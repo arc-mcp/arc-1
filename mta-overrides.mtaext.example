@@ -215,9 +215,11 @@ modules:
 # ── Reusing a SHARED Destination / Connectivity instance ────────────────
 # The base mta.yaml declares `arc1-destination` / `arc1-connectivity` as
 # `org.cloudfoundry.managed-service`, and a managed instance is named after its
-# resource. If your landscape already shares one of these under a DIFFERENT
-# name, a plain deploy creates a second, empty instance and binds ARC-1 to it —
-# the destinations your admin configured simply are not there. Check
+# resource. If your landscape's instances are named differently, a deploy creates
+# ADDITIONAL instances rather than reusing them. Subaccount-level destinations
+# still resolve through a new instance, so this usually costs `lite` quota (the
+# deploy fails outright on a subaccount at its limit) — but ARC-1 does lose the
+# targets if the shared instance carries instance-level destinations. Check
 # `cf services` first. An extension cannot change a resource's `type` (mbt
 # rejects `type` in mta.ResourceExt) — it can only repoint a managed resource at
 # a named instance (a sibling of `modules:`):

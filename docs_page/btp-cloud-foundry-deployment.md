@@ -102,10 +102,14 @@ through the deploy.
 
 Read the `cf services` output before deploying into a space that already runs ARC-1 or shares
 platform services. `arc1-destination` and `arc1-connectivity` are declared as
-`org.cloudfoundry.managed-service`, and a managed instance is named after its resource. If this
-landscape's Destination instance is shared under a different name, a plain deploy creates a second,
-empty instance and binds ARC-1 to it — the destinations your administrator configured are simply
-absent.
+`org.cloudfoundry.managed-service`, and a managed instance is named after its resource — so a
+landscape whose instances are named differently gets additional instances rather than reuse.
+
+Because this guide uses subaccount-level destinations, which any Destination instance in the
+subaccount can resolve, the duplicate usually costs Destination/Connectivity `lite` quota and
+landscape clarity rather than function. It does fail the deploy outright on a subaccount already at
+its quota, and ARC-1 genuinely loses the targets if the shared instance carries **instance-level**
+destinations (see [Destination level and visibility](btp-destination-setup.md#destination-level-and-visibility)).
 
 An extension descriptor cannot change a resource's `type` — `mbt validate` rejects `type` in
 `mta.ResourceExt`. It can only repoint a managed resource at a specific instance name:
