@@ -229,17 +229,24 @@ npm run btp:build
 both checks succeed and MBT creates
 `mta_archives/arc1-mcp_<version>.mtar`.
 
-Before a customer deploy, inspect the archive in a protected workspace:
+Before a customer deploy, inspect the archive in a protected workspace. Resolve exactly one archive
+and echo which one — `mta_archives/` accumulates every version you have built, and a glob that
+matches several is a false green: `unzip -l` then treats the second path as a filter *inside* the
+first archive and reports **0 files** (exit 11), while PowerShell's `OpenRead` fails outright.
 
 ```bash
-unzip -l mta_archives/arc1-mcp_*.mtar | less
+MTAR=$(ls -t mta_archives/*.mtar | head -1) && echo "$MTAR" && unzip -l "$MTAR" | less
 ```
 
-On Windows, list the same entries from PowerShell:
+On Windows, list the same entries from PowerShell. `Dispose()` matters: an open handle keeps the
+archive locked and the next build fails.
 
 ```powershell
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::OpenRead((Get-Item mta_archives\arc1-mcp_*.mtar).FullName).Entries.FullName
+$mtar = Get-ChildItem mta_archives\*.mtar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$mtar.FullName
+$zip = [IO.Compression.ZipFile]::OpenRead($mtar.FullName)
+try { $zip.Entries | Select-Object FullName, Length } finally { $zip.Dispose() }
 ```
 
 A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
