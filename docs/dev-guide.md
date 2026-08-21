@@ -277,3 +277,48 @@ run overlapping CI) without interfering. Mechanics and seams:
 - **Not yet shipped** (see `docs/plans/2026-06-12-test-isolation-and-parallel-runs.md`): CI `retry: 1` paired
   with flake telemetry (H2), a parallel read-only e2e project (F2), and a cross-run flake-aggregation
   workflow (H3). The plan rates these measure-first / conditional on the F1 numbers.
+
+## Building against an unpublished dependency
+
+The MTA path resolves npm dependencies **twice**: `mbt build` runs `npm ci` on your machine
+(`build-parameters.before-all`), and because the module's `ignore:` list excludes `node_modules/`,
+the Node.js buildpack runs its own install on Cloud Foundry. A dependency version that is not on
+the registry therefore fails in both places — which is what happens when you want to deploy a clone
+that tracks an unreleased change to `@arc-mcp/xsuaa-auth`, a package you may not own and cannot
+publish.
+
+`npm link` does not help here: `npm ci` replaces `node_modules` wholesale, and CF never sees your
+machine anyway. Vendor a tarball instead:
+
+```bash
+# In the dependency's clone
+npm run build && npm pack
+
+# In the ARC-1 clone
+mkdir -p vendor && mv ../xsuaa-auth/arc-mcp-xsuaa-auth-*.tgz vendor/
+npm pkg set dependencies.@arc-mcp/xsuaa-auth=file:vendor/arc-mcp-xsuaa-auth-<version>.tgz
+npm install          # rewrites the lockfile to resolve from the tarball
+npm run btp:build
+```
+
+`vendor/` is not in the module's `ignore:` list, so the tarball travels inside the MTAR and the
+buildpack resolves `file:vendor/…` from the app root. A `file:` dependency also bypasses semver
+matching entirely, so the tarball's own version number does not need to match anything.
+
+Verify before deploying:
+
+```bash
+unzip -q mta_archives/arc1-mcp_*.mtar -d /tmp/mtar && unzip -q /tmp/mtar/arc1-mcp-server/data.zip -d /tmp/mtar/app
+ls /tmp/mtar/app/vendor/ && grep xsuaa-auth /tmp/mtar/app/package.json
+```
+
+**Local only — never commit the `file:` reference.** `vendor/` is gitignored for this reason. The
+`file:` dependency and its lockfile entry describe your machine, not the product: a pull request
+must declare the real published range, and merging a `file:` reference would break every other
+build. Treat this as a way to *test* an unreleased change, and revert `package.json` and
+`package-lock.json` before committing.
+
+**Do not ship a pre-installed `node_modules` instead.** Removing `node_modules/` from the module's
+`ignore:` list looks like a shortcut and is a trap: ARC-1 depends on `better-sqlite3`, a native
+module compiled for the build machine's platform and Node ABI. A `node_modules` built on macOS and
+pushed to a Linux CF cell fails at runtime, often only on the first cache-backed request.

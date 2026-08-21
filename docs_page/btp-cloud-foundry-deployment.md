@@ -313,6 +313,10 @@ The application payload must not contain `.env*`, `.npmrc`, service-key exports,
 artifacts. The MTA build has an explicit denylist and CI coverage for critical names; archive
 inspection is still a release gate because a future file type can evade a denylist.
 
+Building against an unpublished companion-package version — a contributor workflow, not a deployment
+one — is covered in [the developer guide](https://github.com/arc-mcp/arc-1/blob/main/docs/dev-guide.md#building-against-an-unpublished-dependency)
+rather than here.
+
 ## 6. Deploy the MTA
 
 Run from the reviewed checkout as the CF Space Developer:

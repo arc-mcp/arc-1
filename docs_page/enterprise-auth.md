@@ -125,6 +125,53 @@ SAP's own OAuth service for BTP applications. Similar to OIDC but uses SAP's [Au
 
 **Setup:** [XSUAA Setup](xsuaa-setup.md)
 
+#### How MCP clients identify themselves (DCR and CIMD)
+
+In XSUAA OAuth proxy mode, an MCP client has to tell ARC-1 who it is before the flow starts.
+ARC-1 supports two mechanisms; DCR is the default and CIMD is opt-in.
+
+**Dynamic Client Registration (RFC 7591) — default, always on.** The client `POST`s to `/register`
+and receives a `client_id`. ARC-1's registrations are *stateless*: the `client_id` carries its own
+signed registration payload, so it survives restarts and scales out without a database. The MCP
+specification revision 2026-07-28 **deprecates** DCR, with a removal window of at least twelve
+months, so it keeps working and stays advertised.
+
+**Client ID Metadata Documents (CIMD, SEP-991) — opt-in via `ARC1_CIMD_ENABLED=true`.** The
+`client_id` *is* an HTTPS URL that the client hosts, pointing at a JSON document of its metadata.
+ARC-1 fetches and validates that document instead of issuing an identifier. The practical benefit
+is durability: a CIMD `client_id` is a stable URL, so it is unaffected by rotation of ARC-1's DCR
+signing key — including the `cf deploy` that recreates an XSUAA binding, which otherwise forces
+every cached registration to be re-created.
+
+Enabling CIMD also publishes `client_id_metadata_document_supported` in the OAuth metadata. Those
+two things deliberately move together: a client that sees the flag stops using DCR, so advertising
+the capability without being able to resolve it would break every capable client. Leaving the flag
+off is therefore the safe state, and clients simply keep using DCR.
+
+!!! warning "CIMD makes ARC-1 fetch a URL chosen by an unauthenticated caller"
+    Resolution happens on `/authorize`, before any user has authenticated. The fetch is hardened —
+    HTTPS only, DNS resolved and every returned address validated against the RFC 6890 special-use
+    ranges, the connection **pinned** to a validated address so DNS rebinding cannot redirect it,
+    redirects refused outright, a 5 KiB cap enforced while streaming, compression refused, and no
+    cookie or credential of any kind sent. No URL found *inside* a fetched document is ever
+    dereferenced.
+
+    On BTP this process runs beside a Cloud Connector whose purpose is to make on-premises SAP
+    networks reachable, so review the
+    [design and threat model](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-08-18-cimd-client-identity.md)
+    before enabling it. Use `ARC1_CIMD_ALLOWED_HOSTS` to restrict which hosts may be fetched.
+
+A document's `client_name` is chosen by whoever controls the domain. CIMD proves domain control and
+nothing else, so never present that name to users as a verified identity.
+
+Behind a mandatory forward proxy, set `ARC1_CIMD_PROXY_URL`. ARC-1 tunnels via
+`CONNECT <validated-ip>` rather than handing the proxy a hostname, so the address validation
+survives the hop; a proxy that refuses `CONNECT` to a bare IP cannot be used, and a TLS-intercepting
+proxy needs its CA trusted through `NODE_EXTRA_CA_CERTS`.
+
+All four settings are documented in the
+[configuration reference](configuration-reference.md).
+
 ---
 
 ## SAP Authentication (ARC-1 → SAP)

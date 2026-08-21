@@ -129,6 +129,65 @@ modules:
       # See docs_page/xsuaa-setup.md "Stable DCR signing key" for the full
       # rationale.
 
+      # ── CIMD — Client ID Metadata Documents (SEP-991) ────────────────
+      # The 2026-07-28 MCP revision deprecates DCR in favour of CIMD, where the
+      # `client_id` IS an HTTPS URL the client hosts and ARC-1 fetches. DCR keeps
+      # working for at least the twelve-month deprecation window, so this is
+      # additive: enabling CIMD does not disable DCR.
+      #
+      # Why you might want it: a CIMD `client_id` is a stable URL, so it does not
+      # depend on the DCR signing key at all — a `cf deploy` that recreates the
+      # XSUAA binding cannot invalidate it, which is the failure this landscape
+      # otherwise mitigates with ARC1_DCR_SIGNING_SECRET above.
+      #
+      # This flag ALSO gates `client_id_metadata_document_supported` in the OAuth
+      # metadata, and the two MUST move together: a client that sees the flag stops
+      # using DCR, so advertising it while resolution is off breaks every capable
+      # client. Default is off; that is the safe state.
+      #
+      # SECURITY — enabling this makes ARC-1 perform an outbound HTTPS fetch to a
+      # URL supplied by an UNAUTHENTICATED caller, on `/authorize`. The fetch is
+      # hardened (HTTPS only, every resolved address checked against the RFC 6890
+      # special-use ranges, the connection pinned so DNS rebinding cannot redirect
+      # it, redirects refused, 5 KiB streaming cap, no credentials, and no URL
+      # inside a fetched document is ever dereferenced). On BTP this process sits
+      # beside a Cloud Connector, so read
+      # docs/research/2026-08-18-cimd-client-identity.md before enabling it.
+      #
+      # No xs-security.json change is needed: the issue-#214 callback proxy means
+      # XSUAA only ever sees ARC-1's own /oauth/callback, which already matches
+      # `https://*.hana.ondemand.com/**`. The CIMD client's own redirect_uri is
+      # validated by ARC-1 against the fetched document, never by XSUAA.
+      # ARC1_CIMD_ENABLED: "true"
+
+      # Optional host allowlist for CIMD `client_id` URLs — exact hosts or
+      # single-label wildcards. Empty (the default) admits any HTTPS host, which
+      # is CIMD's point: admitting a client identity grants nothing by itself,
+      # since XSUAA still authenticates the user and MCP scopes, the safety
+      # ceiling, and the user's own SAP authorizations all still apply. Set it
+      # when subaccount egress policy requires a closed destination set, or to
+      # limit phishing surface — CIMD proves control of a domain and nothing more,
+      # so a document's `client_name` is attacker-chosen and must never be shown
+      # as a trusted identity. Enforced BEFORE any DNS or socket.
+      # ARC1_CIMD_ALLOWED_HOSTS: "claude.ai,*.vscode.dev"
+
+      # Fallback cache lifetime for a document whose response carries no usable
+      # cache headers. Responses that DO carry them are honoured but clamped to
+      # [300s, 3600s]; this value is clamped to the same window. Default "900".
+      # The cache is per-instance and in memory, consistent with ARC-1's
+      # stateless design — scaling out simply means each instance caches its own.
+      # ARC1_CIMD_CACHE_TTL_SECONDS: "900"
+
+      # Forward proxy for CIMD fetches, only if this subaccount's egress requires
+      # one. ARC-1 tunnels with `CONNECT <validated-ip>:<port>` rather than handing
+      # the proxy a hostname, so the proxy resolves nothing and the SSRF address
+      # validation survives the hop. Two consequences: a proxy that refuses
+      # `CONNECT` to a bare IP cannot be used (audit reason `proxy_refused`, never
+      # a silent downgrade), and a TLS-intercepting proxy fails certificate
+      # validation unless its CA is trusted process-wide via NODE_EXTRA_CA_CERTS.
+      # Credentials in the URL are supported and never logged.
+      # ARC1_CIMD_PROXY_URL: "http://proxy.corp:3128"
+
       # ── CORS ─────────────────────────────────────────────────────────
       # Allow browser-based UIs to call /mcp directly. Not needed for
       # native MCP clients (Claude Desktop, Cursor, VS Code, Copilot

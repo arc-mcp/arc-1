@@ -198,6 +198,34 @@ export interface OAuthRedirectUriRejectedEvent extends AuditEventBase {
   redirectUri: string;
 }
 
+/** CIMD (SEP-991): an HTTPS-URL `client_id` was resolved to a client record — either
+ *  freshly fetched and validated, or served from this instance's bounded cache. The
+ *  `/authorize` and `/oauth/callback` checks both resolve, so a completed authorization
+ *  normally produces two of these, the second with `cacheHit: true`. */
+export interface OAuthCimdResolvedEvent extends AuditEventBase {
+  event: 'oauth_cimd_resolved';
+  /** The Client Identifier URL. Caller-supplied — treat as untrusted. */
+  clientIdUrl: string;
+  redirectUriCount: number;
+  cacheHit: boolean;
+}
+
+/** CIMD: an HTTPS-URL `client_id` was refused. `reason` comes from the auth package's
+ *  closed vocabulary — URL shape, the SSRF address/host gates, transport failures, proxy
+ *  failures, or document-validation failures — plus `cimd_disabled` when a URL client_id
+ *  arrives while the feature is off.
+ *
+ *  `blocked_address` and `host_not_allowed` are the alertable ones: they mean someone
+ *  aimed this server at something it refused to reach. The reason never reaches the OAuth
+ *  client; it exists for the operator. */
+export interface OAuthCimdRejectedEvent extends AuditEventBase {
+  event: 'oauth_cimd_rejected';
+  /** The Client Identifier URL. Caller-supplied — treat as untrusted. */
+  clientIdUrl: string;
+  reason: string;
+  cacheHit: boolean;
+}
+
 /** A browser request was rejected by CORS because its `Origin` header is not in
  *  `ARC1_ALLOWED_ORIGINS`. Emitted at most once per request — preflight rejections
  *  also fire this. The browser itself drops the response, so this event is the
@@ -257,6 +285,8 @@ export type AuditEvent =
   | OAuthClientLookupFailedEvent
   | OAuthRedirectUriRegisteredEvent
   | OAuthRedirectUriRejectedEvent
+  | OAuthCimdResolvedEvent
+  | OAuthCimdRejectedEvent
   | CorsRejectedEvent
   | AuthRateLimitedEvent
   | McpRateLimitedEvent;

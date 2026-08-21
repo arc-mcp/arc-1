@@ -103,6 +103,10 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'allow-http-no-auth', valueName: 'boolean', description: 'Allow unauthenticated HTTP MCP (true/false)' },
   { name: 'oauth-dcr-ttl-seconds', valueName: 'seconds', description: 'OAuth DCR client lifetime' },
   { name: 'dcr-signing-secret', valueName: 'secret', description: 'OAuth DCR signing secret' },
+  { name: 'cimd-enabled', valueName: 'boolean', description: 'Accept CIMD URL client_ids (true/false)' },
+  { name: 'cimd-allowed-hosts', valueName: 'hosts', description: 'Comma-separated CIMD client_id host allowlist' },
+  { name: 'cimd-cache-ttl-seconds', valueName: 'seconds', description: 'CIMD document cache fallback TTL' },
+  { name: 'cimd-proxy-url', valueName: 'url', description: 'Forward proxy for CIMD document fetches' },
   { name: 'btp-service-key', valueName: 'json', description: 'BTP ABAP service-key JSON' },
   { name: 'btp-service-key-file', valueName: 'path', description: 'BTP ABAP service-key file' },
   { name: 'btp-oauth-callback-port', valueName: 'port', description: 'BTP OAuth callback port' },
@@ -722,6 +726,43 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   // When omitted, the store falls back to the XSUAA `clientsecret`.
   config.dcrSigningSecret = resolveOptionalStr('dcr-signing-secret', 'ARC1_DCR_SIGNING_SECRET', 'dcrSigningSecret');
 
+  // ── CIMD (Client ID Metadata Documents, SEP-991) ───────────────────
+  // Opt-in: enabling this makes ARC-1 fetch a URL chosen by an unauthenticated caller on
+  // the /authorize path. It also gates the metadata flag — the two MUST move together,
+  // because a client that sees `client_id_metadata_document_supported` stops using DCR.
+  config.cimdEnabled = resolveBool('cimd-enabled', 'ARC1_CIMD_ENABLED', false, 'cimdEnabled');
+
+  const cimdHostsRaw = getFlag('cimd-allowed-hosts') ?? process.env.ARC1_CIMD_ALLOWED_HOSTS;
+  if (cimdHostsRaw !== undefined) {
+    config.cimdAllowedHosts = cimdHostsRaw
+      .split(',')
+      .map((h) => h.trim())
+      .filter((h) => h.length > 0);
+    sources.cimdAllowedHosts =
+      getFlag('cimd-allowed-hosts') !== undefined
+        ? { flag: '--cimd-allowed-hosts' }
+        : { env: 'ARC1_CIMD_ALLOWED_HOSTS' };
+  } else {
+    sources.cimdAllowedHosts = 'default';
+  }
+
+  // Fallback TTL only. Responses carrying cache headers are honoured but clamped to
+  // [300s, 3600s] inside the auth package; this value is used when they carry none, and
+  // is clamped to the same window so the two cannot disagree.
+  const cimdTtlRaw = getFlag('cimd-cache-ttl-seconds') ?? process.env.ARC1_CIMD_CACHE_TTL_SECONDS;
+  if (cimdTtlRaw !== undefined) {
+    const parsed = Number.parseInt(cimdTtlRaw, 10);
+    if (!Number.isNaN(parsed)) {
+      config.cimdCacheTtlSeconds = Math.max(300, Math.min(3600, parsed));
+      sources.cimdCacheTtlSeconds =
+        getFlag('cimd-cache-ttl-seconds') !== undefined
+          ? { flag: '--cimd-cache-ttl-seconds' }
+          : { env: 'ARC1_CIMD_CACHE_TTL_SECONDS' };
+    }
+  }
+
+  config.cimdProxyUrl = resolveOptionalStr('cimd-proxy-url', 'ARC1_CIMD_PROXY_URL', 'cimdProxyUrl');
+
   // ── BTP ABAP Environment ───────────────────────────────────────────
   config.btpServiceKey = resolveOptionalStr('btp-service-key', 'SAP_BTP_SERVICE_KEY', 'btpServiceKey');
   config.btpServiceKeyFile = resolveOptionalStr(
@@ -1081,6 +1122,18 @@ export function validateConfig(config: ServerConfig): void {
   if (config.transport === 'http-streamable' && config.xsuaaAuth && !config.dcrSigningSecret) {
     console.error(
       '[warn] SAP_XSUAA_AUTH=true without ARC1_DCR_SIGNING_SECRET — DCR client_ids are signed with the XSUAA clientsecret, so a redeploy that recreates the service binding (MTA cf deploy, rebind) invalidates every cached client_id and forces all VS Code/Copilot/Eclipse users to re-auth. Set a durable secret: cf set-env <app> ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)".',
+    );
+  }
+
+  if (config.cimdEnabled && !config.xsuaaAuth) {
+    console.error(
+      '[warn] ARC1_CIMD_ENABLED=true but SAP_XSUAA_AUTH=false — CIMD only applies in XSUAA OAuth proxy mode, so nothing is advertised and no URL client_id is accepted. Enable XSUAA OAuth proxy mode (SAP_XSUAA_AUTH=true) or unset the flag.',
+    );
+  }
+
+  if (!config.cimdEnabled && (config.cimdAllowedHosts.length > 0 || config.cimdProxyUrl)) {
+    console.error(
+      '[warn] ARC1_CIMD_ALLOWED_HOSTS / ARC1_CIMD_PROXY_URL are set but ARC1_CIMD_ENABLED=false — these settings are inert. Set ARC1_CIMD_ENABLED=true to use them, or unset them to avoid implying CIMD is active.',
     );
   }
 

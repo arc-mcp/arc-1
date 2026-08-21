@@ -120,6 +120,56 @@ export interface ServerConfig {
    * OAuth proxy mode is active. */
   dcrSigningSecret?: string;
 
+  /**
+   * Enable Client ID Metadata Documents (CIMD, SEP-991) alongside stateless DCR.
+   * Default `false`.
+   *
+   * The 2026-07-28 MCP revision deprecates DCR in favour of CIMD, where the `client_id`
+   * IS an HTTPS URL the client hosts and this server fetches. Turning this on therefore
+   * makes ARC-1 issue an outbound request to a URL chosen by an unauthenticated caller,
+   * on the pre-authentication `/authorize` path. The fetch is SSRF-hardened
+   * (`@arc-mcp/xsuaa-auth`), but read `docs/research/2026-08-18-cimd-client-identity.md`
+   * before enabling it — on BTP this process sits beside a Cloud Connector.
+   *
+   * This flag also gates `client_id_metadata_document_supported` in the published OAuth
+   * metadata. The two must move together: a client that sees the flag STOPS using DCR, so
+   * advertising without resolving breaks every capable client. Only consulted when XSUAA
+   * OAuth proxy mode is active. */
+  cimdEnabled: boolean;
+
+  /**
+   * Optional host allowlist for CIMD `client_id` URLs. Empty (the default) means any
+   * HTTPS host is admitted once `cimdEnabled` is on — which is CIMD's whole point, and is
+   * safe because admitting a client identity grants nothing on its own: XSUAA still
+   * authenticates the human, MCP scopes still apply, and so do the safety ceiling and the
+   * user's own SAP authorizations.
+   *
+   * Set it when egress policy requires a closed set of destinations, or to reduce
+   * phishing surface — CIMD proves control of a domain and nothing more, so `client_name`
+   * is attacker-chosen and must never be shown as a trusted identity. Entries are exact
+   * hosts (`claude.ai`) or single-label wildcards (`*.vscode.dev`). Enforced BEFORE any
+   * DNS or socket, so a rejected host produces no outbound traffic at all. */
+  cimdAllowedHosts: string[];
+
+  /**
+   * Fallback cache lifetime in seconds for a CIMD document whose response carries no
+   * usable cache headers. Default `900`. Responses that DO carry `Cache-Control`/`Expires`
+   * are honoured but clamped to `[300s, 3600s]`: the floor stops a hostile `max-age=0`
+   * turning every `/authorize` into an outbound fetch, the ceiling bounds staleness after
+   * a client legitimately rotates its redirect URIs. */
+  cimdCacheTtlSeconds: number;
+
+  /**
+   * Forward proxy for CIMD document fetches, e.g. `http://proxy.corp:3128`. Unset means
+   * connect directly.
+   *
+   * ARC-1 tunnels via `CONNECT <validated-ip>:<port>` rather than handing the proxy a
+   * hostname, so the proxy resolves nothing and the SSRF address validation survives the
+   * hop. Two consequences: a proxy that refuses `CONNECT` to a bare IP cannot be used, and
+   * a TLS-intercepting proxy fails certificate validation unless its CA is trusted via
+   * `NODE_EXTRA_CA_CERTS`. */
+  cimdProxyUrl?: string;
+
   // --- BTP ABAP Environment (direct connection via service key) ---
   btpServiceKey?: string; // Inline service key JSON
   btpServiceKeyFile?: string; // Path to service key file
@@ -280,6 +330,9 @@ export const DEFAULT_CONFIG: ServerConfig = {
   allowHttpNoAuth: false,
   oidcDiscovery: true,
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
+  cimdEnabled: false, // CIMD is opt-in: enabling it makes ARC-1 fetch caller-chosen URLs
+  cimdAllowedHosts: [], // empty = any HTTPS host, once cimdEnabled is on
+  cimdCacheTtlSeconds: 900,
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,
   multiTargetAllowBasicAuth: false,

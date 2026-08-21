@@ -84,6 +84,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_OIDC_ISSUER` / `SAP_OIDC_AUDIENCE` | OIDC JWT validation |
 | `ARC1_OAUTH_DCR_TTL_SECONDS` | DCR client_id lifetime (default `0` = no expiry; positive opts into expiry, clamped 60s–90d) |
 | `ARC1_DCR_SIGNING_SECRET` | Dedicated HMAC secret so `cf deploy` doesn't invalidate cached client_ids |
+| `ARC1_CIMD_ENABLED` / `ARC1_CIMD_ALLOWED_HOSTS` / `ARC1_CIMD_CACHE_TTL_SECONDS` / `ARC1_CIMD_PROXY_URL` | Default-off CIMD (SEP-991) URL client_ids beside DCR; the flag ALSO gates `client_id_metadata_document_supported` (advertise ⟺ resolve). Enabling makes ARC-1 fetch a caller-chosen URL on `/authorize` — SSRF-hardened in the `@arc-mcp/xsuaa-auth` dep |
 | `ARC1_ALLOWED_ORIGINS` | CORS allowlist for browser MCP clients (empty = CORS off) |
 | `ARC1_PUBLIC_URL` | Advertised OAuth-metadata URL when behind a reverse proxy |
 | `SAP_BTP_SERVICE_KEY[_FILE]` / `SAP_BTP_OAUTH_CALLBACK_PORT` | BTP ABAP service key / OAuth callback port |
@@ -238,6 +239,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | CLI sub-command | `src/cli.ts`, `src/cli-args.ts` — never duplicate Zod validation; `handleToolCall` does it |
 | SAP version-quirk workaround | `src/adt/errors.ts` (`extractExceptionType` preferred); body-marker heuristics only with a release-scoped guard (ADR-0002) |
 | Activation batch ED064 recovery | `src/adt/devtools.ts` (`activateBatch`) — pure ED064 retried once as singles; mixed real errors must NOT retry |
+| CIMD client identity (SEP-991) | `src/server/{http,config,types,audit}.ts` + the `@arc-mcp/xsuaa-auth` dep (`cimd-{fetch,document,cache,resolver}.ts`), `tests/unit/server/http-cimd-metadata.test.ts` — design + threat model in `docs/research/2026-08-18-cimd-client-identity.md`. The metadata flag is the real switch (no flag = every client stays on DCR); never advertise without resolving. New CLI flags must be registered in `CLI_CONFIG_OPTION_SPECS` or `resolveConfig` throws |
 | Plugin elicitation (`ctx.elicit`) / XSUAA / OIDC / DCR store | `src/server/plugin-loader.ts` (`buildMcpCapabilities` — only live elicitation path; core tools use the config safety ceiling, not interactive prompts) / `src/server/xsuaa.ts` / `src/server/http.ts` / DCR store + OAuth proxy in the `@arc-mcp/xsuaa-auth` dep (revocation = rotate `ARC1_DCR_SIGNING_SECRET` or rebind XSUAA; `KDF_LABEL` bump lives in the package) |
 | Scope enforcement / auth scopes | `src/authz/policy.ts` (`ACTION_POLICY`), `src/handlers/dispatch.ts`, `src/server/server.ts`, `xs-security.json` |
 | Auth combination rule | `src/server/config.ts` (`validateConfig`), `src/server/types.ts`, `docs_page/enterprise-auth.md` |

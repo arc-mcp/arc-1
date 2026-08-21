@@ -422,8 +422,28 @@ export async function startHttpServer(
       dcrTtlSeconds: config.oauthDcrTtlSeconds,
       dcrSigningSecret: config.dcrSigningSecret,
       callbackUrl: oauthCallbackUrl,
+      // CIMD (SEP-991) is passed only when enabled, so the store's default stays "an
+      // https: client_id is refused like any other unknown value". Enabled here and
+      // advertised below must stay in lockstep — see the metadata block.
+      ...(config.cimdEnabled
+        ? {
+            cimd: {
+              ...(config.cimdAllowedHosts.length > 0 ? { allowedHosts: config.cimdAllowedHosts } : {}),
+              ...(config.cimdProxyUrl ? { proxyUrl: config.cimdProxyUrl } : {}),
+              cache: { defaultTtlSeconds: config.cimdCacheTtlSeconds },
+            },
+          }
+        : {}),
       logger: authLibLogger,
     });
+    if (config.cimdEnabled) {
+      logger.info('CIMD client identities enabled (SEP-991)', {
+        allowedHosts: config.cimdAllowedHosts.length,
+        cacheTtlSeconds: config.cimdCacheTtlSeconds,
+        // Presence only — a proxy URL can carry credentials and must never be logged.
+        proxied: Boolean(config.cimdProxyUrl),
+      });
+    }
     // Inject ARC-1's scope-expansion policy + logger so the verifier emits the
     // same expanded AuthInfo.scopes ARC-1 produced before the extraction.
     const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials, { expandScopes, logger: authLibLogger });
@@ -652,6 +672,11 @@ export async function startHttpServer(
         revocation_endpoint: `${fullBase}/revoke`,
         revocation_endpoint_auth_methods_supported: ['client_secret_post'],
         registration_endpoint: `${fullBase}/register`,
+        // Advertised ONLY when resolution is actually enabled. A client that sees this
+        // flag stops using DCR, so advertising without resolving breaks every capable
+        // client. `registration_endpoint` stays regardless: DCR remains supported for the
+        // whole deprecation window.
+        ...(config.cimdEnabled ? { client_id_metadata_document_supported: true } : {}),
       };
       const customResourceMetadata = {
         resource: `${fullBase}/mcp`,
@@ -699,6 +724,31 @@ export async function startHttpServer(
           resource_name: 'ARC-1 SAP MCP Server (pinned target)',
         });
       });
+    }
+
+    // Root-path deployments: the SDK's own metadata document is correct, but
+    // `createOAuthMetadata` cannot emit `client_id_metadata_document_supported` and
+    // `mcpAuthRouter` exposes no hook to add it. Rather than hand-maintain a second copy
+    // (which would silently drop any field a future SDK adds), DERIVE the document from
+    // the SDK's own builder, add the one field, and mount it before the router so it wins
+    // the route match — the same shadowing the prefix branch above relies on.
+    //
+    // `metadataHandler` is the SDK's own, so CORS and GET/OPTIONS-only handling are
+    // identical to what the router would have installed.
+    if (!basePath && config.cimdEnabled) {
+      const { createOAuthMetadata } = await import('@modelcontextprotocol/sdk/server/auth/router.js');
+      const { metadataHandler } = await import('@modelcontextprotocol/sdk/server/auth/handlers/metadata.js');
+      const sdkMetadata = createOAuthMetadata({
+        provider,
+        issuerUrl: new URL(appUrl),
+        baseUrl: new URL(appUrl),
+        scopesSupported,
+      });
+      app.use(
+        '/.well-known/oauth-authorization-server',
+        metadataHandler({ ...sdkMetadata, client_id_metadata_document_supported: true }),
+      );
+      logger.info('OAuth metadata override active (CIMD capability, root-path mode)');
     }
 
     // Install MCP SDK auth router at root (OAuth endpoints + DCR).

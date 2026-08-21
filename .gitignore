@@ -96,6 +96,13 @@ node_modules/
 # MTA build artifacts
 mta_archives/
 
+# Locally vendored dependency tarballs — used to build/deploy an MTA against an
+# unpublished version of a dependency (e.g. testing an @arc-mcp/xsuaa-auth branch
+# before its maintainer releases it). The `file:` reference in package.json and the
+# lockfile entry are LOCAL-ONLY and must never be committed; the PR declares the
+# real published range instead. See docs_page/btp-cloud-foundry-deployment.md.
+vendor/
+
 # MTA extension descriptors with per-landscape values (destinations, safety
 # flags, etc.). Deployers copy `mta-overrides.mtaext.example` to
 # `mta-overrides.mtaext` (or any `mta-*.mtaext`) and fill in their values;
