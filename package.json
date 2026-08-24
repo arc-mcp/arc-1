@@ -132,13 +132,13 @@
     "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.8",
+    "@biomejs/biome": "^2.5.9",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.1",
     "@types/supertest": "^7.2.1",
-    "@vitest/coverage-v8": "^4.1.10",
+    "@vitest/coverage-v8": "^4.1.11",
     "husky": "^9.1.7",
     "lint-staged": "^17.3.0",
     "supertest": "^7.2.2",
