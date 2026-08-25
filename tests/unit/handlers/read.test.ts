@@ -885,6 +885,53 @@ describe('SAPRead handler', () => {
       expect(result.content[0]!.text).toContain('sap.ui.define');
     });
 
+    it('auto-splits a subfolder path passed only in name (no include)', async () => {
+      // Regression test: passing "APP/sub" as name alone must not uppercase the
+      // sub-path along with the app name (it did before this fix — the whole
+      // string got treated as appName and .toUpperCase()'d, 404ing against the
+      // case-sensitive filestore).
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <title>ZAPP_BOOKING/webapp/i18n/i18n.properties</title>
+    <category term="file"/>
+    <content afr:etag="def456" xmlns:afr="http://www.sap.com/adt/filestore"/>
+  </entry>
+</feed>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: 'ZAPP_BOOKING/webapp/i18n',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed).toHaveLength(1);
+      const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(calledUrl).toContain('ZAPP_BOOKING%2Fwebapp%2Fi18n');
+      expect(calledUrl).not.toContain('WEBAPP');
+      expect(calledUrl).not.toContain('I18N');
+    });
+
+    it('auto-splits a file path passed only in name (no include)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '{"sap.app": {"id": "zapp.booking"}}'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: 'ZAPP_BOOKING/webapp/manifest.json',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toContain('sap.app');
+      const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(calledUrl).toContain('ZAPP_BOOKING%2Fwebapp%2Fmanifest.json');
+      expect(calledUrl).not.toContain('WEBAPP');
+      expect(calledUrl).not.toContain('MANIFEST.JSON');
+    });
+
     it('returns error when ui5 feature is unavailable', async () => {
       setCachedFeatures(featuresOff());
       try {

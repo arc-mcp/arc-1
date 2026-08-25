@@ -744,21 +744,33 @@ export async function handleSAPRead(
             'for the reason (often a missing S_ADT_RES authorization), or set SAP_FEATURE_UI5=on to force it on.',
         );
       }
-      const include = args.include as string | undefined;
+      let include = args.include as string | undefined;
       if (!name) {
         // List all BSP apps (optional search via query param not used here since name is empty)
         const apps = await client.listBspApps();
         return textResult(toolJson(apps));
       }
+      // A caller sometimes puts the whole nested path in `name` instead of splitting it
+      // across name+include (e.g. name="ZAPP/controller" instead of name="ZAPP"
+      // include="controller"). getBspAppStructure/getBspFileContent uppercase their
+      // appName argument in full, so leaving this unsplit would uppercase the sub-path
+      // too and 404 against the (case-sensitive) filestore. Auto-split on the first '/'
+      // so both call shapes work the same.
+      let bspAppName = name;
+      if (!include && bspAppName.includes('/')) {
+        const slashIdx = bspAppName.indexOf('/');
+        include = bspAppName.slice(slashIdx + 1);
+        bspAppName = bspAppName.slice(0, slashIdx);
+      }
       if (!include) {
         // Browse root structure of the app
-        return textResult(toolJson(await client.getBspAppStructure(name)));
+        return textResult(toolJson(await client.getBspAppStructure(bspAppName)));
       }
       // If include contains a dot, treat as file read; otherwise browse subfolder
       if (include.includes('.')) {
-        return textResult(await client.getBspFileContent(name, include));
+        return textResult(await client.getBspFileContent(bspAppName, include));
       }
-      return textResult(toolJson(await client.getBspAppStructure(name, `/${include}`)));
+      return textResult(toolJson(await client.getBspAppStructure(bspAppName, `/${include}`)));
     }
     case 'BSP_DEPLOY': {
       const ui5repoFeature = getCachedFeatures()?.ui5repo;
