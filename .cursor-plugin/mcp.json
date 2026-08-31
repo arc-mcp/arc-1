@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "arc-1": {
+      "command": "npx",
+      "args": ["-y", "arc-1@latest"],
+      "env": {
+        "SAP_URL": "${env:SAP_URL}",
+        "SAP_USER": "${env:SAP_USER}",
+        "SAP_PASSWORD": "${env:SAP_PASSWORD}",
+        "SAP_CLIENT": "${env:SAP_CLIENT}",
+        "SAP_LANGUAGE": "${env:SAP_LANGUAGE}",
+        "SAP_INSECURE": "${env:SAP_INSECURE}",
+        "SAP_ALLOW_WRITES": "${env:SAP_ALLOW_WRITES}"
+      }
+    }
+  }
+}

@@ -120,7 +120,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "arc-1"
+        "arc-1@latest"
       ],
       "env": {
         "SAP_URL": "${user_config.sap_url}",

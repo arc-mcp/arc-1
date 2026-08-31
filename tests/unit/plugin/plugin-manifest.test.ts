@@ -1,18 +1,16 @@
 /**
- * Guards for the Claude Code plugin + marketplace manifests.
+ * Guards for the portable Agent Plugin, Claude Code/MCPB packages, and Cursor-native adapter.
  *
- * The repo root doubles as a single-plugin Claude Code marketplace: `.claude-plugin/plugin.json`
- * declares the ARC-1 MCP server inline and `.claude-plugin/marketplace.json` lists this repo
- * (source "./") so users can `/plugin marketplace add arc-mcp/arc-1` →
- * `/plugin install arc-1@arc-1`. The plugin's skills are the existing root `skills/` directory,
- * which Claude Code always auto-scans for a plugin.
+ * The root `plugin.json`, `mcp.json`, and `skills/` directory are the Agent Plugins 1.0 portable
+ * surface. The repo also doubles as a single-plugin marketplace: Claude Code reads its native
+ * manifest while Copilot can select the portable root manifest from the same source.
  *
  * These tests make the wiring true by construction:
- * - manifests are valid JSON and self-consistent (names/source match the layout)
- * - the bundled MCP server stays `npx arc-1` with the SAP user_config env mapping
- * - every shipped skill has plugin-legal frontmatter (the rules Anthropic enforces)
- * - the plugin version stays in lockstep with package.json / mcpb / server.json (release-please
- *   manages all four; a manual edit that drifts one is caught here)
+ * - the portable files stay inside the closed Agent Plugins 1.0 schemas
+ * - portable MCP configuration contains no credentials or non-portable substitutions
+ * - native adapters retain their client-specific configuration behavior
+ * - every shipped skill has Agent Skills-conformant frontmatter
+ * - release-please keeps every packaged manifest version in lockstep
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -31,20 +29,73 @@ function readYaml(rel: string): Record<string, any> {
   return parse(readFileSync(join(ROOT, rel), 'utf8')) as Record<string, any>;
 }
 
+function placeholder(name: string): string {
+  return `\${${name}}`;
+}
+
+const agentPlugin = readJson('plugin.json');
+const portableMcp = readJson('mcp.json');
 const plugin = readJson('.claude-plugin/plugin.json');
+const cursorPlugin = readJson('.cursor-plugin/plugin.json');
 const marketplace = readJson('.claude-plugin/marketplace.json');
 
-describe('plugin.json', () => {
+describe('Agent Plugins 1.0 portable package', () => {
+  const PLUGIN_SCHEMA = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json';
+  const MCP_SCHEMA = 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json';
+  const MANIFEST_FIELDS = [
+    '$schema',
+    'author',
+    'description',
+    'homepage',
+    'keywords',
+    'license',
+    'name',
+    'repository',
+    'version',
+  ];
+
+  it('uses the canonical closed manifest schema', () => {
+    expect(agentPlugin.$schema).toBe(PLUGIN_SCHEMA);
+    expect(agentPlugin.name).toBe('arc-1');
+    expect(agentPlugin.name).toMatch(/^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/);
+    expect(Object.keys(agentPlugin).sort()).toEqual(MANIFEST_FIELDS.sort());
+    expect(Object.keys(agentPlugin.author).sort()).toEqual(['name', 'url']);
+  });
+
+  it('declares one schema-conformant stdio server', () => {
+    expect(portableMcp.$schema).toBe(MCP_SCHEMA);
+    expect(Object.keys(portableMcp).sort()).toEqual(['$schema', 'mcpServers']);
+    expect(Object.keys(portableMcp.mcpServers)).toEqual(['arc-1']);
+
+    const server = portableMcp.mcpServers['arc-1'];
+    expect(Object.keys(server).sort()).toEqual(['args', 'command', 'cwd', 'type']);
+    expect(server).toEqual({
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', 'arc-1@latest'],
+      cwd: placeholder('PLUGIN_DATA'),
+    });
+  });
+
+  it('keeps credentials out of portable package data', () => {
+    const raw = JSON.stringify(portableMcp);
+    expect(raw).not.toMatch(/SAP_(?:URL|USER|PASSWORD)/);
+    expect(raw).not.toMatch(/\$\{(?:env:|user_config\.)/);
+    expect(raw.match(/\$\{[^}]+\}/g)).toEqual([placeholder('PLUGIN_DATA')]);
+  });
+});
+
+describe('Claude Code plugin.json', () => {
   it('identifies the plugin as arc-1 with a synced version', () => {
     expect(plugin.name).toBe('arc-1');
     expect(typeof plugin.version).toBe('string');
   });
 
-  it('declares the ARC-1 MCP server inline as npx arc-1', () => {
+  it('declares the ARC-1 MCP server inline as npx arc-1@latest', () => {
     const server = plugin.mcpServers?.['arc-1'];
     expect(server).toBeTruthy();
     expect(server.command).toBe('npx');
-    expect(server.args).toContain('arc-1');
+    expect(server.args).toEqual(['-y', 'arc-1@latest']);
   });
 
   it('maps SAP credentials from userConfig into the server env', () => {
@@ -70,8 +121,21 @@ describe('marketplace.json', () => {
   it('references this repo as the plugin source', () => {
     const entry = marketplace.plugins[0];
     expect(entry.name).toBe(plugin.name);
+    expect(entry.name).toBe(agentPlugin.name);
     // "./" resolves to the marketplace root (= repo root = the plugin); must start with "./".
     expect(entry.source).toBe('./');
+  });
+});
+
+describe('Cursor-native plugin adapter', () => {
+  it('uses an isolated native MCP config instead of the portable root mcp.json', () => {
+    expect(cursorPlugin.mcpServers).toBe('.cursor-plugin/mcp.json');
+    const cursorMcp = readJson(cursorPlugin.mcpServers);
+    const server = cursorMcp.mcpServers?.['arc-1'];
+    expect(server.command).toBe('npx');
+    expect(server.args).toEqual(['-y', 'arc-1@latest']);
+    expect(server.env.SAP_URL).toBe(placeholder('env:SAP_URL'));
+    expect(server.env.SAP_PASSWORD).toBe(placeholder('env:SAP_PASSWORD'));
   });
 });
 
@@ -167,12 +231,28 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
   });
 });
 
-describe('version sync (release-please manages all four)', () => {
-  it('keeps plugin/mcpb/server in lockstep with package.json', () => {
+describe('packaged version sync', () => {
+  it('keeps portable/native plugin, mcpb, and server versions in lockstep with package.json', () => {
     const pkg = readJson('package.json').version;
+    expect(agentPlugin.version).toBe(pkg);
     expect(plugin.version).toBe(pkg);
+    expect(cursorPlugin.version).toBe(pkg);
     expect(readJson('mcpb-manifest.json').version).toBe(pkg);
     expect(readJson('server.json').version).toBe(pkg);
+  });
+
+  it('lets release-please bump every versioned plugin manifest', () => {
+    const releasePlease = readJson('release-please-config.json');
+    const paths = releasePlease.packages['.']['extra-files'].map((entry: { path: string }) => entry.path);
+    for (const path of [
+      'plugin.json',
+      '.claude-plugin/plugin.json',
+      '.cursor-plugin/plugin.json',
+      'mcpb-manifest.json',
+      'server.json',
+    ]) {
+      expect(paths, path).toContain(path);
+    }
   });
 });
 
@@ -212,7 +292,7 @@ describe('deployment templates', () => {
   });
 });
 
-describe('shipped skills have plugin-legal frontmatter', () => {
+describe('shipped skills have Agent Skills-conformant frontmatter', () => {
   const skillsDir = join(ROOT, 'skills');
   const skillNames = readdirSync(skillsDir).filter((name) => {
     const p = join(skillsDir, name);
@@ -233,10 +313,11 @@ describe('shipped skills have plugin-legal frontmatter', () => {
       const nameLine = front.match(/^name:\s*(.+)$/m)?.[1]?.trim();
       const descLine = front.match(/^description:\s*(.+)$/m)?.[1]?.trim();
 
-      // name: lowercase letters/numbers/hyphens, <=64, no reserved words, matches the folder.
+      // name: lowercase letters/numbers/hyphens, <=64, no edge/double hyphens, matches folder.
       expect(nameLine).toBe(name);
-      expect(nameLine!).toMatch(/^[a-z0-9-]{1,64}$/);
-      expect(nameLine!).not.toMatch(/anthropic|claude/);
+      expect(nameLine!.length).toBeLessThanOrEqual(64);
+      expect(nameLine!).toMatch(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/);
+      expect(nameLine!).not.toContain('--');
 
       // description: non-empty, <=1024 chars, no XML tags, written about what/when.
       expect(descLine).toBeTruthy();
