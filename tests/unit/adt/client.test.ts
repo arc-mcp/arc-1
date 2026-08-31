@@ -2219,7 +2219,7 @@ describe('AdtClient', () => {
 
     it('getBspAppStructure returns files and folders', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       const nodes = await client.getBspAppStructure('zapp_booking');
       expect(nodes).toHaveLength(2);
@@ -2229,9 +2229,20 @@ describe('AdtClient', () => {
       expect(nodes[1].name).toBe('i18n');
     });
 
+    it('getBspAppStructure rejects a file response with the requested ADT path', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'file content', { 'content-type': 'text/plain' }));
+      const client = createClient();
+      await expect(client.getBspAppStructure('zapp_booking', 'manifest.json')).rejects.toMatchObject({
+        statusCode: 400,
+        path: `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent('ZAPP_BOOKING/manifest.json')}/content`,
+        message: expect.stringContaining('file, not a folder'),
+      });
+    });
+
     it('getBspAppStructure URL-encodes the app path with %2f', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       await client.getBspAppStructure('zapp_booking', '/i18n');
       const url = mockFetch.mock.calls[0][0] as string;
@@ -2248,6 +2259,17 @@ describe('AdtClient', () => {
       expect(content).toContain('sap.app');
     });
 
+    it('getBspFileContent rejects a folder response with the requested ADT path', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
+      const client = createClient();
+      await expect(client.getBspFileContent('zapp_booking', 'i18n')).rejects.toMatchObject({
+        statusCode: 400,
+        path: `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent('ZAPP_BOOKING/i18n')}/content`,
+        message: expect.stringContaining('folder, not a file'),
+      });
+    });
+
     it('getBspFileContent URL-encodes appName/filePath as single segment', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, 'file content'));
@@ -2259,7 +2281,7 @@ describe('AdtClient', () => {
 
     it('getBspAppStructure normalizes subPath without leading slash', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       await client.getBspAppStructure('zapp_booking', 'i18n');
       const url = mockFetch.mock.calls[0][0] as string;
@@ -2276,6 +2298,36 @@ describe('AdtClient', () => {
       // Verify no double-slash in the path portion (after the protocol)
       const pathPortion = url.replace('http://', '');
       expect(pathPortion).not.toContain('//');
+    });
+
+    it('legacy BSP structure reads preserve a mixed-case path appended to the app name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml;type=feed' }),
+      );
+      const client = createClient();
+      await client.getBspAppStructure('zapp_booking/WebContent');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('ZAPP_BOOKING/WebContent'));
+    });
+
+    it('getBspPathContent identifies folders from the response media type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml;type=feed' }),
+      );
+      const client = createClient();
+      const result = await client.getBspPathContent('zapp_booking', '/WebContent');
+      expect(result.kind).toBe('folder');
+      if (result.kind === 'folder') expect(result.nodes).toHaveLength(2);
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('ZAPP_BOOKING/WebContent'));
+    });
+
+    it('getBspPathContent identifies extensionless files from the response media type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'license text', { 'content-type': 'text/plain' }));
+      const client = createClient();
+      const result = await client.getBspPathContent('zapp_booking', 'LICENSE');
+      expect(result).toEqual({ kind: 'file', content: 'license text' });
     });
 
     it('listBspApps returns empty array for empty feed', async () => {

@@ -107,7 +107,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `DTDC` | CDS Dynamic Cache — server-driven object with its OWN metadata format (`<dtdc:dtdcSource>`, not `blue:blueSource`). JSON metadata + **DDL text** source (`define dynamic cache …`). Available on S/4HANA 2023 (758) and 8.16+. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
-| `BSP` | BSP/UI5 filestore (list apps, browse structure, read files via `name`+`include` path) |
+| `BSP` | BSP/UI5 filestore. List apps without `name`; browse or read with `name="<app>"` and optional case-sensitive `include="<path>"`. `name="<app>/<path>"` is also accepted. |
 | `API_STATE` | API release state (clean core compliance — contract states C0-C4, successor info) |
 | `TABLE_CONTENTS` | Legacy table preview. Useful for an unfiltered sample; filtering and exact row caps are backend-dependent (see parameters above). Prefer `TABLE_QUERY` for deterministic structured projection/filtering. |
 | `TABLE_QUERY` | Structured table/CDS query through data preview (`columns`, `where`, `maxRows`); requires the data-preview gate. |
@@ -165,6 +165,8 @@ SAPRead(type="CLAS", name="ZCL_ORDER", action="diff", from="00001", to="active",
 SAPRead(type="TRAN", name="SE38")                — transaction metadata
 SAPRead(type="SOBJ", name="BUS2032")             — list BOR object methods
 SAPRead(type="BSP")                              — list all BSP/UI5 apps
+SAPRead(type="BSP", name="ZAPP", include="WebContent") — browse a case-sensitive repository path
+SAPRead(type="BSP", name="/UI2/USHELL/chips")   — browse a namespaced app with an appended path
 SAPRead(type="API_STATE", name="CL_SALV_TABLE")              — check if class is released for ABAP Cloud
 SAPRead(type="API_STATE", name="IF_HTTP_CLIENT")              — check interface release state
 SAPRead(type="API_STATE", name="MARA", objectType="TABL")     — check table with explicit type

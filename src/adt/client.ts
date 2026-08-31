@@ -16,6 +16,7 @@
  * This keeps the client class manageable (not a 2,400-line God class).
  */
 
+import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
@@ -88,6 +89,8 @@ export interface SourceReadResult {
   notModified: boolean;
   statusCode: number;
 }
+
+export type BspPathContent = { kind: 'folder'; nodes: BspFileNode[] } | { kind: 'file'; content: string };
 
 export interface SourceReadOptions extends AdtRequestOptions {
   ifNoneMatch?: string;
@@ -1634,33 +1637,53 @@ export class AdtClient {
     if (query) params.set('name', query);
     if (maxResults !== undefined) params.set('maxResults', String(maxResults));
     const qs = params.toString();
-    const path = `/sap/bc/adt/filestore/ui5-bsp/objects${qs ? `?${qs}` : ''}`;
+    const path = `${BSP_OBJECTS_PATH}${qs ? `?${qs}` : ''}`;
     const resp = await this.http.get(path, { Accept: 'application/atom+xml' });
     return parseBspAppList(resp.body);
   }
 
-  /** Browse BSP app file structure (root or subfolder) */
+  /** @deprecated Use getBspPathContent(); throws when SAP identifies the path as a file. */
   async getBspAppStructure(appName: string, subPath?: string): Promise<BspFileNode[]> {
     checkOperation(this.safety, OperationType.Read, 'GetBSPApp');
-    const normalizedSubPath = subPath && !subPath.startsWith('/') ? `/${subPath}` : subPath || '';
-    const objectPath = appName.toUpperCase() + normalizedSubPath;
-    const resp = await this.http.get(
-      `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(objectPath)}/content`,
-      { Accept: 'application/xml', 'Content-Type': 'application/atom+xml' },
-    );
-    return parseBspFolderListing(resp.body, appName.toUpperCase());
+    const resolved = resolveBspNameAndPath(appName, subPath);
+    const content = await this.getBspPathContent(resolved.appName, resolved.path);
+    if (content.kind !== 'folder') {
+      throw new AdtApiError(
+        'The requested BSP path is a file, not a folder.',
+        400,
+        bspContentPath(resolved.appName, resolved.path),
+      );
+    }
+    return content.nodes;
   }
 
-  /** Read a single file from a BSP app */
+  /** @deprecated Use getBspPathContent(); throws when SAP identifies the path as a folder. */
   async getBspFileContent(appName: string, filePath: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetBSPFile');
-    const cleanPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
-    const objectPath = `${appName.toUpperCase()}/${cleanPath}`;
-    const resp = await this.http.get(
-      `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(objectPath)}/content`,
-      { Accept: 'application/xml', 'Content-Type': 'application/octet-stream' },
-    );
-    return resp.body;
+    const resolved = resolveBspNameAndPath(appName, filePath);
+    const content = await this.getBspPathContent(resolved.appName, resolved.path);
+    if (content.kind !== 'file') {
+      throw new AdtApiError(
+        'The requested BSP path is a folder, not a file.',
+        400,
+        bspContentPath(resolved.appName, resolved.path),
+      );
+    }
+    return content.content;
+  }
+
+  /**
+   * Read a BSP path and let SAP's response media type identify files vs folders.
+   * Binary assets remain outside this text-oriented API because AdtResponse exposes a string body.
+   */
+  async getBspPathContent(appName: string, path?: string): Promise<BspPathContent> {
+    checkOperation(this.safety, OperationType.Read, 'GetBSPPathContent');
+    // Explicit */* suppresses discovery MIME negotiation so SAP can select the resource's real media type.
+    const resp = await this.http.get(bspContentPath(appName, path), { Accept: '*/*' });
+    if (resp.headers['content-type']?.toLowerCase().startsWith('application/atom+xml')) {
+      return { kind: 'folder', nodes: parseBspFolderListing(resp.body, appName.toUpperCase()) };
+    }
+    return { kind: 'file', content: resp.body };
   }
 
   /**

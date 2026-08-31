@@ -316,6 +316,10 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 
 ## Style, Stack & Releasing
 
+- **Keep open-PR review changes visible** — apply review feedback and ordinary additions as new commits and
+  push normally; never amend, squash, or force-push merely to fold those changes into published commits.
+  Necessary branch maintenance such as rebasing onto the target branch or resolving history conflicts may
+  rewrite history; verify the branch first, use `--force-with-lease` (never `--force`), and explain the rewrite.
 - **ESM-only**: local imports need `.js` extensions. **TypeScript strict** (noUnusedLocals/Parameters, Node16 resolution). **Biome**: 2-space, single quotes, 120 cols — auto-fixed on commit, never hand-format.
 - **Logging to stderr only** (`src/server/logger.ts`); `console.log` corrupts MCP JSON-RPC on stdout.
 - Stack: TypeScript 6.0, Node 22+, `@modelcontextprotocol/sdk`, `@abaplint/core`, `undici`, `fast-xml-parser` v5, `better-sqlite3`, `commander`, `ajv` (2020-12), `zod` v4, `vitest`, `biome`.
