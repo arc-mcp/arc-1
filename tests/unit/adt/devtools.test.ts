@@ -16,7 +16,7 @@ import {
   parseCoverageMeasurement,
   prettyPrint,
   publishServiceBinding,
-  runAtcCheck,
+  runAtcCheck as runAtcCheckImpl,
   runUnitTests,
   setPrettyPrinterSettings,
   supportsCdsTestCases,
@@ -26,6 +26,17 @@ import {
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+
+/** Keep legacy no-location ATC mocks deterministic while production retains its 10 s quiet interval. */
+const runAtcCheck: typeof runAtcCheckImpl = (http, safety, objectUrl, variant, pollOptions) => {
+  if (pollOptions) return runAtcCheckImpl(http, safety, objectUrl, variant, pollOptions);
+  let clock = 0;
+  return runAtcCheckImpl(http, safety, objectUrl, variant, {
+    timeoutMs: 300_000,
+    now: () => clock,
+    sleep: async (ms) => void (clock += ms),
+  });
+};
 
 const AUNIT_MIXED = readFileSync(
   join(import.meta.dirname, '../../fixtures/xml/aunit-testrun-mixed-alerts.xml'),
@@ -2088,7 +2099,7 @@ describe('DevTools', () => {
       );
       // 2) run the checks into the returned worklist id
       expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('/sap/bc/adt/atc/runs?worklistId=WL789'),
+        '/sap/bc/adt/atc/runs?worklistId=WL789&clientWait=false',
         expect.stringContaining('objectReference'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/xml' }),
@@ -2103,9 +2114,9 @@ describe('DevTools', () => {
     });
 
     // ─── settled-worklist termination (docs/research/2026-08-20-atc-completeness-polling.md) ───
-    // Some systems never satisfy every completeness criterion, so waiting on `complete` alone burns
-    // the whole budget. Settlement requires ten seconds of unchanged XML (apart from SAP's volatile
-    // root timestamp) because a live 758 worklist kept filling after `objectSetIsComplete=true`.
+    // Legacy systems return no run-status location, so settlement supplies the terminal evidence.
+    // It requires ten seconds of unchanged XML (apart from SAP's volatile root timestamp) because a
+    // live 758 worklist kept filling after `objectSetIsComplete=true`.
     const worklistXml = (findings: number, opts: { objects?: boolean; timestamp?: string } = {}) => {
       const rows = Array.from(
         { length: findings },
@@ -2125,8 +2136,8 @@ describe('DevTools', () => {
       return { timeoutMs: 600_000, now: () => clock, sleep: async (ms: number) => void (clock += ms) };
     };
 
-    it('stops once the worklist settles below the run total instead of polling to the deadline', async () => {
-      // Run reports 2 findings; the worklist only ever yields 1 — the customer/758 manifestation.
+    it('accepts a structurally complete settled worklist when FINDING_STATS has a different total', async () => {
+      // Regression for #728: the severity-counter total is informational, not worklist cardinality.
       const http = mockAtcHttp('WL-SET', [0, 0, 2], worklistXml(1));
 
       const result = await runAtcCheck(
@@ -2138,10 +2149,16 @@ describe('DevTools', () => {
       );
 
       expect(http.worklistGet).toHaveBeenCalledTimes(9);
-      expect(result.complete).toBe(false);
-      expect(result.findingCount).toBe(1);
-      expect(result.incompleteReasons.join(' ')).toMatch(/1 of 2 findings/i);
-      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
+      expect(result).toMatchObject({
+        complete: true,
+        completionEvidence: 'legacyWorklistSettled',
+        findingCount: 1,
+        expectedFindingCount: 2,
+        findingStatistics: { errors: 0, warnings: 0, infos: 2, total: 2 },
+        runInfos: [{ type: 'FINDING_STATS', description: '0,0,2' }],
+        truncated: false,
+        incompleteReasons: [],
+      });
     });
 
     it('stops when SAP never reports a processed object (the NW 7.50 worklist shape)', async () => {
@@ -2174,8 +2191,9 @@ describe('DevTools', () => {
       );
 
       expect(http.worklistGet).toHaveBeenCalledTimes(9);
-      expect(result.complete).toBe(false);
-      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
+      expect(result.complete).toBe(true);
+      expect(result.completionEvidence).toBe('legacyWorklistSettled');
+      expect(result.incompleteReasons).toEqual([]);
     });
 
     it('keeps polling while the worklist is still filling', async () => {
@@ -2189,7 +2207,7 @@ describe('DevTools', () => {
         settledPollOptions(),
       );
 
-      expect(http.worklistGet).toHaveBeenCalledTimes(3);
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
       expect(result.complete).toBe(true);
       expect(result.findingCount).toBe(3);
       expect(result.incompleteReasons).toEqual([]);
@@ -2207,7 +2225,7 @@ describe('DevTools', () => {
         settledPollOptions(),
       );
 
-      expect(http.worklistGet).toHaveBeenCalledTimes(4);
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
       expect(result.complete).toBe(true);
       expect(result.findingCount).toBe(2);
     });
@@ -2227,9 +2245,9 @@ describe('DevTools', () => {
       );
 
       expect(http.worklistGet).toHaveBeenCalledTimes(13);
-      expect(result.complete).toBe(false);
+      expect(result.complete).toBe(true);
       expect(result.findings[0]?.messageTitle).toBe('updated');
-      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
+      expect(result.incompleteReasons).toEqual([]);
     });
 
     it('still returns at the deadline when the worklist never stops changing', async () => {
@@ -2469,7 +2487,7 @@ describe('DevTools', () => {
         complete: false,
         expectedFindingCount: 2,
         findingCount: 0,
-        truncated: true,
+        truncated: false,
       });
       expect(result.incompleteReasons.join(' ')).toMatch(/first snapshot/i);
       expect(http.post).toHaveBeenLastCalledWith(
@@ -2515,7 +2533,7 @@ describe('DevTools', () => {
       if (body.includes('<metadata>')) expect(result.processedObjectCount).toBe(0);
     });
 
-    it('uses run finding statistics instead of the ignored maximumVerdicts request hint', async () => {
+    it('keeps run severity statistics informational and ignores the maximumVerdicts request hint', async () => {
       const findingRows = Array.from(
         { length: 101 },
         (_, index) =>
@@ -2528,6 +2546,7 @@ describe('DevTools', () => {
       expect(result).toMatchObject({
         findingCount: 101,
         expectedFindingCount: 101,
+        findingStatistics: { errors: 0, warnings: 0, infos: 101, total: 101 },
         objectSetIsComplete: true,
         truncated: false,
         complete: true,
@@ -2538,11 +2557,15 @@ describe('DevTools', () => {
         mockAtcHttp('WL-CAP', [0, 0, 101], partialBody),
         unrestrictedSafetyConfig(),
         '/sap/bc/adt/programs/programs/ZTEST',
-        undefined,
-        { timeoutMs: 0 },
       );
-      expect(partial).toMatchObject({ findingCount: 100, expectedFindingCount: 101, truncated: true, complete: false });
-      expect(partial.incompleteReasons.join(' ')).toMatch(/100 of 101 findings/i);
+      expect(partial).toMatchObject({
+        findingCount: 100,
+        expectedFindingCount: 101,
+        truncated: false,
+        complete: true,
+        completionEvidence: 'legacyWorklistSettled',
+        incompleteReasons: [],
+      });
 
       const noEvidence = {
         ...mockHttp('WL-UNKNOWN'),
@@ -2581,7 +2604,7 @@ describe('DevTools', () => {
       expect(malformed.incompleteReasons.join(' ')).toMatch(/malformed priority/i);
     });
 
-    it('polls until the asynchronous worklist matches FINDING_STATS', async () => {
+    it('waits for legacy worklist settlement after the last response change', async () => {
       const object = (name: string, count: number) =>
         `<object uri="/sap/bc/adt/programs/programs/${name}" type="PROG" name="${name}"><findings>${Array.from(
           { length: count },
@@ -2590,7 +2613,6 @@ describe('DevTools', () => {
         ).join('')}</findings></object>`;
       const partial = `<worklist id="WL-ASYNC" objectSetIsComplete="true"><objects>${object('ZA', 2)}</objects></worklist>`;
       const complete = `<worklist id="WL-ASYNC" objectSetIsComplete="true"><objects>${object('ZA', 2)}${object('ZB', 3)}</objects></worklist>`;
-      let now = 0;
       const http = mockAtcHttp('WL-ASYNC', [0, 0, 5], partial, complete);
 
       const result = await runAtcCheck(
@@ -2598,10 +2620,10 @@ describe('DevTools', () => {
         unrestrictedSafetyConfig(),
         '/sap/bc/adt/programs/programs/ZA',
         undefined,
-        { timeoutMs: 1_000, now: () => now, sleep: async (ms) => void (now += ms) },
+        settledPollOptions(),
       );
 
-      expect(http.worklistGet).toHaveBeenCalledTimes(2);
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
       expect(result).toMatchObject({
         findingCount: 5,
         expectedFindingCount: 5,
@@ -2610,11 +2632,10 @@ describe('DevTools', () => {
       });
     });
 
-    it('waits for processed-object evidence when FINDING_STATS reports a clean run', async () => {
+    it('waits for processed-object evidence and legacy settlement on a clean run', async () => {
       const pending = '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects/></worklist>';
       const complete =
         '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZCLEAN" type="PROG" name="ZCLEAN"/></objects></worklist>';
-      let now = 0;
       const http = mockAtcHttp('WL-CLEAN', [0, 0, 0], pending, complete);
 
       const result = await runAtcCheck(
@@ -2622,10 +2643,10 @@ describe('DevTools', () => {
         unrestrictedSafetyConfig(),
         '/sap/bc/adt/programs/programs/ZCLEAN',
         undefined,
-        { timeoutMs: 1_000, now: () => now, sleep: async (ms) => void (now += ms) },
+        settledPollOptions(),
       );
 
-      expect(http.worklistGet).toHaveBeenCalledTimes(2);
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
       expect(result).toMatchObject({
         findingCount: 0,
         expectedFindingCount: 0,

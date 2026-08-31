@@ -2268,17 +2268,28 @@ describe('ADT Integration Tests', () => {
     // A variant may exclude this class, but that must remain incomplete rather than appear clean.
     const KERNEL_CLASS_URL = '/sap/bc/adt/oo/classes/cl_abap_typedescr';
     // Assert the invariants that always hold, not "the run completed" — an incomplete run is a
-    // legitimate outcome (a variant excluding the class, a worklist that settles short of SAP's own
-    // statistic), and it must be *reported* as incomplete rather than appear clean. Asserting
+    // legitimate outcome (for example, a variant excluding the class), and it must be *reported*
+    // as incomplete rather than appear clean. Asserting
     // completeness here made the test depend on live ATC timing and it flaked at the deadline.
     const expectSoundResult = (result: Awaited<ReturnType<typeof runAtcCheck>>) => {
       if (result.complete) {
-        expect(result.expectedFindingCount).toBe(result.findings.length);
         expect(result.processedObjectCount).toBeGreaterThan(0);
+        expect(['asyncRunCompleted', 'legacyWorklistSettled']).toContain(result.completionEvidence);
         expect(result.incompleteReasons).toEqual([]);
       } else {
         expect(result.incompleteReasons.length).toBeGreaterThan(0);
       }
+      if (result.completionEvidence === 'asyncRunCompleted') expect(result.runStatus).toBe('Completed');
+      if (result.findingStatistics) {
+        expect(result.expectedFindingCount).toBe(result.findingStatistics.total);
+        expect(result.findingStatistics.total).toBe(
+          result.findingStatistics.errors + result.findingStatistics.warnings + result.findingStatistics.infos,
+        );
+      } else {
+        expect(result.expectedFindingCount).toBeNull();
+      }
+      expect(result.truncated).toBe(false);
+      expect(Array.isArray(result.runInfos)).toBe(true);
       // Nothing processed can never read as clean.
       if (result.processedObjectCount === 0) expect(result.complete).toBe(false);
     };
@@ -2319,10 +2330,10 @@ describe('ADT Integration Tests', () => {
       }
     }, 90000);
 
-    // A4H may return an incomplete zero-object result for this default-variant fixture. This guards
-    // that SAP's per-GET root timestamp does not prevent an otherwise unchanged response from settling.
-    // Evidence: docs/research/2026-08-20-atc-completeness-polling.md
-    it('returns a settled run far inside its budget', async () => {
+    // A4H may return an incomplete zero-object result for this default-variant fixture. The 758
+    // async status must still terminate far inside the request budget without the legacy quiet wait.
+    // Evidence: docs/research/issues/728-atc-finding-stats-completeness.md
+    it('returns a terminal run far inside its budget', async () => {
       const started = Date.now();
       const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
         timeoutMs: 60_000,

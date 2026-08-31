@@ -38,13 +38,17 @@ function atc(overrides: Partial<AtcRunResult> = {}): AtcRunResult {
     variantSource: 'sapFallback',
     maximumVerdicts: 100,
     expectedFindingCount: 0,
+    findingStatistics: { errors: 0, warnings: 0, infos: 0, total: 0 },
     findingCount: 0,
     processedObjectCount: 1,
     objectSetIsComplete: true,
     truncated: false,
     complete: true,
+    completionEvidence: 'legacyWorklistSettled',
     incompleteReasons: [],
     runStatusCode: 200,
+    runStatus: null,
+    runInfos: [{ type: 'FINDING_STATS', description: '0,0,0' }],
     worklist: { id: 'WL1' },
     infos: [],
     ...overrides,
@@ -250,6 +254,19 @@ describe('ATC, lint, and diff CI policy', () => {
     expect(evaluateAtc({ ...atc(), complete: 'true' } as unknown as AtcRunResult, 1)).toBe(3);
     expect(evaluateAtc({ ...atc(), worklistId: undefined } as unknown as AtcRunResult, 1)).toBe(3);
     expect(evaluateAtc({ ...atc(), infos: undefined } as unknown as AtcRunResult, 1)).toBe(3);
+    expect(evaluateAtc({ ...atc(), findingStatistics: undefined } as unknown as AtcRunResult, 1)).toBe(3);
+    expect(evaluateAtc({ ...atc(), runStatus: 'Completed' } as unknown as AtcRunResult, 1)).toBe(3);
+    expect(
+      evaluateAtc(
+        {
+          ...atc(),
+          completionEvidence: 'asyncRunCompleted',
+          runStatusCode: 201,
+          runStatus: null,
+        } as unknown as AtcRunResult,
+        1,
+      ),
+    ).toBe(3);
     expect(
       evaluateAtc(
         {
@@ -266,11 +283,35 @@ describe('ATC, lint, and diff CI policy', () => {
     const findings = [
       { priority: 2, checkTitle: 'Search', messageTitle: 'DB write', uri: '/sap/source#start=7,0', line: 7 },
     ];
-    expect(evaluateAtc(atc({ findings, expectedFindingCount: 1, findingCount: 1 }), 1)).toBe(0);
-    expect(evaluateAtc(atc({ findings, expectedFindingCount: 1, findingCount: 1 }), 2)).toBe(1);
-    expect(formatAtcText(atc({ findings, expectedFindingCount: 1, findingCount: 1 }))).toContain(
-      '[P2] Search: DB write',
-    );
+    const complete = atc({
+      findings,
+      expectedFindingCount: 1,
+      findingStatistics: { errors: 0, warnings: 1, infos: 0, total: 1 },
+      findingCount: 1,
+      runInfos: [{ type: 'FINDING_STATS', description: '0,1,0' }],
+    });
+    expect(evaluateAtc(complete, 1)).toBe(0);
+    expect(evaluateAtc(complete, 2)).toBe(1);
+    expect(formatAtcText(complete)).toContain('[P2] Search: DB write');
+  });
+
+  it('accepts lifecycle-complete ATC evidence without equating severity statistics to findings', () => {
+    const mismatchedLegacy = atc({
+      expectedFindingCount: 44,
+      findingStatistics: { errors: 4, warnings: 10, infos: 30, total: 44 },
+      runInfos: [{ type: 'FINDING_STATS', description: '4,10,30' }],
+    });
+    expect(evaluateAtc(mismatchedLegacy, 1)).toBe(0);
+
+    const asynchronous = atc({
+      expectedFindingCount: null,
+      findingStatistics: null,
+      completionEvidence: 'asyncRunCompleted',
+      runStatusCode: 201,
+      runStatus: 'Completed',
+      runInfos: [],
+    });
+    expect(evaluateAtc(asynchronous, 1)).toBe(0);
   });
 
   it('names the bound variant in the ATC report and flags an unverified one', () => {
