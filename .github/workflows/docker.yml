@@ -53,12 +53,17 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,"name=ghcr.io/arc-mcp/arc-1",push-by-digest=true,name-canonical=true,push=true
+          pull: true
+          # RUN apk upgrade is otherwise reusable forever: package-repository
+          # changes do not invalidate BuildKit's RUN cache. Rebuild only the
+          # lightweight runtime stage so security fixes are picked up each run.
+          no-cache-filters: runtime
           cache-from: type=gha,scope=${{ github.repository }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ github.repository }}-${{ matrix.platform }}
 
       # Trivy: scan the freshly-built image for OS-level + JS-level CVEs.
       # Non-gating on dev pushes — surface findings as SARIF for triage.
-      # The release workflow gates HIGH/CRITICAL (exit-code: 1).
+      # The scheduled security workflow gates HIGH/CRITICAL findings.
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         # Pin the scan to the matrix platform. buildx with provenance attestation
