@@ -5,6 +5,13 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.1.2](https://github.com/arc-mcp/arc-1/compare/v1.1.1...v1.1.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* correct ATC completeness evidence ([#729](https://github.com/arc-mcp/arc-1/issues/729)) ([da71f80](https://github.com/arc-mcp/arc-1/commit/da71f8088c7b67f2fc957ef041ff9d2522c73167))
+
 ## [1.1.1](https://github.com/arc-mcp/arc-1/compare/v1.1.0...v1.1.1) (2026-08-31)
 
 
