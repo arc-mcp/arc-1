@@ -48,19 +48,23 @@ export interface AtcRunResult {
   maximumVerdicts: number;
   /**
    * @deprecated Informational compatibility alias for `findingStatistics.total`. SAP does not
-   * define this value as the exact number of findings that must appear in the worklist.
+   * define this value as the exact number of findings that must appear in the worklist. It is null
+   * when an asynchronous run-creation response has no legacy run-info body.
    */
   expectedFindingCount: number | null;
+  /** Legacy synchronous run infos expose these counters; modern empty 201 responses leave them null. */
   findingStatistics: AtcFindingStatistics | null;
   findingCount: number;
   processedObjectCount: number;
   objectSetIsComplete: boolean | null;
+  /** Compatibility field; false until SAP exposes an independent, reliable truncation signal. */
   truncated: boolean;
   complete: boolean;
   completionEvidence: AtcCompletionEvidence | null;
   incompleteReasons: string[];
   runStatusCode: number;
   runStatus: string | null;
+  /** Raw run infos when SAP returns a synchronous `<worklistRun>` body; otherwise empty. */
   runInfos: AtcRunInfo[];
   worklist: {
     id: string;
@@ -268,89 +272,98 @@ export async function runAtcCheck(
   let delayMs = pollOptions.initialDelayMs ?? DEFAULT_ATC_POLL_DELAY_MS;
   const maxDelayMs = pollOptions.maxDelayMs ?? DEFAULT_ATC_MAX_POLL_DELAY_MS;
   const rawRunLocation = responseHeader(runResp, 'location');
+  const fallbackContext = baseContext;
+  let settleFallbackReason: string | undefined;
 
   if (rawRunLocation !== undefined) {
     const runStatusPath = canonicalAtcRunStatusPath(rawRunLocation);
     if (!runStatusPath) {
-      return incompleteAtcResult(baseContext, 'SAP returned an unsafe or malformed ATC run-status location.');
-    }
-
-    let runStatus: string | null = null;
-    while (true) {
-      let statusResp: AdtResponse;
-      try {
-        statusResp = await http.get(runStatusPath, { Accept: ATC_RUN_STATUS_MEDIA_TYPE }, requestOptions);
-      } catch (error) {
-        if (isAtcDeadlineFailure(error)) {
-          return incompleteAtcResult(
-            { ...baseContext, runStatus },
-            'ATC run-status polling timed out before SAP completed the run.',
+      settleFallbackReason = 'SAP returned an unsafe or malformed ATC run-status location.';
+    } else {
+      let runStatus: string | null = null;
+      while (true) {
+        let statusResp: AdtResponse;
+        try {
+          statusResp = await http.get(runStatusPath, { Accept: ATC_RUN_STATUS_MEDIA_TYPE }, requestOptions);
+        } catch (error) {
+          if (isAtcDeadlineFailure(error)) {
+            return fetchAtcWorklistSnapshot(
+              http,
+              { ...baseContext, runStatus },
+              requestOptions,
+              'ATC run-status polling timed out before SAP completed the run.',
+            );
+          }
+          throw error;
+        }
+        runStatus = parseAtcRunStatus(statusResp.body);
+        const statusContext = { ...baseContext, runStatus };
+        if (!runStatus) {
+          return fetchAtcWorklistSnapshot(
+            http,
+            statusContext,
+            requestOptions,
+            'SAP returned an ATC run-status response without one valid status.',
           );
         }
-        throw error;
+        if (isAtcRunCompleted(runStatus)) {
+          const completedContext: AtcResultContext = {
+            ...statusContext,
+            completionEvidence: 'asyncRunCompleted',
+          };
+          try {
+            const resultResp = await http.get(
+              `/sap/bc/adt/atc/worklists/${encodeURIComponent(worklistId)}`,
+              { Accept: 'application/atc.worklist.v1+xml' },
+              requestOptions,
+            );
+            return parseAtcRunResult(resultResp.body, completedContext);
+          } catch (error) {
+            if (isAtcDeadlineFailure(error)) {
+              return incompleteAtcResult(
+                completedContext,
+                'ATC completed, but worklist retrieval timed out before SAP returned the result.',
+              );
+            }
+            throw error;
+          }
+        }
+        if (isAtcRunFailure(runStatus)) {
+          return fetchAtcWorklistSnapshot(
+            http,
+            statusContext,
+            requestOptions,
+            `SAP ended the ATC run with failure status "${runStatus}".`,
+          );
+        }
+        const remainingMs = deadline - now();
+        if (remainingMs <= delayMs) {
+          return fetchAtcWorklistSnapshot(
+            http,
+            statusContext,
+            requestOptions,
+            'ATC run-status polling could not continue within the request deadline.',
+          );
+        }
+        await sleep(delayMs);
+        if (now() >= deadline) {
+          return fetchAtcWorklistSnapshot(
+            http,
+            statusContext,
+            requestOptions,
+            'ATC run-status polling reached the request deadline before SAP completed the run.',
+          );
+        }
+        delayMs = Math.min(maxDelayMs, delayMs * 2);
       }
-      runStatus = parseAtcRunStatus(statusResp.body);
-      if (!runStatus) {
-        return incompleteAtcResult(
-          { ...baseContext, runStatus },
-          'SAP returned an ATC run-status response without one valid status.',
-        );
-      }
-      if (isAtcRunCompleted(runStatus)) break;
-      if (!isAtcRunPending(runStatus)) {
-        return incompleteAtcResult(
-          { ...baseContext, runStatus },
-          `SAP ended the ATC run with status "${runStatus}" instead of "Completed".`,
-        );
-      }
-      if (now() >= deadline) {
-        return incompleteAtcResult(
-          { ...baseContext, runStatus },
-          'ATC run-status polling reached the request deadline before SAP completed the run.',
-        );
-      }
-      await sleep(Math.min(delayMs, Math.max(0, deadline - now())));
-      if (now() >= deadline) {
-        return incompleteAtcResult(
-          { ...baseContext, runStatus },
-          'ATC run-status polling reached the request deadline before SAP completed the run.',
-        );
-      }
-      delayMs = Math.min(maxDelayMs, delayMs * 2);
     }
-
-    const completedContext: AtcResultContext = {
-      ...baseContext,
-      runStatus,
-      completionEvidence: 'asyncRunCompleted',
-    };
-    try {
-      const resultResp = await http.get(
-        `/sap/bc/adt/atc/worklists/${encodeURIComponent(worklistId)}`,
-        { Accept: 'application/atc.worklist.v1+xml' },
-        requestOptions,
-      );
-      return parseAtcRunResult(resultResp.body, completedContext);
-    } catch (error) {
-      if (isAtcDeadlineFailure(error)) {
-        return incompleteAtcResult(
-          completedContext,
-          'ATC completed, but worklist retrieval timed out before SAP returned the result.',
-        );
-      }
-      throw error;
-    }
+  } else if (runResp.statusCode !== 200) {
+    settleFallbackReason = `SAP returned asynchronous ATC status ${runResp.statusCode} without a run-status location.`;
   }
 
-  if (runResp.statusCode !== 200) {
-    return incompleteAtcResult(
-      baseContext,
-      `SAP returned asynchronous ATC status ${runResp.statusCode} without a run-status location.`,
-    );
-  }
-
-  // Older systems return the completed run synchronously without a status location. The worklist
-  // may still populate after the POST returns, so retain the proven full-response quiet interval.
+  // Older systems return the completed run synchronously without a status location. A malformed or
+  // missing async location also uses this safe path so partial findings survive, but it cannot prove
+  // completion. In both cases the worklist may still populate after the POST returns.
   let result: AtcRunResult | undefined;
   let resultXml: string | undefined;
   let lastWorklistObservation: string | undefined;
@@ -366,15 +379,16 @@ export async function runAtcCheck(
       );
     } catch (error) {
       if (isAtcDeadlineFailure(error)) {
-        return (
-          result ??
-          incompleteAtcResult(baseContext, 'ATC worklist polling timed out before SAP returned the first snapshot.')
-        );
+        const timeoutReason = settleFallbackReason
+          ? `${settleFallbackReason} Worklist polling then timed out before SAP returned a snapshot.`
+          : 'ATC worklist polling timed out before SAP returned the first snapshot.';
+        return result ?? incompleteAtcResult(fallbackContext, timeoutReason);
       }
       throw error;
     }
     resultXml = resultResp.body;
-    result = parseAtcRunResult(resultXml, baseContext);
+    result = parseAtcRunResult(resultXml, fallbackContext);
+    if (settleFallbackReason) result.incompleteReasons.unshift(settleFallbackReason);
     // Counts alone miss same-count replacements and other response-evidence changes. Compare the
     // full XML except the root timestamp, which live 758 advances on otherwise identical GETs.
     const observedAt = now();
@@ -388,9 +402,10 @@ export async function runAtcCheck(
     if (settled || observedAt >= deadline) {
       if (settled) {
         result = parseAtcRunResult(resultXml, {
-          ...baseContext,
-          completionEvidence: 'legacyWorklistSettled',
+          ...fallbackContext,
+          completionEvidence: settleFallbackReason ? null : 'legacyWorklistSettled',
         });
+        if (settleFallbackReason) result.incompleteReasons.unshift(settleFallbackReason);
       }
       if (settled && !result.complete) {
         result.incompleteReasons.push(
@@ -413,6 +428,29 @@ function isAtcDeadlineFailure(error: unknown): boolean {
     error instanceof AdtNetworkError &&
     (error.cause?.name === 'TimeoutError' || /deadline was exceeded|timed out|\btimeout\b/i.test(error.message))
   );
+}
+
+async function fetchAtcWorklistSnapshot(
+  http: AdtHttpClient,
+  context: AtcResultContext,
+  requestOptions: AdtRequestOptions,
+  reason: string,
+): Promise<AtcRunResult> {
+  try {
+    const response = await http.get(
+      `/sap/bc/adt/atc/worklists/${encodeURIComponent(context.worklistId)}`,
+      { Accept: 'application/atc.worklist.v1+xml' },
+      requestOptions,
+    );
+    const result = parseAtcRunResult(response.body, context);
+    result.incompleteReasons.unshift(reason);
+    return result;
+  } catch (error) {
+    if (isAtcDeadlineFailure(error)) {
+      return incompleteAtcResult(context, `${reason} No worklist snapshot was available before the deadline.`);
+    }
+    return incompleteAtcResult(context, `${reason} The best-effort worklist snapshot could not be retrieved.`);
+  }
 }
 
 interface AtcResultContext {
@@ -504,8 +542,10 @@ function isAtcRunCompleted(status: string): boolean {
   return ['completed', 'finished'].includes(normalizedAtcRunStatus(status));
 }
 
-function isAtcRunPending(status: string): boolean {
-  return ['not yet started', 'running'].includes(normalizedAtcRunStatus(status));
+function isAtcRunFailure(status: string): boolean {
+  return ['not created', 'failed', 'cancelled', 'canceled', 'aborted', 'error'].includes(
+    normalizedAtcRunStatus(status),
+  );
 }
 
 function parseAtcRunInfos(xml: string): AtcRunInfo[] {

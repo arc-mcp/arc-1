@@ -131,3 +131,16 @@ npm run lint
 - [x] Commit the reviewed change with a conventional `fix:` subject.
 - [x] Push `codex/fix-atc-completeness` and create a `fix:` pull request that links #728, explains
       the corrected root cause, lists live evidence and validation, and calls out the 750 fallback.
+
+## Post-review hardening
+
+Claude's review of PR #729 identified two applicable cross-release robustness gaps. Unknown
+non-failure run statuses now remain pending instead of being treated as terminal, and every async
+protocol-deviation/failure/deadline path attempts to preserve worklist findings without weakening
+the terminal-evidence requirement. The review also prompted explicit documentation that modern
+empty HTTP 201 responses cannot carry legacy run statistics, the synchronous fallback adds at least
+ten seconds, and `truncated` remains false until SAP provides an independent reliable signal.
+
+The suggested removal of `expectedFindingCount` was not applied: it shipped in 1.1.0, and removing
+it in this patch would break structured-response consumers. It remains a deprecated compatibility
+alias and is documented as null on modern asynchronous runs.

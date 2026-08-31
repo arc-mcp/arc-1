@@ -139,13 +139,15 @@ informational metadata only.
 
 1. In `src/adt/atc.ts`, request runs with `clientWait=false`. If SAP returns a canonical
    host-relative `/sap/bc/adt/atc/runs/…` location, poll it using its exact media type until
-   `Completed`, then fetch the worklist. Reject unsafe locations and return explicit incomplete
-   evidence on timeout or a non-success terminal state.
+   `Completed`, then fetch the worklist. Never follow unsafe locations; use the known worklist path
+   to preserve partial findings while keeping the result incomplete. On timeout or a non-success
+   terminal state, attempt one final worklist snapshot before returning incomplete evidence.
 2. Preserve the synchronous/no-location path for older systems and use the existing full-worklist
    quiescence rule there.
 3. Parse `FINDING_STATS` into named `{ errors, warnings, infos, total }` informational metadata.
    Keep `expectedFindingCount` as a deprecated compatibility alias for `total`, but remove it from
-   `truncated`, polling termination, and completeness decisions.
+   `truncated`, polling termination, and completeness decisions. These values remain null/empty
+   when a modern asynchronous HTTP 201 response has no run-info body.
 4. Require terminal evidence plus the existing worklist structural checks (matching ID,
    `objectSetIsComplete=true`, one valid objects container, at least one processed object, and no
    malformed object or priority rows). `truncated` must not be synthesized from `FINDING_STATS`.

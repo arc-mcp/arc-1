@@ -2289,6 +2289,56 @@ ENDCLASS.`;
         hint: expect.stringMatching(/object, package, and selected check variant/i),
       });
     });
+
+    it('preserves a final worklist snapshot in the default error payload when an async run fails', async () => {
+      const client = createClient();
+      vi.spyOn(client.http, 'post')
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: 'WL-CANCELLED' })
+        .mockResolvedValueOnce({
+          statusCode: 201,
+          headers: { location: '/sap/bc/adt/atc/runs/RUN-CANCELLED' },
+          body: '',
+        });
+      vi.spyOn(client.http, 'get').mockImplementation(async (url: string) => {
+        if (url.includes('/atc/customizing')) {
+          return {
+            statusCode: 200,
+            headers: {},
+            body: '<atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>',
+          };
+        }
+        if (url.includes('/atc/runs/')) {
+          return {
+            statusCode: 200,
+            headers: {},
+            body: '<atc:run xmlns:atc="http://www.sap.com/adt/atc" status="Cancelled"/>',
+          };
+        }
+        return {
+          statusCode: 200,
+          headers: {},
+          body: `<worklist id="WL-CANCELLED" objectSetIsComplete="true"><objects>
+            <object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST">
+              <findings><finding priority="2" checkTitle="Review" messageTitle="Preserved finding"/></findings>
+            </object>
+          </objects></worklist>`,
+        };
+      });
+
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc',
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0]?.text)).toMatchObject({
+        complete: false,
+        runStatus: 'Cancelled',
+        findings: [{ messageTitle: 'Preserved finding' }],
+        incompleteReasons: expect.arrayContaining([expect.stringMatching(/failure status "Cancelled"/i)]),
+      });
+    });
   });
 
   describe('SAPDiagnose action=atc check-variant binding', () => {
