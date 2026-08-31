@@ -382,7 +382,35 @@ jobs:
         run: ./mcp-publisher validate server.json
 
       - name: Publish to MCP Registry
-        run: ./mcp-publisher publish
+        # npm can acknowledge a trusted publish before the new version is visible to
+        # the MCP Registry's package validator. Retry the registry operation itself so
+        # its view of npm, rather than a potentially different npm CDN edge, is decisive.
+        run: |
+          set -uo pipefail
+
+          MAX_ATTEMPTS=12
+          RETRY_DELAY_SECONDS=10
+          PUBLISH_LOG="$(mktemp)"
+          trap 'rm -f "$PUBLISH_LOG"' EXIT
+
+          for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
+            if ./mcp-publisher publish 2>&1 | tee "$PUBLISH_LOG"; then
+              exit 0
+            fi
+
+            if ! grep -Fq "A newly published release can take a moment" "$PUBLISH_LOG"; then
+              echo "::error::MCP Registry publish failed with a non-retryable error"
+              exit 1
+            fi
+
+            if (( attempt == MAX_ATTEMPTS )); then
+              echo "::error::MCP Registry publish failed after $MAX_ATTEMPTS attempts"
+              exit 1
+            fi
+
+            echo "::warning::MCP Registry publish failed (attempt $attempt/$MAX_ATTEMPTS); retrying in $RETRY_DELAY_SECONDS seconds"
+            sleep "$RETRY_DELAY_SECONDS"
+          done
 
   # Build Docker images natively per architecture (no QEMU emulation).
   # better-sqlite3 has no Node.js prebuilds — it always compiles via node-gyp,
