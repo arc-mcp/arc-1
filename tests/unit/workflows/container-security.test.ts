@@ -109,7 +109,7 @@ describe('container security workflows', () => {
     expect(upload.with?.category).toBe(githubExpression('matrix.sarif_category'));
 
     const smoke = namedStep(scheduled, 'trivy-release-gate-preview', 'Verify runtime packages and native addon');
-    expect(smoke.run).toContain('apk info -v libcrypto3 libssl3');
+    expect(smoke.run).toContain('apk list --installed libcrypto3 libssl3');
     expect(smoke.run).toContain('require(\\"better-sqlite3\\")');
     expect(smoke.run).toContain(githubExpression('matrix.platform'));
   });

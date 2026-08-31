@@ -67,7 +67,7 @@ jobs:
       - name: Verify runtime packages and native addon
         run: |
           docker run --rm --platform "${{ matrix.platform }}" "${{ matrix.image }}" \
-            sh -c 'apk info -v libcrypto3 libssl3 && node -e "require(\"better-sqlite3\")"'
+            sh -c 'apk list --installed libcrypto3 libssl3 && node -e "require(\"better-sqlite3\")"'
 
       # Scheduled readiness gate: HIGH,CRITICAL + limit-severities-for-sarif so the
       # exit-code honors the severity filter (without it, format=sarif evaluates
