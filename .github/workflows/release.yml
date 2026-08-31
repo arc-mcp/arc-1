@@ -28,10 +28,8 @@ jobs:
         # From 1.0 the pre-major bump flags are gone, so semver applies normally:
         # feat→minor, fix→patch, breaking→major.
 
-  # npm publishes independently of the Docker CVE gate — a HIGH/CRITICAL finding
-  # blocks the Docker image but not the npm package. (The scheduled security-scan.yml
-  # gate-preview is what keeps base-image CVEs from reaching a release in the first
-  # place, so the two artifacts rarely diverge.)
+  # npm and Docker publish independently. Trivy findings are release telemetry, while
+  # the scheduled security-scan.yml job remains the red HIGH/CRITICAL maintenance gate.
   publish-npm:
     needs: release-please
     # The manual arm is the republish hatch documented on workflow_dispatch above. It
@@ -436,15 +434,20 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,"name=ghcr.io/arc-mcp/arc-1",push-by-digest=true,name-canonical=true,push=true
+          pull: true
+          # Package-repository updates do not invalidate a cached RUN instruction.
+          # Rebuild the named runtime stage so apk upgrade picks up current fixes,
+          # while the native-module builder stage remains cacheable.
+          no-cache-filters: runtime
           cache-from: type=gha,scope=${{ github.repository }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ github.repository }}-${{ matrix.platform }}
 
       # Trivy: scan the freshly-built release image for OS-level + JS-level
-      # CVEs. GATING on the release path — exit-code 1 fails the release
-      # if HIGH/CRITICAL CVEs are present, so customers pulling :vX.Y.Z
-      # get a CVE-clean image. (Dev-push docker.yml runs the same scan
-      # but non-gating, so iteration isn't blocked.)
-      - name: Scan image with Trivy (gating)
+      # CVEs. Advisory on the release path: findings still upload as SARIF, while
+      # the scheduled security scan supplies the independent red maintenance signal.
+      # A scanner finding must not strand Docker after the GitHub/npm release exists.
+      - name: Scan image with Trivy (advisory)
+        continue-on-error: true
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         # Pin the scan to the matrix platform. buildx with provenance attestation
         # wraps each push-by-digest output in an OCI index; without TRIVY_PLATFORM,
@@ -461,13 +464,14 @@ jobs:
           # across ALL severities unless this is set — so `severity: HIGH,CRITICAL` is
           # ignored for gating and exit-code:1 fires on MEDIUM/LOW too. That's what blocked
           # the 0.9.10 Docker publish (new MEDIUM hono advisories), even though the image has
-          # zero HIGH/CRITICAL. limit-severities-for-sarif makes the gate honor the filter.
+          # zero HIGH/CRITICAL. limit-severities-for-sarif makes the report honor the filter.
           limit-severities-for-sarif: true
-          exit-code: '1'
+          exit-code: '0'
 
       - name: Upload Trivy SARIF
-        # always() so a Trivy CVE gate failure (exit-code 1) still uploads findings,
-        # but only when the scan actually produced the SARIF — otherwise an upstream
+        # Security telemetry must not block digest export or manifest publication.
+        continue-on-error: true
+        # Only upload when the scan had an image to inspect — otherwise an upstream
         # buildx/build failure (e.g. transient Docker Hub timeout) cascades into a
         # confusing "Path does not exist: trivy-results.sarif" that masks the real error.
         if: always() && steps.build.outcome == 'success'

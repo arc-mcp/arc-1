@@ -442,12 +442,19 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
 | CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
 | Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
-| Trivy container scan — release | `.github/workflows/release.yml` | **gating**: fails the release on `HIGH` / `CRITICAL` |
+| Trivy container scan — scheduled | `.github/workflows/security-scan.yml` | **gating amd64 + arm64 maintenance signal** on `HIGH` / `CRITICAL`; SARIF uploaded |
+| Trivy container scan — release | `.github/workflows/release.yml` | scan and SARIF upload are non-gating; neither can strand the Docker artifact |
 | Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
 | Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
 | npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
 | npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
 | `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
+
+Docker BuildKit does not automatically invalidate a cached `RUN apk upgrade` when Alpine's
+package repository changes. ARC-1 therefore names the final Dockerfile stage `runtime` and every
+CI image build uses `no-cache-filters: runtime` plus `pull: true`. The comparatively expensive
+native-module builder stage stays cached, while the runtime package upgrade is re-executed and can
+pick up newly published OS security fixes.
 
 ### GitHub-native security features (verified enabled)
 
