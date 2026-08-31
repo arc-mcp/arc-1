@@ -5,6 +5,18 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.1.1](https://github.com/arc-mcp/arc-1/compare/v1.1.0...v1.1.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* add Agent Plugins 1.0 package ([#695](https://github.com/arc-mcp/arc-1/issues/695)) ([03ec895](https://github.com/arc-mcp/arc-1/commit/03ec895300b676d165cd5cd808ce8cdfbb4d66b5))
+* bind the ATC check variant SAPDiagnose claims to run ([#708](https://github.com/arc-mcp/arc-1/issues/708)) ([3c3e9f1](https://github.com/arc-mcp/arc-1/commit/3c3e9f1a7a4f721039d484f0f1437fe68a1a495c))
+* forward user=* when listing transports across owners ([#706](https://github.com/arc-mcp/arc-1/issues/706)) ([e1b9dfb](https://github.com/arc-mcp/arc-1/commit/e1b9dfba5e3c81e858cf72ea615455df445659df))
+* refresh runtime security packages before image scans ([#726](https://github.com/arc-mcp/arc-1/issues/726)) ([284935c](https://github.com/arc-mcp/arc-1/commit/284935cf671f6c1b727a812ac935422014ad7914))
+* resolve BSP paths from response metadata ([#727](https://github.com/arc-mcp/arc-1/issues/727)) ([c429720](https://github.com/arc-mcp/arc-1/commit/c429720d7666442e1f3dc25e3b09816508061881))
+* stop ATC polling once the worklist settles ([#710](https://github.com/arc-mcp/arc-1/issues/710)) ([4dcde5f](https://github.com/arc-mcp/arc-1/commit/4dcde5f4b5206ded189bb15c2cc843ee36bc5a09))
+
 ## [1.1.0](https://github.com/arc-mcp/arc-1/compare/v1.0.2...v1.1.0) (2026-08-18)
 
 
