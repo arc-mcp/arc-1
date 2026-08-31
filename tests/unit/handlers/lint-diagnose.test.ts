@@ -2255,11 +2255,24 @@ ENDCLASS.`;
       const client = createClient();
       vi.spyOn(client.http, 'post')
         .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: 'WL-INCOMPLETE' })
-        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: '' });
-      vi.spyOn(client.http, 'get').mockResolvedValue({
-        statusCode: 200,
-        headers: {},
-        body: '<worklist id="WL-INCOMPLETE" objectSetIsComplete="true"><objects><object>malformed</object></objects></worklist>',
+        .mockResolvedValueOnce({
+          statusCode: 201,
+          headers: { location: '/sap/bc/adt/atc/runs/RUN-INCOMPLETE' },
+          body: '',
+        });
+      vi.spyOn(client.http, 'get').mockImplementation(async (url: string) => {
+        if (url.includes('/atc/runs/')) {
+          return {
+            statusCode: 200,
+            headers: {},
+            body: '<atc:run xmlns:atc="http://www.sap.com/adt/atc" status="Completed"/>',
+          };
+        }
+        return {
+          statusCode: 200,
+          headers: {},
+          body: '<worklist id="WL-INCOMPLETE" objectSetIsComplete="true"><objects><object>malformed</object></objects></worklist>',
+        };
       });
 
       const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPDiagnose', {
@@ -2282,7 +2295,7 @@ ENDCLASS.`;
     // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT, not to
     // systemCheckVariant — see docs/research/2026-08-19-atc-default-check-variant.md.
     const CUSTOMIZING = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;
-    const RUN = `<atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist" xmlns:atcinfo="http://www.sap.com/adt/atc/info"><atcworklist:infos><atcinfo:info><atcinfo:type>FINDING_STATS</atcinfo:type><atcinfo:description>0,0,0</atcinfo:description></atcinfo:info></atcworklist:infos></atcworklist:worklistRun>`;
+    const RUN_STATUS = '<atc:run xmlns:atc="http://www.sap.com/adt/atc" status="Completed"/>';
     const WORKLIST = `<worklist id="WL-VAR" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ztest" type="PROG" name="ZTEST"/></objects></worklist>`;
 
     const atcClient = (variantsFeed?: string) => {
@@ -2290,7 +2303,11 @@ ENDCLASS.`;
       const postSpy = vi
         .spyOn(client.http, 'post')
         .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: 'WL-VAR' })
-        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: RUN });
+        .mockResolvedValueOnce({
+          statusCode: 201,
+          headers: { location: '/sap/bc/adt/atc/runs/RUN-VAR' },
+          body: '',
+        });
       vi.spyOn(client.http, 'get').mockImplementation(async (url: string) => {
         if (url.includes('/atc/customizing')) return { statusCode: 200, headers: {}, body: CUSTOMIZING };
         if (url.includes('/atc/variants'))
@@ -2301,6 +2318,7 @@ ENDCLASS.`;
               variantsFeed ??
               '<?xml version="1.0"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>0</nameditem:totalItemCount></nameditem:namedItemList>',
           };
+        if (url.includes('/atc/runs/')) return { statusCode: 200, headers: {}, body: RUN_STATUS };
         return { statusCode: 200, headers: {}, body: WORKLIST };
       });
       return { client, postSpy };

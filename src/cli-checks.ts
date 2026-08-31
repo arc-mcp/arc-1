@@ -231,6 +231,28 @@ export function evaluateAtc(result: AtcRunResult, maxPriority: number): CiExitCo
     (['timestamp', 'usedObjectSet', 'status'] as const).every(
       (field) => worklist[field] === undefined || typeof worklist[field] === 'string',
     );
+  const findingStatistics = result.findingStatistics;
+  const findingStatisticsAreSound =
+    findingStatistics === null ||
+    (isRecord(findingStatistics) &&
+      isNonNegativeInteger(findingStatistics.errors) &&
+      isNonNegativeInteger(findingStatistics.warnings) &&
+      isNonNegativeInteger(findingStatistics.infos) &&
+      isNonNegativeInteger(findingStatistics.total) &&
+      findingStatistics.total ===
+        (findingStatistics.errors as number) +
+          (findingStatistics.warnings as number) +
+          (findingStatistics.infos as number));
+  const findingStatisticsAliasIsSound =
+    findingStatistics === null
+      ? result.expectedFindingCount === null
+      : isRecord(findingStatistics) && result.expectedFindingCount === findingStatistics.total;
+  const normalizedRunStatus = result.runStatus?.trim().toLowerCase() ?? '';
+  const completionEvidenceIsSound =
+    (result.completionEvidence === 'legacyWorklistSettled' &&
+      result.runStatus === null &&
+      result.runStatusCode === 200) ||
+    (result.completionEvidence === 'asyncRunCompleted' && ['completed', 'finished'].includes(normalizedRunStatus));
   if (
     result.complete !== true ||
     result.truncated !== false ||
@@ -241,8 +263,8 @@ export function evaluateAtc(result: AtcRunResult, maxPriority: number): CiExitCo
     !isNonNegativeInteger(result.findingCount) ||
     !findingsAreSound ||
     result.findingCount !== findings.length ||
-    !isNonNegativeInteger(result.expectedFindingCount) ||
-    result.findingCount !== result.expectedFindingCount ||
+    !findingStatisticsAreSound ||
+    !findingStatisticsAliasIsSound ||
     !isNonNegativeInteger(result.maximumVerdicts) ||
     result.maximumVerdicts === 0 ||
     !isNonEmptyString(result.worklistId) ||
@@ -251,6 +273,12 @@ export function evaluateAtc(result: AtcRunResult, maxPriority: number): CiExitCo
     result.runStatusCode >= 300 ||
     !Array.isArray(result.incompleteReasons) ||
     result.incompleteReasons.length !== 0 ||
+    !completionEvidenceIsSound ||
+    !(result.runStatus === null || typeof result.runStatus === 'string') ||
+    !Array.isArray(result.runInfos) ||
+    !result.runInfos.every(
+      (info) => isRecord(info) && typeof info.type === 'string' && typeof info.description === 'string',
+    ) ||
     !worklistIsSound ||
     !Array.isArray(result.infos) ||
     !result.infos.every((info) => typeof info === 'string')

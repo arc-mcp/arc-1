@@ -29,7 +29,10 @@ import type {
 import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
 export {
+  type AtcCompletionEvidence,
   type AtcFinding,
+  type AtcFindingStatistics,
+  type AtcRunInfo,
   type AtcRunResult,
   getAtcSystemDefaultVariant,
   listAtcVariants,

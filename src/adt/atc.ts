@@ -25,6 +25,20 @@ export interface AtcFinding {
  */
 export type AtcVariantSource = 'requested' | 'requestedUnverified' | 'systemDefault' | 'sapFallback';
 
+export interface AtcRunInfo {
+  type: string;
+  description: string;
+}
+
+export interface AtcFindingStatistics {
+  errors: number;
+  warnings: number;
+  infos: number;
+  total: number;
+}
+
+export type AtcCompletionEvidence = 'asyncRunCompleted' | 'legacyWorklistSettled';
+
 export interface AtcRunResult {
   findings: AtcFinding[];
   worklistId: string;
@@ -32,14 +46,22 @@ export interface AtcRunResult {
   variant: string | null;
   variantSource: AtcVariantSource;
   maximumVerdicts: number;
+  /**
+   * @deprecated Informational compatibility alias for `findingStatistics.total`. SAP does not
+   * define this value as the exact number of findings that must appear in the worklist.
+   */
   expectedFindingCount: number | null;
+  findingStatistics: AtcFindingStatistics | null;
   findingCount: number;
   processedObjectCount: number;
   objectSetIsComplete: boolean | null;
   truncated: boolean;
   complete: boolean;
+  completionEvidence: AtcCompletionEvidence | null;
   incompleteReasons: string[];
   runStatusCode: number;
+  runStatus: string | null;
+  runInfos: AtcRunInfo[];
   worklist: {
     id: string;
     timestamp?: string;
@@ -61,14 +83,17 @@ export interface AtcPollOptions {
 const DEFAULT_ATC_TIMEOUT_MS = 300_000;
 const DEFAULT_ATC_POLL_DELAY_MS = 250;
 const DEFAULT_ATC_MAX_POLL_DELAY_MS = 2_000;
+const ATC_RUN_STATUS_PREFIX = '/sap/bc/adt/atc/runs/';
+const ATC_RUN_STATUS_MEDIA_TYPE = 'application/vnd.sap.atc.run.v1+xml';
 /**
- * Minimum continuous quiet interval before an unchanged worklist is considered settled.
+ * Fallback quiet interval when SAP returns a synchronous run without a status location.
  *
  * A live 758 worklist grew from 23 findings/two objects to 73/ten after already reporting
  * `objectSetIsComplete=true`, so neither that flag nor a few fast count snapshots are terminal
- * evidence. Ten seconds spans at least five intervals at the default 2 s backoff cap. SAP also
- * advances the root worklist timestamp on unchanged GETs, so that proven volatile attribute is
- * excluded from the comparison.
+ * evidence. Modern systems instead expose the terminal run status requested with
+ * `clientWait=false`. Ten seconds spans at least five intervals at the default 2 s backoff cap.
+ * SAP also advances the root worklist timestamp on unchanged GETs, so that proven volatile
+ * attribute is excluded from the comparison.
  * See docs/research/2026-08-20-atc-completeness-polling.md.
  */
 const ATC_SETTLE_QUIET_MS = 10_000;
@@ -160,7 +185,7 @@ async function resolveCheckVariant(
     : { variant: undefined, variantSource: 'sapFallback' };
 }
 
-/** Run an ATC worklist and preserve the evidence required for a CI verdict. */
+/** Run an ATC worklist and preserve terminal, structural, and informational evidence for CI. */
 export async function runAtcCheck(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -201,7 +226,7 @@ export async function runAtcCheck(
   let runResp: AdtResponse;
   try {
     runResp = await http.post(
-      `/sap/bc/adt/atc/runs?worklistId=${encodeURIComponent(worklistId)}`,
+      `/sap/bc/adt/atc/runs?worklistId=${encodeURIComponent(worklistId)}&clientWait=false`,
       runBody,
       'application/xml',
       { Accept: 'application/xml' },
@@ -210,22 +235,124 @@ export async function runAtcCheck(
   } catch (error) {
     if (isAtcDeadlineFailure(error)) {
       return incompleteAtcResult(
-        worklistId,
-        effectiveVariant,
-        variantSource,
-        maximumVerdicts,
-        null,
-        0,
+        {
+          worklistId,
+          variant: effectiveVariant,
+          variantSource,
+          maximumVerdicts,
+          findingStatistics: null,
+          runInfos: [],
+          runStatusCode: 0,
+          runStatus: null,
+          completionEvidence: null,
+        },
         'ATC execution timed out.',
       );
     }
     throw error;
   }
-  const expectedFindingCount = parseAtcFindingStats(runResp.body);
+  const runInfos = parseAtcRunInfos(runResp.body);
+  const findingStatistics = parseAtcFindingStatistics(runInfos);
+  const baseContext: AtcResultContext = {
+    worklistId,
+    variant: effectiveVariant,
+    variantSource,
+    maximumVerdicts,
+    findingStatistics,
+    runInfos,
+    runStatusCode: runResp.statusCode,
+    runStatus: null,
+    completionEvidence: null,
+  };
   const sleep = pollOptions.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   let delayMs = pollOptions.initialDelayMs ?? DEFAULT_ATC_POLL_DELAY_MS;
   const maxDelayMs = pollOptions.maxDelayMs ?? DEFAULT_ATC_MAX_POLL_DELAY_MS;
+  const rawRunLocation = responseHeader(runResp, 'location');
+
+  if (rawRunLocation !== undefined) {
+    const runStatusPath = canonicalAtcRunStatusPath(rawRunLocation);
+    if (!runStatusPath) {
+      return incompleteAtcResult(baseContext, 'SAP returned an unsafe or malformed ATC run-status location.');
+    }
+
+    let runStatus: string | null = null;
+    while (true) {
+      let statusResp: AdtResponse;
+      try {
+        statusResp = await http.get(runStatusPath, { Accept: ATC_RUN_STATUS_MEDIA_TYPE }, requestOptions);
+      } catch (error) {
+        if (isAtcDeadlineFailure(error)) {
+          return incompleteAtcResult(
+            { ...baseContext, runStatus },
+            'ATC run-status polling timed out before SAP completed the run.',
+          );
+        }
+        throw error;
+      }
+      runStatus = parseAtcRunStatus(statusResp.body);
+      if (!runStatus) {
+        return incompleteAtcResult(
+          { ...baseContext, runStatus },
+          'SAP returned an ATC run-status response without one valid status.',
+        );
+      }
+      if (isAtcRunCompleted(runStatus)) break;
+      if (!isAtcRunPending(runStatus)) {
+        return incompleteAtcResult(
+          { ...baseContext, runStatus },
+          `SAP ended the ATC run with status "${runStatus}" instead of "Completed".`,
+        );
+      }
+      if (now() >= deadline) {
+        return incompleteAtcResult(
+          { ...baseContext, runStatus },
+          'ATC run-status polling reached the request deadline before SAP completed the run.',
+        );
+      }
+      await sleep(Math.min(delayMs, Math.max(0, deadline - now())));
+      if (now() >= deadline) {
+        return incompleteAtcResult(
+          { ...baseContext, runStatus },
+          'ATC run-status polling reached the request deadline before SAP completed the run.',
+        );
+      }
+      delayMs = Math.min(maxDelayMs, delayMs * 2);
+    }
+
+    const completedContext: AtcResultContext = {
+      ...baseContext,
+      runStatus,
+      completionEvidence: 'asyncRunCompleted',
+    };
+    try {
+      const resultResp = await http.get(
+        `/sap/bc/adt/atc/worklists/${encodeURIComponent(worklistId)}`,
+        { Accept: 'application/atc.worklist.v1+xml' },
+        requestOptions,
+      );
+      return parseAtcRunResult(resultResp.body, completedContext);
+    } catch (error) {
+      if (isAtcDeadlineFailure(error)) {
+        return incompleteAtcResult(
+          completedContext,
+          'ATC completed, but worklist retrieval timed out before SAP returned the result.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  if (runResp.statusCode !== 200) {
+    return incompleteAtcResult(
+      baseContext,
+      `SAP returned asynchronous ATC status ${runResp.statusCode} without a run-status location.`,
+    );
+  }
+
+  // Older systems return the completed run synchronously without a status location. The worklist
+  // may still populate after the POST returns, so retain the proven full-response quiet interval.
   let result: AtcRunResult | undefined;
+  let resultXml: string | undefined;
   let lastWorklistObservation: string | undefined;
   let unchangedSince: number | undefined;
 
@@ -241,27 +368,13 @@ export async function runAtcCheck(
       if (isAtcDeadlineFailure(error)) {
         return (
           result ??
-          incompleteAtcResult(
-            worklistId,
-            effectiveVariant,
-            variantSource,
-            maximumVerdicts,
-            expectedFindingCount,
-            runResp.statusCode,
-            'ATC worklist polling timed out before SAP returned the first snapshot.',
-          )
+          incompleteAtcResult(baseContext, 'ATC worklist polling timed out before SAP returned the first snapshot.')
         );
       }
       throw error;
     }
-    result = parseAtcRunResult(resultResp.body, {
-      worklistId,
-      variant: effectiveVariant,
-      variantSource,
-      maximumVerdicts,
-      expectedFindingCount,
-      runStatusCode: runResp.statusCode,
-    });
+    resultXml = resultResp.body;
+    result = parseAtcRunResult(resultXml, baseContext);
     // Counts alone miss same-count replacements and other response-evidence changes. Compare the
     // full XML except the root timestamp, which live 758 advances on otherwise identical GETs.
     const observedAt = now();
@@ -272,13 +385,13 @@ export async function runAtcCheck(
     }
     const unchangedForMs = unchangedSince === undefined ? 0 : observedAt - unchangedSince;
     const settled = unchangedForMs >= ATC_SETTLE_QUIET_MS;
-    if (
-      expectedFindingCount === null ||
-      result.complete ||
-      result.findingCount > expectedFindingCount ||
-      settled ||
-      observedAt >= deadline
-    ) {
+    if (settled || observedAt >= deadline) {
+      if (settled) {
+        result = parseAtcRunResult(resultXml, {
+          ...baseContext,
+          completionEvidence: 'legacyWorklistSettled',
+        });
+      }
       if (settled && !result.complete) {
         result.incompleteReasons.push(
           `ATC worklist response, excluding SAP's poll timestamp, was unchanged for at least ` +
@@ -302,30 +415,38 @@ function isAtcDeadlineFailure(error: unknown): boolean {
   );
 }
 
-function incompleteAtcResult(
-  worklistId: string,
-  variant: string | undefined,
-  variantSource: AtcVariantSource,
-  maximumVerdicts: number,
-  expectedFindingCount: number | null,
-  runStatusCode: number,
-  reason: string,
-): AtcRunResult {
+interface AtcResultContext {
+  worklistId: string;
+  variant?: string;
+  variantSource: AtcVariantSource;
+  maximumVerdicts: number;
+  findingStatistics: AtcFindingStatistics | null;
+  runInfos: AtcRunInfo[];
+  runStatusCode: number;
+  runStatus: string | null;
+  completionEvidence: AtcCompletionEvidence | null;
+}
+
+function incompleteAtcResult(context: AtcResultContext, reason: string): AtcRunResult {
   return {
     findings: [],
-    worklistId,
-    variant: variant ?? null,
-    variantSource,
-    maximumVerdicts,
-    expectedFindingCount,
+    worklistId: context.worklistId,
+    variant: context.variant ?? null,
+    variantSource: context.variantSource,
+    maximumVerdicts: context.maximumVerdicts,
+    expectedFindingCount: context.findingStatistics?.total ?? null,
+    findingStatistics: context.findingStatistics,
     findingCount: 0,
     processedObjectCount: 0,
     objectSetIsComplete: null,
-    truncated: expectedFindingCount !== null && expectedFindingCount > 0,
+    truncated: false,
     complete: false,
+    completionEvidence: context.completionEvidence,
     incompleteReasons: [reason],
-    runStatusCode,
-    worklist: { id: worklistId },
+    runStatusCode: context.runStatusCode,
+    runStatus: context.runStatus,
+    runInfos: context.runInfos,
+    worklist: { id: context.worklistId },
     infos: [],
   };
 }
@@ -356,16 +477,52 @@ function nodeText(value: unknown): string {
   return String((first as Record<string, unknown>)['#text'] ?? '').trim();
 }
 
-function parseAtcFindingStats(xml: string): number | null {
+function responseHeader(response: AdtResponse, name: string): string | undefined {
+  const match = Object.entries(response.headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+  return match?.[1];
+}
+
+function canonicalAtcRunStatusPath(rawPath: string): string | null {
+  const canonical = canonicalHostRelativeAdtPath(rawPath, ATC_RUN_STATUS_PREFIX);
+  if (!canonical || canonical.includes('?')) return null;
+  const runId = canonical.slice(ATC_RUN_STATUS_PREFIX.length);
+  return runId && !runId.includes('/') ? canonical : null;
+}
+
+function parseAtcRunStatus(xml: string): string | null {
+  const roots = nodeRecords(parseXml(xml).run);
+  if (roots.length !== 1) return null;
+  const status = typeof roots[0]?.['@_status'] === 'string' ? roots[0]['@_status'].trim() : '';
+  return status || null;
+}
+
+function normalizedAtcRunStatus(status: string): string {
+  return status.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function isAtcRunCompleted(status: string): boolean {
+  return ['completed', 'finished'].includes(normalizedAtcRunStatus(status));
+}
+
+function isAtcRunPending(status: string): boolean {
+  return ['not yet started', 'running'].includes(normalizedAtcRunStatus(status));
+}
+
+function parseAtcRunInfos(xml: string): AtcRunInfo[] {
+  if (!xml.trim()) return [];
   const root = nodeRecord(parseXml(xml).worklistRun);
   const infos = nodeRecords(root?.infos).flatMap((container) => nodeRecords(container.info));
-  const stats = infos.find((info) => nodeText(info.type).toUpperCase() === 'FINDING_STATS');
-  const parts = nodeText(stats?.description)
-    .split(',')
-    .map((part) => Number(part.trim()));
-  return parts.length === 3 && parts.every((part) => Number.isSafeInteger(part) && part >= 0)
-    ? parts.reduce((sum, part) => sum + part, 0)
-    : null;
+  return infos
+    .map((info) => ({ type: nodeText(info.type), description: nodeText(info.description) }))
+    .filter((info) => info.type || info.description);
+}
+
+function parseAtcFindingStatistics(runInfos: AtcRunInfo[]): AtcFindingStatistics | null {
+  const stats = runInfos.find((info) => info.type.toUpperCase() === 'FINDING_STATS');
+  const parts = (stats?.description ?? '').split(',').map((part) => Number(part.trim()));
+  if (parts.length !== 3 || !parts.every((part) => Number.isSafeInteger(part) && part >= 0)) return null;
+  const [errors, warnings, infos] = parts as [number, number, number];
+  return { errors, warnings, infos, total: errors + warnings + infos };
 }
 
 function isValidProcessedObject(object: Record<string, unknown>): boolean {
@@ -426,17 +583,7 @@ function parseAtcInfos(root: Record<string, unknown>): string[] {
     .filter(Boolean);
 }
 
-function parseAtcRunResult(
-  xml: string,
-  context: {
-    worklistId: string;
-    variant?: string;
-    variantSource: AtcVariantSource;
-    maximumVerdicts: number;
-    expectedFindingCount: number | null;
-    runStatusCode: number;
-  },
-): AtcRunResult {
+function parseAtcRunResult(xml: string, context: AtcResultContext): AtcRunResult {
   const parsed = parseXml(xml);
   const rawRootNodes = nodeValues(parsed.worklist);
   const rootNodes = nodeRecords(parsed.worklist);
@@ -451,7 +598,6 @@ function parseAtcRunResult(
   const rawObjectRows = nodeValues(rawObjectValue);
   const objectRows = nodeRecords(rawObjectValue);
   const findings = parseAtcFindings(root, objectRows);
-  const truncated = context.expectedFindingCount !== null && findings.length < context.expectedFindingCount;
   const validObjectRows = objectRows.filter(isValidProcessedObject);
   const processedObjectCount = validObjectRows.length;
   const malformedObjectCount = rawObjectRows.length - validObjectRows.length;
@@ -474,15 +620,7 @@ function parseAtcRunResult(
         : 'SAP did not provide object-set completeness evidence.',
     );
   }
-  if (context.expectedFindingCount === null) {
-    incompleteReasons.push('SAP did not provide valid ATC finding-count evidence for this run.');
-  } else if (findings.length !== context.expectedFindingCount) {
-    incompleteReasons.push(
-      findings.length < context.expectedFindingCount
-        ? `ATC worklist has ${findings.length} of ${context.expectedFindingCount} findings reported by the run.`
-        : `ATC worklist has ${findings.length} findings, exceeding the ${context.expectedFindingCount} reported by the run.`,
-    );
-  }
+  if (context.completionEvidence === null) incompleteReasons.push('SAP did not provide terminal ATC run evidence.');
   if (!objectContainerShapeIsValid) {
     incompleteReasons.push('SAP did not provide one schema-scoped ATC objects container.');
   }
@@ -501,24 +639,26 @@ function parseAtcRunResult(
     variant: context.variant ?? null,
     variantSource: context.variantSource,
     maximumVerdicts: context.maximumVerdicts,
-    expectedFindingCount: context.expectedFindingCount,
+    expectedFindingCount: context.findingStatistics?.total ?? null,
+    findingStatistics: context.findingStatistics,
     findingCount: findings.length,
     processedObjectCount,
     objectSetIsComplete,
-    truncated,
+    truncated: false,
     complete:
       rootShapeIsValid &&
       worklistIdMatches &&
       objectSetIsComplete === true &&
-      !truncated &&
-      context.expectedFindingCount !== null &&
-      findings.length === context.expectedFindingCount &&
+      context.completionEvidence !== null &&
       objectContainerShapeIsValid &&
       processedObjectCount > 0 &&
       malformedObjectCount === 0 &&
       invalidPriorityCount === 0,
+    completionEvidence: context.completionEvidence,
     incompleteReasons,
     runStatusCode: context.runStatusCode,
+    runStatus: context.runStatus,
+    runInfos: context.runInfos,
     worklist: {
       id: bodyWorklistId,
       ...(root['@_timestamp'] ? { timestamp: String(root['@_timestamp']) } : {}),
