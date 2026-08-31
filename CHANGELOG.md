@@ -5,6 +5,29 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.1.0](https://github.com/arc-mcp/arc-1/compare/v1.0.2...v1.1.0) (2026-08-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* SAPGit no longer accepts the advertised but unimplemented commit action. Use abapGit push for supported commit-and-push workflows; gCTS mutations remain quarantined.
+
+### Features
+
+* add SAPTransport action="diff" for transport review ([#671](https://github.com/arc-mcp/arc-1/issues/671)) ([475e6f0](https://github.com/arc-mcp/arc-1/commit/475e6f02a47bd4c5d5b114f7dad8d8879ce31763))
+* harden ARC-1 CLI for SAP CI workflows ([#703](https://github.com/arc-mcp/arc-1/issues/703)) ([8c09b81](https://github.com/arc-mcp/arc-1/commit/8c09b810fefbc61520e6ae81e96d4802f8cad1a0))
+
+
+### Bug Fixes
+
+* add opt-in gzip for WAF-blocked data-preview requests ([#694](https://github.com/arc-mcp/arc-1/issues/694)) ([ba3e1d9](https://github.com/arc-mcp/arc-1/commit/ba3e1d950aeb75265ee245814922398d6e4f74c2))
+* correct and harden ADT source text search ([#683](https://github.com/arc-mcp/arc-1/issues/683)) ([33546e3](https://github.com/arc-mcp/arc-1/commit/33546e327a4630f9272ee63afdfa00c1c18aaf9b))
+* correct TABLE_QUERY IN value guidance ([#691](https://github.com/arc-mcp/arc-1/issues/691)) ([9fba0b6](https://github.com/arc-mcp/arc-1/commit/9fba0b6910dabf23d29fd52e4a3dfd16a27df6c1))
+* **deps:** resolve npm audit advisories in transitive dependencies ([#672](https://github.com/arc-mcp/arc-1/issues/672)) ([c24fb13](https://github.com/arc-mcp/arc-1/commit/c24fb13c7492bef779cc6587acfd5b4f57323a2a))
+* never report a syntax check as clean when SAP refused to run it ([#681](https://github.com/arc-mcp/arc-1/issues/681)) ([a9aedeb](https://github.com/arc-mcp/arc-1/commit/a9aedebbf31b2f373d29852f1523131a6f6f627e))
+* read the CSRF token and session cookie atomically ([#680](https://github.com/arc-mcp/arc-1/issues/680)) ([9c29f6d](https://github.com/arc-mcp/arc-1/commit/9c29f6d359e7e0614656cda0601cc848d919796d))
+* support DDLS table functions on 7.50 ([#693](https://github.com/arc-mcp/arc-1/issues/693)) ([1f29817](https://github.com/arc-mcp/arc-1/commit/1f29817eea57eb51a8ec5a1fe7fe915b5a9585a2))
+
 ## [1.0.2](https://github.com/arc-mcp/arc-1/compare/v1.0.1...v1.0.2) (2026-08-03)
 
 

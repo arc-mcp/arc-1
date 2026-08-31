@@ -1029,7 +1029,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.result.objects[0].files[0].name).toBe('zcl_arc1_test.clas.abap');
     });
 
-    it('push stages first, sends the selected objects with the commit message, and reports them', async () => {
+    it('push stages first, sends selected objects, and reports accepted-but-unverified evidence', async () => {
       setCachedFeatures(featuresOff({ abapGit: true }));
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml)); // loadAbapGitRepo
@@ -1043,9 +1043,16 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         message: 'arc-1 commit',
       });
 
-      expect(result.isError).toBeUndefined();
+      expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.result).toMatchObject({
+        ok: false,
+        outcome: 'incomplete',
+        accepted: true,
+        verified: false,
+      });
       expect(parsed.result.pushed).toEqual([{ name: 'ZCL_ARC1_TEST', type: 'CLAS/OC' }]);
+      expect(parsed.result.message).toContain('Do not retry blindly');
       const pushCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/push'));
       const body = String(pushCall?.[1]?.body);
       expect(body).toContain('abapgitstaging:comment="arc-1 commit"');

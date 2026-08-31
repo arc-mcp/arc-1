@@ -27,26 +27,26 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # --- Runtime Stage -----------------------------------------------------------
-FROM node:22-alpine
+FROM node:22-alpine AS runtime
 
 LABEL io.modelcontextprotocol.server.name="io.github.arc-mcp/arc-1"
 
 # tini: proper PID 1 init (handles SIGTERM gracefully)
 # ca-certificates: needed for HTTPS connections to SAP systems
 #
-# apk upgrade first: node:22-alpine trails the Alpine 3.24 security repo, so its
+# apk upgrade first: node:22-alpine can trail the Alpine security repo, so its
 # bundled OS packages (libssl3/libcrypto3, busybox, zlib, …) periodically carry
-# fixed-upstream HIGH CVEs that block the gating Trivy scan in release.yml — e.g.
+# fixed-upstream HIGH CVEs that the scheduled Trivy gate reports — e.g.
 # CVE-2026-45447 (openssl 3.5.6-r0 → 3.5.7-r0). Upgrading the OS layer to the
-# latest 3.24 patch level keeps the release image CVE-clean without waiting for a
-# base-image rebuild. Stays on the 3.24 branch (patch/security only) since the
-# node:22-alpine tag pins the Alpine release.
+# latest branch patch level keeps the release image current without waiting for a
+# base-image rebuild. CI names this stage so BuildKit can selectively bypass its
+# cache and re-run the upgrade while retaining the expensive builder-stage cache.
 RUN apk upgrade --no-cache && apk add --no-cache tini ca-certificates
 
 # Drop the bundled npm CLI from the runtime image. We exec `node dist/index.js`
 # directly, so npm/npx are never invoked at runtime — but their transitive
 # bundle (picomatch, brace-expansion, ip-address, …) recurringly raises HIGH
-# CVEs that block the gating Trivy scan in release.yml. Removing them shrinks
+# CVEs in Trivy. Removing them shrinks
 # the image and the CVE surface in one shot.
 RUN rm -rf \
   /usr/local/lib/node_modules/npm \

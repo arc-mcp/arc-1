@@ -75,7 +75,7 @@ import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
-export const VERSION = '1.0.2'; // x-release-please-version
+export const VERSION = '1.1.0'; // x-release-please-version
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's
@@ -214,6 +214,7 @@ export function buildAdtConfig(
     client: config.client,
     language: config.language,
     insecure: config.insecure,
+    gzipDataPreviewBody: config.gzipDataPreviewBody,
     disableSaml: config.disableSaml2,
     btpProxy,
     bearerTokenProvider,
@@ -415,7 +416,7 @@ export function applyPerUserAuthTokens(
  * exception: every caller uses the same reviewed SAP identity, so authorization-limited
  * evidence is definitive for that credential generation and may be cached.
  */
-async function probeClientFeatures(
+export async function probeClientFeatures(
   config: ServerConfig,
   client: AdtClient,
   btpConfig?: BTPConfig,
@@ -480,7 +481,10 @@ async function probeClientFeatures(
         'installed and you can ignore this. See docs/sap-trial-setup.md (423 troubleshooting).',
     );
   }
-  setCachedDiscovery(features.discoveryMap ?? new Map(), featureKey);
+  const discoveryMap = features.discoveryMap ?? new Map();
+  setCachedDiscovery(discoveryMap, featureKey);
+  // Direct calls immediately reuse the probed client, so install its evidence too.
+  client.http.setDiscoveryMap(discoveryMap);
 }
 
 export function runStartupProbe(
@@ -512,6 +516,23 @@ export interface StartupAuthPreflightResult {
 }
 
 const STARTUP_AUTH_ENDPOINT = '/sap/bc/adt/core/discovery';
+
+function skippedStartupAuthPreflight(config: ServerConfig): StartupAuthPreflightResult | undefined {
+  const reason = config.ppEnabled
+    ? 'Skipped startup auth preflight: principal propagation mode is enabled (per-user auth at runtime).'
+    : !config.url
+      ? 'Skipped startup auth preflight: SAP_URL is not configured.'
+      : undefined;
+  if (!reason) return undefined;
+  logger.info(reason);
+  return {
+    status: 'skipped',
+    blocking: false,
+    endpoint: STARTUP_AUTH_ENDPOINT,
+    checkedAt: new Date().toISOString(),
+    reason,
+  };
+}
 
 function buildStartupAuthFailureReason(statusCode: number, config: ServerConfig): string {
   if (statusCode === 401) {
@@ -546,41 +567,30 @@ function buildStartupAuthFailureReason(statusCode: number, config: ServerConfig)
   return `Startup auth preflight failed with HTTP ${statusCode}.`;
 }
 
-/**
- * Run a startup auth preflight for shared-credential mode.
- *
- * Goal: detect invalid technical/shared credentials once at startup and avoid
- * repeated failed SAP requests from the first LLM tool call onward.
- *
- * Behavior:
- * - Never throws (server must stay up)
- * - PP mode and no-URL mode are skipped (non-blocking)
- * - 401/403 are blocking failures
- * - Network/other failures are inconclusive (non-blocking)
- */
+/** Shared-auth preflight: 401/403 block; PP/no-URL skip; other failures are non-blocking. */
 export async function runStartupAuthPreflight(
   config: ServerConfig,
   btpProxy?: BTPProxyConfig,
   bearerTokenProvider?: () => Promise<string>,
   adtSemaphore?: Semaphore,
 ): Promise<StartupAuthPreflightResult> {
+  const skipped = skippedStartupAuthPreflight(config);
+  if (skipped) return skipped;
+  const client = new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
+  return runStartupAuthPreflightWithClient(config, client);
+}
+
+/** Existing-client form retains authentication state for direct calls. */
+export async function runStartupAuthPreflightWithClient(
+  config: ServerConfig,
+  client: AdtClient,
+): Promise<StartupAuthPreflightResult> {
+  const skipped = skippedStartupAuthPreflight(config);
+  if (skipped) return skipped;
   const checkedAt = new Date().toISOString();
   const endpoint = STARTUP_AUTH_ENDPOINT;
 
-  if (config.ppEnabled) {
-    const reason = 'Skipped startup auth preflight: principal propagation mode is enabled (per-user auth at runtime).';
-    logger.info(reason);
-    return { status: 'skipped', blocking: false, endpoint, checkedAt, reason };
-  }
-
-  if (!config.url) {
-    const reason = 'Skipped startup auth preflight: SAP_URL is not configured.';
-    logger.info(reason);
-    return { status: 'skipped', blocking: false, endpoint, checkedAt, reason };
-  }
-
   try {
-    const client = new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
     await client.http.get(endpoint);
     const reason = 'Startup auth preflight succeeded for shared SAP credentials.';
     logger.info(reason, { endpoint });

@@ -11,7 +11,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifyCdsImpact } from '../../src/adt/cds-impact.js';
 import type { AdtClient } from '../../src/adt/client.js';
 import { findWhereUsed } from '../../src/adt/codeintel.js';
-import { getCdsTestCases, runAtcCheck, supportsCdsTestCases } from '../../src/adt/devtools.js';
+import {
+  getAtcSystemDefaultVariant,
+  getCdsTestCases,
+  runAtcCheck,
+  supportsCdsTestCases,
+} from '../../src/adt/devtools.js';
 import {
   getDump,
   getGatewayErrorDetail,
@@ -117,6 +122,25 @@ describe('ADT Integration Tests', () => {
         // description may be empty for some components
         expect(typeof comp.description).toBe('string');
       }
+    });
+  });
+
+  describe('BSP filestore', () => {
+    it('classifies a BSP root from SAP response media type', async (ctx) => {
+      let apps: Awaited<ReturnType<AdtClient['listBspApps']>> | undefined;
+      try {
+        apps = await client.listBspApps(undefined, 1);
+      } catch (error) {
+        if (error instanceof AdtApiError && (error.statusCode === 403 || error.statusCode === 404)) {
+          requireOrSkip(ctx, undefined, `${SkipReason.BACKEND_UNSUPPORTED}: BSP filestore unavailable`);
+        }
+        throw error;
+      }
+      const app = apps?.[0];
+      requireOrSkip(ctx, app, `${SkipReason.NO_FIXTURE}: no BSP application available`);
+      const content = await client.getBspPathContent(app.name);
+      expect(content.kind).toBe('folder');
+      if (content.kind === 'folder') expect(Array.isArray(content.nodes)).toBe(true);
     });
   });
 
@@ -2241,18 +2265,28 @@ describe('ADT Integration Tests', () => {
 
   // ─── ATC worklist + check-variant flow (runAtcCheck) ─────────────────
   describe('runAtcCheck (worklist + variant flow)', () => {
-    // Regression guard for the three-step ATC flow. The previous implementation POSTed
-    // straight to /atc/runs?worklistId=1 and never bound a check variant, so ATC executed
-    // no checks and always returned zero findings. These tests assert the worklist→run→get
-    // flow completes and returns a well-formed findings array against a live system.
-    // Finding COUNT is system-dependent (ATC content + check variants vary, and ATC skips
-    // $TMP objects), so exact-format parsing is locked down by the unit fixture test
-    // (tests/unit/adt/devtools.test.ts → "parses the real SAP worklist response format").
+    // A variant may exclude this class, but that must remain incomplete rather than appear clean.
     const KERNEL_CLASS_URL = '/sap/bc/adt/oo/classes/cl_abap_typedescr';
-
+    // Assert the invariants that always hold, not "the run completed" — an incomplete run is a
+    // legitimate outcome (a variant excluding the class, a worklist that settles short of SAP's own
+    // statistic), and it must be *reported* as incomplete rather than appear clean. Asserting
+    // completeness here made the test depend on live ATC timing and it flaked at the deadline.
+    const expectSoundResult = (result: Awaited<ReturnType<typeof runAtcCheck>>) => {
+      if (result.complete) {
+        expect(result.expectedFindingCount).toBe(result.findings.length);
+        expect(result.processedObjectCount).toBeGreaterThan(0);
+        expect(result.incompleteReasons).toEqual([]);
+      } else {
+        expect(result.incompleteReasons.length).toBeGreaterThan(0);
+      }
+      // Nothing processed can never read as clean.
+      if (result.processedObjectCount === 0) expect(result.complete).toBe(false);
+    };
     it('completes the flow with an explicit check variant', async () => {
-      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB');
-      expect(Array.isArray(result.findings)).toBe(true);
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB', {
+        timeoutMs: 30_000,
+      });
+      expectSoundResult(result);
       for (const f of result.findings) {
         expect(typeof f.priority).toBe('number');
         expect(typeof f.line).toBe('number');
@@ -2264,9 +2298,50 @@ describe('ADT Integration Tests', () => {
       }
     }, 90000);
 
-    it('completes the flow with the system default variant (no variant passed)', async () => {
-      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL);
-      expect(Array.isArray(result.findings)).toBe(true);
+    // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT, NOT to
+    // systemCheckVariant — so runAtcCheck resolves the system default itself and sends it.
+    // Evidence: docs/research/2026-08-19-atc-default-check-variant.md
+    it('binds the system default check variant when none is passed', async () => {
+      const systemDefault = await getAtcSystemDefaultVariant(client.http, unrestrictedSafetyConfig());
+
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
+        timeoutMs: 30_000,
+      });
+
+      expectSoundResult(result);
+      if (systemDefault) {
+        expect(result.variantSource).toBe('systemDefault');
+        expect(result.variant).toBe(systemDefault);
+      } else {
+        // No /atc/customizing (or no systemCheckVariant) on this system — documented degradation.
+        expect(result.variantSource).toBe('sapFallback');
+        expect(result.variant).toBeNull();
+      }
+    }, 90000);
+
+    // A4H may return an incomplete zero-object result for this default-variant fixture. This guards
+    // that SAP's per-GET root timestamp does not prevent an otherwise unchanged response from settling.
+    // Evidence: docs/research/2026-08-20-atc-completeness-polling.md
+    it('returns a settled run far inside its budget', async () => {
+      const started = Date.now();
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
+        timeoutMs: 60_000,
+      });
+      const elapsed = Date.now() - started;
+
+      expectSoundResult(result);
+      expect(elapsed).toBeLessThan(45_000);
+    }, 90000);
+
+    it('rejects an unknown check variant instead of letting SAP silently run DEFAULT', async () => {
+      try {
+        await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'ZZZ_ARC1_NO_SUCH_VARIANT', {
+          timeoutMs: 30_000,
+        });
+        throw new Error('Expected runAtcCheck to reject an unknown check variant');
+      } catch (err) {
+        expectSapFailureClass(err, [400], [/does not exist on this system/i]);
+      }
     }, 90000);
   });
 

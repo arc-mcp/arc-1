@@ -16,13 +16,16 @@
  * This keeps the client class manageable (not a 2,400-line God class).
  */
 
+import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
+import { canonicalRevisionSourcePath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
 import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
@@ -87,7 +90,9 @@ export interface SourceReadResult {
   statusCode: number;
 }
 
-export interface SourceReadOptions {
+export type BspPathContent = { kind: 'folder'; nodes: BspFileNode[] } | { kind: 'file'; content: string };
+
+export interface SourceReadOptions extends AdtRequestOptions {
   ifNoneMatch?: string;
   version?: 'active' | 'inactive';
   accept?: string;
@@ -382,6 +387,7 @@ export class AdtClient {
       client: config.client,
       language: config.language,
       insecure: config.insecure,
+      gzipDataPreviewBody: config.gzipDataPreviewBody,
       cookies: config.cookies,
       cookieFile: config.cookieFile,
       cookieString: config.cookieString,
@@ -454,7 +460,7 @@ export class AdtClient {
     const headers: Record<string, string> = {};
     if (opts.accept) headers.Accept = opts.accept;
     if (opts.ifNoneMatch) headers['If-None-Match'] = opts.ifNoneMatch;
-    const resp = await this.http.get(url, Object.keys(headers).length > 0 ? headers : undefined);
+    const resp = await this.http.get(url, Object.keys(headers).length > 0 ? headers : undefined, opts);
     return {
       source: resp.body,
       etag: resp.headers.etag ?? undefined,
@@ -1034,10 +1040,13 @@ export class AdtClient {
   /** Read source content for a specific revision URI from the revisions feed. */
   async getRevisionSource(versionUri: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetRevisionSource');
-    if (!versionUri.startsWith('/sap/bc/adt/')) {
-      throw new Error('versionUri must be an ADT path starting with /sap/bc/adt/');
+    const canonicalUri = canonicalRevisionSourcePath(versionUri);
+    if (!canonicalUri) {
+      throw new Error(
+        'Path must be a canonical host-relative ADT path under /sap/bc/adt/ and a source URI from a VERSIONS response.',
+      );
     }
-    const resp = await this.http.get(versionUri, { Accept: 'text/plain' });
+    const resp = await this.http.get(canonicalUri, { Accept: 'text/plain' });
     return resp.body;
   }
 
@@ -1628,33 +1637,53 @@ export class AdtClient {
     if (query) params.set('name', query);
     if (maxResults !== undefined) params.set('maxResults', String(maxResults));
     const qs = params.toString();
-    const path = `/sap/bc/adt/filestore/ui5-bsp/objects${qs ? `?${qs}` : ''}`;
+    const path = `${BSP_OBJECTS_PATH}${qs ? `?${qs}` : ''}`;
     const resp = await this.http.get(path, { Accept: 'application/atom+xml' });
     return parseBspAppList(resp.body);
   }
 
-  /** Browse BSP app file structure (root or subfolder) */
+  /** @deprecated Use getBspPathContent(); throws when SAP identifies the path as a file. */
   async getBspAppStructure(appName: string, subPath?: string): Promise<BspFileNode[]> {
     checkOperation(this.safety, OperationType.Read, 'GetBSPApp');
-    const normalizedSubPath = subPath && !subPath.startsWith('/') ? `/${subPath}` : subPath || '';
-    const objectPath = appName.toUpperCase() + normalizedSubPath;
-    const resp = await this.http.get(
-      `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(objectPath)}/content`,
-      { Accept: 'application/xml', 'Content-Type': 'application/atom+xml' },
-    );
-    return parseBspFolderListing(resp.body, appName.toUpperCase());
+    const resolved = resolveBspNameAndPath(appName, subPath);
+    const content = await this.getBspPathContent(resolved.appName, resolved.path);
+    if (content.kind !== 'folder') {
+      throw new AdtApiError(
+        'The requested BSP path is a file, not a folder.',
+        400,
+        bspContentPath(resolved.appName, resolved.path),
+      );
+    }
+    return content.nodes;
   }
 
-  /** Read a single file from a BSP app */
+  /** @deprecated Use getBspPathContent(); throws when SAP identifies the path as a folder. */
   async getBspFileContent(appName: string, filePath: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetBSPFile');
-    const cleanPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
-    const objectPath = `${appName.toUpperCase()}/${cleanPath}`;
-    const resp = await this.http.get(
-      `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(objectPath)}/content`,
-      { Accept: 'application/xml', 'Content-Type': 'application/octet-stream' },
-    );
-    return resp.body;
+    const resolved = resolveBspNameAndPath(appName, filePath);
+    const content = await this.getBspPathContent(resolved.appName, resolved.path);
+    if (content.kind !== 'file') {
+      throw new AdtApiError(
+        'The requested BSP path is a folder, not a file.',
+        400,
+        bspContentPath(resolved.appName, resolved.path),
+      );
+    }
+    return content.content;
+  }
+
+  /**
+   * Read a BSP path and let SAP's response media type identify files vs folders.
+   * Binary assets remain outside this text-oriented API because AdtResponse exposes a string body.
+   */
+  async getBspPathContent(appName: string, path?: string): Promise<BspPathContent> {
+    checkOperation(this.safety, OperationType.Read, 'GetBSPPathContent');
+    // Explicit */* suppresses discovery MIME negotiation so SAP can select the resource's real media type.
+    const resp = await this.http.get(bspContentPath(appName, path), { Accept: '*/*' });
+    if (resp.headers['content-type']?.toLowerCase().startsWith('application/atom+xml')) {
+      return { kind: 'folder', nodes: parseBspFolderListing(resp.body, appName.toUpperCase()) };
+    }
+    return { kind: 'file', content: resp.body };
   }
 
   /**

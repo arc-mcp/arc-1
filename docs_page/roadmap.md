@@ -64,7 +64,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-69](#feat-69) | **Mass syntax check** — `syntaxCheck()` (`src/adt/devtools.ts`) already builds a list-shaped `chkrun:checkObjectList` but always emits exactly one `chkrun:checkObject`; making it N lets an agent check a whole package before activating | P2 | XS | Features |
 | [FEAT-21](#feat-21) | ABAP Documentation (F1 Help) | P2 | XS | Features |
 | [FEAT-32](#feat-32) | Table Pagination / Offset | P2 | XS | Features |
-| [FEAT-42](#feat-42) | ATC Output Formats (JUnit4, checkstyle, codeclimate) | P2 | XS | Features |
+| [FEAT-42](#feat-42) | ATC Output Formats — CLI Checkstyle shipped; JUnit4/codeclimate remain | P2 | XS | Features |
 | [OPS-02](#ops-02) | Health Check Enhancements | P2 | XS | Ops |
 | [PR-ε](#pr-epsilon) | Remove static SAP_BASIS release gates and `isRelease750()` helper after ARCH-01 lands; consume `resolveSourceUrl` + `filterByDiscovery` at the call sites that are still hard-coded | P2 | S | Architecture |
 | [FEAT-18](#feat-18) | Function Group Bulk Fetch (read) — still open; its **sibling, FUGR structural-include WRITE, ✅ shipped 2026-06-25 (PR #505)** (`SAPWrite update type=INCL`+`group`, live-verified 758 + 816) | P2 | S | Features |
@@ -75,14 +75,15 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | [FEAT-27](#feat-27) | Migration Analysis (ECC->S/4) | P2 | S | Features |
 | [FEAT-28](#feat-28) | SAP Compatibility Hardening | P2 | S | Features |
 | [FEAT-36](#feat-36) | Type Information (SAPNavigate) | P2 | S | Features |
-| [FEAT-60](#feat-60) | CLI/server alignment (shortcut parity with MCP tool schemas) | P2 | S | Features |
+| [FEAT-60](#feat-60) | CLI/server alignment — strict dispatcher parity + CI checks implemented for the next release; full shortcut parity remains | P2 | S | Features |
 | [DOC-03](#doc-03) | SAP Community Blog Post | P2 | S | Docs |
 | [COMPAT-06](#compat-06) | Outbound `HTTP_PROXY` / `NO_PROXY` support for SAP ADT traffic from ARC-1 | P2 | S | Compatibility |
-| [FEAT-09](#feat-09) | SQL Trace Monitoring | P2 | M | Features |
+| [FEAT-09](#feat-09) | SQL Trace record reader — ST05 state/control/directory shipped; Cross Trace records remain | P2 | M | Features |
 | [FEAT-06](#feat-06) | Cloud Readiness Assessment | P2 | M | Features |
 | [FEAT-03](#feat-03) | Enhancement Framework (BAdI) | P2 | M | Features |
 | [FEAT-30](#feat-30) | ABAP Cleaner Integration | P2 | M | Features |
 | [FEAT-34](#feat-34) | i18n Translation Management | P2 | M | Features |
+| [FEAT-22](#feat-22) | gCTS/abapGit Integration — reads + conservative abapGit workflows shipped; unverifiable mutations return incomplete and safe gCTS mutation remains deferred | P2 | M | Features |
 | [COMPAT-04](#compat-04) | BTP transport omission in safeUpdateSource() — verify only | P3 | XS | Compatibility |
 | [FEAT-50](#feat-50) | ADT Probe Fixture Coverage (contributed fixtures) | P3 | XS-each | Diagnostics |
 | [SEC-14](#sec-14) | DNS-rebinding / Host-header allowlist for HTTP/SSE transport (`ARC1_ALLOWED_HOSTS`) — defense-in-depth for self-hosted/localhost; BTP gorouter already controls `Host`. fr0ster v7.2.0 + MCP spec. **Implemented then DEFERRED** (PR #500) — mandatory HTTP auth is the primary control; see [details](#sec-14) | P3 | S | Security |
@@ -108,7 +109,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | ~~[FEAT-49](#feat-49)~~ | ~~Current Object Transport Status (legacy `history` action)~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-17~~ |
 | ~~[DOC-04](#doc-04)~~ | ~~RAP & Common ABAP Workflow Skill Pack Refresh~~ | ~~P1~~ | ~~S~~ | ~~Completed 2026-04-18~~ |
 | ~~[FEAT-67](#feat-67)~~ | ~~**DTDC (Dynamic Cache) read/write**~~ — ✅ **shipped 2026-07-24**: generalized the SDO engine off the blue-only assumption (per-entry metadata root/ns/marker); `SAPRead`/`SAPWrite`/`SAPActivate type=DTDC`. Live-verified create→activate→delete on 758 + 816 | P2 | S | Features |
-| ~~[FEAT-68](#feat-68)~~ | ~~**ATC check-variant listing**~~ — ✅ **shipped 2026-07-24**: `SAPDiagnose action=atc_variants` lists variants + the system default. Live-verified 758 + 816 | P2 | XS | Features |
+| ~~[FEAT-68](#feat-68)~~ | ~~**ATC check-variant listing**~~ — ✅ **shipped 2026-07-24**: `SAPDiagnose action=atc_variants` lists variants + the system default. Live-verified 758 + 816. (2026-08-19: the accompanying "an empty `checkVariant` runs the system default" claim was disproven — `action=atc` now resolves and sends it explicitly) | P2 | XS | Features |
 | — | **RAP behavior-extension create** (`extend behavior for`) — ✅ **shipped 2026-06-25 (PR #507)**: `SAPWrite create type=BDEF` with extension source emits the `adtTemplate(base_bdef)`; live-verified 758 + 816 (new capability, no prior FEAT id) | P2 | M | Features |
 | — | **CDS API-release WRITE** (`SAPManage set_api_state`, FEAT-02 follow-up) — ✅ **shipped 2026-06-25 (PR #506)**: release/revoke a C1 contract; live-verified 758 + 816 | P2 | S | Features |
 | ~~[FEAT-31](#feat-31)~~ | ~~Code Coverage from Unit Tests~~ — **✅ Resolved by FEAT-41 / PR #503**: `SAPDiagnose action=unittest` now supports `coverage:true` | P2 | S | Features |
@@ -117,7 +118,6 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | ~~[FEAT-64](#feat-64)~~ | ~~Self-correcting "unknown column" hint on SAPQuery / TABLE_QUERY~~ — **✅ Completed 2026-06-25 (PR #502)**, live-verified 758 + 816 | P2 | S | Features |
 | ~~COMPAT-05~~ | ~~Verify ToC (type `T`) creation~~ — **✅ Resolved 2026-06-25 (PR #501):** the create path is K-only by design; the misleading K/W/T advertise-text was corrected | P2 | XS | Compatibility |
 | ~~[SEC-05](#sec-05)~~ | ~~Layered Rate Limiting — PR #276~~ | ~~P2~~ | ~~S~~ | ~~Completed 2026-05-27~~ |
-| ~~[FEAT-22](#feat-22)~~ | ~~gCTS/abapGit Integration~~ | ~~P2~~ | ~~M~~ | ~~Completed 2026-04-18~~ |
 | ~~[FEAT-33](#feat-33)~~ | ~~CDS Impact Analysis~~ | ~~P2~~ | ~~S~~ | ~~Completed 2026-04-16~~ |
 | ~~[FEAT-43](#feat-43)~~ | ~~DDIC Auth & Misc Read (Authorization Fields, Feature Toggles, Enhancement Implementations)~~ | ~~P2~~ | ~~S~~ | ~~Completed 2026-04-17~~ |
 | ~~[FEAT-55](#feat-55)~~ | ~~System Messages (SM02) + Gateway Error Log (IWFND) in SAPDiagnose~~ | ~~P2~~ | ~~S~~ | ~~Completed 2026-04-21~~ |
@@ -179,7 +179,7 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 | — | SAPManage Scope Split + Data Preview Diagnostics (PR #171) | 2026-04-19 | Security |
 | [DOC-05](#doc-05) | First-Party Skill Pack Expansion (clean-core ATC, dead code, object documenter) (PR #164) | 2026-04-19 | Docs |
 | [DOC-04](#doc-04) | RAP & Common ABAP Workflow Skill Pack Refresh | 2026-04-18 | Docs |
-| [FEAT-22](#feat-22) | gCTS/abapGit Integration (`SAPGit` tool + `--allow-git-writes` safety gate) | 2026-04-18 | Features |
+| [FEAT-22](#feat-22) | `SAPGit` foundation: gCTS/abapGit reads, gated abapGit workflows, and Git safety gate (gCTS mutation deferred) | 2026-04-18 | Features |
 | SEC-09 | Auth Safety & Configurability (cookie→PP leak fix, applyAuthHeader guard, fail-fast validation, auth summary log, SAML disable opt-in, HTML login detection) | 2026-04-17 | Security |
 | [FEAT-20](#feat-20) | Source Version / Revision History | 2026-04-17 | Features |
 | [FEAT-49](#feat-49) | Current Object Transport Status (legacy `history` action) | 2026-04-17 | Features |
@@ -282,9 +282,9 @@ SORT RULES for this table — DO NOT BREAK when adding rows:
 > - `SAPContext(action="impact")` already handles DDLS/DDLX upstream+downstream (FEAT-33, 2026-04-16) plus sibling DDLS/DDLX consistency (FEAT-57, 2026-04-22).
 > - `SAPRead(type="VERSIONS" | "VERSION_SOURCE")` (FEAT-20, 2026-04-17) is live on on-prem; BTP exposure intentionally deferred.
 > - `SAPTransport(action="history")` (FEAT-49, 2026-04-17) is live with a `transportchecks` fallback. The action name is legacy: output is current lock/assignment status, not complete history.
-> - `SAPDiagnose` now covers dumps + traces + system_messages + gateway_errors + quickfix + apply_quickfix (FEAT-55, 2026-04-21). SQL trace (FEAT-09) is the only fr0ster-v5 diagnostic still missing.
-> - `SAPGit` (FEAT-22, 2026-04-18) auto-selects gCTS→abapGit with a `--allow-git-writes` safety gate; VSP's gCTS lead is closed for the prioritized workflow set.
-> - **OData/SQL performance insight** (2026-06-25): `SAPDiagnose action=odata_perf` (probe an OData URL with `?sap-statistics=true` → server-side gw* timing split + routing verdict) + `action=cds_sql` (CDS Show-SQL via `ddic/ddl/createstatements`) + an ICF-inactive activation guard (`icf-service-inactive`). Verified live on 7.50 / 758 / 816. Answers "why is this Fiori/OData request slow" without SAP GUI; SQL-trace control (FEAT-09 / ST05) is the next step.
+> - `SAPDiagnose` now covers dumps + traces + system_messages + gateway_errors + quickfix + apply_quickfix (FEAT-55, 2026-04-21). ST05 state/control/directory shipped later; FEAT-09 now tracks only a GUI-free Cross Trace record reader.
+> - `SAPGit` (FEAT-22, 2026-04-18) auto-selects gCTS→abapGit and has a `--allow-git-writes` safety gate. gCTS reads are supported; gCTS mutation remains fail-closed pending a staged/preflight/deploy/confirm/rollback contract.
+> - **OData/SQL performance insight** (2026-06-25): `SAPDiagnose action=odata_perf` (probe an OData URL with `?sap-statistics=true` → server-side gw* timing split + routing verdict) + `action=cds_sql` (CDS Show-SQL via `ddic/ddl/createstatements`) + an ICF-inactive activation guard (`icf-service-inactive`). Verified live on 7.50 / 758 / 816. Answers "why is this Fiori/OData request slow" without SAP GUI; the remaining FEAT-09 step is the Cross Trace record reader.
 > - **ST05 SQL-trace control** (2026-06-25, FEAT-09): `SAPDiagnose action=sql_trace_state`/`set_sql_trace_state` (read/arm/disarm the ST05 SQL trace via `/sap/bc/adt/st05/trace/state`) + `action=sql_trace_directory` (SAP returns the TMC "SQL Trace Analysis" deep-link to read records — there is no ADT SQL-record API). Verified live on 758. **Discovered the ADT-native ABAP Cross Trace API** (`/sap/bc/adt/crosstrace/*`, present on 758 not just 816; request types include OData V2/V4) — the strategic GUI-free record reader, scoped as a focused follow-up PR.
 >
 > Competitor scan (2026-04-23): only **fr0ster** has moved this week — v6.2.0 shipped per-object-type tool descriptions (13 types) and v6.4.0 added per-instance `systemType` on `EmbeddableMcpServer` (multi-tenant embedding capability ARC-1 lacks — tracked as FEAT-59). VSP, dassian-adt, mario, AWS Accelerator all quiet since before 2026-04-17.
@@ -345,10 +345,10 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 21. ~~**FEAT-47** MSAG (Message Class) Read/Write (S)~~ — **completed 2026-04-14** (SAPRead type=MSAG + SAPWrite/SAPManage MSAG create/update/delete)
 22. ~~**FEAT-39** Transport Enhancements (S)~~ — **completed 2026-04-13** (lifecycle operations; Workbench K create). sapcli has full CTS lifecycle.
 21. ~~**FEAT-41** ABAP Unit Test Coverage (S)~~ — **completed 2026-06-25 (PR #503)**: `SAPDiagnose action="unittest"` with `coverage:true` returns statement/branch/procedure coverage, handles cross-release CLAS/OM variants, and degrades cleanly when the coverage endpoint is unavailable.
-22. **FEAT-42** ATC Output Formats (XS) — JUnit4, checkstyle, codeclimate formatters for CI/CD integration. sapcli has these.
+22. **FEAT-42** ATC Output Formats (XS) — CLI Checkstyle is implemented with completeness-aware exits; JUnit4 and codeclimate remain.
 23. ~~**FEAT-43** DDIC Auth & Misc Read (S)~~ — **completed 2026-04-17** (SAPRead types `AUTH`, `FEATURE_TOGGLE` (formerly `FTG2`, renamed in audit Plan B / PR #224), `ENHO`; Authorization Fields endpoint: `/sap/bc/adt/aps/iam/auth/{name}`, namespace `http://www.sap.com/iam/auth`)
 24. ~~**FEAT-48** SKTD (Knowledge Transfer Documents) Read/Write (S)~~ — **✅ Completed 2026-04-16** (PR #134 merged). Unique to ARC-1. LLM-generated documentation for ABAP objects.
-25. **FEAT-09** SQL Trace Monitoring (S) — completes diagnostics story (SM02 and /IWFND/ERROR_LOG already completed 2026-04-21 via FEAT-55 — SQL trace is the only fr0ster-v5 diagnostic still missing)
+25. **FEAT-09** SQL Trace record reader (S) — ST05 state/arm/disarm/directory is complete; implement the discovered `/sap/bc/adt/crosstrace/*` record inventory/detail path
 26. **SEC-05** Rate Limiting (S) — prevent runaway AI loops
 26b. ~~**SEC-14** DNS-rebinding / Host-header validation (S)~~ — **implemented then DEFERRED 2026-06-25** (PR #500, closed-deferred). Mandatory HTTP auth is the primary rebind control; Host validation only matters in the no-auth mode a real deploy shouldn't use, so it's parked to avoid the `ARC1_ALLOWED_HOSTS` setup surface. Decision record + resume guide: [docs/plans/2026-06-25-sec-14-dns-rebinding-host-validation.md](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-06-25-sec-14-dns-rebinding-host-validation.md).
 26. ~~**FEAT-20** Source Version / Revision History (S) — promoted to P1/Phase B and completed 2026-04-17~~
@@ -361,7 +361,7 @@ These bugs affect real-world deployments and were confirmed by cross-project com
 29. **FEAT-27** Migration Analysis ECC->S/4 (S) — custom code migration
 30. **FEAT-06** Cloud Readiness Assessment (M) — ATC cloud checks + abaplint
 31. **FEAT-03** Enhancement Framework / BAdI (M) — customization scenarios
-32. ~~**FEAT-22** gCTS/abapGit Integration (M)~~ — **completed 2026-04-18** (`SAPGit` with backend auto-selection and git safety gate)
+32. **FEAT-22** gCTS/abapGit Integration (M) — foundation shipped 2026-04-18 (`SAPGit` backend auto-selection and Git safety gate); safe gCTS mutation remains deferred
 33. **FEAT-34** i18n Translation Management (M) — VSP has 7 tools (Apr 5)
 34. **OPS-03** Multi-System Routing (L) — one instance -> multiple SAP systems
 35. **DOC-03** SAP Community Blog Post (S) — visibility and adoption
@@ -720,7 +720,7 @@ SAP confirmed GA of ABAP Cloud Extension for VS Code with built-in agentic AI po
 | **Priority** | P2 |
 | **Effort** | XS |
 | **Risk** | Low |
-| **Usefulness** | Medium-high — `SAPDiagnose action=atc` takes a free-string `variant` today, so an LLM must guess a valid name or fall back to the system default. |
+| **Usefulness** | Medium-high — `SAPDiagnose action=atc` takes a free-string `variant` today, so an LLM must guess a valid name. |
 | **Status** | ✅ **Completed 2026-07-24** — `SAPDiagnose action=atc_variants` lists the check variants (`GET /atc/variants?name=<filter>`) + the system default (`GET /atc/customizing` → `systemCheckVariant`). The `variant` param doubles as the name filter. Read-only; live-verified 758 (184 variants) + 816 (215). Authoring CHKO/CHKC/CHKV objects remains out of scope (Basis governance, not LLM-driven). Dossier: [docs/research/2026-07-24-feat68-atc-variant-listing.md](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-07-24-feat68-atc-variant-listing.md). |
 
 <a id="feat-69"></a>
@@ -848,14 +848,22 @@ Note: The `/enhancements/elements` endpoint is **on-prem only** (SAP BTP ABAP Cl
 | **Effort** | S (1-2 days) |
 | **Risk** | Low |
 | **Usefulness** | Medium — performance diagnostics |
-| **Status** | Not started |
+| **Status** | Partial — ST05 state, arm/disarm, and TMC directory deep-link shipped; Cross Trace record reading remains |
 | **Source** | [Feature matrix #17](https://github.com/arc-mcp/arc-1/blob/main/docs/compare/00-feature-matrix.md) |
 
-**What:** Read SQL trace state, list SQL traces, analyze trace results. Uses ADT endpoints `/sap/bc/adt/runtime/traces/sql/*`. VSP has `GetSQLTraceState`, `ListSQLTraces`.
+**Delivered:** `SAPDiagnose(action="sql_trace_state")`, `set_sql_trace_state`, and
+`sql_trace_directory` use `/sap/bc/adt/st05/trace/*` to read/arm/disarm ST05 across instances and return
+SAP's TMC viewer deep-link. Verified on 758.
+
+**Remaining:** implement a bounded GUI-free record inventory/detail reader through the discovered
+`/sap/bc/adt/crosstrace/*` surface (present on 758; request types include OData V2/V4). There is no ST05
+ADT record endpoint behind the directory action.
 
 **Why:** Completes the diagnostics story alongside short dumps and profiler traces. Useful for AI-assisted performance analysis.
 
-**Why not:** SQL tracing is a performance debugging tool, not a development task — LLMs don't optimize query performance, humans do. ADT's trace endpoints are read-only (can't start/stop traces from ADT — users must start them in SAP's ST05), making the tool half-featured. A single SQL trace can contain thousands of lines, bloating the LLM context window for marginal diagnostic value.
+**Guardrail:** a trace can contain thousands of records and sensitive literals. The follow-up needs
+bounded pagination, redaction, explicit data scope, and clear trace-lifecycle ownership; do not expose
+an unbounded raw feed merely to remove the browser step.
 
 ---
 
@@ -995,26 +1003,35 @@ Note: The `/enhancements/elements` endpoint is **on-prem only** (SAP BTP ABAP Cl
 |-------|-------|
 | **Priority** | P2 |
 | **Effort** | M (3-5 days) |
-| **Risk** | Low |
+| **Risk** | Medium — gCTS import/deploy is transactional and system-wide |
 | **Usefulness** | Medium — Git-based ABAP workflows |
-| **Status** | Complete (2026-04-18) |
+| **Status** | Partial — read clients and conservative abapGit workflows shipped; unverifiable accepted mutations return incomplete; gCTS mutation deferred |
 | **Source** | Dassian, [VSP eval](https://github.com/arc-mcp/arc-1/blob/main/docs/compare/vibing-steampunk/evaluations/81cce41-gcts-tools.md), abap-adt-api |
 
 **What was delivered:**
 - New `SAPGit` intent tool with backend auto-selection (prefers gCTS, falls back to abapGit).
 - New backend clients: `src/adt/gcts.ts` (JSON `/sap/bc/cts_abapvcs/*`) and `src/adt/abapgit.ts` (XML/HATEOAS `/sap/bc/adt/abapgit/*`).
-- New safety gate `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES` (default `false`) for all git write operations.
+- New safety gate `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES` (default `false`) for Git write operations.
 - Feature probing extended with gCTS detection; tool registration is feature-gated.
 - End-to-end coverage added (unit + integration + e2e for SAPGit read paths and safety behavior).
+- gCTS response wrappers and credential redaction were hardened against live and SAP-authored client evidence.
 
-**Backend coverage:**
-- **Both:** `list_repos`, `clone`, `pull`, `switch_branch`, `create_branch`, `unlink`
-- **gCTS-only:** `whoami`, `config`, `branches`, `history`, `objects`, `commit`
-- **abapGit-only:** `external_info`, `check`, `stage`, `push`
+**Current backend coverage:**
+- **Both:** `list_repos`
+- **gCTS reads:** `whoami`, `config`, `branches`, `history`, `objects`
+- **abapGit:** `external_info`, `check`, `stage`, `clone`, `pull`, `push`, `switch_branch`,
+  `create_branch`, `unlink`, subject to action gates and subtree package checks. Clone/pull evidence is
+  unverified; selected push and branch changes return error/incomplete after acceptance; unlink succeeds
+  only after absence readback. Callers must inspect state before retrying.
+- **gCTS mutation names, quarantined before HTTP mutation:** `clone`, `pull`, `switch_branch`,
+  `create_branch`, `unlink`
 
-**Result:** FEAT-22 is closed; ARC-1 now has parity on gCTS/abapGit workflows with leading competitors while preserving ARC-1's safety model.
+**Remaining contract:** safe gCTS mutation needs a no-import staging step, affected-object inventory,
+authorization/package preflight, explicit deploy, terminal readback, and rollback. ARC-1 fails these
+actions closed until that complete transaction is implemented; correcting route shapes alone is not
+considered delivery.
 
-**Competitive update:** VSP's gCTS lead is closed for the prioritized workflow set via `SAPGit`.
+**Result:** the read and abapGit foundation is usable; full gCTS workflow parity is not claimed.
 
 ---
 
@@ -1549,17 +1566,18 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 | **Effort** | XS (< 1 day) |
 | **Risk** | Low |
 | **Usefulness** | Medium — CI/CD integration |
-| **Status** | Not started |
+| **Status** | Partial — dedicated CLI supports text, JSON, and Checkstyle; JUnit4/codeclimate remain |
 | **Source** | [sapcli comparison](https://github.com/arc-mcp/arc-1/blob/main/docs/compare/09-sapcli.md) |
 
-**What:** Format ATC check results as JUnit4 XML, checkstyle XML, or codeclimate JSON. Currently ARC-1 returns raw ATC results.
+**What:** Format ATC check results for CI. The dedicated `arc1 atc` command now emits text, structured
+JSON, or Checkstyle and exits `3` when SAP cannot prove the result complete. JUnit4 and codeclimate JSON
+remain open; the generic MCP action keeps its legacy raw result by default.
 
 **Why:** Standard output formats enable integration with CI/CD pipelines (GitHub Actions, Jenkins, GitLab CI) and code quality dashboards.
 
-**Implementation:**
-- Add `format` parameter to ATC handler in `src/handlers/intent.ts` (`raw`, `junit4`, `checkstyle`, `codeclimate`)
-- Formatter functions in new `src/adt/atc-formatters.ts`
-- Default to current format for LLM consumption; optional structured formats for CI/CD
+**Remaining implementation:**
+- Add JUnit4 and codeclimate formatters without weakening the current incomplete-run exit contract.
+- Keep the current legacy MCP result as the default for LLM consumption.
 
 ---
 
@@ -2035,22 +2053,28 @@ For FUGR (function groups), the same pattern applies with `objecttype=FUGR/P` an
 |-------|-------|
 | **Priority** | P2 |
 | **Effort** | S (1-2 days) |
-| **Risk** | Low (CLI-only, behind existing `call` generic entry point) |
+| **Risk** | Medium — CLI parsing/reporting plus shared HTTP, AUnit, CTS, Git, audit, and safety semantics |
 | **Usefulness** | Medium — reduces "why can't the CLI do X?" support load |
-| **Status** | Not started |
+| **Status** | Partial — direct dispatcher/config parity and dedicated CI checks implemented for the next release; full shortcut parity remains |
 | **Source** | PR [#179](https://github.com/arc-mcp/arc-1/pull/179) matrix |
 
-**What:** The CLI exposes generic `call` + `tools` entry points plus ergonomic shortcuts for some MCP tools, but the shortcuts have drifted from the Zod schemas. PR #179's matrix shows 9 of 12 MCP tools (SAPWrite, SAPNavigate, SAPTransport, SAPGit, SAPContext, SAPLint, SAPManage and the extended actions of SAPRead/SAPDiagnose/SAPActivate) have no shortcut or incomplete shortcut coverage.
+**What:** The CLI exposes authoritative `call` + `tools` entry points plus ergonomic shortcuts. Direct
+calls now reuse strict schemas, dispatcher safety/audit, startup auth checks, and target-local feature
+evidence. Dedicated `unittest`, `atc`, `diff`, and offline `lint` commands add deterministic CI exits
+and reports. Full ergonomic shortcut coverage for every action is still intentionally incomplete;
+`call SAPX` remains the non-drifting complete surface.
 
 **Why:** CLI drift forces users into `call SAPX --arg key=value` syntax for any non-basic operation. This hides capabilities from ad-hoc users and makes the CLI hard to recommend alongside the MCP server.
 
-**Implementation options:**
-1. Hand-write the missing shortcuts — faster, but will drift again next time a schema changes.
-2. Auto-generate shortcut help (required/optional field hints) from the Zod schemas at build time — slower first cut, but prevents future drift.
+**Remaining implementation options:**
+1. Hand-write additional high-value shortcuts while keeping handler validation authoritative.
+2. Auto-generate shortcut help (required/optional field hints) from schemas at build time.
 
-**Why not:** CLI usage is minor compared to MCP-first usage (Claude Desktop, Cursor, etc.). Option 2 adds build-time complexity. Defer if CLI shortcut requests stay sporadic.
+**Why not yet:** `call` already exposes every tool without duplicating validation, while generated
+shortcut help adds build-time complexity. Add shortcuts only where they improve a concrete workflow.
 
-**Related follow-up from PR #179:** rename the local `lint` CLI command to `lint-local` or `offline-lint` to free `lint` for the `SAPLint` MCP tool; clean up XML entity residue (`&quot;`, `&gt;`) in `SyntaxMessage.text`.
+**Resolved direction:** `lint` remains the offline local shortcut but now dispatches through `SAPLint`
+validation/audit without SAP I/O; no second command name is needed.
 
 ---
 
@@ -2698,7 +2722,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 ### CLEAN-02: CLI Surface
 | Field | Value |
 |-------|-------|
-| **Status** | Complete — minimal CLI: `arc1 search`, `arc1 source`, `arc1 lint`, `arc1 serve` |
+| **Status** | Complete for the authoritative surface: `serve`, `call`, `tools`, `read`/`source`, `activate`, `syntax`, `sql`, `search`, dedicated `unittest`/`atc`/`diff`/`lint`, cookie extraction, version, and config. Full ergonomic shortcut parity is tracked by FEAT-60. |
 
 ---
 
@@ -2727,7 +2751,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 ---
 
 <!-- x-release-please-start-version -->
-## Current State (v1.0.2 — TypeScript)
+## Current State (v1.1.0 — TypeScript)
 <!-- x-release-please-end -->
 
 | Area | Status |
@@ -2763,7 +2787,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 | Object Caching | SQLite + memory cache with request-driven ETag revalidation (#31) |
 | LLM Search UX | Auto-transliteration, field-name hints, cache indicators |
 | HTTP Client | Native fetch + undici (replaced axios) (#35) |
-| Test Coverage | 4,101 passing unit tests (810 Vitest suites, local Node 22 run on 2026-06-26) + 279-test default integration profile; E2E/BTP/slow SAP profiles are CI/manual; coverage telemetry is informational |
+| Test Coverage | June baseline: 4,101 unit tests plus the default integration profile. The 2026-08-17 CLI/security change set added substantial coverage; its final frozen-tree count is pending the post-documentation rerun and must not be inferred from an intermediate run. E2E/BTP/slow SAP profiles remain CI/manual. |
 | Documentation | Architecture, auth guides, Docker guide, setup phases, security guide, RAP/common-use-case workflow skills |
 
 ---
@@ -2836,7 +2860,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 12. **RFC 9700 OAuth security** — state + PKCE, loopback binding, audience validation
 
 **Key competitive threats** (tracked in [`docs/compare/`](https://github.com/arc-mcp/arc-1/tree/main/docs/compare/)):
-1. **vibing-steampunk** (392 stars) — community favorite. **Major threat escalation (Apr 2026)**: massive sprint added Streamable HTTP, API release state, i18n (7 tools), gCTS (10 tools), version history, code coverage, health analysis, rename preview, dead code analysis, CDS impact, and recovery primitives. ARC-1 has now closed the prioritized gCTS/abapGit gap via FEAT-22, but VSP remains strong on breadth and release velocity.
+1. **vibing-steampunk** (392 stars) — community favorite. **Major threat escalation (Apr 2026)**: massive sprint added Streamable HTTP, API release state, i18n (7 tools), gCTS (10 tools), version history, code coverage, health analysis, rename preview, dead code analysis, CDS impact, and recovery primitives. ARC-1 has closed the read/abapGit foundation of FEAT-22, but safe gCTS mutation remains open; VSP remains strong on breadth and release velocity.
 2. **fr0ster** (v7.2.1, 120+ releases, 63 stars) — closest enterprise competitor; doubled its stars since April. Q2 sprint added SearchSource (package source grep), RuntimeRunClass + profiling, certificate/Kerberos auth, function-group include CRUD, and — notably — **DNS-rebinding protection (v7.2.0)**, the one security control ARC-1 currently lacks (→ **SEC-14**). 9+ auth providers, TLS, RFC, embeddable. Watch for convergence on enterprise **and security** features.
 3. **dassian-adt / abap-mcpb** (33 stars, 53 tools) — fast April sprint added OAuth/XSUAA, multi-system support, more transport tooling, trace flows, and test/include helpers. No safety system is still a major gap, but the pace is notable.
 4. **btp-odata-mcp** (120 stars) — different category (OData) but high adoption. Could expand into ADT territory.
@@ -2868,6 +2892,7 @@ The VS Code client-side issue — [microsoft/vscode#314715](https://github.com/m
 
 | Date | Update |
 |------|--------|
+| 2026-08-17 | CLI/CI hardening implemented for the next release: strict direct-dispatch parity, harmless-only AUnit evidence, completeness-aware ATC, terminal CTS confirmation, gCTS mutation quarantine, conservative abapGit postconditions, and documentation/schema parity. Final frozen-tree validation count is pending. |
 | 2026-06-26 | DDIC structure context + docs audit. `SAPContext(action="structure", type="TABL")` now returns recursive DDIC include trees plus append/extension structures, with A4H 2025 where-used fallback. The roadmap and feature matrix ARC-1 column were re-audited against current repo facts: MCP OAuth/DCR, dry-run scope, RAP preflight, AUnit coverage, diagnostics/DDIC coverage, and test counts. |
 | 2026-06-25 | Shipped the 2026-06-24 deep-scan gaps in 8 PRs, each live-verified on a4h 758 (S/4HANA 2023) and a4h-2025 816 (ABAP Platform 2025): FEAT-63 pre-release inactive-objects check + COMPAT-05 K/W/T fix (PR #501), FEAT-64 unknown-column hint (PR #502), FEAT-41 AUnit coverage (PR #503), FEAT-65 TTYP read+create (PR #504), FUGR structural-include write (PR #505), CDS API-release write via `SAPManage set_api_state` (PR #506), and RAP behavior-extension create (PR #507). SEC-14 was implemented then deferred in PR #500 because mandatory HTTP auth is the primary control. FEAT-62 (TRAN write) remains hard-blocked because `/aps/iam/tran` is absent on all three test systems. |
 | 2026-06-24 | Competitor deep scan of fr0ster v7.2.1, sapcli, and dassian-adt found SEC-14, FEAT-63, FEAT-64, FEAT-65, COMPAT-05, and a dual-signal CDS API-release-write gap. It also reinforced FEAT-41 and FEAT-62 with sapcli reference implementations. See [`docs/compare/`](https://github.com/arc-mcp/arc-1/tree/main/docs/compare/). |

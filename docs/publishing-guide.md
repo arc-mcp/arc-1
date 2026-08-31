@@ -404,7 +404,8 @@ copilot mcp get arc-1 --json --show-secrets
 ```
 
 For an isolated local regression, set `COPILOT_HOME` to a temporary directory before those commands.
-The install must report 22 skills; `mcp get` must show `type: stdio`, `command: npx -y arc-1@latest`,
+The install must report every bundled skill; `mcp get` must show `type: stdio`,
+`command: npx -y arc-1@latest`,
 `sourcePluginSpec: true`, and a resolved `env.PLUGIN_DATA`, with no literal `${user_config.*}` or
 `${env:...}` configuration values. Copilot preserves the portable `${PLUGIN_DATA}` token in the
 diagnostic `cwd` field and expands it when launching the process.
@@ -417,7 +418,7 @@ diagnostic `cwd` field and expands it when launching the process.
   server shape, credential-free MCP config, adapter isolation, release wiring, and version parity.
 - Validate `plugin.json` and `mcp.json` against the canonical 1.0.0 JSON Schemas and validate every
   skill with the official `skills-ref` library before publishing a format change.
-- Re-run the Claude strict validator and Copilot marketplace install after any manifest precedence
+- Re-run the Claude plugin validator and Copilot marketplace install after any manifest precedence
   change; both clients consume the same repository through different manifests.
 
 ### Distribution Follow-Up

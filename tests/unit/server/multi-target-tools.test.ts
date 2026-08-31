@@ -55,6 +55,7 @@ describe('multi-target tool surface', () => {
     expect(lint.inputSchema.properties).not.toHaveProperty('style');
 
     const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose') as ToolDefinition;
+    expect(diagnose.inputSchema.properties).toHaveProperty('includeSubpackages');
     expect(property(diagnose, 'action').enum).toEqual([
       'syntax',
       'unittest',
@@ -77,6 +78,7 @@ describe('multi-target tool surface', () => {
     expect(property(transport, 'action').enum).toEqual(['list', 'get', 'check', 'history']);
     expect(transport.inputSchema.properties).not.toHaveProperty('target');
     expect(transport.inputSchema.properties).not.toHaveProperty('transportLayer');
+    expect(transport.inputSchema.properties).not.toHaveProperty('resultFormat');
   });
 
   it('adds data and SQL only when the effective target/union policy permits them', () => {

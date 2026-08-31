@@ -119,7 +119,11 @@ export interface GctsSystemInfo {
 }
 
 export interface GctsConfig {
-  ckey: string;
+  /** Repository-specific configuration fields returned by /repository/{rid}/config. */
+  key?: string;
+  value?: string;
+  /** Global /config metadata fields (live-verified on gCTS 2.7.1 / SAP_BASIS 758). */
+  ckey?: string;
   ctype?: string;
   datatype?: string;
   defaultValue?: string;
@@ -150,11 +154,18 @@ export interface GctsBranch {
 }
 
 export interface GctsCommit {
+  /** Live gCTS commit identifier (`commits[].id`). */
+  id?: string;
+  /** Backward-compatible alias populated from `id`. */
   commit?: string;
   author?: string;
+  /** Live gCTS author mail field (`commits[].authorMail`). */
+  authorMail?: string;
+  /** Backward-compatible alias populated from `authorMail`. */
   email?: string;
   date?: string;
   message?: string;
+  description?: string;
   [key: string]: unknown;
 }
 
@@ -163,13 +174,6 @@ export interface GctsObject {
   name?: string;
   package?: string;
   path?: string;
-  [key: string]: unknown;
-}
-
-export interface GctsCloneResult {
-  rid?: string;
-  result?: string;
-  message?: string;
   [key: string]: unknown;
 }
 
@@ -307,12 +311,6 @@ export interface CoverageSummary {
   /** Methods below 100% statement coverage, worst-first (the actionable "test next" subset the
    *  object aggregate hides). Present only when the measurement carries per-method nodes. */
   methodsBelowFull?: MethodCoverage[];
-}
-
-/** Result of a unit-test run: the test outcomes plus optional coverage (when requested + available). */
-export interface UnitTestRunResult {
-  tests: UnitTestResult[];
-  coverage?: CoverageSummary;
 }
 
 /**

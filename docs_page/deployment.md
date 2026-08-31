@@ -196,14 +196,15 @@ For any deployment visible to a network, before you open the gate:
 - [ ] `SAP_ALLOWED_PACKAGES` set to a specific allowlist, not `*`
 - [ ] `SAP_ALLOW_DATA_PREVIEW=false` and `SAP_ALLOW_FREE_SQL=false` unless you need them
 - [ ] `SAP_ALLOW_TRANSPORT_WRITES=false` unless you need CTS management
-- [ ] `SAP_ALLOW_GIT_WRITES=false` unless you need gCTS/abapGit writes (reads are always allowed when the backends are available)
+- [ ] `SAP_ALLOW_GIT_WRITES=false` unless you need gated abapGit mutations/SAP-side Git egress. gCTS
+      reads remain available when detected, but gCTS mutations are quarantined regardless of this flag.
 - [ ] PP/API-key topology is explicit: recommended strict/separate instances, or supported mixed mode with `SAP_PP_STRICT=false`
 - [ ] `ARC1_RATE_LIMIT` set (e.g. `60`) for multi-user instances — the per-user MCP quota is **off by default**, so one runaway agent loop can saturate the shared SAP request semaphore
 - [ ] `SAP_INSECURE=false` (the default) — the bundled `manifest.yml` / `mta.yaml` ship `"false"`; keep it that way on CA-signed landscapes
 - [ ] If using cookies: `SAP_PP_ENABLED=true` and cookies both set? → refuses unless `SAP_PP_ALLOW_SHARED_COOKIES=true` escape hatch is explicit
 - [ ] Audit log sink configured (file or BTP Audit Log Service) — payload bodies and result previews are centrally redacted, but logs still contain identities, paths, statuses, sizes, and timing metadata; restrict permissions and rotation
 - [ ] `ARC1_CACHE=memory`/`none` or an encrypted volume on IP-sensitive landscapes — the SQLite cache stores SAP source in cleartext at `.arc1-cache.db`
-- [ ] Image pinned to an exact version (for example `:1.0.2`), not `:latest` <!-- x-release-please-version -->
+- [ ] Image pinned to an exact version (for example `:1.1.0`), not `:latest` <!-- x-release-please-version -->
 - [ ] Update procedure rehearsed → [updating.md](updating.md)
 
 Full production hardening guide: [security-guide.md](security-guide.md).

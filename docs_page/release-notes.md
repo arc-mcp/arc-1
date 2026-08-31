@@ -26,6 +26,50 @@ until they are promoted.
     line — nobody runs them today, and the one part that still matters when jumping from an ancient version
     is the **v0.7.0 authorization break**, which is spelled out in full at the bottom of this page.
 
+## 1.1.1 — you get the scope you asked for (2026-08-20)
+
+Three correctness fixes with one theme: ARC-1 was quietly running a *different* query than the caller
+asked for, and the result looked clean either way. ATC ran the Code Inspector variant literally named
+`DEFAULT` instead of the system's configured one, a transport listing for all owners silently narrowed
+to the calling user, and an ATC run that SAP never declared complete spent the caller's entire timeout
+before saying so. Nothing here needs configuration; the visible change is that findings and transport
+lists can differ from 1.1.0 because the scope is now the one you requested.
+
+| Change | What it means | Action |
+|---|---|---|
+| Bind the ATC check variant `SAPDiagnose` claims to run ([#708](https://github.com/arc-mcp/arc-1/pull/708)) | `SAPDiagnose(action="atc")` without `variant` sent no `checkVariant` at all, and SAP does **not** substitute the configured system variant in that case — it runs the Code Inspector variant literally named `DEFAULT`. ARC-1 now resolves `systemCheckVariant` from `/atc/customizing` and sends it explicitly, which is what SAP's own language server does. A `variant` name that does not exist is rejected instead of being silently swapped for `DEFAULT` behind an HTTP 200. `resultFormat="structured"` reports the bound variant and how it was chosen. **Findings can differ from 1.1.0**: on a validation system the bare run gained a priority-1 *"Objects of type PROG are not allowed in ABAP Cloud Development"* and lost two `DEFAULT`-only *Critical Statements* hits. Systems whose configured variant already is `DEFAULT` see no change. | `none` — but re-baseline any stored ATC finding counts |
+| Stop ATC polling once the worklist settles ([#710](https://github.com/arc-mcp/arc-1/pull/710)) | `runAtcCheck` waited for a nine-part completeness verdict, and some worklists never satisfy every part even after they stop changing — so the run consumed the whole budget before returning. Measured on NW 7.50: wall time tracked `--timeout` exactly (45 s → 46 s, 240 s → 240 s); it is now ~13 s at either budget. The verdict itself is unchanged — a settled-but-incomplete run still reports `complete: false`, still errors on the default payload, and `arc1-cli atc` still exits `3`. The default (non-`structured`) ATC payload now also carries `variant` and `variantSource`, and a variant used without validation reports `variantSource: "requestedUnverified"`. | `none` |
+| Forward `user=*` when listing transports across owners ([#706](https://github.com/arc-mcp/arc-1/pull/706)) | `SAPTransport(action="list", user="*")` documented an all-owner query but dropped the parameter before calling ADT, so SAP applied its default owner filter and returned only the calling user's requests. Omission and `user=*` are deliberately different requests on both 7.50 and 7.58. **Result sets grow**: on a validation system the same call went from 1 request to 400+. SAP's own ordering is kept — transport numbers are not change timestamps, so the previous "newest-first" ID sort was removed. | `none` — expect larger lists; narrow with `user=<name>` |
+
+**Tool-surface changes**
+
+- `SAPDiagnose` — the `atc` action description now states that omitting `variant` binds the system default and that an unknown variant is an error; the `variant` parameter description is unchanged.
+- `SAPTransport` — the `user` parameter description changed to "List user (default: current SAP user; `\*` means all visible owners)".
+- `SAPDiagnose action="atc"` results gained `variantSource` (`requested` | `requestedUnverified` | `systemDefault` | `sapFallback`), and the default payload gained `variant` + `variantSource` alongside `findings`.
+
+Background for the ATC changes: [check-variant dossier](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-08-19-atc-default-check-variant.md) and [completeness-polling dossier](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-08-20-atc-completeness-polling.md).
+
+## 1.1.0 — a truthful CLI for SAP CI workflows (2026-08-18)
+
+The shipped Node CLI becomes a supported automation path rather than a thin, inconsistent wrapper around
+the MCP server. Direct commands now use the same configuration, authentication preflight, feature discovery,
+authorization, safety gates and audit path as MCP calls. Dedicated AUnit, ATC, diff and lint commands add
+deterministic CI exit codes and fail closed when SAP's evidence is incomplete. The direct CI surface and the
+unavailable gCTS mutation paths were not established usable contracts, so these compatibility corrections ship
+as a minor release; pipelines that already trialed the CLI should review the actions below.
+
+| Change | What it means | Action |
+|---|---|---|
+| Harden the CLI for SAP CI workflows ([#703](https://github.com/arc-mcp/arc-1/pull/703)) | `arc1`, `arc-1` and `arc1-cli` now share strict command parsing and direct-command bootstrap. New `unittest`, `atc`, `diff` and offline `lint` commands produce JSON/JUnit/Checkstyle reports with stable exit semantics: `0` passed, `1` evaluated failure or SAP/tool/safety failure, `2` CLI/configuration error, `3` incomplete or non-evaluable evidence. AUnit reconciles harmless-only execution with active source declarations; ATC, diff, lint, CTS release and Git mutations no longer claim success from incomplete evidence. HTTP deadlines cover queues, authentication, retries and fetches. gCTS mutations remain quarantined; uncertain abapGit mutations return incomplete/error instead of optimistic success. | Pin `arc-1@1.1.0` in CI. Configure credentials through environment variables, treat exit `3` as incomplete rather than green, and preserve the process exit code when publishing reports. Remove the unavailable `SAPGit.commit` action and its `description` argument from callers. Recursive CTS release with a restrictive transport allowlist must use single releases or an explicit `*` grant. See [Updating → v1.1.0](updating.md#v110-clici-hardening-compatibility-changes). |
+| Review a transport as source diffs ([#671](https://github.com/arc-mcp/arc-1/pull/671)) | `SAPTransport action="diff"` maps request and task revisions to the owning source objects, rolls LIMU entries up to their parent class, compares every relevant class include, and reports whether each baseline was exact or inferred. Non-source objects remain visible as inventory instead of disappearing. | `none` — use `arc1 diff <transport>` or `SAPTransport(diff)` when a review needs the actual source changes rather than only the object list. |
+| Opt-in gzip for WAF-blocked data preview ([#694](https://github.com/arc-mcp/arc-1/pull/694)) | Some body-inspecting reverse proxies reject valid ABAP SQL-shaped data-preview POSTs before SAP sees them. A default-off option can gzip request bodies only for the exact freestyle/DDIC data-preview collections while preserving the same bytes through every retry and transport. No SQL, data, scope or SAP authorization gate is relaxed. | Prefer a narrowly scoped WAF rule correction. If that is unavailable and correlated gateway evidence confirms this fingerprint, set `SAP_GZIP_DATAPREVIEW_BODY=true`. |
+| Correct ADT source text search ([#683](https://github.com/arc-mcp/arc-1/pull/683)) | `SAPSearch searchType="source_code"` now uses the lowercase ADT collection, real paging parameters and live response model. It maps slash-form object types correctly and distinguishes a backend-disabled source-search service from an authorization failure. | `none` — systems where the backend feature is disabled now return an accurate unsupported result instead of misleading 404/authorization guidance. |
+| Correct `TABLE_QUERY` IN/NOT IN guidance ([#691](https://github.com/arc-mcp/arc-1/pull/691)) | The tool schema now tells callers to pass bare comma-separated values; ARC-1 performs the quoting and escaping. Following the old quoted example produced valid SQL that silently matched nothing. | Pass `values: "T000,T001"`, not `values: "'T000','T001'"`. |
+| Resolve transitive dependency advisories ([#672](https://github.com/arc-mcp/arc-1/pull/672)) | Lockfile-only updates move `fast-uri`, `ip-address`, `hono` and `postcss` to patched versions. The reported vulnerable APIs were not reachable through ARC-1, but fresh installs and the audit gate are clean again. | `none` |
+| Fail closed when SAP refuses a syntax check ([#681](https://github.com/arc-mcp/arc-1/pull/681)) | SAP can return HTTP 200 with `status="notProcessed"`, notably for a missing class. ARC-1 previously discarded that status and reported an empty, clean result. It now returns `checked:false` and an error result explaining that the source was not validated. | Consumers should honor `checked` as well as `hasErrors`; a refused check is not approval. |
+| Read CSRF token and session cookie atomically ([#680](https://github.com/arc-mcp/arc-1/pull/680)) | Concurrent bearer-authenticated requests could pair one SAP session's CSRF token with another session's cookie, causing a recoverable 403 and retry. The pair is now captured together. Basic and cookie authentication behavior is unchanged. | `none` |
+| Support DDLS table functions on SAP_BASIS 750 ([#693](https://github.com/arc-mcp/arc-1/pull/693)) | The pre-7.57 guard again rejects only unsupported CDS table entities, not supported table functions, across single and batch writes. Localized 7.50 dependency failures during delete no longer become false object-not-found hints. | `none` |
+
 ## 1.0.2 — completes the 1.0.1 release (2026-08-03)
 
 **No product change: the package contents are identical to 1.0.1.** 1.0.1's own release pipeline stopped

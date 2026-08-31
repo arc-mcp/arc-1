@@ -263,22 +263,246 @@ export type AuditEvent =
 
 const SENSITIVE_KEY_FRAGMENTS = [
   'password',
+  'passwd',
+  'passphrase',
+  'pwd',
   'token',
   'secret',
   'cookie',
+  'session',
+  'sessionid',
+  'jsessionid',
+  'sapsessionid',
   'authorization',
   'csrf',
   'apikey',
   'authpwd',
+  'authuser',
   'authtoken',
   'remotepassword',
+  'credential',
+  'accesskey',
+  'privatekey',
+  'sshkey',
+  'signature',
 ];
+const KNOWN_SENSITIVE_FIELD_KEYS = new Set([
+  'password',
+  'passwd',
+  'passphrase',
+  'pwd',
+  'token',
+  'secret',
+  'cookie',
+  'session',
+  'sessionid',
+  'jsessionid',
+  'sap-sessionid',
+  'sap_sessionid',
+  'authorization',
+  'csrf',
+  'apikey',
+  'api-key',
+  'api_key',
+  'authpwd',
+  'auth-pwd',
+  'auth_pwd',
+  'authuser',
+  'auth-user',
+  'auth_user',
+  'authtoken',
+  'auth-token',
+  'auth_token',
+  'remotepassword',
+  'remote-password',
+  'remote_password',
+  'credential',
+  'accesskey',
+  'access-key',
+  'access_key',
+  'privatekey',
+  'private-key',
+  'private_key',
+  'sshkey',
+  'ssh-key',
+  'ssh_key',
+  'signature',
+  'x-csrf-token',
+  'x_csrf_token',
+  'set-cookie',
+  'x-api-key',
+  'proxy-authorization',
+]);
+const KNOWN_SAFE_FIELD_KEYS = new Set(['includesignature']);
 
 const PAYLOAD_BODY_KEYS = new Set(['errorbody', 'errormessage', 'requestbody', 'responsebody', 'resultpreview']);
+const REDACTION_LIMIT_MARKER = '[TRUNCATED: redaction budget exceeded]';
+const MAX_REDACTION_DEPTH = 16;
+const MAX_REDACTION_ENTRIES = 512;
+const MAX_AUDIT_STRING_LENGTH = 500;
+const AUDIT_STRING_PREFIX_LENGTH = 200;
+
+interface RedactionState {
+  remainingEntries: number;
+  seen: WeakSet<object>;
+}
+
+type RedactionMode = 'audit-event' | 'tool-args';
+
+function normalizeSafeUnicodeEscapes(value: string): string {
+  return value.replace(/\\{1,8}u([0-9a-f]{4})/gi, (encoded, hex: string) => {
+    const decoded = String.fromCharCode(Number.parseInt(hex, 16));
+    return /^[a-z0-9_.-]$/i.test(decoded) ? decoded : encoded;
+  });
+}
+
+function canonicalKey(key: string): string {
+  return normalizeSafeUnicodeEscapes(key)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
 
 function isSensitiveKey(key: string): boolean {
+  const normalized = canonicalKey(key);
+  return (
+    !KNOWN_SAFE_FIELD_KEYS.has(normalized) && SENSITIVE_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment))
+  );
+}
+
+function isUrlKey(key: string): boolean {
+  const normalized = canonicalKey(key);
+  return ['url', 'urls', 'uri', 'uris', 'href', 'hrefs'].some(
+    (suffix) => normalized === suffix || normalized.endsWith(suffix),
+  );
+}
+
+function isSensitiveUrlQueryKey(key: string): boolean {
   const lower = key.toLowerCase();
-  return SENSITIVE_KEY_FRAGMENTS.some((fragment) => lower.includes(fragment));
+  return (
+    isSensitiveKey(key) ||
+    ['auth', 'credential', 'access_key', 'accesskey', 'signature'].some((fragment) => lower.includes(fragment))
+  );
+}
+
+function redactCredentialAssignments(value: string): string {
+  return value
+    .replace(
+      /\bauthorization\s*([:=])\s*(?:bearer|basic)\s+(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      'authorization$1[REDACTED]',
+    )
+    .replace(
+      /\b(bearer|basic)\s+(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      '$1 [REDACTED]',
+    )
+    .replace(
+      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\{1,64})?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      '$1$2[REDACTED]',
+    );
+}
+
+function normalizeEscapedUrlSlashes(value: string): string {
+  return normalizeSafeUnicodeEscapes(value.replace(/\\{1,8}\//g, '/'));
+}
+
+/** Redact query-style assignments in a query string or URL fragment, including encoded keys. */
+function sanitizeUrlAssignments(value: string): string {
+  return redactCredentialAssignments(value).replace(
+    /(^|[&;])([^=&;]+)(?:=([^&;]*))?/g,
+    (part, separator: string, rawKey: string) => {
+      let decodedKey = rawKey;
+      try {
+        decodedKey = decodeURIComponent(rawKey.replace(/\+/g, ' '));
+      } catch {
+        // Keep the raw key for the sensitivity check.
+      }
+      return isSensitiveUrlQueryKey(decodedKey) ? `${separator}[REDACTED]=[REDACTED]` : part;
+    },
+  );
+}
+
+function sanitizeUrl(value: string): string {
+  const normalizedValue = normalizeEscapedUrlSlashes(value);
+  try {
+    const parsed = new URL(normalizedValue);
+    let changed = parsed.username.length > 0 || parsed.password.length > 0;
+    if (changed) {
+      parsed.username = '';
+      parsed.password = '';
+    }
+    const sanitizedPath = redactCredentialAssignments(parsed.pathname);
+    if (sanitizedPath !== parsed.pathname) {
+      parsed.pathname = sanitizedPath;
+      changed = true;
+    }
+    if (parsed.search) {
+      const sanitizedSearch = sanitizeUrlAssignments(parsed.search.slice(1));
+      if (sanitizedSearch !== parsed.search.slice(1)) {
+        parsed.search = `?${sanitizedSearch}`;
+        changed = true;
+      }
+    }
+    if (parsed.hash) {
+      const sanitizedHash = sanitizeUrlAssignments(parsed.hash.slice(1));
+      if (sanitizedHash !== parsed.hash.slice(1)) {
+        parsed.hash = `#${sanitizedHash}`;
+        changed = true;
+      }
+    }
+    return changed ? parsed.toString() : normalizedValue;
+  } catch {
+    // Invalid URLs are rejected later by the handler, but audit runs before validation. Apply a
+    // best-effort textual scrub so malformed userinfo/query secrets cannot escape first.
+    const withoutUserinfo = normalizedValue.replace(/^([a-z][a-z\d+.-]*:\/\/)[^/@\s]+@/i, '$1[REDACTED]@');
+    const fragmentStart = withoutUserinfo.indexOf('#');
+    const beforeFragment = fragmentStart >= 0 ? withoutUserinfo.slice(0, fragmentStart) : withoutUserinfo;
+    const fragment = fragmentStart >= 0 ? withoutUserinfo.slice(fragmentStart + 1) : undefined;
+    const queryStart = beforeFragment.indexOf('?');
+    const path = queryStart >= 0 ? beforeFragment.slice(0, queryStart) : beforeFragment;
+    const query = queryStart >= 0 ? beforeFragment.slice(queryStart + 1) : undefined;
+    return `${redactCredentialAssignments(path)}${query === undefined ? '' : `?${sanitizeUrlAssignments(query)}`}${
+      fragment === undefined ? '' : `#${sanitizeUrlAssignments(fragment)}`
+    }`;
+  }
+}
+
+function sanitizeText(value: string): string {
+  const normalized = normalizeEscapedUrlSlashes(value);
+  return redactCredentialAssignments(normalized).replace(/https?:\/\/[^\s<>"']+/gi, (candidate) => {
+    const trailing = candidate.match(/[),.;]+$/)?.[0] ?? '';
+    const core = trailing ? candidate.slice(0, -trailing.length) : candidate;
+    return `${sanitizeUrl(core)}${trailing}`;
+  });
+}
+
+function boundAuditString(value: string, originalLength = value.length): string {
+  if (value.length <= MAX_AUDIT_STRING_LENGTH && originalLength <= MAX_AUDIT_STRING_LENGTH) return value;
+  return `${value.slice(0, AUDIT_STRING_PREFIX_LENGTH)}... [truncated ${originalLength} chars]`;
+}
+
+function auditStringInput(value: string): string {
+  return value.length <= MAX_AUDIT_STRING_LENGTH ? value : value.slice(0, MAX_AUDIT_STRING_LENGTH);
+}
+
+function redactedAuditKey(entryKey: string, target: Record<string, unknown>): string {
+  const normalizedEntryKey = normalizeSafeUnicodeEscapes(auditStringInput(entryKey));
+  const sensitiveKeyContainsData =
+    isSensitiveKey(normalizedEntryKey) && !KNOWN_SENSITIVE_FIELD_KEYS.has(normalizedEntryKey.toLowerCase());
+  const sanitized = sensitiveKeyContainsData
+    ? '[REDACTED sensitive key]'
+    : boundAuditString(sanitizeText(normalizedEntryKey), entryKey.length);
+  if (!Object.hasOwn(target, sanitized)) return sanitized;
+  let collision = 2;
+  while (Object.hasOwn(target, `[REDACTED duplicate key ${collision}]`)) collision += 1;
+  return `[REDACTED duplicate key ${collision}]`;
+}
+
+function setAuditEntry(target: Record<string, unknown>, entryKey: string, value: unknown): void {
+  Object.defineProperty(target, redactedAuditKey(entryKey, target), {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
 }
 
 function redactPayloadValue(value: unknown): string {
@@ -286,35 +510,66 @@ function redactPayloadValue(value: unknown): string {
   return '[REDACTED]';
 }
 
-function redactValue(key: string, value: unknown): unknown {
+function redactValue(key: string, value: unknown, state: RedactionState, depth: number, mode: RedactionMode): unknown {
+  if (depth > MAX_REDACTION_DEPTH || state.remainingEntries <= 0) return REDACTION_LIMIT_MARKER;
+  state.remainingEntries -= 1;
   if (isSensitiveKey(key)) return '[REDACTED]';
-  if (PAYLOAD_BODY_KEYS.has(key.toLowerCase())) {
+  if (mode === 'audit-event' && PAYLOAD_BODY_KEYS.has(canonicalKey(key))) {
     if (value == null) return value;
     return redactPayloadValue(value);
   }
-  if (Array.isArray(value)) return value.map((entry) => redactValue('', entry));
+  if (typeof value === 'string') {
+    const boundedInput = auditStringInput(value);
+    const sanitized = isUrlKey(key) ? sanitizeUrl(boundedInput) : sanitizeText(boundedInput);
+    return boundAuditString(sanitized, value.length);
+  }
+  if (Array.isArray(value)) {
+    if (state.seen.has(value)) return REDACTION_LIMIT_MARKER;
+    state.seen.add(value);
+    const result: unknown[] = [];
+    for (const entry of value) {
+      if (state.remainingEntries <= 0) {
+        result.push(REDACTION_LIMIT_MARKER);
+        break;
+      }
+      result.push(redactValue(key, entry, state, depth + 1, mode));
+    }
+    return result;
+  }
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactValue(k, v)]));
+    if (state.seen.has(value)) return REDACTION_LIMIT_MARKER;
+    state.seen.add(value);
+    const result: Record<string, unknown> = {};
+    for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
+      if (state.remainingEntries <= 0) {
+        setAuditEntry(result, '__truncated__', REDACTION_LIMIT_MARKER);
+        break;
+      }
+      setAuditEntry(result, entryKey, redactValue(entryKey, entryValue, state, depth + 1, mode));
+    }
+    return result;
   }
   return value;
 }
 
 /** Redact sensitive or high-volume SAP payload fields before any audit sink sees them. */
 export function redactAuditEvent(event: AuditEvent): AuditEvent {
-  return redactValue('', event) as AuditEvent;
+  return redactValue(
+    '',
+    event,
+    { remainingEntries: MAX_REDACTION_ENTRIES, seen: new WeakSet() },
+    0,
+    'audit-event',
+  ) as AuditEvent;
 }
 
-/** Sanitize tool call arguments — remove values that might contain sensitive data */
+/** Sanitize tool call arguments before the pre-dispatch audit event is emitted. */
 export function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (isSensitiveKey(key)) {
-      result[key] = '[REDACTED]';
-    } else if (typeof value === 'string' && value.length > 500) {
-      result[key] = `${value.slice(0, 200)}... [truncated ${value.length} chars]`;
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
+  return redactValue(
+    '',
+    args,
+    { remainingEntries: MAX_REDACTION_ENTRIES, seen: new WeakSet() },
+    0,
+    'tool-args',
+  ) as Record<string, unknown>;
 }

@@ -8,12 +8,16 @@ describe.sequential('E2E SAPGit tests', () => {
   let sapGitAvailable: boolean | undefined;
   let gctsAvailable: boolean | undefined;
   let abapGitAvailable: boolean | undefined;
+  let sapGitActions: string[] = [];
 
   beforeAll(async () => {
     client = await connectClient();
 
     const tools = await client.listTools();
-    sapGitAvailable = tools.tools.some((tool) => tool.name === 'SAPGit');
+    const sapGitTool = tools.tools.find((tool) => tool.name === 'SAPGit');
+    sapGitAvailable = Boolean(sapGitTool);
+    sapGitActions = ((sapGitTool?.inputSchema as { properties?: { action?: { enum?: string[] } } })?.properties?.action
+      ?.enum ?? []) as string[];
 
     if (!sapGitAvailable) return;
 
@@ -72,21 +76,43 @@ describe.sequential('E2E SAPGit tests', () => {
     const payload = JSON.parse(text);
     expect(payload.backend).toBe('gcts');
     expect(Array.isArray(payload.result)).toBe(true);
-    if (payload.result.length > 0) {
-      expect(
-        payload.result.some((entry: { ckey?: string }) => typeof entry?.ckey === 'string' && entry.ckey.length > 0),
-      ).toBe(true);
+    expect(payload.result.length).toBeGreaterThan(0);
+    expect(
+      payload.result.some((entry: { key?: string; ckey?: string }) =>
+        [entry?.key, entry?.ckey].some((key) => typeof key === 'string' && key.length > 0),
+      ),
+    ).toBe(true);
+    let redactedFields = 0;
+    for (const entry of payload.result as Array<Record<string, unknown>>) {
+      const key = String(entry.key ?? entry.ckey ?? '').toUpperCase();
+      if (key.includes('AUTH_USER') || key.includes('AUTH_PWD') || key.includes('AUTH_TOKEN')) {
+        for (const [field, value] of Object.entries(entry)) {
+          if (['value', 'defaultvalue', 'currentvalue', 'example'].includes(field.toLowerCase())) {
+            expect(value).toBe('[REDACTED]');
+            redactedFields += 1;
+          }
+        }
+      }
     }
+    expect(redactedFields).toBeGreaterThan(0);
   }, 120_000);
 
   it('SAPGit(action=external_info, backend=abapgit) returns remote branch info', async (ctx) => {
     requireOrSkip(ctx, sapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     requireOrSkip(ctx, abapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
+    if (!sapGitActions.includes('external_info')) {
+      return skipTest(ctx, 'SAPGit external_info is not enabled by the server write/Git safety ceiling');
+    }
     const result = await callTool(client, 'SAPGit', {
       action: 'external_info',
       backend: 'abapgit',
       url: 'https://github.com/abapGit-tests/CLAS.git',
     });
+    if (result.isError) {
+      const errorText = (result.content?.[0]?.text ?? '') as string;
+      expect(errorText).toMatch(/allowWrites=false|allowGitWrites=false|Git write|required scope|authorization/i);
+      return;
+    }
     const text = expectToolSuccess(result);
     const payload = JSON.parse(text);
     expect(payload.backend).toBe('abapgit');
@@ -94,27 +120,12 @@ describe.sequential('E2E SAPGit tests', () => {
     expect(payload.result.branches.length).toBeGreaterThan(0);
   }, 120_000);
 
-  it('SAPGit(action=clone) without --allow-git-writes returns safety error', async (ctx) => {
+  it('tools/list omits clone when Git writes are disabled without attempting a mutation', async (ctx) => {
     requireOrSkip(ctx, sapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
-    const backend = gctsAvailable ? 'gcts' : 'abapgit';
-    const args: Record<string, unknown> = {
-      action: 'clone',
-      backend,
-      url: 'https://github.com/abapGit-tests/CLAS.git',
-    };
-    if (backend === 'abapgit') args.package = '$TMP';
-
-    const result = await callTool(client, 'SAPGit', args);
-    const text = (result.content?.[0]?.text ?? '') as string;
-
-    if (result.isError && text.includes('Git write')) {
-      expectToolError(result, 'allowGitWrites=false');
-      return;
+    if (sapGitActions.includes('clone')) {
+      return skipTest(ctx, 'Server advertises Git writes; a negative gate test must not attempt a live clone');
     }
-    skipTest(
-      ctx,
-      'Server appears to run with --allow-git-writes=true; write safety gate is not expected in this environment',
-    );
+    expect(sapGitActions).not.toContain('clone');
   }, 120_000);
 
   it('SAPGit(action=whoami, backend=abapgit) returns backend mismatch error', async (ctx) => {

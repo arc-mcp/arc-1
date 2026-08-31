@@ -1,7 +1,7 @@
 # Agent Plugin
 
 ARC-1 is available as an [Agent Plugins 1.0](https://agent-plugins.org/) package alongside the
-Claude Desktop `.mcpb` extension. One installation provides the ARC-1 MCP server and all 22 SAP
+Claude Desktop `.mcpb` extension. One installation provides the ARC-1 MCP server and all bundled SAP
 development skills in this repository.
 
 The portable package is the repository root:
@@ -76,7 +76,7 @@ Add the checkout to user or workspace settings, then run **Developer: Reload Win
 Open **Chat: Open Customizations** → **Plugins** and **MCP: List Servers**. Verify that:
 
 - ARC-1 appears as an Agent Plugin with the version from root `plugin.json`.
-- The plugin contributes all 22 skills and one MCP server named `arc-1`.
+- The plugin contributes every bundled skill and one MCP server named `arc-1`.
 - The server source is the plugin and its launch is `npx -y arc-1@latest`.
 
 ### Cursor
@@ -90,8 +90,8 @@ ln -s /absolute/path/to/arc-1 ~/.cursor/plugins/local/arc-1
 ```
 
 Do not replace an existing `~/.cursor/plugins/local/arc-1` path without inspecting it first. Open
-**Customize** → **Plugins**, **Skills**, and **MCP Servers** and verify the same version, 22 skills,
-and `arc-1` server.
+**Customize** → **Plugins**, **Skills**, and **MCP Servers** and verify the same version, all bundled
+skills, and `arc-1` server.
 
 ### What To Expect
 
@@ -173,8 +173,8 @@ BTP service keys, feature gates, and the complete safety surface.
 
 ## Verify
 
-For Copilot CLI, these commands should show versioned plugin metadata, 22 skills, and one local
-`arc-1` MCP server:
+For Copilot CLI, these commands should show versioned plugin metadata, all bundled skills, and one
+local `arc-1` MCP server:
 
 ```bash
 copilot plugin list

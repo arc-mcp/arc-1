@@ -1,26 +1,32 @@
-[
-  {
-    "ckey": "CLIENT_VCS_URI",
-    "ctype": "string",
-    "datatype": "CHAR",
-    "defaultValue": "",
-    "description": "Git registry URL",
-    "category": "registry"
-  },
-  {
-    "ckey": "CLIENT_VCS_AUTH_USER",
-    "ctype": "string",
-    "datatype": "CHAR",
-    "defaultValue": "",
-    "description": "Registry username",
-    "category": "registry"
-  },
-  {
-    "ckey": "CLIENT_VCS_AUTH_PWD",
-    "ctype": "string",
-    "datatype": "CHAR",
-    "defaultValue": "",
-    "description": "Registry password",
-    "category": "registry"
-  }
-]
+{
+  "config": [
+    {
+      "ckey": "CLIENT_VCS_URI",
+      "ctype": "REPOSITORY",
+      "cvisible": "X",
+      "datatype": "STRING",
+      "description": "URI used to clone a remote repository",
+      "category": "CONNECTION",
+      "example": "https://github.com/example/arc1.git"
+    },
+    {
+      "ckey": "CLIENT_VCS_AUTH_USER",
+      "ctype": "REPOSITORY",
+      "cvisible": "X",
+      "datatype": "STRING",
+      "description": "Remote repository user",
+      "category": "CONNECTION",
+      "example": "git-user"
+    },
+    {
+      "ckey": "CLIENT_VCS_AUTH_PWD",
+      "ctype": "REPOSITORY",
+      "cprivate": "X",
+      "cvisible": "X",
+      "datatype": "STRING",
+      "description": "Remote repository password",
+      "category": "CONNECTION",
+      "example": "sentinel-password"
+    }
+  ]
+}

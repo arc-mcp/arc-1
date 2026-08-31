@@ -211,3 +211,24 @@ modules:
 # resources:
 #   - name: arc1-application-logs
 #     active: true
+
+# ── Reusing a SHARED Destination / Connectivity instance ────────────────
+# The base mta.yaml declares `arc1-destination` / `arc1-connectivity` as
+# `org.cloudfoundry.managed-service`, and a managed instance is named after its
+# resource. If your landscape's instances are named differently, a deploy creates
+# ADDITIONAL instances rather than reusing them. Subaccount-level destinations
+# still resolve through a new instance, so this usually costs `lite` quota (the
+# deploy fails outright on a subaccount at its limit) — but ARC-1 does lose the
+# targets if the shared instance carries instance-level destinations. Check
+# `cf services` first. An extension cannot change a resource's `type` (mbt
+# rejects `type` in mta.ResourceExt) — it can only repoint a managed resource at
+# a named instance (a sibling of `modules:`):
+# resources:
+#   - name: arc1-destination
+#     parameters:
+#       service-name: my-shared-destination
+# That instance then stays MTA-MANAGED: the deploy creates it if absent, and
+# `cf undeploy --delete-services` would delete it. Use it only if this ARC-1
+# deployment is meant to own the instance. Binding one whose lifecycle belongs
+# to someone else needs `org.cloudfoundry.existing-service` in `mta.yaml`, which
+# this descriptor does not offer — that is a reviewed descriptor change.

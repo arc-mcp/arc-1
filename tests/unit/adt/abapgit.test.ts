@@ -14,6 +14,7 @@ import {
   parseAbapGitStaging,
   pullRepo,
   pushRepo,
+  redactGitUrl,
   stageRepo,
   switchBranch,
   unlinkRepo,
@@ -44,6 +45,17 @@ function firstRepo(): AbapGitRepo {
 }
 
 describe('abapGit client helpers', () => {
+  it('redacts encoded query and fragment credentials from Git URLs', () => {
+    const sentinel = 'abapgit-url-sentinel';
+    const redacted = redactGitUrl(
+      `https://example.com/repo.git;token=${sentinel}` +
+        `?ref=main;to%6ben=${sentinel}&token:${sentinel}&jsessionid=${sentinel}` +
+        `&cookie=${sentinel}#access_token=${sentinel}`,
+    );
+    expect(redacted).toContain('ref=main');
+    expect(redacted).not.toContain(sentinel);
+  });
+
   it('parseAbapGitRepos parses repository metadata and HATEOAS links', () => {
     const repos = parseAbapGitRepos(loadFixture('abapgit-repos-v2.xml'));
     expect(repos).toHaveLength(2);
@@ -59,6 +71,14 @@ describe('abapGit client helpers', () => {
     expect(info.defaultBranch).toBe('main');
     expect(info.branches.some((branch) => branch.name === 'HEAD' && branch.isHead === true)).toBe(true);
     expect(info.branches.some((branch) => branch.name === 'main')).toBe(true);
+  });
+
+  it('repository and external-info reads fail closed on unknown or incomplete 200 XML', () => {
+    expect(() => parseAbapGitRepos('<html><body>Logon</body></html>')).toThrow(/no <repositories> root/);
+    expect(() =>
+      parseAbapGitRepos('<repositories><repository><key>1</key><package>$TMP</package></repository></repositories>'),
+    ).toThrow(/incomplete <repository> row/);
+    expect(() => parseAbapGitExternalInfo('<html><body>Logon</body></html>')).toThrow(/no <externalRepoInfo> root/);
   });
 
   it('parseAbapGitObjects parses a clone/pull response incl. abapGit status messages', () => {
@@ -92,6 +112,80 @@ describe('abapGit client helpers', () => {
     expect(() => parseAbapGitObjects('<html><body>Logon screen</body></html>')).toThrow(/no <abapObjects> root/);
     expect(() => parseAbapGitStaging('')).toThrow(/unexpected staging response/);
     expect(() => parseAbapGitStaging(loadFixture('abapgit-objects.xml'))).toThrow(/no <abapgitstaging> root/);
+
+    // A present expected root is empty only when the element is actually empty. Scalar error text
+    // must not become a false-green empty result.
+    expect(() => parseAbapGitRepos('<repositories>ERROR</repositories>')).toThrow(/unexpected repository-list/);
+    expect(() => parseAbapGitExternalInfo('<externalRepoInfo>ERROR</externalRepoInfo>')).toThrow(
+      /unexpected external-info/,
+    );
+    expect(() => parseAbapGitObjects('<abapObjects>ERROR</abapObjects>')).toThrow(/unexpected clone\/pull/);
+    expect(() => parseAbapGitStaging('<abapgitstaging>ERROR</abapgitstaging>')).toThrow(/unexpected staging/);
+    expect(() => parseAbapGitRepos('<repositories><repository>ERROR</repository></repositories>')).toThrow(
+      /invalid <repository>/,
+    );
+    expect(() => parseAbapGitExternalInfo('<externalRepoInfo><branch>ERROR</branch></externalRepoInfo>')).toThrow(
+      /invalid <branch>/,
+    );
+    expect(() =>
+      parseAbapGitExternalInfo(
+        '<externalRepoInfo accessMode="PUBLIC"><branch><foo>x</foo></branch></externalRepoInfo>',
+      ),
+    ).toThrow(/incomplete external branch row/);
+    expect(() =>
+      parseAbapGitObjects('<abapObjects><abapObject>ERROR</abapObject><abapObject>ERROR2</abapObject></abapObjects>'),
+    ).toThrow(/invalid <abapObject>/);
+    expect(() =>
+      parseAbapGitStaging('<abapgitstaging><unstaged_objects>ERROR</unstaged_objects></abapgitstaging>'),
+    ).toThrow(/invalid <unstaged_objects>/);
+    expect(() => parseAbapGitExternalInfo('<externalRepoInfo/>')).toThrow(/incomplete <externalRepoInfo>/);
+    expect(() => parseAbapGitObjects('<abapObjects><abapObject><foo>x</foo></abapObject></abapObjects>')).toThrow(
+      /incomplete object row/,
+    );
+    expect(() =>
+      parseAbapGitStaging(
+        '<abapgitstaging><unstaged_objects><abapgitobject><foo>x</foo></abapgitobject></unstaged_objects></abapgitstaging>',
+      ),
+    ).toThrow(/incomplete staging object row/);
+    expect(() =>
+      parseAbapGitStaging(
+        '<abapgitstaging><unstaged_objects><abapgitobject name="Z" type="CLAS"><abapgitfile name="x"/></abapgitobject></unstaged_objects></abapgitstaging>',
+      ),
+    ).toThrow(/incomplete staging file row/);
+    expect(() => parseAbapGitRepos('<repositories><error>FAILED</error></repositories>')).toThrow(
+      /unexpected child elements/,
+    );
+    expect(() => parseAbapGitStaging('<abapgitstaging><error>FAILED</error></abapgitstaging>')).toThrow(
+      /unexpected child elements/,
+    );
+    expect(() =>
+      parseAbapGitStaging(
+        '<abapgitstaging><unstaged_objects><error>FAILED</error></unstaged_objects></abapgitstaging>',
+      ),
+    ).toThrow(/unexpected child elements/);
+    expect(() =>
+      parseAbapGitStaging(
+        '<abapgitstaging><unstaged_objects><dummy>x</dummy></unstaged_objects><unstaged_objects><abapgitobject name="Z" type="CLAS"/></unstaged_objects></abapgitstaging>',
+      ),
+    ).toThrow(/duplicate <unstaged_objects>/);
+    expect(() => parseAbapGitRepos('<repositories><repository/></repositories>')).toThrow(/invalid <repository>/);
+    expect(() => parseAbapGitObjects('<abapObjects><abapObject/></abapObjects>')).toThrow(/invalid <abapObject>/);
+    expect(() =>
+      parseAbapGitStaging('<abapgitstaging><unstaged_objects><abapgitobject/></unstaged_objects></abapgitstaging>'),
+    ).toThrow(/invalid <abapgitobject>/);
+  });
+
+  it('does not expose malformed XML response prefixes in parser errors', async () => {
+    const sentinel = 'abapgit-invalid-xml-sentinel';
+    const http = mockHttp(`<repositories><repository remotePassword="${sentinel}"`);
+    try {
+      await listRepos(http, gitSafety);
+      expect.fail('Expected malformed abapGit XML to throw');
+    } catch (err) {
+      expect(String(err)).toContain('abapGit bridge returned invalid XML');
+      expect(String(err)).not.toContain(sentinel);
+      expect(String(err)).not.toContain('<repositories>');
+    }
   });
 
   it('parseAbapGitStaging splits unstaged/ignored objects and reads the prefilled commit identity', () => {
@@ -131,6 +225,32 @@ describe('abapGit client helpers', () => {
     expect(body).toContain('http://www.sap.com/adt/abapgit/externalRepo');
   });
 
+  it('getExternalInfo requires the Git write/egress ceiling and rejects unsafe literal targets', async () => {
+    const noWrites = { ...gitSafety, allowWrites: false };
+    const noGit = { ...gitSafety, allowGitWrites: false };
+    await expect(getExternalInfo(mockHttp(), noWrites, 'https://example.com/repo.git')).rejects.toThrow(
+      /allowWrites=false/,
+    );
+    await expect(getExternalInfo(mockHttp(), noGit, 'https://example.com/repo.git')).rejects.toThrow(
+      /allowGitWrites=false/,
+    );
+    await expect(getExternalInfo(mockHttp(), gitSafety, 'http://example.com/repo.git')).rejects.toThrow(/only HTTPS/);
+    await expect(getExternalInfo(mockHttp(), gitSafety, 'https://user:secret@example.com/repo.git')).rejects.toThrow(
+      /userinfo/,
+    );
+    for (const url of [
+      'https://localhost/repo.git',
+      'https://localhost./repo.git',
+      'https://foo.localhost./repo.git',
+      'https://127.0.0.1/repo.git',
+      'https://[::1]/repo.git',
+      'https://[::ffff:127.0.0.1]/repo.git',
+      'https://[::ffff:10.0.0.1]/repo.git',
+    ]) {
+      await expect(getExternalInfo(mockHttp(), gitSafety, url)).rejects.toThrow(/private|localhost/);
+    }
+  });
+
   it('createRepo is blocked when allowGitWrites=false', async () => {
     const http = mockHttp(loadFixture('abapgit-repos-v2.xml'));
     const safety = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
@@ -152,17 +272,31 @@ describe('abapGit client helpers', () => {
       await expect(enforceRepoPackageAllowed(gitSafety, '$TUTORIALS', null, 'pull')).resolves.toBeUndefined();
     });
 
-    it('allows a repo whose bound package is within the allowlist', async () => {
-      const safety = { ...gitSafety, allowedPackages: ['$TUTORIALS'] };
+    it('allows only an explicit whole-subtree grant or global *', async () => {
+      const safety = { ...gitSafety, allowedPackages: ['$TUTORIALS/**'] };
       await expect(enforceRepoPackageAllowed(safety, '$TUTORIALS', null, 'pull')).resolves.toBeUndefined();
+      await expect(
+        enforceRepoPackageAllowed({ ...gitSafety, allowedPackages: ['*'] }, '$TUTORIALS', null, 'pull'),
+      ).resolves.toBeUndefined();
     });
 
-    it('refuses a repo whose bound package is outside the allowlist', async () => {
-      // $TUTORIALS is the binding of repos-v2 repo[0]; a pull would deserialize remote content into it.
-      const safety = { ...gitSafety, allowedPackages: ['$TMP'] };
-      await expect(enforceRepoPackageAllowed(safety, '$TUTORIALS', null, 'SAPGit(action="pull")')).rejects.toThrow(
-        AdtSafetyError,
-      );
+    it('allows a repository package covered by an ancestor subtree grant', async () => {
+      const resolver = {
+        isDescendantOrSelf: vi.fn().mockResolvedValue(true),
+        invalidate: vi.fn(),
+      };
+      const safety = { ...gitSafety, allowedPackages: ['ZROOT/**'] };
+      await expect(enforceRepoPackageAllowed(safety, 'ZROOT_CHILD', resolver, 'pull')).resolves.toBeUndefined();
+      expect(resolver.isDescendantOrSelf).toHaveBeenCalledWith('ZROOT', 'ZROOT_CHILD');
+    });
+
+    it('refuses exact-root and broad prefix grants because neither proves descendant closure', async () => {
+      for (const allowedPackages of [['$TUTORIALS'], ['$*'], ['Z*']]) {
+        const safety = { ...gitSafety, allowedPackages };
+        await expect(enforceRepoPackageAllowed(safety, '$TUTORIALS', null, 'SAPGit(action="pull")')).rejects.toThrow(
+          /whole|subpackages|subtree/,
+        );
+      }
     });
 
     it('fails closed when the allowlist is set but the bound package cannot be resolved', async () => {
@@ -177,7 +311,7 @@ describe('abapGit client helpers', () => {
   });
 
   it('createRepo sends Username + base64 Password headers and remote credentials in XML body', async () => {
-    const http = mockHttp(loadFixture('abapgit-objects.xml'));
+    const http = mockHttp(loadFixture('abapgit-objects-v1.xml'));
     await createRepo(http, gitSafety, {
       package: '$TMP',
       url: 'https://github.com/example/repo.git',
@@ -202,6 +336,14 @@ describe('abapGit client helpers', () => {
     expect(body).toContain('<abapgitrepo:remotePassword>git-pass</abapgitrepo:remotePassword>');
   });
 
+  it('createRepo and pullRepo reject E/A/X bridge object messages', async () => {
+    const http = mockHttp(loadFixture('abapgit-objects.xml'));
+    await expect(
+      createRepo(http, gitSafety, { package: '$TMP', url: 'https://github.com/example/repo.git' }),
+    ).rejects.toThrow(/rejecting object messages/);
+    await expect(pullRepo(http, gitSafety, '000000000001')).rejects.toThrow(/rejecting object messages/);
+  });
+
   it('pullRepo maps bridge XML errors to AdtApiError message with namespace', async () => {
     const http = mockHttp();
     (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
@@ -222,10 +364,109 @@ describe('abapGit client helpers', () => {
     }
   });
 
+  it('redacts credential assignments and URL secrets from bridge errors and response bodies', async () => {
+    const http = mockHttp();
+    const bearer = 'abapgit-bearer-sentinel';
+    const basic = 'abapgit-basic-sentinel';
+    const escapedUrl = 'abapgit-escaped-url-sentinel';
+    const pathSentinel = 'abapgit-error-path-sentinel';
+    const assignmentSentinel = 'abapgit-assignment-sentinel';
+    const attributeSentinel = 'abapgit-attribute-sentinel';
+    const cookieSentinel = 'abapgit-cookie-sentinel';
+    const standaloneSentinel = 'abapgit-standalone-sentinel';
+    const unicodeKeySentinel = 'abapgit-unicode-key-sentinel';
+    const body =
+      `<?xml version="1.0"?><exc:exception xmlns:exc="x"><namespace id="org.abapgit.adt"/><detail remotePassword="${attributeSentinel}"/><message>` +
+      `Remote Authorization: Bearer ${bearer}; Authorization=Basic \\"${basic}\\"; ` +
+      `Cookie: SAP_SESSIONID_A4H_001=${cookieSentinel}; Set-Cookie: JSESSIONID=${cookieSentinel}; ` +
+      `Basic ${standaloneSentinel}; ` +
+      `{\\"to\\u006ben\\":\\"${unicodeKeySentinel}\\"}; ` +
+      `CLIENT_VCS_AUTH_TOKEN=${assignmentSentinel}; pwd=plain-error-sentinel ` +
+      `https:\\/\\/user:${escapedUrl}@example.com/r?auth=query-sentinel` +
+      '</message></exc:exception>';
+    (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdtApiError('remote failed', 500, `/sap/bc/adt/abapgit/repos/R/pull?token=${pathSentinel}`, body),
+    );
+
+    try {
+      await pullRepo(http, gitSafety, 'R');
+      expect.fail('Expected pullRepo to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(AdtApiError);
+      expect((err as Error).message).not.toContain('plain-error-sentinel');
+      expect((err as Error).message).not.toContain('url-sentinel');
+      expect((err as Error).message).not.toContain('query-sentinel');
+      expect((err as AdtApiError).responseBody).not.toContain('plain-error-sentinel');
+      expect((err as Error).message).not.toContain(bearer);
+      expect((err as Error).message).not.toContain(basic);
+      expect((err as Error).message).not.toContain(escapedUrl);
+      expect((err as Error).message).not.toContain(pathSentinel);
+      expect((err as AdtApiError).path).not.toContain(pathSentinel);
+      expect((err as Error).message).not.toContain(assignmentSentinel);
+      expect((err as Error).message).not.toContain(cookieSentinel);
+      expect((err as Error).message).not.toContain(standaloneSentinel);
+      expect((err as Error).message).not.toContain(unicodeKeySentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(bearer);
+      expect((err as AdtApiError).responseBody).not.toContain(basic);
+      expect((err as AdtApiError).responseBody).not.toContain(escapedUrl);
+      expect((err as AdtApiError).responseBody).not.toContain(assignmentSentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(attributeSentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(cookieSentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(standaloneSentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(unicodeKeySentinel);
+      expect((err as AdtApiError).responseBody).not.toContain('query-sentinel');
+    }
+  });
+
+  it('redacts then bounds oversized credential-bearing bridge error URLs', async () => {
+    const sentinel = 'abapgit-long-url-sentinel';
+    const body =
+      '<?xml version="1.0"?><exc:exception xmlns:exc="x"><namespace id="org.abapgit.adt"/><message>' +
+      `Remote failed https://git-user:${sentinel}@example.com/${'A'.repeat(60_000)}?token=${sentinel}` +
+      '</message></exc:exception>';
+    const http = mockHttp();
+    (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdtApiError(body.slice(0, 500), 500, '/sap/bc/adt/abapgit/repos/R/pull', body),
+    );
+
+    try {
+      await pullRepo(http, gitSafety, 'R');
+      expect.fail('Expected pullRepo to throw');
+    } catch (err) {
+      expect(String(err)).not.toContain(sentinel);
+      expect((err as AdtApiError).responseBody).not.toContain(sentinel);
+      expect((err as AdtApiError).responseBody!.length).toBeLessThan(4_096);
+      expect((err as AdtApiError).responseBody).toContain('[truncated');
+    }
+  });
+
   it('stageRepo throws descriptive error when repository has no stage link', async () => {
     const http = mockHttp(loadFixture('abapgit-staging.xml'));
     const repo = { ...firstRepo(), links: [] };
     await expect(stageRepo(http, gitSafety, repo)).rejects.toThrow(/does not expose a stage_link/);
+
+    const sentinel = 'abapgit-repo-key-sentinel';
+    try {
+      await stageRepo(http, gitSafety, { ...repo, key: `Authorization: Bearer ${sentinel}` });
+      expect.fail('Expected missing stage link to throw');
+    } catch (err) {
+      expect(String(err)).not.toContain(sentinel);
+    }
+  });
+
+  it.each([
+    '/sap/bc/adt/abapgit/../admin/trigger',
+    '/sap/bc/adt/abapgit/repos/1/%2e%2e/admin/trigger',
+    '/sap/bc/adt/abapgitEVIL/repos/1/stage',
+  ])('rejects a non-canonical SAP-provided HATEOAS link: %s', async (href) => {
+    const http = mockHttp(loadFixture('abapgit-staging.xml'));
+    const repo = {
+      ...firstRepo(),
+      links: [{ rel: 'http://www.sap.com/adt/relations/abapgit/stage', href, type: 'stage_link' }],
+    };
+
+    await expect(stageRepo(http, gitSafety, repo)).rejects.toThrow(/canonical host-relative ADT path/i);
+    expect(http.get).not.toHaveBeenCalled();
   });
 
   it('stageRepo parses staging objects from HATEOAS stage endpoint', async () => {
@@ -351,6 +592,23 @@ describe('abapGit client helpers', () => {
     expect(body).toContain('<abapgitstaging:staged_objects/>');
   });
 
+  it('pushRepo rejects an unexpected non-empty 2xx body without exposing it', async () => {
+    const sentinel = 'abapgit-push-body-sentinel';
+    const http = mockHttp(`<error remotePassword="${sentinel}">accepted-but-incomplete</error>`);
+    const repo = firstRepo();
+    try {
+      await pushRepo(http, gitSafety, repo, {
+        repoKey: repo.key,
+        objects: [{ type: 'CLAS', name: 'Z', files: [] }],
+        comment: { comment: 'test' },
+      });
+      expect.fail('Expected unexpected push response to throw');
+    } catch (err) {
+      expect(String(err)).toContain('unexpected non-empty push response');
+      expect(String(err)).not.toContain(sentinel);
+    }
+  });
+
   it('pushRepo forwards private-remote credentials as bridge headers', async () => {
     const http = mockHttp('');
     const repo = firstRepo();
@@ -393,11 +651,32 @@ describe('abapGit client helpers', () => {
     }
   });
 
+  it('switchBranch/createBranch reject unexpected non-empty 2xx bodies without exposing them', async () => {
+    const sentinel = 'abapgit-branch-body-sentinel';
+    const http = mockHttp(`<error remotePassword="${sentinel}">accepted-but-incomplete</error>`);
+    await expect(switchBranch(http, gitSafety, '000000000001', 'main')).rejects.toThrow(
+      /unexpected non-empty switch-branch response/,
+    );
+    await expect(createBranch(http, gitSafety, '000000000001', 'feature/new')).rejects.toThrow(
+      /unexpected non-empty create-branch response/,
+    );
+    for (const operation of [
+      switchBranch(mockHttp(`<error>${sentinel}</error>`), gitSafety, 'R', 'main'),
+      createBranch(mockHttp(`<error>${sentinel}</error>`), gitSafety, 'R', 'feature/new'),
+    ]) {
+      try {
+        await operation;
+      } catch (err) {
+        expect(String(err)).not.toContain(sentinel);
+      }
+    }
+  });
+
   it('createRepo and pullRepo accept the object media type the bridge renders (406 guard)', async () => {
-    const http = mockHttp(loadFixture('abapgit-objects.xml'));
+    const http = mockHttp(loadFixture('abapgit-objects-v1.xml'));
     const created = await createRepo(http, gitSafety, { package: '$TMP', url: 'https://github.com/example/repo.git' });
     await pullRepo(http, gitSafety, '000000000001', { package: '$TMP' });
-    expect(created).toHaveLength(2);
+    expect(created).toHaveLength(1);
     expect(created[0]?.name).toBe('ZCL_ARC1_TEST');
     for (const call of (http.post as ReturnType<typeof vi.fn>).mock.calls) {
       const headers = call[3] as Record<string, string>;
@@ -413,5 +692,22 @@ describe('abapGit client helpers', () => {
     await unlinkRepo(http, gitSafety, 'repo with spaces');
     const [url] = (http.delete as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
     expect(url).toContain('/repos/repo%20with%20spaces');
+  });
+
+  it('unlinkRepo rejects an unexpected non-empty 2xx body without exposing it', async () => {
+    const sentinel = 'abapgit-unlink-body-sentinel';
+    const http = mockHttp();
+    (http.delete as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      statusCode: 200,
+      headers: {},
+      body: `<error remotePassword="${sentinel}">accepted-but-incomplete</error>`,
+    });
+    try {
+      await unlinkRepo(http, gitSafety, 'R');
+      expect.fail('Expected unexpected unlink response to throw');
+    } catch (err) {
+      expect(String(err)).toContain('unexpected non-empty unlink response');
+      expect(String(err)).not.toContain(sentinel);
+    }
   });
 });

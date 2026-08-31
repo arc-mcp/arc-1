@@ -165,7 +165,7 @@ describe('Tool Definitions', () => {
     const schema = sapGit!.inputSchema as Record<string, any>;
     const actions: string[] = schema.properties.action.enum;
     expect(actions).toContain('list_repos');
-    expect(actions).toContain('external_info');
+    expect(actions).not.toContain('external_info');
     expect(actions).not.toContain('commit');
     expect(actions).not.toContain('unlink');
     expect(schema.properties.backend.enum).toEqual(['gcts', 'abapgit']);
@@ -180,8 +180,9 @@ describe('Tool Definitions', () => {
     expect(sapGit).toBeDefined();
     const schema = sapGit!.inputSchema as Record<string, any>;
     const actions: string[] = schema.properties.action.enum;
+    expect(actions).toContain('external_info');
     expect(actions).toContain('list_repos');
-    expect(actions).toContain('commit');
+    expect(actions).not.toContain('commit');
     expect(actions).toContain('unlink');
     expect(schema.properties.backend.enum).toEqual(['gcts', 'abapgit']);
   });
@@ -237,6 +238,46 @@ describe('Tool Definitions', () => {
     expect(whereDescription).toContain('ARC-1 quotes and escapes values');
     expect(whereDescription).toContain('"261,262"');
     expect(whereDescription).not.toContain('single-quoted literals');
+  });
+
+  it('documents the live-verified TABLE_QUERY and TABLE_CONTENTS limitations on SAP_BASIS 758', () => {
+    const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
+    const schema = sapRead.inputSchema as Record<string, any>;
+
+    expect(schema.properties.maxRows.description).toContain('On 758, TABLE_CONTENTS returns N+1');
+    expect(schema.properties.sqlFilter.description).toContain('broken on 758');
+    expect(schema.properties.sqlFilter.description).toContain('TABLE_QUERY where');
+    expect(schema.properties.where.description).toContain('use <> because 758 rejects !=');
+    expect(schema.properties.where.description).not.toContain('Ops: =, !=');
+  });
+
+  it('documents VERSION_SOURCE canonical-path enforcement', () => {
+    const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
+    const description = (sapRead.inputSchema as Record<string, any>).properties.versionUri.description as string;
+
+    expect(description).toContain('canonical source/revision URI');
+    expect(description).toContain('unrelated ADT endpoints');
+    expect(description).toContain('traversal');
+    expect(description).toContain('fragments');
+  });
+
+  it('documents action-specific SAPDiagnose result formats', () => {
+    const diagnose = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPDiagnose')!;
+    const resultFormat = (diagnose.inputSchema as Record<string, any>).properties.resultFormat;
+
+    expect(resultFormat.enum).toEqual(['legacy', 'structured', 'junit']);
+    expect(resultFormat.description).toContain('unittest: legacy|structured|junit');
+    expect(resultFormat.description).toContain('atc: legacy|structured');
+    expect(resultFormat.description).toContain('other actions reject it');
+  });
+
+  it('advertises exact-by-default DEVC package AUnit scope', () => {
+    const diagnose = getToolDefinitions(DEFAULT_CONFIG).find((tool) => tool.name === 'SAPDiagnose')!;
+    const schema = diagnose.inputSchema as Record<string, any>;
+
+    expect(diagnose.description).toContain('CLAS/PROG/FUGR or DEVC');
+    expect(schema.properties.type.description).toContain('DEVC');
+    expect(schema.properties.includeSubpackages).toEqual({ type: 'boolean', default: false });
   });
 
   it('describes SAPRead sqlFilter as condition-only expression', () => {

@@ -83,6 +83,37 @@ export function hasRequiredScope(authInfo: AuthInfo, requiredScope: string): boo
 }
 
 const DDIC_SAVE_HINT_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX', 'DOMA', 'DTEL']);
+const DATA_PREVIEW_COLLECTION_PATHS = new Set(['/sap/bc/adt/datapreview/freestyle', '/sap/bc/adt/datapreview/ddic']);
+
+function isPossibleDataPreviewWafBlock(err: AdtApiError, tool: string, args: Record<string, unknown>): boolean {
+  if (err.statusCode !== 403) return false;
+  const collectionPath = err.path.split(/[?#]/, 1)[0] ?? '';
+  if (!DATA_PREVIEW_COLLECTION_PATHS.has(collectionPath)) return false;
+  if (collectionPath === '/sap/bc/adt/datapreview/ddic') {
+    const isFilteredTableContents =
+      tool === 'SAPRead' &&
+      canonicalTablType(String(args.type ?? '').toUpperCase()) === 'TABLE_CONTENTS' &&
+      typeof args.sqlFilter === 'string' &&
+      args.sqlFilter.trim().length > 0;
+    if (!isFilteredTableContents) return false;
+  }
+
+  const body = (err.responseBody ?? '').trim();
+  return body === '' || /^(?:403\s+)?forbidden\.?$/i.test(body);
+}
+
+function formatPossibleDataPreviewWafBlock(err: AdtApiError, minimalErrors: boolean): string {
+  const prefix = minimalErrors
+    ? 'ADT API error: status 403. Use the request ID to correlate server-side audit and gateway logs.'
+    : err.message;
+  return (
+    `${prefix}\n\nHint: This bare 403 on an ADT data-preview endpoint is a possible upstream WAF/body inspection ` +
+    'block or a rejected CSRF/session pair, not proof of an SAP authorization failure. Compare an unfiltered ' +
+    'TABLE_CONTENTS call and inspect gateway logs for the matched rule. Prefer a scoped WAF rule exclusion. If ' +
+    'the security owner approves sending these request bodies as compressed content, set ' +
+    'SAP_GZIP_DATAPREVIEW_BODY=true as a compatibility fallback.'
+  );
+}
 
 function getWriteInfrastructureHint(err: AdtApiError, tool: string, args: Record<string, unknown>): string | undefined {
   if (tool !== 'SAPWrite') return undefined;
@@ -129,6 +160,9 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtApiError) {
+    if (isPossibleDataPreviewWafBlock(err, tool, args)) {
+      return formatPossibleDataPreviewWafBlock(err, config.minimalErrors);
+    }
     if (config.minimalErrors) return formatMinimalAdtError(err);
 
     // Append additional SAP messages (line numbers, secondary errors) if available

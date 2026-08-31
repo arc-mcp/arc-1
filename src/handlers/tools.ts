@@ -165,13 +165,12 @@ const SAPSEARCH_DESC_BTP =
   "Tips: On BTP, focus on classes (CL_*), interfaces (IF_*), CDS views (I_*), and custom Z/Y objects.\n\nNote: Searches object names only (classes, CDS views, etc.) — field/column names are not searchable here. To find fields by name, use SAPRead(type='DDLS', include='elements') for CDS views.";
 
 // ─── SAPTransport ───────────────────────────────────────────────────
-
 const SAPTRANSPORT_DESC_ONPREM =
   'Manage CTS transport requests (SE09/SE10). Actions: list (current user, modifiable), get (tasks + objects), ' +
   'create (always a Workbench (K) request — the package/target sets target & layer, not the request category; optional explicit target), ' +
   'release, delete, remove_object (keep the request), reassign (change owner), release_recursive (tasks then parent), ' +
   'check (does a package need a transport — type, name, package), history (legacy name: current object lock plus assignment candidates — type, name; not complete transport history; read-only, no write scope needed). ' +
-  'IDs look like A4HK900123. Status: D=modifiable, R=released.';
+  'IDs look like A4HK900123. Status: D/L=modifiable, O/P=releasing, R/N=released.';
 
 const SAPTRANSPORT_DESC_BTP =
   'Manage transport requests (BTP ABAP Environment, SE09/SE10). Actions: list (current user, modifiable), get (tasks + objects), ' +
@@ -181,7 +180,6 @@ const SAPTRANSPORT_DESC_BTP =
   'On BTP, release triggers a gCTS push to the software-component Git repo; import is via Manage Software Components / cTMS, not this tool.';
 
 // ─── SAPManage ──────────────────────────────────────────────────────
-
 const SAPMANAGE_DESC_ONPREM =
   'Probe and report SAP system capabilities. Use BEFORE operations that depend on optional features ' +
   '(abapGit, RAP/CDS, AMDP, HANA, UI5/Fiori, CTS transports, FLP). Also handles package (DEVC) lifecycle.\n\n' +
@@ -230,29 +228,21 @@ const SAPMANAGE_ACTIONS_WRITE = [
 const SAPTRANSPORT_ACTIONS_READ = ['list', 'get', 'diff', 'check', 'history', 'layers', 'targets'];
 const SAPTRANSPORT_ACTIONS_WRITE = ['create', 'release', 'delete', 'remove_object', 'reassign', 'release_recursive'];
 
-const SAPGIT_ACTIONS_READ = [
-  'list_repos',
-  'whoami',
-  'config',
-  'branches',
+const SAPGIT_ACTIONS_READ = ['list_repos', 'whoami', 'config', 'branches', 'history', 'objects', 'check'];
+const SAPGIT_ACTIONS_WRITE = [
   'external_info',
-  'history',
-  'objects',
-  'check',
+  'stage',
+  'clone',
+  'pull',
+  'push',
+  'switch_branch',
+  'create_branch',
+  'unlink',
 ];
-const SAPGIT_ACTIONS_WRITE = ['stage', 'clone', 'pull', 'push', 'commit', 'switch_branch', 'create_branch', 'unlink'];
 
-// ─── SAPGit ─────────────────────────────────────────────────────────
-
-const SAPGIT_DESC_ONPREM =
-  'Git-based ABAP repository workflows with backend auto-selection: gCTS is preferred when available, otherwise abapGit bridge is used. ' +
-  'Actions: list_repos (both), whoami/config/branches/history/objects (gCTS only), external_info/check/stage/push (abapGit only), clone/pull/commit/switch_branch/create_branch/unlink (backend-specific implementation). ' +
-  'Use backend="gcts" or backend="abapgit" to force a backend. Write actions require SAP_ALLOW_WRITES=true, SAP_ALLOW_GIT_WRITES=true, git scope, and package allowlist compliance.';
-
-const SAPGIT_DESC_BTP =
-  'Git-based ABAP repository workflows for BTP ABAP and S/4 systems. Backend auto-selection prefers gCTS and falls back to abapGit bridge when gCTS is unavailable. ' +
-  'Actions: list_repos (both), whoami/config/branches/history/objects (gCTS only), external_info/check/stage/push (abapGit only), clone/pull/commit/switch_branch/create_branch/unlink (backend-specific implementation). ' +
-  'Use backend="gcts" or backend="abapgit" to force a backend. Write actions require SAP_ALLOW_WRITES=true, SAP_ALLOW_GIT_WRITES=true, git scope, and package allowlist compliance.';
+const SAPGIT_DESC =
+  'Git reads and gated abapGit workflows. gCTS mutations are quarantined. ' +
+  'abapGit mutations need write/Git gates and allowedPackages ROOT/** or *; clone/pull evidence is unverified. external_info is gated HTTPS SAP egress.';
 
 // ─── SAPSearch Builder ─────────────────────────────────────────────
 
@@ -460,7 +450,7 @@ export function getToolDefinitions(
             description:
               'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. ' +
               'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
-              'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses).',
+              'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path.',
           },
           group: {
             type: 'string',
@@ -498,7 +488,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured'],
             description:
-              'Output format. "text" (default): raw source. "structured" (CLAS only): JSON metadata + EVERY class include (main, testclasses, definitions, implementations, macros) — a superset of "text", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method="*" / method="name" / grep=.',
+              'Output format. For action="diff", "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default remains the human-readable patch. For ordinary reads, "text" (default) is raw source; "structured" (CLAS only) returns JSON metadata + EVERY class include — a superset of "text", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method="*" / method="name" / grep=.',
           },
           version: {
             type: 'string',
@@ -518,7 +508,8 @@ export function getToolDefinitions(
           },
           maxRows: {
             type: 'number',
-            description: 'For TABLE_CONTENTS and TABLE_QUERY: max rows to return (default 100)',
+            description:
+              'Row cap (default 100). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY or cap client-side.',
           },
           maxResults: {
             type: 'number',
@@ -528,7 +519,7 @@ export function getToolDefinitions(
           sqlFilter: {
             type: 'string',
             description:
-              'For TABLE_CONTENTS: condition expression only (no WHERE, no SELECT), e.g. "MANDT = \'100\'" or "MATNR LIKE \'Z%\'".',
+              'TABLE_CONTENTS condition expression only (no WHERE, no SELECT); broken on 758 (SAP expects SELECT). Use TABLE_QUERY where.',
           },
           objectType: {
             type: 'string',
@@ -538,7 +529,7 @@ export function getToolDefinitions(
           versionUri: {
             type: 'string',
             description:
-              'For VERSION_SOURCE: URI of a specific revision from SAPRead(type="VERSIONS") response (.revisions[].uri). Must start with /sap/bc/adt/.',
+              'VERSION_SOURCE: canonical source/revision URI from VERSIONS .revisions[].uri; rejects unrelated ADT endpoints, absolute URLs, traversal, queries, and fragments.',
           },
           columns: {
             type: 'array',
@@ -550,7 +541,7 @@ export function getToolDefinitions(
             type: 'array',
             description:
               'For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. ' +
-              'Allowed ops: =, !=, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL. ' +
+              'Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; use <> because 758 rejects !=. ' +
               'For IN/NOT IN: use bare comma-separated values; do NOT quote them. ARC-1 quotes and escapes values, e.g. "261,262". No subqueries. ' +
               'Example: [{"field":"MATNR","op":"=","value":"300006888"},{"field":"BUDAT_MKPF","op":">=","value":"20250101"}].',
             items: {
@@ -1096,8 +1087,8 @@ export function getToolDefinitions(
       description:
         'Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n' +
         '- "syntax": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n' +
-        '- "unittest": run ABAP Unit tests (name+type).\n' +
-        '- "atc": run ATC checks (name+type; optional variant). "atc_variants": list variants + the system default (variant = name filter; read-only).\n' +
+        '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
+        '- "atc": run ATC checks (name+type; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
         '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
         '- "quickfix": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n' +
@@ -1140,7 +1131,6 @@ export function getToolDefinitions(
               'sql_trace_directory',
               'authorization_trace',
             ],
-            description: 'Diagnostic action',
           },
           name: {
             type: 'string',
@@ -1154,7 +1144,7 @@ export function getToolDefinitions(
           },
           type: {
             type: 'string',
-            description: 'Object type (PROG, CLAS, etc.) (for syntax/unittest/atc/object_state)',
+            description: 'Object type; unittest accepts CLAS, PROG, FUGR, or DEVC.',
           },
           source: {
             type: 'string',
@@ -1213,7 +1203,7 @@ export function getToolDefinitions(
           detailUrl: {
             type: 'string',
             description:
-              'ADT detail URL for gateway_errors detail mode (preferred over id+errorType). Accepts absolute or /sap/bc/adt/... path.',
+              'Canonical host-relative /sap/bc/adt/gw/errorlog/... path for detail mode; absolute URLs are rejected.',
           },
           errorType: {
             type: 'string',
@@ -1251,7 +1241,17 @@ export function getToolDefinitions(
           coverage: {
             type: 'boolean',
             description:
-              'For action="unittest": also return statement/branch/procedure coverage for the object, plus methodsBelowFull — the methods below 100% statement coverage, worst first (what to test next) — in one extra round-trip. If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false.',
+              'unittest only: collect statement/branch/procedure coverage and methodsBelowFull. Unavailable measurements do not discard test results. Default false.',
+          },
+          includeSubpackages: { type: 'boolean', default: false },
+          resultFormat: {
+            type: 'string',
+            enum: ['legacy', 'structured', 'junit'],
+            description: 'unittest: legacy|structured|junit; atc: legacy|structured; other actions reject it.',
+          },
+          timeoutSeconds: {
+            type: 'number',
+            description: 'unittest/atc timeout: 1-3600s; default 300.',
           },
           sqlOn: {
             type: 'boolean',
@@ -1577,7 +1577,7 @@ export function getToolDefinitions(
             description:
               'Transport layer for create (optional, advanced). Sent as the ?transportLayer= query param to override which consolidation route — and therefore which target — SAP resolves. OMIT IT by default: SAP resolves the target from the package automatically, which is correct for almost all cases. Never invent a value — if you need a specific layer, obtain it from action="layers" or from the user. Only effective when that layer has a classic STMS consolidation route; otherwise the request is local regardless.',
           },
-          user: { type: 'string', description: 'SAP user for list (default: current user; "*" means all users).' },
+          user: { type: 'string', description: 'List user (default: current SAP user; "*" means all visible owners).' },
           status: {
             type: 'string',
             description: 'Transport status filter (for list). D=modifiable (default), R=released, "*"=all statuses.',
@@ -1617,6 +1617,15 @@ export function getToolDefinitions(
             description:
               'Maximum list rows or check/history assignment candidates (defaults: list/history 50, check 10; max 1000).',
           },
+          resultFormat: {
+            type: 'string',
+            enum: ['legacy', 'structured'],
+            description: 'release actions: legacy (default) or structured JSON.',
+          },
+          timeoutSeconds: {
+            type: 'number',
+            description: 'release timeout seconds: 1-1800; default 300.',
+          },
         },
         required: ['action'],
       },
@@ -1632,16 +1641,13 @@ export function getToolDefinitions(
         : SAPGIT_ACTIONS_READ;
     tools.push({
       name: 'SAPGit',
-      description: btp ? SAPGIT_DESC_BTP : SAPGIT_DESC_ONPREM,
+      description: SAPGIT_DESC,
       inputSchema: {
         type: 'object',
         properties: {
           action: {
             type: 'string',
             enum: sapGitActions,
-            description:
-              'Git action. The writes (clone, pull, push, commit, stage, switch_branch, create_branch, unlink) ' +
-              'need SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true; the rest are reads.',
           },
           backend: {
             type: 'string',
@@ -1650,11 +1656,10 @@ export function getToolDefinitions(
           },
           repoId: {
             type: 'string',
-            description: 'Repository ID/key for repo-specific actions.',
           },
           url: {
             type: 'string',
-            description: 'Remote Git URL (required for clone and abapGit external_info).',
+            description: 'HTTPS remote for clone/external_info; embedded credentials are rejected.',
           },
           branch: {
             type: 'string',
@@ -1662,7 +1667,8 @@ export function getToolDefinitions(
           },
           package: {
             type: 'string',
-            description: 'ABAP package for clone/create operations (checked against allowedPackages).',
+            description:
+              'abapGit clone package. Mutations require an allowedPackages ROOT/** or * grant; not gCTS evidence.',
           },
           transport: {
             type: 'string',
@@ -1674,15 +1680,11 @@ export function getToolDefinitions(
           },
           message: {
             type: 'string',
-            description: 'Commit message (required for gCTS commit and abapGit push).',
-          },
-          description: {
-            type: 'string',
-            description: 'Commit description (gCTS).',
+            description: 'Commit message required for abapGit push.',
           },
           objects: {
             type: 'array',
-            description: 'Object list for commit/push. For abapGit push it selects the changed objects to commit.',
+            description: 'For abapGit push, the changed objects to commit; omit to select every local change.',
             items: {
               type: 'object',
               properties: {

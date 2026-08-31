@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit" xmlns:adtcore="http://www.sap.com/adt/core">
+  <program adtcore:name="ZCL_RISKY">
+    <testClasses>
+      <testClass adtcore:name="LTCL_RISKY" durationCategory="short" riskLevel="dangerous">
+        <alerts>
+          <alert kind="warning" severity="tolerable">
+            <title>Keine Ausführung, die Risikostufe der Testklasse überschreitet die Obergrenze</title>
+          </alert>
+        </alerts>
+        <testMethods/>
+      </testClass>
+    </testClasses>
+  </program>
+</aunit:runResult>

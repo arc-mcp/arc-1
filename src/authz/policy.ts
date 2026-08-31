@@ -186,7 +186,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPGit.whoami': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.config': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.branches': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
-  'SAPGit.external_info': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
+  // SAP performs outbound network access to a caller-selected remote. Treat this as an
+  // egress-capable Git mutation: it needs user `git` scope plus allowWrites/allowGitWrites.
+  'SAPGit.external_info': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.history': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.objects': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.check': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
@@ -194,7 +196,6 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPGit.clone': { scope: 'git', opType: OperationType.Create, featureGate: 'git' },
   'SAPGit.pull': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.push': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
-  'SAPGit.commit': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.switch_branch': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.create_branch': { scope: 'git', opType: OperationType.Create, featureGate: 'git' },
   'SAPGit.unlink': { scope: 'git', opType: OperationType.Delete, featureGate: 'git' },

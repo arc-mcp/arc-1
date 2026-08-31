@@ -177,7 +177,7 @@ that browser can still reach the loopback callback, which rules out most remote 
 ### Smoke test
 
 ```bash
-SAP_BTP_SERVICE_KEY_FILE=/path/to/service-key.json SAP_SYSTEM_TYPE=btp arc1 --verbose search "ZCL_*"
+SAP_BTP_SERVICE_KEY_FILE=/path/to/service-key.json SAP_SYSTEM_TYPE=btp arc1 search "ZCL_*" --output json
 ```
 
 Browser login, then results as JSON. A `client_credentials` token cannot be used instead: ADT requires

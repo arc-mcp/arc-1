@@ -3,6 +3,7 @@
  * preview. Exports version helpers shared with the write handler.
  */
 
+import { resolveBspNameAndPath } from '../adt/bsp-path.js';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import { decodeKtdText } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
@@ -165,6 +166,23 @@ export async function handleSAPRead(
         fromLabel,
         toLabel,
       });
+      if (args.format === 'structured') {
+        return textResult(
+          toolJson({
+            type,
+            name,
+            from,
+            to,
+            fromLabel: fromDisplay,
+            toLabel: toDisplay,
+            identical: r.identical,
+            hasDifferences: !r.identical,
+            added: r.added,
+            removed: r.removed,
+            diff: r.diff,
+          }),
+        );
+      }
       if (r.identical) {
         return textResult(`No differences between ${fromDisplay} and ${toDisplay} for ${type} ${name}.`);
       }
@@ -744,21 +762,14 @@ export async function handleSAPRead(
             'for the reason (often a missing S_ADT_RES authorization), or set SAP_FEATURE_UI5=on to force it on.',
         );
       }
-      const include = args.include as string | undefined;
       if (!name) {
         // List all BSP apps (optional search via query param not used here since name is empty)
         const apps = await client.listBspApps();
         return textResult(toolJson(apps));
       }
-      if (!include) {
-        // Browse root structure of the app
-        return textResult(toolJson(await client.getBspAppStructure(name)));
-      }
-      // If include contains a dot, treat as file read; otherwise browse subfolder
-      if (include.includes('.')) {
-        return textResult(await client.getBspFileContent(name, include));
-      }
-      return textResult(toolJson(await client.getBspAppStructure(name, `/${include}`)));
+      const { appName, path } = resolveBspNameAndPath(name, args.include as string | undefined);
+      const content = await client.getBspPathContent(appName, path);
+      return content.kind === 'folder' ? textResult(toolJson(content.nodes)) : textResult(content.content);
     }
     case 'BSP_DEPLOY': {
       const ui5repoFeature = getCachedFeatures()?.ui5repo;

@@ -7,8 +7,8 @@
 ## Goal
 
 Let an LLM discover which ATC check variant to pass to `SAPDiagnose action=atc` — today the `variant`
-param is a free string the model has to guess, or it falls back to the system default *whose name it
-cannot see*.
+param is a free string the model has to guess. (The "falls back to the system default" premise below was
+disproven on 2026-08-19 — it fell back to `DEFAULT`.)
 
 ## The "200 ≠ content" trap (caught in Phase 1)
 
@@ -41,9 +41,11 @@ Sample (816): `ABAP_CLOUD_DEVELOPMENT_3TIER` → "Variant 4 Cloud Development wi
 | Root | `<atc:customizing>` ns `http://www.sap.com/adt/atc` | live |
 | Default variant | `<property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/>` | live both releases |
 
-This is the name ATC uses when `checkVariant` is empty — adt-ls decompile confirms `runCheck` with an
-empty variant calls `getSystemDefaultCheckVariant()` server-side (`arc-1-lsp` capability map). So the
-value of surfacing it is **transparency**, not behavior change: the LLM can see/report the default.
+> **DISPROVEN 2026-08-19 (758, two independent systems).** An empty `checkVariant` runs the CI variant
+> literally named `DEFAULT`, **not** this value. The adt-ls decompile note describes **client-side**
+> resolution inside SAP's language server (`AtcCheckService`), not ABAP-backend behavior. ARC-1 now
+> resolves and sends it explicitly — see
+> [2026-08-19-atc-default-check-variant.md](2026-08-19-atc-default-check-variant.md).
 
 ### Not the endpoint (disambiguation)
 - `/atc/checkvariants` (singular collection, `chkvv4+xml`) → **400 uriMappingError** on a bare GET —

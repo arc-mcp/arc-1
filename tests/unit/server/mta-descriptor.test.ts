@@ -162,7 +162,7 @@ describe('shipped mta.yaml resolves through the config parser', () => {
 
     expect(ignored).toEqual(
       expect.arrayContaining([
-        '.env.*',
+        '.env*',
         '.npmrc',
         '*service-key*.json',
         '*.key',

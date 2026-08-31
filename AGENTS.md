@@ -44,9 +44,26 @@ TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test
 
 Pre-commit: Husky runs `lint-staged` → Biome auto-fixes staged `*.{ts,js,json}`. Never hand-fix formatting.
 
+## Deploying ARC-1 (not developing it)
+
+If the task is "deploy/install ARC-1 for a team", you are an operator, not a contributor — do not
+edit `src/`. Start at [docs_page/btp-overview.md](docs_page/btp-overview.md) (pick the topology),
+then follow the canonical runbook
+[docs_page/btp-cloud-foundry-deployment.md](docs_page/btp-cloud-foundry-deployment.md).
+Docker/npx/stdio instead: [docs_page/deployment.md](docs_page/deployment.md).
+
+| Trap | Reality |
+|------|---------|
+| Putting BTP config in `.env` | On CF, config lives in `mta-overrides.mtaext` `properties:` (or `cf set-env`). The MTA build's `ignore:` list keeps `.env*` out of the archive (`.cfignore` is the analogous guard for a direct `cf push`, not a second MTAR filter), so values set only there never reach CF — against the target-free base that is a **healthy app with no SAP target** — see [docs_page/configuration-precedence.md](docs_page/configuration-precedence.md) |
+| Deleting an `.mtaext` line to disable a feature | An extension can add or override a property, never remove one — write the explicit off-value (`SAP_FOO: "false"`); `cf unset-env` is undone by the next deploy |
+| Assuming MTA reuses pre-existing services | `arc1-destination`/`arc1-connectivity` are `managed-service` and are named after their RESOURCE, so a space with differently-named instances gets ADDITIONAL ones, not reuse. An extension cannot change a resource's `type`, only repoint it with `service-name:` — which leaves MTA owning that instance. Run `cf services` first; consequences and the reuse limits are in the [runbook preflight](docs_page/btp-cloud-foundry-deployment.md) |
+| Assuming a first deploy | The runbook is greenfield; changes, upgrades, restart-vs-restage, and rollback are [docs_page/btp-administration.md](docs_page/btp-administration.md) |
+| Trying to finish it alone | Cockpit destinations, XSUAA role collections, Cloud Connector, and SAP STRUST/CERTRULE/SU01 belong to other owners (runbook §2) — hand off with a specific evidence request instead of inventing CLI equivalents |
+
 ## Configuration (Priority: CLI > Env > .env > Defaults)
 
-Copy `.env.example` to `.env`. Parser: `src/server/config.ts`; defaults: `src/server/types.ts`.
+Copy `.env.example` to `.env` — local/stdio/Docker only; on BTP CF these same keys are
+`.mtaext` properties (see above). Parser: `src/server/config.ts`; defaults: `src/server/types.ts`.
 Full per-option details (defaults, clamps, layer interactions): [docs_page/configuration-reference.md](docs_page/configuration-reference.md).
 
 | Variable / Flag | Description |
@@ -54,6 +71,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_URL`, `SAP_USER`, `SAP_PASSWORD`, `SAP_CLIENT` | SAP connection (client default 100) |
 | `SAP_LANGUAGE` | Request language AND master language of created objects (default EN, #343) |
 | `SAP_INSECURE` | Skip TLS verification (default false) |
+| `SAP_GZIP_DATAPREVIEW_BODY` | Default-off WAF compatibility: gzip only non-empty POST bodies on exact `/datapreview/{freestyle,ddic}` collection paths; prefer a scoped gateway rule exclusion and require security approval |
 | `SAP_TRANSPORT` | `stdio` (default) or `http-streamable` |
 | `ARC1_PORT` / `ARC1_HTTP_ADDR` | HTTP port (8080) / full bind address |
 | `ARC1_SERVER_NAME` / `--server-name` | Server name advertised in the MCP handshake (default `arc-1`); use a unique value per direct-connect instance |
@@ -200,7 +218,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | SAPQuery freestyle SQL hints + IN-list chunking | `src/handlers/{query,query-errors}.ts` — ABAP Open SQL uses `alias~field` + `ASCENDING`/`DESCENDING`; auto-chunk plain SELECTs only |
 | batch_create `activateAtEnd` | `src/handlers/write/create.ts` — prefer for interdependent objects (one activator pass) |
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
-| ATC run (`SAPDiagnose action=atc`) | `src/adt/devtools.ts` (`runAtcCheck`) — three-step flow; variant MUST bind at worklist creation; ATC skips `$TMP` (details: dev-guide) |
+| ATC run (`SAPDiagnose action=atc`) | `src/adt/atc.ts` (`runAtcCheck`/`resolveCheckVariant`) — three-step flow; variant MUST bind at worklist creation and an EMPTY `checkVariant` runs the CI variant literally named `DEFAULT`, **not** `systemCheckVariant`, so ARC-1 resolves and sends the system default itself; settle after 10 s of unchanged worklist XML, excluding only the volatile root timestamp (counts and `objectSetIsComplete` are insufficient; details: dev-guide) |
 | CDS test-case suggestions (8.16+) | `src/adt/devtools.ts`, `src/handlers/diagnose.ts` — discovery-gated, read-only |
 | Server-driven objects read/write (DESD/EVTB/DSFD/…) | `src/adt/server-driven.ts` (`SDO_TYPES` + `SDO_REGISTRY` — the SAPRead/SAPWrite table rows derive from the tuple; `sourceFormat` is per-type: `text` for DTSC/DSFD/DTDC, `json` for the rest — wrong one = hard 415; DTDC is the first NON-blue type — metadata root/ns/marker are per-entry (`metadataRootQName`/`metadataNamespace`/`discoveryMarker`), blue family shares the `BLUE_METADATA` spread), `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
 | XML response parser / safety check | `src/adt/xml-parser.ts` / `src/adt/safety.ts` |
@@ -298,6 +316,10 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 
 ## Style, Stack & Releasing
 
+- **Keep open-PR review changes visible** — apply review feedback and ordinary additions as new commits and
+  push normally; never amend, squash, or force-push merely to fold those changes into published commits.
+  Necessary branch maintenance such as rebasing onto the target branch or resolving history conflicts may
+  rewrite history; verify the branch first, use `--force-with-lease` (never `--force`), and explain the rewrite.
 - **ESM-only**: local imports need `.js` extensions. **TypeScript strict** (noUnusedLocals/Parameters, Node16 resolution). **Biome**: 2-space, single quotes, 120 cols — auto-fixed on commit, never hand-format.
 - **Logging to stderr only** (`src/server/logger.ts`); `console.log` corrupts MCP JSON-RPC on stdout.
 - Stack: TypeScript 6.0, Node 22+, `@modelcontextprotocol/sdk`, `@abaplint/core`, `undici`, `fast-xml-parser` v5, `better-sqlite3`, `commander`, `ajv` (2020-12), `zod` v4, `vitest`, `biome`.

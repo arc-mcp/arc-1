@@ -39,7 +39,7 @@ The included `xs-security.json` defines 7 scopes:
 | `data`         | Preview named table contents                                   | `SAPRead(type=TABLE_CONTENTS)`                                                               |
 | `sql`          | Execute freestyle SQL queries                                  | `SAPQuery`                                                                                   |
 | `transports`   | Create / release / delete CTS transports                       | `SAPTransport.create`/`release`/`delete`                                                     |
-| `git`          | Push / pull / commit via abapGit / gCTS                        | `SAPGit.clone`/`pull`/`push`/`commit`                                                        |
+| `git`          | Authorize gated abapGit mutation/egress actions; gCTS mutations remain quarantined | `SAPGit.external_info`/`clone`/`pull`/`push`/branch/unlink actions after server gates          |
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
 And 7 pre-defined role collections (defined in `mta.yaml`, assignable to users in BTP Cockpit):
@@ -80,7 +80,11 @@ And 7 pre-defined role collections (defined in `mta.yaml`, assignable to users i
 Role collections are only the user-permission gate. Server flags still have to allow the capability: for example, a user in `ARC-1 Developer` still cannot create transports unless the ARC-1 instance also has `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_TRANSPORT_WRITES=true`.
 
 !!! note "Assign the least-privilege collection"
-    `ARC-1 Developer` bundles `transports` + `git` — assigning it lets that user create/release CTS transports and push/pull via abapGit/gCTS (when the matching server flags are on). For reviewers, assign `ARC-1 Viewer` (read only); to grant code-write *without* transports/Git, use the `[read, write]`-only template above rather than reusing Developer.
+    `ARC-1 Developer` bundles `transports` + `git` — assigning it authorizes CTS mutations and the
+    gated abapGit mutation/egress family when the matching server flags are on. It does not make gCTS
+    mutations available: those remain quarantined before HTTP. Some accepted abapGit mutations return
+    incomplete when no authoritative postcondition exists. For reviewers, assign `ARC-1 Viewer` (read
+    only); to grant code-write *without* transports/Git, use the `[read, write]`-only template above.
 
 See [authorization.md](authorization.md) for the full three-layer authorization model.
 

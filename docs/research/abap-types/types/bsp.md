@@ -18,7 +18,7 @@ Naming is misleading but functionally correct.
 ## ADT slash subtypes
 | Slash code | Meaning | URL prefix | Verified on |
 |---|---|---|---|
-| (none used by ARC-1) | UI5/BSP filestore root | `/sap/bc/adt/filestore/ui5-bsp/objects/<APP>/content` | ARC-1 `client.listBspApps`/`getBspAppStructure`/`getBspFileContent` |
+| (none used by ARC-1) | UI5/BSP filestore root | `/sap/bc/adt/filestore/ui5-bsp/objects/<APP>/content` | ARC-1 `client.listBspApps`/`getBspPathContent` |
 
 ## SAP docs & notes
 - "ABAP UI Development Toolkit for HTML5 — Deployment to BSP Repository".
@@ -31,8 +31,8 @@ Naming is misleading but functionally correct.
 ## Live verification
 ### a4h (S/4HANA 2023)
 - `SAPRead(type='BSP', name='')` → `listBspApps()` returns deployed apps.
-- `SAPRead(type='BSP', name='ZAPP')` → `getBspAppStructure('ZAPP')`.
-- `SAPRead(type='BSP', name='ZAPP', include='manifest.json')` → `getBspFileContent`.
+- `SAPRead(type='BSP', name='ZAPP')` → `getBspPathContent('ZAPP')` and response-driven folder parsing.
+- `SAPRead(type='BSP', name='ZAPP', include='manifest.json')` → `getBspPathContent` and raw file text.
 
 ### 7.50 (NW 7.50)
 - Same filestore endpoint exists; depends on whether UI5 ABAP repo ICF is active.
@@ -42,7 +42,7 @@ Naming is misleading but functionally correct.
 |---|---|---|---|
 | `handleSAPRead` | 1731–1753 | `case 'BSP'` → filestore APIs | ✅ functional |
 | `objectBasePath` | n/a (no entry) | falls through to default | ⚠️ — `BSP` is read-only, no URL builder needed |
-| `client.listBspApps`/`getBspAppStructure`/`getBspFileContent` | 668–700 | `/sap/bc/adt/filestore/ui5-bsp/objects/` | ✅ |
+| `client.listBspApps`/`getBspPathContent` | BSP methods | `/sap/bc/adt/filestore/ui5-bsp/objects/` | ✅ |
 | `cachedFeatures.ui5` gate | 1732–1737 | feature-probed | ✅ |
 | Tool description | 104, 108 | `BSP (deployed UI5/Fiori apps …)` | ⚠️ — naming overloads legacy BSP semantics |
 

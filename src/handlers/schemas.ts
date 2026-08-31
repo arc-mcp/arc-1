@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
@@ -115,11 +116,12 @@ function validateSapReadInput(
       });
       return;
     }
-    if (!versionUri.startsWith('/sap/bc/adt/')) {
+    if (!canonicalRevisionSourcePath(versionUri)) {
       ctx.addIssue({
         code: 'custom',
         path: ['versionUri'],
-        message: 'VERSION_SOURCE versionUri must start with /sap/bc/adt/.',
+        message:
+          'VERSION_SOURCE versionUri must be a canonical source URI under /sap/bc/adt/ from a VERSIONS response.',
       });
     }
   }
@@ -852,6 +854,9 @@ export const SAPDiagnoseSchema = z
     sections: z.array(z.string()).optional(),
     includeFullText: looseOptionalBoolean,
     coverage: looseOptionalBoolean,
+    includeSubpackages: looseOptionalBoolean,
+    resultFormat: z.enum(['legacy', 'structured', 'junit']).optional(),
+    timeoutSeconds: z.coerce.number().int().min(1).max(3600).optional(),
     sqlOn: looseOptionalBoolean,
     onlyFailures: looseOptionalBoolean,
     analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
@@ -865,7 +870,64 @@ export const SAPDiagnoseSchema = z
     aggregate: looseOptionalBoolean,
     description: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.action === 'unittest' && input.type !== undefined) {
+      const type = input.type.toUpperCase().split('/')[0];
+      if (!['CLAS', 'PROG', 'FUGR', 'DEVC'].includes(type ?? '')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['type'],
+          message: 'SAPDiagnose action="unittest" supports CLAS, PROG, FUGR, and DEVC package targets.',
+        });
+      }
+    }
+    if (
+      input.includeSubpackages !== undefined &&
+      (input.action !== 'unittest' || input.type?.toUpperCase().split('/')[0] !== 'DEVC')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['includeSubpackages'],
+        message: 'SAPDiagnose includeSubpackages is only supported for action="unittest" with type="DEVC".',
+      });
+    }
+    if (input.timeoutSeconds !== undefined && input.action !== 'unittest' && input.action !== 'atc') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['timeoutSeconds'],
+        message: 'SAPDiagnose timeoutSeconds is only supported for action="unittest" or action="atc".',
+      });
+    }
+    if (input.resultFormat !== undefined) {
+      if (input.action === 'atc' && input.resultFormat === 'junit') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['resultFormat'],
+          message:
+            'SAPDiagnose action="atc" resultFormat must be "legacy" or "structured"; "junit" is only supported for action="unittest".',
+        });
+      } else if (input.action !== 'atc' && input.action !== 'unittest') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['resultFormat'],
+          message: 'SAPDiagnose resultFormat is only supported for action="unittest" or action="atc".',
+        });
+      }
+    }
+
+    if (
+      input.action === 'gateway_errors' &&
+      input.detailUrl !== undefined &&
+      !isCanonicalHostRelativeAdtPath(input.detailUrl, '/sap/bc/adt/gw/errorlog/')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['detailUrl'],
+        message: 'gateway_errors detailUrl must be a canonical host-relative gateway-error ADT path.',
+      });
+    }
+  });
 
 // ─── SAPTransport ───────────────────────────────────────────────────
 
@@ -905,11 +967,22 @@ export const SAPTransportSchema = z
     // For list: headers-only view — omit each transport's object lists (keep an objectCount).
     summary: looseOptionalBoolean,
     maxResults: z.coerce.number().optional(),
+    resultFormat: z.enum(['legacy', 'structured']).optional(),
+    timeoutSeconds: z.coerce.number().int().min(1).max(1800).optional(),
     // For diff: object-level paging (cap 40, matching SAP's own transport-diff pageSize ceiling).
     offset: z.coerce.number().optional(),
     limit: z.coerce.number().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.timeoutSeconds !== undefined && input.action !== 'release' && input.action !== 'release_recursive') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['timeoutSeconds'],
+        message: 'SAPTransport timeoutSeconds is only supported for release and release_recursive.',
+      });
+    }
+  });
 
 // ─── SAPGit ─────────────────────────────────────────────────────────
 
@@ -928,7 +1001,6 @@ export const SAPGitSchema = z
       'clone',
       'pull',
       'push',
-      'commit',
       'switch_branch',
       'create_branch',
       'unlink',
@@ -940,7 +1012,6 @@ export const SAPGitSchema = z
     transport: z.string().optional(),
     commit: z.string().optional(),
     message: z.string().optional(),
-    description: z.string().optional(),
     objects: z
       .array(
         z.object({

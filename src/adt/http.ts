@@ -35,26 +35,18 @@ import { traceHeaders } from '../server/trace-context.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
+import {
+  type AdtRequestOptions,
+  awaitWithinRequestBudget,
+  requestBudgetSignal,
+  requestSignal,
+  sleepWithinRequestBudget,
+  throwIfRequestCancelled,
+} from './http-deadline.js';
+import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import type { Semaphore } from './semaphore.js';
 
-export interface AdtRequestOptions {
-  /**
-   * Some ADT subresources are optional and legitimately return 404, for example
-   * class local includes such as testclasses on classes without ABAP Unit code.
-   * Callers that handle those 404s can opt into debug-level audit logging.
-   */
-  suppressNotFoundLog?: boolean;
-  /**
-   * Startup capability/discovery probe. ANY non-2xx is expected here (the feature
-   * is simply absent/not activated, or the endpoint intentionally 400s without
-   * query params, e.g. the RAP probe on `/ddic/ddl/sources`). The outcome is
-   * captured as structured data and re-reported at a higher layer (feature map,
-   * the `Authorization probe: …` lines, the contextual discovery warn), so the
-   * raw `http_request` failure is logged at debug instead of warn to keep a
-   * healthy startup quiet. Unlike `suppressNotFoundLog` this is not limited to 404.
-   */
-  probe?: boolean;
-}
+export type { AdtRequestOptions } from './http-deadline.js';
 
 /**
  * Opt-in wire-level debug logging.
@@ -131,6 +123,8 @@ export interface AdtHttpConfig {
   client?: string;
   language?: string;
   insecure?: boolean;
+  /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
+  gzipDataPreviewBody?: boolean;
   cookies?: Record<string, string>;
   /** Path to cookie file — enables hot-reload on stale auth */
   cookieFile?: string;
@@ -194,6 +188,7 @@ export class AdtHttpClient {
   private negotiatedHeaders: Map<string, { accept?: string; contentType?: string }> = new Map();
   private csrfToken = '';
   private dispatcher: Dispatcher | undefined;
+  private longOperationDispatcher: Dispatcher | undefined;
   private config: AdtHttpConfig;
   /**
    * Cookie jar — stores Set-Cookie headers from responses and sends them back.
@@ -222,7 +217,7 @@ export class AdtHttpClient {
     // (see doProxyRequest()) — undici 8.x ProxyAgent always uses CONNECT tunneling,
     // which BTP's connectivity proxy doesn't support (HTTP 405).
     if (!config.btpProxy && config.insecure) {
-      this.dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
+      this.dispatcher = new Agent({ connect: { rejectUnauthorized: false }, headersTimeout: 0, bodyTimeout: 0 });
     }
   }
 
@@ -254,8 +249,8 @@ export class AdtHttpClient {
   }
 
   /** HEAD request — lightweight probe, no response body */
-  async head(path: string, headers?: Record<string, string>): Promise<AdtResponse> {
-    return this.request('HEAD', path, undefined, undefined, headers);
+  async head(path: string, headers?: Record<string, string>, options?: AdtRequestOptions): Promise<AdtResponse> {
+    return this.request('HEAD', path, undefined, undefined, headers, options);
   }
 
   /** POST request (includes CSRF token) */
@@ -264,18 +259,25 @@ export class AdtHttpClient {
     body?: string,
     contentType?: string,
     headers?: Record<string, string>,
+    options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
-    return this.request('POST', path, body, contentType, headers);
+    return this.request('POST', path, body, contentType, headers, options);
   }
 
   /** PUT request (includes CSRF token) */
-  async put(path: string, body: string, contentType?: string, headers?: Record<string, string>): Promise<AdtResponse> {
-    return this.request('PUT', path, body, contentType, headers);
+  async put(
+    path: string,
+    body: string,
+    contentType?: string,
+    headers?: Record<string, string>,
+    options?: AdtRequestOptions,
+  ): Promise<AdtResponse> {
+    return this.request('PUT', path, body, contentType, headers, options);
   }
 
   /** DELETE request (includes CSRF token) */
-  async delete(path: string, headers?: Record<string, string>): Promise<AdtResponse> {
-    return this.request('DELETE', path, undefined, undefined, headers);
+  async delete(path: string, headers?: Record<string, string>, options?: AdtRequestOptions): Promise<AdtResponse> {
+    return this.request('DELETE', path, undefined, undefined, headers, options);
   }
 
   /**
@@ -308,13 +310,22 @@ export class AdtHttpClient {
     extraHeaders?: Record<string, string>,
     options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
-    const execute = () => {
-      if (this.config.semaphore) {
-        return this.config.semaphore.run(() =>
-          this.requestInner(method, path, body, contentType, extraHeaders, options),
-        );
+    throwIfRequestCancelled(options);
+    const execute = async () => {
+      try {
+        if (this.config.semaphore) {
+          return await this.config.semaphore.run(
+            () => this.requestInner(method, path, body, contentType, extraHeaders, options),
+            requestBudgetSignal(options),
+          );
+        }
+        return await this.requestInner(method, path, body, contentType, extraHeaders, options);
+      } catch (error) {
+        if (error instanceof AdtApiError || error instanceof AdtNetworkError) throw error;
+        if (!options?.signal && options?.deadline === undefined) throw error;
+        const cause = error instanceof Error ? error : new Error(String(error));
+        throw new AdtNetworkError(cause.message, cause);
       }
-      return this.requestInner(method, path, body, contentType, extraHeaders, options);
     };
 
     // Shared Basic clients disable 401 retries. Serialize their internal HTTP fan-out as well:
@@ -322,25 +333,32 @@ export class AdtHttpClient {
     // expired password before the first 401 is observed. Once rejected, later requests on this
     // per-call client fail locally and never contact SAP.
     if (this.config.retryUnauthorized === false) {
-      return this.runSerializedAuthenticationAttempt(path, execute);
+      return this.runSerializedAuthenticationAttempt(path, execute, options);
     }
     return execute();
   }
 
-  private async runSerializedAuthenticationAttempt<T>(path: string, execute: () => Promise<T>): Promise<T> {
+  private async runSerializedAuthenticationAttempt<T>(
+    path: string,
+    execute: () => Promise<T>,
+    options?: AdtRequestOptions,
+  ): Promise<T> {
     const previous = this.authenticationAttemptState.tail;
     let release!: () => void;
     this.authenticationAttemptState.tail = new Promise<void>((resolve) => {
       release = resolve;
     });
-    await previous;
+    let turnStarted = false;
     try {
+      await awaitWithinRequestBudget(previous, options);
+      turnStarted = true;
       if (this.authenticationAttemptState.rejected) {
         throw new AdtApiError('Shared Basic authentication was already rejected for this request.', 401, path);
       }
       return await execute();
     } finally {
-      release();
+      if (turnStarted) release();
+      else void previous.then(release, release);
     }
   }
 
@@ -353,9 +371,10 @@ export class AdtHttpClient {
     extraHeaders?: Record<string, string>,
     options?: AdtRequestOptions,
   ): Promise<AdtResponse> {
+    throwIfRequestCancelled(options);
     // Auto-fetch CSRF token for modifying requests
     if (isModifyingMethod(method) && !this.csrfToken) {
-      await this.fetchCsrfToken();
+      await this.fetchCsrfToken(options);
     }
 
     const headers: Record<string, string> = { Accept: '*/*' };
@@ -399,10 +418,14 @@ export class AdtHttpClient {
       headers['Content-Type'] = contentType;
     }
 
+    // Keep `body` as the logical plaintext for debug audit fields; only `wireBody` is sent.
+    const wireBody = prepareDataPreviewWireBody(this.config.gzipDataPreviewBody === true, method, path, body, headers);
+
     // Auth: Bearer token (BTP ABAP) or Basic Auth (on-premise)
     this.applyAuthHeader(headers);
     if (this.config.bearerTokenProvider) {
-      const token = await this.config.bearerTokenProvider();
+      throwIfRequestCancelled(options);
+      const token = await awaitWithinRequestBudget(this.config.bearerTokenProvider(), options);
       headers.Authorization = `Bearer ${token}`;
     }
 
@@ -448,7 +471,7 @@ export class AdtHttpClient {
     let retried429 = false;
 
     try {
-      let response = await this.doFetch(url, method, headers, body);
+      let response = await this.doFetch(url, method, headers, wireBody, options);
       let responseBody = await response.text();
 
       // Persist any Set-Cookie headers from the response
@@ -478,7 +501,7 @@ export class AdtHttpClient {
 
           // Re-fetch CSRF token (needed for modifying requests, harmless for reads)
           if (isModifyingMethod(method)) {
-            await this.fetchCsrfToken();
+            await this.fetchCsrfToken(options);
             headers['X-CSRF-Token'] = this.csrfToken;
           }
 
@@ -493,7 +516,7 @@ export class AdtHttpClient {
             delete headers.Cookie;
           }
 
-          const retryResp = await this.doFetch(url, method, headers, body);
+          const retryResp = await this.doFetch(url, method, headers, wireBody, options);
           const retryBody = await retryResp.text();
           this.storeCookies(retryResp);
           const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path);
@@ -536,9 +559,9 @@ export class AdtHttpClient {
           errorBody: `503 Service Unavailable — retrying in ${Math.round(jitterMs)}ms (${source})`,
         });
 
-        await new Promise((resolve) => setTimeout(resolve, jitterMs));
+        await sleepWithinRequestBudget(jitterMs, options);
 
-        const retryResp = await this.doFetch(url, method, headers, body);
+        const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
         this.storeCookies(retryResp);
 
@@ -580,9 +603,9 @@ export class AdtHttpClient {
           errorBody: `429 Too Many Requests — retrying in ${Math.round(jitterMs)}ms (${source})`,
         });
 
-        await new Promise((resolve) => setTimeout(resolve, jitterMs));
+        await sleepWithinRequestBudget(jitterMs, options);
 
-        const retryResp = await this.doFetch(url, method, headers, body);
+        const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
         this.storeCookies(retryResp);
 
@@ -631,13 +654,14 @@ export class AdtHttpClient {
         // Re-apply auth credentials
         this.applyAuthHeader(headers);
         if (this.config.bearerTokenProvider) {
-          const token = await this.config.bearerTokenProvider();
+          throwIfRequestCancelled(options);
+          const token = await awaitWithinRequestBudget(this.config.bearerTokenProvider(), options);
           headers.Authorization = `Bearer ${token}`;
         }
 
         // Re-fetch CSRF token for modifying requests
         if (isModifyingMethod(method)) {
-          await this.fetchCsrfToken();
+          await this.fetchCsrfToken(options);
           headers['X-CSRF-Token'] = this.csrfToken;
         }
 
@@ -649,7 +673,7 @@ export class AdtHttpClient {
           delete headers.Cookie;
         }
 
-        response = await this.doFetch(url, method, headers, body);
+        response = await this.doFetch(url, method, headers, wireBody, options);
         responseBody = await response.text();
         this.storeCookies(response);
 
@@ -676,7 +700,7 @@ export class AdtHttpClient {
 
       // Handle CSRF token refresh on 403 (modifying requests only)
       if (response.status === 403 && isModifyingMethod(method)) {
-        await this.fetchCsrfToken();
+        await this.fetchCsrfToken(options);
         headers['X-CSRF-Token'] = this.csrfToken;
         // Update cookie header after CSRF fetch may have set new cookies. Use the
         // merged builder (jar wins) so auth cookies in config.cookies (e.g.
@@ -685,7 +709,7 @@ export class AdtHttpClient {
         if (csrfRefreshedCookieHeader) {
           headers.Cookie = csrfRefreshedCookieHeader;
         }
-        const retryResponse = await this.doFetch(url, method, headers, body);
+        const retryResponse = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResponse.text();
         this.storeCookies(retryResponse);
         const result = this.handleResponse(retryResponse.status, retryResponse.headers, retryBody, path);
@@ -760,7 +784,7 @@ export class AdtHttpClient {
             errorBody: `Content negotiation ${response.status} — retrying with fallback headers`,
           });
 
-          const retryResp = await this.doFetch(url, method, fallbackHeaders, body);
+          const retryResp = await this.doFetch(url, method, fallbackHeaders, wireBody, options);
           const retryBody = await retryResp.text();
           this.storeCookies(retryResp);
 
@@ -856,6 +880,8 @@ export class AdtHttpClient {
         throw err;
       }
 
+      if (err instanceof AdtNetworkError) throw err;
+
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(message, err instanceof Error ? err : undefined);
     }
@@ -942,7 +968,8 @@ export class AdtHttpClient {
    * Fetch CSRF token from SAP.
    * Uses HEAD /sap/bc/adt/core/discovery for speed.
    */
-  async fetchCsrfToken(): Promise<void> {
+  async fetchCsrfToken(options?: AdtRequestOptions): Promise<void> {
+    throwIfRequestCancelled(options);
     const url = this.buildUrl('/sap/bc/adt/core/discovery');
     const headers: Record<string, string> = {
       'X-CSRF-Token': 'fetch',
@@ -960,7 +987,8 @@ export class AdtHttpClient {
     // Auth: Bearer token (BTP ABAP) or Basic Auth (on-premise)
     this.applyAuthHeader(headers);
     if (this.config.bearerTokenProvider) {
-      const token = await this.config.bearerTokenProvider();
+      throwIfRequestCancelled(options);
+      const token = await awaitWithinRequestBudget(this.config.bearerTokenProvider(), options);
       headers.Authorization = `Bearer ${token}`;
     }
 
@@ -985,7 +1013,7 @@ export class AdtHttpClient {
     }
 
     try {
-      let response = await this.doFetch(url, 'HEAD', headers);
+      let response = await this.doFetch(url, 'HEAD', headers, undefined, options);
 
       // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion)
       if (response.status === 503) {
@@ -1000,8 +1028,8 @@ export class AdtHttpClient {
           durationMs: 0,
           errorBody: `CSRF fetch got 503 — retrying in ${Math.round(jitterMs)}ms`,
         });
-        await new Promise((resolve) => setTimeout(resolve, jitterMs));
-        response = await this.doFetch(url, 'HEAD', headers);
+        await sleepWithinRequestBudget(jitterMs, options);
+        response = await this.doFetch(url, 'HEAD', headers, undefined, options);
       }
 
       // Preserve any session established by HEAD before deciding whether GET is needed.
@@ -1034,7 +1062,7 @@ export class AdtHttpClient {
               ? 'CSRF HEAD returned 403 — retrying with GET (S/4HANA Public Cloud compat)'
               : 'CSRF HEAD returned no usable token — retrying with GET',
         });
-        response = await this.doFetch(url, 'GET', headers);
+        response = await this.doFetch(url, 'GET', headers, undefined, options);
       }
 
       // Store cookies from the final CSRF response — critical for session correlation.
@@ -1069,7 +1097,7 @@ export class AdtHttpClient {
 
       this.csrfToken = token;
     } catch (err) {
-      if (err instanceof AdtApiError) throw err;
+      if (err instanceof AdtApiError || err instanceof AdtNetworkError) throw err;
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(`CSRF token fetch failed: ${message}`, err instanceof Error ? err : undefined);
     }
@@ -1268,25 +1296,31 @@ export class AdtHttpClient {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body?: string,
+    body?: string | Buffer,
+    options?: AdtRequestOptions,
   ): Promise<Response> {
+    throwIfRequestCancelled(options);
     // Forward the caller's W3C trace context to SAP so one trace spans agent → ARC-1 → SAP.
     // Empty unless the MCP client sent a valid `traceparent`; ARC-1 never originates a trace.
     // Injected here because doFetch is the single outbound choke point (the proxy branch below
     // spreads these headers too).
     const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
 
-    // BTP Connectivity proxy: use standard HTTP proxy protocol (not CONNECT)
     if (this.config.btpProxy) {
-      return this.doProxyRequest(url, method, outbound, body);
+      return this.doProxyRequest(url, method, outbound, body, options);
     }
-
+    // Let the explicit operation budget override undici's 300-second header timeout.
+    const dispatcher =
+      this.dispatcher ??
+      (options?.fetchTimeoutMs === undefined
+        ? undefined
+        : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
     return undiciFetch(url, {
       method,
       headers: outbound,
       body,
-      signal: AbortSignal.timeout(120_000),
-      ...(this.dispatcher ? { dispatcher: this.dispatcher } : {}),
+      signal: requestSignal(options),
+      ...(dispatcher ? { dispatcher } : {}),
     }) as Promise<Response>;
   }
 
@@ -1311,21 +1345,21 @@ export class AdtHttpClient {
     url: string,
     method: string,
     headers: Record<string, string>,
-    body?: string,
+    body?: string | Buffer,
+    options?: AdtRequestOptions,
   ): Promise<Response> {
     const proxy = this.config.btpProxy!;
     const proxyOrigin = `${proxy.protocol}://${proxy.host}:${proxy.port}`;
 
-    // Get proxy auth token
     let proxyAuth: string;
+    throwIfRequestCancelled(options);
     if (this.config.ppProxyAuth) {
       proxyAuth = this.config.ppProxyAuth;
     } else {
-      const proxyToken = await proxy.getProxyToken();
+      const proxyToken = await awaitWithinRequestBudget(proxy.getProxyToken(), options);
       proxyAuth = `Bearer ${proxyToken}`;
     }
 
-    // Extract host from target URL for the Host header
     const targetUrl = new URL(url);
     const hostHeader = targetUrl.port ? `${targetUrl.hostname}:${targetUrl.port}` : targetUrl.hostname;
 
@@ -1342,7 +1376,8 @@ export class AdtHttpClient {
       proxyHeaders['SAP-Connectivity-SCC-Location_ID'] = proxy.locationId;
     }
 
-    const client = new Client(proxyOrigin);
+    const clientOptions = options?.fetchTimeoutMs === undefined ? undefined : { headersTimeout: 0, bodyTimeout: 0 };
+    const client = new Client(proxyOrigin, clientOptions);
     try {
       const resp = await client.request({
         method: method as Dispatcher.HttpMethod,
@@ -1350,7 +1385,7 @@ export class AdtHttpClient {
         path: url,
         headers: proxyHeaders,
         body: body ?? undefined,
-        signal: AbortSignal.timeout(120_000),
+        signal: requestSignal(options),
       });
 
       // Convert undici response to a Response-like object that matches

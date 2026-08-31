@@ -95,7 +95,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Activate objects | `write` | `SAP_ALLOW_WRITES=true` | Activation is a mutation |
 | Package / FLP mutations | `write` | `SAP_ALLOW_WRITES=true` | FLP list actions are reads; FLP create/delete actions are writes |
 | Create / release / delete transports | `write` + `transports` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_TRANSPORT_WRITES=true` | `SAP_ALLOWED_TRANSPORTS` can further restrict CTS IDs |
-| Git clone / pull / push / commit | `write` + `git` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_GIT_WRITES=true` | Requires backend gCTS/abapGit feature availability |
+| Gated abapGit mutation / SAP-side Git egress | `write` + `git` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_GIT_WRITES=true` | Package-bound actions also need subtree authorization. Accepted push/branch operations can return incomplete; inspect before retrying. Every gCTS mutation is currently quarantined before HTTP. |
 
 Why transport and Git rows list `write` plus the specialized scope: ARC-1's safety layer turns off all mutations for users without `write`. The specialized `transports` / `git` scopes decide who may use those write families after general write permission exists.
 
@@ -145,7 +145,7 @@ Seven scopes exist:
 | `data` | Named table preview | - |
 | `sql` | Freestyle SQL | `data` |
 | `transports` | CTS transport mutations | - |
-| `git` | abapGit/gCTS mutations | - |
+| `git` | Gated abapGit mutations, SAP-side Git egress, and the reserved authorization boundary for currently quarantined gCTS mutations | - |
 | `admin` | All ARC-1 scopes | all other scopes |
 
 Assigning only `transports` or only `git` is not useful for mutations because transport/Git writes also need `write`. The shipped `developer` profiles and BTP `MCPDeveloper` role include `write`, `transports`, and `git` together.
@@ -348,6 +348,7 @@ Then assign role collections in BTP Cockpit. The server says what the instance c
 | `Operations on package ... are blocked` | Server/profile safety | Adjust `SAP_ALLOWED_PACKAGES` or API-key profile choice |
 | `denied by server policy (SAP_DENY_ACTIONS)` | Deny list | Remove or narrow the deny pattern |
 | `No authorization for object ...` / SAP 403 | SAP authorization | Fix SAP user roles / PFCG / package auth |
+| Bare 403 only for `SAPQuery` / `TABLE_QUERY`, while unfiltered `TABLE_CONTENTS` works | Possibly an upstream WAF/body-inspection false positive | Inspect the gateway audit log and matched rule. Prefer a narrowly scoped WAF rule exclusion; if the security owner approves compressed bodies, use `SAP_GZIP_DATAPREVIEW_BODY=true` as the default-off fallback. |
 | `Legacy authorization config detected` | Migration | Replace old v0.6 env vars per [Updating](updating.md#v07-authorization-refactor-breaking-change) |
 
 Debug commands:
@@ -362,6 +363,13 @@ Also read startup logs for:
 - `effective safety: ...` - final server ceiling
 - `config contradiction: ...` - flags that cannot take effect, such as transport writes without writes
 - `auth: MCP=[...] SAP=[...]` - active auth methods
+
+The WAF row is a fingerprint, not a diagnosis by status code alone. `SAPQuery` and structured
+`TABLE_QUERY` both POST SQL text to `/sap/bc/adt/datapreview/freestyle`; unfiltered
+`TABLE_CONTENTS` normally POSTs no filter body to `/sap/bc/adt/datapreview/ddic`. If the same SAP
+identity succeeds directly or for the bodyless control but receives a bare gateway-style 403 for
+the SQL-bearing call, compare the gateway and SAP access logs to establish where the request
+stopped. Do not enable gzip merely to make an unexplained authorization failure disappear.
 
 ### MCP sign-in ends on a blank page / "this site can't be reached" / "Missing required parameters … code, state, nonce"
 

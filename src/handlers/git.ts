@@ -16,24 +16,21 @@ import {
   stageRepo as abapGitStageRepo,
   switchBranch as abapGitSwitchBranch,
   unlinkRepo as abapGitUnlinkRepo,
+  redactGitUrl,
+  validateGitRemoteUrl,
 } from '../adt/abapgit.js';
 import type { AdtClient } from '../adt/client.js';
 import {
-  type GctsCloneParams,
-  cloneRepo as gctsCloneRepo,
-  commitRepo as gctsCommitRepo,
-  createBranch as gctsCreateBranch,
-  deleteRepo as gctsDeleteRepo,
+  enforceGctsMutationQuarantine,
   getCommitHistory as gctsGetCommitHistory,
   getConfig as gctsGetConfig,
   getUserInfo as gctsGetUserInfo,
   listBranches as gctsListBranches,
   listRepoObjects as gctsListRepoObjects,
   listRepos as gctsListRepos,
-  pullRepo as gctsPullRepo,
-  switchBranch as gctsSwitchBranch,
+  redactGctsValue,
 } from '../adt/gcts.js';
-import type { AbapGitStagingObject } from '../adt/types.js';
+import type { AbapGitObject, AbapGitRepo, AbapGitStagingObject } from '../adt/types.js';
 import { getActionPolicy } from '../authz/policy.js';
 import { getCachedFeatures } from './feature-cache.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -41,6 +38,70 @@ import { errorResult, type ToolResult, textResult, toolJson } from './shared.js'
 // ─── SAPGit Handler ──────────────────────────────────────────────────
 
 type SapGitBackend = 'gcts' | 'abapgit';
+
+function gitToolResult(backend: SapGitBackend, result: unknown, isError = false): ToolResult {
+  const payload = redactGctsValue({ backend, result });
+  return isError ? errorResult(toolJson(payload)) : textResult(toolJson(payload));
+}
+
+function repositoryEvidence(repo: AbapGitRepo | undefined): Record<string, unknown> | null {
+  if (!repo) return null;
+  return {
+    key: repo.key,
+    package: repo.package,
+    url: repo.url,
+    branchName: repo.branchName,
+    selectedBranch: repo.selectedBranch,
+    writeProtected: repo.writeProtected,
+  };
+}
+
+function abapGitMutationEvidence(
+  operation: 'clone' | 'pull',
+  objects: AbapGitObject[],
+  repo: AbapGitRepo | undefined,
+): Record<string, unknown> {
+  const incomplete = objects.length === 0;
+  return {
+    outcome: incomplete ? 'incomplete' : 'bridge_evidence',
+    verified: false,
+    operation,
+    objects,
+    repository: repositoryEvidence(repo),
+    message: incomplete
+      ? 'The abapGit bridge returned an empty object wrapper. Repository linkage/readback does not prove that objects were imported or activated. Do not retry blindly; inspect the repository and expected objects first.'
+      : 'The bridge returned non-rejecting object rows and repository readback. Complete repository import and activation were not reconciled.',
+  };
+}
+
+function sameGitUrl(left: string, right: string): boolean {
+  return redactGitUrl(left) === redactGitUrl(right);
+}
+
+async function readBackCreatedAbapGitRepo(
+  client: AdtClient,
+  packageName: string,
+  url: string,
+): Promise<AbapGitRepo | undefined> {
+  try {
+    const repos = await abapGitListRepos(client.http, client.safety);
+    return repos.find(
+      (candidate) => candidate.package.toUpperCase() === packageName.toUpperCase() && sameGitUrl(candidate.url, url),
+    );
+  } catch {
+    // The mutation already ran. Preserve an honest incomplete/unverified result rather than masking
+    // it with a secondary readback failure (repository:null records the missing evidence).
+    return undefined;
+  }
+}
+
+async function tryReadBackAbapGitRepo(client: AdtClient, repoId: string): Promise<AbapGitRepo | undefined> {
+  try {
+    return (await abapGitListRepos(client.http, client.safety)).find((candidate) => candidate.key === repoId);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Narrow a staging result to the objects the caller asked for (`objects: [{name, type}]`).
@@ -122,7 +183,9 @@ export async function handleSAPGit(
   const abapGitPassword = password ?? token;
   const limit = Number(args.limit ?? 20);
 
-  const gctsOnlyActions = new Set(['whoami', 'config', 'branches', 'history', 'objects', 'commit']);
+  if (url) validateGitRemoteUrl(url, { rejectPrivateLiteral: action === 'external_info' });
+
+  const gctsOnlyActions = new Set(['whoami', 'config', 'branches', 'history', 'objects']);
   const abapGitOnlyActions = new Set(['external_info', 'check', 'stage', 'push']);
   if (backend === 'abapgit' && gctsOnlyActions.has(action)) {
     return errorResult(`Action '${action}' is only supported by gCTS; this system uses abapGit.`);
@@ -130,8 +193,10 @@ export async function handleSAPGit(
   if (backend === 'gcts' && abapGitOnlyActions.has(action)) {
     return errorResult(`Action '${action}' is only supported by abapGit; this system uses gCTS.`);
   }
+  if (backend === 'gcts') enforceGctsMutationQuarantine(client.safety, action);
 
   let result: unknown;
+  let incomplete = false;
   switch (action) {
     case 'list_repos':
       result =
@@ -173,67 +238,56 @@ export async function handleSAPGit(
       result = await abapGitStageRepo(client.http, client.safety, repo, abapGitUser, abapGitPassword);
       break;
     }
-    case 'clone':
+    case 'clone': {
       if (!url) return errorResult('SAPGit(action="clone") requires url.');
-      if (backend === 'gcts') {
-        const params: GctsCloneParams = {
-          rid: repoId || undefined,
-          name: repoId || undefined,
+      if (!packageName) return errorResult('SAPGit(action="clone", backend="abapgit") requires package.');
+      const objects = await abapGitCreateRepo(
+        client.http,
+        client.safety,
+        {
+          package: packageName,
           url,
-          ...(packageName ? { package: packageName } : {}),
-          user,
-          password,
-          token,
-        };
-        result = await gctsCloneRepo(client.http, client.safety, params, client.getPackageHierarchyResolver());
-      } else {
-        if (!packageName) return errorResult('SAPGit(action="clone", backend="abapgit") requires package.');
-        result = await abapGitCreateRepo(
-          client.http,
-          client.safety,
-          {
-            package: packageName,
-            url,
-            branchName: branch || undefined,
-            transportRequest: String(args.transport ?? '').trim() || undefined,
-            user: abapGitUser,
-            password: abapGitPassword,
-          },
-          client.getPackageHierarchyResolver(),
-        );
+          branchName: branch || undefined,
+          transportRequest: String(args.transport ?? '').trim() || undefined,
+          user: abapGitUser,
+          password: abapGitPassword,
+        },
+        client.getPackageHierarchyResolver(),
+      );
+      const repo = await readBackCreatedAbapGitRepo(client, packageName, url);
+      const evidence = abapGitMutationEvidence('clone', objects, repo);
+      if (objects.length === 0) {
+        return gitToolResult('abapgit', evidence, true);
       }
+      result = evidence;
       break;
-    case 'pull':
+    }
+    case 'pull': {
       if (!repoId) return errorResult('SAPGit(action="pull") requires repoId.');
-      if (backend === 'gcts') {
-        result = await gctsPullRepo(
-          client.http,
-          client.safety,
-          repoId,
-          String(args.commit ?? '').trim() || undefined,
-          client.getPackageHierarchyResolver(),
-        );
-      } else {
-        // R9: a pull deserializes remote content into the repo's server-bound package, which is
-        // NOT the caller-supplied `package` (abapGit ignores that for an existing repo). Gate the
-        // real binding against the allowlist before writing.
-        const repo = await loadAbapGitRepo(client, repoId);
-        await abapGitEnforceRepoPackage(
-          client.safety,
-          repo.package,
-          client.getPackageHierarchyResolver(),
-          'SAPGit(action="pull")',
-        );
-        result = await abapGitPullRepo(client.http, client.safety, repoId, {
+      const repo = await loadAbapGitRepo(client, repoId);
+      const objects = await abapGitPullRepo(
+        client.http,
+        client.safety,
+        repoId,
+        {
           ...(packageName ? { package: packageName } : {}),
           ...(url ? { url } : {}),
           ...(branch ? { branchName: branch } : {}),
           transportRequest: String(args.transport ?? '').trim() || undefined,
           user: abapGitUser,
           password: abapGitPassword,
-        });
+        },
+        client.getPackageHierarchyResolver(),
+        repo.package,
+      );
+      const refreshedRepo = await tryReadBackAbapGitRepo(client, repoId);
+      const evidence = abapGitMutationEvidence('pull', objects, refreshedRepo ?? repo);
+      if (objects.length === 0) {
+        return gitToolResult('abapgit', evidence, true);
       }
+      result = evidence;
       break;
+    }
     case 'push': {
       if (!repoId) return errorResult('SAPGit(action="push") requires repoId.');
       const message = String(args.message ?? '').trim();
@@ -241,8 +295,7 @@ export async function handleSAPGit(
         return errorResult('SAPGit(action="push", backend="abapgit") requires message (the commit message).');
       }
       const repo = await loadAbapGitRepo(client, repoId);
-      // R9: push exports the repo's bound-package source to a remote git; gate that package
-      // against the allowlist (the read-side mirror of the pull gate above).
+      // Staging is Update-scoped and runs before pushRepo's sink-local gate, so gate the bound package first.
       await abapGitEnforceRepoPackage(
         client.safety,
         repo.package,
@@ -264,70 +317,113 @@ export async function handleSAPGit(
         { ...staging, objects: selected, comment: { ...staging.comment, comment: message } },
         abapGitUser,
         abapGitPassword,
+        client.getPackageHierarchyResolver(),
       );
-      result = { ok: true, pushed: selected.map(({ name, type }) => ({ name, type })) };
+      incomplete = true;
+      result = {
+        ok: false,
+        outcome: 'incomplete',
+        accepted: true,
+        verified: false,
+        pushed: selected.map(({ name, type }) => ({ name, type })),
+        message:
+          'The bridge accepted the push request, but ARC-1 has no authoritative remote-commit postcondition. ' +
+          'Do not retry blindly; inspect the remote repository before deciding whether to retry.',
+      };
       break;
     }
-    case 'commit':
-      if (!repoId) return errorResult('SAPGit(action="commit") requires repoId.');
-      result = await gctsCommitRepo(
+    case 'switch_branch': {
+      if (!repoId || !branch) return errorResult('SAPGit(action="switch_branch") requires repoId and branch.');
+      const repo = await loadAbapGitRepo(client, repoId);
+      await abapGitSwitchBranch(
         client.http,
         client.safety,
         repoId,
-        {
-          message: String(args.message ?? '').trim() || undefined,
-          description: String(args.description ?? '').trim() || undefined,
-          objects: Array.isArray(args.objects) ? (args.objects as Array<{ type?: string; name?: string }>) : undefined,
-        },
+        branch,
+        false,
+        abapGitUser,
+        abapGitPassword,
         client.getPackageHierarchyResolver(),
+        repo.package,
       );
+      const refreshedRepo = await tryReadBackAbapGitRepo(client, repoId);
+      incomplete = true;
+      result = {
+        ok: false,
+        outcome: 'incomplete',
+        accepted: true,
+        verified: false,
+        repository: repositoryEvidence(refreshedRepo ?? repo),
+        message:
+          'Branch switch was accepted, but repository readback does not prove imported objects or activation. ' +
+          'Do not retry blindly.',
+      };
       break;
-    case 'switch_branch':
-      if (!repoId || !branch) return errorResult('SAPGit(action="switch_branch") requires repoId and branch.');
-      if (backend === 'gcts') {
-        result = await gctsSwitchBranch(
-          client.http,
-          client.safety,
-          repoId,
-          branch,
-          client.getPackageHierarchyResolver(),
-        );
-      } else {
-        await abapGitSwitchBranch(client.http, client.safety, repoId, branch, false, abapGitUser, abapGitPassword);
-        result = { ok: true };
-      }
-      break;
-    case 'create_branch':
+    }
+    case 'create_branch': {
       if (!repoId || !branch) return errorResult('SAPGit(action="create_branch") requires repoId and branch.');
-      if (backend === 'gcts') {
-        result = await gctsCreateBranch(
-          client.http,
-          client.safety,
-          repoId,
-          {
-            branch,
-            ...(packageName ? { package: packageName } : {}),
-          },
-          client.getPackageHierarchyResolver(),
-        );
-      } else {
-        await abapGitCreateBranch(client.http, client.safety, repoId, branch, abapGitUser, abapGitPassword);
-        result = { ok: true };
-      }
+      const repo = await loadAbapGitRepo(client, repoId);
+      await abapGitCreateBranch(
+        client.http,
+        client.safety,
+        repoId,
+        branch,
+        abapGitUser,
+        abapGitPassword,
+        client.getPackageHierarchyResolver(),
+        repo.package,
+      );
+      const refreshedRepo = await tryReadBackAbapGitRepo(client, repoId);
+      incomplete = true;
+      result = {
+        ok: false,
+        outcome: 'incomplete',
+        accepted: true,
+        verified: false,
+        repository: repositoryEvidence(refreshedRepo ?? repo),
+        message:
+          'Branch creation was accepted, but repository readback does not prove imported objects or activation. ' +
+          'Do not retry blindly.',
+      };
       break;
-    case 'unlink':
+    }
+    case 'unlink': {
       if (!repoId) return errorResult('SAPGit(action="unlink") requires repoId.');
-      if (backend === 'gcts') {
-        await gctsDeleteRepo(client.http, client.safety, repoId);
-      } else {
-        await abapGitUnlinkRepo(client.http, client.safety, repoId);
+      const repo = await loadAbapGitRepo(client, repoId);
+      await abapGitUnlinkRepo(client.http, client.safety, repoId, client.getPackageHierarchyResolver(), repo.package);
+      let remaining: AbapGitRepo | undefined;
+      try {
+        remaining = (await abapGitListRepos(client.http, client.safety)).find((candidate) => candidate.key === repoId);
+      } catch {
+        incomplete = true;
+        result = {
+          ok: false,
+          outcome: 'incomplete',
+          accepted: true,
+          verified: false,
+          message:
+            'The bridge accepted unlink, but repository readback failed. Do not retry blindly; inspect the repository list first.',
+        };
+        break;
       }
-      result = { ok: true };
+      if (remaining) {
+        incomplete = true;
+        result = {
+          ok: false,
+          outcome: 'incomplete',
+          accepted: true,
+          verified: false,
+          repository: repositoryEvidence(remaining),
+          message: 'The bridge accepted unlink, but the repository is still present on readback. Do not retry blindly.',
+        };
+      } else {
+        result = { ok: true, verified: true, repositoryAbsent: true };
+      }
       break;
+    }
     default:
       return errorResult(`Unknown SAPGit action: ${action}`);
   }
 
-  const payload = backend === 'gcts' || backend === 'abapgit' ? { backend, result } : result;
-  return textResult(toolJson(payload));
+  return gitToolResult(backend, result, incomplete);
 }

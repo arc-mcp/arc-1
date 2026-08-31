@@ -100,6 +100,33 @@ Stop if `cf target` names the wrong API endpoint, org, or space. Record the sele
 deployment ticket. Confirm entitlements in BTP Cockpit rather than discovering missing quota halfway
 through the deploy.
 
+Read the `cf services` output before deploying into a space that already runs ARC-1 or shares
+platform services. `arc1-destination` and `arc1-connectivity` are declared as
+`org.cloudfoundry.managed-service`, and a managed instance is named after its resource — so a
+landscape whose instances are named differently gets additional instances rather than reuse.
+
+Because this guide uses subaccount-level destinations, which any Destination instance in the
+subaccount can resolve, the duplicate usually costs Destination/Connectivity `lite` quota and
+landscape clarity rather than function. It does fail the deploy outright on a subaccount already at
+its quota, and ARC-1 genuinely loses the targets if the shared instance carries **instance-level**
+destinations (see [Destination level and visibility](btp-destination-setup.md#destination-level-and-visibility)).
+
+An extension descriptor cannot change a resource's `type` — `mbt validate` rejects `type` in
+`mta.ResourceExt`. It can only repoint a managed resource at a specific instance name:
+
+```yaml
+resources:
+  - name: arc1-destination
+    parameters:
+      service-name: my-shared-destination
+```
+
+That binds the named instance, but the resource stays MTA-managed: the deploy creates it if it is
+absent, and `cf undeploy --delete-services` would delete it. Use it only when this ARC-1 deployment
+is meant to own that instance. Binding an instance whose lifecycle belongs to someone else requires
+`org.cloudfoundry.existing-service` in `mta.yaml` itself, which the shipped descriptor does not
+offer — treat that landscape as needing a reviewed descriptor change, not an extension.
+
 ## 4. Create the landscape extension
 
 `mta.yaml` owns versioned safe defaults and BTP resource topology. A customer-owned extension owns
@@ -202,11 +229,84 @@ npm run btp:build
 both checks succeed and MBT creates
 `mta_archives/arc1-mcp_<version>.mtar`.
 
-Before a customer deploy, inspect the archive in a protected workspace:
+Before a customer deploy, inspect the archive in a protected workspace. Three things make a naive
+listing useless here:
+
+- **The MTAR is a wrapper.** Each deployed module is one nested `<module>/data.zip`, and the
+  application lives inside it. Listing the MTAR shows you `META-INF/` and those nested archives and
+  nothing about their contents. The UI variant (`npm run btp:build-ui-ext`) ships more than one
+  payload, so inspect every member rather than assuming one.
+- **`mta_archives/` accumulates every version you have built.** A glob matching several archives is
+  a false green: `unzip -l` treats the second path as a filter *inside* the first and reports
+  **0 files** (exit 11), while PowerShell's `OpenRead` fails outright. Resolve one archive and echo
+  which one.
+- **A gate that cannot find anything must fail, not pass.** No archive, no `data.zip` member, or an
+  unreadable payload has to be an error; otherwise a broken workspace reports a clean release.
 
 ```bash
-unzip -l mta_archives/arc1-mcp_*.mtar | less
+inspect_mtar() (
+  set -o pipefail
+  deny='\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
+  mtar=$(ls -t mta_archives/*.mtar 2>/dev/null | head -1)
+  [ -n "$mtar" ] || { echo 'FAIL: no archive in mta_archives/'; return 1; }
+  echo "$mtar"
+  unzip -l "$mtar" || { echo 'FAIL: unreadable archive'; return 1; }
+  members=$(unzip -Z1 "$mtar" | grep '/data\.zip$') ||
+    { echo 'FAIL: no <module>/data.zip member'; return 1; }
+  tmp=$(mktemp -d) || return 1
+  trap 'rm -rf "$tmp"' EXIT
+  for member in $members; do
+    unzip -p "$mtar" "$member" > "$tmp/payload.zip" || { echo "FAIL: cannot extract $member"; return 1; }
+    n=$(unzip -Z1 "$tmp/payload.zip" | wc -l) || { echo "FAIL: cannot read $member"; return 1; }
+    echo "-- $member: $n entries"
+    unzip -Z1 "$tmp/payload.zip" | grep -Ei "$deny" && { echo "FAIL: denied path in $member"; return 1; }
+  done
+  echo 'PASS: every payload inspected, no denied paths'
+)
+inspect_mtar
 ```
+
+It returns zero only after inspecting every payload successfully, so it is safe to run unattended.
+The function body is a subshell, so `pipefail` and the cleanup trap do not leak into your session.
+
+Read a full listing too — the pattern covers today's known names, and the point of the gate is to
+catch a file type no denylist anticipated. Take the member names from the wrapper listing above:
+
+```bash
+unzip -p "$MTAR" '<module>/data.zip' > payload.zip && unzip -l payload.zip | less
+```
+
+On Windows, `Expand-Archive` needs a `.zip` extension, so copy first:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$deny = '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
+$mtar = Get-ChildItem mta_archives\*.mtar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if (-not $mtar) { throw 'FAIL: no archive in mta_archives/' }
+$mtar.FullName
+$tmp = Join-Path $env:TEMP ([guid]::NewGuid())
+try {
+  Copy-Item $mtar.FullName "$tmp.zip"
+  Expand-Archive "$tmp.zip" "$tmp-outer"
+  $members = @(Get-ChildItem "$tmp-outer" -Recurse -Filter data.zip -File)
+  if ($members.Count -eq 0) { throw "FAIL: no <module>/data.zip member in $($mtar.Name)" }
+  $bad = @()
+  foreach ($member in $members) {
+    $dest = Join-Path "$tmp-payload" $member.Directory.Name
+    Expand-Archive $member.FullName $dest
+    $files = @(Get-ChildItem $dest -Recurse -File)
+    if ($files.Count -eq 0) { throw "FAIL: empty payload $($member.Directory.Name)" }
+    "-- $($member.Directory.Name): $($files.Count) files"
+    $bad += $files | Where-Object Name -match $deny
+  }
+  if ($bad) { $bad.FullName; throw 'FAIL: denied path in payload' }
+  'PASS: every payload inspected, no denied paths'
+} finally {
+  Remove-Item "$tmp.zip","$tmp-outer","$tmp-payload" -Recurse -Force -ErrorAction SilentlyContinue
+}
+```
+
+A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
 
 The application payload must not contain `.env*`, `.npmrc`, service-key exports, customer
 `.mtaext` files, private keys, certificates, local MCP configuration, source tests, or operator

@@ -55,6 +55,8 @@ export interface AdtClientConfig {
   language: string;
   /** Skip TLS verification */
   insecure: boolean;
+  /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
+  gzipDataPreviewBody: boolean;
   /** Cookie-based auth (alternative to basic auth) */
   cookies: Record<string, string>;
   /** Path to cookie file — enables hot-reload on stale auth */
@@ -130,6 +132,7 @@ export function defaultAdtClientConfig(): AdtClientConfig {
     client: '100',
     language: 'EN',
     insecure: false,
+    gzipDataPreviewBody: false,
     cookies: {},
     safety: unrestrictedSafetyConfig(),
     features: defaultFeatureConfig(),

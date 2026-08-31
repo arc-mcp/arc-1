@@ -6,11 +6,9 @@
 
 import { AdtApiError, AdtSafetyError, classifyGctsError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
-import type { PackageHierarchyResolver } from './package-hierarchy.js';
-import { checkGit, checkOperation, checkPackage, OperationType, type SafetyConfig } from './safety.js';
+import { checkGit, checkOperation, OperationType, type OperationTypeCode, type SafetyConfig } from './safety.js';
 import type {
   GctsBranch,
-  GctsCloneResult,
   GctsCommit,
   GctsConfig,
   GctsObject,
@@ -21,45 +19,293 @@ import type {
 
 const GCTS_BASE = '/sap/bc/cts_abapvcs';
 const JSON_HEADERS = { Accept: 'application/json' };
-const JSON_CONTENT_TYPE = 'application/json';
+const GCTS_MUTATION_QUARANTINE =
+  'gCTS mutations are unavailable until ARC-1 implements staged VCS_NO_IMPORT fetch, affected-object inventory, authorization preflight, explicit deploy, terminal confirmation, and rollback. No gCTS mutation was sent.';
+const GCTS_REDACTION_LIMIT_MARKER = '[TRUNCATED: redaction budget exceeded]';
+const GCTS_REDACTION_MAX_DEPTH = 16;
+// gCTS list/config payloads are legitimately wide. Keep the defensive traversal cap well above
+// ordinary API responses so redaction never turns a successful list into partial data.
+const GCTS_REDACTION_MAX_ENTRIES = 10_000;
+const GCTS_REDACTION_MAX_STRING_LENGTH = 4_096;
+const GCTS_REDACTION_STRING_PREFIX_LENGTH = 2_000;
 
-interface GctsConfigEntry {
-  key: string;
-  value: string;
-}
-
-export interface GctsCloneParams {
-  rid?: string;
-  name?: string;
-  role?: string;
-  type?: string;
-  vSID?: string;
-  url: string;
-  package?: string;
-  privateFlag?: boolean;
-  config?: GctsConfigEntry[];
-  user?: string;
-  password?: string;
-  token?: string;
-}
-
-export interface GctsCommitParams {
-  message?: string;
-  description?: string;
-  objects?: GctsObject[];
-}
-
-export interface GctsCreateBranchParams {
-  branch: string;
-  isSymbolic?: boolean;
-  isPeeled?: boolean;
-  type?: string;
-  package?: string;
-}
+const GIT_SECRET_FRAGMENTS = [
+  'password',
+  'passwd',
+  'passphrase',
+  'pwd',
+  'token',
+  'secret',
+  'auth_pwd',
+  'auth_user',
+  'auth_token',
+  'authpwd',
+  'authuser',
+  'authtoken',
+  'authorization',
+  'apikey',
+  'api_key',
+  'credential',
+  'accesskey',
+  'access_key',
+  'privatekey',
+  'private_key',
+  'sshkey',
+  'ssh_key',
+  'signature',
+  'cookie',
+  'session',
+  'sessionid',
+  'jsessionid',
+  'sapsessionid',
+];
 
 function parseJson<T>(body: string): T {
-  if (!body) return {} as T;
-  return JSON.parse(body) as T;
+  if (!body.trim()) throw new Error('gCTS returned an empty response where JSON was required.');
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    // JSON.parse includes a prefix of the response in its SyntaxError on current Node releases.
+    // Never let response-derived credentials escape through MCP/CLI error formatting.
+    throw new Error('gCTS returned invalid JSON. Check the endpoint and installed gCTS version.');
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeSafeUnicodeEscapes(value: string): string {
+  return value.replace(/\\{1,8}u([0-9a-f]{4})/gi, (encoded, hex: string) => {
+    const decoded = String.fromCharCode(Number.parseInt(hex, 16));
+    return /^[a-z0-9_.-]$/i.test(decoded) ? decoded : encoded;
+  });
+}
+
+function isGitSecretKey(key: string): boolean {
+  const normalized = normalizeSafeUnicodeEscapes(key)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+  return GIT_SECRET_FRAGMENTS.some((fragment) => normalized.includes(fragment));
+}
+
+function isCredentialQueryKey(key: string): boolean {
+  const normalized = normalizeSafeUnicodeEscapes(key).toLowerCase();
+  return normalized === 'auth' || normalized.includes('authorization') || isGitSecretKey(normalized);
+}
+
+function redactCredentialAssignments(value: string): string {
+  return value
+    .replace(
+      /\bauthorization\s*([:=])\s*(?:bearer|basic)\s+(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      'authorization$1[REDACTED]',
+    )
+    .replace(
+      /\b(bearer|basic)\s+(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      '$1 [REDACTED]',
+    )
+    .replace(
+      /\b(password|passwd|passphrase|pwd|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|jsessionid|sap[_-]?sessionid|sessionid|session|(?:client[_-]?vcs[_-]?)?auth[_-]?(?:pwd|user|token)|remote[_-]?(?:password|user|token))(?:(?:\\{1,64})?["'])?\s*([:=])\s*(?:(?:bearer|basic)\s+)?(?:\\{1,64}"[^"]*\\{1,64}"|\\{1,64}'[^']*\\{1,64}'|"[^"]*"|'[^']*'|[^\s,;&<>"']+)/gi,
+      '$1$2[REDACTED]',
+    );
+}
+
+function normalizeEscapedUrlSlashes(value: string): string {
+  return normalizeSafeUnicodeEscapes(value.replace(/\\{1,8}\//g, '/'));
+}
+
+function boundGctsString(value: string, originalLength = value.length): string {
+  if (value.length <= GCTS_REDACTION_MAX_STRING_LENGTH && originalLength <= GCTS_REDACTION_MAX_STRING_LENGTH) {
+    return value;
+  }
+  return `${value.slice(0, GCTS_REDACTION_STRING_PREFIX_LENGTH)}... [truncated ${originalLength} chars]`;
+}
+
+function gctsStringInput(value: string): string {
+  return value.length <= GCTS_REDACTION_MAX_STRING_LENGTH ? value : value.slice(0, GCTS_REDACTION_MAX_STRING_LENGTH);
+}
+
+function redactUrlAssignments(value: string): string {
+  return redactCredentialAssignments(value).replace(
+    /(^|[&;])([^=&;]+)(?:=([^&;]*))?/g,
+    (part, separator: string, rawKey: string) => {
+      let decodedKey = rawKey;
+      try {
+        decodedKey = decodeURIComponent(rawKey.replace(/\+/g, ' '));
+      } catch {
+        // Keep the raw key for the sensitivity check.
+      }
+      return isCredentialQueryKey(decodedKey) ? `${separator}[REDACTED]=[REDACTED]` : part;
+    },
+  );
+}
+
+function redactUrl(value: string): string {
+  const normalizedValue = normalizeEscapedUrlSlashes(gctsStringInput(value));
+  try {
+    const parsed = new URL(normalizedValue);
+    parsed.username = '';
+    parsed.password = '';
+    parsed.pathname = redactCredentialAssignments(parsed.pathname);
+    if (parsed.search) parsed.search = `?${redactUrlAssignments(parsed.search.slice(1))}`;
+    if (parsed.hash) parsed.hash = `#${redactUrlAssignments(parsed.hash.slice(1))}`;
+    return parsed.toString();
+  } catch {
+    const withoutUserinfo = normalizedValue.replace(/^([a-z][a-z\d+.-]*:\/\/)[^/@\s]+@/i, '$1[REDACTED]@');
+    const fragmentStart = withoutUserinfo.indexOf('#');
+    const beforeFragment = fragmentStart >= 0 ? withoutUserinfo.slice(0, fragmentStart) : withoutUserinfo;
+    const fragment = fragmentStart >= 0 ? withoutUserinfo.slice(fragmentStart + 1) : undefined;
+    const queryStart = beforeFragment.indexOf('?');
+    const path = queryStart >= 0 ? beforeFragment.slice(0, queryStart) : beforeFragment;
+    const query = queryStart >= 0 ? beforeFragment.slice(queryStart + 1) : undefined;
+    return `${redactCredentialAssignments(path)}${query === undefined ? '' : `?${redactUrlAssignments(query)}`}${
+      fragment === undefined ? '' : `#${redactUrlAssignments(fragment)}`
+    }`;
+  }
+}
+
+function redactUrlsInText(value: string): string {
+  const redacted = redactCredentialAssignments(normalizeEscapedUrlSlashes(gctsStringInput(value))).replace(
+    /https?:\/\/[^\s<>"']+/gi,
+    (candidate) => {
+      const trailing = candidate.match(/[),.;]+$/)?.[0] ?? '';
+      const core = trailing ? candidate.slice(0, -trailing.length) : candidate;
+      return `${redactUrl(core)}${trailing}`;
+    },
+  );
+  return boundGctsString(redacted, value.length);
+}
+
+function redactedOutputKey(entryKey: string, target: Record<string, unknown>): string {
+  const boundedInput = gctsStringInput(entryKey);
+  const sanitized = isCredentialQueryKey(boundedInput)
+    ? '[REDACTED sensitive key]'
+    : boundGctsString(redactUrlsInText(boundedInput), entryKey.length);
+  if (!Object.hasOwn(target, sanitized)) return sanitized;
+
+  // Different attacker-controlled names can collapse to the same redacted key. Preserve every
+  // value without reintroducing either original key or an unbounded suffix.
+  let collision = 2;
+  while (Object.hasOwn(target, `[REDACTED duplicate key ${collision}]`)) collision += 1;
+  return `[REDACTED duplicate key ${collision}]`;
+}
+
+function setRedactedEntry(target: Record<string, unknown>, entryKey: string, value: unknown): void {
+  Object.defineProperty(target, redactedOutputKey(entryKey, target), {
+    value,
+    enumerable: true,
+    configurable: true,
+    writable: true,
+  });
+}
+
+/** Remove credential-bearing gCTS config and URL values before they can reach tool output. */
+function redactGctsValueWithinBudget<T>(
+  value: T,
+  key: string,
+  state: { remainingEntries: number; seen: WeakSet<object> },
+  depth: number,
+): T {
+  if (depth > GCTS_REDACTION_MAX_DEPTH || state.remainingEntries <= 0) return GCTS_REDACTION_LIMIT_MARKER as T;
+  state.remainingEntries -= 1;
+  if (isGitSecretKey(key)) return '[REDACTED]' as T;
+  if (typeof value === 'string') {
+    const redacted =
+      key.toLowerCase().includes('url') || key.toLowerCase().includes('uri')
+        ? redactUrl(value)
+        : redactUrlsInText(value);
+    return boundGctsString(redacted, value.length) as T;
+  }
+  if (Array.isArray(value)) {
+    if (state.seen.has(value)) return GCTS_REDACTION_LIMIT_MARKER as T;
+    state.seen.add(value);
+    const result: unknown[] = [];
+    for (const entry of value) {
+      if (state.remainingEntries <= 0) {
+        result.push(GCTS_REDACTION_LIMIT_MARKER);
+        break;
+      }
+      result.push(redactGctsValueWithinBudget(entry, key, state, depth + 1));
+    }
+    return result as T;
+  }
+  if (!isRecord(value)) return value;
+  if (state.seen.has(value)) return GCTS_REDACTION_LIMIT_MARKER as T;
+  state.seen.add(value);
+
+  const configKey = String(value.ckey ?? value.key ?? '').trim();
+  const sensitiveConfigEntry = isGitSecretKey(configKey);
+  const redacted: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(value)) {
+    if (state.remainingEntries <= 0) {
+      setRedactedEntry(redacted, '__truncated__', GCTS_REDACTION_LIMIT_MARKER);
+      break;
+    }
+    let redactedValue: unknown;
+    if (sensitiveConfigEntry && ['value', 'defaultvalue', 'currentvalue', 'example'].includes(entryKey.toLowerCase())) {
+      redactedValue = '[REDACTED]';
+    } else {
+      redactedValue = redactGctsValueWithinBudget(entryValue, entryKey, state, depth + 1);
+    }
+    setRedactedEntry(redacted, entryKey, redactedValue);
+  }
+  return redacted as T;
+}
+
+export function redactGctsValue<T>(value: T, key = ''): T {
+  return redactGctsValueWithinBudget(
+    value,
+    key,
+    { remainingEntries: GCTS_REDACTION_MAX_ENTRIES, seen: new WeakSet() },
+    0,
+  );
+}
+
+function redactGctsText(value: string): string {
+  try {
+    return JSON.stringify(redactGctsValue(JSON.parse(value) as unknown));
+  } catch {
+    return redactUrlsInText(value);
+  }
+}
+
+function redactGctsResponseBody(value: string): string {
+  if (!value) return '';
+  try {
+    return JSON.stringify(redactGctsValue(JSON.parse(value) as unknown));
+  } catch {
+    return `[REDACTED invalid/non-JSON gCTS response ${value.length} chars]`;
+  }
+}
+
+function requireArrayWrapper<T>(payload: unknown, wrapper: string, operation: string): T[] {
+  if (isRecord(payload) && Array.isArray(payload[wrapper])) return payload[wrapper] as T[];
+  throw new Error(`gCTS ${operation} returned an unexpected response shape; expected {${wrapper}:[...]}.`);
+}
+
+function requireObjectWrapper<T>(payload: unknown, wrapper: string, operation: string): T {
+  if (isRecord(payload) && isRecord(payload[wrapper])) return payload as T;
+  throw new Error(`gCTS ${operation} returned an unexpected response shape; expected {${wrapper}:{...}}.`);
+}
+
+export const GCTS_QUARANTINED_MUTATIONS = {
+  clone: [OperationType.Create, 'GctsCloneRepo'],
+  pull: [OperationType.Update, 'GctsPullRepo'],
+  create_branch: [OperationType.Create, 'GctsCreateBranch'],
+  switch_branch: [OperationType.Update, 'GctsSwitchBranch'],
+  unlink: [OperationType.Delete, 'GctsDeleteRepo'],
+} as const satisfies Record<string, readonly [OperationTypeCode, string]>;
+
+export type GctsQuarantinedMutation = keyof typeof GCTS_QUARANTINED_MUTATIONS;
+
+/** Fail closed before dispatch while gCTS mutations lack transactional postconditions. */
+export function enforceGctsMutationQuarantine(safety: SafetyConfig, action: string): void {
+  const mutation = GCTS_QUARANTINED_MUTATIONS[action as GctsQuarantinedMutation];
+  if (!mutation) return;
+  const [opType, operation] = mutation;
+  checkOperation(safety, opType, operation);
+  checkGit(safety, action);
+  throw new AdtSafetyError(`${operation}: ${GCTS_MUTATION_QUARANTINE}`);
 }
 
 function errorMessageFromPayload(payload: unknown): string | undefined {
@@ -70,7 +316,9 @@ function errorMessageFromPayload(payload: unknown): string | undefined {
     (entry) =>
       typeof entry === 'object' &&
       entry !== null &&
-      String((entry as Record<string, unknown>).severity ?? '').toUpperCase() === 'ERROR',
+      String((entry as Record<string, unknown>).severity ?? '')
+        .trim()
+        .toUpperCase() === 'ERROR',
   ) as Record<string, unknown> | undefined;
   return typeof errorLog?.message === 'string' ? errorLog.message : undefined;
 }
@@ -80,56 +328,33 @@ async function requestGcts(
   run: () => Promise<{ statusCode: number; headers: Record<string, string>; body: string }>,
 ): Promise<{ statusCode: number; headers: Record<string, string>; body: string }> {
   try {
-    return await run();
+    const response = await run();
+    if (response.body) {
+      try {
+        const payload = JSON.parse(response.body) as unknown;
+        const logMessage = errorMessageFromPayload(payload);
+        if (logMessage) {
+          throw new AdtApiError(redactGctsText(logMessage), 500, path, JSON.stringify(redactGctsValue(payload)));
+        }
+      } catch (err) {
+        if (err instanceof AdtApiError) throw err;
+        // The endpoint-specific parser below owns non-JSON/invalid-JSON diagnostics.
+      }
+    }
+    return response;
   } catch (err) {
     if (err instanceof AdtApiError) {
-      const classified = classifyGctsError(err.responseBody ?? '');
-      const detail = classified.exception ?? classified.logMessage;
-      if (detail) {
-        throw new AdtApiError(detail, err.statusCode, err.path || path, err.responseBody);
-      }
+      const rawBody = err.responseBody ?? '';
+      const classified = classifyGctsError(rawBody);
+      const safeBody = redactGctsResponseBody(rawBody);
+      const detail =
+        classified.exception ??
+        classified.logMessage ??
+        (rawBody ? 'gCTS request failed with an invalid or unclassified response.' : err.message);
+      throw new AdtApiError(redactGctsText(detail), err.statusCode, redactUrlsInText(err.path || path), safeBody);
     }
     throw err;
   }
-}
-
-function withRepoCredentials(payload: Record<string, unknown>, user?: string, password?: string, token?: string) {
-  const config = Array.isArray(payload.config) ? [...(payload.config as GctsConfigEntry[])] : [];
-  if (user) config.push({ key: 'CLIENT_VCS_AUTH_USER', value: user });
-  if (password) config.push({ key: 'CLIENT_VCS_AUTH_PWD', value: password });
-  if (token) config.push({ key: 'CLIENT_VCS_AUTH_TOKEN', value: token });
-
-  return {
-    ...payload,
-    ...(config.length > 0 ? { config } : {}),
-  };
-}
-
-function repoPackage(repo: GctsRepo): string | undefined {
-  return typeof repo.package === 'string' && repo.package.trim() ? repo.package.trim() : undefined;
-}
-
-function findRepoById(repos: GctsRepo[], repoId: string): GctsRepo | undefined {
-  return repos.find((repo) => repo.rid === repoId || repo.name === repoId);
-}
-
-async function enforceExistingRepoPackage(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  repoId: string,
-  operation: string,
-  resolver?: PackageHierarchyResolver | null,
-): Promise<void> {
-  if (safety.allowedPackages.length === 0) return;
-
-  const repo = findRepoById(await listRepos(http, safety), repoId);
-  const pkg = repo ? repoPackage(repo) : undefined;
-  if (!pkg) {
-    throw new AdtSafetyError(
-      `${operation} could not resolve package for gCTS repository '${repoId}'; refusing to mutate because allowedPackages is configured.`,
-    );
-  }
-  await checkPackage(safety, pkg, resolver);
 }
 
 /** gCTS system status (/system). */
@@ -137,7 +362,7 @@ export async function getSystemInfo(http: AdtHttpClient, safety: SafetyConfig): 
   checkOperation(safety, OperationType.Read, 'GctsGetSystemInfo');
   const path = `${GCTS_BASE}/system`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
-  return parseJson<GctsSystemInfo>(resp.body);
+  return redactGctsValue(requireObjectWrapper<GctsSystemInfo>(parseJson<unknown>(resp.body), 'result', 'system info'));
 }
 
 /** gCTS user scopes (/user). */
@@ -145,7 +370,7 @@ export async function getUserInfo(http: AdtHttpClient, safety: SafetyConfig): Pr
   checkOperation(safety, OperationType.Read, 'GctsGetUserInfo');
   const path = `${GCTS_BASE}/user`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
-  return parseJson<GctsUserInfo>(resp.body);
+  return redactGctsValue(requireObjectWrapper<GctsUserInfo>(parseJson<unknown>(resp.body), 'user', 'user info'));
 }
 
 /** gCTS configuration schema (/config or /repository/{rid}/config). */
@@ -154,12 +379,7 @@ export async function getConfig(http: AdtHttpClient, safety: SafetyConfig, repoI
   const path = repoId ? `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/config` : `${GCTS_BASE}/config`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
   const parsed = parseJson<unknown>(resp.body);
-
-  if (Array.isArray(parsed)) return parsed as GctsConfig[];
-  if (typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as Record<string, unknown>).result)) {
-    return (parsed as { result: GctsConfig[] }).result;
-  }
-  return [];
+  return redactGctsValue(requireArrayWrapper<GctsConfig>(parsed, 'config', 'config'));
 }
 
 /** List gCTS repositories. Returns [] for empty-object response shape. */
@@ -174,111 +394,13 @@ export async function listRepos(http: AdtHttpClient, safety: SafetyConfig): Prom
     return [];
   }
 
-  if (Array.isArray(parsed)) return parsed as GctsRepo[];
-  if (typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as Record<string, unknown>).result)) {
-    return (parsed as { result: GctsRepo[] }).result;
+  if (Array.isArray(parsed)) return redactGctsValue(parsed as GctsRepo[]);
+  if (isRecord(parsed) && Array.isArray(parsed.result)) return redactGctsValue(parsed.result as GctsRepo[]);
+  if (isRecord(parsed) && Array.isArray(parsed.repositories)) {
+    return redactGctsValue(parsed.repositories as GctsRepo[]);
   }
 
-  return [];
-}
-
-/** Clone/link a repository in gCTS. */
-export async function cloneRepo(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  params: GctsCloneParams,
-  resolver?: PackageHierarchyResolver | null,
-): Promise<GctsCloneResult> {
-  checkOperation(safety, OperationType.Create, 'GctsCloneRepo');
-  checkGit(safety, 'clone');
-  // When an allowlist is configured, the package is not optional: gCTS would
-  // otherwise bind the repo to a server-derived default (possibly outside the
-  // allowlist). Force the caller to declare the target package up-front.
-  if (safety.allowedPackages.length > 0 && !params.package) {
-    throw new AdtSafetyError(
-      `GctsCloneRepo requires an explicit 'package' when allowedPackages is configured (allowed: ${JSON.stringify(safety.allowedPackages)})`,
-    );
-  }
-  if (params.package) await checkPackage(safety, params.package, resolver);
-
-  const path = `${GCTS_BASE}/repository`;
-  const payload = withRepoCredentials(
-    {
-      rid: params.rid,
-      name: params.name,
-      role: params.role,
-      type: params.type,
-      vSID: params.vSID,
-      url: params.url,
-      package: params.package,
-      privateFlag: params.privateFlag,
-      config: params.config,
-    },
-    params.user,
-    params.password,
-    params.token,
-  );
-
-  const resp = await requestGcts(path, () => http.post(path, JSON.stringify(payload), JSON_CONTENT_TYPE, JSON_HEADERS));
-
-  const parsed = parseJson<unknown>(resp.body);
-  const logMessage = errorMessageFromPayload(parsed);
-  if (logMessage) {
-    throw new AdtApiError(logMessage, 500, path, resp.body);
-  }
-  return parsed as GctsCloneResult;
-}
-
-/** Pull latest changes or a specific commit. */
-export async function pullRepo(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  repoId: string,
-  commit?: string,
-  resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  checkOperation(safety, OperationType.Update, 'GctsPullRepo');
-  checkGit(safety, 'pull');
-  await enforceExistingRepoPackage(http, safety, repoId, 'GctsPullRepo', resolver);
-
-  const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/pullByCommit`;
-  const resp = await requestGcts(path, () =>
-    http.post(path, JSON.stringify(commit ? { commit } : {}), JSON_CONTENT_TYPE, JSON_HEADERS),
-  );
-  const parsed = parseJson<Record<string, unknown>>(resp.body);
-  const logMessage = errorMessageFromPayload(parsed);
-  if (logMessage) {
-    throw new AdtApiError(logMessage, 500, path, resp.body);
-  }
-  return parsed;
-}
-
-/** Commit staged gCTS changes. */
-export async function commitRepo(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  repoId: string,
-  params: GctsCommitParams,
-  resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  checkOperation(safety, OperationType.Update, 'GctsCommitRepo');
-  checkGit(safety, 'commit');
-  await enforceExistingRepoPackage(http, safety, repoId, 'GctsCommitRepo', resolver);
-
-  const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/commit`;
-  const body = JSON.stringify({
-    ...(params.message ? { message: params.message } : {}),
-    ...(params.description ? { description: params.description } : {}),
-    ...(params.objects ? { objects: params.objects } : {}),
-  });
-
-  const resp = await requestGcts(path, () => http.post(path, body, JSON_CONTENT_TYPE, JSON_HEADERS));
-  const parsed = parseJson<Record<string, unknown>>(resp.body);
-  const logMessage = errorMessageFromPayload(parsed);
-  if (logMessage) {
-    throw new AdtApiError(logMessage, 500, path, resp.body);
-  }
-  return parsed;
+  throw new Error('gCTS repository list returned an unexpected response shape.');
 }
 
 /** List branches for a repository. */
@@ -287,54 +409,7 @@ export async function listBranches(http: AdtHttpClient, safety: SafetyConfig, re
   const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/branches`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
   const parsed = parseJson<unknown>(resp.body);
-  if (Array.isArray(parsed)) return parsed as GctsBranch[];
-  if (typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as Record<string, unknown>).result)) {
-    return (parsed as { result: GctsBranch[] }).result;
-  }
-  return [];
-}
-
-/** Create a branch in gCTS. */
-export async function createBranch(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  repoId: string,
-  params: GctsCreateBranchParams,
-  resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  checkOperation(safety, OperationType.Update, 'GctsCreateBranch');
-  checkGit(safety, 'create_branch');
-  if (params.package) await checkPackage(safety, params.package, resolver);
-
-  const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/branches`;
-  const body = JSON.stringify({
-    branch: params.branch,
-    isSymbolic: params.isSymbolic ?? false,
-    isPeeled: params.isPeeled ?? false,
-    type: params.type ?? 'head',
-  });
-
-  const resp = await requestGcts(path, () => http.post(path, body, JSON_CONTENT_TYPE, JSON_HEADERS));
-  return parseJson<Record<string, unknown>>(resp.body);
-}
-
-/** Switch branch in gCTS. */
-export async function switchBranch(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  repoId: string,
-  branch: string,
-  resolver?: PackageHierarchyResolver | null,
-): Promise<Record<string, unknown>> {
-  checkOperation(safety, OperationType.Update, 'GctsSwitchBranch');
-  checkGit(safety, 'switch_branch');
-  // A checkout deserializes the branch's objects into the repo's server-bound package, just like a
-  // pull — gate it against the same allowlist so it cannot mutate a package outside the ceiling.
-  await enforceExistingRepoPackage(http, safety, repoId, 'GctsSwitchBranch', resolver);
-
-  const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/checkout/${encodeURIComponent(branch)}`;
-  const resp = await requestGcts(path, () => http.post(path, JSON.stringify({}), JSON_CONTENT_TYPE, JSON_HEADERS));
-  return parseJson<Record<string, unknown>>(resp.body);
+  return redactGctsValue(requireArrayWrapper<GctsBranch>(parsed, 'branches', 'branches'));
 }
 
 /** Commit history for a repository. */
@@ -349,11 +424,14 @@ export async function getCommitHistory(
   const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/getCommit?limit=${encodeURIComponent(String(safeLimit))}`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
   const parsed = parseJson<unknown>(resp.body);
-  if (Array.isArray(parsed)) return parsed as GctsCommit[];
-  if (typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as Record<string, unknown>).result)) {
-    return (parsed as { result: GctsCommit[] }).result;
-  }
-  return [];
+  const commits = requireArrayWrapper<GctsCommit>(parsed, 'commits', 'commit history');
+  return redactGctsValue(
+    commits.map((commit) => ({
+      ...commit,
+      ...(commit.id && !commit.commit ? { commit: commit.id } : {}),
+      ...(commit.authorMail && !commit.email ? { email: commit.authorMail } : {}),
+    })),
+  );
 }
 
 /** List repository objects tracked by gCTS. */
@@ -366,11 +444,9 @@ export async function listRepoObjects(
   const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}/objects`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
   const parsed = parseJson<unknown>(resp.body);
-  if (Array.isArray(parsed)) return parsed as GctsObject[];
-  if (typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as Record<string, unknown>).result)) {
-    return (parsed as { result: GctsObject[] }).result;
-  }
-  return [];
+  if (isRecord(parsed) && Array.isArray(parsed.objects)) return redactGctsValue(parsed.objects as GctsObject[]);
+  if (isRecord(parsed) && Array.isArray(parsed.result)) return redactGctsValue(parsed.result as GctsObject[]);
+  throw new Error('gCTS repository objects returned an unexpected response shape.');
 }
 
 /** Read transport history for repository linkage diagnostics. */
@@ -382,14 +458,5 @@ export async function getTransportHistory(
   checkOperation(safety, OperationType.Read, 'GctsGetTransportHistory');
   const path = `${GCTS_BASE}/repository/history/${encodeURIComponent(repoId)}`;
   const resp = await requestGcts(path, () => http.get(path, JSON_HEADERS));
-  return parseJson<Record<string, unknown>>(resp.body);
-}
-
-/** Unlink/delete a gCTS repository. */
-export async function deleteRepo(http: AdtHttpClient, safety: SafetyConfig, repoId: string): Promise<void> {
-  checkOperation(safety, OperationType.Delete, 'GctsDeleteRepo');
-  checkGit(safety, 'unlink');
-
-  const path = `${GCTS_BASE}/repository/${encodeURIComponent(repoId)}`;
-  await requestGcts(path, () => http.delete(path, JSON_HEADERS));
+  return redactGctsValue(parseJson<Record<string, unknown>>(resp.body));
 }

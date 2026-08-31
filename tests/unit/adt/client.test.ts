@@ -672,6 +672,22 @@ describe('AdtClient', () => {
       await expect(client.getRevisionSource('https://evil.example/foo')).rejects.toThrow(/\/sap\/bc\/adt\//);
     });
 
+    it.each([
+      '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/programs/%2f..%2fadmin',
+      '/sap/bc/adt/programs/%5c..%5cadmin',
+      '/sap/bc/adt\\..\\sap\\opu\\odata',
+      '/sap/bc/adt/programs/source#fragment',
+      '/sap/bc/adt/programs/source\u0000suffix',
+    ])('rejects unsafe revision URI %j before HTTP dispatch', async (versionUri) => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource(versionUri)).rejects.toThrow(/canonical host-relative ADT path/i);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('returns plain source text for valid revision URI', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(
@@ -685,6 +701,32 @@ describe('AdtClient', () => {
       const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
       expect(calledUrl).toContain('/versions/20260410185851/00000/content');
       expect(fetchHeaders(0).Accept).toBe('text/plain');
+    });
+
+    it('rejects unrelated same-host ADT endpoints before HTTP dispatch', async () => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource('/sap/bc/adt/runtime/dumps')).rejects.toThrow(/VERSIONS response/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('accepts an encoded namespace in a revision object segment', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'CLASS /arc/cl_demo DEFINITION.'));
+      const client = createClient();
+      const path = '/sap/bc/adt/oo/classes/%2FARC%2FCL_DEMO/includes/main/versions/1/00000/content';
+      await expect(client.getRevisionSource(path)).resolves.toContain('/arc/cl_demo');
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('%2FARC%2FCL_DEMO');
+    });
+
+    it.each([
+      '/sap/bc/adt/oo/classes/%252FARC%252FCL_DEMO/includes/main/versions/1/00000/content',
+      '/sap/bc/adt/oo/classes/ZCL_DEMO/includes/main/versions/1%2F00000%2Fcontent',
+    ])('rejects ambiguous encoded separators in revision source path %s', async (path) => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource(path)).rejects.toThrow(/VERSIONS response/);
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -2177,7 +2219,7 @@ describe('AdtClient', () => {
 
     it('getBspAppStructure returns files and folders', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       const nodes = await client.getBspAppStructure('zapp_booking');
       expect(nodes).toHaveLength(2);
@@ -2187,9 +2229,20 @@ describe('AdtClient', () => {
       expect(nodes[1].name).toBe('i18n');
     });
 
+    it('getBspAppStructure rejects a file response with the requested ADT path', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'file content', { 'content-type': 'text/plain' }));
+      const client = createClient();
+      await expect(client.getBspAppStructure('zapp_booking', 'manifest.json')).rejects.toMatchObject({
+        statusCode: 400,
+        path: `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent('ZAPP_BOOKING/manifest.json')}/content`,
+        message: expect.stringContaining('file, not a folder'),
+      });
+    });
+
     it('getBspAppStructure URL-encodes the app path with %2f', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       await client.getBspAppStructure('zapp_booking', '/i18n');
       const url = mockFetch.mock.calls[0][0] as string;
@@ -2206,6 +2259,17 @@ describe('AdtClient', () => {
       expect(content).toContain('sap.app');
     });
 
+    it('getBspFileContent rejects a folder response with the requested ADT path', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
+      const client = createClient();
+      await expect(client.getBspFileContent('zapp_booking', 'i18n')).rejects.toMatchObject({
+        statusCode: 400,
+        path: `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent('ZAPP_BOOKING/i18n')}/content`,
+        message: expect.stringContaining('folder, not a file'),
+      });
+    });
+
     it('getBspFileContent URL-encodes appName/filePath as single segment', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, 'file content'));
@@ -2217,7 +2281,7 @@ describe('AdtClient', () => {
 
     it('getBspAppStructure normalizes subPath without leading slash', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       await client.getBspAppStructure('zapp_booking', 'i18n');
       const url = mockFetch.mock.calls[0][0] as string;
@@ -2234,6 +2298,36 @@ describe('AdtClient', () => {
       // Verify no double-slash in the path portion (after the protocol)
       const pathPortion = url.replace('http://', '');
       expect(pathPortion).not.toContain('//');
+    });
+
+    it('legacy BSP structure reads preserve a mixed-case path appended to the app name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml;type=feed' }),
+      );
+      const client = createClient();
+      await client.getBspAppStructure('zapp_booking/WebContent');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('ZAPP_BOOKING/WebContent'));
+    });
+
+    it('getBspPathContent identifies folders from the response media type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml;type=feed' }),
+      );
+      const client = createClient();
+      const result = await client.getBspPathContent('zapp_booking', '/WebContent');
+      expect(result.kind).toBe('folder');
+      if (result.kind === 'folder') expect(result.nodes).toHaveLength(2);
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('ZAPP_BOOKING/WebContent'));
+    });
+
+    it('getBspPathContent identifies extensionless files from the response media type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'license text', { 'content-type': 'text/plain' }));
+      const client = createClient();
+      const result = await client.getBspPathContent('zapp_booking', 'LICENSE');
+      expect(result).toEqual({ kind: 'file', content: 'license text' });
     });
 
     it('listBspApps returns empty array for empty feed', async () => {

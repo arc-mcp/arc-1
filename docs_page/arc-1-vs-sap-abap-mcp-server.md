@@ -285,12 +285,12 @@ diagnostics (ST22 dumps, traces)**. On the tested backend the server exposed **o
 | `SAPActivate` | Activate (single & batch, ED064-aware); publish/unpublish service bindings |
 | `SAPNavigate` | Go-to-definition, references, where-used, completion |
 | `SAPQuery` | Free SQL **and** table-data preview (both admin-gated) |
-| `SAPTransport` | `create` · `assign` · `list` · `history` · `release` · `delete` (gated) |
-| `SAPGit` | Full gCTS / abapGit: clone, pull, push, stage, commit, branches, repos… (gated) |
+| `SAPTransport` | `list` · `get` · `diff` · `check` · `history` · layers/targets plus gated create/release/reassign/delete/remove-object workflows |
+| `SAPGit` | gCTS/abapGit reads plus gated abapGit workflows. gCTS mutations are quarantined; accepted abapGit mutations are fail-closed as incomplete when no authoritative postcondition exists. |
 | `SAPContext` | Dependency / contract / compressed-context extraction for LLMs |
 | `SAPLint` | abaplint (offline) + Pretty Printer + formatter settings |
 | `SAPDiagnose` | `syntax` · `atc` · `quickfix`/`apply_quickfix` · ABAP Unit · **ST22 dumps** · **traces** · gateway/system messages · RAP preflight · CDS test-case suggestions |
-| `SAPManage` | Package create/delete/move (DEVC) · FLP catalogs/groups/tiles · feature probe · cache stats |
+| `SAPManage` | Package create/delete/move (DEVC) · API release state · FLP catalogs/groups/tiles · feature probe · cache stats |
 
 All gated operations also depend on the target system exposing the needed ADT/OData services and the SAP
 user being authorized.
@@ -310,7 +310,7 @@ user being authorized.
 | Read source **over MCP** | ✅ `SAPRead` | ❌ not in the documented toolset (IDE editor reads instead) |
 | Search / where-used **over MCP** | ✅ | ❌ not in the documented toolset (roadmap item) |
 | Free SQL · table preview | ✅ (gated) | ❌ |
-| Git (gCTS / abapGit) | ✅ (gated) | ❌ |
+| Git reads / gated abapGit workflows | ✅ (gCTS mutations quarantined) | ❌ |
 | Transport create / get / diff | ✅ | ✅ |
 | Transport **release / delete** | ✅ (gated) | ❌ |
 | Runtime diagnostics — **ST22 dumps, traces** | ✅ | ❌ |

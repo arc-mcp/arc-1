@@ -75,7 +75,7 @@
         },
         "include": {
           "type": "string",
-          "description": "For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses)."
+          "description": "For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
         },
         "group": {
           "type": "string",
@@ -96,7 +96,7 @@
             "text",
             "structured"
           ],
-          "description": "Output format. \"text\" (default): raw source. \"structured\" (CLAS only): JSON metadata + EVERY class include (main, testclasses, definitions, implementations, macros) — a superset of \"text\", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method=\"*\" / method=\"name\" / grep=."
+          "description": "Output format. For action=\"diff\", \"structured\" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default remains the human-readable patch. For ordinary reads, \"text\" (default) is raw source; \"structured\" (CLAS only) returns JSON metadata + EVERY class include — a superset of \"text\", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method=\"*\" / method=\"name\" / grep=."
         },
         "version": {
           "type": "string",
@@ -117,7 +117,7 @@
         },
         "maxRows": {
           "type": "number",
-          "description": "For TABLE_CONTENTS and TABLE_QUERY: max rows to return (default 100)"
+          "description": "Row cap (default 100). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY or cap client-side."
         },
         "maxResults": {
           "type": "number",
@@ -125,7 +125,7 @@
         },
         "sqlFilter": {
           "type": "string",
-          "description": "For TABLE_CONTENTS: condition expression only (no WHERE, no SELECT), e.g. \"MANDT = '100'\" or \"MATNR LIKE 'Z%'\"."
+          "description": "TABLE_CONTENTS condition expression only (no WHERE, no SELECT); broken on 758 (SAP expects SELECT). Use TABLE_QUERY where."
         },
         "objectType": {
           "type": "string",
@@ -133,7 +133,7 @@
         },
         "versionUri": {
           "type": "string",
-          "description": "For VERSION_SOURCE: URI of a specific revision from SAPRead(type=\"VERSIONS\") response (.revisions[].uri). Must start with /sap/bc/adt/."
+          "description": "VERSION_SOURCE: canonical source/revision URI from VERSIONS .revisions[].uri; rejects unrelated ADT endpoints, absolute URLs, traversal, queries, and fragments."
         },
         "columns": {
           "type": "array",
@@ -144,7 +144,7 @@
         },
         "where": {
           "type": "array",
-          "description": "For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. Allowed ops: =, !=, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL. For IN/NOT IN: use bare comma-separated values; do NOT quote them. ARC-1 quotes and escapes values, e.g. \"261,262\". No subqueries. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
+          "description": "For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; use <> because 758 rejects !=. For IN/NOT IN: use bare comma-separated values; do NOT quote them. ARC-1 quotes and escapes values, e.g. \"261,262\". No subqueries. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
           "items": {
             "type": "object",
             "properties": {
@@ -348,7 +348,7 @@
   },
   {
     "name": "SAPDiagnose",
-    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": run ABAP Unit tests (name+type).\n- \"atc\": run ATC checks (name+type; optional variant). \"atc_variants\": list variants + the system default (variant = name filter; read-only).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path); returns the sap-statistics timing split (DB/ABAP/framework/auth). Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
+    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n- \"atc\": run ATC checks (name+type; omit variant to bind the system default; unknown variant = error). \"atc_variants\": list variants + that default (variant = name filter; read-only).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path); returns the sap-statistics timing split (DB/ABAP/framework/auth). Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -376,8 +376,7 @@
             "set_sql_trace_state",
             "sql_trace_directory",
             "authorization_trace"
-          ],
-          "description": "Diagnostic action"
+          ]
         },
         "name": {
           "type": "string",
@@ -389,7 +388,7 @@
         },
         "type": {
           "type": "string",
-          "description": "Object type (PROG, CLAS, etc.) (for syntax/unittest/atc/object_state)"
+          "description": "Object type; unittest accepts CLAS, PROG, FUGR, or DEVC."
         },
         "source": {
           "type": "string",
@@ -465,7 +464,7 @@
         },
         "detailUrl": {
           "type": "string",
-          "description": "ADT detail URL for gateway_errors detail mode (preferred over id+errorType). Accepts absolute or /sap/bc/adt/... path."
+          "description": "Canonical host-relative /sap/bc/adt/gw/errorlog/... path for detail mode; absolute URLs are rejected."
         },
         "errorType": {
           "type": "string",
@@ -504,7 +503,24 @@
         },
         "coverage": {
           "type": "boolean",
-          "description": "For action=\"unittest\": also return statement/branch/procedure coverage for the object, plus methodsBelowFull — the methods below 100% statement coverage, worst first (what to test next) — in one extra round-trip. If the coverage endpoint or measurement is unavailable, returns the tests without coverage. Default false."
+          "description": "unittest only: collect statement/branch/procedure coverage and methodsBelowFull. Unavailable measurements do not discard test results. Default false."
+        },
+        "includeSubpackages": {
+          "type": "boolean",
+          "default": false
+        },
+        "resultFormat": {
+          "type": "string",
+          "enum": [
+            "legacy",
+            "structured",
+            "junit"
+          ],
+          "description": "unittest: legacy|structured|junit; atc: legacy|structured; other actions reject it."
+        },
+        "timeoutSeconds": {
+          "type": "number",
+          "description": "unittest/atc timeout: 1-3600s; default 300."
         },
         "sqlOn": {
           "type": "boolean",
@@ -878,7 +894,7 @@
         },
         "user": {
           "type": "string",
-          "description": "SAP user for list (default: current user; \"*\" means all users)."
+          "description": "List user (default: current SAP user; \"*\" means all visible owners)."
         },
         "status": {
           "type": "string",
@@ -919,6 +935,18 @@
         "maxResults": {
           "type": "number",
           "description": "Maximum list rows or check/history assignment candidates (defaults: list/history 50, check 10; max 1000)."
+        },
+        "resultFormat": {
+          "type": "string",
+          "enum": [
+            "legacy",
+            "structured"
+          ],
+          "description": "release actions: legacy (default) or structured JSON."
+        },
+        "timeoutSeconds": {
+          "type": "number",
+          "description": "release timeout seconds: 1-1800; default 300."
         }
       },
       "required": [
@@ -933,7 +961,7 @@
   },
   {
     "name": "SAPGit",
-    "description": "Git-based ABAP repository workflows for BTP ABAP and S/4 systems. Backend auto-selection prefers gCTS and falls back to abapGit bridge when gCTS is unavailable. Actions: list_repos (both), whoami/config/branches/history/objects (gCTS only), external_info/check/stage/push (abapGit only), clone/pull/commit/switch_branch/create_branch/unlink (backend-specific implementation). Use backend=\"gcts\" or backend=\"abapgit\" to force a backend. Write actions require SAP_ALLOW_WRITES=true, SAP_ALLOW_GIT_WRITES=true, git scope, and package allowlist compliance.",
+    "description": "Git reads and gated abapGit workflows. gCTS mutations are quarantined. abapGit mutations need write/Git gates and allowedPackages ROOT/** or *; clone/pull evidence is unverified. external_info is gated HTTPS SAP egress.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -944,12 +972,10 @@
             "whoami",
             "config",
             "branches",
-            "external_info",
             "history",
             "objects",
             "check"
-          ],
-          "description": "Git action. The writes (clone, pull, push, commit, stage, switch_branch, create_branch, unlink) need SAP_ALLOW_WRITES=true and SAP_ALLOW_GIT_WRITES=true; the rest are reads."
+          ]
         },
         "backend": {
           "type": "string",
@@ -960,12 +986,11 @@
           "description": "Backend override; omit to auto-select (gCTS preferred)."
         },
         "repoId": {
-          "type": "string",
-          "description": "Repository ID/key for repo-specific actions."
+          "type": "string"
         },
         "url": {
           "type": "string",
-          "description": "Remote Git URL (required for clone and abapGit external_info)."
+          "description": "HTTPS remote for clone/external_info; embedded credentials are rejected."
         },
         "branch": {
           "type": "string",
@@ -973,7 +998,7 @@
         },
         "package": {
           "type": "string",
-          "description": "ABAP package for clone/create operations (checked against allowedPackages)."
+          "description": "abapGit clone package. Mutations require an allowedPackages ROOT/** or * grant; not gCTS evidence."
         },
         "transport": {
           "type": "string",
@@ -985,15 +1010,11 @@
         },
         "message": {
           "type": "string",
-          "description": "Commit message (required for gCTS commit and abapGit push)."
-        },
-        "description": {
-          "type": "string",
-          "description": "Commit description (gCTS)."
+          "description": "Commit message required for abapGit push."
         },
         "objects": {
           "type": "array",
-          "description": "Object list for commit/push. For abapGit push it selects the changed objects to commit.",
+          "description": "For abapGit push, the changed objects to commit; omit to select every local change.",
           "items": {
             "type": "object",
             "properties": {
