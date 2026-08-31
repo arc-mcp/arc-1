@@ -125,6 +125,25 @@ describe('ADT Integration Tests', () => {
     });
   });
 
+  describe('BSP filestore', () => {
+    it('classifies a BSP root from SAP response media type', async (ctx) => {
+      let apps: Awaited<ReturnType<AdtClient['listBspApps']>> | undefined;
+      try {
+        apps = await client.listBspApps(undefined, 1);
+      } catch (error) {
+        if (error instanceof AdtApiError && (error.statusCode === 403 || error.statusCode === 404)) {
+          requireOrSkip(ctx, undefined, `${SkipReason.BACKEND_UNSUPPORTED}: BSP filestore unavailable`);
+        }
+        throw error;
+      }
+      const app = apps?.[0];
+      requireOrSkip(ctx, app, `${SkipReason.NO_FIXTURE}: no BSP application available`);
+      const content = await client.getBspPathContent(app.name);
+      expect(content.kind).toBe('folder');
+      if (content.kind === 'folder') expect(Array.isArray(content.nodes)).toBe(true);
+    });
+  });
+
   // ─── ADT Discovery (MIME Negotiation) ─────────────────────────
 
   describe('discovery MIME negotiation', () => {

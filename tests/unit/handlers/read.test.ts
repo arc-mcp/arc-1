@@ -823,6 +823,7 @@ describe('SAPRead handler', () => {
     <content afr:etag="abc123" xmlns:afr="http://www.sap.com/adt/filestore"/>
   </entry>
 </feed>`,
+          { 'content-type': 'application/atom+xml;type=feed' },
         ),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -849,6 +850,7 @@ describe('SAPRead handler', () => {
     <content afr:etag="def456" xmlns:afr="http://www.sap.com/adt/filestore"/>
   </entry>
 </feed>`,
+          { 'content-type': 'application/atom+xml;type=feed' },
         ),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -875,7 +877,9 @@ describe('SAPRead handler', () => {
 
     it('reads BSP file content for nested path with dot', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(mockResponse(200, 'sap.ui.define([], function() { return {}; });'));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, 'sap.ui.define([], function() { return {}; });', { 'content-type': 'text/javascript' }),
+      );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'BSP',
         name: 'ZAPP_BOOKING',
@@ -883,6 +887,102 @@ describe('SAPRead handler', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(result.content[0]!.text).toContain('sap.ui.define');
+    });
+
+    it('preserves a mixed-case BSP path appended to name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>ZAPP_BOOKING/WebContent/index.html</title><category term="file"/></entry></feed>',
+          { 'content-type': 'application/atom+xml;type=feed' },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: 'ZAPP_BOOKING/WebContent',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)).toHaveLength(1);
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('ZAPP_BOOKING/WebContent'));
+    });
+
+    it('keeps a namespaced BSP app name intact', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>/UI2/USHELL/chips</title><category term="folder"/></entry></feed>',
+          { 'content-type': 'application/atom+xml;type=feed' },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: '/UI2/USHELL',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)[0].path).toBe('/chips');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('/UI2/USHELL'));
+    });
+
+    it('keeps a single leading slash as part of the BSP app name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>/ZAPP_BOOKING/index.html</title><category term="file"/></entry></feed>',
+          { 'content-type': 'application/atom+xml;type=feed' },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: '/ZAPP_BOOKING',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)[0].path).toBe('/index.html');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('/ZAPP_BOOKING'));
+    });
+
+    it('splits a path after a namespaced BSP app and combines include', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<chip/>', { 'content-type': 'text/xml' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: '/UI2/USHELL/chips',
+        include: 'action.chip.xml',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toBe('<chip/>');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('/UI2/USHELL/chips/action.chip.xml'));
+    });
+
+    it('browses a dotted BSP folder based on SAP response type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>ZAPP_BOOKING/.settings/prefs</title><category term="file"/></entry></feed>',
+          { 'content-type': 'application/atom+xml;type=feed' },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: 'ZAPP_BOOKING/.settings',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)[0].name).toBe('prefs');
+    });
+
+    it('reads an extensionless BSP file based on SAP response type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'extensionless content', { 'content-type': 'text/plain' }));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'BSP',
+        name: 'ZAPP_BOOKING',
+        include: 'LICENSE',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toBe('extensionless content');
     });
 
     it('returns error when ui5 feature is unavailable', async () => {
