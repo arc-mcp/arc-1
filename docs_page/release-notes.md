@@ -26,6 +26,17 @@ until they are promoted.
     line — nobody runs them today, and the one part that still matters when jumping from an ancient version
     is the **v0.7.0 authorization break**, which is spelled out in full at the bottom of this page.
 
+## 1.1.2 — ATC completeness follows SAP's run lifecycle (2026-08-31)
+
+ATC result completeness no longer depends on an invented equality between SAP's informational finding
+counters and the visible finding rows. ARC-1 now follows the asynchronous run returned by ADT until SAP
+marks it `Completed`; systems without that run location keep the settled-worklist fallback. This removes
+false `incomplete` and `truncated` results when the counters legitimately differ from persisted findings.
+
+| Change | What it means | Action |
+|---|---|---|
+| Correct ATC completeness evidence ([#729](https://github.com/arc-mcp/arc-1/pull/729)) | Asynchronous ATC runs poll their canonical run location to `Completed`. Structured results expose `findingStatistics`, raw `runInfos`, `runStatus`, and `completionEvidence`; `expectedFindingCount` remains only as a deprecated informational alias and no longer controls completeness. Matching-worklist, object-set, processed-object, and malformed-row checks still fail closed. | `none` — runs previously misclassified as incomplete may now complete successfully |
+
 ## 1.1.1 — you get the scope you asked for (2026-08-20)
 
 Three correctness fixes with one theme: ARC-1 was quietly running a *different* query than the caller
