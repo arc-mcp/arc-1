@@ -329,9 +329,6 @@ jobs:
         run: |
           curl -sL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
 
-      - name: Authenticate to MCP Registry (GitHub OIDC)
-        run: ./mcp-publisher login github-oidc
-
       - name: Update version in server.json
         run: |
           set -o pipefail
@@ -378,8 +375,47 @@ jobs:
           fi
           mv server.tmp server.json
 
+      - name: Wait for npm package version
+        # npm trusted publishing can finish several minutes before the immutable
+        # version endpoint becomes visible. Wait before authentication because the
+        # MCP Registry token is valid for only five minutes.
+        env:
+          RELEASE_VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          MAX_ATTEMPTS=30
+          RETRY_DELAY_SECONDS=20
+          NPM_VERSION_URL="https://registry.npmjs.org/arc-1/${RELEASE_VERSION}"
+
+          for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
+            if METADATA="$(curl -fsSL \
+              -H "Accept: application/json" \
+              -H "Cache-Control: no-cache" \
+              "${NPM_VERSION_URL}?attempt=${attempt}")" && \
+              jq -e \
+                --arg version "$RELEASE_VERSION" \
+                --arg mcp_name "io.github.arc-mcp/arc-1" \
+                '.version == $version and .mcpName == $mcp_name' \
+                <<< "$METADATA" >/dev/null; then
+              echo "npm package arc-1@$RELEASE_VERSION is visible with the expected mcpName"
+              exit 0
+            fi
+
+            if (( attempt == MAX_ATTEMPTS )); then
+              echo "::error::npm package arc-1@$RELEASE_VERSION did not become visible after $MAX_ATTEMPTS attempts"
+              exit 1
+            fi
+
+            echo "::warning::npm package arc-1@$RELEASE_VERSION is not visible yet (attempt $attempt/$MAX_ATTEMPTS); retrying in $RETRY_DELAY_SECONDS seconds"
+            sleep "$RETRY_DELAY_SECONDS"
+          done
+
       - name: Validate server.json
         run: ./mcp-publisher validate server.json
+
+      - name: Authenticate to MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
 
       - name: Publish to MCP Registry
         # npm can acknowledge a trusted publish before the new version is visible to
