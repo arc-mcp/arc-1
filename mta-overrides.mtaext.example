@@ -47,6 +47,11 @@ modules:
       # prefix without numeric collision suffixes.
       # ARC1_SERVER_NAME: "arc1-erp-dev"
 
+      # Optional model-facing label for clients that replace the handshake name
+      # with an opaque connector ID. Single line, max 160 characters; ignored by
+      # the target-aware instructions on multi-target endpoints.
+      # ARC1_SYSTEM_LABEL: "ERP development (read-only)"
+
       # ── Principal propagation behaviour ──────────────────────────────
       # The base MTA keeps single-target JWT calls on PP by default. Set false only
       # for an intentional shared-identity/API-key deployment.

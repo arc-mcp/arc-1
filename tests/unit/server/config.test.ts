@@ -4,6 +4,7 @@ import {
   parseApiKeys,
   parseArgs,
   resolveConfig,
+  SYSTEM_LABEL_MAX_LENGTH,
   validateConfig,
 } from '../../../src/server/config.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -308,6 +309,36 @@ describe('parseArgs', () => {
     } finally {
       delete process.env.ARC1_SERVER_NAME;
     }
+  });
+
+  it('defaults systemLabel to empty', () => {
+    expect(parseArgs([]).systemLabel).toBe('');
+  });
+
+  it('parses ARC1_SYSTEM_LABEL env var', () => {
+    process.env.ARC1_SYSTEM_LABEL = 'ERP production (read-only)';
+    expect(parseArgs([]).systemLabel).toBe('ERP production (read-only)');
+  });
+
+  it('parses --system-label flag over ARC1_SYSTEM_LABEL env', () => {
+    process.env.ARC1_SYSTEM_LABEL = 'ERP development';
+    expect(parseArgs(['--system-label', 'ERP quality assurance']).systemLabel).toBe('ERP quality assurance');
+  });
+
+  it('normalizes a system label to one trimmed line', () => {
+    const config = parseArgs(['--system-label', '  ＥＲＰ\tproduction\n(read-only)\u007f  ']);
+    expect(config.systemLabel).toBe('ERP production (read-only)');
+  });
+
+  it('normalizes a blank system label to the empty default', () => {
+    process.env.ARC1_SYSTEM_LABEL = ' \n\t ';
+    expect(parseArgs([]).systemLabel).toBe('');
+  });
+
+  it('rejects a system label over the model-context budget', () => {
+    expect(() => parseArgs(['--system-label', 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH + 1)])).toThrow(
+      `ARC1_SYSTEM_LABEL must be at most ${SYSTEM_LABEL_MAX_LENGTH} characters`,
+    );
   });
 
   it('parses --port flag and overrides httpAddr port', () => {
