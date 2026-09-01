@@ -22,9 +22,11 @@ import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { defineTool } from '../../../src/public/index.js';
+import { SYSTEM_LABEL_MAX_LENGTH } from '../../../src/server/config.js';
 import { opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
-import { targetConnectionFingerprint } from '../../../src/server/destination-registry.js';
+import { DestinationRegistry, targetConnectionFingerprint } from '../../../src/server/destination-registry.js';
 import { logger } from '../../../src/server/logger.js';
+import { MULTI_TARGET_SERVER_INSTRUCTIONS } from '../../../src/server/multi-target-server.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
 import {
   buildAdtConfig,
@@ -57,23 +59,67 @@ function requestHandler(server: Server, method: string): RequestHandler {
   return handler;
 }
 
+async function initializeServer(
+  config: Parameters<typeof createServer>[0],
+  options: Parameters<typeof createServer>[1] = {},
+) {
+  const server = createServer(config, options);
+  const client = new Client({ name: 'arc1-server-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    return { version: client.getServerVersion(), instructions: client.getInstructions() };
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
 describe('MCP Server', () => {
   it.each([
     ['default', DEFAULT_CONFIG, 'arc-1'],
     ['custom', { ...DEFAULT_CONFIG, serverName: 'arc1-erp-dev' }, 'arc1-erp-dev'],
   ])('advertises the %s server name and version in the initialize handshake', async (_label, config, expectedName) => {
-    const server = createServer(config);
-    const client = new Client({ name: 'arc1-server-test', version: '1.0.0' });
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    expect((await initializeServer(config)).version).toEqual({ name: expectedName, version: VERSION });
+  });
 
-    try {
-      await server.connect(serverTransport);
-      await client.connect(clientTransport);
-      expect(client.getServerVersion()).toEqual({ name: expectedName, version: VERSION });
-    } finally {
-      await client.close();
-      await server.close();
-    }
+  it('prepends a system label to the single-target instructions without changing their body', async () => {
+    const baseline = (await initializeServer(DEFAULT_CONFIG)).instructions;
+    const labeled = (await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'ERP production (read-only)' }))
+      .instructions;
+
+    expect(baseline).toMatch(/^ARC-1 gives this SAP ABAP system/);
+    expect(baseline).not.toContain('Connected SAP system:');
+    expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
+  });
+
+  it('keeps the maximum system label below the client instruction ceiling', async () => {
+    const instructions = (
+      await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })
+    ).instructions;
+    expect(instructions?.length).toBeLessThan(2_048);
+  });
+
+  it('rejects an overlong system label even when ServerConfig is constructed directly', () => {
+    expect(() => createServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH + 1) })).toThrow(
+      `ARC1_SYSTEM_LABEL must be at most ${SYSTEM_LABEL_MAX_LENGTH} characters`,
+    );
+  });
+
+  it('keeps multi-target instructions authoritative over a single-target system label', async () => {
+    const registry = DestinationRegistry.unavailable({
+      code: 'REGISTRY_DISCOVERY_ERROR',
+      message: 'safe test failure',
+    });
+    const metadata = await initializeServer(
+      { ...DEFAULT_CONFIG, systemLabel: 'SHOULD NOT APPEAR' },
+      { multiTarget: { mode: 'aggregate', registry, instanceConfig: DEFAULT_CONFIG } },
+    );
+
+    expect(metadata.instructions).toBe(MULTI_TARGET_SERVER_INSTRUCTIONS);
+    expect(metadata.instructions).not.toContain('SHOULD NOT APPEAR');
   });
 
   it('has a valid version string', () => {

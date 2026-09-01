@@ -43,6 +43,22 @@ export interface CliConfigOptionSpec {
   valueOptional?: boolean;
 }
 
+/** Keeps the complete model-facing server instructions below clients' known 2,048-character ceiling. */
+export const SYSTEM_LABEL_MAX_LENGTH = 160;
+
+/** Normalize a configured system label to one model-facing line. */
+export function normalizeSystemLabel(value: string): string {
+  const withoutControls = Array.from(value.normalize('NFKC'), (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f) ? ' ' : character;
+  }).join('');
+  const normalized = withoutControls.replace(/\s+/g, ' ').trim();
+  if (normalized.length > SYSTEM_LABEL_MAX_LENGTH) {
+    throw new Error(`ARC1_SYSTEM_LABEL must be at most ${SYSTEM_LABEL_MAX_LENGTH} characters after normalization.`);
+  }
+  return normalized;
+}
+
 export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'url', valueName: 'url', description: 'SAP base URL' },
   { name: 'user', valueName: 'user', description: 'SAP username (prefer SAP_USER in CI)' },
@@ -61,6 +77,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'http-addr', valueName: 'host:port', description: 'HTTP transport bind address' },
   { name: 'port', valueName: 'port', description: 'HTTP transport port override' },
   { name: 'server-name', valueName: 'name', description: 'MCP server name' },
+  { name: 'system-label', valueName: 'label', description: 'Connected-system label shown in MCP instructions' },
   {
     name: 'ui',
     valueName: 'mode',
@@ -544,6 +561,9 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.httpAddr = getFlag('port') !== undefined ? { flag: '--port' } : { env: 'ARC1_PORT' };
   }
   config.serverName = resolveStr('server-name', 'ARC1_SERVER_NAME', DEFAULT_CONFIG.serverName, 'serverName');
+  config.systemLabel = normalizeSystemLabel(
+    resolveStr('system-label', 'ARC1_SYSTEM_LABEL', DEFAULT_CONFIG.systemLabel, 'systemLabel'),
+  );
 
   // ── Read-only Admin UI ────────────────────────────────────────────
   const uiFlag = getOptionalFlagValue('ui');
