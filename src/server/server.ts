@@ -659,6 +659,14 @@ const SERVER_INSTRUCTIONS = [
   'One SAP system per instance: there is no system/destination selector, by design.',
 ].join('\n');
 
+/** With several ARC-1 instances pointing at different SAP systems (dev/QA/prod), some clients
+ *  show an opaque connector id instead of `config.serverName` — the label line is then the only
+ *  thing that tells a model which system it is talking to, without a probing tool call. */
+export function buildServerInstructions(config: ServerConfig): string {
+  if (!config.systemLabel) return SERVER_INSTRUCTIONS;
+  return `Connected SAP system: ${config.systemLabel}.\n\n${SERVER_INSTRUCTIONS}`;
+}
+
 export interface CreateServerOptions {
   btpProxy?: BTPProxyConfig;
   btpConfig?: BTPConfig;
@@ -687,7 +695,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     { name: config.serverName, version: VERSION },
     {
       capabilities: { tools: { listChanged: true } },
-      instructions: multiTarget ? buildMultiTargetServerInstructions(multiTarget) : SERVER_INSTRUCTIONS,
+      instructions: multiTarget ? buildMultiTargetServerInstructions(multiTarget) : buildServerInstructions(config),
     },
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);

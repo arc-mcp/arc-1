@@ -61,6 +61,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'http-addr', valueName: 'host:port', description: 'HTTP transport bind address' },
   { name: 'port', valueName: 'port', description: 'HTTP transport port override' },
   { name: 'server-name', valueName: 'name', description: 'MCP server name' },
+  { name: 'system-label', valueName: 'label', description: 'Connected-system label shown in the server instructions' },
   {
     name: 'ui',
     valueName: 'mode',
@@ -544,6 +545,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.httpAddr = getFlag('port') !== undefined ? { flag: '--port' } : { env: 'ARC1_PORT' };
   }
   config.serverName = resolveStr('server-name', 'ARC1_SERVER_NAME', DEFAULT_CONFIG.serverName, 'serverName');
+  config.systemLabel = resolveStr('system-label', 'ARC1_SYSTEM_LABEL', DEFAULT_CONFIG.systemLabel, 'systemLabel');
 
   // ── Read-only Admin UI ────────────────────────────────────────────
   const uiFlag = getOptionalFlagValue('ui');

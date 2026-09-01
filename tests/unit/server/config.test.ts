@@ -310,6 +310,31 @@ describe('parseArgs', () => {
     }
   });
 
+  it('defaults systemLabel to empty', () => {
+    const config = parseArgs([]);
+    expect(config.systemLabel).toBe('');
+  });
+
+  it('parses ARC1_SYSTEM_LABEL env var', () => {
+    process.env.ARC1_SYSTEM_LABEL = 'ERP production (read-only)';
+    try {
+      const config = parseArgs([]);
+      expect(config.systemLabel).toBe('ERP production (read-only)');
+    } finally {
+      delete process.env.ARC1_SYSTEM_LABEL;
+    }
+  });
+
+  it('parses --system-label flag over ARC1_SYSTEM_LABEL env', () => {
+    process.env.ARC1_SYSTEM_LABEL = 'ERP dev';
+    try {
+      const config = parseArgs(['--system-label', 'ERP QA']);
+      expect(config.systemLabel).toBe('ERP QA');
+    } finally {
+      delete process.env.ARC1_SYSTEM_LABEL;
+    }
+  });
+
   it('parses --port flag and overrides httpAddr port', () => {
     const config = parseArgs(['--port', '9090']);
     expect(config.httpAddr).toBe('0.0.0.0:9090');
