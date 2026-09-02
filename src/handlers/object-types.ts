@@ -524,10 +524,10 @@ export function normalizeClassWriteInclude(include: unknown): ClassWriteInclude 
 
 /**
  * Auto-detect which class include a method specifier targets, based on the
- * local-class prefix on the LHS of `<localclass>~<method>`. Used by
- * `edit_method` so callers can pass `lhc_project~approve_project` and have
- * ARC-1 transparently route the read+write to `/includes/implementations`
- * instead of `/source/main`.
+ * local-class prefix on the LHS of `<localclass>~<method>`. Used by method-level
+ * reads and `edit_method` so callers can pass `lhc_project~approve_project` and
+ * have ARC-1 transparently route to `/includes/implementations` instead of
+ * `/source/main`.
  *
  * Prefix → include mapping (intentionally narrow; extend via explicit
  * `include` parameter when a code-base uses other conventions):
