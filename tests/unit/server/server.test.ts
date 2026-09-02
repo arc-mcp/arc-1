@@ -28,12 +28,12 @@ import { DestinationRegistry, targetConnectionFingerprint } from '../../../src/s
 import { logger } from '../../../src/server/logger.js';
 import { MULTI_TARGET_SERVER_INSTRUCTIONS } from '../../../src/server/multi-target-server.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
+import { dataResultAdmissionEnvelope, runtimeMemoryEnvelope } from '../../../src/server/runtime-memory.js';
 import {
   buildAdtConfig,
   canUseSharedSingleTargetCredentials,
   createCachingLayer,
   createServer,
-  dataResultAdmissionEnvelope,
   filterToolsByAuthScope,
   formatStartupAuthPreflightToolError,
   getConfiguredToolDefinitions,
@@ -44,7 +44,6 @@ import {
   resolveSingleTargetOverlapState,
   runStartupAuthPreflight,
   runStartupAuthPreflightWithClient,
-  runtimeMemoryEnvelope,
   VERSION,
 } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';

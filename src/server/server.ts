@@ -7,7 +7,6 @@
  * - http-streamable: for remote/containerized deployments
  */
 
-import { getHeapStatistics } from 'node:v8';
 import { type ApiKeyEntry, createApiKeyVerifier, type Verifier } from '@arc-mcp/xsuaa-auth';
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -16,7 +15,6 @@ import { CallToolRequestSchema, type Implementation, ListToolsRequestSchema } fr
 import { AdtClient } from '../adt/client.js';
 import type { AdtClientConfig } from '../adt/config.js';
 import { resolveCookies } from '../adt/cookies.js';
-import { DEFAULT_CONCURRENT_DATA_RESULTS, DEFAULT_DATA_PREVIEW_RESPONSE_BYTES } from '../adt/data-result-context.js';
 import { AdtApiError } from '../adt/errors.js';
 import { shouldWarnPreStatefulRelease } from '../adt/release.js';
 import { deriveUserSafety, deriveUserSafetyFromProfile } from '../adt/safety.js';
@@ -70,6 +68,7 @@ import {
 import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { loadPlugins } from './plugin-loader.js';
+import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
 import { buildServerInstructions } from './server-instructions.js';
 import { FileSink } from './sinks/file.js';
 import { filterToolsByAuthScope } from './tool-auth.js';
@@ -86,33 +85,6 @@ export const VERSION = '1.1.2'; // x-release-please-version
 // runtime and invisible to CI — so warn once at serve time if the live list crosses the threshold.
 const TOOLS_LIST_SOFT_WARN_BYTES = 60_000;
 let warnedLargeToolsList = false;
-
-/** Exact raw response-body admission envelope, kept numeric only while it remains a safe integer. */
-export function dataResultAdmissionEnvelope(bytesPerResult: number, concurrentResults: number): number | string {
-  const exact = BigInt(bytesPerResult) * BigInt(concurrentResults);
-  return exact <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(exact) : exact.toString();
-}
-
-/** Non-secret runtime memory values that let CF operators verify the effective heap policy. */
-export function runtimeMemoryEnvelope(
-  env: NodeJS.ProcessEnv = process.env,
-  heapSizeLimitBytes = getHeapStatistics().heap_size_limit,
-): {
-  cfMemoryAvailableMiB?: number;
-  optimizeMemory: boolean;
-  v8HeapSizeLimitMiB: number;
-} {
-  const memoryAvailable = env.MEMORY_AVAILABLE?.trim();
-  const parsedMemoryAvailable = memoryAvailable && /^\d+$/.test(memoryAvailable) ? Number(memoryAvailable) : undefined;
-  return {
-    cfMemoryAvailableMiB:
-      parsedMemoryAvailable !== undefined && Number.isSafeInteger(parsedMemoryAvailable)
-        ? parsedMemoryAvailable
-        : undefined,
-    optimizeMemory: env.OPTIMIZE_MEMORY === 'true',
-    v8HeapSizeLimitMiB: Math.round(heapSizeLimitBytes / (1024 * 1024)),
-  };
-}
 
 /**
  * Resolve API-key provenance from the configured secret, not from AuthInfo.clientId.
@@ -1330,35 +1302,11 @@ export async function createAndStartServer(
   const sharedAuthState = config.multiTargetEndpoints ? new MultiTargetSharedAuthState() : undefined;
 
   // ─── Layer 3: shared SAP-bound Semaphore (server-wide cap) ────────
-  // One Semaphore for the whole process. Threaded into the shared startup client AND
-  // every per-user PP client built at request time, so ARC1_MAX_CONCURRENT is a true
-  // server-wide ceiling rather than a per-client one (the latter would multiply the cap
-  // by the number of active PP users — see ADR-0004).
+  // One process-wide instance gates the startup client and every per-user PP client;
+  // a per-client guard would multiply the cap by active users (ADR-0004).
   const adtSemaphore = new Semaphore(config.maxConcurrent);
   logger.info('SAP semaphore', { maxConcurrent: config.maxConcurrent, scope: 'server-wide' });
-  const dataResultSemaphore = new Semaphore(config.maxConcurrentDataResults);
-  const admittedBodyBytes = dataResultAdmissionEnvelope(
-    config.maxDataPreviewResponseBytes,
-    config.maxConcurrentDataResults,
-  );
-  logger.info('Data-result safety envelope', {
-    maxDataPreviewResponseBytes: config.maxDataPreviewResponseBytes,
-    maxConcurrentDataResults: config.maxConcurrentDataResults,
-    admittedBodyBytes,
-    scope: 'server-wide',
-  });
-  const defaultAdmissionEnvelope =
-    BigInt(DEFAULT_DATA_PREVIEW_RESPONSE_BYTES) * BigInt(DEFAULT_CONCURRENT_DATA_RESULTS);
-  if (BigInt(config.maxDataPreviewResponseBytes) * BigInt(config.maxConcurrentDataResults) > defaultAdmissionEnvelope) {
-    logger.warn(
-      'Configured data-result admission exceeds the shipped 4 MiB envelope. Benchmark bounded peak RSS for this topology and normally reduce ARC1_MAX_CONCURRENT_DATA_RESULTS when raising ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES.',
-      {
-        maxDataPreviewResponseBytes: config.maxDataPreviewResponseBytes,
-        maxConcurrentDataResults: config.maxConcurrentDataResults,
-        admittedBodyBytes,
-      },
-    );
-  }
+  const dataResultSemaphore = createDataResultSemaphore(config);
 
   // ─── Layer 2: per-user MCP tool-call rate limiter ─────────────────
   // Applied inside handleToolCall. Stdio (no authInfo) is exempt — there's no user
