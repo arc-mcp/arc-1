@@ -197,12 +197,29 @@ function cloneResponseHeaders(headers: Headers): Headers {
   return copy;
 }
 
-function capResponseBody(response: Response, budget: DataResponseBudget): Response {
+async function capResponseBody(response: Response, budget: DataResponseBudget): Promise<Response> {
   const responseBody = response.body;
   if (responseBody === null) return response;
+  const requestId = getCurrentContext()?.requestId;
+  const contentEncoding = response.headers.get('content-encoding')?.trim().toLowerCase();
+  const contentLength = response.headers.get('content-length')?.trim();
+  if ((!contentEncoding || contentEncoding === 'identity') && contentLength && /^\d+$/.test(contentLength)) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isSafeInteger(declaredBytes)) {
+      try {
+        budget.assertSingleResponseBytes(declaredBytes, requestId);
+      } catch (error) {
+        try {
+          await responseBody.cancel(error);
+        } catch {
+          // Preserve the response-limit error.
+        }
+        throw error;
+      }
+    }
+  }
   const reader = responseBody.getReader();
   const reservation = response.ok ? budget.createReservation() : undefined;
-  const requestId = getCurrentContext()?.requestId;
   let seenBytes = 0;
   let settled = false;
 
@@ -1449,7 +1466,7 @@ export class AdtHttpClient {
         ...(dispatcher ? { dispatcher } : {}),
       })) as Response;
     }
-    return options?.responseBudget ? capResponseBody(response, options.responseBudget) : response;
+    return options?.responseBudget ? await capResponseBody(response, options.responseBudget) : response;
   }
 
   /**

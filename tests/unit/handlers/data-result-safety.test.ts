@@ -83,6 +83,80 @@ describe('request-scoped data-result safety', () => {
     expect(limitedEvent).not.toHaveProperty('responseBody');
   });
 
+  it('keeps the limit contract in minimal-error multi-target mode and stops before XML parsing', async () => {
+    const semaphore = new Semaphore(2);
+    const client = createBoundedClient(8, semaphore);
+    mockFetch
+      .mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }))
+      .mockResolvedValueOnce(mockResponse(200, 'not XML and already oversized'));
+
+    const result = await handleToolCall(
+      client,
+      {
+        ...DEFAULT_CONFIG,
+        maxDataPreviewResponseBytes: 8,
+        minimalErrors: true,
+        targetId: 'A4H-001',
+      },
+      'SAPQuery',
+      { sql: 'SELECT obj_name FROM tadir' },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'REQ-TARGET-BUDGET',
+    );
+
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toEqual({
+      error: 'DATA_RESPONSE_TOO_LARGE',
+      message: expect.stringContaining('restrictive non-overlapping key-range WHERE'),
+      limitBytes: 8,
+      retryable: false,
+      requestId: 'REQ-TARGET-BUDGET',
+      target: 'A4H-001',
+    });
+    expect(semaphore.inflight).toBe(0);
+  });
+
+  it('makes hyperfocused query inherit one scope, request ID, and semaphore lease', async () => {
+    const body = dataPreviewXml(['Z01']);
+    const semaphore = new Semaphore(1);
+    const client = createBoundedClient(Buffer.byteLength(body) - 1, semaphore);
+    const auditSpy = vi.spyOn(logger, 'emitAudit');
+    mockFetch
+      .mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }))
+      .mockResolvedValueOnce(mockResponse(200, body));
+
+    const result = await handleToolCall(
+      client,
+      { ...DEFAULT_CONFIG, toolMode: 'hyperfocused' },
+      'SAP',
+      { action: 'query', params: { sql: 'SELECT obj_name FROM tadir' } },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'REQ-HYPER-BUDGET',
+    );
+
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+      error: 'DATA_RESPONSE_TOO_LARGE',
+      requestId: 'REQ-HYPER-BUDGET',
+    });
+    expect(
+      auditSpy.mock.calls
+        .map(([event]) => event)
+        .filter((event) => event.event === 'tool_call_start')
+        .map((event) => event.requestId),
+    ).toEqual(['REQ-HYPER-BUDGET', 'REQ-HYPER-BUDGET']);
+    expect(semaphore.inflight).toBe(0);
+    expect(semaphore.waiting).toBe(0);
+  });
+
   it('shares a FIFO process-wide lease, leaves source reads independent, and holds it through terminal audit', async () => {
     const semaphore = new Semaphore(2);
     const clients = [

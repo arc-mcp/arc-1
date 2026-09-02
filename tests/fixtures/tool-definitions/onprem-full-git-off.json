@@ -135,7 +135,7 @@
         },
         "maxRows": {
           "type": "number",
-          "description": "Row cap (default 100). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY or cap client-side."
+          "description": "Row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY for exact caps."
         },
         "maxResults": {
           "type": "number",
@@ -1060,7 +1060,7 @@
   },
   {
     "name": "SAPQuery",
-    "description": "Execute ABAP SQL queries against SAP tables. Returns columns + rows. Good for reverse-engineering metadata tables (DD02L, DD03L, TADIR, TFDIR, SWOTLV). Unknown tables get name suggestions. ADT freestyle ABAP SQL: one read-only SELECT; use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted inline literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION, and subqueries work; schema prefixes, CTEs, derived tables, window functions, FULL JOIN, INTERSECT/EXCEPT, comments, and semicolons do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. To find CDS consumers do NOT text-scan DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC — use SAPContext(action=\"impact\", type=\"DDLS\") (where-used index, filtered buckets).",
+    "description": "Query SAP tables with ABAP SQL; returns columns + rows. For metadata reverse-engineering: DD02L, DD03L, TADIR. Unknown tables get suggestions. ADT freestyle ABAP SQL: one read-only SELECT. Use alias~field/alias~*, ASCENDING/DESCENDING, quoted literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION and subqueries work. CTEs, FULL JOIN, derived/window tables, INTERSECT/EXCEPT, comments, semicolons and schema prefixes do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. For CDS consumers, do not scan DDDDLSRC; use SAPContext(action=\"impact\", type=\"DDLS\").",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1070,7 +1070,7 @@
         },
         "maxRows": {
           "type": "number",
-          "description": "Maximum rows (default 100)"
+          "description": "Rows (default 100, max 10,000; byte limit may apply sooner)."
         }
       },
       "required": [

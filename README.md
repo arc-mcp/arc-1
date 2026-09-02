@@ -131,6 +131,12 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL. Both are 
 | Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
 | Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
 
+When either capability is enabled, successful data-preview bodies are limited cumulatively per tool
+call (2 MiB by default), and only two data-result calls per process remain admitted through parsing
+and serialization. `SAPQuery.maxRows` is separately clamped to 10,000, but wide rows can reach the
+byte limit much earlier. See [Configuration](docs_page/configuration-reference.md) before tuning
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` or `ARC1_MAX_CONCURRENT_DATA_RESULTS`.
+
 With both flags at their defaults, ARC-1's data/sql rows are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
 
 ARC-1's strategy is to stay close to documented and discoverable ADT behavior, probe system capabilities before exposing tools, keep conservative security defaults (writes off, data preview off, free SQL off, package allowlist `$TMP`), and continuously review SAP's guidance as it evolves. This README is not a compliance decision for any specific customer landscape, but the default posture is intended to support normal governed development use rather than block it.

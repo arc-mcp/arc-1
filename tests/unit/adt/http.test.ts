@@ -1878,6 +1878,48 @@ describe('AdtHttpClient', () => {
   });
 
   describe('bounded response bodies', () => {
+    it('rejects a known oversized identity body from Content-Length before reading it', async () => {
+      const cancelled = vi.fn();
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel: cancelled,
+          }),
+          { status: 200, headers: { 'content-length': '9' } },
+        ),
+      );
+
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/path', undefined, {
+          responseBudget: new DataResponseBudget(3),
+        }),
+      ).rejects.toBeInstanceOf(AdtResponseLimitError);
+      expect(cancelled).toHaveBeenCalledOnce();
+    });
+
+    it('rejects and cancels when the first chunk crosses the byte ceiling', async () => {
+      const cancelled = vi.fn();
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('oversized'));
+            },
+            cancel: cancelled,
+          }),
+          { status: 200 },
+        ),
+      );
+      const budget = new DataResponseBudget(3);
+
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/path', undefined, { responseBudget: budget }),
+      ).rejects.toBeInstanceOf(AdtResponseLimitError);
+      expect(cancelled).toHaveBeenCalledOnce();
+      expect(budget.consumedBytes).toBe(0);
+      expect(budget.reservedBytes).toBe(0);
+    });
+
     it('allows the exact decompressed-byte boundary and preserves UTF-8 split across chunks', async () => {
       const encoded = new TextEncoder().encode('A€B');
       mockFetch.mockResolvedValueOnce(streamedResponse(200, [encoded.slice(0, 2), encoded.slice(2)]));
@@ -1929,6 +1971,43 @@ describe('AdtHttpClient', () => {
 
       expect(response.body).toBe('ok');
       expect(budget.consumedBytes).toBe(2);
+    });
+
+    it.each([
+      ['401 authentication', 401, 'bad', undefined],
+      ['406 content negotiation', 406, 'bad', undefined],
+      ['429 throttling', 429, 'bad', { 'retry-after': '0' }],
+      ['500 database reconnect', 500, 'database connection is not open', undefined],
+      ['503 availability', 503, 'bad', { 'retry-after': '0' }],
+    ])('does not charge a bounded %s retry body to the successful allowance', async (_name, status, body, headers) => {
+      const budget = new DataResponseBudget(64);
+      mockFetch.mockResolvedValueOnce(streamedResponse(status, [new TextEncoder().encode(body)], headers));
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('ok')]));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      const response = await client.get(
+        '/path',
+        status === 406 ? { Accept: 'application/vnd.sap.adt.custom+xml' } : undefined,
+        { responseBudget: budget },
+      );
+
+      expect(response.body).toBe('ok');
+      expect(budget.consumedBytes).toBe(2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not charge a bounded 415 retry body to the successful allowance', async () => {
+      const budget = new DataResponseBudget(3);
+      mockFetch.mockResolvedValueOnce(streamedResponse(415, [new TextEncoder().encode('bad')]));
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('ok')]));
+      const client = new AdtHttpClient(getDefaultConfig());
+      (client as any).csrfToken = 'T';
+
+      const response = await client.post('/path', '<x/>', 'text/xml', undefined, { responseBudget: budget });
+
+      expect(response.body).toBe('ok');
+      expect(budget.consumedBytes).toBe(2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
     it('rejects an oversized non-2xx body before AdtApiError buffering', async () => {

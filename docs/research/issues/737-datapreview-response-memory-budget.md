@@ -1,10 +1,12 @@
 # Issue #737 — data-preview responses need a bounded memory budget
 
-**Status:** Confirmed ARC-1 resource-safety bug on 2026-09-02. The affected path is present in
-ARC-1 1.1.0 and remains present at HEAD `7969a9b2` (1.1.2). The failure mechanism was validated
+**Status:** Confirmed ARC-1 resource-safety bug on 2026-09-02; the recommended fix is implemented
+and locally validated in draft PR #739. The affected path is present in ARC-1
+1.1.0 and at the original research baseline `7969a9b2` (1.1.2). The failure mechanism was validated
 with the real ADT data-preview contract on S/4HANA 2023 / SAP_BASIS 758, with local RSS
 measurements through ARC-1's actual parser and MCP result shape, and against the shipped Cloud
-Foundry configuration. No SAP object, BTP service, destination, or deployed application was
+Foundry configuration. Implementation validation used a disposable CF app only; it was deleted
+afterward, and no SAP object, BTP service, destination, or existing deployed application was
 changed.
 
 ## TL;DR
@@ -69,6 +71,52 @@ concurrency 2 keeps the nominal admitted-body envelope at 4 MiB. They are behavi
 previously successful bulk query can now be clamped or rejected, even if its result was impractical
 for an LLM client. The release notes and upgrade guidance must say so, and the defaults must be
 confirmed with the regression matrix below before implementation is merged.
+
+## Implementation record in PR #739
+
+The draft PR now implements the approved design as reviewable commits:
+
+- `f742eafd` parses rows and metrics once, clamps raw and chunked freestyle queries at the required
+  sink, and reports the requested/effective limits when the caller asked for more than 10,000 rows;
+- `e506205e` adds strict configuration, the request-owned cumulative budget, the shared two-slot
+  data-result semaphore, direct and BTP bounded streams, cancellation/teardown, stable errors, and
+  safe audit events;
+- `d28f0bad` removes the fixed CF command, enables buildpack `OPTIMIZE_MEMORY`, and logs the
+  non-secret runtime memory envelope; and
+- `407e6dd9` refreshes the already-red audited transitive dependencies to patched lockfile versions.
+
+The MTA build succeeds with no module `command`. A disposable live app using Cloud Foundry Node.js
+buildpack 1.9.3 and Node 22.23.1 produced `--max_old_space_size=384` at 512 MiB and `768` at 1 GiB,
+then was deleted. This validates the adaptive heap mechanics without altering an existing ARC-1
+deployment.
+
+A read-only SAP_BASIS 758 acceptance run first used a deliberately lower 64 KiB ceiling: three
+parallel 10,000-row narrowed TADIR queries all returned `AdtResponseLimitError`, observed
+data-result concurrency was exactly two, all slots/waiters were released, incremental peak RSS was
+12 MiB, and a subsequent five-row T000 query plus ordinary system read both succeeded. The same
+test was then repeated at the shipped 2 MiB ceiling with `SELECT * FROM TADIR`: all three calls were
+bounded, concurrency remained exactly two, all slots/waiters were released, subsequent data and
+system reads succeeded, and incremental peak RSS was 25 MiB. No SAP state was changed.
+
+The final local regression pass is green:
+
+```text
+npm test: 184 files, 5,432 tests passed
+npm run lint: passed (two pre-existing Biome migration notices)
+npm run typecheck: passed
+npm run build: passed
+npm audit --audit-level=high --omit=optional: 0 vulnerabilities
+npm run btp:validate: passed for the base and documented extension combinations
+npm run btp:build: passed
+npm run docs:build: passed in strict mode (one pre-existing release-note anchor notice)
+```
+
+The direct and BTP Connectivity transports have deterministic unit coverage for response
+boundaries, cancellation, retry charging, identity encoding, headers, and proxy-client teardown.
+A branch deployment through a live principal-propagation destination was not performed because it
+would require replacing or separately authenticating a shared deployed MCP application. That is a
+deployment acceptance check, not an untested transport branch: the live CF buildpack behavior and
+live SAP boundary are verified independently, and the BTP stream adapter is covered locally.
 
 ## Reported impact and scope
 
@@ -787,9 +835,9 @@ type, the release notes and upgrade guidance must prominently say that:
   and data concurrency; and
 - both new limits reject zero or malformed values at startup rather than disabling the boundary.
 
-## Affected files
+## Implementation surface
 
-Expected implementation surface:
+The implementation uses this surface:
 
 - `src/server/context.ts` — carry the MCP abort signal plus the lazy request-level budget and data
   semaphore lease;
@@ -812,11 +860,12 @@ Expected implementation surface:
 - `src/handlers/dispatch.ts` — request-context lifetime, lease release after result/audit work,
   nested hyperfocused scope inheritance, stable error formatting/audit classification, and
   avoidable string copy;
-- `src/server/types.ts`, `src/server/config.ts`, `src/server/server.ts`, and
-  `src/server/multi-target-runtime.ts` — defaults, strict CLI/env parsing, MCP signal propagation,
-  process-wide semaphore, multi-target sharing, startup envelope log, and warning;
-- `src/handlers/tools.ts` and possibly `src/handlers/schemas.ts` — describe/enforce the row ceiling;
-- `mta.yaml`, `manifest.yml`, `.env.example`, `docs_page/configuration-reference.md`,
+- `src/server/types.ts`, `src/server/config.ts`, and `src/server/server.ts` — defaults, strict
+  CLI/env parsing, MCP signal propagation, process-wide semaphore shared by every server/client
+  factory, startup envelope log, and warning;
+- `src/handlers/tools.ts` — describe the row and byte ceilings (the schema retains sink clamping);
+- `mta.yaml`, `.env.example`, `mta-overrides.mtaext.example`,
+  `docs_page/configuration-reference.md`,
   `docs_page/rate-limiting.md`, `docs_page/btp-administration.md`, `docs_page/tools.md`, and release
   notes — operator contract and deployment guidance.
 - `AGENTS.md` — add `AdtResponseLimitError` to the documented canonical ADT error set.
@@ -924,11 +973,12 @@ For affected operators:
   compatibility research. Track the exposed `runQueryWithMetrics()` plugin-facade omission as an
   independent, surgical scope-hardening follow-up.
 
-**Recommendation:** continue PR #739 as the single implementation PR and close #737 and #741 only
-after the complete regression matrix passes. Treat the 2 MiB streaming cumulative byte budget and
-two-slot data semaphore together as the issue-closing boundary. Ship the one-pass parser, row
-clamp, request-level budget, conditional transport stream, shared semaphore,
-cancellation/config/error contract, and adaptive 75% CF heap sizing atomically. They address
-independently measured amplifiers and make the default 512 MiB topology defensible without claiming
-that the 4 MiB raw admission product is a process-memory proof. Revisit a SAX/columnar response path
-only as a later performance feature.
+**Implementation review status:** PR #739 contains the complete issue-closing boundary: the
+2 MiB streaming cumulative byte budget, two-slot data semaphore, one-pass parser, row clamp,
+request-level ownership, conditional transport stream, cancellation/config/error contract, and
+adaptive 75% CF heap sizing. The local, live-SAP, and disposable-CF regression evidence is green,
+so the implementation is ready for code review and can close #737 and #741. A live
+principal-propagation branch deployment remains an optional deployment acceptance check before
+release. These controls make the shipped 512 MiB topology defensible without claiming that the
+4 MiB raw admission product is a process-memory proof. A SAX/columnar response path remains a later
+performance feature, not a prerequisite for this fix.

@@ -99,6 +99,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
 | `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
 | `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
+| `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` / `ARC1_MAX_CONCURRENT_DATA_RESULTS` | Cumulative successful data-preview body cap per tool call (default 2 MiB, after decompression/before string conversion) / process-wide data-result cap held through parse + serialization + audit (default 2); positive integers only, `0` does not disable |
 | `ARC1_AUTH_RATE_LIMIT` / `ARC1_MCP_HTTP_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Per-IP OAuth cap (20/min), optional shared MCP HTTP/IP override (unset derives `max(OAuth×30,600)`; 0 disables), and per-user MCP cap (default 0 = off; ADR-0004) |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
 | `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |

@@ -593,6 +593,8 @@ export function getToolRegistry(): ToolRegistry {
       ctx.server,
       ctx.cache,
       ctx.isPerUserClient,
+      undefined,
+      ctx.requestId,
     );
   });
   _toolRegistry = r;

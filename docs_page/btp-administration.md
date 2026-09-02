@@ -171,6 +171,21 @@ number of ARC-1 processes × ARC1_MAX_CONCURRENT
 Include other ARC-1 deployments that reach the same SAP system when sizing against Basis dialog
 work processes. Sticky sessions do not turn process-local state into shared coordination.
 
+Data-preview memory admission is independently process-local. Each process admits at most
+`ARC1_MAX_CONCURRENT_DATA_RESULTS` data-result calls and gives each complete tool call a cumulative
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` successful-body allowance. At the defaults, the raw-body
+admission product is 4 MiB per process; with `N` instances it is `N × 4 MiB`. This is not a heap
+bound because XML parsing and JSON serialization amplify the bytes. Raise the response allowance
+only after measuring bounded peak RSS for the real row shapes, and normally reduce data-result
+concurrency proportionally.
+
+The shipped MTA sets `OPTIMIZE_MEMORY=true` and leaves the start command to the Node.js buildpack.
+The buildpack assigns old-space 75% of `MEMORY_AVAILABLE`: 384 MiB at the shipped 512 MiB allocation
+and 768 MiB at 1 GiB. Memory overrides therefore remain in sync automatically. After deployment,
+confirm the `Runtime memory envelope` startup log shows the expected CF memory and effective V8 heap
+limit. Keep a temporarily enlarged instance during rollout until observed bounded peaks justify a
+smaller allocation.
+
 ### Non-rolling update for shared Basic
 
 Use a maintenance window. Do not pass a rolling strategy and do not use blue-green deployment:

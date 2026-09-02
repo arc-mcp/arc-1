@@ -255,6 +255,7 @@ event; the BTP Audit Log sink forwards the security/data categories described be
 | `tool_call_start` | Tool name and centrally redacted arguments. |
 | `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
 | `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
+| `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
 | `http_csrf_fetch` | CSRF-token fetch success and duration. |
 | `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
 | `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
