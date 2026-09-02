@@ -91,6 +91,64 @@ describe('experimental data-source blocklist live contract', () => {
     expect(searchSpy).not.toHaveBeenCalled();
   });
 
+  it('resolves a real access-controlled standard view instead of refusing it', async (ctx) => {
+    // Regression for the prototype: I_BUSINESSPARTNER carries an auxiliary
+    // RELATED_OBJECTS_TREE -> ... -> DCLS/DL branch that was mistaken for an unknown data node.
+    if (basisRelease < 752) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+    }
+    const strict = withBlocked(['USR02']);
+    await expect(strict.runTableQuery('I_BUSINESSPARTNER', { maxRows: 1 })).resolves.toBeDefined();
+  });
+
+  it('denies a blocked table reached through the access-controlled standard view', async (ctx) => {
+    if (basisRelease < 752) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+    }
+    const strict = withBlocked(['BUT000']);
+    await expect(strict.runTableQuery('I_BUSINESSPARTNER', { maxRows: 1 })).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      sourcePath: ['I_BUSINESSPARTNER', 'BUT000'],
+    });
+  });
+
+  it('fails closed on a live CDS table-function graph', async (ctx) => {
+    if (basisRelease < 752) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+    }
+    const strict = withBlocked(['USR02']);
+    await expect(strict.runTableQuery('CdsFrwk_flight_booking', { maxRows: 1 })).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+    });
+  });
+
+  it('authorizes an IN-list chunked request once', async (ctx) => {
+    if (basisRelease < 752) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: /datapreview is unbound on the live SAP_BASIS 750 target`);
+    }
+    const strict = withBlocked(['USR02']);
+    const searchSpy = vi.spyOn(strict, 'searchObject');
+    await strict.runQueryBatch(
+      [
+        "SELECT CARRID FROM SCARR WHERE CARRID IN ('AA','AB')",
+        "SELECT CARRID FROM SCARR WHERE CARRID IN ('LH','UA')",
+        "SELECT CARRID FROM SCARR WHERE CARRID IN ('SQ','JL')",
+      ],
+      50,
+    );
+    // One resolution for the whole logical request, not one per chunk.
+    expect(searchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses ABAP comments and unsupported SQL before any SAP call', async () => {
+    const strict = withBlocked(['USR02']);
+    const postSpy = vi.spyOn(strict.http, 'post');
+    for (const sql of ['SELECT * FROM SCARR " c', 'SELECT SINGLE * FROM SCARR', 'SELECT * FROM (lv)']) {
+      await expect(strict.runQuery(sql)).rejects.toMatchObject({ code: 'DATA_SQL_UNSUPPORTED' });
+    }
+    expect(postSpy).not.toHaveBeenCalled();
+  });
+
   it('returns a typed denial with an operator action and no SQL or data values', async () => {
     const strict = withBlocked(['SCARR']);
     let error: unknown;
