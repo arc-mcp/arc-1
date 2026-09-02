@@ -35,12 +35,12 @@ The recommended fix is a bundle:
 1. Add an enabled-by-default **post-content-decoding response-body byte budget for the complete
    data-preview tool call**. The first guarded data operation should lazily create one request-level
    budget in the existing `AsyncLocalStorage` context and pass it explicitly to the transport.
-   Nested hyperfocused dispatch must inherit the outer MCP call's scope. Start with **1 MiB per
+   Nested hyperfocused dispatch must inherit the outer MCP call's scope. Start with **2 MiB per
    call**, including the sum of auto-chunked and internal data-preview responses, and make the
-   ceiling operator-configurable. This is still roughly 190,000–202,000 tokens for a representative
-   TADIR-shaped result, so it is a server-safety ceiling rather than a promise that every client can
-   use a near-limit result.
-2. Add a separate **process-wide data-result semaphore**, default **4**, acquired lazily by that
+   ceiling operator-configurable. A representative TADIR-shaped 1 MiB result was already roughly
+   190,000–202,000 tokens, so the 2 MiB value is a server-safety and compatibility ceiling, not a
+   promise that every client can use a near-limit result.
+2. Add a separate **process-wide data-result semaphore**, default **2**, acquired lazily by that
    same request context and held through fetch, parse, row construction, tool JSON construction,
    and terminal audit formatting. It must be shared by all principal-propagation and multi-target
    clients. Ordinary source/metadata reads should remain governed only by `ARC1_MAX_CONCURRENT`.
@@ -48,21 +48,24 @@ The recommended fix is a bundle:
    XML-to-heap amplification ratio or aggregate process limit.
 3. Parse rows and metrics from one XML parse, and clamp every raw/chunked `SAPQuery` to the existing
    10,000-row ARC-1 ceiling as a secondary rail.
-4. In the issue-closing PR, change the shipped fixed CF old-space limit from **448 MiB to 384 MiB**
-   so native, young-generation, HTTP-buffer, and platform overhead have real headroom. Do not lower
-   old-space before the response guard exists: an unbounded result could merely reach a fatal V8
-   allocation failure sooner. Do not use Node's percentage flag without first raising ARC-1's
-   runtime floor: it was added in Node 22.21, while ARC-1 currently permits Node 22.19. More CF
-   memory remains a mitigation, not the correctness fix.
+4. In the same PR, remove the shipped fixed **448 MiB** CF old-space command and enable the Node
+   buildpack's supported 75% memory optimization. That produces 384 MiB old-space at the shipped
+   512 MiB container size and 768 MiB after a 1 GiB memory override. Ship this only together with
+   the response guard: lowering the 512 MiB deployment's old-space before bounding responses could
+   merely reach a fatal V8 allocation failure sooner. Do not use Node's percentage flag without
+   first raising ARC-1's runtime floor: it was added in Node 22.21, while ARC-1 currently permits
+   Node 22.19. More CF memory remains a mitigation, not the correctness fix.
 
 The locked configuration contract is
-`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` / `--max-datapreview-response-bytes` with default `1048576`,
-and `ARC1_MAX_CONCURRENT_DATA_RESULTS` / `--max-concurrent-data-results` with default `4`. Accept
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` / `--max-datapreview-response-bytes` with default `2097152`,
+and `ARC1_MAX_CONCURRENT_DATA_RESULTS` / `--max-concurrent-data-results` with default `2`. Accept
 positive decimal safe integers only and fail startup for malformed, fractional, unsafe, negative,
 or zero values; the first release should not include a magic `0` disable. The defaults are
 intentionally conservative starting points for the shipped 512 MiB topology. Together they admit
 at most 4 MiB of successful response bodies into the guarded phase before parsing amplification;
-this is a sizing starting point, not a process-memory proof. They are behavior changes: a
+this is a sizing starting point, not a process-memory proof. The 2 MiB allowance leaves the
+existing default 100-row preview usable with margin on representative wide table shapes;
+concurrency 2 keeps the nominal admitted-body envelope at 4 MiB. They are behavior changes: a
 previously successful bulk query can now be clamped or rejected, even if its result was impractical
 for an LLM client. The release notes and upgrade guidance must say so, and the defaults must be
 confirmed with the regression matrix below before implementation is merged.
@@ -74,7 +77,8 @@ The external report is for ARC-1 1.1.0 on Cloud Foundry with one 512 MiB instanc
 parallel `SAPQuery` calls returned several megabytes each from BW tables. Cloud Foundry terminated
 the instance twice within 31 seconds with `Exited with status 137 (out of memory)`. Every in-flight
 MCP request on the instance was lost; sequential retries fit after the operator raised the instance
-to 2 GiB.
+to 1 GiB. That change reduced total-RSS pressure, but the fixed start command left V8 old-space at
+448 MiB.
 
 The same mechanism affects:
 
@@ -324,6 +328,58 @@ old-space limit ended in a fatal allocation failure (exit 134). That is not the 
 137 path, but it independently validates that this allocation chain can terminate a process. The
 shared live CF application was deliberately not crashed to reproduce 137.
 
+### Reporter-side wide-table evidence
+
+The issue reporter supplied
+[follow-up evidence](https://github.com/arc-mcp/arc-1/issues/737#issuecomment-5516264336) from a
+customer ERP QA system reached through the same Cloud Foundry, BTP Connectivity, Cloud Connector,
+and principal-propagation topology as the incident. The directly observed metric was ARC-1's
+`tool_call_end.resultSize` for
+`SAPRead(type="TABLE_QUERY", maxRows=5)`. The current audit implementation computes that metric as
+JavaScript string `.length` after XML parsing and compact JSON serialization. It is therefore tool
+result **UTF-16 code units**, not UTF-8 transfer bytes, raw SAP XML bytes, proxy-buffer bytes, or
+peak memory. Mostly ASCII table data makes code units numerically close to compact JSON bytes, but
+the units must not be conflated.
+
+Separate the direct observations from the derived sizing:
+
+| Table | Columns | Direct observation | Derived sizing |
+|---|---:|---|---|
+| TADIR | 22 | 5-row tool result; about 430 code units per returned row when the complete result is divided by 5 | Applying the earlier large-result XML/JSON ratio gives about 0.8 KiB raw XML per row |
+| MARA, including customer appends | 264 | 5-row tool result; about 4,556 code units per returned row by the same calculation | Roughly 0.8 MiB raw XML for 100 rows; the 1 MiB boundary is estimated around 100–125 rows |
+| BSEG | 331 | No completed body: two end-to-end attempts timed out after 120 seconds, including attempts with `BUKRS` and `GJAHR` predicates | A per-cell extrapolation from MARA suggests 100 rows could approach 1 MiB; no BSEG response size was measured |
+
+These calls travelled through the BTP/PP path, but `resultSize` is produced after the transport and
+does not validate proxy double-buffering or its RSS cost. The BSEG observation likewise proves an
+end-to-end timeout without a completed result; it does not identify whether time was spent in the
+database, SAP response generation, the proxy, or transfer, nor whether partial network bytes had
+arrived. A selective, index-aligned predicate is the main query-side mitigation. `maxRows` bounds
+the returned rows but does not prove that SAP can avoid an expensive scan. The response-byte guard
+cannot shorten work performed before a usable body is available, while the data-result semaphore
+still limits how many such slow operations ARC-1 admits concurrently.
+
+The five-row extrapolation also includes fixed JSON wrapper and `columns` costs. If a result has
+fixed cost `F` and per-row cost `R`, dividing a five-row result by five yields `R + F/5`; scaling
+that value to 100 rows counts the fixed cost twenty times. The approximately 1.85 raw-XML/tool-JSON
+ratio measured on the earlier large TADIR result is also not stable for very small responses whose
+XML metadata dominates.
+
+A focused, content-free validation through the direct transport on the live 758 test system
+demonstrates the effect. The same 22-column `TADIR` query was executed at three row limits,
+recording only sizes and counts; no table values were logged or retained:
+
+| Returned rows | Raw XML UTF-8 bytes | Compact tool JSON UTF-8 bytes | Raw-XML/tool-JSON ratio |
+|---:|---:|---:|---:|
+| 5 | 9,994 | 2,059 | 4.85 |
+| 100 | 73,381 | 36,279 | 2.02 |
+| 1,000 | 678,035 | 364,631 | 1.86 |
+
+Scaling that five-row tool result directly to 100 rows predicts 41,180 code units, while the
+observed 100-row result was 36,279, about 13.5% lower. The reporter's evidence therefore establishes
+that a 1 MiB default has little compatibility margin for wide tables, but it does not establish
+exact rejection rows. Use the MARA/BSEG figures as directional sizing inputs and confirm raw body
+bytes, peak RSS, and proxy lifecycle on the offered development BW route before release.
+
 ### Consumer-side budget sizing
 
 The server limit should also avoid spending substantial SAP, parser, transport, and model context
@@ -342,11 +398,13 @@ and compact JSON serialization as the measured path. Token counts from `gpt-toke
 | 4,189,901 B (~4 MiB) | 2,428,941 B | 765,486 | 809,647 |
 | 5,692,062 B (~5.43 MiB) | 3,300,142 B | 1,040,046 | 1,100,047 |
 
-This supports lowering the provisional default from 4 MiB to **1 MiB**. It does not prove that a
-near-limit response fits every MCP conversation: the representative result alone consumes about
-an entire 200,000-token context before instructions, history, schemas, or the model's answer. A
-roughly 0.5 MiB response was still about 96,000–101,000 tokens. Operators should keep `maxRows`
-well below the rejection boundary for normal agent use.
+Consumer sizing alone would support a 1 MiB ceiling: the representative result already consumes
+about an entire 200,000-token context before instructions, history, schemas, or the model's answer,
+and a roughly 0.5 MiB response was still about 96,000–101,000 tokens. The reporter's wide-table
+evidence adds a different constraint: 1 MiB can sit directly against ARC-1's ordinary 100-row
+default. Use **2 MiB** as the server-safety and compatibility ceiling, while documenting that
+normal agent requests should remain substantially smaller. The higher ceiling is not a statement
+that a near-limit result fits a particular MCP client's usable context.
 
 Nor is any fixed claim that multi-megabyte results fit “no model” durable. Current OpenAI models
 advertise a 1.05M context window, and current Gemini documentation describes 1M-token models; see
@@ -359,11 +417,12 @@ specific vendor tokenizer or model generation.
 A second focused harness retained ten distinct ~1 MiB response bodies, ARC-1's current two-parse
 results, compact tool results, and SSE-equivalent byte arrays. It peaked at 202.5 MiB RSS from a
 49.3 MiB focused-process baseline (153.2 MiB incremental). Adding the separately measured full
-server baseline still places this representative case below 512 MiB. This supports 1 MiB as a
-plausible default, but it does **not** make aggregate admission optional: the harness was synthetic,
-direct-transport-only, and cannot establish a maximum amplification factor for all column/value
-shapes or account for operators raising the byte limit. Keep the data-result semaphore in the
-issue-closing design.
+server baseline still places this representative case below 512 MiB. This supports a 4 MiB raw
+admission envelope as a plausible starting point, but it does **not** prove that `1 MiB × 4` and
+`2 MiB × 2` have identical peak memory: the harness was synthetic, direct-transport-only, and
+cannot establish a maximum amplification factor for every column/value shape or individual-call
+temporary allocation. Lock the compatibility-oriented default at 2 MiB with concurrency 2, keep
+the semaphore mandatory, and gate release on the two-response 2 MiB regression below.
 
 ### Transport-wrapper feasibility checks
 
@@ -398,25 +457,43 @@ see the official [Dispatcher documentation](https://github.com/nodejs/undici/blo
 
 The shipped `mta.yaml` allocates 512 MiB and starts Node with
 `--max-old-space-size=448`, described as leaving 64 MiB headroom. A read-only CF inspection showed
-the available test instance at the same 512 MiB size and about 108 MiB RSS while idle.
+the available test instance at the same 512 MiB size and about 100–108 MiB RSS while idle; the CF
+V3 process record confirmed that its effective start command remained the fixed 448 MiB command.
+The issue reporter observed the configuration drift tracked by
+[#741](https://github.com/arc-mcp/arc-1/issues/741): after the affected production BW instance was
+raised to 1 GiB through an `.mtaext` `parameters.memory` override, its old-space flag remained 448
+MiB. The added container memory still benefited young-generation heap, external buffers, native
+allocations, transport, and other process overhead, so it was not "wasted"; it did not, however,
+increase V8's old-space ceiling.
 
 Node documents that `--max-old-space-size` limits only V8's old-memory section and explicitly
 recommends leaving memory for other uses. See
 [Node's CLI documentation](https://nodejs.org/download/release/v22.19.0/docs/api/cli.html#--max-old-space-sizesize-in-mib).
-The current Cloud Foundry Node buildpack's optional memory optimization uses 75% of available
-memory, not 87.5%; see its
-[`bin/release`](https://github.com/cloudfoundry/nodejs-buildpack/blob/master/bin/release).
-ARC-1 also needs young-generation heap, external buffers, native libraries, HTTP buffers, and
-platform process overhead. The existing 64 MiB comment is therefore not a valid total-process
-headroom calculation.
+The Node buildpack used by the inspected BTP deployment was 1.9.2. Its supported optional memory
+optimization, like current upstream, sets `NODE_OPTIONS=--max_old_space_size=75%` of the
+buildpack-provided `MEMORY_AVAILABLE` for its **default** `npm start` process. Its integration test
+verifies 1,024 MiB available memory produces a 768 MiB flag. See its
+[`bin/release`](https://github.com/cloudfoundry/nodejs-buildpack/blob/v1.9.2/bin/release) and
+[`memory_test.go`](https://github.com/cloudfoundry/nodejs-buildpack/blob/v1.9.2/src/nodejs/integration/memory_test.go).
+ARC-1's `package.json` already defines `npm start` as `node dist/index.js`. Therefore the preferred
+fix is to remove the custom MTA `command` and set `OPTIMIZE_MEMORY: "true"`, allowing the buildpack
+default process to produce 384 MiB old-space at 512 MiB and 768 MiB at 1 GiB. A deployment test
+must prove that updating the MTA clears the previously stored custom command; merely setting
+`OPTIMIZE_MEMORY` while retaining a custom command does not activate the buildpack-generated
+default process.
+
+This 75% choice leaves a more realistic allowance for young-generation heap, external buffers,
+native libraries, HTTP buffers, and platform process overhead. The existing claim that 448 MiB
+leaves 64 MiB total-process headroom is invalid because the flag controls old space, not total V8
+or process memory.
 
 Node added `--max-old-space-size-percentage` in 22.21.0, but ARC-1's `package.json` permits
 Node >=22.19. Using the percentage flag in `mta.yaml` without also raising the runtime floor can
 therefore make an otherwise supported deployment fail at process startup. The implementation also
 falls back from `uv_get_constrained_memory()` to total host memory when the constrained value is
 unavailable; that is a code-path risk, not an observed failure on the target Diego environment.
-Neither risk is justified here because the MTA memory and command are maintained together. Use the
-fixed 384 MiB value. See the
+Neither risk is justified when the buildpack already supplies a tested adaptive mechanism below
+ARC-1's Node floor. See the
 [Node 22.21.0 release notes](https://nodejs.org/en/blog/release/v22.21.0) and the
 [percentage implementation](https://github.com/nodejs/node/blob/v22.21.1/src/node_options.cc#L2381-L2435).
 
@@ -427,7 +504,13 @@ and the [status-137 log example](https://docs.cloudfoundry.org/devguide/deploy-a
 
 Node 22's `process.constrainedMemory()` and `process.availableMemory()` could improve startup and
 audit diagnostics. Both are stable in Node >=22.16, but available memory is inherently racy under
-parallel requests. They should not replace a deterministic configured budget. See the
+parallel requests. Log the non-secret CF memory inputs and effective V8 heap limit at startup so a
+stale command or unexpected buildpack result is visible, but do not use a live available-memory
+snapshot as an admission decision. If an MTA deployment cannot reliably clear the custom command,
+the fallback is a small startup wrapper that strictly accepts the documented positive whole-memory
+format, computes 75%, fails closed for missing/malformed input, logs the result, and `exec`s Node.
+Do not ship the unvalidated `M=${MEMORY_LIMIT%M}` one-liner: absent input becomes a zero flag and
+malformed units fail through incidental shell arithmetic rather than a deliberate diagnostic. See the
 [Node process documentation](https://nodejs.org/download/release/v22.21.1/docs/api/process.html#processavailablememory).
 
 ### Existing regression suite
@@ -457,8 +540,9 @@ This confirms the report is an uncovered limit case, not an already-failing impl
 | Check `Content-Length` | Only when trustworthy/present | No | Almost free | Fast reject only |
 | Reject after `JSON.stringify` | No; peak already happened | No | Protects client context, not server memory | Defense-in-depth only |
 | Stream-count post-content-decoding response bytes | **Yes** | No; it bounds each/cumulative tool result, not the process | Moderate, release-neutral | Primary individual-call boundary |
-| Dedicated data concurrency = 4 | No | Bounds the guarded data phase to the configured cap | Queues only data work; configurable | Required aggregate boundary |
-| Parse rows and metrics once | No | Reduces amplification | About 52 MiB saved in the measured one-call fixture | Land first as lower-risk mitigation |
+| Dedicated data concurrency = 2 | No | Bounds the guarded data phase to the configured cap | Queues only data work across targets; configurable | Required aggregate boundary |
+| Parse rows and metrics once | No | Reduces amplification | About 52 MiB saved in the measured one-call fixture | Required amplification reduction in this PR |
+| Buildpack `OPTIMIZE_MEMORY=true` with its default process | No | No | Adapts old-space to CF memory at the buildpack-supported 75% ratio | Required CF defense-in-depth |
 | SAX/streaming XML parser | Can reduce amplification | Helps | High complexity; final row result still occupies memory | Follow-up optimization |
 | Return files/object-store links | Avoids MCP result size | Depends on writer | Data governance, lifecycle, and authorization design required | Separate feature, not this fix |
 
@@ -466,12 +550,14 @@ This confirms the report is an uncovered limit case, not an already-failing impl
 
 ### A. One request-scoped post-content-decoding body budget
 
-Use `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, default `1048576` (1 MiB). It is a server-wide safety
+Use `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, default `2097152` (2 MiB). It is a server-wide safety
 ceiling, not a destination property and not user-expandable through scopes. An operator may raise
 it for a larger deployment. The first release must reject `0` instead of offering a disable switch:
 an apparently configured but unbounded data path would undermine the default-safe contract.
 Bulk/file consumers should use an explicitly sized deployment override rather than causing the
-shared MCP default to absorb multi-megabyte row sets.
+shared MCP default to absorb multi-megabyte row sets. The default intentionally preserves margin
+for the existing 100-row preview on wide table shapes; it is not a recommended target result size
+for an LLM conversation.
 
 Extend the existing `RequestContext` with the MCP abort signal and a shared data-result scope whose
 budget and semaphore lease are initialized lazily. The scope owns one budget with `limitBytes`,
@@ -542,8 +628,8 @@ Suggested client-facing result:
 ```json
 {
   "error": "DATA_RESPONSE_TOO_LARGE",
-  "message": "The SAP data-preview result exceeded the 1 MiB server limit. Lower maxRows, select fewer columns, or add a restrictive/key-range WHERE clause, then retry.",
-  "limitBytes": 1048576,
+  "message": "The SAP data-preview result exceeded the 2 MiB server limit. Submit a new request with lower maxRows, fewer columns, or a restrictive non-overlapping key-range WHERE clause.",
+  "limitBytes": 2097152,
   "retryable": false,
   "requestId": "..."
 }
@@ -551,15 +637,19 @@ Suggested client-facing result:
 
 This should be a normal failed tool call; the process and unrelated MCP requests remain healthy.
 It is deterministic for unchanged arguments, so `retryable` must be `false`: automatic retries
-repeat the same expensive SAP work. The message asks the caller to submit a new request with lower
-`maxRows`, fewer selected columns, or a more restrictive/key-range `WHERE`. Do not calculate a
-suggested `maxRows`; ARC-1 cannot infer row width safely, and silently changing query semantics
-would surprise callers.
+repeat the same expensive SAP work. The message asks the caller to submit a **separate tool call**
+with lower `maxRows`, fewer selected columns, or a restrictive, non-overlapping key-range `WHERE`.
+Smaller internal IN-list chunks do not solve a cumulative body-budget failure when their combined
+result is unchanged. Keep the existing IN-list parser guidance cause-specific: it should recommend
+shorter literal lists and smaller batches, with client-side union/re-sort where semantics permit.
+Both errors should use consistent terms, but they must not give identical instructions. Do not
+calculate a suggested `maxRows`; ARC-1 cannot infer row width safely, and silently changing query
+semantics would surprise callers.
 
 ### B. A data-result semaphore held across the expensive phase
 
 Add a shared process-wide `Semaphore`, configured by `ARC1_MAX_CONCURRENT_DATA_RESULTS` with
-default `4`. Thread the one instance into every `AdtClient` in the same way as `adtSemaphore`,
+default `2`. Thread the one instance into every `AdtClient` in the same way as `adtSemaphore`,
 including request-local principal-propagation and multi-target clients. The first guarded client
 method in an MCP tool call acquires it lazily through the request-level data-result context; later
 data methods and nested hyperfocused dispatch in that call reuse the lease and must not acquire a
@@ -570,12 +660,15 @@ JSON-RPC/SSE encoding remains outside this lease. The wait and guarded HTTP work
 
 Do not reuse or lower `ARC1_MAX_CONCURRENT`: that limiter protects SAP dialog work processes and
 has different sizing semantics. A separate FIFO queue keeps ordinary source reads concurrent
-while bounding admitted data work across every target. Default 4 is a compromise between the
-measured ten-call representative case and head-of-line blocking in `/<target>/...` and `/multi/mcp`;
-it is not evidence that four arbitrary near-limit SAP results always fit 512 MiB.
+while bounding admitted data work across every target. Default 2 leaves one data slot available
+when another target has a slow call, preserves margin for wide 100-row previews under the 2 MiB
+ceiling, and directly limits the incident's two-large-response shape. It still creates
+process-wide head-of-line pressure in `/<target>/...` and `/multi/mcp`; cross-target FIFO progress
+and ordinary-read independence are therefore release criteria, not assumptions.
 
 Treat the product of the two knobs as an explicit raw-body admission envelope: the defaults are
-`4 × 1 MiB = 4 MiB` before parser/result amplification. Raising
+`2 × 2 MiB = 4 MiB` before parser/result amplification. Equal products do not prove equal peak
+RSS because individual-call temporary allocations and XML shapes can differ. Raising
 `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` should normally be paired with a proportionate reduction in
 `ARC1_MAX_CONCURRENT_DATA_RESULTS` unless a larger combined envelope has been benchmarked on the
 deployed topology. The semaphore remains required because post-content-decoding bytes do not
@@ -596,9 +689,9 @@ operator may raise either ceiling.
   `rowLimitClamped`, `requestedRows`, and `effectiveMaxRows` metadata to both single and chunked
   results. Do not return partial rows after a byte-budget error.
 - Update the tool description to distinguish the two limits: 10,000 is the hard maximum requested
-  row count, while the 1 MiB cumulative decompressed-response ceiling can reject a wide result much
+  row count, while the 2 MiB cumulative decompressed-response ceiling can reject a wide result much
   earlier. In the live TADIR sample, 6,690,675 bytes for 10,000 rows averaged about 669 raw XML
-  bytes per row, so a 1 MiB response is only roughly 1,500 rows for that shape. This is an
+  bytes per row, so a 2 MiB response is only roughly 3,100 rows for that shape. This is an
   illustration, not a row guarantee or a basis for automatic retry sizing.
 - Avoid building aggregate `fullText` with `.map().join('')` in dispatch when there is only one
   text block; use the existing string directly, and compute multi-block size without concatenating
@@ -609,20 +702,27 @@ operator may raise either ceiling.
 
 ### D. Correct the CF safety margin
 
-For the shipped MTA, replace `--max-old-space-size=448` with
-`--max-old-space-size=384`. Update the comment so it does not describe old-space headroom as
-total-process headroom. Do not use `--max-old-space-size-percentage`: the flag is newer than
-ARC-1's declared minimum Node version, and its total-host-memory fallback adds a failure mode that
-buys little while `memory:` and `command:` live in the same MTA module. Consider raising the
-generic direct-push manifest from 256 MiB after measuring its real startup and bounded query peaks.
+In the same implementation PR, remove the custom `command: node --max-old-space-size=448
+dist/index.js` from `mta.yaml` and add `OPTIMIZE_MEMORY: "true"` to the module properties. The
+buildpack default process then runs the existing `npm start` and supplies 75% of
+`MEMORY_AVAILABLE` through `NODE_OPTIONS`. Expected old-space flags are 384 MiB for the shipped
+512 MiB module and 768 MiB for a 1 GiB `.mtaext` memory override.
 
-Land this change with the response budget and data semaphore, not in the earlier mitigation PR.
-Without the guard, lowering the V8 ceiling can turn the same unbounded request into a fatal
-old-space allocation failure sooner. With the guard present, 384 MiB becomes defense-in-depth that
-reserves more of the 512 MiB container for young generation, external/native buffers, transport,
-and platform overhead.
+Do not use `--max-old-space-size-percentage`: it is newer than ARC-1's declared minimum Node
+version and adds a host-memory fallback path. Do not use an unchecked shell expression derived
+from `MEMORY_LIMIT`. If removal of the stored custom command cannot be made reliable through MTA
+deployment, use the strictly validated, fail-closed 75% startup wrapper described above. Consider
+raising the generic direct-push manifest from 256 MiB only after measuring its startup and bounded
+query peaks.
 
-Do not make a larger instance the only remediation. Keep the reporter's 2 GiB allocation during
+Ship adaptive heap sizing atomically with the response budget and data semaphore in this PR.
+Without the guard, lowering the 512 MiB deployment's V8 ceiling can turn the same unbounded request
+into a fatal old-space allocation failure sooner. With the guard present, the 75% setting becomes
+defense-in-depth and follows future CF memory overrides. The implementation PR closes both
+[#737](https://github.com/arc-mcp/arc-1/issues/737) and
+[#741](https://github.com/arc-mcp/arc-1/issues/741).
+
+Do not make a larger instance the only remediation. Keep the reporter's 1 GiB allocation during
 rollout, then choose instance memory from observed bounded peaks and user concurrency rather than
 assuming the guard makes 512 MiB universally sufficient.
 
@@ -633,8 +733,8 @@ CLI > environment/`.env` > defaults:
 
 | Purpose | Environment | CLI | Default |
 |---|---|---|---:|
-| Cumulative decompressed data body bytes per tool call | `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` | `--max-datapreview-response-bytes` | `1048576` |
-| Process-wide admitted data-result calls | `ARC1_MAX_CONCURRENT_DATA_RESULTS` | `--max-concurrent-data-results` | `4` |
+| Cumulative decompressed data body bytes per tool call | `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` | `--max-datapreview-response-bytes` | `2097152` |
+| Process-wide admitted data-result calls | `ARC1_MAX_CONCURRENT_DATA_RESULTS` | `--max-concurrent-data-results` | `2` |
 
 Both values must be positive base-10 integers within JavaScript's safe-integer range. Reject startup
 for empty explicit values, signs, fractions, exponent notation, suffixes, zero, negatives, or unsafe
@@ -650,29 +750,36 @@ limit.
 
 ## Landing sequence and compatibility
 
-Use two implementation PRs so the measured low-risk reductions can land without weakening the
-definition of done for #737:
+Continue draft PR #739 from research into the single implementation PR. Keeping the interacting
+changes atomic prevents an unsafe intermediate deployment in which old-space is lowered without a
+response guard, or the response guard ships while `.mtaext` memory scaling still leaves old-space
+pinned. Organize the implementation as independently reviewable commits inside the same PR:
 
-1. **Mitigation PR — does not close #737:** combine the one-pass rows/metrics parser and sink-level
-   10,000-row clamp for raw and chunked `SAPQuery`. The parser change is intended to preserve
-   results. The clamp is a deliberate behavior change and must be disclosed in `SAPQuery` result
-   metadata; its sink enforcement remains consistent with the safety ceiling used by
-   `TABLE_CONTENTS` and `TABLE_QUERY` after #388. Keep the shipped 448 MiB old-space setting in this
-   PR; lowering it before the response guard exists can make an unbounded request fail fatally
-   sooner.
-2. **Issue-closing PR:** add the lazy request-level data-result context, MCP cancellation plumbing,
-   strict configuration contract, 1 MiB cumulative body budget, conditional direct/BTP response
-   stream wrapper, CSRF budget stripping, correctly owned proxy teardown, shared data-result
-   semaphore, stable non-retryable error, and the fixed `448` → `384` MiB old-space change. Neither
-   the byte budget nor the semaphore should be reviewed away as an optional optimization; together
-   they are the individual-call and aggregate admission controls.
+1. Parse rows and metrics once, enforce the 10,000-row sink clamp, and report clamp metadata.
+2. Add the required lazy request-level budget/context, cancellation, strict configuration, and
+   process-wide data-result semaphore.
+3. Add the conditional direct/BTP response stream wrapper, CSRF budget stripping, bounded retry
+   bodies, decompression policy, and correctly owned proxy teardown.
+4. Add the stable non-retryable error, aligned but cause-specific query guidance, audit fields, and
+   avoidable result-string cleanup.
+5. Remove the fixed CF start command, enable buildpack memory optimization, add startup sizing
+   diagnostics, and verify 512 MiB and 1 GiB MTA deployments.
+6. Update operator documentation and release notes, then run the complete local/live regression
+   matrix.
+
+The byte budget and semaphore must not be reviewed away as optional optimizations: together they
+are the individual-call and aggregate admission controls. The parse-once path and adaptive heap
+sizing reduce independent amplifiers but do not replace either boundary. Once implementation and
+verification are present, rename PR #739 to the normal `fix:` convention and make its description
+close both #737 and #741. The qualified reporter evidence from PR #742 is incorporated in this
+dossier; do not merge its estimates as unqualified proxy-body measurements.
 
 Use the project's normal `fix:` convention for the resource-safety work. Independently of commit
 type, the release notes and upgrade guidance must prominently say that:
 
 - raw `SAPQuery.maxRows` values above 10,000 are now clamped and the result reports the requested
   and effective limits;
-- successful results above the default 1 MiB cumulative post-content-decoding body ceiling now
+- successful results above the default 2 MiB cumulative post-content-decoding body ceiling now
   fail with an actionable error;
 - 10,000 is only the maximum row request; wide rows can reach the byte ceiling and fail at a much
   lower row count;
@@ -752,10 +859,11 @@ No ADT feature discovery or SAP release gate is needed.
    client callers receive a safe context automatically.
 6. **Parser equivalence:** old ASX and current data-preview fixtures produce identical rows and
    metrics through the one-parse function, including empty/null values.
-7. **Concurrency and cancellation:** five data calls never exceed the default data-result
-   concurrency of four; an ordinary source read is not queued behind them; the semaphore is shared
+7. **Concurrency and cancellation:** three data calls never exceed the default data-result
+   concurrency of two; an ordinary source read is not queued behind them; the semaphore is shared
    across per-user, pinned, and aggregate multi-target clients; queued work for a second target
-   progresses in FIFO order as a slot frees. Pass the SDK's MCP abort signal into dispatch: an
+   progresses in FIFO order as a slot frees, and one slow call against target A leaves one slot for
+   target B. Pass the SDK's MCP abort signal into dispatch: an
    aborted waiter leaves no slot leak, and an active direct/BTP read is cancelled and cleaned up.
    The lease remains held through tool JSON and terminal audit work and is released on every
    success/error path. Also test a non-default value so the assertion proves configuration plumbing
@@ -766,14 +874,18 @@ No ADT feature discovery or SAP release gate is needed.
    unchanged request is never automatically retried and no guessed `maxRows` is returned.
 9. **Deployment/config:** default, environment, CLI precedence, exact flag names, positive decimal
    safe-integer validation, rejection of zero/malformed/unsafe values, 4 MiB startup envelope log,
-   larger-envelope warning, no auto-adjustment, MTA heap ratio, and docs are synchronized. Verify
-   that the mitigation PR leaves old-space at 448 MiB and the issue-closing PR changes it to 384
-   MiB. Run startup coverage on the minimum supported Node version so a deployment flag cannot
-   exceed the declared engine floor again.
-10. **Live regression:** against the 758 system, run five parallel `TADIR` queries that cross the
-   test cap. The calls must fail or queue individually under the default four-call admission cap,
+   larger-envelope warning, no auto-adjustment, adaptive MTA heap sizing, and docs are synchronized.
+   Verify an MTA deployment clears the previous custom command and that buildpack optimization
+   produces a 384 MiB old-space flag at 512 MiB and 768 MiB at 1 GiB. The startup log must expose
+   the non-secret memory inputs and effective V8 heap limit. Run startup coverage on the minimum
+   supported Node version and assert that no deployment flag exceeds the declared engine floor.
+10. **Live regression:** against the 758 system, run three parallel `TADIR` queries that cross the
+   2 MiB test cap. The calls must fail or queue individually under the default two-call admission cap,
    `/health` and a subsequent small query must succeed, and CF/local RSS must remain below the test
-   envelope. Repeat through a CF principal-propagation route without using production BW data.
+   envelope. Separately retain two near-2-MiB successful results through the full direct path and
+   prove the 512 MiB reference topology survives. Repeat both boundary and near-limit cases through
+   a CF principal-propagation route without using production BW data; the reporter's offered
+   development BW route is the preferred proxy acceptance test.
 
 An exact RSS assertion should not be a normal unit-test gate because allocator and platform
 behavior vary. Keep a child-process benchmark as release evidence and gate deterministic facts:
@@ -812,10 +924,11 @@ For affected operators:
   compatibility research. Track the exposed `runQueryWithMetrics()` plugin-facade omission as an
   independent, surgical scope-hardening follow-up.
 
-**Recommendation:** accept #737 and implement the layered fix above. Treat the streaming cumulative
-byte budget and dedicated data semaphore together as the issue-closing boundary. Land the
-one-pass parser and raw row clamp first as a lower-risk mitigation. Then ship the request-level
-budget, conditional transport stream, shared semaphore, cancellation/config/error contract, and
-fixed CF heap correction together. They address independently measured amplifiers and make the
-default 512 MiB topology defensible. Revisit a SAX/columnar response path only as a later
-performance feature.
+**Recommendation:** continue PR #739 as the single implementation PR and close #737 and #741 only
+after the complete regression matrix passes. Treat the 2 MiB streaming cumulative byte budget and
+two-slot data semaphore together as the issue-closing boundary. Ship the one-pass parser, row
+clamp, request-level budget, conditional transport stream, shared semaphore,
+cancellation/config/error contract, and adaptive 75% CF heap sizing atomically. They address
+independently measured amplifiers and make the default 512 MiB topology defensible without claiming
+that the 4 MiB raw admission product is a process-memory proof. Revisit a SAX/columnar response path
+only as a later performance feature.
