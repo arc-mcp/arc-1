@@ -2111,6 +2111,263 @@ ENDCLASS.`;
       expect(result.content[0]?.text).not.toContain('METHOD run');
     });
 
+    const behaviorPoolMain = `CLASS zbp_test DEFINITION PUBLIC ABSTRACT FINAL FOR BEHAVIOR OF zi_test.
+ENDCLASS.
+CLASS zbp_test IMPLEMENTATION.
+ENDCLASS.`;
+    const behaviorPoolImplementations = `CLASS lhc_test DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+    METHODS approve.
+    METHODS reject.
+ENDCLASS.
+CLASS lhc_test IMPLEMENTATION.
+  METHOD approve.
+    " approve request
+  ENDMETHOD.
+  METHOD reject.
+    " reject request
+  ENDMETHOD.
+ENDCLASS.
+CLASS lcl_helper DEFINITION.
+  PUBLIC SECTION.
+    METHODS calculate.
+ENDCLASS.
+CLASS lcl_helper IMPLEMENTATION.
+  METHOD calculate.
+    " calculate value
+  ENDMETHOD.
+ENDCLASS.`;
+    const behaviorPoolTests = `CLASS ltc_test DEFINITION FOR TESTING.
+  PRIVATE SECTION.
+    METHODS runs FOR TESTING.
+    METHODS fails FOR TESTING.
+ENDCLASS.
+CLASS ltc_test IMPLEMENTATION.
+  METHOD runs.
+    " test passes
+  ENDMETHOD.
+  METHOD fails.
+    " test fails
+  ENDMETHOD.
+ENDCLASS.
+CLASS lhc_test DEFINITION.
+  PUBLIC SECTION.
+    METHODS test_only.
+    METHODS unrelated.
+ENDCLASS.
+CLASS lhc_test IMPLEMENTATION.
+  METHOD test_only.
+    " explicit testclasses selection
+  ENDMETHOD.
+  METHOD unrelated.
+  ENDMETHOD.
+ENDCLASS.`;
+
+    function mockClassSections(statusByInclude: Partial<Record<string, number>> = {}): string[] {
+      mockFetch.mockReset();
+      const urls: string[] = [];
+      mockFetch.mockImplementation((url: string | URL) => {
+        const value = String(url);
+        urls.push(value);
+        if (value.includes('/activation/inactiveobjects')) {
+          return Promise.resolve(
+            mockResponse(
+              200,
+              '<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects"/>',
+            ),
+          );
+        }
+        if (value.includes('/includes/implementations')) {
+          const status = statusByInclude.implementations ?? 200;
+          return Promise.resolve(mockResponse(status, status === 200 ? behaviorPoolImplementations : 'Not Found'));
+        }
+        if (value.includes('/includes/testclasses')) {
+          const status = statusByInclude.testclasses ?? 200;
+          return Promise.resolve(mockResponse(status, status === 200 ? behaviorPoolTests : 'Not Found'));
+        }
+        return Promise.resolve(mockResponse(200, behaviorPoolMain));
+      });
+      return urls;
+    }
+
+    it.each([
+      ['lhc_test~approve', 'approve request', 'METHOD reject'],
+      ['lcl_helper~calculate', 'calculate value', 'METHOD approve'],
+    ])('routes qualified %s to the implementations include', async (method, expected, unrelated) => {
+      const urls = mockClassSections();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method,
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain(expected);
+      expect(result.content[0]?.text).not.toContain(unrelated);
+      expect(urls.some((url) => url.includes('/includes/implementations'))).toBe(true);
+      expect(urls.some((url) => url.includes('/source/main'))).toBe(false);
+    });
+
+    it('routes a qualified ltc_* method to the testclasses include', async () => {
+      const urls = mockClassSections();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'ltc_test~runs',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('test passes');
+      expect(result.content[0]?.text).not.toContain('METHOD fails');
+      expect(urls.some((url) => url.includes('/includes/testclasses'))).toBe(true);
+      expect(urls.some((url) => url.includes('/source/main'))).toBe(false);
+    });
+
+    it('extracts a bare method from an explicit include instead of returning the whole include', async () => {
+      mockClassSections();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'reject',
+        include: 'implementations',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('reject request');
+      expect(result.content[0]?.text).not.toContain('METHOD approve');
+      expect(result.content[0]?.text).not.toContain('CLASS lhc_test');
+    });
+
+    it('keeps explicit include="main" authoritative for a qualified local-class method', async () => {
+      const urls = mockClassSections();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'lhc_test~approve',
+        include: 'main',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not found');
+      expect(urls.some((url) => url.includes('/source/main'))).toBe(true);
+      expect(urls.some((url) => url.includes('/includes/implementations'))).toBe(false);
+    });
+
+    it('keeps an explicit non-MAIN include authoritative over a conflicting method prefix', async () => {
+      const urls = mockClassSections();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'lhc_test~test_only',
+        include: 'testclasses',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('explicit testclasses selection');
+      expect(result.content[0]?.text).not.toContain('METHOD unrelated');
+      expect(urls.some((url) => url.includes('/includes/testclasses'))).toBe(true);
+      expect(urls.some((url) => url.includes('/includes/implementations'))).toBe(false);
+    });
+
+    it('lists methods from an explicit include and propagates version="inactive"', async () => {
+      const urls = mockClassSections();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: '*',
+        include: 'testclasses',
+        version: 'inactive',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('runs');
+      expect(result.content[0]?.text).toContain('fails');
+      expect(result.content[0]?.text).not.toContain('CLASS ltc_test');
+      expect(urls.some((url) => url.includes('/includes/testclasses') && url.includes('version=inactive'))).toBe(true);
+    });
+
+    it('keeps global-interface-qualified methods on MAIN when include is omitted', async () => {
+      const mainSource = `CLASS zcl_order DEFINITION PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_order.
+ENDCLASS.
+CLASS zcl_order IMPLEMENTATION.
+  METHOD zif_order~process.
+    " process order
+  ENDMETHOD.
+ENDCLASS.`;
+      mockFetch.mockReset();
+      const urls: string[] = [];
+      mockFetch.mockImplementation((url: string | URL) => {
+        urls.push(String(url));
+        return Promise.resolve(mockResponse(200, mainSource));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZCL_ORDER',
+        method: 'zif_order~process',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('process order');
+      expect(urls.some((url) => url.includes('/source/main'))).toBe(true);
+      expect(urls.some((url) => url.includes('/includes/'))).toBe(false);
+    });
+
+    it('reports a missing auto-detected include without parsing MAIN', async () => {
+      mockClassSections({ implementations: 404 });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'lhc_test~approve',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Include "implementations" is not available for class ZBP_TEST');
+      expect(result.content[0]?.text).not.toContain('Available methods: (none)');
+    });
+
+    it('does not satisfy an include method read from a cached MAIN source', async () => {
+      const layer = new CachingLayer(new MemoryCache());
+      const urls = mockClassSections();
+      const client = createClient();
+
+      const mainResult = await handleToolCall(
+        client,
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'CLAS', name: 'ZBP_TEST' },
+        undefined,
+        undefined,
+        layer,
+      );
+      expect(mainResult.isError).toBeUndefined();
+      expect(mainResult.content[0]?.text).toContain('FOR BEHAVIOR OF');
+
+      const methodResult = await handleToolCall(
+        client,
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'CLAS', name: 'ZBP_TEST', method: 'lhc_test~approve' },
+        undefined,
+        undefined,
+        layer,
+      );
+
+      expect(methodResult.isError).toBeUndefined();
+      expect(methodResult.content[0]?.text).toContain('approve request');
+      expect(urls.filter((url) => url.includes('/source/main')).length).toBe(1);
+      expect(urls.filter((url) => url.includes('/includes/implementations')).length).toBe(1);
+    });
+
     it('returns error for nonexistent method', async () => {
       const classSource = `CLASS zcl_test DEFINITION PUBLIC.
   PUBLIC SECTION.
