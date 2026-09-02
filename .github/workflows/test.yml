@@ -89,6 +89,14 @@ jobs:
       - name: Security audit (BTP AppRouter)
         run: npm audit --prefix btp/approuter --audit-level=high --omit=optional
 
+      # The AppRouter's decode-uri-component fix is a CommonJS bridge around an
+      # ESM-only package, so it needs a real install to verify. Also fails if the
+      # DoS-vulnerable decoder returns — that advisory is moderate and would slip
+      # past the high threshold above.
+      - name: AppRouter regression tests
+        working-directory: btp/approuter
+        run: npm ci && npm test
+
       - name: Lint
         run: npm run lint
 

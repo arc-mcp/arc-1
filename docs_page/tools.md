@@ -53,8 +53,8 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `fromLabel` | string | No | For `action="diff"`: optional display label for the OLD side in the summary and patch header, e.g. `DNT-6-6: Validate discounts (DS7K900123)`. Does not affect source resolution. |
 | `toLabel` | string | No | For `action="diff"`: optional display label for the NEW side in the summary and patch header, e.g. `active` or `inactive draft`. Does not affect source resolution. |
 | `format` | string | No | Output format: `"text"` (default) or `"structured"`. For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured is supported for CLAS only (see below). |
-| `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
-| `method` | string | No | For CLAS: method name to read (e.g., `get_name`), or `*` to list all methods |
+| `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). |
+| `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline |
 | `group` | string | No | For FUNC: function group name |
@@ -139,6 +139,8 @@ SAPRead(type="CLAS", name="ZCL_ORDER", include="testclasses")
 SAPRead(type="CLAS", name="ZCL_ORDER", format="structured")  — JSON with metadata + decomposed source
 SAPRead(type="CLAS", name="ZCL_ORDER", method="*")           — list all methods
 SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name")    — read a specific method
+SAPRead(type="CLAS", name="ZBP_TRAVEL", method="lhc_travel~accept") — auto-route a RAP handler to implementations
+SAPRead(type="CLAS", name="ZCL_ORDER", method="setup", include="testclasses") — extract one method from an explicit include
 SAPRead(type="CLAS", name="ZCL_ORDER", grep="select.*from")  — matching lines only, annotated by method
 SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols") — maintained text pool (on-prem; see Class text symbols)
 SAPRead(type="PROG", name="ZTEST_REPORT", grep="WRITE")      — search source, returns matches + context

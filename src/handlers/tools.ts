@@ -446,7 +446,7 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. ' +
+              'For CLAS: omit include for full MAIN; otherwise select definitions, implementations, macros, or testclasses. With method=, an explicit include (including main) selects the source before extraction. ' +
               'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
               'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path.',
           },
@@ -458,8 +458,7 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'For CLAS: method name to read a single method implementation (e.g., "get_name", "zif_order~process"). ' +
-              'Use "*" to list all methods with signatures and visibility. ' +
+              'For CLAS: read a method (e.g., "get_name", "zif_order~process", "lhc_travel~accept") or use "*" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. ' +
               (btp ? '' : 'For SOBJ: BOR method name to read. If omitted, returns the full BOR method catalog. ') +
               'Not used with other types.',
           },

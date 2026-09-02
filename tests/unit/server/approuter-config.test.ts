@@ -8,16 +8,80 @@ describe('BTP UI AppRouter config', () => {
       overrides: Record<string, string>;
     };
     const packageLock = JSON.parse(await readFile('btp/approuter/package-lock.json', 'utf8')) as {
-      packages: Record<string, { version?: string }>;
+      packages: Record<string, { name?: string; version?: string; resolved?: string }>;
     };
 
-    expect(packageJson.engines.node).toBe('^22.0.0 || ^24.0.0');
-    expect(packageJson.overrides).toMatchObject({ axios: '1.18.0', 'body-parser': '2.3.0' });
+    // 22.12 is the floor for require(esm), which the decode-uri-component bridge needs.
+    expect(packageJson.engines.node).toBe('^22.12.0 || ^24.0.0');
+    expect(packageJson.overrides).toMatchObject({
+      axios: '1.18.0',
+      'body-parser': '2.3.0',
+      'decode-uri-component': 'file:./vendor/decode-uri-component-cjs',
+    });
     expect(packageLock.packages['node_modules/axios']?.version).toBe('1.18.0');
     expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.3.0');
     // AppRouter pins its own patched ws (>= 7.5.10); never override it to a different major.
+    // Asserted by version rather than tree position, which npm is free to hoist.
     expect(packageJson.overrides.ws).toBeUndefined();
-    expect(packageLock.packages['node_modules/@sap/approuter/node_modules/ws']?.version).toBe('7.5.11');
+    const wsEntries = Object.entries(packageLock.packages).filter(([path]) => path.endsWith('node_modules/ws'));
+    expect(wsEntries.length).toBeGreaterThan(0);
+    for (const [, entry] of wsEntries) {
+      expect(entry.version).toBe('7.5.11');
+    }
+
+    // query-string reaches decode-uri-component pre-auth, and <= 0.4.2 decodes malformed
+    // percent-encoding super-linearly (GHSA DoS). Every resolved copy must be the patched one.
+    const decoders = Object.entries(packageLock.packages).filter(
+      ([path, entry]) => entry.name === 'decode-uri-component' || path.endsWith('node_modules/decode-uri-component'),
+    );
+    expect(decoders.length).toBeGreaterThan(0);
+    for (const [, entry] of decoders) {
+      if (entry.resolved?.startsWith('https://')) {
+        expect(entry.version).toBe('0.5.0');
+      }
+    }
+    expect(packageLock.packages['node_modules/decode-uri-component-esm']?.version).toBe('0.5.0');
+  });
+
+  it('keeps the decode-uri-component bridge version in lockstep with the package it wraps', async () => {
+    // GitHub keys its dependency graph off the lockfile PATH, so the bridge appears as
+    // decode-uri-component@<bridge version> while the real tarball is hidden behind the
+    // npm: alias (reported as decode-uri-component-esm, which is not a real package and
+    // therefore never matches an advisory). The bridge's version field is the only thing
+    // Dependabot can match on, so it has to name the version actually being wrapped.
+    const bridge = JSON.parse(await readFile('btp/approuter/vendor/decode-uri-component-cjs/package.json', 'utf8')) as {
+      version: string;
+      dependencies: Record<string, string>;
+    };
+    const packageLock = JSON.parse(await readFile('btp/approuter/package-lock.json', 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    const aliasSpec = bridge.dependencies['decode-uri-component-esm'];
+    const wrappedVersion = aliasSpec?.replace('npm:decode-uri-component@', '');
+    expect(wrappedVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(bridge.version).toBe(wrappedVersion);
+    expect(packageLock.packages['node_modules/decode-uri-component-esm']?.version).toBe(wrappedVersion);
+    expect(packageLock.packages['node_modules/decode-uri-component']?.version).toBe(wrappedVersion);
+  });
+
+  it('allows only the reviewed AppRouter npm config through the MTAR inspection gate', async () => {
+    const npmrc = await readFile('btp/approuter/.npmrc', 'utf8');
+    const activeSettings = npmrc
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'));
+    const runbook = await readFile('docs_page/btp-cloud-foundry-deployment.md', 'utf8');
+
+    // Keep the one allowed project config non-secret and narrowly scoped.
+    expect(activeSettings).toEqual(['install-links=true']);
+    // Both documented inspection implementations must compare the packaged file with source.
+    expect(runbook).toContain(`[ "$member" = 'arc1-ui-router/data.zip' ]`);
+    expect(runbook).toContain('cmp -s "$tmp/approuter.npmrc" btp/approuter/.npmrc');
+    expect(runbook).toContain("$member.Directory.Name -eq 'arc1-ui-router'");
+    expect(runbook).toContain('Get-FileHash $allowedNpmrc -Algorithm SHA256');
+    // The blanket filename deny remains in place for every other module and path.
+    expect(runbook.match(/deny\s*=\s*['"]\\\.env\|\\\.npmrc/g)).toHaveLength(2);
   });
 
   it('requires admin scope for all UI routes', async () => {

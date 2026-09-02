@@ -213,6 +213,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | CDS impact classifier | `src/adt/cds-impact.ts`, `src/adt/codeintel.ts`, tests |
 | Inactive syntax check / post-save check | `src/adt/devtools.ts`, `src/handlers/write-helpers.ts` (`tryPostSaveSyntaxCheck`) |
 | Method-level surgery | `src/context/method-surgery.ts` — `<localclass>~<method>` specifiers; ambiguous bare names error |
+| SAPRead method for class-local includes | `src/handlers/read.ts`, `src/handlers/object-types.ts`, `tests/unit/handlers/read.test.ts` — explicit `include=` wins (including `main`); otherwise `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses, global/bare→MAIN; raw include reads bypass the MAIN-only cache key |
 | SAPRead `grep` (#313) | `src/context/grep.ts`, `src/handlers/read.ts` — rejects `grep`+`method` together |
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
 | Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
