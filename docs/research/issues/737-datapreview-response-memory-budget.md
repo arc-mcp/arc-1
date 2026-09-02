@@ -32,13 +32,13 @@ exceeds its memory limit is restarted and shows status 137 for an out-of-memory 
 
 The recommended fix is a bundle:
 
-1. Add an enabled-by-default **decoded-byte budget for the complete data-preview tool call** and
-   pass it explicitly from the data operation to the first direct/proxy body reader. Start with
-   **1 MiB per call**, including the sum of auto-chunked responses, and make the ceiling
+1. Add an enabled-by-default **post-content-decoding response-body byte budget for the complete
+   data-preview tool call** and pass it explicitly from the data operation into the transport.
+   Start with **1 MiB per call**, including the sum of auto-chunked responses, and make the ceiling
    operator-configurable. This is still roughly 190,000–202,000 tokens for a representative
    TADIR-shaped result, so it is a server-safety ceiling rather than a promise that every client
    can use a near-limit result.
-2. Add a separate **process-wide data-result semaphore**, default **1**, held through fetch, parse,
+2. Add a separate **process-wide data-result semaphore**, default **4**, held through fetch, parse,
    row construction, and tool JSON serialization. It must be shared by all principal-propagation
    and multi-target clients. Ordinary source/metadata reads should remain governed only by
    `ARC1_MAX_CONCURRENT`. The semaphore remains part of the issue-closing boundary: a byte cap
@@ -50,11 +50,13 @@ The recommended fix is a bundle:
    percentage flag without first raising ARC-1's runtime floor: it was added in Node 22.21, while
    ARC-1 currently permits Node 22.19. More CF memory remains a mitigation, not the correctness fix.
 
-The 1 MiB/one-data-call defaults are intentionally conservative starting points for the shipped
-512 MiB topology. They are behavior changes: a previously successful bulk query can now be
-clamped or rejected, even if its result was impractical for an LLM client. The release notes and
-upgrade guidance must say so, and the defaults must be confirmed with the regression matrix below
-before implementation is merged.
+The defaults—1 MiB per tool call and four concurrent data calls—are intentionally conservative
+starting points for the shipped 512 MiB topology. Together they admit at most 4 MiB of successful
+response bodies into the guarded phase before parsing amplification; this is a sizing starting
+point, not a process-memory proof. They are behavior changes: a previously successful bulk query
+can now be clamped or rejected, even if its result was impractical for an LLM client. The release
+notes and upgrade guidance must say so, and the defaults must be confirmed with the regression
+matrix below before implementation is merged.
 
 ## Reported impact and scope
 
@@ -94,15 +96,15 @@ and Node's
 The exact topology reported in #737 has an earlier BTP-specific exposure. When `btpProxy` is
 configured, `doProxyRequest()` uses `undici.Client`, calls `resp.body.text()` at line 1393, builds
 a new Fetch `Response` from the complete string, and returns it to the common path, which calls
-`response.text()` again. An outer bounded reader would therefore be too late for the first proxy
-allocation and would preserve an avoidable body conversion. The limit must be enforced at the
-first consumer of the proxy `BodyReadable`, and the transport abstraction should return one
-normalized bounded body rather than round-trip it through a second `Response`.
+`response.text()` again. A cap around only the currently returned `Response` would therefore be
+too late for the first proxy allocation. The proxy adapter must instead expose its live
+`BodyReadable` as a Web `ReadableStream`, after which the same transport-level wrapper can cap both
+direct and proxy responses before any caller receives them.
 
 A `Content-Length` check is useful only as a fast rejection when content encoding is absent or
 identity. It cannot be the guard: the live 758 data-preview responses had no `Content-Length`, and
-streamed/compressed responses need the actual delivered body chunks counted. A header may reject
-early but must never authorize an otherwise unbounded read.
+streamed/compressed responses need the actual post-content-decoding body chunks counted. A header
+may reject early but must never authorize an otherwise unbounded read.
 
 ### 2. The row cap is incomplete and cannot represent a byte budget
 
@@ -163,8 +165,8 @@ captures the dominant peak. The streaming byte cap remains the hard individual-c
 `runChunkedSapQuery()` executes multiple statements sequentially and appends every chunk's rows to
 one array. Any per-response limit would still permit several individually sub-limit chunks to
 produce one much larger tool result. The budget object must therefore belong to the outer tool
-call. Each data-preview read consumes from the same remaining decoded-byte allowance, and a later
-chunk fails or stops before the cumulative allowance is crossed.
+call. Each data-preview read consumes from the same remaining post-content-decoding byte allowance,
+and a later chunk fails or stops before the cumulative allowance is crossed.
 
 ## Contract and reference implementation research
 
@@ -283,6 +285,26 @@ direct-transport-only, and cannot establish a maximum amplification factor for a
 shapes or account for operators raising the byte limit. Keep the data-result semaphore in the
 issue-closing design.
 
+### Transport-wrapper feasibility checks
+
+A focused prototype against the installed Undici 8.10.0 validated the smaller transport design.
+Wrapping `Response.body` in a `TransformStream` preserved a 206 status and status text, an ETag,
+and two distinct `Set-Cookie` headers; a 304 retained its null body; and a body crossing the cap
+rejected at `.text()` before a complete string was returned. A local `undici.Client` response
+adapted through `Readable.toWeb()` was destroyed when the cap rejected. Both `error` and `close`
+can reach cleanup, so the per-request proxy-client teardown must be idempotent.
+
+The same prototype exposed a compression distinction that the implementation must not hide. For
+a 100,000-byte uncompressed body served as 133 bytes of gzip, `undici.fetch()` exposed 100,000 body
+bytes while `Client.request()` exposed the 133 compressed bytes. Therefore the BTP adapter must
+either stream-decompress before applying the shared cap, or request `Accept-Encoding: identity`
+and reject an unexpected non-identity `Content-Encoding`; counting compressed proxy bytes would
+create a large expansion bypass. This agrees with Undici's requirement that every Client response
+body be consumed or destroyed and that `Client.close()` waits for enqueued requests to complete;
+see the official [Dispatcher documentation](https://github.com/nodejs/undici/blob/main/docs/docs/api/Dispatcher.md#dispatcherclosecallback).
+`Readable.toWeb()` is stable since Node 22.17, below ARC-1's 22.19 floor; see the
+[Node stream documentation](https://nodejs.org/download/release/v22.19.0/docs/api/stream.html#streamreadabletowebstreamreadable-options).
+
 ### Cloud Foundry sizing
 
 The shipped `mta.yaml` allocates 512 MiB and starts Node with
@@ -345,15 +367,15 @@ This confirms the report is an uncovered limit case, not an already-failing impl
 | Reduce the row cap to 5,000 | No | No | Breaks current use cases; SAP UI maxima vary by release | Do not use as primary fix |
 | Check `Content-Length` | Only when trustworthy/present | No | Almost free | Fast reject only |
 | Reject after `JSON.stringify` | No; peak already happened | No | Protects client context, not server memory | Defense-in-depth only |
-| Stream-count decoded response bytes | **Yes** | No; it bounds each/cumulative tool result, not the process | Moderate, release-neutral | Primary individual-call boundary |
-| Dedicated data concurrency = 1 | No | **Yes for the guarded data phase** | Queues only data work; configurable | Required aggregate boundary |
+| Stream-count post-content-decoding response bytes | **Yes** | No; it bounds each/cumulative tool result, not the process | Moderate, release-neutral | Primary individual-call boundary |
+| Dedicated data concurrency = 4 | No | Bounds the guarded data phase to the configured cap | Queues only data work; configurable | Required aggregate boundary |
 | Parse rows and metrics once | No | Reduces amplification | About 52 MiB saved in the measured one-call fixture | Land first as lower-risk mitigation |
 | SAX/streaming XML parser | Can reduce amplification | Helps | High complexity; final row result still occupies memory | Follow-up optimization |
 | Return files/object-store links | Avoids MCP result size | Depends on writer | Data governance, lifecycle, and authorization design required | Separate feature, not this fix |
 
 ## Recommended implementation
 
-### A. One request-scoped decoded-byte budget
+### A. One request-scoped post-content-decoding body budget
 
 Add a server configuration property provisionally named
 `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, default `1048576` (1 MiB). It is a server-wide safety
@@ -362,30 +384,41 @@ may raise it for a larger deployment; if disabling it is supported, `0` must be 
 unsafe opt-out. Bulk/file consumers should use an explicitly sized deployment override rather than
 causing the shared MCP default to absorb multi-megabyte row sets.
 
-Create a small request-scoped budget object with `limitBytes`, `consumedBytes`, and a method that
-atomically charges each chunk. Pass the same object through every data-preview request made by one
-tool call, including automatic IN-list chunks. Count the response-body `Uint8Array` chunks delivered
-by Undici before converting them into a complete JavaScript string. Successful result bodies
-consume the cumulative tool-call budget; non-success and discarded retry bodies use the same hard
-per-response ceiling but should not reduce the later successful-result allowance. When the next
-chunk would cross its applicable limit, cancel the reader, discard accumulated chunks, and throw a
-typed `AdtResponseLimitError`. Do not include the SQL, response prefix, or row values in the error
-or audit event.
+Create a small request-scoped budget object with `limitBytes` and `consumedBytes`. Pass the same
+object through every data-preview request made by one tool call, including automatic IN-list
+chunks. Count the response-body `Uint8Array` chunks emitted by the HTTP transport **after any
+content decoding/decompression and before UTF-8 string conversion**. This is neither the encoded
+`Content-Length` nor JavaScript string length. For each body, retain its starting cumulative count,
+check `start + seen` as chunks arrive, and commit the new cumulative count only when a successful
+body is fully read. Non-success and discarded retry bodies use the same hard per-response ceiling
+but do not reduce the later successful-result allowance. When the next chunk would cross its
+applicable limit, cancel upstream, discard accumulated chunks, and throw a typed
+`AdtResponseLimitError`. Do not include the SQL, response prefix, or row values in the error or
+audit event.
 
 The data operation must attach this budget explicitly through request/client options. The HTTP
 layer must not infer policy by matching `/datapreview/{ddic,freestyle}` path strings: path sniffing
 would be fragile under endpoint variants, retries, and future callers. The explicit object is also
 what makes all chunks in one outer tool call share the same cumulative allowance.
 
-Refactor the transport choke point so the direct Fetch and BTP `undici.Client` branches both feed
-the same bounded-body decoder and return a normalized `{ status, headers, body }` exactly once.
-For the BTP branch, consume and cap `resp.body` before closing its short-lived `Client`; do not
-construct a second `Response` from the complete string. This is required for #737's reported
-topology—adding a reader only after `doFetch()` returns would not protect it.
+Keep the existing Fetch `Response` contract. Inside `doFetch()`, immediately before returning
+either branch, pass the response through one `capResponseBody(response, budget)` helper. The helper
+wraps a non-null `response.body` with a `TransformStream`, preserves status, status text, headers
+(including multiple `Set-Cookie` values and ETags), and passes 204/205/304 null bodies through.
+Existing initial and retry `.text()` call sites then cannot bypass the cap, so this avoids a
+high-risk transport return-type rewrite across all response consumers.
 
-Every initial and retry response must use one shared bounded-body helper; leaving even one
-`retryResp.text()` branch creates a bypass. Preserve abort/deadline behavior and always release the
-reader lock/cancel the body on failure.
+For the BTP branch, convert `resp.body` with `Readable.toWeb()` and construct the `Response` around
+that live stream; do not call `resp.body.text()` or round-trip a complete string through a second
+`Response`. Because `doProxyRequest()` creates one short-lived `undici.Client` per request, it must
+also transfer client ownership to the returned stream. Close or destroy the client exactly once
+when the underlying body ends, errors, or is cancelled—including cancellation caused by the byte
+cap. The current `finally { await client.close(); }` cannot remain around a returned live body:
+`Client.close()` waits for response bodies to finish, while the caller cannot consume the body
+until `doProxyRequest()` returns. Preserve abort/deadline behavior and cancel upstream on failure.
+For request-scoped data budgets, prefer `Accept-Encoding: identity` and reject an unexpected
+encoded response unless the adapter adds a streaming decoder before `capResponseBody()`; low-level
+`Client.request()` does not provide Fetch's automatic decompression.
 
 Suggested client-facing result:
 
@@ -406,17 +439,24 @@ and may surprise callers with silently different query semantics.
 ### B. A data-result semaphore held across the expensive phase
 
 Add a shared process-wide `Semaphore`, provisionally configured by
-`ARC1_MAX_CONCURRENT_DATA_RESULTS` with default `1`. Thread it through every `AdtClient` in the
+`ARC1_MAX_CONCURRENT_DATA_RESULTS` with default `4`. Thread it through every `AdtClient` in the
 same way as `adtSemaphore`, including request-local principal-propagation and multi-target clients.
 Acquire it outside the complete data handler and release only after rows and compact tool JSON have
 been built or an error returned. The wait must honor the MCP/ADT request abort signal.
 
 Do not reuse or lower `ARC1_MAX_CONCURRENT`: that limiter protects SAP dialog work processes and
-has different sizing semantics. A separate queue keeps ordinary source reads concurrent while
-making data-memory exposure predictable. Operators with measured headroom can raise the data
-value. This semaphore is not optional merely because the 1 MiB representative ten-call harness
-fit below 512 MiB: decoded bytes do not impose a fixed heap multiplier, the current request
-semaphore ends before this phase, and an operator may raise the byte ceiling.
+has different sizing semantics. A separate FIFO queue keeps ordinary source reads concurrent
+while bounding admitted data work across every target. Default 4 is a compromise between the
+measured ten-call representative case and head-of-line blocking in `/<target>/...` and `/multi/mcp`;
+it is not evidence that four arbitrary near-limit SAP results always fit 512 MiB.
+
+Treat the product of the two knobs as an explicit raw-body admission envelope: the defaults are
+`4 × 1 MiB = 4 MiB` before parser/result amplification. Raising
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` should normally be paired with a proportionate reduction in
+`ARC1_MAX_CONCURRENT_DATA_RESULTS` unless a larger combined envelope has been benchmarked on the
+deployed topology. The semaphore remains required because post-content-decoding bytes do not
+impose a fixed heap multiplier, the current request semaphore ends before this phase, and an
+operator may raise either ceiling.
 
 ### C. Close the known amplification gaps
 
@@ -459,8 +499,9 @@ definition of done for #737:
    The parser change is intended to preserve results. The clamp and heap setting are deliberate
    behavior/operational changes, although the clamp matches the silent, graceful policy already
    used by `TABLE_CONTENTS` and `TABLE_QUERY` after #388.
-2. **Issue-closing PR:** add the explicitly threaded 1 MiB cumulative body budget at the first
-   direct/BTP body consumer, remove the proxy's second body conversion, and add the shared
+2. **Issue-closing PR:** add the explicitly threaded 1 MiB cumulative body budget in the shared
+   direct/BTP response-stream wrapper, remove the proxy's second body conversion with correct
+   stream-owned client teardown, and add the shared
    data-result semaphore. Neither the byte budget nor the semaphore should be reviewed away as an
    optional optimization; together they are the individual-call and aggregate admission controls.
 
@@ -468,8 +509,8 @@ Use the project's normal `fix:` convention for the resource-safety work. Indepen
 type, the release notes and upgrade guidance must prominently say that:
 
 - raw `SAPQuery.maxRows` values above 10,000 are now clamped;
-- successful results above the default 1 MiB cumulative decoded-body ceiling now fail with an
-  actionable error;
+- successful results above the default 1 MiB cumulative post-content-decoding body ceiling now
+  fail with an actionable error;
 - operators serving intentional batch/file consumers can raise the ceiling after sizing memory
   and data concurrency; and
 - `0`, if implemented, disables an important safety boundary and is not recommended.
@@ -479,8 +520,9 @@ type, the release notes and upgrade guidance must prominently say that:
 Expected implementation surface:
 
 - `src/adt/http-deadline.ts` — carry the optional response budget/request context;
-- `src/adt/http.ts` — one bounded stream reader used at the first direct/proxy body consumer and by
-  the initial and all retry branches; remove the BTP string → `Response` → string round-trip;
+- `src/adt/http.ts` — one bounded `Response.body` stream wrapper applied inside `doFetch()` to the
+  direct and proxy branches; expose the BTP `BodyReadable` as a Web stream, remove its string →
+  `Response` → string round-trip, and close the per-request proxy client on end/error/cancel;
 - `src/adt/errors.ts` — typed response-limit error with secret-free fields; add it to both HTTP
   pass-through catches so it is not accidentally reclassified as `AdtNetworkError`;
 - `src/adt/config.ts` and `src/adt/client.ts` — budget/semaphore plumbing, sink row clamp, combined
@@ -500,12 +542,14 @@ No ADT feature discovery or SAP release gate is needed.
 
 ## Required tests
 
-1. **Bounded reader:** missing `Content-Length`, exact boundary, first chunk over boundary, later
-   chunk over boundary, UTF-8 split across chunks, body cancellation, reader errors, and a cheap
-   identity-body header rejection. Run the same cases through direct Fetch and the BTP Connectivity
-   proxy adapter. Assert the proxy body is read exactly once and the parser is never called after
-   an over-limit response. Assert the budget is activated by explicit request context rather than
-   URL matching, and that an unrelated large response cannot accidentally consume it.
+1. **Bounded response stream:** missing `Content-Length`, exact boundary, first chunk over boundary,
+   later chunk over boundary, UTF-8 split across chunks, body cancellation, reader errors, and a
+   cheap identity-body header rejection. Run the same cases through direct Fetch and the BTP
+   Connectivity proxy adapter. Preserve status, status text, ETag, multiple `Set-Cookie` headers,
+   and null-body 204/205/304 responses. Assert the proxy body is read exactly once, its per-request
+   client closes exactly once on end/error/cancel, and the parser is never called after an
+   over-limit response. Assert the budget is activated by explicit request context rather than URL
+   matching, and that an unrelated large response cannot accidentally consume it.
 2. **Retry coverage:** 401, 429, 503, and content-negotiation retry responses cannot bypass a hard
    per-response ceiling. Assert that discarded error/retry bodies do not consume the cumulative
    successful-result allowance, while no individual body can be read without a bound.
@@ -515,19 +559,21 @@ No ADT feature discovery or SAP release gate is needed.
    NaN, infinity, fractions, zero, and negatives retain the existing fallback semantics.
 5. **Parser equivalence:** old ASX and current data-preview fixtures produce identical rows and
    metrics through the one-parse function, including empty/null values.
-6. **Concurrency:** two data calls never exceed the configured data-result concurrency; an ordinary
-   source read is not queued behind them; the semaphore is shared across per-user and multi-target
-   clients; aborted waiters leave no slot leak.
+6. **Concurrency:** five data calls never exceed the default data-result concurrency of four; an
+   ordinary source read is not queued behind them; the semaphore is shared across per-user, pinned,
+   and aggregate multi-target clients; queued work for a second target progresses in FIFO order as
+   a slot frees; aborted waiters leave no slot leak. Also test a non-default value so the assertion
+   proves configuration plumbing rather than hard-coded behavior.
 7. **Error contract:** single-target and multi-target routes return a stable, secret-free,
    actionable error and keep the request ID. Minimal-error mode must not hide the operator-defined
    limit or remediation.
 8. **Deployment/config:** default, env, CLI precedence, invalid values, MTA heap ratio, and docs are
    synchronized. Run startup coverage on the minimum supported Node version so a deployment flag
    cannot exceed the declared engine floor again.
-9. **Live regression:** against the 758 system, run two parallel `TADIR` queries that cross the test
-   cap. Both calls must fail or queue individually as configured, `/health` and a subsequent small
-   query must succeed, and CF/local RSS must remain below the test envelope. Repeat through a CF
-   principal-propagation route without using production BW data.
+9. **Live regression:** against the 758 system, run five parallel `TADIR` queries that cross the
+   test cap. The calls must fail or queue individually under the default four-call admission cap,
+   `/health` and a subsequent small query must succeed, and CF/local RSS must remain below the test
+   envelope. Repeat through a CF principal-propagation route without using production BW data.
 
 An exact RSS assertion should not be a normal unit-test gate because allocator and platform
 behavior vary. Keep a child-process benchmark as release evidence and gate deterministic facts:
