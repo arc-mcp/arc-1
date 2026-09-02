@@ -9,5 +9,5 @@
 // never grow a reimplementation of it.
 //
 // Requires Node >= 22.12 for require(esm); enforced by "engines" in
-// ../../package.json.
+// ../../package.json. See ../../.npmrc for why this is copied, not linked.
 module.exports = require('decode-uri-component-esm').default;

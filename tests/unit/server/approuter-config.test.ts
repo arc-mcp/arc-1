@@ -16,13 +16,18 @@ describe('BTP UI AppRouter config', () => {
     expect(packageJson.overrides).toMatchObject({
       axios: '1.18.0',
       'body-parser': '2.3.0',
-      'decode-uri-component': 'file:../../vendor/decode-uri-component-cjs',
+      'decode-uri-component': 'file:./vendor/decode-uri-component-cjs',
     });
     expect(packageLock.packages['node_modules/axios']?.version).toBe('1.18.0');
     expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.3.0');
     // AppRouter pins its own patched ws (>= 7.5.10); never override it to a different major.
+    // Asserted by version rather than tree position, which npm is free to hoist.
     expect(packageJson.overrides.ws).toBeUndefined();
-    expect(packageLock.packages['node_modules/@sap/approuter/node_modules/ws']?.version).toBe('7.5.11');
+    const wsEntries = Object.entries(packageLock.packages).filter(([path]) => path.endsWith('node_modules/ws'));
+    expect(wsEntries.length).toBeGreaterThan(0);
+    for (const [, entry] of wsEntries) {
+      expect(entry.version).toBe('7.5.11');
+    }
 
     // query-string reaches decode-uri-component pre-auth, and <= 0.4.2 decodes malformed
     // percent-encoding super-linearly (GHSA DoS). Every resolved copy must be the patched one.
