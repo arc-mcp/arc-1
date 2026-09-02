@@ -10,4 +10,14 @@
 //
 // Requires Node >= 22.12 for require(esm); enforced by "engines" in
 // ../../package.json. See ../../.npmrc for why this is copied, not linked.
+//
+// Updating: bump BOTH the "decode-uri-component-esm" alias and this package's
+// own "version" in package.json. GitHub reads the dependency graph from the
+// lockfile path, so this package is what it sees as decode-uri-component — the
+// real tarball hides behind the alias and never matches an advisory. Dependabot
+// cannot do this bump itself; approuter-config.test.ts fails if they drift.
+//
+// Deleting: once @sap/approuter ships a chain that no longer resolves
+// decode-uri-component <= 0.4.2 (e.g. it moves to query-string >= 9), drop this
+// directory, the override in ../../package.json, ../../.npmrc and the test.
 module.exports = require('decode-uri-component-esm').default;

@@ -43,6 +43,28 @@ describe('BTP UI AppRouter config', () => {
     expect(packageLock.packages['node_modules/decode-uri-component-esm']?.version).toBe('0.5.0');
   });
 
+  it('keeps the decode-uri-component bridge version in lockstep with the package it wraps', async () => {
+    // GitHub keys its dependency graph off the lockfile PATH, so the bridge appears as
+    // decode-uri-component@<bridge version> while the real tarball is hidden behind the
+    // npm: alias (reported as decode-uri-component-esm, which is not a real package and
+    // therefore never matches an advisory). The bridge's version field is the only thing
+    // Dependabot can match on, so it has to name the version actually being wrapped.
+    const bridge = JSON.parse(await readFile('btp/approuter/vendor/decode-uri-component-cjs/package.json', 'utf8')) as {
+      version: string;
+      dependencies: Record<string, string>;
+    };
+    const packageLock = JSON.parse(await readFile('btp/approuter/package-lock.json', 'utf8')) as {
+      packages: Record<string, { version?: string }>;
+    };
+
+    const aliasSpec = bridge.dependencies['decode-uri-component-esm'];
+    const wrappedVersion = aliasSpec?.replace('npm:decode-uri-component@', '');
+    expect(wrappedVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(bridge.version).toBe(wrappedVersion);
+    expect(packageLock.packages['node_modules/decode-uri-component-esm']?.version).toBe(wrappedVersion);
+    expect(packageLock.packages['node_modules/decode-uri-component']?.version).toBe(wrappedVersion);
+  });
+
   it('requires admin scope for all UI routes', async () => {
     const xsApp = JSON.parse(await readFile('btp/approuter/xs-app.json', 'utf8')) as {
       routes: Array<Record<string, unknown>>;
