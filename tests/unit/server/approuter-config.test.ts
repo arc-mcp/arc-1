@@ -8,16 +8,34 @@ describe('BTP UI AppRouter config', () => {
       overrides: Record<string, string>;
     };
     const packageLock = JSON.parse(await readFile('btp/approuter/package-lock.json', 'utf8')) as {
-      packages: Record<string, { version?: string }>;
+      packages: Record<string, { name?: string; version?: string; resolved?: string }>;
     };
 
-    expect(packageJson.engines.node).toBe('^22.0.0 || ^24.0.0');
-    expect(packageJson.overrides).toMatchObject({ axios: '1.18.0', 'body-parser': '2.3.0' });
+    // 22.12 is the floor for require(esm), which the decode-uri-component bridge needs.
+    expect(packageJson.engines.node).toBe('^22.12.0 || ^24.0.0');
+    expect(packageJson.overrides).toMatchObject({
+      axios: '1.18.0',
+      'body-parser': '2.3.0',
+      'decode-uri-component': 'file:../../vendor/decode-uri-component-cjs',
+    });
     expect(packageLock.packages['node_modules/axios']?.version).toBe('1.18.0');
     expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.3.0');
     // AppRouter pins its own patched ws (>= 7.5.10); never override it to a different major.
     expect(packageJson.overrides.ws).toBeUndefined();
     expect(packageLock.packages['node_modules/@sap/approuter/node_modules/ws']?.version).toBe('7.5.11');
+
+    // query-string reaches decode-uri-component pre-auth, and <= 0.4.2 decodes malformed
+    // percent-encoding super-linearly (GHSA DoS). Every resolved copy must be the patched one.
+    const decoders = Object.entries(packageLock.packages).filter(
+      ([path, entry]) => entry.name === 'decode-uri-component' || path.endsWith('node_modules/decode-uri-component'),
+    );
+    expect(decoders.length).toBeGreaterThan(0);
+    for (const [, entry] of decoders) {
+      if (entry.resolved?.startsWith('https://')) {
+        expect(entry.version).toBe('0.5.0');
+      }
+    }
+    expect(packageLock.packages['node_modules/decode-uri-component-esm']?.version).toBe('0.5.0');
   });
 
   it('requires admin scope for all UI routes', async () => {
