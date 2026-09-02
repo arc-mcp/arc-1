@@ -324,6 +324,33 @@ old-space limit ended in a fatal allocation failure (exit 134). That is not the 
 137 path, but it independently validates that this allocation chain can terminate a process. The
 shared live CF application was deliberately not crashed to reproduce 137.
 
+### Reporter-side measurements (customer ERP QA system, Cloud Connector / principal propagation)
+
+The reporter measured tool-result sizes on a customer ERP QA system through the deployed CF
+instance — i.e. through the BTP Connectivity proxy path the local harness above skips — by reading
+`resultSize` from ARC-1's own `tool_call_end` audit events for `SAPRead(type="TABLE_QUERY",
+maxRows=5)` and scaling linearly per row. Raw XML is approximated with the ~1.85 XML/JSON ratio
+from the TADIR run above. No table content is recorded here.
+
+| Table | Columns | Tool JSON / row | ≈ raw XML / row | 100 rows ≈ | 1 MiB reached at |
+|---|---:|---:|---:|---:|---:|
+| TADIR | 22 | 430 B | ~795 B | ~78 KB | ~1,300 rows |
+| MARA (incl. customer appends) | 264 | 4,556 B | ~8.4 KB | ~0.80 MiB | ~124 rows |
+| BSEG | 331 | ~5,700 B (derived) | ~10.6 KB | ~1.0 MiB | ~99 rows |
+
+BSEG's body could not be measured: the freestyle preview timed out twice at 120 s (surfaced as
+`AdtNetworkError`), even with `BUKRS` and `GJAHR` in the `WHERE`. Its row is derived from MARA's
+measured per-cell size (~17 B of JSON per cell) times its 331 fields. The TADIR row lands within
+~20 % of the 669 B/row live figure above, so the calibration roughly holds.
+
+Two consequences for the default. First, a default 100-row read of the widest core tables still
+fits under 1 MiB, but with only 0–25 % headroom, and `maxRows` above ~100–125 fails on MARA and
+BSEG. A 2 MiB budget paired with `ARC1_MAX_CONCURRENT_DATA_RESULTS=2` keeps the same 4 MiB
+admission envelope while leaving "200 rows of MARA" working; the row equivalents per table shape
+should be documented either way. Second, the BSEG timeout shows a boundary the byte budget cannot
+reach: a preview without a selective predicate occupies a SAP work process for the full 120 s
+before ARC-1 receives a single byte, so only `maxRows` and predicate guidance help there.
+
 ### Consumer-side budget sizing
 
 The server limit should also avoid spending substantial SAP, parser, transport, and model context
@@ -399,6 +426,17 @@ see the official [Dispatcher documentation](https://github.com/nodejs/undici/blo
 The shipped `mta.yaml` allocates 512 MiB and starts Node with
 `--max-old-space-size=448`, described as leaving 64 MiB headroom. A read-only CF inspection showed
 the available test instance at the same 512 MiB size and about 108 MiB RSS while idle.
+
+Reporter observation on the same topology: after the incident the crashed instance was raised to
+1 GiB through an `.mtaext` override of `parameters.memory`, but `command:` still pins
+`--max-old-space-size=448`, so V8 old-space did not grow with the container and roughly half of the
+added memory only benefits non-heap allocations. The "bump in lockstep" comment is not enforced by
+anything, and extension descriptors are the documented way operators size instances. Deriving the
+flag from `$MEMORY_LIMIT` in the start command (shell arithmetic, no dependency on the Node 22.21
+percentage flag) would give a larger instance a proportionally larger heap automatically; the
+ratio itself (currently 87.5 %, 75 % proposed above) stays a separate decision. Tracked separately in
+[#741](https://github.com/arc-mcp/arc-1/issues/741) because it is a deployment-descriptor defect
+independent of the response budget.
 
 Node documents that `--max-old-space-size` limits only V8's old-memory section and explicitly
 recommends leaving memory for other uses. See
