@@ -54,6 +54,69 @@ function parsedSourceName(raw: string): string {
   }
 }
 
+/**
+ * Refuse lexical constructs the strict subset does not accept, before the statement is parsed.
+ *
+ * `@abaplint/core` strips ABAP comments during lexing, so a commented region is invisible to the
+ * security parser while the ORIGINAL, unmodified string — comment included — is what is posted to
+ * `/sap/bc/adt/datapreview/freestyle`. That divergence is not a demonstrated exploit: live SAP_BASIS
+ * 758 answered an inline quote comment with HTTP 400 and ignored a column-one asterisk comment,
+ * matching ordinary ABAP comment semantics. It is refused anyway for a narrower reason — while
+ * comments are accepted, the text the analyzer inspects is not the text SAP receives, and that is
+ * only safe because of an assumption about a parser ARC-1 does not control. Rejecting them removes
+ * the assumption and shrinks the accepted grammar at no cost.
+ *
+ * Lexing is literal-aware: a double quote or semicolon INSIDE a single-quoted literal is legitimate
+ * (`WHERE X = 'a"b'`) and stays accepted, and doubled single quotes (`'it''s'`) are escaped quotes,
+ * not literal terminators.
+ */
+function rejectUnsupportedLexicalConstructs(sql: string): void {
+  let inLiteral = false;
+  let column = 0;
+
+  for (let i = 0; i < sql.length; i++) {
+    const char = sql[i]!;
+    if (char === '\n' || char === '\r') {
+      column = 0;
+      continue;
+    }
+    const atColumnOne = column === 0;
+    column += 1;
+
+    if (inLiteral) {
+      if (char === "'") {
+        if (sql[i + 1] === "'") {
+          i += 1;
+          column += 1;
+          continue;
+        }
+        inLiteral = false;
+      }
+      continue;
+    }
+
+    if (char === "'") {
+      inLiteral = true;
+      continue;
+    }
+    if (char === '"') {
+      throw new SqlSourceAnalysisError(
+        'ABAP inline comments (") are not accepted by the strict SQL subset; remove the comment and resubmit',
+      );
+    }
+    if (char === ';') {
+      throw new SqlSourceAnalysisError('semicolons are not accepted by the strict SQL subset');
+    }
+    if (atColumnOne && char === '*') {
+      throw new SqlSourceAnalysisError(
+        'ABAP full-line comments (* in column one) are not accepted by the strict SQL subset; remove the comment and resubmit',
+      );
+    }
+  }
+
+  if (inLiteral) throw new SqlSourceAnalysisError('unterminated string literal');
+}
+
 /** Extract every static database source from one complete ABAP SQL SELECT/WITH statement. */
 export function analyzeSqlDataSources(sql: string): string[] {
   if (sql.length > MAX_SQL_LENGTH) {
@@ -61,6 +124,9 @@ export function analyzeSqlDataSources(sql: string): string[] {
   }
   const trimmed = sql.trim();
   if (!trimmed) throw new SqlSourceAnalysisError('SQL is empty');
+  // Runs on the trimmed text, which is exactly what is embedded below, so column-one detection
+  // matches what the parser sees.
+  rejectUnsupportedLexicalConstructs(trimmed);
 
   const inputLineCount = trimmed.split(/\r?\n/).length;
   const syntheticTargetRow = inputLineCount + 3;
