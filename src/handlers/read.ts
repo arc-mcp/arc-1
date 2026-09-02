@@ -5,10 +5,12 @@
 
 import { resolveBspNameAndPath } from '../adt/bsp-path.js';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { decodeKtdText } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
+import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
   ensureServerDrivenSupport,
@@ -130,6 +132,21 @@ function sourceVersionWarning(effectiveVersion: SourceVersion, draft?: InactiveO
     return 'Note: No inactive draft exists for this object on the server. Returning the active version.';
   }
   return undefined;
+}
+
+/**
+ * SWOTLV is a declared internal source and BOR method resolution has no alternative in ARC-1, so a
+ * policy denial must name the affected feature rather than surfacing a bare policy error.
+ */
+async function swotlv<T>(run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof DataSourcePolicyError) {
+      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error.message)) };
+    }
+    throw error;
+  }
 }
 
 export async function handleSAPRead(
@@ -624,6 +641,7 @@ export async function handleSAPRead(
     case 'TRAN': {
       const tran = await client.getTransaction(name);
       // Enrich with program name via SQL — only if free SQL is allowed by safety config
+      let tranWarning: string | undefined;
       if (isOperationAllowed(client.safety, OperationType.FreeSQL)) {
         try {
           const safeName = name.toUpperCase().replace(/[^A-Z0-9_/]/g, '');
@@ -631,11 +649,16 @@ export async function handleSAPRead(
           if (data.rows.length > 0) {
             tran.program = String(data.rows[0]!.PGMNA ?? '').trim();
           }
-        } catch {
-          // SQL failed (e.g., TSTC not found on BTP) — still return metadata
+        } catch (error) {
+          // Optional enrichment: still return the transaction metadata, but say the program name is
+          // missing rather than letting the model read its absence as "this transaction has none".
+          if (error instanceof DataSourcePolicyError) {
+            tranWarning = internalOperationWarning('tran_program_enrichment', error.code);
+          }
+          // Other failures (e.g. TSTC absent on BTP) keep the existing silent-metadata behaviour.
         }
       }
-      return textResult(toolJson(tran));
+      return textResult(toolJson(tranWarning ? { ...tran, warning: tranWarning } : tran));
     }
     case 'API_STATE': {
       // Determine object type for URL construction — use explicit objectType, infer from name, or error
@@ -692,10 +715,13 @@ export async function handleSAPRead(
       }
       if (safeMethod) {
         // Read specific BOR method implementation via SWOTLV lookup
-        const data = await client.runQuery(
-          `SELECT PROGNAME, FORMNAME FROM SWOTLV WHERE LOBJTYPE = '${safeName}' AND VERB = '${safeMethod}'`,
-          1,
+        const data = await swotlv(() =>
+          client.runQuery(
+            `SELECT PROGNAME, FORMNAME FROM SWOTLV WHERE LOBJTYPE = '${safeName}' AND VERB = '${safeMethod}'`,
+            1,
+          ),
         );
+        if ('policyDenial' in data) return data.policyDenial;
         if (data.rows.length > 0) {
           const prog = String(data.rows[0]!.PROGNAME ?? '').trim();
           if (!prog) {
@@ -711,10 +737,10 @@ export async function handleSAPRead(
         );
       }
       // List all methods for this BOR object
-      const methods = await client.runQuery(
-        `SELECT VERB, PROGNAME, FORMNAME, DESCRIPT FROM SWOTLV WHERE LOBJTYPE = '${safeName}'`,
-        100,
+      const methods = await swotlv(() =>
+        client.runQuery(`SELECT VERB, PROGNAME, FORMNAME, DESCRIPT FROM SWOTLV WHERE LOBJTYPE = '${safeName}'`, 100),
       );
+      if ('policyDenial' in methods) return methods.policyDenial;
       if (methods.rows.length === 0) {
         return errorResult(`No BOR methods found for object type "${name}". Verify the BOR object type name.`);
       }

@@ -22,6 +22,7 @@ import {
   resolveAunitPackageSelection,
 } from '../adt/aunit-package.js';
 import type { AdtClient, SourceReadOptions, SourceReadResult } from '../adt/client.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import {
   applyFixProposal,
   getAtcSystemDefaultVariant,
@@ -55,6 +56,7 @@ import {
   setSqlTraceState,
 } from '../adt/diagnostics.js';
 import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
+import { internalOperationDenial } from '../adt/internal-data-operations.js';
 import type {
   DumpDetail,
   FixAffectedObject,
@@ -1188,7 +1190,17 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const maxResults = args.maxResults === undefined ? undefined : Number(args.maxResults);
 
       try {
-        const result = await getAuthorizationTrace(client, { user, authObject, onlyFailures, maxResults });
+        // Both SUAUTHVALTRC and TOBJ are required: returning trace rows without decoded field
+        // names would be ambiguous, so a blocked source denies the action instead of half-answering.
+        let result: Awaited<ReturnType<typeof getAuthorizationTrace>>;
+        try {
+          result = await getAuthorizationTrace(client, { user, authObject, onlyFailures, maxResults });
+        } catch (error) {
+          if (error instanceof DataSourcePolicyError) {
+            return errorResult(internalOperationDenial('authorization_trace', error.message));
+          }
+          throw error;
+        }
         return textResult(toolJson(result));
       } catch (err) {
         if (err instanceof AdtApiError && /Cannot find '/i.test(err.message)) {

@@ -1758,9 +1758,12 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.superclass).toBe('CL_PARENT');
       expect(parsed.subclasses).toEqual(['ZCL_CHILD1']);
-      // Verify it used the ddic endpoint (named table), not freestyle
+      // Uses the STRUCTURED table query, not the filtered DDIC preview. The sqlFilter condition
+      // language is outside the analyzed subset and is refused whenever the blocklist is active, so
+      // this fallback would otherwise stop working the moment an operator configured a blocklist.
       const postCalls = mockFetch.mock.calls.filter((c: unknown[]) => (c[1] as { method?: string })?.method === 'POST');
-      expect(postCalls[0]![0]).toContain('/datapreview/ddic');
+      expect(postCalls[0]![0]).toContain('/datapreview/freestyle');
+      expect(String(postCalls[0]![1].body)).toContain("FROM SEOMETAREL WHERE CLSNAME = 'ZCL_TEST'");
     });
 
     it('returns error when both free SQL and table preview are blocked', async () => {
