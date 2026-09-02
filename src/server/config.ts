@@ -156,6 +156,16 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'cache', valueName: 'mode', description: 'Cache mode: auto/memory/sqlite/none' },
   { name: 'cache-file', valueName: 'path', description: 'SQLite cache file' },
   { name: 'max-concurrent', valueName: 'count', description: 'Maximum concurrent SAP requests' },
+  {
+    name: 'max-datapreview-response-bytes',
+    valueName: 'bytes',
+    description: 'Cumulative data-preview response bytes per tool call',
+  },
+  {
+    name: 'max-concurrent-data-results',
+    valueName: 'count',
+    description: 'Maximum concurrent data-result calls',
+  },
   { name: 'auth-rate-limit', valueName: 'per-minute', description: 'OAuth requests per IP per minute' },
   { name: 'rate-limit', valueName: 'per-minute', description: 'MCP calls per user per minute' },
   { name: 'allowed-origins', valueName: 'origins', description: 'Comma-separated browser CORS origins' },
@@ -517,6 +527,26 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     return undefined;
   };
 
+  const resolvePositiveSafeInteger = (flag: string, envVar: string, defaultVal: number, fieldName: string): number => {
+    const flagVal = getFlag(flag);
+    const envVal = process.env[envVar];
+    const raw = flagVal ?? envVal;
+    if (raw === undefined) {
+      sources[fieldName] = 'default';
+      return defaultVal;
+    }
+    const source = flagVal !== undefined ? `--${flag}` : envVar;
+    if (!/^[1-9]\d*$/.test(raw)) {
+      throw new Error(`Invalid ${source}='${raw}': expected a positive base-10 integer.`);
+    }
+    const parsed = Number(raw);
+    if (!Number.isSafeInteger(parsed)) {
+      throw new Error(`Invalid ${source}='${raw}': value exceeds JavaScript's safe-integer range.`);
+    }
+    sources[fieldName] = flagVal !== undefined ? { flag: `--${flag}` } : { env: envVar };
+    return parsed;
+  };
+
   // ── SAP Connection ─────────────────────────────────────────────────
   config.url = resolveStr('url', 'SAP_URL', '', 'url');
   config.username = resolveStr('user', 'SAP_USER', '', 'username');
@@ -846,6 +876,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     const parsed = Number.parseInt(maxConcurrent, 10);
     config.maxConcurrent = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
   }
+  config.maxDataPreviewResponseBytes = resolvePositiveSafeInteger(
+    'max-datapreview-response-bytes',
+    'ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES',
+    DEFAULT_CONFIG.maxDataPreviewResponseBytes,
+    'maxDataPreviewResponseBytes',
+  );
+  config.maxConcurrentDataResults = resolvePositiveSafeInteger(
+    'max-concurrent-data-results',
+    'ARC1_MAX_CONCURRENT_DATA_RESULTS',
+    DEFAULT_CONFIG.maxConcurrentDataResults,
+    'maxConcurrentDataResults',
+  );
 
   // ── Rate limiting (Layer 1 + Layer 2) ──────────────────────────────
   // Both knobs accept a positive integer (requests per minute) or `0` to disable.

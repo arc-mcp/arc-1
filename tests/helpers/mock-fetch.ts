@@ -20,13 +20,21 @@ export function mockResponse(
   cookies: string[] = [],
 ): Response {
   const h = new Headers(headers);
+  const nullBodyStatus = status === 204 || status === 205 || status === 304;
+  const nativeResponse = new Response(nullBodyStatus ? null : body, { status, headers: h });
   for (const c of cookies) {
     h.append('set-cookie', c);
   }
   return {
     ok: status >= 200 && status < 300,
     status,
+    statusText: nativeResponse.statusText,
     headers: h,
+    // Tests may deliberately reuse this response object for independent fetches.
+    // Give each access a fresh stream instead of sharing a consumed/locked body.
+    get body() {
+      return new Response(nullBodyStatus ? null : body, { status }).body;
+    },
     text: async () => body,
     json: async () => JSON.parse(body),
   } as unknown as Response;

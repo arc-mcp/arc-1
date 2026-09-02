@@ -16,10 +16,12 @@
  * This keeps the client class manageable (not a 2,400-line God class).
  */
 
+import { getCurrentContext } from '../server/context.js';
 import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
+import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
@@ -358,6 +360,10 @@ export class AdtClient {
   private internalUser?: string;
   /** The configured SAP client number (from --client / SAP_CLIENT) */
   readonly sapClient: string;
+  /** Per-call response ceiling shared by every data method in the current MCP request. */
+  private readonly maxDataPreviewResponseBytes: number;
+  /** Shared process-wide data admission guard (private fallback outside server-managed clients). */
+  private readonly dataResultSemaphore: Semaphore;
   /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
    *  /tables/, structure at /structures/). Populated by getTabl() via the
    *  /tables/→/structures/ 404 fallback. */
@@ -379,6 +385,8 @@ export class AdtClient {
     this.bearerTokenProvider = config.bearerTokenProvider;
     this.usesBearerAuth = !!config.bearerTokenProvider;
     this.sapClient = config.client;
+    this.maxDataPreviewResponseBytes = config.maxDataPreviewResponseBytes;
+    this.dataResultSemaphore = config.dataResultSemaphore ?? new Semaphore(config.maxConcurrentDataResults);
 
     const httpConfig: AdtHttpConfig = {
       baseUrl: config.baseUrl,
@@ -1434,6 +1442,35 @@ export class AdtClient {
 
   // ─── Table Data Operations ─────────────────────────────────────────
 
+  /** Create the lazy request-level result scope inherited by nested handler dispatch. */
+  createDataResultScope(): DataResultScope {
+    return new DataResultScope(this.maxDataPreviewResponseBytes, this.dataResultSemaphore);
+  }
+
+  private async withDataResultScope<T>(
+    operation: (budget: DataResponseBudget, signal?: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const context = getCurrentContext();
+    const inheritedScope = context?.dataResultScope;
+    const scope = inheritedScope ?? this.createDataResultScope();
+    await scope.acquire(context?.signal);
+    try {
+      return await operation(scope.responseBudget, context?.signal);
+    } finally {
+      if (!inheritedScope) scope.release();
+    }
+  }
+
+  private async postDataPreview(
+    path: string,
+    body: string | undefined,
+    budget: DataResponseBudget,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const resp = await this.http.post(path, body, 'text/plain', undefined, { responseBudget: budget, signal });
+    return resp.body;
+  }
+
   /** Get table contents via data preview */
   async getTableContents(
     tableName: string,
@@ -1442,17 +1479,24 @@ export class AdtClient {
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'GetTableContents');
     const rowLimit = clampPreviewRows(maxRows);
-    const resp = await this.http.post(
-      `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(tableName)}`,
-      sqlFilter,
-      'text/plain',
+    return this.withDataResultScope(async (budget, signal) =>
+      parseTableContents(
+        await this.postDataPreview(
+          `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(tableName)}`,
+          sqlFilter,
+          budget,
+          signal,
+        ),
+      ),
     );
-    return parseTableContents(resp.body);
   }
 
   /** Execute freestyle SQL query and return just the rows/columns. */
   async runQuery(sql: string, maxRows = 100): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
-    return parseTableContents(await this.postFreestyleQuery(sql, maxRows));
+    checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
+    return this.withDataResultScope(async (budget, signal) =>
+      parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal)),
+    );
   }
 
   /**
@@ -1465,15 +1509,21 @@ export class AdtClient {
     sql: string,
     maxRows = 100,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
-    const body = await this.postFreestyleQuery(sql, maxRows);
-    return parseDataPreviewResult(body);
+    checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
+    return this.withDataResultScope(async (budget, signal) => {
+      const body = await this.postFreestyleQuery(sql, maxRows, budget, signal);
+      return parseDataPreviewResult(body);
+    });
   }
 
-  private async postFreestyleQuery(sql: string, maxRows: number): Promise<string> {
-    checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
+  private async postFreestyleQuery(
+    sql: string,
+    maxRows: number,
+    budget: DataResponseBudget,
+    signal?: AbortSignal,
+  ): Promise<string> {
     const rowLimit = clampPreviewRows(maxRows);
-    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${rowLimit}`, sql, 'text/plain');
-    return resp.body;
+    return this.postDataPreview(`/sap/bc/adt/datapreview/freestyle?rowNumber=${rowLimit}`, sql, budget, signal);
   }
 
   /**
@@ -1494,8 +1544,9 @@ export class AdtClient {
     checkOperation(this.safety, OperationType.Query, 'RunTableQuery');
     const sql = buildTableQuerySql(tableName, opts.columns, opts.where);
     const maxRows = clampPreviewRows(opts.maxRows);
-    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
-    return parseTableContents(resp.body);
+    return this.withDataResultScope(async (budget, signal) =>
+      parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal)),
+    );
   }
 
   // ─── System Information ────────────────────────────────────────────

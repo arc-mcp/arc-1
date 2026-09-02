@@ -27,14 +27,16 @@
  *    No external HTTP dependencies — undici ships with Node.js 22+.
  */
 
+import { Readable } from 'node:stream';
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
 import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
 import { resolveCookies } from './cookies.js';
+import type { DataResponseBudget } from './data-result-context.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
-import { AdtApiError, AdtNetworkError } from './errors.js';
+import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
   awaitWithinRequestBudget,
@@ -42,6 +44,7 @@ import {
   requestSignal,
   sleepWithinRequestBudget,
   throwIfRequestCancelled,
+  withoutResponseBudget,
 } from './http-deadline.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import type { Semaphore } from './semaphore.js';
@@ -176,6 +179,122 @@ export interface AdtResponse {
 interface AuthenticationAttemptState {
   rejected: boolean;
   tail: Promise<void>;
+}
+
+function cloneResponseHeaders(headers: Headers): Headers {
+  const copy = new Headers();
+  let legacySetCookie: string | undefined;
+  for (const [key, value] of headers.entries()) {
+    if (key.toLowerCase() === 'set-cookie') {
+      legacySetCookie = value;
+    } else {
+      copy.append(key, value);
+    }
+  }
+  const getSetCookie = (headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+  const setCookies = getSetCookie?.call(headers) ?? (legacySetCookie ? [legacySetCookie] : []);
+  for (const cookie of setCookies) copy.append('set-cookie', cookie);
+  return copy;
+}
+
+function capResponseBody(response: Response, budget: DataResponseBudget): Response {
+  const responseBody = response.body;
+  if (responseBody === null) return response;
+  const reader = responseBody.getReader();
+  const reservation = response.ok ? budget.createReservation() : undefined;
+  const requestId = getCurrentContext()?.requestId;
+  let seenBytes = 0;
+  let settled = false;
+
+  const release = () => {
+    if (settled) return;
+    settled = true;
+    reservation?.release();
+  };
+
+  const cappedBody = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          if (!settled) {
+            settled = true;
+            reservation?.commit();
+          }
+          controller.close();
+          return;
+        }
+        const nextSeenBytes = seenBytes + chunk.value.byteLength;
+        if (reservation) reservation.add(chunk.value.byteLength, requestId);
+        else budget.assertSingleResponseBytes(nextSeenBytes, requestId);
+        seenBytes = nextSeenBytes;
+        controller.enqueue(chunk.value);
+      } catch (error) {
+        release();
+        try {
+          await reader.cancel(error);
+        } catch {
+          // Preserve the original stream/budget error.
+        }
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      release();
+      await reader.cancel(reason);
+    },
+  });
+
+  return new Response(cappedBody, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: cloneResponseHeaders(response.headers),
+  });
+}
+
+function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal): ReadableStream<Uint8Array> {
+  const source = Readable.toWeb(body) as ReadableStream<Uint8Array>;
+  // Keep the same signal that guarded Client.request() active for body transfer.
+  // This also cancels the Node stream through Readable.toWeb() when the MCP call
+  // or the per-fetch deadline expires after response headers have arrived.
+  const reader = source.pipeThrough(new TransformStream<Uint8Array>(), { signal }).getReader();
+  let settled = false;
+
+  const settle = async (error?: Error) => {
+    if (settled) return;
+    settled = true;
+    if (error) await client.destroy(error);
+    else await client.close();
+  };
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          await settle();
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk.value);
+      } catch (error) {
+        const cause = error instanceof Error ? error : new Error(String(error));
+        try {
+          await settle(cause);
+        } finally {
+          controller.error(error);
+        }
+      }
+    },
+    async cancel(reason) {
+      const cause = reason instanceof Error ? reason : new Error('The proxy response stream was cancelled.');
+      try {
+        await reader.cancel(reason);
+      } finally {
+        await settle(cause);
+      }
+    },
+  });
 }
 
 /**
@@ -321,7 +440,13 @@ export class AdtHttpClient {
         }
         return await this.requestInner(method, path, body, contentType, extraHeaders, options);
       } catch (error) {
-        if (error instanceof AdtApiError || error instanceof AdtNetworkError) throw error;
+        if (
+          error instanceof AdtApiError ||
+          error instanceof AdtNetworkError ||
+          error instanceof AdtResponseLimitError
+        ) {
+          throw error;
+        }
         if (!options?.signal && options?.deadline === undefined) throw error;
         const cause = error instanceof Error ? error : new Error(String(error));
         throw new AdtNetworkError(cause.message, cause);
@@ -374,7 +499,7 @@ export class AdtHttpClient {
     throwIfRequestCancelled(options);
     // Auto-fetch CSRF token for modifying requests
     if (isModifyingMethod(method) && !this.csrfToken) {
-      await this.fetchCsrfToken(options);
+      await this.fetchCsrfToken(withoutResponseBudget(options));
     }
 
     const headers: Record<string, string> = { Accept: '*/*' };
@@ -501,7 +626,7 @@ export class AdtHttpClient {
 
           // Re-fetch CSRF token (needed for modifying requests, harmless for reads)
           if (isModifyingMethod(method)) {
-            await this.fetchCsrfToken(options);
+            await this.fetchCsrfToken(withoutResponseBudget(options));
             headers['X-CSRF-Token'] = this.csrfToken;
           }
 
@@ -661,7 +786,7 @@ export class AdtHttpClient {
 
         // Re-fetch CSRF token for modifying requests
         if (isModifyingMethod(method)) {
-          await this.fetchCsrfToken(options);
+          await this.fetchCsrfToken(withoutResponseBudget(options));
           headers['X-CSRF-Token'] = this.csrfToken;
         }
 
@@ -700,7 +825,7 @@ export class AdtHttpClient {
 
       // Handle CSRF token refresh on 403 (modifying requests only)
       if (response.status === 403 && isModifyingMethod(method)) {
-        await this.fetchCsrfToken(options);
+        await this.fetchCsrfToken(withoutResponseBudget(options));
         headers['X-CSRF-Token'] = this.csrfToken;
         // Update cookie header after CSRF fetch may have set new cookies. Use the
         // merged builder (jar wins) so auth cookies in config.cookies (e.g.
@@ -880,7 +1005,7 @@ export class AdtHttpClient {
         throw err;
       }
 
-      if (err instanceof AdtNetworkError) throw err;
+      if (err instanceof AdtNetworkError || err instanceof AdtResponseLimitError) throw err;
 
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(message, err instanceof Error ? err : undefined);
@@ -1306,22 +1431,25 @@ export class AdtHttpClient {
     // spreads these headers too).
     const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
 
+    let response: Response;
     if (this.config.btpProxy) {
-      return this.doProxyRequest(url, method, outbound, body, options);
+      response = await this.doProxyRequest(url, method, outbound, body, options);
+    } else {
+      // Let the explicit operation budget override undici's 300-second header timeout.
+      const dispatcher =
+        this.dispatcher ??
+        (options?.fetchTimeoutMs === undefined
+          ? undefined
+          : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
+      response = (await undiciFetch(url, {
+        method,
+        headers: outbound,
+        body,
+        signal: requestSignal(options),
+        ...(dispatcher ? { dispatcher } : {}),
+      })) as Response;
     }
-    // Let the explicit operation budget override undici's 300-second header timeout.
-    const dispatcher =
-      this.dispatcher ??
-      (options?.fetchTimeoutMs === undefined
-        ? undefined
-        : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
-    return undiciFetch(url, {
-      method,
-      headers: outbound,
-      body,
-      signal: requestSignal(options),
-      ...(dispatcher ? { dispatcher } : {}),
-    }) as Promise<Response>;
+    return options?.responseBudget ? capResponseBody(response, options.responseBudget) : response;
   }
 
   /**
@@ -1369,6 +1497,12 @@ export class AdtHttpClient {
       Host: hostHeader,
       'Proxy-Authorization': proxyAuth,
     };
+    if (options?.responseBudget) {
+      for (const key of Object.keys(proxyHeaders)) {
+        if (key.toLowerCase() === 'accept-encoding') delete proxyHeaders[key];
+      }
+      proxyHeaders['Accept-Encoding'] = 'identity';
+    }
 
     // Cloud Connector Location ID — required when multiple Cloud Connectors
     // are connected to the same subaccount with different Location IDs.
@@ -1378,19 +1512,18 @@ export class AdtHttpClient {
 
     const clientOptions = options?.fetchTimeoutMs === undefined ? undefined : { headersTimeout: 0, bodyTimeout: 0 };
     const client = new Client(proxyOrigin, clientOptions);
+    let responseOwnsClient = false;
     try {
+      const signal = requestSignal(options);
       const resp = await client.request({
         method: method as Dispatcher.HttpMethod,
         // Full URL as path — standard HTTP proxy protocol
         path: url,
         headers: proxyHeaders,
         body: body ?? undefined,
-        signal: requestSignal(options),
+        signal,
       });
 
-      // Convert undici response to a Response-like object that matches
-      // what fetch() returns, so the rest of AdtHttpClient works unchanged.
-      const responseBody = await resp.body.text();
       const responseHeaders = new Headers();
       for (const [key, value] of Object.entries(resp.headers)) {
         if (value !== undefined) {
@@ -1409,12 +1542,43 @@ export class AdtHttpClient {
       // (1xx informational statuses are null-body too, but never surface here:
       // undici's Client doesn't return them as a final status and ADT never emits them.)
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
-      return new Response(isNullBodyStatus ? null : responseBody, {
+      if (isNullBodyStatus) {
+        resp.body.destroy();
+        return new Response(null, {
+          status: resp.statusCode,
+          headers: responseHeaders,
+        });
+      }
+
+      if (options?.responseBudget) {
+        const contentEncoding = responseHeaders.get('content-encoding')?.trim().toLowerCase();
+        if (contentEncoding && contentEncoding !== 'identity') {
+          const error = new Error(`Unexpected Content-Encoding '${contentEncoding}' on bounded proxy response.`);
+          // We surface the protocol error ourselves. Destroying the unread body with
+          // that error would also emit an unobserved Node stream `error` event.
+          resp.body.destroy();
+          await client.destroy(error);
+          responseOwnsClient = true;
+          throw error;
+        }
+        const response = new Response(proxyResponseBody(resp.body, client, signal), {
+          status: resp.statusCode,
+          headers: responseHeaders,
+        });
+        responseOwnsClient = true;
+        return response;
+      }
+
+      // Keep the established buffered conversion for ordinary proxy requests. Some callers
+      // inspect headers only, so globally transferring client ownership to an unread stream
+      // would leak their short-lived proxy client.
+      const responseBody = await resp.body.text();
+      return new Response(responseBody, {
         status: resp.statusCode,
         headers: responseHeaders,
       });
     } finally {
-      await client.close();
+      if (!responseOwnsClient) await client.close();
     }
   }
 }

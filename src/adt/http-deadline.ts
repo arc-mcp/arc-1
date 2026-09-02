@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import type { DataResponseBudget } from './data-result-context.js';
 import { AdtNetworkError } from './errors.js';
 
 export interface RequestDeadlineOptions {
@@ -13,6 +14,15 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
   suppressNotFoundLog?: boolean;
   /** Capability probe: all non-2xx responses are expected evidence, not warning noise. */
   probe?: boolean;
+  /** Explicit post-content-decoding response allowance for a guarded data operation. */
+  responseBudget?: DataResponseBudget;
+}
+
+/** Keep request cancellation/deadline controls while excluding result-data accounting from CSRF bootstrap. */
+export function withoutResponseBudget(options?: AdtRequestOptions): AdtRequestOptions | undefined {
+  if (!options?.responseBudget) return options;
+  const { responseBudget: _responseBudget, ...rest } = options;
+  return rest;
 }
 
 const DEFAULT_FETCH_TIMEOUT_MS = 120_000;

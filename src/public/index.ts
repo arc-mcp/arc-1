@@ -4,7 +4,7 @@
 // fuse); the loader rejects a mismatch. No semver guarantee until the feature graduates.
 // See docs/research/2026-06-17-extension-framework-spec.md §2.
 
-export { AdtApiError, AdtNetworkError, AdtSafetyError } from '../adt/errors.js';
+export { AdtApiError, AdtNetworkError, AdtResponseLimitError, AdtSafetyError } from '../adt/errors.js';
 export type { AdtResponse } from '../adt/http.js';
 
 // Re-exported building blocks (stable shapes plugins reference):

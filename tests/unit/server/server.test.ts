@@ -33,6 +33,7 @@ import {
   canUseSharedSingleTargetCredentials,
   createCachingLayer,
   createServer,
+  dataResultAdmissionEnvelope,
   filterToolsByAuthScope,
   formatStartupAuthPreflightToolError,
   getConfiguredToolDefinitions,
@@ -78,6 +79,11 @@ async function initializeServer(
 }
 
 describe('MCP Server', () => {
+  it('computes the data-result admission envelope without unsafe-number rounding', () => {
+    expect(dataResultAdmissionEnvelope(2 * 1024 * 1024, 2)).toBe(4 * 1024 * 1024);
+    expect(dataResultAdmissionEnvelope(Number.MAX_SAFE_INTEGER, 2)).toBe('18014398509481982');
+  });
+
   it.each([
     ['default', DEFAULT_CONFIG, 'arc-1'],
     ['custom', { ...DEFAULT_CONFIG, serverName: 'arc1-erp-dev' }, 'arc1-erp-dev'],

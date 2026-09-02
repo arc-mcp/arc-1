@@ -8,7 +8,13 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { AdtClient } from '../adt/client.js';
-import { AdtApiError, AdtNetworkError, AdtSafetyError, classifySapDomainError } from '../adt/errors.js';
+import {
+  AdtApiError,
+  AdtNetworkError,
+  AdtResponseLimitError,
+  AdtSafetyError,
+  classifySapDomainError,
+} from '../adt/errors.js';
 /**
  * Scope required for each tool.
  *
@@ -159,6 +165,20 @@ function buildBaseErrorMessage(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): string {
+  if (err instanceof AdtResponseLimitError) {
+    const mebibytes = err.limitBytes / (1024 * 1024);
+    const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;
+    return toolJson({
+      error: err.code,
+      message:
+        `The SAP data-preview result exceeded the ${displayLimit} server limit. ` +
+        'Submit a new request with lower maxRows, fewer columns, or a restrictive non-overlapping key-range WHERE clause.',
+      limitBytes: err.limitBytes,
+      retryable: false,
+      requestId: err.requestId ?? getCurrentContext()?.requestId,
+      ...(config.targetId ? { target: config.targetId } : {}),
+    });
+  }
   if (err instanceof AdtApiError) {
     if (isPossibleDataPreviewWafBlock(err, tool, args)) {
       return formatPossibleDataPreviewWafBlock(err, config.minimalErrors);
@@ -389,6 +409,21 @@ function buildAuditResultPreview(toolName: string, args: Record<string, unknown>
   }
 }
 
+function resultTextForAuditPreview(toolName: string, content: ToolResult['content']): string {
+  if (content.length <= 1) return content[0]?.text ?? '';
+  // Detailed diagnostic previews parse their JSON before removing large sections.
+  if (toolName === 'SAPDiagnose') return content.map((item) => item.text).join('');
+
+  // Other previews never inspect beyond 500 characters. Avoid concatenating a
+  // potentially large multi-block result merely to truncate it immediately.
+  let prefix = '';
+  for (const item of content) {
+    prefix += item.text.slice(0, 501 - prefix.length);
+    if (prefix.length >= 501) break;
+  }
+  return prefix;
+}
+
 /** Enrich error message with additional SAP XML diagnostic detail (extra messages, properties) */
 function enrichWithSapDetails(err: AdtApiError, message: string): string {
   if (!err.responseBody) return message;
@@ -507,6 +542,7 @@ function getBehaviorPoolSaveFailureHint(err: AdtApiError, args: Record<string, u
 }
 
 function classifyError(err: unknown): string {
+  if (err instanceof AdtResponseLimitError) return 'AdtResponseLimitError';
   if (err instanceof AdtApiError) {
     const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path);
     return classification ? `AdtApiError:${classification.category}` : 'AdtApiError';
@@ -679,6 +715,8 @@ export async function handleToolCall(
   requestId?: string,
   /** Request-local guard that may replace a handler result before the terminal audit event. */
   postDispatchResult?: () => ToolResult | undefined,
+  /** MCP caller cancellation; nested dispatch inherits it through RequestContext. */
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
   const reqId = requestId ?? generateRequestId();
   const start = Date.now();
@@ -859,6 +897,10 @@ export async function handleToolCall(
     args = parsed.data as Record<string, unknown>;
   }
 
+  const inheritedDataResultScope = inherited?.dataResultScope;
+  const dataResultScope = inheritedDataResultScope ?? client.createDataResultScope();
+  const ownsDataResultScope = inheritedDataResultScope === undefined;
+
   // Run within request context so HTTP-level logs get the requestId
   return requestContext.run(
     {
@@ -869,6 +911,8 @@ export async function handleToolCall(
       target: config.targetId,
       identity,
       clientAgent,
+      signal: signal ?? inherited?.signal,
+      dataResultScope,
       // Carried forward from the HTTP edge so the outbound SAP call keeps the caller's trace.
       traceparent: inherited?.traceparent,
       tracestate: inherited?.tracestate,
@@ -906,9 +950,12 @@ export async function handleToolCall(
         if (guardedResult) result = guardedResult;
 
         const durationMs = Date.now() - start;
-        const fullText = result.content.map((c) => c.text).join('');
-        const resultSize = fullText.length;
-        const resultPreview = buildAuditResultPreview(toolName, args, fullText);
+        const resultSize = result.content.reduce((bytes, item) => bytes + item.text.length, 0);
+        const resultPreview = buildAuditResultPreview(
+          toolName,
+          args,
+          resultTextForAuditPreview(toolName, result.content),
+        );
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -938,6 +985,25 @@ export async function handleToolCall(
             ? `SAP HTTP ${err.statusCode} authentication/authorization failure (response details suppressed)`
             : message;
         const durationMs = Date.now() - start;
+
+        if (err instanceof AdtResponseLimitError) {
+          logger.emitAudit({
+            timestamp: new Date().toISOString(),
+            level: 'warn',
+            event: 'data_response_limited',
+            destination: config.targetId ? undefined : config.destinationName,
+            target: config.targetId,
+            identity,
+            requestId: reqId,
+            user,
+            clientId,
+            tool: toolName,
+            limitBytes: err.limitBytes,
+            observedBytes: err.observedBytes,
+            endpointFamily: err.endpointFamily,
+            queueWaitMs: dataResultScope.queueWaitMs,
+          });
+        }
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -993,6 +1059,8 @@ export async function handleToolCall(
         }
 
         return errorResult(formatErrorForLLM(err, message, toolName, args, config));
+      } finally {
+        if (ownsDataResultScope) dataResultScope.release();
       }
     },
   );

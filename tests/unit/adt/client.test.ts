@@ -2043,6 +2043,16 @@ describe('AdtClient', () => {
       const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
       expect(String(postCall?.[0])).toContain('rowNumber=10000');
     });
+
+    it('routes every known data-preview endpoint through the required-budget sink', () => {
+      const source = readFileSync(new URL('../../../src/adt/client.ts', import.meta.url), 'utf8');
+      const endpointLiterals = source.match(/\/sap\/bc\/adt\/datapreview\/(?:ddic|freestyle)/g) ?? [];
+
+      expect(endpointLiterals).toEqual(['/sap/bc/adt/datapreview/ddic', '/sap/bc/adt/datapreview/freestyle']);
+      expect(source).not.toMatch(/this\.http\.post\([\s\S]{0,160}\/sap\/bc\/adt\/datapreview\//);
+      expect(source).toContain('private async postDataPreview(');
+      expect(source).toContain('budget: DataResponseBudget');
+    });
   });
 
   describe('class metadata and structured read', () => {
