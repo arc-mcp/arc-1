@@ -33,30 +33,38 @@ exceeds its memory limit is restarted and shows status 137 for an out-of-memory 
 The recommended fix is a bundle:
 
 1. Add an enabled-by-default **post-content-decoding response-body byte budget for the complete
-   data-preview tool call** and pass it explicitly from the data operation into the transport.
-   Start with **1 MiB per call**, including the sum of auto-chunked responses, and make the ceiling
-   operator-configurable. This is still roughly 190,000–202,000 tokens for a representative
-   TADIR-shaped result, so it is a server-safety ceiling rather than a promise that every client
-   can use a near-limit result.
-2. Add a separate **process-wide data-result semaphore**, default **4**, held through fetch, parse,
-   row construction, and tool JSON serialization. It must be shared by all principal-propagation
-   and multi-target clients. Ordinary source/metadata reads should remain governed only by
-   `ARC1_MAX_CONCURRENT`. The semaphore remains part of the issue-closing boundary: a byte cap
-   does not establish a fixed XML-to-heap amplification ratio or aggregate process limit.
+   data-preview tool call**. The first guarded data operation should lazily create one request-level
+   budget in the existing `AsyncLocalStorage` context and pass it explicitly to the transport.
+   Start with **1 MiB per call**, including the sum of auto-chunked and internal data-preview
+   responses, and make the ceiling operator-configurable. This is still roughly 190,000–202,000
+   tokens for a representative TADIR-shaped result, so it is a server-safety ceiling rather than a
+   promise that every client can use a near-limit result.
+2. Add a separate **process-wide data-result semaphore**, default **4**, acquired lazily by that
+   same request context and held through fetch, parse, row construction, tool JSON construction,
+   and terminal audit formatting. It must be shared by all principal-propagation and multi-target
+   clients. Ordinary source/metadata reads should remain governed only by `ARC1_MAX_CONCURRENT`.
+   The semaphore remains part of the issue-closing boundary: a byte cap does not establish a fixed
+   XML-to-heap amplification ratio or aggregate process limit.
 3. Parse rows and metrics from one XML parse, and clamp every raw/chunked `SAPQuery` to the existing
    10,000-row ARC-1 ceiling as a secondary rail.
-4. Change the shipped fixed CF old-space limit from **448 MiB to 384 MiB** so native,
-   young-generation, HTTP-buffer, and platform overhead have real headroom. Do not use Node's
-   percentage flag without first raising ARC-1's runtime floor: it was added in Node 22.21, while
-   ARC-1 currently permits Node 22.19. More CF memory remains a mitigation, not the correctness fix.
+4. In the issue-closing PR, change the shipped fixed CF old-space limit from **448 MiB to 384 MiB**
+   so native, young-generation, HTTP-buffer, and platform overhead have real headroom. Do not lower
+   old-space before the response guard exists: an unbounded result could merely reach a fatal V8
+   allocation failure sooner. Do not use Node's percentage flag without first raising ARC-1's
+   runtime floor: it was added in Node 22.21, while ARC-1 currently permits Node 22.19. More CF
+   memory remains a mitigation, not the correctness fix.
 
-The defaults—1 MiB per tool call and four concurrent data calls—are intentionally conservative
-starting points for the shipped 512 MiB topology. Together they admit at most 4 MiB of successful
-response bodies into the guarded phase before parsing amplification; this is a sizing starting
-point, not a process-memory proof. They are behavior changes: a previously successful bulk query
-can now be clamped or rejected, even if its result was impractical for an LLM client. The release
-notes and upgrade guidance must say so, and the defaults must be confirmed with the regression
-matrix below before implementation is merged.
+The locked configuration contract is
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` / `--max-datapreview-response-bytes` with default `1048576`,
+and `ARC1_MAX_CONCURRENT_DATA_RESULTS` / `--max-concurrent-data-results` with default `4`. Accept
+positive decimal safe integers only and fail startup for malformed, fractional, unsafe, negative,
+or zero values; the first release should not include a magic `0` disable. The defaults are
+intentionally conservative starting points for the shipped 512 MiB topology. Together they admit
+at most 4 MiB of successful response bodies into the guarded phase before parsing amplification;
+this is a sizing starting point, not a process-memory proof. They are behavior changes: a
+previously successful bulk query can now be clamped or rejected, even if its result was impractical
+for an LLM client. The release notes and upgrade guidance must say so, and the defaults must be
+confirmed with the regression matrix below before implementation is merged.
 
 ## Reported impact and scope
 
@@ -155,10 +163,11 @@ byte accounting and no data-specific admission rule. Lowering it helps operation
 because the JavaScript parser itself runs synchronously, but it is neither a deterministic byte
 bound nor a narrow long-term control.
 
-The dedicated data semaphore should cover the complete handler work through `toolJson()`. The MCP
-SDK's final JSON-RPC/SSE encoding happens after the handler returns and is harder to include without
-changing the transport contract; the benchmark shows that covering fetch, parse, and tool JSON
-captures the dominant peak. The streaming byte cap remains the hard individual-call boundary.
+The dedicated data semaphore should be acquired lazily by the first guarded client method and
+released by the outer dispatch after `toolJson()` and terminal audit work. The MCP SDK's final
+JSON-RPC/SSE encoding happens after the handler returns and is harder to include without changing
+the transport contract; the benchmark shows that covering fetch, parse, and tool JSON captures the
+dominant peak. The streaming byte cap remains the hard individual-call boundary.
 
 ### 5. Auto-chunking is a per-response-cap bypass unless the budget is request-scoped
 
@@ -167,6 +176,44 @@ one array. Any per-response limit would still permit several individually sub-li
 produce one much larger tool result. The budget object must therefore belong to the outer tool
 call. Each data-preview read consumes from the same remaining post-content-decoding byte allowance,
 and a later chunk fails or stops before the cumulative allowance is crossed.
+
+### 6. Data-preview work is not confined to the two obvious handlers
+
+Wrapping only `SAPQuery` and `SAPRead` would miss existing internal consumers. Database-backed
+`SAPSearch.tadir_lookup`, `SAPNavigate.hierarchy`, where-used interface augmentation, and
+`SAPDiagnose.authorization_trace` all reach `runQuery()`, `getTableContents()`, or
+`runTableQuery()`. Several of those paths make more than one data request, and future handlers can
+do the same. Giving every client method an independent budget would avoid an unbounded response but
+would lose cumulative accounting and could acquire the same semaphore more than once inside one
+tool call.
+
+ARC-1 already has a per-tool-call `AsyncLocalStorage` context in `src/server/context.ts`. The safe
+ownership boundary is one lazily initialized data-result context in that store. The first guarded
+client method acquires the data slot and creates the budget; every later guarded method in the same
+tool call reuses both. The outer dispatch releases the slot in `finally`, after result construction
+and terminal audit formatting. This structurally covers current and future handler call paths
+without a handler allowlist. Public `AdtClient` use outside an MCP request still needs a fallback
+per-operation context so library callers do not silently receive an unbounded response.
+
+The current POST path also forwards its `AdtRequestOptions` to `fetchCsrfToken()`. A data response
+budget must not follow that call into the discovery HEAD/GET: the fallback GET may have a body, is
+not data-preview output, and could consume or trip the wrong allowance. Add a narrow
+`withoutResponseBudget(options)` helper for CSRF bootstrap and preserve its signal, deadline,
+fetch timeout, and other request controls.
+
+### 7. MCP cancellation exists but is not yet connected to this work
+
+The MCP SDK supplies `RequestHandlerExtra.signal` to the registered tool handler. `server.ts`
+currently receives that `extra` object but does not pass its signal into `handleToolCall()`, whose
+request context has no cancellation field. Queueing a data call without this signal can leave a
+cancelled caller waiting for a slot, and starting HTTP work without it wastes SAP and proxy
+resources after the MCP request is gone.
+
+Pass `extra.signal` into `handleToolCall()`, store it in the request context, and use it for the lazy
+data-semaphore acquisition and every guarded direct/proxy request. Cancellation must remove a
+queued waiter without leaking a slot and cancel or destroy an active response stream and its proxy
+client. This change is scoped to the guarded data path; broad cancellation plumbing for every
+existing ADT operation is useful but not required to close #737.
 
 ## Contract and reference implementation research
 
@@ -294,6 +341,15 @@ rejected at `.text()` before a complete string was returned. A local `undici.Cli
 adapted through `Readable.toWeb()` was destroyed when the cap rejected. Both `error` and `close`
 can reach cleanup, so the per-request proxy-client teardown must be idempotent.
 
+The prototype also showed why the BTP conversion must not become globally streaming in the first
+fix. With an unread 16 MiB response, the source stream, Web response body, and per-request Client
+were all still open after 100 ms and remained so until cancellation. Most normal `doFetch()` callers
+read their body, but the CSRF HEAD/GET path can legitimately inspect headers without reading it.
+Keep the existing buffer-and-close behavior for non-budgeted proxy calls; use the live stream only
+when an explicit data response budget is attached. For 204/205/304, consume or destroy the Undici
+body, close the client, and return `Response(null, ...)`: constructing a Fetch `Response` with a
+non-null stream for one of these statuses throws a `TypeError`.
+
 The same prototype exposed a compression distinction that the implementation must not hide. For
 a 100,000-byte uncompressed body served as 133 bytes of gzip, `undici.fetch()` exposed 100,000 body
 bytes while `Client.request()` exposed the 133 compressed bytes. Therefore the BTP adapter must
@@ -377,48 +433,62 @@ This confirms the report is an uncovered limit case, not an already-failing impl
 
 ### A. One request-scoped post-content-decoding body budget
 
-Add a server configuration property provisionally named
-`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, default `1048576` (1 MiB). It is a server-wide safety
-ceiling, not a destination property and not user-expandable through scopes. An explicit operator
-may raise it for a larger deployment; if disabling it is supported, `0` must be documented as an
-unsafe opt-out. Bulk/file consumers should use an explicitly sized deployment override rather than
-causing the shared MCP default to absorb multi-megabyte row sets.
+Use `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, default `1048576` (1 MiB). It is a server-wide safety
+ceiling, not a destination property and not user-expandable through scopes. An operator may raise
+it for a larger deployment. The first release must reject `0` instead of offering a disable switch:
+an apparently configured but unbounded data path would undermine the default-safe contract.
+Bulk/file consumers should use an explicitly sized deployment override rather than causing the
+shared MCP default to absorb multi-megabyte row sets.
 
-Create a small request-scoped budget object with `limitBytes` and `consumedBytes`. Pass the same
-object through every data-preview request made by one tool call, including automatic IN-list
-chunks. Count the response-body `Uint8Array` chunks emitted by the HTTP transport **after any
-content decoding/decompression and before UTF-8 string conversion**. This is neither the encoded
-`Content-Length` nor JavaScript string length. For each body, retain its starting cumulative count,
-check `start + seen` as chunks arrive, and commit the new cumulative count only when a successful
-body is fully read. Non-success and discarded retry bodies use the same hard per-response ceiling
+Extend the existing `RequestContext` with the MCP abort signal and a lazily created data-result
+context. The latter owns one budget with `limitBytes`, committed successful `consumedBytes`, and
+provisional successful bytes reserved by active response streams. `getTableContents()`,
+`runQuery()`, `runQueryWithMetrics()`, and `runTableQuery()` must all obtain this context through one
+client-layer helper before issuing HTTP. This makes database-backed search, navigation, where-used,
+authorization trace, and auto-chunking share the same allowance automatically. Do not wrap a list
+of handlers. When no MCP `RequestContext` exists, each public operation creates and releases a safe
+fallback data context for that operation.
+
+Attach the budget explicitly to `AdtRequestOptions` for the actual data POST. The HTTP layer must
+not infer policy by matching `/datapreview/{ddic,freestyle}` path strings: path sniffing would be
+fragile under endpoint variants, retries, and future callers. Before an automatic data POST fetches
+a CSRF token, call `fetchCsrfToken(withoutResponseBudget(options))`. That helper removes only the
+response budget; it must preserve the caller signal, deadline, fetch timeout, and other request
+controls. Discovery HEAD/GET responses are not result data and must neither consume nor trip the
+data allowance.
+
+Count response-body `Uint8Array` chunks **after content decoding/decompression and before UTF-8
+string conversion**. This is neither encoded `Content-Length` nor JavaScript string length. A
+successful response stream reserves bytes as chunks arrive. The acceptance check is
+`consumedBytes + allInFlightReservedBytes + nextChunkBytes <= limitBytes`, so two future parallel
+responses in the same request cannot each start from the same stale cumulative count. On complete
+successful consumption, move that stream's reservation into `consumedBytes`; on cancellation or
+failure, release it. Non-success and discarded retry bodies use the same hard per-response limit
 but do not reduce the later successful-result allowance. When the next chunk would cross its
 applicable limit, cancel upstream, discard accumulated chunks, and throw a typed
-`AdtResponseLimitError`. Do not include the SQL, response prefix, or row values in the error or
-audit event.
+`AdtResponseLimitError`. Do not include SQL, response prefixes, or row values in the error or audit
+event.
 
-The data operation must attach this budget explicitly through request/client options. The HTTP
-layer must not infer policy by matching `/datapreview/{ddic,freestyle}` path strings: path sniffing
-would be fragile under endpoint variants, retries, and future callers. The explicit object is also
-what makes all chunks in one outer tool call share the same cumulative allowance.
+Keep the existing Fetch `Response` contract. Inside `doFetch()`, wrap a response with
+`capResponseBody(response, budget)` only when `options.responseBudget` is present. The helper wraps
+a non-null `response.body` with a `TransformStream`, preserves status, status text, headers
+(including multiple `Set-Cookie` values and ETags), and passes null bodies through. Existing initial
+and retry `.text()` call sites then cannot bypass the cap, while unrelated transport behavior stays
+unchanged.
 
-Keep the existing Fetch `Response` contract. Inside `doFetch()`, immediately before returning
-either branch, pass the response through one `capResponseBody(response, budget)` helper. The helper
-wraps a non-null `response.body` with a `TransformStream`, preserves status, status text, headers
-(including multiple `Set-Cookie` values and ETags), and passes 204/205/304 null bodies through.
-Existing initial and retry `.text()` call sites then cannot bypass the cap, so this avoids a
-high-risk transport return-type rewrite across all response consumers.
+For a **budgeted BTP request only**, request `Accept-Encoding: identity`, convert `resp.body` with
+`Readable.toWeb()`, and construct the `Response` around that live stream; do not call
+`resp.body.text()` or round-trip a complete string through a second `Response`. Reject an unexpected
+non-identity `Content-Encoding` before returning the body, destroying the response and client; the
+low-level `Client.request()` API does not provide Fetch's automatic decompression. Transfer the
+short-lived Client's ownership to the returned stream and close or destroy it exactly once when the
+underlying body ends, errors, or is cancelled, including byte-limit cancellation. Also clean up a
+client when `client.request()` fails before a response exists. For 204/205/304, consume or destroy
+the Undici body, close the client, and return a null-body `Response`.
 
-For the BTP branch, convert `resp.body` with `Readable.toWeb()` and construct the `Response` around
-that live stream; do not call `resp.body.text()` or round-trip a complete string through a second
-`Response`. Because `doProxyRequest()` creates one short-lived `undici.Client` per request, it must
-also transfer client ownership to the returned stream. Close or destroy the client exactly once
-when the underlying body ends, errors, or is cancelled—including cancellation caused by the byte
-cap. The current `finally { await client.close(); }` cannot remain around a returned live body:
-`Client.close()` waits for response bodies to finish, while the caller cannot consume the body
-until `doProxyRequest()` returns. Preserve abort/deadline behavior and cancel upstream on failure.
-For request-scoped data budgets, prefer `Accept-Encoding: identity` and reject an unexpected
-encoded response unless the adapter adds a streaming decoder before `capResponseBody()`; low-level
-`Client.request()` does not provide Fetch's automatic decompression.
+Preserve the current buffered proxy conversion and `finally` cleanup for requests without an
+explicit response budget. Making every proxy response live-streaming is a separate refactor and is
+unsafe while callers such as CSRF bootstrap may inspect only headers and leave the body unread.
 
 Suggested client-facing result:
 
@@ -427,22 +497,28 @@ Suggested client-facing result:
   "error": "DATA_RESPONSE_TOO_LARGE",
   "message": "The SAP data-preview result exceeded the 1 MiB server limit. Lower maxRows, select fewer columns, or add a restrictive/key-range WHERE clause, then retry.",
   "limitBytes": 1048576,
-  "retryable": true,
+  "retryable": false,
   "requestId": "..."
 }
 ```
 
 This should be a normal failed tool call; the process and unrelated MCP requests remain healthy.
-Do not automatically rerun with a lower limit: that repeats SAP work, still cannot infer row width,
-and may surprise callers with silently different query semantics.
+It is deterministic for unchanged arguments, so `retryable` must be `false`: automatic retries
+repeat the same expensive SAP work. The message asks the caller to submit a new request with lower
+`maxRows`, fewer selected columns, or a more restrictive/key-range `WHERE`. Do not calculate a
+suggested `maxRows`; ARC-1 cannot infer row width safely, and silently changing query semantics
+would surprise callers.
 
 ### B. A data-result semaphore held across the expensive phase
 
-Add a shared process-wide `Semaphore`, provisionally configured by
-`ARC1_MAX_CONCURRENT_DATA_RESULTS` with default `4`. Thread it through every `AdtClient` in the
-same way as `adtSemaphore`, including request-local principal-propagation and multi-target clients.
-Acquire it outside the complete data handler and release only after rows and compact tool JSON have
-been built or an error returned. The wait must honor the MCP/ADT request abort signal.
+Add a shared process-wide `Semaphore`, configured by `ARC1_MAX_CONCURRENT_DATA_RESULTS` with
+default `4`. Thread the one instance into every `AdtClient` in the same way as `adtSemaphore`,
+including request-local principal-propagation and multi-target clients. The first guarded client
+method in an MCP tool call acquires it lazily through the request-level data-result context; later
+data methods in that call reuse the lease and must not acquire a nested slot. `handleToolCall()`
+releases the lease in an outer `finally` after tool JSON, result sizing/preview, terminal audit, or
+error formatting completes. The MCP SDK's later JSON-RPC/SSE encoding remains outside this lease.
+The wait and guarded HTTP work must honor `RequestHandlerExtra.signal`.
 
 Do not reuse or lower `ARC1_MAX_CONCURRENT`: that limiter protects SAP dialog work processes and
 has different sizing semantics. A separate FIFO queue keeps ordinary source reads concurrent
@@ -485,25 +561,55 @@ ARC-1's declared minimum Node version, and its total-host-memory fallback adds a
 buys little while `memory:` and `command:` live in the same MTA module. Consider raising the
 generic direct-push manifest from 256 MiB after measuring its real startup and bounded query peaks.
 
+Land this change with the response budget and data semaphore, not in the earlier mitigation PR.
+Without the guard, lowering the V8 ceiling can turn the same unbounded request into a fatal
+old-space allocation failure sooner. With the guard present, 384 MiB becomes defense-in-depth that
+reserves more of the 512 MiB container for young generation, external/native buffers, transport,
+and platform overhead.
+
 Do not make a larger instance the only remediation. Keep the reporter's 2 GiB allocation during
 rollout, then choose instance memory from observed bounded peaks and user concurrency rather than
 assuming the guard makes 512 MiB universally sufficient.
+
+### E. Lock and validate the operator contract
+
+Ship both environment variables and CLI flags, following the existing precedence
+CLI > environment/`.env` > defaults:
+
+| Purpose | Environment | CLI | Default |
+|---|---|---|---:|
+| Cumulative decompressed data body bytes per tool call | `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` | `--max-datapreview-response-bytes` | `1048576` |
+| Process-wide admitted data-result calls | `ARC1_MAX_CONCURRENT_DATA_RESULTS` | `--max-concurrent-data-results` | `4` |
+
+Both values must be positive base-10 integers within JavaScript's safe-integer range. Reject startup
+for empty explicit values, signs, fractions, exponent notation, suffixes, zero, negatives, or unsafe
+integers; do not clamp and do not silently fall back. This is intentionally stricter than the
+legacy `ARC1_MAX_CONCURRENT` parser because accepting a malformed safety ceiling as another value
+would create a misleading deployment.
+
+At startup, log both effective values and their product as the raw-body admission envelope, without
+logging secrets. Compute the product without numeric overflow. Warn when it exceeds the shipped
+default envelope of 4 MiB, but do not auto-adjust either operator choice. The warning should tell
+operators to benchmark bounded peak RSS and normally reduce concurrency when they raise the byte
+limit.
 
 ## Landing sequence and compatibility
 
 Use two implementation PRs so the measured low-risk reductions can land without weakening the
 definition of done for #737:
 
-1. **Mitigation PR — does not close #737:** combine the one-pass rows/metrics parser, sink-level
-   10,000-row clamp for raw and chunked `SAPQuery`, and fixed `448` → `384` MiB old-space change.
-   The parser change is intended to preserve results. The clamp and heap setting are deliberate
-   behavior/operational changes, although the clamp matches the silent, graceful policy already
-   used by `TABLE_CONTENTS` and `TABLE_QUERY` after #388.
-2. **Issue-closing PR:** add the explicitly threaded 1 MiB cumulative body budget in the shared
-   direct/BTP response-stream wrapper, remove the proxy's second body conversion with correct
-   stream-owned client teardown, and add the shared
-   data-result semaphore. Neither the byte budget nor the semaphore should be reviewed away as an
-   optional optimization; together they are the individual-call and aggregate admission controls.
+1. **Mitigation PR — does not close #737:** combine the one-pass rows/metrics parser and sink-level
+   10,000-row clamp for raw and chunked `SAPQuery`. The parser change is intended to preserve
+   results. The clamp is a deliberate behavior change, although it matches the silent, graceful
+   policy already used by `TABLE_CONTENTS` and `TABLE_QUERY` after #388. Keep the shipped 448 MiB
+   old-space setting in this PR; lowering it before the response guard exists can make an unbounded
+   request fail fatally sooner.
+2. **Issue-closing PR:** add the lazy request-level data-result context, MCP cancellation plumbing,
+   strict configuration contract, 1 MiB cumulative body budget, conditional direct/BTP response
+   stream wrapper, CSRF budget stripping, correctly owned proxy teardown, shared data-result
+   semaphore, stable non-retryable error, and the fixed `448` → `384` MiB old-space change. Neither
+   the byte budget nor the semaphore should be reviewed away as an optional optimization; together
+   they are the individual-call and aggregate admission controls.
 
 Use the project's normal `fix:` convention for the resource-safety work. Independently of commit
 type, the release notes and upgrade guidance must prominently say that:
@@ -513,30 +619,39 @@ type, the release notes and upgrade guidance must prominently say that:
   fail with an actionable error;
 - operators serving intentional batch/file consumers can raise the ceiling after sizing memory
   and data concurrency; and
-- `0`, if implemented, disables an important safety boundary and is not recommended.
+- both new limits reject zero or malformed values at startup rather than disabling the boundary.
 
 ## Affected files
 
 Expected implementation surface:
 
-- `src/adt/http-deadline.ts` — carry the optional response budget/request context;
-- `src/adt/http.ts` — one bounded `Response.body` stream wrapper applied inside `doFetch()` to the
-  direct and proxy branches; expose the BTP `BodyReadable` as a Web stream, remove its string →
-  `Response` → string round-trip, and close the per-request proxy client on end/error/cancel;
+- `src/server/context.ts` — carry the MCP abort signal plus the lazy request-level budget and data
+  semaphore lease;
+- `src/adt/http-deadline.ts` — carry the optional response budget and provide
+  `withoutResponseBudget()` for CSRF bootstrap;
+- `src/adt/http.ts` — bounded `Response.body` wrapper for explicitly budgeted direct/proxy
+  responses; use a live BTP Web stream only on that path, keep non-budgeted proxy requests
+  buffered, enforce identity encoding, handle null-body statuses, and close/destroy the
+  per-request proxy client exactly once on every terminal path;
 - `src/adt/errors.ts` — typed response-limit error with secret-free fields; add it to both HTTP
-  pass-through catches so it is not accidentally reclassified as `AdtNetworkError`;
-- `src/adt/config.ts` and `src/adt/client.ts` — budget/semaphore plumbing, sink row clamp, combined
-  parser path;
+  pass-through catches so it is not accidentally reclassified as `AdtNetworkError`; export it from
+  `src/public/index.ts` for direct client consumers;
+- `src/adt/config.ts` and `src/adt/client.ts` — shared admission-controller plumbing, lazy/fallback
+  data-operation context, all data-method coverage, sink row clamp, and combined parser path;
 - `src/adt/xml-parser.ts` — one-parse data-preview result extraction;
-- `src/handlers/query.ts` and `src/handlers/read.ts` — outer cumulative budget and actionable result;
-- `src/handlers/dispatch.ts` — error formatting/audit classification and avoidable string copy;
+- `src/handlers/query.ts` — chunked row clamp; request-level budget ownership belongs below the
+  handlers so `SAPRead`, `SAPSearch`, `SAPNavigate`, where-used, and authorization trace cannot be
+  missed;
+- `src/handlers/dispatch.ts` — request-context lifetime, lease release after result/audit work,
+  stable error formatting/audit classification, and avoidable string copy;
 - `src/server/types.ts`, `src/server/config.ts`, `src/server/server.ts`, and
-  `src/server/multi-target-runtime.ts` — defaults, CLI/env parsing, and process-wide semaphore;
+  `src/server/multi-target-runtime.ts` — defaults, strict CLI/env parsing, MCP signal propagation,
+  process-wide semaphore, multi-target sharing, startup envelope log, and warning;
 - `src/handlers/tools.ts` and possibly `src/handlers/schemas.ts` — describe/enforce the row ceiling;
 - `mta.yaml`, `manifest.yml`, `.env.example`, `docs_page/configuration-reference.md`,
   `docs_page/rate-limiting.md`, `docs_page/btp-administration.md`, `docs_page/tools.md`, and release
   notes — operator contract and deployment guidance.
-- `AGENTS.md` — add the response-limit type to the documented canonical ADT error set.
+- `AGENTS.md` — add `AdtResponseLimitError` to the documented canonical ADT error set.
 
 No ADT feature discovery or SAP release gate is needed.
 
@@ -544,33 +659,51 @@ No ADT feature discovery or SAP release gate is needed.
 
 1. **Bounded response stream:** missing `Content-Length`, exact boundary, first chunk over boundary,
    later chunk over boundary, UTF-8 split across chunks, body cancellation, reader errors, and a
-   cheap identity-body header rejection. Run the same cases through direct Fetch and the BTP
-   Connectivity proxy adapter. Preserve status, status text, ETag, multiple `Set-Cookie` headers,
-   and null-body 204/205/304 responses. Assert the proxy body is read exactly once, its per-request
-   client closes exactly once on end/error/cancel, and the parser is never called after an
-   over-limit response. Assert the budget is activated by explicit request context rather than URL
-   matching, and that an unrelated large response cannot accidentally consume it.
-2. **Retry coverage:** 401, 429, 503, and content-negotiation retry responses cannot bypass a hard
+   cheap identity-body header rejection. Run the same cases through direct Fetch and the budgeted
+   BTP Connectivity adapter. Preserve status, status text, ETag, multiple `Set-Cookie` headers, and
+   null-body 204/205/304 responses. Assert the proxy body is read exactly once, its per-request
+   client closes exactly once on normal end, source error, cap cancellation, caller cancellation,
+   unexpected encoding, null-body status, and pre-response request failure. The parser must never
+   run after an over-limit response.
+2. **Transport scope and CSRF:** explicit `AdtRequestOptions.responseBudget`, not URL matching,
+   activates the wrapper. A non-budgeted proxy response keeps the current buffer-and-close
+   behavior. `withoutResponseBudget()` prevents both CSRF HEAD and fallback GET from consuming or
+   tripping the data allowance while preserving signal, deadline, fetch timeout, and request flags.
+   An unrelated large response must not accidentally acquire a data lease or budget.
+3. **Retry coverage:** 401, 429, 503, and content-negotiation retry responses cannot bypass a hard
    per-response ceiling. Assert that discarded error/retry bodies do not consume the cumulative
    successful-result allowance, while no individual body can be read without a bound.
-3. **Aggregate chunking:** several individually sub-limit IN-list responses cross the cumulative
-   tool budget and fail without retaining/serializing the combined rows.
-4. **Row limits:** raw, single-statement, and chunked `SAPQuery` all clamp at the sink to 10,000;
+4. **Request ownership and aggregate accounting:** several individually sub-limit IN-list or
+   internal data responses cross the cumulative tool budget and fail without retaining/serializing
+   the combined rows. Two simultaneous successful response streams in one request must include
+   each other's provisional reservations, so their combined bytes cannot oversubscribe the limit.
+   Cover `SAPQuery`, table-content/table-query reads, DB-backed TADIR lookup, class hierarchy,
+   where-used interface augmentation, and authorization trace. Assert one lazy context and one
+   non-nested semaphore lease per tool call. A direct `AdtClient` operation outside MCP receives a
+   bounded fallback context and releases it.
+5. **Row limits:** raw, single-statement, and chunked `SAPQuery` all clamp at the sink to 10,000;
    NaN, infinity, fractions, zero, and negatives retain the existing fallback semantics.
-5. **Parser equivalence:** old ASX and current data-preview fixtures produce identical rows and
+6. **Parser equivalence:** old ASX and current data-preview fixtures produce identical rows and
    metrics through the one-parse function, including empty/null values.
-6. **Concurrency:** five data calls never exceed the default data-result concurrency of four; an
-   ordinary source read is not queued behind them; the semaphore is shared across per-user, pinned,
+7. **Concurrency and cancellation:** five data calls never exceed the default data-result
+   concurrency of four; an ordinary source read is not queued behind them; the semaphore is shared
+   across per-user, pinned,
    and aggregate multi-target clients; queued work for a second target progresses in FIFO order as
-   a slot frees; aborted waiters leave no slot leak. Also test a non-default value so the assertion
-   proves configuration plumbing rather than hard-coded behavior.
-7. **Error contract:** single-target and multi-target routes return a stable, secret-free,
-   actionable error and keep the request ID. Minimal-error mode must not hide the operator-defined
-   limit or remediation.
-8. **Deployment/config:** default, env, CLI precedence, invalid values, MTA heap ratio, and docs are
-   synchronized. Run startup coverage on the minimum supported Node version so a deployment flag
-   cannot exceed the declared engine floor again.
-9. **Live regression:** against the 758 system, run five parallel `TADIR` queries that cross the
+   a slot frees. Pass the SDK's MCP abort signal into dispatch: an aborted waiter leaves no slot
+   leak, and an active direct/BTP read is cancelled and cleaned up. The lease remains held through
+   tool JSON and terminal audit work and is released on every success/error path. Also test a
+   non-default value so the assertion proves configuration plumbing rather than a hard-coded value.
+8. **Error contract:** single-target and multi-target routes return a stable, secret-free,
+   actionable `DATA_RESPONSE_TOO_LARGE` error with `retryable:false`, the effective limit, and the
+   request ID. Minimal-error mode must not hide the operator-defined limit or remediation. An
+   unchanged request is never automatically retried and no guessed `maxRows` is returned.
+9. **Deployment/config:** default, environment, CLI precedence, exact flag names, positive decimal
+   safe-integer validation, rejection of zero/malformed/unsafe values, 4 MiB startup envelope log,
+   larger-envelope warning, no auto-adjustment, MTA heap ratio, and docs are synchronized. Verify
+   that the mitigation PR leaves old-space at 448 MiB and the issue-closing PR changes it to 384
+   MiB. Run startup coverage on the minimum supported Node version so a deployment flag cannot
+   exceed the declared engine floor again.
+10. **Live regression:** against the 758 system, run five parallel `TADIR` queries that cross the
    test cap. The calls must fail or queue individually under the default four-call admission cap,
    `/health` and a subsequent small query must succeed, and CF/local RSS must remain below the test
    envelope. Repeat through a CF principal-propagation route without using production BW data.
@@ -610,7 +743,8 @@ For affected operators:
 
 **Recommendation:** accept #737 and implement the layered fix above. Treat the streaming cumulative
 byte budget and dedicated data semaphore together as the issue-closing boundary. Land the
-one-pass parser, raw row clamp, and fixed CF heap correction first as a lower-risk mitigation, then
-ship the two admission controls together. They address independently measured amplifiers and make
-the default 512 MiB topology defensible. Revisit a SAX/columnar response path only as a later
+one-pass parser and raw row clamp first as a lower-risk mitigation. Then ship the request-level
+budget, conditional transport stream, shared semaphore, cancellation/config/error contract, and
+fixed CF heap correction together. They address independently measured amplifiers and make the
+default 512 MiB topology defensible. Revisit a SAX/columnar response path only as a later
 performance feature.
