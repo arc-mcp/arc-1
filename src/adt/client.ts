@@ -20,6 +20,7 @@ import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-p
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
+import { canonicalDataSourceName } from './data-source-name.js';
 import { DataSourceBlocklistGuard } from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
@@ -1352,10 +1353,14 @@ export class AdtClient {
     sqlFilter?: string,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'GetTableContents');
-    await this.dataSourceBlocklistGuard().enforceTableContents(tableName, sqlFilter);
+    // Canonicalize BEFORE authorizing and before building the URL so the name the policy checks is
+    // byte-for-byte the name SAP receives. This runs with the blocklist off too: identifier handling
+    // must not depend on policy state.
+    const source = canonicalDataSourceName(tableName, 'TABLE_CONTENTS table name');
+    await this.dataSourceBlocklistGuard().enforceTableContents(source, sqlFilter);
     const rowLimit = clampPreviewRows(maxRows);
     const resp = await this.http.post(
-      `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(tableName)}`,
+      `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(source)}`,
       sqlFilter,
       'text/plain',
     );
@@ -1404,8 +1409,10 @@ export class AdtClient {
     } = {},
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'RunTableQuery');
-    await this.dataSourceBlocklistGuard().enforceSources([tableName]);
-    const sql = buildTableQuerySql(tableName, opts.columns, opts.where);
+    // One canonical identity: authorize it, then build the statement from the SAME string.
+    const source = canonicalDataSourceName(tableName, 'TABLE_QUERY table name');
+    await this.dataSourceBlocklistGuard().enforceSources([source]);
+    const sql = buildTableQuerySql(source, opts.columns, opts.where);
     const maxRows = clampPreviewRows(opts.maxRows);
     const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
     return parseTableContents(resp.body);

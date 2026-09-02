@@ -1,5 +1,7 @@
 /** Safe SQL builder and row-limit helpers for ADT data-preview requests. */
 
+import { canonicalDataSourceName } from './data-source-name.js';
+
 /** Allowed SQL comparison operators for TABLE_QUERY where conditions. */
 const ALLOWED_OPS = new Set([
   '=',
@@ -38,29 +40,39 @@ export function clampPreviewRows(requested: number | undefined, fallback = 100):
   return Math.min(Math.floor(requested), MAX_TABLE_QUERY_ROWS);
 }
 
-/** Sanitize a SQL identifier used by the structured TABLE_QUERY builder. */
-function sanitizeIdentifier(raw: string, kind: 'table' | 'column' | 'field'): string {
-  const safe = raw.toUpperCase().replace(/[^\w/]/g, '');
-  if (!safe) throw new Error(`TABLE_QUERY: ${kind} name "${raw}" is invalid (empty after sanitization)`);
-  return safe;
+/**
+ * Validate a caller-supplied SQL identifier exactly. It is NEVER rewritten.
+ *
+ * The previous implementation stripped disallowed characters (`raw.toUpperCase().replace(/[^\w/]/g, '')`).
+ * That made the identifier ARC-1 authorized differ from the identifier it executed: `USR02$` was checked
+ * as `USR02$` but executed as `USR02`. Silent rewriting is therefore banned outright — including when
+ * the blocklist is off, so the identifier contract does not depend on policy state. The only permitted
+ * transformation is ASCII case folding, which is what makes "checked name" and "executed name"
+ * byte-for-byte equal.
+ */
+export function exactSqlIdentifier(raw: string, kind: 'table' | 'column' | 'field'): string {
+  return canonicalDataSourceName(raw, `TABLE_QUERY ${kind} name`);
 }
 
 /**
  * Build a safe static SELECT from structured TABLE_QUERY parameters.
- * Values are quoted and escaped; IN/NOT IN values cannot become subqueries.
+ *
+ * Identifiers are validated, not sanitized; values are quoted and escaped, and IN/NOT IN values
+ * cannot become subqueries. Pass an already-canonical table name when the caller has authorized it,
+ * so the authorized and executed identities are the same string.
  */
 export function buildTableQuerySql(
   tableName: string,
   columns?: string[],
   where?: Array<{ field: string; op: string; value?: string }>,
 ): string {
-  const safeTable = sanitizeIdentifier(tableName, 'table');
-  const colList = columns?.length ? columns.map((column) => sanitizeIdentifier(column, 'column')).join(', ') : '*';
+  const safeTable = exactSqlIdentifier(tableName, 'table');
+  const colList = columns?.length ? columns.map((column) => exactSqlIdentifier(column, 'column')).join(', ') : '*';
   let sql = `SELECT ${colList} FROM ${safeTable}`;
 
   if (where?.length) {
     const clauses = where.map(({ field, op, value }) => {
-      const safeField = sanitizeIdentifier(field, 'field');
+      const safeField = exactSqlIdentifier(field, 'field');
       const safeOp = op.trim().toUpperCase();
       if (!ALLOWED_OPS.has(safeOp)) throw new Error(`TABLE_QUERY: operator "${op}" is not allowed`);
       if (safeOp === 'IS NULL' || safeOp === 'IS NOT NULL') return `${safeField} ${safeOp}`;

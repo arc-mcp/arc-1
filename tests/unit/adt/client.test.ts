@@ -2003,6 +2003,57 @@ describe('AdtClient', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    // Phase 3 invariant: the identifier ARC-1 authorizes is byte-for-byte the identifier it sends.
+    // The old builder stripped anything outside [\w/], so `USR02$` was checked as USR02$ and
+    // executed as USR02. Identifier handling must not depend on whether the blocklist is active.
+    it('with the blocklist off, executes the exact canonical identity', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+
+      await client.runTableQuery('usr02$');
+
+      const post = mockFetch.mock.calls.find((call) => String(call[0]).includes('/datapreview/freestyle'));
+      expect(String(post?.[1]?.body)).toBe('SELECT * FROM USR02$');
+    });
+
+    it('with the blocklist on, authorizes that same exact identity', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(objectSearchResponses([]));
+      const client = createClient({ safety: strictSafety(['SCARR']) });
+
+      // Unresolvable here (the mocked search returns nothing), which is correct fail-closed
+      // behaviour. What this asserts is the identity the policy was handed: USR02$, not USR02.
+      await expect(client.runTableQuery('usr02$')).rejects.toMatchObject({ code: 'DATA_SOURCE_UNRESOLVED' });
+
+      const searchUrl = mockFetch.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => url.includes('/repository/informationsystem/search'));
+      expect(decodeURIComponent(String(searchUrl))).toContain('USR02$');
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+
+    it('does not strip characters from a TABLE_CONTENTS entity name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+
+      await client.getTableContents('usr02$');
+
+      const url = mockFetch.mock.calls.map((call) => String(call[0])).find((u) => u.includes('/datapreview/ddic'));
+      expect(url).toContain('ddicEntityName=USR02%24');
+    });
+
+    it.each([
+      ['TABLE_QUERY', (c: InstanceType<typeof AdtClient>) => c.runTableQuery('US R02')],
+      ['TABLE_CONTENTS', (c: InstanceType<typeof AdtClient>) => c.getTableContents('T000; DROP')],
+    ])('refuses an identifier that would need rewriting on %s', async (_label, call) => {
+      mockFetch.mockReset();
+      const client = createClient({ safety: strictSafety([]) });
+      await expect(call(client)).rejects.toThrow(/not an exact technical name/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('keeps empty-list behavior byte-for-byte and performs no metadata lookup', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
