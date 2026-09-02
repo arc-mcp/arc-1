@@ -65,6 +65,25 @@ describe('BTP UI AppRouter config', () => {
     expect(packageLock.packages['node_modules/decode-uri-component']?.version).toBe(wrappedVersion);
   });
 
+  it('allows only the reviewed AppRouter npm config through the MTAR inspection gate', async () => {
+    const npmrc = await readFile('btp/approuter/.npmrc', 'utf8');
+    const activeSettings = npmrc
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'));
+    const runbook = await readFile('docs_page/btp-cloud-foundry-deployment.md', 'utf8');
+
+    // Keep the one allowed project config non-secret and narrowly scoped.
+    expect(activeSettings).toEqual(['install-links=true']);
+    // Both documented inspection implementations must compare the packaged file with source.
+    expect(runbook).toContain(`[ "$member" = 'arc1-ui-router/data.zip' ]`);
+    expect(runbook).toContain('cmp -s "$tmp/approuter.npmrc" btp/approuter/.npmrc');
+    expect(runbook).toContain("$member.Directory.Name -eq 'arc1-ui-router'");
+    expect(runbook).toContain('Get-FileHash $allowedNpmrc -Algorithm SHA256');
+    // The blanket filename deny remains in place for every other module and path.
+    expect(runbook.match(/deny\s*=\s*['"]\\\.env\|\\\.npmrc/g)).toHaveLength(2);
+  });
+
   it('requires admin scope for all UI routes', async () => {
     const xsApp = JSON.parse(await readFile('btp/approuter/xs-app.json', 'utf8')) as {
       routes: Array<Record<string, unknown>>;
