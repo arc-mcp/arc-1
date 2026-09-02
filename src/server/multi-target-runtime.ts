@@ -41,7 +41,9 @@ function buildReadOnlyRuntimeConfig(
     allowFreeSQL: safety.allowFreeSQL,
     allowTransportWrites: safety.allowTransportWrites,
     allowGitWrites: safety.allowGitWrites,
-    blockedDataSources: [...base.blockedDataSources],
+    // Instance-wide and restrictive: every target inherits the server blocklist and no destination
+    // or caller can weaken it. Destination-local policy is deliberately not part of v1.
+    blockedDataSources: [...safety.blockedDataSources],
     allowedPackages: [...safety.allowedPackages],
     allowedTransports: [...safety.allowedTransports],
     denyActions: [...new Set([...base.denyActions, ...safety.denyActions])],
@@ -87,7 +89,7 @@ function buildReadOnlyRuntimeConfig(
 
 /** Build the isolated runtime for one discovered target. */
 export function buildMultiTargetConfig(base: ServerConfig, target: TargetDescriptor): ServerConfig {
-  return buildReadOnlyRuntimeConfig(base, targetSafety(target), target);
+  return buildReadOnlyRuntimeConfig(base, targetSafety(target, base.blockedDataSources), target);
 }
 
 /**
@@ -100,10 +102,13 @@ export function buildAggregateToolSurfaceConfig(
 ): ServerConfig {
   return buildReadOnlyRuntimeConfig(
     base,
-    multiTargetSafety({
-      allowDataPreview: targets.some((target) => target.effectivePolicy.allowDataPreview),
-      allowFreeSQL: targets.some((target) => target.effectivePolicy.allowFreeSQL),
-    }),
+    multiTargetSafety(
+      {
+        allowDataPreview: targets.some((target) => target.effectivePolicy.allowDataPreview),
+        allowFreeSQL: targets.some((target) => target.effectivePolicy.allowFreeSQL),
+      },
+      base.blockedDataSources,
+    ),
   );
 }
 

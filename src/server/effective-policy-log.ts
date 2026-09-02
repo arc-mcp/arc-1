@@ -9,6 +9,7 @@
  * functions are reused by `arc1 config show` (Task 9).
  */
 
+import { dataSourcePolicyFingerprint, shortPolicyFingerprint } from '../adt/data-source-name.js';
 import type { Logger } from './logger.js';
 import type { ConfigSource, ServerConfig } from './types.js';
 
@@ -21,8 +22,13 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     allowTransportWrites: config.allowTransportWrites,
     allowGitWrites: config.allowGitWrites,
     gzipDataPreviewBody: config.gzipDataPreviewBody,
-    blockedDataSources: config.blockedDataSources,
+    // Exact names are NOT logged. They are not credentials, but a curated list of an
+    // organisation's sensitive tables is a reconnaissance aid for anyone with log access. Count plus
+    // fingerprint is enough for startup diagnostics; exact values stay on administrator-only
+    // surfaces (`arc1 config show`, the local operator UI, the admin-scoped web UI).
+    blockedDataSourcesEnabled: config.blockedDataSources.length > 0,
     blockedDataSourcesCount: config.blockedDataSources.length,
+    blockedDataSourcesFingerprint: dataSourcePolicyFingerprint(config.blockedDataSources),
     allowedPackages: config.allowedPackages,
     allowedTransports: config.allowedTransports,
     denyActionsCount: config.denyActions.length,
@@ -38,7 +44,9 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     `effective safety: writes=${yn(config.allowWrites)} data=${yn(config.allowDataPreview)} ` +
     `sql=${yn(config.allowFreeSQL)} packages=[${config.allowedPackages.join(',')}] ` +
     `transports=${yn(config.allowTransportWrites)} git=${yn(config.allowGitWrites)} ` +
-    `gzipDataPreview=${yn(config.gzipDataPreviewBody)} blockedDataSources=${config.blockedDataSources.length} ` +
+    `gzipDataPreview=${yn(config.gzipDataPreviewBody)} ` +
+    `blockedDataSources=${config.blockedDataSources.length}` +
+    `${config.blockedDataSources.length > 0 ? `/${shortPolicyFingerprint(config.blockedDataSources)}` : ''} ` +
     `denyActions=${config.denyActions.length}`;
   logger.info(line);
 

@@ -545,7 +545,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
         expect(text).not.toContain('USR02');
 
         const decision = auditSpy.mock.calls
-          .map(([event]) => event as Record<string, unknown>)
+          .map(([event]) => event as unknown as Record<string, unknown>)
           .find((event) => event?.event === 'data_source_policy_decision');
 
         // The protected record keeps the complete normalized decision.
@@ -595,7 +595,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
         );
 
         const decisions = auditSpy.mock.calls
-          .map(([event]) => event as Record<string, unknown>)
+          .map(([event]) => event as unknown as Record<string, unknown>)
           .filter((event) => event?.event === 'data_source_policy_decision');
         // One decision for the whole logical request, even though chunking may split the SQL.
         expect(decisions).toHaveLength(1);

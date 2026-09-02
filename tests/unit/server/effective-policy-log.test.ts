@@ -27,8 +27,10 @@ describe('logEffectivePolicy', () => {
         allowTransportWrites: false,
         allowGitWrites: false,
         gzipDataPreviewBody: false,
-        blockedDataSources: [],
+        // Exact names never reach ordinary startup logs; count + fingerprint do.
+        blockedDataSourcesEnabled: false,
         blockedDataSourcesCount: 0,
+        blockedDataSourcesFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
         allowedPackages: ['Z*'],
         allowedTransports: [],
         denyActionsCount: 0,
@@ -63,6 +65,12 @@ describe('logEffectivePolicy', () => {
     expect(humanLine).toContain('git=NO');
     expect(humanLine).toContain('gzipDataPreview=YES');
     expect(humanLine).toContain('blockedDataSources=1');
+
+    // Ordinary startup logs must never carry the exact names.
+    expect(humanLine).not.toContain('USR02');
+    expect(JSON.stringify(calls)).not.toContain('USR02');
+    // A short fingerprint is shown so operators can spot configuration drift between deployments.
+    expect(humanLine).toMatch(/blockedDataSources=1\/[0-9a-f]{12}/);
     expect(humanLine).toContain('packages=[$TMP,Z*]');
     expect(humanLine).toContain('denyActions=0');
   });
