@@ -44,6 +44,7 @@ import {
   resolveSingleTargetOverlapState,
   runStartupAuthPreflight,
   runStartupAuthPreflightWithClient,
+  runtimeMemoryEnvelope,
   VERSION,
 } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -82,6 +83,19 @@ describe('MCP Server', () => {
   it('computes the data-result admission envelope without unsafe-number rounding', () => {
     expect(dataResultAdmissionEnvelope(2 * 1024 * 1024, 2)).toBe(4 * 1024 * 1024);
     expect(dataResultAdmissionEnvelope(Number.MAX_SAFE_INTEGER, 2)).toBe('18014398509481982');
+  });
+
+  it('reports the non-secret Cloud Foundry memory inputs and effective V8 heap limit', () => {
+    expect(runtimeMemoryEnvelope({ MEMORY_AVAILABLE: '512', OPTIMIZE_MEMORY: 'true' }, 396 * 1024 * 1024)).toEqual({
+      cfMemoryAvailableMiB: 512,
+      optimizeMemory: true,
+      v8HeapSizeLimitMiB: 396,
+    });
+    expect(runtimeMemoryEnvelope({ MEMORY_AVAILABLE: 'invalid' }, 4 * 1024 * 1024 * 1024)).toEqual({
+      cfMemoryAvailableMiB: undefined,
+      optimizeMemory: false,
+      v8HeapSizeLimitMiB: 4096,
+    });
   });
 
   it.each([

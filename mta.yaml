@@ -71,10 +71,6 @@ modules:
       # `host:` in your `mta-overrides.mtaext` (see mta-overrides.mtaext.example).
       health-check-type: http
       health-check-http-endpoint: /health
-      # Node heap target sized to 87.5% of dyno memory (512M -> 448M) so V8 GCs
-      # cleanly inside the CF cgroup instead of being SIGKILL'd; bump in
-      # lockstep when memory: changes.
-      command: node --max-old-space-size=448 dist/index.js
       buildpack: nodejs_buildpack
     build-parameters:
       builder: custom
@@ -142,6 +138,10 @@ modules:
         - vitest*.ts
         - xs-security.json
     properties:
+      # Let the Node.js buildpack size old-space to 75% of MEMORY_AVAILABLE.
+      # This follows durable MTA memory overrides (512M -> 384M, 1G -> 768M)
+      # while preserving native/Buffer/parser headroom outside the V8 heap.
+      OPTIMIZE_MEMORY: "true"
       SAP_TRANSPORT: http-streamable
       SAP_SYSTEM_TYPE: auto
       SAP_LANGUAGE: EN

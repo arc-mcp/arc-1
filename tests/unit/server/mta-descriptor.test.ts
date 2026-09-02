@@ -77,6 +77,8 @@ describe('shipped mta.yaml resolves through the config parser', () => {
     const config = resolveWithOverrides();
 
     expect(config.transport).toBe('http-streamable');
+    expect(process.env.OPTIMIZE_MEMORY).toBe('true');
+    expect(appModuleDescriptor().parameters?.command).toBeUndefined();
     expect(process.env.SAP_BTP_DESTINATION).toBeUndefined();
     expect(process.env.SAP_BTP_PP_DESTINATION).toBeUndefined();
     expect(config.ppEnabled).toBe(true);

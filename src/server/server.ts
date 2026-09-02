@@ -7,6 +7,7 @@
  * - http-streamable: for remote/containerized deployments
  */
 
+import { getHeapStatistics } from 'node:v8';
 import { type ApiKeyEntry, createApiKeyVerifier, type Verifier } from '@arc-mcp/xsuaa-auth';
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -90,6 +91,27 @@ let warnedLargeToolsList = false;
 export function dataResultAdmissionEnvelope(bytesPerResult: number, concurrentResults: number): number | string {
   const exact = BigInt(bytesPerResult) * BigInt(concurrentResults);
   return exact <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(exact) : exact.toString();
+}
+
+/** Non-secret runtime memory values that let CF operators verify the effective heap policy. */
+export function runtimeMemoryEnvelope(
+  env: NodeJS.ProcessEnv = process.env,
+  heapSizeLimitBytes = getHeapStatistics().heap_size_limit,
+): {
+  cfMemoryAvailableMiB?: number;
+  optimizeMemory: boolean;
+  v8HeapSizeLimitMiB: number;
+} {
+  const memoryAvailable = env.MEMORY_AVAILABLE?.trim();
+  const parsedMemoryAvailable = memoryAvailable && /^\d+$/.test(memoryAvailable) ? Number(memoryAvailable) : undefined;
+  return {
+    cfMemoryAvailableMiB:
+      parsedMemoryAvailable !== undefined && Number.isSafeInteger(parsedMemoryAvailable)
+        ? parsedMemoryAvailable
+        : undefined,
+    optimizeMemory: env.OPTIMIZE_MEMORY === 'true',
+    v8HeapSizeLimitMiB: Math.round(heapSizeLimitBytes / (1024 * 1024)),
+  };
 }
 
 /**
@@ -1101,6 +1123,7 @@ export async function createAndStartServer(
     logger.addSink(uiLogBuffer);
   }
   logAuthSummary(config);
+  logger.info('Runtime memory envelope', runtimeMemoryEnvelope());
 
   // Effective-policy log + contradiction warnings (Task 8 observability).
   // Sources is optional for test callers — defaults to 'default' for all fields.
