@@ -55,7 +55,12 @@ const BUDGETS = {
   // + getFunctionModuleProperties and the getFunctionGroup pre-7.52 objectstructure fallback.
   // Lowered after TABLE_QUERY construction and experimental data-source lineage moved into
   // dedicated modules; do not let those domains grow back into the facade.
-  'src/adt/client.ts': 1680,
+  // +10 for runQueryBatch, the single freestyle-SQL entry point that authorizes a whole logical
+  // request once and then executes its statements. Authorization and the POSTs must stay inside one
+  // private client operation, so this genuinely belongs on the facade. The two parts that did not
+  // were extracted first: guard wiring to data-source-policy.ts and the execution loop to
+  // table-query.ts.
+  'src/adt/client.ts': 1690,
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.

@@ -21,7 +21,11 @@ import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
 import { canonicalDataSourceName } from './data-source-name.js';
-import { DataSourceBlocklistGuard } from './data-source-policy.js';
+import {
+  CDS_DEPENDENCY_GRAPH_PATH,
+  createDataSourceBlocklistGuard,
+  type DataSourceBlocklistGuard,
+} from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
@@ -30,7 +34,7 @@ import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './pa
 import { canonicalRevisionSourcePath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
-import { buildTableQuerySql, clampPreviewRows } from './table-query.js';
+import { buildTableQuerySql, clampPreviewRows, executeDataPreviewStatements } from './table-query.js';
 import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
 import type {
   AdtObjectLookupResult,
@@ -1331,14 +1335,15 @@ export class AdtClient {
 
   // ─── Table Data Operations ─────────────────────────────────────────
 
+  /** A fresh guard per logical request; instrumentation never leaks between decisions. */
   private dataSourceBlocklistGuard(): DataSourceBlocklistGuard {
-    const collection = '/sap/bc/adt/ddic/ddl/dependencies/graphdata';
-    return new DataSourceBlocklistGuard(this.safety.blockedDataSources, {
+    return createDataSourceBlocklistGuard({
+      blockedDataSources: this.safety.blockedDataSources,
       searchObject: (name, maxResults) => this.searchObject(name, maxResults),
       // Canonical /tables source only: the NW 7.50 /structures fallback omits
       // replacementObject metadata and therefore cannot prove authorization.
       readTableSource: async (name) => (await this.getTable(name)).source,
-      dependencyGraphAccept: () => this.http.discoveryAcceptFor(collection),
+      dependencyGraphAccept: () => this.http.discoveryAcceptFor(CDS_DEPENDENCY_GRAPH_PATH),
       readDependencyGraph: async (path, accept) => {
         checkOperation(this.safety, OperationType.Read, 'GetCdsDependencyGraph');
         return (await this.http.get(path, { Accept: accept })).body;
@@ -1419,16 +1424,7 @@ export class AdtClient {
       return { ...parseTableContents(body), ...parseDataPreviewMeta(body) };
     }
 
-    const rows: Record<string, string>[] = [];
-    let columns: string[] = [];
-    for (const statement of statements) {
-      const remaining = rowLimit - rows.length;
-      if (remaining <= 0) break;
-      const chunk = parseTableContents(await post(statement, remaining));
-      if (columns.length === 0) columns = chunk.columns;
-      rows.push(...chunk.rows);
-    }
-    return { columns, rows: rows.slice(0, rowLimit) };
+    return executeDataPreviewStatements(post, parseTableContents, statements, rowLimit);
   }
 
   /**

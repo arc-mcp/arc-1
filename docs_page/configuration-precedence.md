@@ -77,6 +77,32 @@ For BTP CF deploys, `cf env <app>` shows you the final environment as the contai
 
 ---
 
+## Restriction lists on BTP: `.mtaext` is durable, `cf set-env` is not
+
+`SAP_BLOCKED_DATA_SOURCES` deserves its own note because getting this wrong silently turns a security
+control off.
+
+ARC-1 treats a customer `.mtaext` extension descriptor as the **durable desired state** for a
+landscape. Every `cf deploy` reconciles the application environment toward the descriptor chain. A
+direct `cf set-env SAP_BLOCKED_DATA_SOURCES ...` takes effect immediately but is **temporary**: the
+next MTA deployment reconciles the property back to whatever the descriptors declare.
+
+| You want | Do this |
+|---|---|
+| Enable the blocklist durably on BTP | Set the value in the landscape `.mtaext` |
+| A temporary incident-response brake | `cf set-env`, then promote the value into the `.mtaext` |
+| Disable it | Write the explicit empty value `SAP_BLOCKED_DATA_SOURCES: ""` |
+
+The base `Dockerfile`, `mta.yaml`, `manifest.yml` and `manifest-btp-abap.yml` deliberately ship
+`SAP_BLOCKED_DATA_SOURCES=""`. That is what makes the one-field rollback reliable: an MTA extension
+can add or override a property but never remove one, so deleting a line does **not** unset an
+already-deployed value. If the base omitted the key, a previously deployed non-empty value could
+survive a deployment intended to clear it.
+
+Verify the effective value after every deploy with `arc1 config show` or the startup policy log — the
+log reports whether the policy is enabled, how many entries it has, and a fingerprint you can compare
+across environments.
+
 ## See also
 
 - [Configuration Reference](configuration-reference.md) — every env var, grouped by purpose, with effects.

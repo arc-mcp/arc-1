@@ -85,3 +85,28 @@ export function buildTableQuerySql(
   // ADT freestyle SQL rejects ORDER BY on NW 7.50/7.51; callers sort client-side.
   return sql;
 }
+
+/**
+ * Execute statements that have ALREADY been authorized by the data-source policy.
+ *
+ * Kept beside the SQL builder rather than in the ADT facade, but deliberately NOT exported as a
+ * public client method: authorization and execution must stay inside one private client operation so
+ * no caller can obtain a reusable "already authorized" handle.
+ */
+export async function executeDataPreviewStatements(
+  post: (sql: string, rowLimit: number) => Promise<string>,
+  parse: (body: string) => { columns: string[]; rows: Record<string, string>[] },
+  statements: string[],
+  rowLimit: number,
+): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
+  const rows: Record<string, string>[] = [];
+  let columns: string[] = [];
+  for (const statement of statements) {
+    const remaining = rowLimit - rows.length;
+    if (remaining <= 0) break;
+    const chunk = parse(await post(statement, remaining));
+    if (columns.length === 0) columns = chunk.columns;
+    rows.push(...chunk.rows);
+  }
+  return { columns, rows: rows.slice(0, rowLimit) };
+}

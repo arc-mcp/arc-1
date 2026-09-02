@@ -372,7 +372,7 @@ export class DataSourceBlocklistGuard {
   }
 
   private async readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode> {
-    const collection = '/sap/bc/adt/ddic/ddl/dependencies/graphdata';
+    const collection = CDS_DEPENDENCY_GRAPH_PATH;
     const requestGraph = async (accept: string): Promise<CdsDependencyNode> => {
       const params = new URLSearchParams({ ddlsourceName: ddlSource });
       // Metrics add roughly 40% payload without changing topology, and authorization only needs
@@ -397,6 +397,25 @@ export class DataSourceBlocklistGuard {
       return requestGraph('application/vnd.sap.adt.elementinfo+xml');
     }
   }
+}
+
+/** Endpoint the SQL dependency graph is served from. */
+export const CDS_DEPENDENCY_GRAPH_PATH = '/sap/bc/adt/ddic/ddl/dependencies/graphdata';
+
+/**
+ * Wire a request-scoped guard from the ADT primitives it needs.
+ *
+ * Lives here rather than on the client so the ADT facade stays a facade: this is policy wiring, and
+ * a new guard is built per logical request so its instrumentation can never leak between decisions.
+ */
+export function createDataSourceBlocklistGuard(deps: {
+  blockedDataSources: string[];
+  searchObject: DataSourcePolicyBackend['searchObject'];
+  readTableSource: DataSourcePolicyBackend['readTableSource'];
+  dependencyGraphAccept: DataSourcePolicyBackend['dependencyGraphAccept'];
+  readDependencyGraph: DataSourcePolicyBackend['readDependencyGraph'];
+}): DataSourceBlocklistGuard {
+  return new DataSourceBlocklistGuard(deps.blockedDataSources, deps);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

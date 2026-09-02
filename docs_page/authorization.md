@@ -72,32 +72,137 @@ The `data` and `sql` user scopes (and the `viewer-data`, `viewer-sql`, `develope
 
 ## Experimental data-source blocklist
 
-For a customer who accepts extra latency in exchange for another denial layer, set an exact list such as:
+!!! warning "Experimental, default-off, administrator-only"
+    `SAP_BLOCKED_DATA_SOURCES` is the only public field for this feature, and `--blocked-data-sources`
+    is the same field spelled as a CLI flag — not a second mode. There is no enable flag, allowlist,
+    cache option, policy mode, or destination property, and no MCP tool argument can enable, weaken,
+    or bypass it. It is a **deny emergency brake, not an allowlist**: every source you do not list
+    stays reachable.
 
 ```bash
 SAP_BLOCKED_DATA_SOURCES=USR02,PA0002
 ```
 
-The empty default disables the feature and adds no SAP calls. A non-empty list applies globally to every
-`SAPQuery`, `SAPRead(type=TABLE_QUERY)`, and `SAPRead(type=TABLE_CONTENTS)` execution, including internal
-callers that share those client methods. ARC-1 denies a direct match before contacting SAP. Otherwise it
-parses one static `SELECT`/`WITH`, resolves each exact source through ADT search, follows SAP's active CDS
-dependency graph, expands DDIC `@AbapCatalog.replacementObject`, and compares every repository/entity/database
-alias. A match returns `DATA_SOURCE_BLOCKED` with the first source path; an analysis, lookup, graph, source,
-or supported-kind failure returns `DATA_SOURCE_UNRESOLVED`. Both state that the data request was not executed.
-Replacement metadata is read from active DDL with comment and string-literal awareness, so annotation-shaped
-text inside `//`, `/* ... */`, or labels is ignored; malformed or duplicate active annotations are denied.
-Dependency XML is capped before parsing and the parsed graph has independent depth and node limits.
+### Value grammar
 
-This experimental policy deliberately fails closed for dynamic or host-backed SQL, privileged/client/secondary-
-connection clauses, CDS association paths, multiple/malformed statements, classic/generated DDIC views, CDS
-table functions, and filtered legacy `TABLE_CONTENTS`; use structured `TABLE_QUERY` where possible. It makes
-fresh metadata calls for every request and the check/query pair is not transactionally atomic. It is a blocklist,
-so unlisted sources remain reachable; it is not row/column filtering, an inheritance rule for DCL, a production
-root allowlist, or a replacement for least-privilege SAP authorization and applicable SAP security notes.
-On the verified SAP_BASIS 750 target, the generic TABL source fallback does not expose replacement-object
-metadata. The policy can still deny a known transitive graph match before that lookup, but refuses other reads
-as unresolved when it cannot obtain the canonical table source. This is intentional fail-closed behavior.
+| Value | Meaning |
+|---|---|
+| unset | off |
+| `""` | off |
+| ASCII whitespace only | off |
+| `USR02,PA0002` | active with two entries |
+| `,` · `,,,` · `,USR02` · `USR02,` · `USR02,,PA0002` | **startup error** |
+| `SCARR*` · `TABL:SCARR` · `!SCARR` · `'SCARR'` · `US R02` | **startup error** |
+
+Blank means off so that the shipped Docker image and MTA descriptors can carry a visible empty
+default and operators keep a one-field rollback. But once the value is non-empty **every
+comma-separated field is mandatory** — a stray separator fails startup instead of silently shortening
+or disabling a security control. Entries are trimmed of ASCII whitespace, validated as raw ASCII
+*before* case folding, uppercased, and deduplicated preserving first-occurrence order. Only
+`A-Z a-z 0-9 _ / $` are accepted, with at least one letter or digit and a 128-character limit; nothing
+is ever silently stripped. Non-ASCII input is rejected rather than case-folded, so `uſr02` cannot
+become `USR02`. Configuration is read at startup only — changing it needs a restart or redeploy.
+
+Startup errors name the variable (or the CLI flag) and the failing token position without printing
+unrelated environment content.
+
+### How a request is decided
+
+Order matters and does not change:
+
+1. **Capability gate** — `checkOperation(Query|FreeSQL)`, i.e. `SAP_ALLOW_DATA_PREVIEW` /
+   `SAP_ALLOW_FREE_SQL`, plus the caller's `data`/`sql` scope.
+2. **Blocklist policy** — this feature. It can only ever *narrow* an already-enabled capability; it
+   can never enable or widen data access.
+3. **SAP request.**
+
+Because the capability gate runs first, turning both data flags off means no governed data request is
+reachable at all — external *or* internal — and startup says so.
+
+With an active list, one logical request is decided exactly once:
+
+- direct exact matches are denied with **zero SAP calls**;
+- otherwise free SQL is parsed locally, each direct source is resolved through exact ADT search, CDS
+  roots are expanded through SAP's active SQL dependency graph, and DDIC
+  `@AbapCatalog.replacementObject` chains are followed;
+- every repository/entity/database alias of every node is compared against the list;
+- IN-list chunking does **not** re-decide: the union of all chunks is authorized once and the
+  already-authorized statements are then executed.
+
+### Failure codes
+
+| Code | Meaning |
+|---|---|
+| `DATA_SOURCE_BLOCKED` | An exact configured rule matched, directly or transitively. |
+| `DATA_LINEAGE_UNRESOLVED` | Identity, dependency-graph or replacement lineage could not be proven. |
+| `DATA_SQL_UNSUPPORTED` | The statement is outside the strict accepted SQL grammar. |
+
+All three mean the SAP data request was **not executed**. Each carries `executed=false` and an opaque
+`decisionId` that also appears in the audit log.
+
+### What is deliberately unsupported
+
+While the list is active, these are refused rather than guessed at:
+
+- ABAP comments (`"` to end of line, `*` in column one) — the parser strips them, so what is checked
+  would not be what SAP receives;
+- host expressions and host variables (`@`, `@( … )`), `FOR ALL ENTRIES`;
+- dynamic sources `FROM (name)`, `WITH PRIVILEGED ACCESS`, `CLIENT SPECIFIED`/`USING CLIENT`,
+  `CONNECTION …`, provider syntax;
+- CDS association and column paths;
+- `SELECT SINGLE`, caller-supplied `INTO`/`APPENDING`, multiple statements, DML;
+- CDS table functions — live SAP does not expose their AMDP `USING` lineage in the graph;
+- classic/generated DDIC views, where complete lineage cannot be proven;
+- `TABLE_CONTENTS` with a `sqlFilter` — use the structured `TABLE_QUERY` `where`/`columns` instead.
+
+Joins, unions, nested subqueries, CTEs, parameterized CDS roots, hierarchy sources and aggregates
+**are** supported.
+
+### Impact on ARC-1's own features
+
+ARC-1 reads six metadata tables for its own features. These reads are governed like any other, so
+blocking one really does disable the feature that reads it:
+
+| Blocked source | Affected feature | Behaviour |
+|---|---|---|
+| `TADIR` | `SAPSearch(tadir_lookup, source="db"\|"both")` | Denied; retry with `source="adt"` (which cannot see orphan/ghost TADIR rows) |
+| `SEOMETAREL` | `SAPNavigate(action="hierarchy")` | Denied; use `SAPRead(type="CLAS", include="definitions")` |
+| `SEOMETAREL` | Interface-implementer where-used augmentation | Returns native results **with an explicit incompleteness warning** |
+| `TSTC` | `SAPRead(type="TRAN")` program name | Returns metadata **with a warning**, without the program name |
+| `SWOTLV` | `SAPRead(type="SOBJ")` | Denied; no alternative in ARC-1 |
+| `SUAUTHVALTRC` + `TOBJ` | `SAPDiagnose(authorization_trace)` | Denied — both are required; positional values without decoded field names would be misleading |
+
+Optional enrichment always warns rather than silently returning less.
+
+### Cost, and what this is not
+
+**Blocklist mode performs additional SAP metadata requests and is slower by design.** There is no
+cross-request cache in v1: every request revalidates live lineage, so a policy change or a CDS
+activation takes effect immediately and no stale decision can be reused. Directly blocked sources
+stay cheap and local. The check and the query are separate SAP requests, so the pair is not
+transactionally atomic (a TOCTOU window remains).
+
+Under principal propagation the metadata reads run as the calling SAP user, so a user who lacks read
+authorization on a DDL source can get `DATA_LINEAGE_UNRESOLVED` for a query SAP itself would have
+authorized. That is fail-closed and intended.
+
+Out of scope in v1: generic extension `ctx.http.get()` calls are **not** governed by this policy, so a
+plugin can read a blocked source. Object source, dumps and traces are likewise outside the boundary.
+Do not enable untrusted plugins if you need this to be a complete data boundary.
+
+This does not replace CDS DCL and does not assume DCL is transitive — SAP evaluates access control at
+the entity used as the SQL entry point, not inherited from wrapped entities. It also does not
+remediate **SAP Note 3772411**: a default-off feature fixes nothing, and `SAP_ALLOW_WRITES=false` does
+not neutralize a database-side mutation reached through a vulnerable SQL Console host expression.
+Patch or apply SAP's workaround independently.
+
+### Seeing the effective policy
+
+Exact names appear only on administrator surfaces: `arc1 config show`, the local operator UI, and the
+authenticated admin-scoped web UI. Ordinary startup logs and the unauthenticated `/health` endpoint
+show no names — startup logs carry enabled, count and a deterministic fingerprint. That fingerprint is
+a **configuration-drift and correlation signal only**: it is unsalted by design, the candidate name
+space is small and guessable, and it must not be treated as protecting the contents of the list.
 
 ---
 

@@ -109,7 +109,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore. List apps without `name`; browse or read with `name="<app>"` and optional case-sensitive `include="<path>"`. `name="<app>/<path>"` is also accepted. |
 | `API_STATE` | API release state (clean core compliance — contract states C0-C4, successor info) |
-| `TABLE_CONTENTS` | Legacy table preview. Useful for an unfiltered sample; filtering and exact row caps are backend-dependent (see parameters above). Prefer `TABLE_QUERY` for deterministic structured projection/filtering. With experimental `SAP_BLOCKED_DATA_SOURCES` active, only unfiltered requests are supported. |
+| `TABLE_CONTENTS` | Legacy table preview. Useful for an unfiltered sample; filtering and exact row caps are backend-dependent (see parameters above). Prefer `TABLE_QUERY` for deterministic structured projection/filtering. With experimental `SAP_BLOCKED_DATA_SOURCES` active, only unfiltered requests are supported — a `sqlFilter` returns `DATA_SQL_UNSUPPORTED`, so use `TABLE_QUERY`. |
 | `TABLE_QUERY` | Structured table/CDS query through data preview (`columns`, `where`, `maxRows`); requires the data-preview gate. A configured experimental source blocklist checks direct and transitive active CDS/replacement lineage before execution. |
 | `DEVC` | Package contents |
 | `SYSTEM` | System info (SID, release, kernel) |
@@ -796,10 +796,18 @@ SAPNavigate(action="hierarchy", name="ZCL_ORDER")
 
 When `SAP_BLOCKED_DATA_SOURCES` is non-empty, SAPQuery is restricted to one statically provable
 `SELECT`/`WITH`. ARC-1 extracts every join/union/subquery/CTE source and checks live CDS plus DDIC
-replacement lineage before sending the query. Direct/transitive matches return `DATA_SOURCE_BLOCKED`;
-dynamic, unsupported, ambiguous, or unresolved requests return `DATA_SOURCE_UNRESOLVED`. The empty default
-keeps current behavior and adds no metadata calls. This experimental denylist is not an allowlist or a
-replacement for SAP authorization/CDS DCL.
+replacement lineage before sending the query, authorizing the whole request once even when IN-list
+chunking splits it. Supported: joins, unions, nested subqueries, CTEs, parameterized CDS roots,
+hierarchy sources, aggregates. Refused: ABAP comments, host expressions, `FOR ALL ENTRIES`, dynamic
+sources, `WITH PRIVILEGED ACCESS`, client override, secondary connections, association/column paths,
+`SELECT SINGLE`, caller `INTO` targets, multiple statements and CDS table functions.
+
+Outcomes are three stable codes — `DATA_SOURCE_BLOCKED`, `DATA_LINEAGE_UNRESOLVED` and
+`DATA_SQL_UNSUPPORTED` — each meaning the SAP request was **not executed**, each carrying
+`executed=false` and a `decisionId` that also appears in the server audit log. The empty default keeps
+current behavior and adds no metadata calls; a non-empty list is slower by design. This experimental
+blocklist is not an allowlist and not a replacement for SAP authorization or CDS DCL. See
+[Authorization & Roles](authorization.md#experimental-data-source-blocklist).
 
 Execute ABAP SQL queries against SAP tables.
 
