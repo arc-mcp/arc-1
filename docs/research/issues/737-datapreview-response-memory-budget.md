@@ -83,7 +83,10 @@ The draft PR now implements the approved design as reviewable commits:
   safe audit events;
 - `d28f0bad` removes the fixed CF command, enables buildpack `OPTIMIZE_MEMORY`, and logs the
   non-secret runtime memory envelope; and
-- `407e6dd9` refreshes the already-red audited transitive dependencies to patched lockfile versions.
+- `407e6dd9` refreshes the already-red audited transitive dependencies to patched lockfile versions;
+  and
+- `4d4a5cc0` extracts the bounded transport, table-query, and runtime-memory helpers so every source
+  file remains within the existing CI size ratchets without increasing any budget.
 
 The MTA build succeeds with no module `command`. A disposable live app using Cloud Foundry Node.js
 buildpack 1.9.3 and Node 22.23.1 produced `--max_old_space_size=384` at 512 MiB and `768` at 1 GiB,
@@ -104,6 +107,7 @@ The final local regression pass is green:
 npm test: 184 files, 5,444 tests passed
 npm run lint: passed (two pre-existing Biome migration notices)
 npm run typecheck: passed
+npm run check:sizes: passed (all 427 tracked source/test files and every tool-schema budget)
 npm run build: passed
 npm audit --audit-level=high --omit=optional: 0 vulnerabilities
 npm audit --prefix btp/approuter --audit-level=high --omit=optional: 0 vulnerabilities
@@ -845,16 +849,17 @@ The implementation uses this surface:
   semaphore lease;
 - `src/adt/http-deadline.ts` — carry the optional response budget and provide
   `withoutResponseBudget()` for CSRF bootstrap;
-- `src/adt/http.ts` — bounded `Response.body` wrapper for explicitly budgeted direct/proxy
-  responses; use a live BTP Web stream only on that path, keep non-budgeted proxy requests
-  buffered, enforce identity encoding, handle null-body statuses, and close/destroy the
-  per-request proxy client exactly once on every terminal path;
+- `src/adt/bounded-response.ts` and `src/adt/http.ts` — bounded `Response.body` wrapper for
+  explicitly budgeted direct/proxy responses; use a live BTP Web stream only on that path, keep
+  non-budgeted proxy requests buffered, enforce identity encoding, handle null-body statuses, and
+  close/destroy the per-request proxy client exactly once on every terminal path;
 - `src/adt/errors.ts` — typed response-limit error with secret-free fields; add it to both HTTP
   pass-through catches so it is not accidentally reclassified as `AdtNetworkError`; export it from
   `src/public/index.ts` for direct client consumers;
-- `src/adt/config.ts` and `src/adt/client.ts` — shared admission-controller plumbing, lazy/fallback
-  data-operation context, required internal data-preview sink, all data-method coverage, sink row
-  clamp, and combined parser path;
+- `src/adt/config.ts`, `src/adt/client.ts`, and `src/adt/table-query.ts` — shared
+  admission-controller plumbing, lazy/fallback data-operation context, required internal
+  data-preview sink, all data-method coverage, sink row clamp, structured-query construction, and
+  combined parser path;
 - `src/adt/xml-parser.ts` — one-parse data-preview result extraction;
 - `src/handlers/query.ts` — chunked row clamp; request-level budget ownership belongs below the
   handlers so `SAPRead`, `SAPSearch`, `SAPNavigate`, where-used, and authorization trace cannot be
@@ -862,9 +867,9 @@ The implementation uses this surface:
 - `src/handlers/dispatch.ts` — request-context lifetime, lease release after result/audit work,
   nested hyperfocused scope inheritance, stable error formatting/audit classification, and
   avoidable string copy;
-- `src/server/types.ts`, `src/server/config.ts`, and `src/server/server.ts` — defaults, strict
-  CLI/env parsing, MCP signal propagation, process-wide semaphore shared by every server/client
-  factory, startup envelope log, and warning;
+- `src/server/types.ts`, `src/server/config.ts`, `src/server/runtime-memory.ts`, and
+  `src/server/server.ts` — defaults, strict CLI/env parsing, MCP signal propagation, process-wide
+  semaphore shared by every server/client factory, startup envelope log, and warning;
 - `src/handlers/tools.ts` — describe the row and byte ceilings (the schema retains sink clamping);
 - `mta.yaml`, `.env.example`, `mta-overrides.mtaext.example`,
   `docs_page/configuration-reference.md`,
