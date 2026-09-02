@@ -101,11 +101,13 @@ system reads succeeded, and incremental peak RSS was 25 MiB. No SAP state was ch
 The final local regression pass is green:
 
 ```text
-npm test: 184 files, 5,432 tests passed
+npm test: 184 files, 5,444 tests passed
 npm run lint: passed (two pre-existing Biome migration notices)
 npm run typecheck: passed
 npm run build: passed
 npm audit --audit-level=high --omit=optional: 0 vulnerabilities
+npm audit --prefix btp/approuter --audit-level=high --omit=optional: 0 vulnerabilities
+btp/approuter npm ci && npm test: 3 tests passed
 npm run btp:validate: passed for the base and documented extension combinations
 npm run btp:build: passed
 npm run docs:build: passed in strict mode (one pre-existing release-note anchor notice)
