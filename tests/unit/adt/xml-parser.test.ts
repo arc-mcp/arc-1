@@ -15,6 +15,7 @@ import {
   parseClassMetadata,
   parseDataElementMetadata,
   parseDataPreviewMeta,
+  parseDataPreviewResult,
   parseDomainMetadata,
   parseEnhancementImplementation,
   parseFeatureToggleStates,
@@ -306,6 +307,17 @@ describe('XML Parser', () => {
 
     it('returns empty object for empty input', () => {
       expect(parseDataPreviewMeta('')).toEqual({});
+    });
+
+    it('parses rows and metrics together from one data-preview document', () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>2</dataPreview:totalRows><dataPreview:queryExecutionTime>1.25</dataPreview:queryExecutionTime><dataPreview:columns><dataPreview:metadata dataPreview:name="MANDT"/><dataPreview:dataSet><dataPreview:data>001</dataPreview:data><dataPreview:data>002</dataPreview:data></dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>`;
+      expect(parseDataPreviewResult(xml)).toEqual({
+        totalRows: 2,
+        queryExecutionTimeMs: 1.25,
+        columns: ['MANDT'],
+        rows: [{ MANDT: '001' }, { MANDT: '002' }],
+      });
+      expect(parseDataPreviewResult('')).toEqual({ columns: [], rows: [] });
     });
   });
 

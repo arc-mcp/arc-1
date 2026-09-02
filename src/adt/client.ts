@@ -62,7 +62,7 @@ import {
   parseClassMetadata,
   parseClassStructure,
   parseDataElementMetadata,
-  parseDataPreviewMeta,
+  parseDataPreviewResult,
   parseDomainMetadata,
   parseEnhancementImplementation,
   parseFeatureToggleStates,
@@ -1466,12 +1466,13 @@ export class AdtClient {
     maxRows = 100,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
     const body = await this.postFreestyleQuery(sql, maxRows);
-    return { ...parseTableContents(body), ...parseDataPreviewMeta(body) };
+    return parseDataPreviewResult(body);
   }
 
   private async postFreestyleQuery(sql: string, maxRows: number): Promise<string> {
     checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
-    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
+    const rowLimit = clampPreviewRows(maxRows);
+    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${rowLimit}`, sql, 'text/plain');
     return resp.body;
   }
 

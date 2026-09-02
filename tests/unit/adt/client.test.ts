@@ -2034,6 +2034,15 @@ describe('AdtClient', () => {
       const nan = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/ddic'));
       expect(String(nan?.[0])).toContain('rowNumber=100');
     });
+
+    it('runQuery clamps rowNumber at the private freestyle sink', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.runQuery('SELECT * FROM T000', 999_999);
+      const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
+      expect(String(postCall?.[0])).toContain('rowNumber=10000');
+    });
   });
 
   describe('class metadata and structured read', () => {

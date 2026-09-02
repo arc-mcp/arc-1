@@ -2,7 +2,7 @@
  * SAPQuery handler — freestyle SQL execution with IN-list chunking + SQL literal parsing.
  */
 
-import type { AdtClient } from '../adt/client.js';
+import { type AdtClient, clampPreviewRows } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
 import type { DataPreviewMeta } from '../adt/xml-parser.js';
 import { classifySapQueryParserError, maskSqlStringLiterals } from './query-errors.js';
@@ -160,7 +160,7 @@ async function runChunkedSapQuery(
 ): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
   // Metrics are intentionally omitted for the chunked path: an early break on the row cap would make
   // totalRows a misleading partial sum, so we report metrics only for the single-statement path below.
-  const rowLimit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 100;
+  const rowLimit = clampPreviewRows(maxRows);
   const rows: Record<string, string>[] = [];
   let columns: string[] = [];
 
@@ -178,6 +178,8 @@ async function runChunkedSapQuery(
 export async function handleSAPQuery(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const sql = String(args.sql ?? '');
   const maxRows = Number(args.maxRows ?? 100);
+  const effectiveMaxRows = clampPreviewRows(maxRows);
+  const rowLimitClamped = Number.isFinite(maxRows) && maxRows > 10_000;
   const chunkPlan = planSimpleInListChunking(sql);
   let chunkingAttempted = false;
 
@@ -192,6 +194,11 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
     if (data.totalRows !== undefined) out.totalRows = data.totalRows;
     if (data.queryExecutionTimeMs !== undefined) out.queryExecutionTimeMs = data.queryExecutionTimeMs;
     if (data.executedQueryString) out.executedQueryString = data.executedQueryString;
+    if (rowLimitClamped) {
+      out.rowLimitClamped = true;
+      out.requestedRows = maxRows;
+      out.effectiveMaxRows = effectiveMaxRows;
+    }
     out.rowsReturned = data.rows.length;
     out.columns = data.columns;
     out.rows = data.rows;
