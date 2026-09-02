@@ -1,7 +1,9 @@
 /** Experimental exact-name data-source blocklist and live CDS-lineage evaluation. */
 
+import { randomBytes } from 'node:crypto';
 import { XMLParser } from 'fast-xml-parser';
-import { canonicalDataSourceName, DataSourceNameError } from './data-source-name.js';
+import { logger } from '../server/logger.js';
+import { canonicalDataSourceName, DataSourceNameError, dataSourcePolicyFingerprint } from './data-source-name.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import { analyzeSqlDataSources } from './sql-source-analyzer.js';
 
@@ -42,19 +44,70 @@ class DataSourceLineageError extends Error {
  */
 export type DataSourcePolicyErrorCode = 'DATA_SOURCE_BLOCKED' | 'DATA_LINEAGE_UNRESOLVED' | 'DATA_SQL_UNSUPPORTED';
 
+/** Opaque, bounded, non-secret correlation id shared by the client error and the audit record. */
+export function newDecisionId(): string {
+  return `dsp_${randomBytes(8).toString('hex')}`;
+}
+
 export class DataSourcePolicyError extends AdtSafetyError {
+  readonly decisionId: string;
+  readonly matchedSource?: string;
+  readonly reason: string;
+  /** Always false: every policy denial happens before the SAP data request is submitted. */
+  readonly executed = false;
+
   constructor(
     readonly code: DataSourcePolicyErrorCode,
     readonly directSource: string,
     readonly sourcePath: string[],
     reason: string,
+    options: { decisionId?: string; matchedSource?: string } = {},
   ) {
     const path = sourcePath.length > 0 ? sourcePath.join(' -> ') : directSource;
+    const decisionId = options.decisionId ?? newDecisionId();
     super(
-      `${code}: request denied before data execution. Source path: ${path}. Reason: ${reason}. ` +
+      `${code}: request denied before data execution (executed=false, decisionId=${decisionId}). ` +
+        `Source path: ${path}. Reason: ${reason}. ` +
         'Operator action: use a permitted static source, or change SAP_BLOCKED_DATA_SOURCES only after security review.',
     );
     this.name = 'DataSourcePolicyError';
+    this.decisionId = decisionId;
+    this.reason = reason;
+    if (options.matchedSource) this.matchedSource = options.matchedSource;
+  }
+
+  /**
+   * Client-facing text.
+   *
+   * `ARC1_MINIMAL_ERRORS` is a CLIENT DISCLOSURE control only: it removes the direct root, the
+   * matched rule, the dependency path and the configuration variable name, keeping just enough for
+   * the model to act (stable code, executed=false, decision id, and a safe alternative). It does not
+   * change the decision and does not reduce what the audit event records.
+   *
+   * The three codes stay distinguishable even in minimal mode, which does permit coarse membership
+   * probing. That is a deliberate, documented trade: a model that cannot tell "blocked by policy"
+   * from "SQL not supported" cannot correct itself.
+   */
+  clientMessage(minimalErrors: boolean): string {
+    if (!minimalErrors) return this.message;
+    return (
+      `${this.code}: the request was denied by the administrator's data-source policy before any SAP ` +
+      `data request was executed (executed=false, decisionId=${this.decisionId}). ` +
+      `${this.safeAlternative()} Details are recorded in the server audit log; ask an operator to ` +
+      'correlate the decision id.'
+    );
+  }
+
+  /** Guidance that does not reveal policy-sensitive names. */
+  private safeAlternative(): string {
+    switch (this.code) {
+      case 'DATA_SQL_UNSUPPORTED':
+        return 'Rewrite the request as one complete static SELECT/WITH without comments, host expressions or dynamic sources, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
+      case 'DATA_LINEAGE_UNRESOLVED':
+        return 'Query a source whose lineage ARC-1 can resolve, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
+      default:
+        return 'Use a different data source.';
+    }
   }
 }
 
@@ -118,40 +171,99 @@ export interface DataSourcePolicyBackend {
 
 /** Request-scoped adapter from ADT metadata reads to the pure lineage evaluator. */
 export class DataSourceBlocklistGuard {
+  /** Per-decision instrumentation. The guard is constructed per logical request and never reused. */
+  private metadataRequests = 0;
+  private graphNodes = 0;
+
   constructor(
     private readonly blockedSources: string[],
     private readonly backend: DataSourcePolicyBackend,
   ) {}
 
+  /**
+   * Run one policy decision and record exactly one audit event for it, allow or deny.
+   *
+   * The audit record is the protected copy: it always carries the complete normalized decision, so
+   * an operator can reconstruct a denial even when the client was told almost nothing.
+   */
+  private async decide(directRootsHint: string[], run: () => Promise<string[]>): Promise<void> {
+    const decisionId = newDecisionId();
+    const started = Date.now();
+    const fingerprint = dataSourcePolicyFingerprint(this.blockedSources);
+    let directRoots = directRootsHint;
+    try {
+      directRoots = await run();
+      logger.emitAudit({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        event: 'data_source_policy_decision',
+        decision: 'allow',
+        decisionId,
+        executed: true,
+        directRoots,
+        policyFingerprint: fingerprint,
+        metadataRequests: this.metadataRequests,
+        graphNodes: this.graphNodes,
+        durationMs: Date.now() - started,
+      });
+    } catch (error) {
+      const policyError =
+        error instanceof DataSourcePolicyError
+          ? error
+          : new DataSourcePolicyError(
+              'DATA_LINEAGE_UNRESOLVED',
+              directRoots[0] ?? 'UNKNOWN',
+              [],
+              safeLineageFailureReason(error),
+              { decisionId },
+            );
+      logger.emitAudit({
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        event: 'data_source_policy_decision',
+        decision: 'deny',
+        decisionId: policyError.decisionId,
+        code: policyError.code,
+        executed: false,
+        directRoots,
+        ...(policyError.matchedSource ? { matchedSource: policyError.matchedSource } : {}),
+        ...(policyError.sourcePath.length > 0 ? { sourcePath: policyError.sourcePath } : {}),
+        reason: policyError.reason,
+        policyFingerprint: fingerprint,
+        metadataRequests: this.metadataRequests,
+        graphNodes: this.graphNodes,
+        durationMs: Date.now() - started,
+      });
+      throw policyError;
+    }
+  }
+
   async enforceTableContents(tableName: string, sqlFilter?: string): Promise<void> {
     if (this.blockedSources.length === 0) return;
     if (!sqlFilter?.trim()) return this.enforceSources([tableName]);
 
-    let source: string;
-    try {
-      source = canonicalDataSourceName(tableName);
-    } catch (error) {
+    // A filtered DDIC preview is refused whatever the table is, but a directly blocked table still
+    // reports as blocked so the operator sees the real reason.
+    await this.decide([tableName], async () => {
+      const source = canonicalDataSourceName(tableName, 'TABLE_CONTENTS table name');
+      if (this.blockedSources.includes(source)) {
+        throw new DataSourcePolicyError(
+          'DATA_SOURCE_BLOCKED',
+          source,
+          [source],
+          `exact source ${source} matches the configured blocklist`,
+          {
+            matchedSource: source,
+          },
+        );
+      }
       throw new DataSourcePolicyError(
-        'DATA_LINEAGE_UNRESOLVED',
-        'UNKNOWN',
-        [],
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-    if (this.blockedSources.some((name) => name.trim().toUpperCase() === source)) {
-      throw new DataSourcePolicyError(
-        'DATA_SOURCE_BLOCKED',
+        'DATA_SQL_UNSUPPORTED',
         source,
         [source],
-        `exact source ${source} matches SAP_BLOCKED_DATA_SOURCES`,
+        'the TABLE_CONTENTS sqlFilter condition language is outside the strict analyzed subset; use the structured TABLE_QUERY where/columns parameters instead',
       );
-    }
-    throw new DataSourcePolicyError(
-      'DATA_SQL_UNSUPPORTED',
-      source,
-      [source],
-      'the TABLE_CONTENTS sqlFilter condition language is outside the strict analyzed subset; use the structured TABLE_QUERY where/columns parameters instead',
-    );
+    });
   }
 
   /**
@@ -163,17 +275,20 @@ export class DataSourceBlocklistGuard {
    */
   async enforceSqlBatch(statements: string[]): Promise<void> {
     if (this.blockedSources.length === 0) return;
-    const union: string[] = [];
-    const seen = new Set<string>();
-    for (const statement of statements) {
-      for (const source of this.analyzeOrThrow(statement)) {
-        if (!seen.has(source)) {
-          seen.add(source);
-          union.push(source);
+    await this.decide([], async () => {
+      const union: string[] = [];
+      const seen = new Set<string>();
+      for (const statement of statements) {
+        for (const source of this.analyzeOrThrow(statement)) {
+          if (!seen.has(source)) {
+            seen.add(source);
+            union.push(source);
+          }
         }
       }
-    }
-    await this.enforceSources(union);
+      await this.evaluate(union);
+      return union;
+    });
   }
 
   private analyzeOrThrow(sql: string): string[] {
@@ -190,9 +305,21 @@ export class DataSourceBlocklistGuard {
   }
 
   async enforceSources(directSources: string[]): Promise<void> {
+    if (this.blockedSources.length === 0) return;
+    await this.decide(directSources, async () => {
+      await this.evaluate(directSources);
+      return directSources;
+    });
+  }
+
+  /** The evaluation itself, without audit framing, so exactly one event is emitted per request. */
+  private async evaluate(directSources: string[]): Promise<void> {
     await enforceBlockedDataSources(directSources, this.blockedSources, {
       resolveDirectSource: (name) => this.resolveDirectSource(name),
-      readTableSource: (name) => this.backend.readTableSource(name),
+      readTableSource: (name) => {
+        this.metadataRequests += 1;
+        return this.backend.readTableSource(name);
+      },
       readCdsDependencyGraph: (ddlSource) => this.readCdsDependencyGraph(ddlSource),
     });
   }
@@ -208,6 +335,7 @@ export class DataSourceBlocklistGuard {
     };
     // NW 7.50 decorates exact names (for example "SCARR (Database Table)"
     // and "X (Entity)"). Fuzzy search hits cannot prove source identity.
+    this.metadataRequests += 1;
     const matches = (await this.backend.searchObject(requested, 100)).filter(
       (match) => canonicalSearchName(match.objectName) === requested,
     );
@@ -251,9 +379,13 @@ export class DataSourceBlocklistGuard {
       // topology. Live-verified: the v3 media type returns 406 on SAP_BASIS 750, which is what
       // drives the element-info fallback below.
       if (/SQLDependencyModel/i.test(accept)) params.set('addMetrics', 'false');
-      return parseCdsDependencyGraph(
+      this.metadataRequests += 1;
+      const graph = parseCdsDependencyGraph(
         await this.backend.readDependencyGraph(`${collection}?${params.toString()}`, accept),
       );
+      const count = (node: CdsDependencyNode): number => 1 + node.children.reduce((n, c) => n + count(c), 0);
+      this.graphNodes += count(graph);
+      return graph;
     };
 
     const discoveredAccept = this.backend.dependencyGraphAccept();
@@ -587,6 +719,7 @@ export async function enforceBlockedDataSources(
         directSource,
         path,
         `exact source ${matched} matches SAP_BLOCKED_DATA_SOURCES`,
+        { matchedSource: matched },
       );
     }
   };

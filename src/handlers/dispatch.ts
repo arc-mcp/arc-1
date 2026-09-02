@@ -273,7 +273,11 @@ function buildBaseErrorMessage(
   }
 
   if (err instanceof AdtSafetyError) {
-    if (err instanceof DataSourcePolicyError) return message;
+    // Minimal mode is a CLIENT disclosure control only: it strips the direct root, the matched rule,
+    // the dependency path and the configuration variable name, while keeping the stable code,
+    // executed=false, the decision id and a safe alternative. The audit event still records the
+    // complete normalized decision either way.
+    if (err instanceof DataSourcePolicyError) return err.clientMessage(config.minimalErrors);
     const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS') {
       return (

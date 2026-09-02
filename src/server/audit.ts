@@ -127,6 +127,39 @@ export interface SafetyBlockedEvent extends AuditEventBase {
   reason: string;
 }
 
+/**
+ * One data-source policy decision per LOGICAL request (not per generated IN-list chunk).
+ *
+ * Emitted for allow and deny alike, so an operator can prove what the policy checked, not only what
+ * it refused. This is the protected record: it always carries the complete normalized decision even
+ * when ARC1_MINIMAL_ERRORS redacts the client-facing message, because minimal mode is a client
+ * disclosure control and must never reduce operator observability.
+ *
+ * It deliberately carries no SQL text, literals, row values, credentials or backend bodies.
+ */
+export interface DataSourcePolicyDecisionEvent extends AuditEventBase {
+  event: 'data_source_policy_decision';
+  decision: 'allow' | 'deny';
+  decisionId: string;
+  /** Absent on allow. */
+  code?: 'DATA_SOURCE_BLOCKED' | 'DATA_LINEAGE_UNRESOLVED' | 'DATA_SQL_UNSUPPORTED';
+  /** True only if the SAP data request was actually submitted; always false for a policy denial. */
+  executed: boolean;
+  /** Canonical direct roots of the whole logical request. */
+  directRoots: string[];
+  /** The configured entry that matched, when the decision was a block. */
+  matchedSource?: string;
+  /** Deterministic first path from a requested root to the blocked source. */
+  sourcePath?: string[];
+  reason?: string;
+  /** Effective policy fingerprint, for correlating a decision with a deployment configuration. */
+  policyFingerprint: string;
+  /** Evidence for a future caching decision. */
+  metadataRequests: number;
+  graphNodes: number;
+  durationMs: number;
+}
+
 /** Server started */
 export interface ServerStartEvent extends AuditEventBase {
   event: 'server_start';
@@ -242,6 +275,7 @@ export interface McpRateLimitedEvent extends AuditEventBase {
 
 /** Discriminated union of all audit events */
 export type AuditEvent =
+  | DataSourcePolicyDecisionEvent
   | ToolCallStartEvent
   | ToolCallEndEvent
   | HttpRequestEvent
