@@ -108,6 +108,7 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | ---------- | ------- | ------- | ----------- |
 | Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
 | Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Exact table/CDS blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Defense-in-depth denial with live CDS/replacement lineage; unresolved requests fail closed. Not an allowlist or SAP authorization replacement. |
 
 **Recommendation for productive systems:** keep both flags at their defaults unless there is an approved use case. ARC-1 still covers the core developer-tooling surface — read source/metadata, search, navigate, lint, write/activate ABAP objects, manage transports, drive Git workflows. Turning either flag on can be appropriate, but should be a deliberate operator decision against the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules.
 
@@ -118,6 +119,7 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | `SAP_ALLOW_WRITES`                 | `false` unless writes are needed | Blocks every mutation — object writes, activation, transport writes, git writes. |
 | `SAP_ALLOW_FREE_SQL`               | `false` on sensitive systems | Blocks arbitrary SQL queries against the database via `SAPQuery`.                               |
 | `SAP_ALLOW_DATA_PREVIEW`           | `false` unless table preview is required | Blocks named table content preview.                                              |
+| `SAP_BLOCKED_DATA_SOURCES`         | Exact sensitive sources when data/SQL is approved; otherwise empty | Experimental slower emergency brake. It fails closed on unsupported lineage but leaves every unlisted source eligible. |
 | `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Prefix wildcards (`Z*`), exact matches, and DEVCLASS subtree rules (`ZFOO/**` — `ZFOO` plus every transitive sub-package) are all supported; subtree resolution is fail-closed on SAP errors. Reads are never package-gated. |
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
 | `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for gated abapGit mutations and SAP-side Git egress. It does not enable gCTS mutations, which remain quarantined before HTTP; accepted abapGit mutations without an authoritative postcondition return incomplete. |

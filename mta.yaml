@@ -192,6 +192,7 @@ modules:
       SAP_ALLOW_WRITES: "false"
       SAP_ALLOW_DATA_PREVIEW: "false"
       SAP_ALLOW_FREE_SQL: "false"
+      SAP_BLOCKED_DATA_SOURCES: ""
       SAP_ALLOW_TRANSPORT_WRITES: "false"
       SAP_ALLOW_GIT_WRITES: "false"
       SAP_ALLOWED_PACKAGES: "$TMP"

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<abapsource:elementInfo
+  xmlns:abapsource="http://www.sap.com/adt/abapsource"
+  xmlns:adtcore="http://www.sap.com/adt/core"
+  adtcore:type="DDLS/DF"
+  adtcore:name="DEMO_CDS_SUMDIST">
+  <abapsource:properties>
+    <abapsource:entry abapsource:key="TYPE">CDS_VIEW</abapsource:entry>
+    <abapsource:entry abapsource:key="ENTITY_NAME">demo_cds_sumdist</abapsource:entry>
+    <abapsource:entry abapsource:key="NODE_NAME">DEMO_CDS_SUDI</abapsource:entry>
+    <abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+    <abapsource:entry abapsource:key="AC_STATE">NONE</abapsource:entry>
+  </abapsource:properties>
+  <abapsource:elementInfo adtcore:type="TABL/DT" adtcore:name="SCARR">
+    <abapsource:properties>
+      <abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
+      <abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry>
+      <abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+    </abapsource:properties>
+  </abapsource:elementInfo>
+  <abapsource:elementInfo adtcore:type="TABL/DT" adtcore:name="SPFLI">
+    <abapsource:properties>
+      <abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
+      <abapsource:entry abapsource:key="RELATION">INNER_JOIN</abapsource:entry>
+      <abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+    </abapsource:properties>
+  </abapsource:elementInfo>
+</abapsource:elementInfo>

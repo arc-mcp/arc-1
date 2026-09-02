@@ -21,6 +21,8 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     allowTransportWrites: config.allowTransportWrites,
     allowGitWrites: config.allowGitWrites,
     gzipDataPreviewBody: config.gzipDataPreviewBody,
+    blockedDataSources: config.blockedDataSources,
+    blockedDataSourcesCount: config.blockedDataSources.length,
     allowedPackages: config.allowedPackages,
     allowedTransports: config.allowedTransports,
     denyActionsCount: config.denyActions.length,
@@ -36,7 +38,8 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     `effective safety: writes=${yn(config.allowWrites)} data=${yn(config.allowDataPreview)} ` +
     `sql=${yn(config.allowFreeSQL)} packages=[${config.allowedPackages.join(',')}] ` +
     `transports=${yn(config.allowTransportWrites)} git=${yn(config.allowGitWrites)} ` +
-    `gzipDataPreview=${yn(config.gzipDataPreviewBody)} denyActions=${config.denyActions.length}`;
+    `gzipDataPreview=${yn(config.gzipDataPreviewBody)} blockedDataSources=${config.blockedDataSources.length} ` +
+    `denyActions=${config.denyActions.length}`;
   logger.info(line);
 
   // Per-field source attribution — debug-level detail for "where did this value come from?"
@@ -56,6 +59,7 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
     'allowTransportWrites',
     'allowGitWrites',
     'gzipDataPreviewBody',
+    'blockedDataSources',
     'allowedPackages',
     'allowedTransports',
     'denyActions',
@@ -75,7 +79,8 @@ export function logEffectivePolicy(config: ServerConfig, sources: Record<string,
  *   2. allowGitWrites=true + allowWrites=false — same for git.
  *   3. allowedPackages is non-default but allowWrites=false — restriction is unreachable.
  *   4. gzipDataPreviewBody=true while both data-preview gates are false — encoding is unreachable.
- *   5. denyActions entry already gated by a server flag (informational only).
+ *   5. blockedDataSources is non-empty while both data-preview gates are false — policy is unreachable.
+ *   6. denyActions entry already gated by a server flag (informational only).
  */
 export function detectContradictions(config: ServerConfig): string[] {
   const warnings: string[] = [];
@@ -91,6 +96,12 @@ export function detectContradictions(config: ServerConfig): string[] {
   if (config.gzipDataPreviewBody && !config.allowDataPreview && !config.allowFreeSQL) {
     warnings.push(
       'gzipDataPreviewBody=true has no effect when allowDataPreview=false and allowFreeSQL=false; no data-preview request body can reach the transport.',
+    );
+  }
+
+  if (config.blockedDataSources.length > 0 && !config.allowDataPreview && !config.allowFreeSQL) {
+    warnings.push(
+      'blockedDataSources is configured but allowDataPreview=false and allowFreeSQL=false; no governed data request is reachable.',
     );
   }
 

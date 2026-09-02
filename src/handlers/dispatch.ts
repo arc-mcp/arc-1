@@ -8,6 +8,7 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { AdtClient } from '../adt/client.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError, classifySapDomainError } from '../adt/errors.js';
 /**
  * Scope required for each tool.
@@ -272,6 +273,7 @@ function buildBaseErrorMessage(
   }
 
   if (err instanceof AdtSafetyError) {
+    if (err instanceof DataSourcePolicyError) return message;
     const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS') {
       return (
@@ -512,6 +514,7 @@ function classifyError(err: unknown): string {
     return classification ? `AdtApiError:${classification.category}` : 'AdtApiError';
   }
   if (err instanceof AdtNetworkError) return 'AdtNetworkError';
+  if (err instanceof DataSourcePolicyError) return `DataSourcePolicyError:${err.code}`;
   if (err instanceof AdtSafetyError) return 'AdtSafetyError';
   if (err instanceof Error) return err.constructor.name;
   return 'Unknown';

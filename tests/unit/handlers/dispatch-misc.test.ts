@@ -451,6 +451,70 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
   });
 
   describe('error guidance', () => {
+    it.each([
+      ['SAPRead', { type: 'TABLE_CONTENTS', name: 'USR02' }],
+      ['SAPQuery', { sql: 'SELECT * FROM USR02' }],
+    ])('preserves the experimental policy reason for %s and classifies it in audit', async (tool, args) => {
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
+        const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+        const result = await handleToolCall(
+          client,
+          { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true, blockedDataSources: ['USR02'] },
+          tool,
+          args,
+        );
+        const text = result.content[0]?.text ?? '';
+        expect(result.isError).toBe(true);
+        expect(text).toContain('DATA_SOURCE_BLOCKED');
+        expect(text).toContain('request denied before data execution');
+        expect(text).toContain('USR02');
+        expect(text).not.toContain('Set SAP_ALLOW_DATA_PREVIEW');
+
+        const endEvent = auditSpy.mock.calls
+          .map(([event]) => event)
+          .find(
+            (event) =>
+              typeof event === 'object' &&
+              event !== null &&
+              (event as { event?: string; status?: string }).event === 'tool_call_end' &&
+              (event as { event?: string; status?: string }).status === 'error',
+          ) as { errorClass?: string } | undefined;
+        expect(endEvent?.errorClass).toBe('DataSourcePolicyError:DATA_SOURCE_BLOCKED');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
+    it('keeps lineage failures actionable without leaking SAP diagnostics in minimal-error mode', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(
+        new AdtApiError('locked by SECRETUSER in DEVK900001', 423, '/sap/bc/adt/repository/informationsystem/search'),
+      );
+      const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
+      const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+
+      const result = await handleToolCall(
+        client,
+        {
+          ...DEFAULT_CONFIG,
+          allowDataPreview: true,
+          allowFreeSQL: true,
+          blockedDataSources: ['USR02'],
+          minimalErrors: true,
+        },
+        'SAPQuery',
+        { sql: 'SELECT * FROM SCARR' },
+      );
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toContain('DATA_SOURCE_UNRESOLVED');
+      expect(text).toContain('HTTP 423 during lineage resolution');
+      expect(text).not.toMatch(/SECRETUSER|DEVK900001|informationsystem/i);
+    });
+
     it('404 error includes SAPSearch hint', async () => {
       mockFetch.mockReset();
       // Make the mock reject with a 404 AdtApiError

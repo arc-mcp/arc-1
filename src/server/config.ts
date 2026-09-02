@@ -96,6 +96,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     description: 'Enable transport mutations (true/false)',
   },
   { name: 'allow-git-writes', valueName: 'boolean', description: 'Enable Git mutations (true/false)' },
+  {
+    name: 'blocked-data-sources',
+    valueName: 'names',
+    description: 'Experimental exact SQL/CDS source blocklist (comma-separated)',
+  },
   { name: 'allowed-packages', valueName: 'patterns', description: 'Comma-separated write package allowlist' },
   { name: 'allowed-transports', valueName: 'ids', description: 'Comma-separated transport allowlist' },
   { name: 'deny-actions', valueName: 'patterns', description: 'Action deny patterns or file path' },
@@ -603,6 +608,28 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'allowTransportWrites',
   );
   config.allowGitWrites = resolveBool('allow-git-writes', 'SAP_ALLOW_GIT_WRITES', false, 'allowGitWrites');
+
+  const blockedDataSourcesRaw = getFlag('blocked-data-sources') ?? process.env.SAP_BLOCKED_DATA_SOURCES;
+  if (blockedDataSourcesRaw !== undefined) {
+    const blockedDataSources = blockedDataSourcesRaw
+      .split(',')
+      .map((name) => name.trim().toUpperCase())
+      .filter(Boolean);
+    for (const name of blockedDataSources) {
+      if (name.length > 128 || !/^(?=.*[A-Z0-9])[A-Z0-9_/$]+$/.test(name)) {
+        throw new Error(
+          `Invalid SAP_BLOCKED_DATA_SOURCES entry '${name}': expected an exact technical name using only A-Z, 0-9, _, /, or $.`,
+        );
+      }
+    }
+    config.blockedDataSources = [...new Set(blockedDataSources)];
+    sources.blockedDataSources =
+      getFlag('blocked-data-sources') !== undefined
+        ? { flag: '--blocked-data-sources' }
+        : { env: 'SAP_BLOCKED_DATA_SOURCES' };
+  } else {
+    sources.blockedDataSources = 'default';
+  }
 
   const pkgs = getFlag('allowed-packages') ?? process.env.SAP_ALLOWED_PACKAGES;
   if (pkgs !== undefined) {

@@ -33,6 +33,7 @@ describe('Safety System', () => {
       expect(cfg.allowTransportWrites).toBe(false);
       expect(cfg.allowGitWrites).toBe(false);
       expect(cfg.allowedPackages).toEqual(['$TMP']);
+      expect(cfg.blockedDataSources).toEqual([]);
       expect(cfg.allowedTransports).toEqual([]);
       expect(cfg.denyActions).toEqual([]);
     });
@@ -516,15 +517,23 @@ describe('Safety System', () => {
       expect(server.allowDataPreview).toBe(true);
     });
 
-    it('preserves allowedPackages/allowedTransports/denyActions as deep copies', () => {
-      const server = config({ allowedPackages: ['Z*'], allowedTransports: ['DEV*'], denyActions: ['SAPWrite.delete'] });
+    it('preserves list policies as deep copies', () => {
+      const server = config({
+        allowedPackages: ['Z*'],
+        allowedTransports: ['DEV*'],
+        blockedDataSources: ['USR02'],
+        denyActions: ['SAPWrite.delete'],
+      });
       const result = deriveUserSafety(server, ['admin']);
       expect(result.allowedPackages).toEqual(['Z*']);
       expect(result.allowedTransports).toEqual(['DEV*']);
       expect(result.denyActions).toEqual(['SAPWrite.delete']);
+      expect(result.blockedDataSources).toEqual(['USR02']);
       // Mutate result; server untouched
       result.allowedPackages.push('OTHER');
+      result.blockedDataSources.push('SCARR');
       expect(server.allowedPackages).toEqual(['Z*']);
+      expect(server.blockedDataSources).toEqual(['USR02']);
     });
   });
 
@@ -593,6 +602,13 @@ describe('Safety System', () => {
       const result = deriveUserSafetyFromProfile(server, profile);
       expect(result.denyActions.sort()).toEqual(['SAPManage.flp_*', 'SAPWrite.delete']);
     });
+
+    it('blockedDataSources: union means a profile can only add denials', () => {
+      const server = config({ blockedDataSources: ['USR02'] });
+      const profile = { blockedDataSources: ['SCARR', 'USR02'] };
+      const result = deriveUserSafetyFromProfile(server, profile);
+      expect(result.blockedDataSources).toEqual(['USR02', 'SCARR']);
+    });
   });
 
   describe('describeSafety', () => {
@@ -612,6 +628,10 @@ describe('Safety System', () => {
     it('includes denyActions count when non-empty', () => {
       const desc = describeSafety(config({ denyActions: ['SAPWrite.delete', 'SAPManage.flp_*'] }));
       expect(desc).toContain('DenyActions=2');
+    });
+
+    it('includes blocked data-source count when active', () => {
+      expect(describeSafety(config({ blockedDataSources: ['USR02'] }))).toContain('BlockedDataSources=1');
     });
   });
 });

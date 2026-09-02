@@ -20,6 +20,7 @@ import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-p
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
+import { DataSourceBlocklistGuard } from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
@@ -28,6 +29,7 @@ import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './pa
 import { canonicalRevisionSourcePath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
+import { buildTableQuerySql, clampPreviewRows } from './table-query.js';
 import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
 import type {
   AdtObjectLookupResult,
@@ -81,6 +83,7 @@ import {
   parseTransactionMetadata,
 } from './xml-parser.js';
 
+export { buildTableQuerySql, clampPreviewRows } from './table-query.js';
 export { clampSearchResults, toTextSearchObjectType };
 
 export interface SourceReadResult {
@@ -172,58 +175,6 @@ function tadirObjectUrl(tadirType: string, name: string): string {
   }
 }
 
-// ─── TABLE_QUERY SQL builder ───────────────────────────────────────────────
-
-/** Allowed SQL comparison operators for TABLE_QUERY where conditions. */
-const ALLOWED_OPS = new Set([
-  '=',
-  '!=',
-  '<>',
-  '<',
-  '<=',
-  '>',
-  '>=',
-  'LIKE',
-  'NOT LIKE',
-  'IN',
-  'NOT IN',
-  'IS NULL',
-  'IS NOT NULL',
-]);
-
-// BETWEEN is intentionally excluded: the value would require parsing "low AND high"
-// where AND is a reserved word, making safe escaping complex and error-prone.
-// Use two separate conditions (>= low, <= high) instead.
-
-/**
- * Build a safe IN/NOT IN list from a comma-separated string of raw values.
- * Each value is trimmed, single-quote-escaped, and wrapped in quotes.
- * Surrounding parentheses are accepted for caller convenience but stripped.
- * Subquery injection is impossible because every element becomes a string literal.
- */
-function buildInList(raw: string): string {
-  const trimmed = raw.trim();
-  const inner = trimmed.startsWith('(') && trimmed.endsWith(')') ? trimmed.slice(1, -1) : trimmed;
-  const parts = inner.split(',').map((p) => {
-    const escaped = p.trim().replace(/'/g, "''");
-    return `'${escaped}'`;
-  });
-  return `(${parts.join(', ')})`;
-}
-
-/** Upper bound on rows returned by a single TABLE_QUERY — a memory-safety rail (the whole
- *  result set is buffered in `parseTableContents`), not a SAP-side limit. Page client-side
- *  for more. Generous on purpose; adjust if a real use case needs it. */
-const MAX_TABLE_QUERY_ROWS = 10_000;
-
-/** Coerce a caller-supplied row limit into a safe positive integer in [1, MAX_TABLE_QUERY_ROWS].
- *  NaN / non-finite / non-positive / undefined fall back to the default (prevents `rowNumber=NaN`
- *  and unbounded result buffering). */
-export function clampPreviewRows(requested: number | undefined, fallback = 100): number {
-  if (requested === undefined || !Number.isFinite(requested) || requested < 1) return fallback;
-  return Math.min(Math.floor(requested), MAX_TABLE_QUERY_ROWS);
-}
-
 /** Media type for a class's text symbols on the top-level ADT textelements service. Used as BOTH
  *  Content-Type and Accept on the write PUT (SAP returns 400 "Accept header missing" otherwise).
  *  Symbols only — a class has no selection screen, so its `source/selections` segment is always
@@ -240,61 +191,6 @@ const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
 function clampUrlLimit(requested: number | undefined, fallback: number): number {
   if (requested === undefined || !Number.isFinite(requested)) return fallback;
   return Math.max(1, Math.min(1000, Math.floor(requested)));
-}
-
-/** Sanitize a SQL identifier (table / column / field): uppercase, then strip everything but
- *  word characters and the namespace slash. Throws when nothing survives — a structurally
- *  invalid identifier must fail closed rather than emit malformed SQL (e.g. `SELECT , X FROM`).
- *  Stripping spaces is also what blocks keyword injection (UNION/JOIN/OR collapse to one token). */
-function sanitizeIdentifier(raw: string, kind: 'table' | 'column' | 'field'): string {
-  const safe = raw.toUpperCase().replace(/[^\w/]/g, '');
-  if (!safe) throw new Error(`TABLE_QUERY: ${kind} name "${raw}" is invalid (empty after sanitization)`);
-  return safe;
-}
-
-/**
- * Build a safe SELECT statement from structured parameters.
- * All identifiers are uppercased, stripped to word-chars + namespace slash, and rejected if empty.
- * String values are single-quote escaped (doubled single quotes).
- * IN/NOT IN values are strictly parsed as quoted literal lists (no subqueries).
- * Raises if the table, any column, or any where-field is empty after sanitization.
- * ORDER BY is intentionally omitted: the ADT freestyle endpoint rejects it on NW 7.50/7.51.
- */
-export function buildTableQuerySql(
-  tableName: string,
-  columns?: string[],
-  where?: Array<{ field: string; op: string; value?: string }>,
-): string {
-  const safeTable = sanitizeIdentifier(tableName, 'table');
-
-  const colList = columns && columns.length > 0 ? columns.map((c) => sanitizeIdentifier(c, 'column')).join(', ') : '*';
-
-  let sql = `SELECT ${colList} FROM ${safeTable}`;
-
-  if (where && where.length > 0) {
-    const clauses = where.map(({ field, op, value }) => {
-      const safeField = sanitizeIdentifier(field, 'field');
-      const safeOp = op.trim().toUpperCase();
-      if (!ALLOWED_OPS.has(safeOp)) throw new Error(`TABLE_QUERY: operator "${op}" is not allowed`);
-
-      if (safeOp === 'IS NULL' || safeOp === 'IS NOT NULL') return `${safeField} ${safeOp}`;
-
-      if (safeOp === 'IN' || safeOp === 'NOT IN') {
-        // Each element is individually escaped — subquery injection impossible.
-        const safeList = buildInList(String(value ?? ''));
-        return `${safeField} ${safeOp} ${safeList}`;
-      }
-
-      const escaped = String(value ?? '').replace(/'/g, "''");
-      return `${safeField} ${safeOp} '${escaped}'`;
-    });
-    sql += ` WHERE ${clauses.join(' AND ')}`;
-  }
-
-  // ORDER BY intentionally omitted: the ADT freestyle SQL endpoint rejects it on
-  // NW 7.50/7.51 (parser error: '"DESC" is not allowed here'). Sort client-side if needed.
-
-  return sql;
 }
 
 /** The five source includes a class keeps its revisions under. */
@@ -1434,6 +1330,21 @@ export class AdtClient {
 
   // ─── Table Data Operations ─────────────────────────────────────────
 
+  private dataSourceBlocklistGuard(): DataSourceBlocklistGuard {
+    const collection = '/sap/bc/adt/ddic/ddl/dependencies/graphdata';
+    return new DataSourceBlocklistGuard(this.safety.blockedDataSources, {
+      searchObject: (name, maxResults) => this.searchObject(name, maxResults),
+      // Canonical /tables source only: the NW 7.50 /structures fallback omits
+      // replacementObject metadata and therefore cannot prove authorization.
+      readTableSource: async (name) => (await this.getTable(name)).source,
+      dependencyGraphAccept: () => this.http.discoveryAcceptFor(collection),
+      readDependencyGraph: async (path, accept) => {
+        checkOperation(this.safety, OperationType.Read, 'GetCdsDependencyGraph');
+        return (await this.http.get(path, { Accept: accept })).body;
+      },
+    });
+  }
+
   /** Get table contents via data preview */
   async getTableContents(
     tableName: string,
@@ -1441,6 +1352,7 @@ export class AdtClient {
     sqlFilter?: string,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'GetTableContents');
+    await this.dataSourceBlocklistGuard().enforceTableContents(tableName, sqlFilter);
     const rowLimit = clampPreviewRows(maxRows);
     const resp = await this.http.post(
       `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(tableName)}`,
@@ -1471,6 +1383,7 @@ export class AdtClient {
 
   private async postFreestyleQuery(sql: string, maxRows: number): Promise<string> {
     checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
+    await this.dataSourceBlocklistGuard().enforceSql(sql);
     const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
     return resp.body;
   }
@@ -1491,6 +1404,7 @@ export class AdtClient {
     } = {},
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'RunTableQuery');
+    await this.dataSourceBlocklistGuard().enforceSources([tableName]);
     const sql = buildTableQuerySql(tableName, opts.columns, opts.where);
     const maxRows = clampPreviewRows(opts.maxRows);
     const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');

@@ -70,6 +70,35 @@ With both flags at their defaults, the data/sql rows in the capability matrix be
 
 The `data` and `sql` user scopes (and the `viewer-data`, `viewer-sql`, `developer-data`, `developer-sql` API-key profiles) only become useful after the matching server flag is on. Granting `data` / `sql` to a user does **not** widen the server ceiling.
 
+## Experimental data-source blocklist
+
+For a customer who accepts extra latency in exchange for another denial layer, set an exact list such as:
+
+```bash
+SAP_BLOCKED_DATA_SOURCES=USR02,PA0002
+```
+
+The empty default disables the feature and adds no SAP calls. A non-empty list applies globally to every
+`SAPQuery`, `SAPRead(type=TABLE_QUERY)`, and `SAPRead(type=TABLE_CONTENTS)` execution, including internal
+callers that share those client methods. ARC-1 denies a direct match before contacting SAP. Otherwise it
+parses one static `SELECT`/`WITH`, resolves each exact source through ADT search, follows SAP's active CDS
+dependency graph, expands DDIC `@AbapCatalog.replacementObject`, and compares every repository/entity/database
+alias. A match returns `DATA_SOURCE_BLOCKED` with the first source path; an analysis, lookup, graph, source,
+or supported-kind failure returns `DATA_SOURCE_UNRESOLVED`. Both state that the data request was not executed.
+Replacement metadata is read from active DDL with comment and string-literal awareness, so annotation-shaped
+text inside `//`, `/* ... */`, or labels is ignored; malformed or duplicate active annotations are denied.
+Dependency XML is capped before parsing and the parsed graph has independent depth and node limits.
+
+This experimental policy deliberately fails closed for dynamic or host-backed SQL, privileged/client/secondary-
+connection clauses, CDS association paths, multiple/malformed statements, classic/generated DDIC views, CDS
+table functions, and filtered legacy `TABLE_CONTENTS`; use structured `TABLE_QUERY` where possible. It makes
+fresh metadata calls for every request and the check/query pair is not transactionally atomic. It is a blocklist,
+so unlisted sources remain reachable; it is not row/column filtering, an inheritance rule for DCL, a production
+root allowlist, or a replacement for least-privilege SAP authorization and applicable SAP security notes.
+On the verified SAP_BASIS 750 target, the generic TABL source fallback does not expose replacement-object
+metadata. The policy can still deny a known transitive graph match before that lookup, but refuses other reads
+as unresolved when it cannot obtain the canonical table source. This is intentional fail-closed behavior.
+
 ---
 
 <a id="capability-matrix"></a>
@@ -91,6 +120,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Preview named table contents | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `sql` implies `data` |
 | Authorization trace (`SUAUTHVALTRC`) | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPDiagnose action=authorization_trace`; on-prem STUSERTRACE read only |
 | Run freestyle SQL | `sql` | `SAP_ALLOW_FREE_SQL=true` | High risk on productive systems |
+| Apply exact source blocklist (experimental) | Existing `data`/`sql` scope | `SAP_BLOCKED_DATA_SOURCES=...` | Further restricts all three data paths; cannot enable access, and unresolved lineage is denied |
 | Create / update / delete objects | `write` | `SAP_ALLOW_WRITES=true` | `SAP_ALLOWED_PACKAGES` applies; supports exact (`ZFOO`), prefix (`Z*`), and DEVCLASS subtree (`ZFOO/**`) patterns. Subtree resolution is fail-closed on SAP errors. |
 | Activate objects | `write` | `SAP_ALLOW_WRITES=true` | Activation is a mutation |
 | Package / FLP mutations | `write` | `SAP_ALLOW_WRITES=true` | FLP list actions are reads; FLP create/delete actions are writes |
@@ -269,6 +299,8 @@ Set nothing. This is the default.
 ```bash
 SAP_ALLOW_DATA_PREVIEW=true
 SAP_ALLOW_FREE_SQL=true
+# Optional defense in depth; exact names, no wildcards:
+SAP_BLOCKED_DATA_SOURCES=USR02,PA0002
 ```
 
 Users still need `data` / `sql` scopes in HTTP auth mode.
@@ -327,6 +359,8 @@ Then assign role collections in BTP Cockpit. The server says what the instance c
 | SQL still blocked after `SAP_ALLOW_FREE_SQL=true` | User lacks `sql` scope | Grant `sql` or use `viewer-sql` / `developer-sql` |
 | Table preview blocked after `SAP_ALLOW_DATA_PREVIEW=true` | User lacks `data` scope | Grant `data`; `sql` also implies `data` |
 | Package allowlist seems ignored for reads | ARC-1 package allowlist is write-only | Enforce read restrictions in SAP roles |
+| `DATA_SOURCE_BLOCKED` | A direct or transitive table/CDS alias matches the experimental list | Use a permitted source, or remove the exact entry only after security review |
+| `DATA_SOURCE_UNRESOLVED` | Strict SQL or live lineage analysis could not prove the request safe | Use one supported static source/`TABLE_QUERY`; inspect the reported reason and dependency path |
 | Action is hidden from tool list | User scope, server flag, backend feature, or `SAP_DENY_ACTIONS` pruned it | Run `arc1 config show` and check startup feature logs |
 
 ---
@@ -345,6 +379,7 @@ Then assign role collections in BTP Cockpit. The server says what the instance c
 | `allowGitWrites=false` | Server ceiling | Set `SAP_ALLOW_GIT_WRITES=true` and `SAP_ALLOW_WRITES=true` |
 | `allowDataPreview=false` | Server ceiling | Set `SAP_ALLOW_DATA_PREVIEW=true` |
 | `allowFreeSQL=false` | Server ceiling | Set `SAP_ALLOW_FREE_SQL=true` |
+| `DATA_SOURCE_BLOCKED` / `DATA_SOURCE_UNRESOLVED` | Experimental source policy | Follow the returned path/reason; do not disable the list merely to make an unsupported query run |
 | `Operations on package ... are blocked` | Server/profile safety | Adjust `SAP_ALLOWED_PACKAGES` or API-key profile choice |
 | `denied by server policy (SAP_DENY_ACTIONS)` | Deny list | Remove or narrow the deny pattern |
 | `No authorization for object ...` / SAP 403 | SAP authorization | Fix SAP user roles / PFCG / package auth |

@@ -228,6 +228,11 @@ the backend. Do not use that legacy filter/limit as a CI data boundary; use TABL
 final cap in your caller. On 758, spell inequality as `<>`; the currently accepted `!=` input is sent
 unchanged and SAP rejects it.
 
+For an approved but security-first deployment, `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` activates the
+experimental exact source blocklist. It performs strict SQL parsing and fresh live CDS/replacement lineage
+checks before execution; unsupported or unresolved requests are denied with a reason and path. This costs
+metadata round-trips and is a denylist, not a substitute for SAP authorization or a production allowlist.
+
 ## CI check commands
 
 ### `unittest`

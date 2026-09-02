@@ -41,6 +41,7 @@ function buildReadOnlyRuntimeConfig(
     allowFreeSQL: safety.allowFreeSQL,
     allowTransportWrites: safety.allowTransportWrites,
     allowGitWrites: safety.allowGitWrites,
+    blockedDataSources: [...base.blockedDataSources],
     allowedPackages: [...safety.allowedPackages],
     allowedTransports: [...safety.allowedTransports],
     denyActions: [...new Set([...base.denyActions, ...safety.denyActions])],

@@ -109,8 +109,8 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore. List apps without `name`; browse or read with `name="<app>"` and optional case-sensitive `include="<path>"`. `name="<app>/<path>"` is also accepted. |
 | `API_STATE` | API release state (clean core compliance — contract states C0-C4, successor info) |
-| `TABLE_CONTENTS` | Legacy table preview. Useful for an unfiltered sample; filtering and exact row caps are backend-dependent (see parameters above). Prefer `TABLE_QUERY` for deterministic structured projection/filtering. |
-| `TABLE_QUERY` | Structured table/CDS query through data preview (`columns`, `where`, `maxRows`); requires the data-preview gate. |
+| `TABLE_CONTENTS` | Legacy table preview. Useful for an unfiltered sample; filtering and exact row caps are backend-dependent (see parameters above). Prefer `TABLE_QUERY` for deterministic structured projection/filtering. With experimental `SAP_BLOCKED_DATA_SOURCES` active, only unfiltered requests are supported. |
+| `TABLE_QUERY` | Structured table/CDS query through data preview (`columns`, `where`, `maxRows`); requires the data-preview gate. A configured experimental source blocklist checks direct and transitive active CDS/replacement lineage before execution. |
 | `DEVC` | Package contents |
 | `SYSTEM` | System info (SID, release, kernel) |
 | `COMPONENTS` | Installed software components |
@@ -793,6 +793,13 @@ SAPNavigate(action="hierarchy", name="ZCL_ORDER")
 ---
 
 ## SAPQuery
+
+When `SAP_BLOCKED_DATA_SOURCES` is non-empty, SAPQuery is restricted to one statically provable
+`SELECT`/`WITH`. ARC-1 extracts every join/union/subquery/CTE source and checks live CDS plus DDIC
+replacement lineage before sending the query. Direct/transitive matches return `DATA_SOURCE_BLOCKED`;
+dynamic, unsupported, ambiguous, or unresolved requests return `DATA_SOURCE_UNRESOLVED`. The empty default
+keeps current behavior and adds no metadata calls. This experimental denylist is not an allowlist or a
+replacement for SAP authorization/CDS DCL.
 
 Execute ABAP SQL queries against SAP tables.
 

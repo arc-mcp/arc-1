@@ -22,6 +22,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Action deny list** — block specific tool actions with `SAP_DENY_ACTIONS` (for example `SAPWrite.delete`), without exposing low-level operation codes to admins
 - **Package restrictions** — limit AI write operations (create, update, delete) to specific packages with wildcards (`--allowed-packages "Z*,$TMP"`). Read operations are not restricted by package — use SAP's native authorization for read-level access control
 - **Data access control (off by default)** — `SAPRead(type=TABLE_CONTENTS)` and `SAPQuery` are gated behind explicit env vars (`SAP_ALLOW_DATA_PREVIEW=true`, `SAP_ALLOW_FREE_SQL=true`). These capabilities can expose application data or run ad-hoc SQL, so they are intentionally separated from the default development-tooling surface. They can be enabled for governed use cases, but should be reviewed against the [SAP API Policy](docs_page/sap-api-policy-and-architecture.md), your SAP agreement, and internal data-governance rules
+- **Experimental data-source emergency brake** — approved data/SQL deployments can set `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002`. ARC-1 then parses each SQL request and resolves active CDS plus replacement-object lineage before execution, denying direct or transitive exact-name matches and failing closed when lineage is unsupported or cannot be proven. The empty default adds no metadata calls. This denylist is defense in depth, not a production allowlist or replacement for SAP authorization/CDS DCL; see [Authorization & Roles](docs_page/authorization.md#experimental-data-source-blocklist).
 - **Transport safety** — transport reads are available for review, while transport mutations require both `--allow-writes` and `--allow-transport-writes`. Update/delete operations auto-use the lock correction number when no explicit transport is provided
 - **Git workflow safety** — Git operations are disabled by default. Enable explicitly with `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES=true`
 - **API-key profiles** — multi-key HTTP deployments can assign `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, or `admin` per key
@@ -130,6 +131,7 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL. Both are 
 | ---------- | ------- | ------- | ----------- |
 | Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
 | Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Exact source blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Denies exact direct/transitive table or CDS dependencies; active mode is deliberately fail-closed and slower. |
 
 With both flags at their defaults, ARC-1's data/sql rows are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
 
@@ -139,7 +141,7 @@ ARC-1's strategy is to stay close to documented and discoverable ADT behavior, p
 
 From `1.0` onward ARC-1 follows [semantic versioning](https://semver.org/): patch releases fix bugs, minor releases add backward-compatible capability, and breaking changes to the MCP tool surface, configuration, or auth contract bump the major version.
 
-**Experimental, default-off features are excluded from this guarantee until they are promoted** — they are clearly labeled and their surface may still change in a minor release. Today this covers the [multi-target BTP mode](docs_page/multi-target-setup.md) (ADR-0006 / ADR-0007): a mutation-free, read-only exception to the single-target default.
+**Experimental, default-off features are excluded from this guarantee until they are promoted** — they are clearly labeled and their surface may still change in a minor release. Today this covers the [multi-target BTP mode](docs_page/multi-target-setup.md) (ADR-0006 / ADR-0007) and the [data-source blocklist](docs_page/authorization.md#experimental-data-source-blocklist).
 
 What changed per release: the annotated [Release Notes](https://docs.arc-1-mcp.com/release-notes/) give each release its impact and upgrade action; [CHANGELOG.md](CHANGELOG.md) lists every merged PR.
 

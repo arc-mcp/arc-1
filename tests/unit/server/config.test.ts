@@ -38,6 +38,7 @@ describe('parseArgs', () => {
     expect(config.allowDataPreview).toBe(false);
     expect(config.allowTransportWrites).toBe(false);
     expect(config.allowGitWrites).toBe(false);
+    expect(config.blockedDataSources).toEqual([]);
     expect(config.denyActions).toEqual([]);
     expect(config.schemaNullableOptionals).toBe('auto');
     expect(config.multiTargetAllowBasicAuth).toBe(false);
@@ -137,6 +138,29 @@ describe('parseArgs', () => {
     expect(fromCli.config.gzipDataPreviewBody).toBe(false);
     expect(fromCli.sources.gzipDataPreviewBody).toEqual({ flag: '--gzip-datapreview-body' });
   });
+
+  it('normalizes, deduplicates, and source-attributes the experimental data-source blocklist', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = ' usr02,SCARR,usr02 ';
+    const fromEnv = resolveConfig([]);
+    expect(fromEnv.config.blockedDataSources).toEqual(['USR02', 'SCARR']);
+    expect(fromEnv.sources.blockedDataSources).toEqual({ env: 'SAP_BLOCKED_DATA_SOURCES' });
+
+    const fromCli = resolveConfig(['--blocked-data-sources', '/dmo/i_flight,spfli']);
+    expect(fromCli.config.blockedDataSources).toEqual(['/DMO/I_FLIGHT', 'SPFLI']);
+    expect(fromCli.sources.blockedDataSources).toEqual({ flag: '--blocked-data-sources' });
+  });
+
+  it.each(['SCARR*', 'SCARR SPFLI', 'SCARR;DELETE', '/', '$', '___', ''])(
+    'fails fast on invalid blocked source %j',
+    (value) => {
+      process.env.SAP_BLOCKED_DATA_SOURCES = value;
+      if (value === '') {
+        expect(resolveConfig([]).config.blockedDataSources).toEqual([]);
+      } else {
+        expect(() => resolveConfig([])).toThrow(/SAP_BLOCKED_DATA_SOURCES.*exact technical name/i);
+      }
+    },
+  );
 
   it('parses --allow-git-writes flag', () => {
     const config = parseArgs(['--allow-git-writes', 'true']);
@@ -1059,6 +1083,7 @@ describe('parseArgs', () => {
     const { sources } = resolveConfig([]);
     expect(sources.allowWrites).toBe('default');
     expect(sources.gzipDataPreviewBody).toBe('default');
+    expect(sources.blockedDataSources).toBe('default');
     expect(sources.allowedPackages).toBe('default');
     expect(sources.schemaNullableOptionals).toBe('default');
   });

@@ -183,6 +183,7 @@ describe('config surface parity (plugin ↔ mcpb)', () => {
     'SAP_ALLOWED_PACKAGES',
     'SAP_ALLOW_DATA_PREVIEW',
     'SAP_ALLOW_FREE_SQL',
+    'SAP_BLOCKED_DATA_SOURCES',
     'SAP_ALLOW_TRANSPORT_WRITES',
     'SAP_ALLOW_GIT_WRITES',
     'ARC1_UI',
@@ -257,6 +258,14 @@ describe('packaged version sync', () => {
 });
 
 describe('deployment templates', () => {
+  it('ship the experimental data-source policy disabled', () => {
+    for (const rel of ['mta.yaml', 'manifest.yml', 'manifest-btp-abap.yml']) {
+      const body = readFileSync(join(ROOT, rel), 'utf8');
+      expect(body, rel).toContain('SAP_BLOCKED_DATA_SOURCES: ""');
+    }
+    expect(readFileSync(join(ROOT, 'Dockerfile'), 'utf8')).toContain('ENV SAP_BLOCKED_DATA_SOURCES=""');
+  });
+
   it('keep the experimental UI explicitly disabled in CF descriptors', () => {
     for (const rel of ['mta.yaml', 'manifest.yml', 'manifest-btp-abap.yml']) {
       const body = readFileSync(join(ROOT, rel), 'utf8');

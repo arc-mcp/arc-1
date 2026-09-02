@@ -43,6 +43,7 @@ applications:
       SAP_ALLOW_WRITES: "true"
       SAP_ALLOW_DATA_PREVIEW: "false"
       SAP_ALLOW_FREE_SQL: "true"
+      SAP_BLOCKED_DATA_SOURCES: ""
       SAP_ALLOW_TRANSPORT_WRITES: "true"
       SAP_ALLOW_GIT_WRITES: "false"
       # Experimental read-only UI. Keep disabled unless explicitly testing it.

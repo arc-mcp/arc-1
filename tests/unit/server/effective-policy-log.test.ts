@@ -27,6 +27,8 @@ describe('logEffectivePolicy', () => {
         allowTransportWrites: false,
         allowGitWrites: false,
         gzipDataPreviewBody: false,
+        blockedDataSources: [],
+        blockedDataSourcesCount: 0,
         allowedPackages: ['Z*'],
         allowedTransports: [],
         denyActionsCount: 0,
@@ -43,6 +45,7 @@ describe('logEffectivePolicy', () => {
         allowWrites: true,
         allowDataPreview: true,
         gzipDataPreviewBody: true,
+        blockedDataSources: ['USR02'],
         allowTransportWrites: true,
         allowedPackages: ['$TMP', 'Z*'],
       }),
@@ -59,6 +62,7 @@ describe('logEffectivePolicy', () => {
     expect(humanLine).toContain('transports=YES');
     expect(humanLine).toContain('git=NO');
     expect(humanLine).toContain('gzipDataPreview=YES');
+    expect(humanLine).toContain('blockedDataSources=1');
     expect(humanLine).toContain('packages=[$TMP,Z*]');
     expect(humanLine).toContain('denyActions=0');
   });
@@ -70,6 +74,7 @@ describe('logEffectivePolicy', () => {
     const sources: Record<string, ConfigSource> = {
       allowWrites: { env: 'SAP_ALLOW_WRITES' },
       gzipDataPreviewBody: { env: 'SAP_GZIP_DATAPREVIEW_BODY' },
+      blockedDataSources: { env: 'SAP_BLOCKED_DATA_SOURCES' },
       allowedPackages: 'default',
       denyActions: { file: '/etc/deny.json' },
     };
@@ -81,6 +86,7 @@ describe('logEffectivePolicy', () => {
       expect.objectContaining({
         allowWrites: 'env SAP_ALLOW_WRITES',
         gzipDataPreviewBody: 'env SAP_GZIP_DATAPREVIEW_BODY',
+        blockedDataSources: 'env SAP_BLOCKED_DATA_SOURCES',
         allowedPackages: 'default',
         denyActions: 'file /etc/deny.json',
       }),
@@ -133,6 +139,17 @@ describe('detectContradictions', () => {
     expect(
       detectContradictions(makeConfig({ gzipDataPreviewBody: true, allowDataPreview: false, allowFreeSQL: true })),
     ).toEqual([]);
+  });
+
+  it('flags an unreachable configured data-source blocklist', () => {
+    const warnings = detectContradictions(
+      makeConfig({ blockedDataSources: ['USR02'], allowDataPreview: false, allowFreeSQL: false }),
+    );
+    expect(warnings.some((w) => w.includes('blockedDataSources is configured'))).toBe(true);
+  });
+
+  it('does not flag the data-source blocklist when a governed data path is reachable', () => {
+    expect(detectContradictions(makeConfig({ blockedDataSources: ['USR02'], allowDataPreview: true }))).toEqual([]);
   });
 
   it('flags non-default allowedPackages with allowWrites=false', () => {
