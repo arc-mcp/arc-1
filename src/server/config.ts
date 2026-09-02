@@ -16,6 +16,7 @@
  *   - See docs_page/updating.md for the full migration table.
  */
 
+import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
@@ -609,24 +610,19 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   );
   config.allowGitWrites = resolveBool('allow-git-writes', 'SAP_ALLOW_GIT_WRITES', false, 'allowGitWrites');
 
-  const blockedDataSourcesRaw = getFlag('blocked-data-sources') ?? process.env.SAP_BLOCKED_DATA_SOURCES;
+  // Experimental data-source blocklist. Unset / empty / ASCII-whitespace-only all mean off, which is
+  // what lets the shipped Dockerfile and MTA descriptors carry a visible `""` default and still give
+  // operators a one-field rollback. Any other value is strict CSV: every field is mandatory, so a
+  // stray separator fails startup instead of quietly shortening or disabling a security control.
+  const blockedFlag = getFlag('blocked-data-sources');
+  const blockedDataSourcesRaw = blockedFlag ?? process.env.SAP_BLOCKED_DATA_SOURCES;
   if (blockedDataSourcesRaw !== undefined) {
-    const blockedDataSources = blockedDataSourcesRaw
-      .split(',')
-      .map((name) => name.trim().toUpperCase())
-      .filter(Boolean);
-    for (const name of blockedDataSources) {
-      if (name.length > 128 || !/^(?=.*[A-Z0-9])[A-Z0-9_/$]+$/.test(name)) {
-        throw new Error(
-          `Invalid SAP_BLOCKED_DATA_SOURCES entry '${name}': expected an exact technical name using only A-Z, 0-9, _, /, or $.`,
-        );
-      }
-    }
-    config.blockedDataSources = [...new Set(blockedDataSources)];
+    config.blockedDataSources = parseBlockedDataSourcesCsv(
+      blockedDataSourcesRaw,
+      blockedFlag !== undefined ? '--blocked-data-sources' : 'SAP_BLOCKED_DATA_SOURCES',
+    );
     sources.blockedDataSources =
-      getFlag('blocked-data-sources') !== undefined
-        ? { flag: '--blocked-data-sources' }
-        : { env: 'SAP_BLOCKED_DATA_SOURCES' };
+      blockedFlag !== undefined ? { flag: '--blocked-data-sources' } : { env: 'SAP_BLOCKED_DATA_SOURCES' };
   } else {
     sources.blockedDataSources = 'default';
   }

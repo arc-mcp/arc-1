@@ -1,8 +1,9 @@
 /** Experimental exact-name data-source blocklist and live CDS-lineage evaluation. */
 
 import { XMLParser } from 'fast-xml-parser';
+import { canonicalDataSourceName, DataSourceNameError } from './data-source-name.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
-import { analyzeSqlDataSources, normalizeDataSourceName, SqlSourceAnalysisError } from './sql-source-analyzer.js';
+import { analyzeSqlDataSources } from './sql-source-analyzer.js';
 
 const MAX_GRAPH_XML_CHARS = 5_000_000;
 const MAX_GRAPH_DEPTH = 64;
@@ -89,7 +90,7 @@ export class DataSourceBlocklistGuard {
 
     let source: string;
     try {
-      source = normalizeDataSourceName(tableName);
+      source = canonicalDataSourceName(tableName);
     } catch (error) {
       throw new DataSourcePolicyError(
         'DATA_SOURCE_UNRESOLVED',
@@ -139,7 +140,7 @@ export class DataSourceBlocklistGuard {
   }
 
   private async resolveDirectSource(name: string): Promise<ResolvedDirectDataSource> {
-    const requested = normalizeDataSourceName(name);
+    const requested = canonicalDataSourceName(name);
     const canonicalSearchName = (displayName: string): string | undefined => {
       const match = displayName
         .trim()
@@ -168,7 +169,7 @@ export class DataSourceBlocklistGuard {
         const sourceMatch = match.uri.match(/\/ddic\/ddl\/sources\/([^/?#]+)(?:\/source\/main)?(?:#|$)/i);
         if (!sourceMatch?.[1]) continue;
         try {
-          ddlSources.add(normalizeDataSourceName(decodeURIComponent(sourceMatch[1])));
+          ddlSources.add(canonicalDataSourceName(decodeURIComponent(sourceMatch[1])));
         } catch {
           return { kind: 'unknown', name };
         }
@@ -260,7 +261,7 @@ export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
     if (!rawName) throw new DataSourceLineageError('CDS dependency graph node is missing its name');
     let name: string;
     try {
-      name = normalizeDataSourceName(rawName);
+      name = canonicalDataSourceName(rawName);
     } catch {
       throw new DataSourceLineageError('CDS dependency graph node has an invalid technical name');
     }
@@ -272,7 +273,7 @@ export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
       const value = properties.get(key);
       if (value) {
         try {
-          aliases.add(normalizeDataSourceName(value));
+          aliases.add(canonicalDataSourceName(value));
         } catch {
           throw new DataSourceLineageError(`CDS dependency graph node ${name} has an invalid ${key}`);
         }
@@ -298,7 +299,7 @@ export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
   try {
     return visit(root, 0);
   } catch (error) {
-    if (error instanceof SqlSourceAnalysisError) {
+    if (error instanceof DataSourceNameError) {
       throw new DataSourceLineageError('CDS dependency graph contains an invalid technical name');
     }
     throw error;
@@ -399,7 +400,7 @@ export function extractReplacementObject(source: string): string | undefined {
     throw new DataSourceLineageError('replacementObject annotation is present but malformed');
   }
   try {
-    return normalizeDataSourceName(valueSpan.value);
+    return canonicalDataSourceName(valueSpan.value);
   } catch {
     throw new DataSourceLineageError('replacementObject annotation value is not an exact technical name');
   }
@@ -431,8 +432,8 @@ export async function enforceBlockedDataSources(
   let blocked: Set<string>;
   let roots: string[];
   try {
-    blocked = new Set(configuredBlockedSources.map((name) => normalizeDataSourceName(name)));
-    roots = [...new Set(directSources.map((name) => normalizeDataSourceName(name)))];
+    blocked = new Set(configuredBlockedSources.map((name) => canonicalDataSourceName(name)));
+    roots = [...new Set(directSources.map((name) => canonicalDataSourceName(name)))];
   } catch (error) {
     throw unresolved('UNKNOWN', [], error instanceof Error ? error.message : String(error));
   }
@@ -485,9 +486,9 @@ export async function enforceBlockedDataSources(
     resolved: ResolvedDirectDataSource,
     path: string[],
   ): Promise<void> => {
-    checkBlocked(directSource, path, [normalizeDataSourceName(resolved.name)]);
+    checkBlocked(directSource, path, [canonicalDataSourceName(resolved.name)]);
     if (resolved.kind === 'table') {
-      const table = normalizeDataSourceName(resolved.name);
+      const table = canonicalDataSourceName(resolved.name);
       const replacement = await replacementAt(directSource, table, path);
       if (replacement) await evaluateRoot(directSource, replacement, [...path, replacement]);
       return;
@@ -500,9 +501,9 @@ export async function enforceBlockedDataSources(
       );
     }
 
-    const graph = await resolver.readCdsDependencyGraph(normalizeDataSourceName(resolved.ddlSource));
-    const normalizedGraphAliases = graph.aliases.map((alias) => normalizeDataSourceName(alias));
-    if (!normalizedGraphAliases.includes(normalizeDataSourceName(resolved.name))) {
+    const graph = await resolver.readCdsDependencyGraph(canonicalDataSourceName(resolved.ddlSource));
+    const normalizedGraphAliases = graph.aliases.map((alias) => canonicalDataSourceName(alias));
+    if (!normalizedGraphAliases.includes(canonicalDataSourceName(resolved.name))) {
       throw unresolved(
         directSource,
         path,
@@ -514,7 +515,7 @@ export async function enforceBlockedDataSources(
       checkBlocked(
         directSource,
         nodePath,
-        node.aliases.map((alias) => normalizeDataSourceName(alias)),
+        node.aliases.map((alias) => canonicalDataSourceName(alias)),
       );
       if (node.databaseExists === false) {
         throw unresolved(directSource, nodePath, `dependency ${node.name} is not active in the database`);

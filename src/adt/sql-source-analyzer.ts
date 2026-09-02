@@ -7,10 +7,10 @@
 
 import { Expressions, MemoryFile, Registry, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
+import { canonicalDataSourceName } from './data-source-name.js';
 
 const MAX_SQL_LENGTH = 100_000;
 const SYNTHETIC_TARGET = '__arc1_policy_result';
-const TECHNICAL_NAME = /^(?=.*[A-Z0-9])[A-Z0-9_/$]+$/;
 
 const FORBIDDEN_EXPRESSIONS = [
   ['privileged access', Expressions.SQLPrivilegedAccess],
@@ -40,15 +40,18 @@ export class SqlSourceAnalysisError extends Error {
   }
 }
 
-/** Normalize an exact ABAP SQL data-source identity or fail closed. */
-export function normalizeDataSourceName(raw: string): string {
-  const value = raw.trim().toUpperCase();
-  if (value.length === 0 || value.length > 128 || !TECHNICAL_NAME.test(value)) {
-    throw new SqlSourceAnalysisError(
-      `data-source name ${JSON.stringify(raw)} is not an exact technical name (allowed: A-Z, 0-9, _, /, $)`,
-    );
+/**
+ * Canonicalize a source the parser found, reporting failure as a SQL-grammar problem.
+ *
+ * Identity rules live in one place (`data-source-name.ts`); a name the shared canonicalizer refuses
+ * means the statement is outside the accepted subset, not that lineage is unresolved.
+ */
+function parsedSourceName(raw: string): string {
+  try {
+    return canonicalDataSourceName(raw, 'SQL data source');
+  } catch (error) {
+    throw new SqlSourceAnalysisError(error instanceof Error ? error.message : String(error));
   }
-  return value;
 }
 
 /** Extract every static database source from one complete ABAP SQL SELECT/WITH statement. */
@@ -119,7 +122,7 @@ export function analyzeSqlDataSources(sql: string): string[] {
 
   const sources = structure
     .findAllExpressionsRecursive(Expressions.DatabaseTable)
-    .map((node) => normalizeDataSourceName(node.concatTokens()));
+    .map((node) => parsedSourceName(node.concatTokens()));
   const uniqueSources = [...new Set(sources)];
   if (uniqueSources.length === 0) {
     throw new SqlSourceAnalysisError('no static database source could be proven');

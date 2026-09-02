@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  analyzeSqlDataSources,
-  normalizeDataSourceName,
-  SqlSourceAnalysisError,
-} from '../../../src/adt/sql-source-analyzer.js';
+import { analyzeSqlDataSources, SqlSourceAnalysisError } from '../../../src/adt/sql-source-analyzer.js';
 
 describe('analyzeSqlDataSources', () => {
   it.each([
@@ -43,7 +39,5 @@ describe('analyzeSqlDataSources', () => {
     expect(() => analyzeSqlDataSources(`SELECT * FROM scarr ${' '.repeat(100_001)}`)).toThrow(/too long/i);
   });
 
-  it.each(['/', '$', '___'])('rejects punctuation-only technical name %j', (name) => {
-    expect(() => normalizeDataSourceName(name)).toThrow(SqlSourceAnalysisError);
-  });
+  // Identity/normalization rules now live in one place; see tests/unit/adt/data-source-name.test.ts.
 });
