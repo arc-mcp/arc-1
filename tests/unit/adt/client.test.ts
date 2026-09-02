@@ -2024,7 +2024,7 @@ describe('AdtClient', () => {
 
       // Unresolvable here (the mocked search returns nothing), which is correct fail-closed
       // behaviour. What this asserts is the identity the policy was handed: USR02$, not USR02.
-      await expect(client.runTableQuery('usr02$')).rejects.toMatchObject({ code: 'DATA_SOURCE_UNRESOLVED' });
+      await expect(client.runTableQuery('usr02$')).rejects.toMatchObject({ code: 'DATA_LINEAGE_UNRESOLVED' });
 
       const searchUrl = mockFetch.mock.calls
         .map((call) => String(call[0]))
@@ -2068,7 +2068,7 @@ describe('AdtClient', () => {
     it('rejects filtered DDIC preview before any request while strict analysis is active', async () => {
       const client = createClient({ safety: strictSafety(['USR02']) });
       await expect(client.getTableContents('SCARR', 10, "CARRID = 'LH'")).rejects.toMatchObject({
-        code: 'DATA_SOURCE_UNRESOLVED',
+        code: 'DATA_SQL_UNSUPPORTED',
       });
       expect(mockFetch).not.toHaveBeenCalled();
     });
@@ -2077,11 +2077,10 @@ describe('AdtClient', () => {
       'SELECT * FROM (lv_table)',
       'SELECT * FROM SCARR WHERE CARRID = @lv_carrid',
       'SELECT * FROM SCARR. DELETE FROM USR02',
-    ])('returns a typed unresolved denial before SAP for unsupported SQL: %s', async (sql) => {
+    ])('returns DATA_SQL_UNSUPPORTED before SAP for unsupported SQL: %s', async (sql) => {
       const client = createClient({ safety: strictSafety(['USR02']) });
       await expect(client.runQuery(sql)).rejects.toMatchObject({
-        code: 'DATA_SOURCE_UNRESOLVED',
-        sourcePath: ['SQL'],
+        code: 'DATA_SQL_UNSUPPORTED',
       });
       expect(mockFetch).not.toHaveBeenCalled();
     });
@@ -2134,7 +2133,7 @@ describe('AdtClient', () => {
       });
       const urls = mockFetch.mock.calls.map((call) => String(call[0]));
       expect(
-        urls.some((url) => url.includes('ddlsourceName=DEMO_CDS_SUMDIST') && url.includes('addMetrics=true')),
+        urls.some((url) => url.includes('ddlsourceName=DEMO_CDS_SUMDIST') && url.includes('addMetrics=false')),
       ).toBe(true);
       expect(urls.some((url) => url.includes('/datapreview/'))).toBe(false);
     });

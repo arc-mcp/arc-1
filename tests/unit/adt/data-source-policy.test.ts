@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  DataSourcePolicyError,
   type DataSourcePolicyResolver,
   enforceBlockedDataSources,
   extractReplacementObject,
@@ -34,6 +33,90 @@ describe('parseCdsDependencyGraph', () => {
       expect(graph.children.map((node) => node.relation)).toEqual(['FROM', 'INNER_JOIN']);
     },
   );
+
+  // Live SAP_BASIS 758/816: a released standard view with access control returns SQL nodes PLUS an
+  // auxiliary RELATED_OBJECTS_TREE -> RELATED_OBJECTS_ENTRY -> DCLS_OBJECT_LIST -> DCLS/DL branch
+  // whose leaf has no properties at all. The prototype treated every elementInfo as a SQL source and
+  // therefore refused this ordinary view. The branch carries no application data and must be
+  // validated, recorded as audit context, and dropped.
+  it('drops the auxiliary access-control branch of a real standard view', () => {
+    const graph = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758-dcl.xml'));
+    expect(graph.name).toBe('I_BUSINESSPARTNER');
+    expect(graph.kind).toBe('CDS_VIEW');
+    // Mixed-case ENTITY_NAME is canonicalized; the DCL object never becomes a data source.
+    expect(graph.aliases).toEqual(expect.arrayContaining(['I_BUSINESSPARTNER', 'IBUSINESSPARTNER']));
+    expect(graph.children.map((node) => node.name)).toEqual(['BUT000']);
+    expect(graph.children[0]?.kind).toBe('TABLE');
+    // Access control is retained as audit context only - never as an authorization decision.
+    expect(graph.accessControlled).toBe(true);
+    expect(graph.children[0]?.accessControlled).toBe(false);
+  });
+
+  it('records access control from HAS_DCL/AC_STATE without treating DCL as data lineage', () => {
+    const dcl = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758-dcl.xml'));
+    const plain = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758.xml'));
+    expect(dcl.accessControlled).toBe(true);
+    expect(plain.accessControlled).toBe(false);
+    const names = (node: typeof dcl): string[] => [node.name, ...node.children.flatMap(names)];
+    expect(names(dcl)).not.toContain('DCLS_OBJECT_LIST');
+    expect(names(dcl)).not.toContain('RELATED_OBJECTS_TREE');
+  });
+
+  it('classifies the live CDS_TABLE_FUNCTION node kind', () => {
+    const graph = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758-table-function.xml'));
+    const kinds = new Set<string>();
+    const walk = (node: typeof graph): void => {
+      kinds.add(node.kind);
+      for (const child of node.children) walk(child);
+    };
+    walk(graph);
+    expect(kinds).toContain('CDS_TABLE_FUNCTION');
+    // SAP does not expand the AMDP USING list: the table-function nodes are childless.
+    const findTf = (node: typeof graph): typeof graph | undefined =>
+      node.kind === 'CDS_TABLE_FUNCTION' ? node : node.children.map(findTf).find(Boolean);
+    expect(findTf(graph)?.children).toEqual([]);
+  });
+
+  it('orders siblings deterministically regardless of SAP response order', () => {
+    const build = (first: string, second: string) =>
+      `<elementInfo name="ROOT"><properties><entry key="TYPE" value="CDS_VIEW"/></properties>` +
+      `<elementInfo name="${first}"><properties><entry key="TYPE" value="TABLE"/></properties></elementInfo>` +
+      `<elementInfo name="${second}"><properties><entry key="TYPE" value="TABLE"/></properties></elementInfo>` +
+      `</elementInfo>`;
+    expect(parseCdsDependencyGraph(build('SPFLI', 'SCARR')).children.map((n) => n.name)).toEqual(['SCARR', 'SPFLI']);
+    expect(parseCdsDependencyGraph(build('SCARR', 'SPFLI')).children.map((n) => n.name)).toEqual(['SCARR', 'SPFLI']);
+  });
+
+  it.each([
+    ['an unknown SQL node kind', '<entry key="TYPE" value="EXTERNAL_THING"/>'],
+    ['a node with no TYPE at all', ''],
+  ])('fails closed on %s inside the SQL branch', (_label, typeEntry) => {
+    const xml =
+      `<elementInfo name="ROOT"><properties><entry key="TYPE" value="CDS_VIEW"/></properties>` +
+      `<elementInfo name="X"><properties>${typeEntry}</properties></elementInfo></elementInfo>`;
+    expect(() => parseCdsDependencyGraph(xml)).toThrow(/unsupported kind|missing TYPE/);
+  });
+
+  // "Do not broadly ignore a subtree merely because a name contains RELATED or DCLS."
+  it('does not let an auxiliary-looking branch hide a real data source', () => {
+    const xml =
+      `<elementInfo name="ROOT"><properties><entry key="TYPE" value="CDS_VIEW"/></properties>` +
+      `<elementInfo name="RELATED_OBJECTS_TREE"><properties><entry key="TYPE" value="RELATED_OBJECTS_TREE"/></properties>` +
+      `<elementInfo name="USR02"><properties><entry key="TYPE" value="TABLE"/></properties></elementInfo>` +
+      `</elementInfo></elementInfo>`;
+    expect(() => parseCdsDependencyGraph(xml)).toThrow(/access-control branch expected RELATED_OBJECTS_ENTRY/);
+  });
+
+  it('fails closed when the access-control branch terminal is not a DCLS/DL object', () => {
+    const xml =
+      `<elementInfo name="ROOT"><properties><entry key="TYPE" value="CDS_VIEW"/></properties>` +
+      `<elementInfo name="RELATED_OBJECTS_TREE"><properties><entry key="TYPE" value="RELATED_OBJECTS_TREE"/></properties>` +
+      `<elementInfo name="E"><properties><entry key="TYPE" value="RELATED_OBJECTS_ENTRY"/></properties>` +
+      `<elementInfo name="L"><properties><entry key="TYPE" value="DCLS_OBJECT_LIST"/></properties>` +
+      `<elementInfo type="TABL/DT" name="USR02"><properties/></elementInfo>` +
+      `</elementInfo></elementInfo></elementInfo></elementInfo>`;
+    expect(() => parseCdsDependencyGraph(xml)).toThrow(/not a DCLS\/DL object/);
+  });
 
   it('rejects malformed or unbounded graphs', () => {
     expect(() => parseCdsDependencyGraph('<elementInfo/>')).toThrow(/root|name/i);
@@ -155,7 +238,7 @@ describe('enforceBlockedDataSources', () => {
       }),
     });
     await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_SOURCE_UNRESOLVED',
+      code: 'DATA_LINEAGE_UNRESOLVED',
       sourcePath: ['DEMO_CDS_SUMDIST', 'SCARR'],
     });
   });
@@ -185,21 +268,57 @@ describe('enforceBlockedDataSources', () => {
   ])('fails closed for unresolved $kind roots', async (resolved) => {
     const r = resolver({ resolveDirectSource: vi.fn(async () => resolved) });
     await expect(enforceBlockedDataSources([resolved.name], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_SOURCE_UNRESOLVED',
+      code: 'DATA_LINEAGE_UNRESOLVED',
     });
   });
 
-  it('fails closed on a CDS table-function node', async () => {
+  it('fails closed on a real live CDS table-function graph', async () => {
+    // Uses the captured live 758 response rather than a fabricated node type, so the refusal is
+    // proven against the contract SAP actually returns.
+    const graph = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758-table-function.xml'));
     const r = resolver({
-      resolveDirectSource: vi.fn(async () => ({ kind: 'cds' as const, name: 'ZTF', ddlSource: 'ZTF' })),
-      readCdsDependencyGraph: vi.fn(async () => ({
-        name: 'ZTF',
-        aliases: ['ZTF'],
-        kind: 'CDS_TABLE_FUNCTION',
-        children: [],
+      resolveDirectSource: vi.fn(async (name: string) => ({
+        kind: 'cds' as const,
+        name,
+        ddlSource: 'CDS_WITH_TABLE_FUNCTION_3',
       })),
+      readCdsDependencyGraph: vi.fn(async () => graph),
     });
-    await expect(enforceBlockedDataSources(['ZTF'], ['USR02'], r)).rejects.toBeInstanceOf(DataSourcePolicyError);
+    await expect(enforceBlockedDataSources(['CDS_WITH_TABLE_FUNCTION_3'], ['USR02'], r)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+    });
+  });
+
+  it('allows a standard view whose only extra branch is access-control metadata', async () => {
+    // Regression: the prototype refused the released standard view I_BUSINESSPARTNER because it
+    // treated the auxiliary DCL branch as an unknown data node.
+    const graph = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758-dcl.xml'));
+    const r = resolver({
+      resolveDirectSource: vi.fn(async (name: string) => ({
+        kind: 'cds' as const,
+        name,
+        ddlSource: 'I_BUSINESSPARTNER',
+      })),
+      readCdsDependencyGraph: vi.fn(async () => graph),
+      readTableSource: vi.fn(async () => 'define table but000 { key client : abap.clnt; }'),
+    });
+    await expect(enforceBlockedDataSources(['I_BUSINESSPARTNER'], ['USR02'], r)).resolves.toBeUndefined();
+  });
+
+  it('still denies a blocked table reached through an access-controlled standard view', async () => {
+    const graph = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758-dcl.xml'));
+    const r = resolver({
+      resolveDirectSource: vi.fn(async (name: string) => ({
+        kind: 'cds' as const,
+        name,
+        ddlSource: 'I_BUSINESSPARTNER',
+      })),
+      readCdsDependencyGraph: vi.fn(async () => graph),
+    });
+    await expect(enforceBlockedDataSources(['I_BUSINESSPARTNER'], ['BUT000'], r)).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      sourcePath: ['I_BUSINESSPARTNER', 'BUT000'],
+    });
   });
 
   it('fails closed when SAP returns a graph for a different root', async () => {
@@ -211,7 +330,7 @@ describe('enforceBlockedDataSources', () => {
       })),
     });
     await expect(enforceBlockedDataSources(['EXPECTED_VIEW'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_SOURCE_UNRESOLVED',
+      code: 'DATA_LINEAGE_UNRESOLVED',
       sourcePath: ['EXPECTED_VIEW'],
     });
   });
@@ -224,7 +343,7 @@ describe('enforceBlockedDataSources', () => {
     });
     const result = enforceBlockedDataSources(['SCARR'], ['USR02'], r);
     await expect(result).rejects.toMatchObject({
-      code: 'DATA_SOURCE_UNRESOLVED',
+      code: 'DATA_LINEAGE_UNRESOLVED',
     });
     await expect(result).rejects.not.toThrow(/search unavailable/i);
   });
@@ -251,7 +370,7 @@ describe('enforceBlockedDataSources', () => {
       ),
     });
     await expect(enforceBlockedDataSources(['TABLE_A'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_SOURCE_UNRESOLVED',
+      code: 'DATA_LINEAGE_UNRESOLVED',
     });
   });
 
@@ -259,7 +378,7 @@ describe('enforceBlockedDataSources', () => {
     const r = resolver();
     const sources = Array.from({ length: 65 }, (_, index) => `TABLE_${index}`);
     await expect(enforceBlockedDataSources(sources, ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_SOURCE_UNRESOLVED',
+      code: 'DATA_LINEAGE_UNRESOLVED',
     });
     expect(r.resolveDirectSource).not.toHaveBeenCalled();
   });

@@ -29,7 +29,18 @@ class DataSourceLineageError extends Error {
   }
 }
 
-export type DataSourcePolicyErrorCode = 'DATA_SOURCE_BLOCKED' | 'DATA_SOURCE_UNRESOLVED';
+/**
+ * Stable, distinct client-facing outcomes.
+ *
+ * - `DATA_SOURCE_BLOCKED`      an exact configured rule matched.
+ * - `DATA_LINEAGE_UNRESOLVED`  SAP metadata/identity/graph/replacement lineage could not be proven.
+ * - `DATA_SQL_UNSUPPORTED`     the caller's SQL is outside the strict accepted grammar.
+ *
+ * They stay distinguishable on purpose: a model that cannot tell "blocked by policy" from "SQL not
+ * supported" cannot self-correct. That does permit coarse membership probing, which is a documented,
+ * deliberate trade rather than an oversight.
+ */
+export type DataSourcePolicyErrorCode = 'DATA_SOURCE_BLOCKED' | 'DATA_LINEAGE_UNRESOLVED' | 'DATA_SQL_UNSUPPORTED';
 
 export class DataSourcePolicyError extends AdtSafetyError {
   constructor(
@@ -47,12 +58,40 @@ export class DataSourcePolicyError extends AdtSafetyError {
   }
 }
 
+/**
+ * SQL node kinds SAP emits in the dependency branch. Verified live on SAP_BASIS 750, 758 and 816.
+ * Anything outside this set inside a SQL branch fails closed.
+ */
+export const SQL_NODE_KINDS = ['CDS_VIEW', 'TABLE', 'CDS_TABLE_FUNCTION'] as const;
+export type SqlNodeKind = (typeof SQL_NODE_KINDS)[number];
+
+/**
+ * The EXACT auxiliary chain SAP emits for access-control metadata, verified live on 758/816 for the
+ * released standard view I_BUSINESSPARTNER:
+ *
+ *   RELATED_OBJECTS_TREE -> RELATED_OBJECTS_ENTRY -> DCLS_OBJECT_LIST -> DCLS/DL leaf
+ *
+ * These carry no application data, so they are validated and then dropped from lineage. Matching is
+ * on the exact TYPE value and exact nesting — never on a name merely containing "RELATED" or "DCLS",
+ * which would let an attacker-shaped subtree hide a real data source.
+ */
+const AUXILIARY_CHILD_KIND: Record<string, string> = {
+  RELATED_OBJECTS_TREE: 'RELATED_OBJECTS_ENTRY',
+  RELATED_OBJECTS_ENTRY: 'DCLS_OBJECT_LIST',
+  DCLS_OBJECT_LIST: 'DCLS_OBJECT',
+};
+
+/** adtcore:type of the terminal access-control object; it legitimately carries no properties. */
+const DCL_OBJECT_ADTCORE_TYPE = 'DCLS/DL';
+
 export interface CdsDependencyNode {
   name: string;
   aliases: string[];
-  kind: string;
+  kind: SqlNodeKind;
   relation?: string;
   databaseExists?: boolean;
+  /** Access-control presence, retained as audit context only — never an authorization decision. */
+  accessControlled: boolean;
   children: CdsDependencyNode[];
 }
 
@@ -93,7 +132,7 @@ export class DataSourceBlocklistGuard {
       source = canonicalDataSourceName(tableName);
     } catch (error) {
       throw new DataSourcePolicyError(
-        'DATA_SOURCE_UNRESOLVED',
+        'DATA_LINEAGE_UNRESOLVED',
         'UNKNOWN',
         [],
         error instanceof Error ? error.message : String(error),
@@ -108,10 +147,10 @@ export class DataSourceBlocklistGuard {
       );
     }
     throw new DataSourcePolicyError(
-      'DATA_SOURCE_UNRESOLVED',
+      'DATA_SQL_UNSUPPORTED',
       source,
       [source],
-      'TABLE_CONTENTS sqlFilter is unsupported by the experimental security analyzer; use TABLE_QUERY',
+      'the TABLE_CONTENTS sqlFilter condition language is outside the strict analyzed subset; use the structured TABLE_QUERY where/columns parameters instead',
     );
   }
 
@@ -121,10 +160,11 @@ export class DataSourceBlocklistGuard {
     try {
       directSources = analyzeSqlDataSources(sql);
     } catch (error) {
+      // A statement outside the accepted grammar is a SQL problem, not an unprovable lineage.
       throw new DataSourcePolicyError(
-        'DATA_SOURCE_UNRESOLVED',
+        'DATA_SQL_UNSUPPORTED',
         'SQL',
-        ['SQL'],
+        [],
         error instanceof Error ? error.message : String(error),
       );
     }
@@ -189,7 +229,10 @@ export class DataSourceBlocklistGuard {
     const collection = '/sap/bc/adt/ddic/ddl/dependencies/graphdata';
     const requestGraph = async (accept: string): Promise<CdsDependencyNode> => {
       const params = new URLSearchParams({ ddlsourceName: ddlSource });
-      if (/SQLDependencyModel/i.test(accept)) params.set('addMetrics', 'true');
+      // Metrics add roughly 40% payload without changing topology, and authorization only needs
+      // topology. Live-verified: the v3 media type returns 406 on SAP_BASIS 750, which is what
+      // drives the element-info fallback below.
+      if (/SQLDependencyModel/i.test(accept)) params.set('addMetrics', 'false');
       return parseCdsDependencyGraph(
         await this.backend.readDependencyGraph(`${collection}?${params.toString()}`, accept),
       );
@@ -235,7 +278,15 @@ function parseProperties(node: Record<string, unknown>): Map<string, string> {
   return result;
 }
 
-/** Parse old and new SAP dependency-analyzer XML into one bounded tree. */
+/**
+ * Parse SAP dependency-analyzer XML (750 element-info and 758/816 SQLDependencyModel v3) into one
+ * bounded, explicitly classified tree.
+ *
+ * Every node is classified before it can influence a decision. SQL nodes enter lineage; the verified
+ * auxiliary access-control chain is validated and dropped; anything else fails closed. Explicit kind
+ * classification is the primary boundary here — a later failed table-source read is defence in depth,
+ * not the protection.
+ */
 export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
   if (xml.length > MAX_GRAPH_XML_CHARS) {
     throw new DataSourceLineageError(`CDS dependency graph exceeds input limit ${MAX_GRAPH_XML_CHARS} characters`);
@@ -250,48 +301,116 @@ export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
   if (!root) throw new DataSourceLineageError('CDS dependency graph is missing its root elementInfo node');
 
   let nodeCount = 0;
-  const visit = (raw: Record<string, unknown>, depth: number): CdsDependencyNode => {
+
+  const rawChildren = (raw: Record<string, unknown>): Record<string, unknown>[] => {
+    const kids = Array.isArray(raw.elementInfo) ? raw.elementInfo : raw.elementInfo ? [raw.elementInfo] : [];
+    return kids.map((child) => {
+      const record = asRecord(child);
+      if (!record) throw new DataSourceLineageError('CDS dependency graph contains a malformed child node');
+      return record;
+    });
+  };
+
+  const countNode = (depth: number): void => {
     if (depth > MAX_GRAPH_DEPTH)
       throw new DataSourceLineageError(`CDS dependency graph exceeds depth limit ${MAX_GRAPH_DEPTH}`);
     nodeCount += 1;
     if (nodeCount > MAX_GRAPH_NODES)
       throw new DataSourceLineageError(`CDS dependency graph exceeds node limit ${MAX_GRAPH_NODES}`);
+  };
+
+  /** Validate one node of the auxiliary access-control chain and everything under it. */
+  const visitAuxiliary = (raw: Record<string, unknown>, expected: string, depth: number): void => {
+    countNode(depth);
+    const properties = parseProperties(raw);
+    const declared = properties.get('TYPE')?.trim().toUpperCase();
+
+    if (expected === 'DCLS_OBJECT') {
+      // The terminal DCL object carries an adtcore:type and, live, no properties at all.
+      if (declared !== undefined) {
+        throw new DataSourceLineageError(`access-control object declares unexpected TYPE ${declared}`);
+      }
+      if (attribute(raw, 'type')?.toUpperCase() !== DCL_OBJECT_ADTCORE_TYPE) {
+        throw new DataSourceLineageError('access-control branch terminal is not a DCLS/DL object');
+      }
+      if (rawChildren(raw).length > 0) {
+        throw new DataSourceLineageError('access-control object has unexpected children');
+      }
+      return;
+    }
+
+    if (declared !== expected) {
+      throw new DataSourceLineageError(
+        `access-control branch expected ${expected} but found ${declared ?? 'a node with no TYPE'}`,
+      );
+    }
+    const nextExpected = AUXILIARY_CHILD_KIND[expected]!;
+    for (const child of rawChildren(raw)) visitAuxiliary(child, nextExpected, depth + 1);
+  };
+
+  const visit = (raw: Record<string, unknown>, depth: number): CdsDependencyNode => {
+    countNode(depth);
+
+    const properties = parseProperties(raw);
+    const declared = properties.get('TYPE')?.trim().toUpperCase();
+    if (!declared) {
+      throw new DataSourceLineageError('CDS dependency graph node is missing TYPE');
+    }
+    if (!(SQL_NODE_KINDS as readonly string[]).includes(declared)) {
+      throw new DataSourceLineageError(`CDS dependency graph node declares unsupported kind ${declared}`);
+    }
+    const kind = declared as SqlNodeKind;
 
     const rawName = attribute(raw, 'name');
     if (!rawName) throw new DataSourceLineageError('CDS dependency graph node is missing its name');
     let name: string;
     try {
-      name = canonicalDataSourceName(rawName);
+      name = canonicalDataSourceName(rawName, 'CDS dependency graph node');
     } catch {
       throw new DataSourceLineageError('CDS dependency graph node has an invalid technical name');
     }
-    const properties = parseProperties(raw);
-    const kind = properties.get('TYPE')?.trim().toUpperCase();
-    if (!kind) throw new DataSourceLineageError(`CDS dependency graph node ${name} is missing TYPE`);
+
+    // ENTITY_NAME is mixed case live (I_BusinessPartner) and can be empty on table nodes.
     const aliases = new Set<string>([name]);
     for (const key of ['ENTITY_NAME', 'NODE_NAME']) {
       const value = properties.get(key);
-      if (value) {
-        try {
-          aliases.add(canonicalDataSourceName(value));
-        } catch {
-          throw new DataSourceLineageError(`CDS dependency graph node ${name} has an invalid ${key}`);
-        }
+      if (!value) continue;
+      try {
+        aliases.add(canonicalDataSourceName(value, `CDS dependency graph ${key}`));
+      } catch {
+        throw new DataSourceLineageError(`CDS dependency graph node ${name} has an invalid ${key}`);
       }
     }
+
+    const accessState = properties.get('AC_STATE')?.trim().toUpperCase();
+    const hasDcl = properties.get('HAS_DCL')?.trim().toUpperCase() === 'X';
+    let accessControlled = hasDcl || (accessState !== undefined && !['NA', 'NONE', ''].includes(accessState));
+
+    const children: CdsDependencyNode[] = [];
+    for (const child of rawChildren(raw)) {
+      const childType = parseProperties(child).get('TYPE')?.trim().toUpperCase();
+      if (childType !== undefined && childType in AUXILIARY_CHILD_KIND) {
+        // A recognized auxiliary branch: validate its exact shape, record that access control is
+        // present, and drop it. It contributes no application data and must never enter lineage.
+        visitAuxiliary(child, childType, depth + 1);
+        accessControlled = true;
+        continue;
+      }
+      children.push(visit(child, depth + 1));
+    }
+
+    // Deterministic ordering so the same graph always reports the same first blocked path,
+    // regardless of the order SAP happens to serialize siblings in.
+    children.sort((a, b) => (a.name === b.name ? 0 : a.name < b.name ? -1 : 1));
+
     const dbExists = properties.get('DB_EXISTS');
-    const rawChildren = Array.isArray(raw.elementInfo) ? raw.elementInfo : raw.elementInfo ? [raw.elementInfo] : [];
-    const children = rawChildren.map((child) => {
-      const record = asRecord(child);
-      if (!record) throw new DataSourceLineageError(`CDS dependency graph node ${name} has a malformed child`);
-      return visit(record, depth + 1);
-    });
     return {
       name,
       aliases: [...aliases],
       kind,
       ...(properties.get('RELATION') ? { relation: properties.get('RELATION')!.toUpperCase() } : {}),
       ...(dbExists !== undefined ? { databaseExists: dbExists.toUpperCase() === 'X' } : {}),
+      accessControlled,
       children,
     };
   };
@@ -418,7 +537,7 @@ function safeLineageFailureReason(error: unknown): string {
 }
 
 function unresolved(directSource: string, sourcePath: string[], reason: string): DataSourcePolicyError {
-  return new DataSourcePolicyError('DATA_SOURCE_UNRESOLVED', directSource, sourcePath, reason);
+  return new DataSourcePolicyError('DATA_LINEAGE_UNRESOLVED', directSource, sourcePath, reason);
 }
 
 /** Evaluate direct sources and their active lineage before a data-preview request is sent. */
@@ -524,6 +643,16 @@ export async function enforceBlockedDataSources(
         if (node.children.length > 0)
           throw unresolved(directSource, nodePath, `table node ${node.name} has unexpected children`);
         return;
+      }
+      if (node.kind === 'CDS_TABLE_FUNCTION') {
+        // Live 758 confirms SAP emits TYPE=CDS_TABLE_FUNCTION and does NOT expand the AMDP USING
+        // list, so the node's real data sources are simply absent from the graph. Refusing on the
+        // declared kind is the primary boundary; it is never inferred from a later failed read.
+        throw unresolved(
+          directSource,
+          nodePath,
+          `CDS table function ${node.name} is not supported by the experimental policy: SAP does not expose its AMDP USING lineage in the dependency graph`,
+        );
       }
       if (node.kind !== 'CDS_VIEW') {
         throw unresolved(directSource, nodePath, `dependency kind ${node.kind} is unsupported`);

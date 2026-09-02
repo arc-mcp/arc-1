@@ -510,7 +510,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       const text = result.content[0]?.text ?? '';
 
       expect(result.isError).toBe(true);
-      expect(text).toContain('DATA_SOURCE_UNRESOLVED');
+      expect(text).toContain('DATA_LINEAGE_UNRESOLVED');
       expect(text).toContain('HTTP 423 during lineage resolution');
       expect(text).not.toMatch(/SECRETUSER|DEVK900001|informationsystem/i);
     });

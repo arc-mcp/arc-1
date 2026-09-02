@@ -1,28 +1,6 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<abapsource:elementInfo
-  xmlns:abapsource="http://www.sap.com/adt/abapsource"
-  xmlns:adtcore="http://www.sap.com/adt/core"
-  adtcore:type="DDLS/DF"
-  adtcore:name="DEMO_CDS_SUMDIST">
-  <abapsource:properties>
-    <abapsource:entry abapsource:key="TYPE">CDS_VIEW</abapsource:entry>
-    <abapsource:entry abapsource:key="ENTITY_NAME">demo_cds_sumdist</abapsource:entry>
-    <abapsource:entry abapsource:key="NODE_NAME">DEMO_CDS_SUDI</abapsource:entry>
-    <abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
-    <abapsource:entry abapsource:key="AC_STATE">NONE</abapsource:entry>
-  </abapsource:properties>
-  <abapsource:elementInfo adtcore:type="TABL/DT" adtcore:name="SCARR">
-    <abapsource:properties>
-      <abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
-      <abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry>
-      <abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
-    </abapsource:properties>
-  </abapsource:elementInfo>
-  <abapsource:elementInfo adtcore:type="TABL/DT" adtcore:name="SPFLI">
-    <abapsource:properties>
-      <abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
-      <abapsource:entry abapsource:key="RELATION">INNER_JOIN</abapsource:entry>
-      <abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
-    </abapsource:properties>
-  </abapsource:elementInfo>
-</abapsource:elementInfo>
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Captured live 2026-09-02 from SAP_BASIS 758 (A4H); byte-identical on 816.
+     GET .../graphdata?ddlsourceName=DEMO_CDS_SUMDIST&addMetrics=false
+     Accept: application/vnd.sap.adt.ddl.SQLDependencyModel.v3+xml  ->  200
+     The same request with the v3 media type returns 406 on 750, which is the negotiation fallback.
+     Sanitized: SAP standard demo/released objects only; no credentials, hosts or customer data. --><abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/demo_cds_sumdist" adtcore:type="DDLS/DF" adtcore:name="DEMO_CDS_SUMDIST" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core"><abapsource:properties><abapsource:entry abapsource:key="TYPE">CDS_VIEW</abapsource:entry><abapsource:entry abapsource:key="RELATION"/><abapsource:entry abapsource:key="ENTITY_NAME">demo_cds_sumdist</abapsource:entry><abapsource:entry abapsource:key="NODE_NAME">DEMO_CDS_SUDI</abapsource:entry><abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry><abapsource:entry abapsource:key="AC_STATE">NONE</abapsource:entry></abapsource:properties><abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/tables/scarr" adtcore:type="TABL/DT" adtcore:name="SCARR"><abapsource:properties><abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry><abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry><abapsource:entry abapsource:key="ENTITY_NAME"/><abapsource:entry abapsource:key="NODE_NAME">SCARR</abapsource:entry><abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry><abapsource:entry abapsource:key="AC_STATE">NA</abapsource:entry></abapsource:properties></abapsource:elementInfo><abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/tables/spfli" adtcore:type="TABL/DT" adtcore:name="SPFLI"><abapsource:properties><abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry><abapsource:entry abapsource:key="RELATION">INNER_JOIN</abapsource:entry><abapsource:entry abapsource:key="ENTITY_NAME"/><abapsource:entry abapsource:key="NODE_NAME">SPFLI</abapsource:entry><abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry><abapsource:entry abapsource:key="AC_STATE">NA</abapsource:entry></abapsource:properties></abapsource:elementInfo></abapsource:elementInfo>
