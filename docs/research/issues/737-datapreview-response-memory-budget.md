@@ -35,10 +35,11 @@ The recommended fix is a bundle:
 1. Add an enabled-by-default **post-content-decoding response-body byte budget for the complete
    data-preview tool call**. The first guarded data operation should lazily create one request-level
    budget in the existing `AsyncLocalStorage` context and pass it explicitly to the transport.
-   Start with **1 MiB per call**, including the sum of auto-chunked and internal data-preview
-   responses, and make the ceiling operator-configurable. This is still roughly 190,000–202,000
-   tokens for a representative TADIR-shaped result, so it is a server-safety ceiling rather than a
-   promise that every client can use a near-limit result.
+   Nested hyperfocused dispatch must inherit the outer MCP call's scope. Start with **1 MiB per
+   call**, including the sum of auto-chunked and internal data-preview responses, and make the
+   ceiling operator-configurable. This is still roughly 190,000–202,000 tokens for a representative
+   TADIR-shaped result, so it is a server-safety ceiling rather than a promise that every client can
+   use a near-limit result.
 2. Add a separate **process-wide data-result semaphore**, default **4**, acquired lazily by that
    same request context and held through fetch, parse, row construction, tool JSON construction,
    and terminal audit formatting. It must be shared by all principal-propagation and multi-target
@@ -194,6 +195,12 @@ tool call reuses both. The outer dispatch releases the slot in `finally`, after 
 and terminal audit formatting. This structurally covers current and future handler call paths
 without a handler allowlist. Public `AdtClient` use outside an MCP request still needs a fallback
 per-operation context so library callers do not silently receive an unbounded response.
+
+Hyperfocused mode is a nested-dispatch exception: its `SAP` registry entry recursively calls
+`handleToolCall()` for the expanded tool. That inner call must inherit the outer context's mutable
+data-result scope and MCP signal instead of creating a second budget or lease. Only the outermost
+owner releases the shared lease, after the outer tool's result/audit work. This preserves one
+admission unit per actual MCP call and prevents early release or double release.
 
 The current POST path also forwards its `AdtRequestOptions` to `fetchCsrfToken()`. A data response
 budget must not follow that call into the discovery HEAD/GET: the fallback GET may have a body, is
@@ -440,9 +447,12 @@ an apparently configured but unbounded data path would undermine the default-saf
 Bulk/file consumers should use an explicitly sized deployment override rather than causing the
 shared MCP default to absorb multi-megabyte row sets.
 
-Extend the existing `RequestContext` with the MCP abort signal and a lazily created data-result
-context. The latter owns one budget with `limitBytes`, committed successful `consumedBytes`, and
-provisional successful bytes reserved by active response streams. `getTableContents()`,
+Extend the existing `RequestContext` with the MCP abort signal and a shared data-result scope whose
+budget and semaphore lease are initialized lazily. The scope owns one budget with `limitBytes`,
+committed successful `consumedBytes`, and provisional successful bytes reserved by active response
+streams. A nested `handleToolCall()`—currently the hyperfocused `SAP` wrapper—must inherit this
+same scope and signal, with only the outermost owner responsible for final release.
+`getTableContents()`,
 `runQuery()`, `runQueryWithMetrics()`, and `runTableQuery()` must all obtain this context through one
 client-layer helper before issuing HTTP. This makes database-backed search, navigation, where-used,
 authorization trace, and auto-chunking share the same allowance automatically. Do not wrap a list
@@ -515,10 +525,11 @@ Add a shared process-wide `Semaphore`, configured by `ARC1_MAX_CONCURRENT_DATA_R
 default `4`. Thread the one instance into every `AdtClient` in the same way as `adtSemaphore`,
 including request-local principal-propagation and multi-target clients. The first guarded client
 method in an MCP tool call acquires it lazily through the request-level data-result context; later
-data methods in that call reuse the lease and must not acquire a nested slot. `handleToolCall()`
-releases the lease in an outer `finally` after tool JSON, result sizing/preview, terminal audit, or
-error formatting completes. The MCP SDK's later JSON-RPC/SSE encoding remains outside this lease.
-The wait and guarded HTTP work must honor `RequestHandlerExtra.signal`.
+data methods and nested hyperfocused dispatch in that call reuse the lease and must not acquire a
+nested slot. Only the outermost `handleToolCall()` owner releases the lease, in `finally` after tool
+JSON, result sizing/preview, terminal audit, or error formatting completes. The MCP SDK's later
+JSON-RPC/SSE encoding remains outside this lease. The wait and guarded HTTP work must honor
+`RequestHandlerExtra.signal`.
 
 Do not reuse or lower `ARC1_MAX_CONCURRENT`: that limiter protects SAP dialog work processes and
 has different sizing semantics. A separate FIFO queue keeps ordinary source reads concurrent
@@ -643,7 +654,8 @@ Expected implementation surface:
   handlers so `SAPRead`, `SAPSearch`, `SAPNavigate`, where-used, and authorization trace cannot be
   missed;
 - `src/handlers/dispatch.ts` — request-context lifetime, lease release after result/audit work,
-  stable error formatting/audit classification, and avoidable string copy;
+  nested hyperfocused scope inheritance, stable error formatting/audit classification, and
+  avoidable string copy;
 - `src/server/types.ts`, `src/server/config.ts`, `src/server/server.ts`, and
   `src/server/multi-target-runtime.ts` — defaults, strict CLI/env parsing, MCP signal propagation,
   process-wide semaphore, multi-target sharing, startup envelope log, and warning;
@@ -679,8 +691,10 @@ No ADT feature discovery or SAP release gate is needed.
    each other's provisional reservations, so their combined bytes cannot oversubscribe the limit.
    Cover `SAPQuery`, table-content/table-query reads, DB-backed TADIR lookup, class hierarchy,
    where-used interface augmentation, and authorization trace. Assert one lazy context and one
-   non-nested semaphore lease per tool call. A direct `AdtClient` operation outside MCP receives a
-   bounded fallback context and releases it.
+   non-nested semaphore lease per tool call. The hyperfocused `SAP` wrapper inherits the same
+   budget/signal, the inner dispatch does not release it, and the outer dispatch releases it once
+   after its own audit/result work. A direct `AdtClient` operation outside MCP receives a bounded
+   fallback context and releases it.
 5. **Row limits:** raw, single-statement, and chunked `SAPQuery` all clamp at the sink to 10,000;
    NaN, infinity, fractions, zero, and negatives retain the existing fallback semantics.
 6. **Parser equivalence:** old ASX and current data-preview fixtures produce identical rows and
