@@ -178,6 +178,13 @@ produce one much larger tool result. The budget object must therefore belong to 
 call. Each data-preview read consumes from the same remaining post-content-decoding byte allowance,
 and a later chunk fails or stops before the cumulative allowance is crossed.
 
+The byte budget is not a truncation mechanism. If a later chunk would cross it, the complete tool
+call fails and discards the partial aggregate. Separately, when `SAPQuery.maxRows` is reduced to the
+10,000-row safety ceiling, the result must report `rowLimitClamped: true`, `requestedRows`, and
+`effectiveMaxRows: 10000`. Those fields disclose the changed execution limit without claiming that
+SAP definitely had more matching rows. Do not set `truncated: true` merely because the requested
+limit was clamped.
+
 ### 6. Data-preview work is not confined to the two obvious handlers
 
 Wrapping only `SAPQuery` and `SAPRead` would miss existing internal consumers. Database-backed
@@ -208,6 +215,10 @@ not data-preview output, and could consume or trip the wrong allowance. Add a na
 `withoutResponseBudget(options)` helper for CSRF bootstrap and preserve its signal, deadline,
 fetch timeout, and other request controls.
 
+`SAPRead.TABLE_CONTENTS` and `TABLE_QUERY` bypass the source/ETag caching layer, as do the freestyle
+query methods. The budget therefore accounts only for live SAP response streams; there is no cached
+data-preview body to charge, replay, or invalidate in this implementation.
+
 ### 7. MCP cancellation exists but is not yet connected to this work
 
 The MCP SDK supplies `RequestHandlerExtra.signal` to the registered tool handler. `server.ts`
@@ -221,6 +232,21 @@ data-semaphore acquisition and every guarded direct/proxy request. Cancellation 
 queued waiter without leaking a slot and cancel or destroy an active response stream and its proxy
 client. This change is scoped to the guarded data path; broad cancellation plumbing for every
 existing ADT operation is useful but not required to close #737.
+
+### 8. The plugin facade has a separate data-method omission
+
+FEAT-61 plugins cannot issue a raw data-preview POST through `ctx.http`: `createSafeHttpClient()`
+rejects every POST to `/sap/bc/adt/...`, and the read-only client facade hides
+`getTableContents()`, `runQuery()`, and `runTableQuery()`. Therefore generic plugin HTTP access is
+not a bypass for this data-preview budget. The client-layer design also means every invocation of a
+guarded high-level data method is bounded regardless of which handler called it.
+
+However, `runQueryWithMetrics()` is missing from both the static `ReadOnlyAdtClient` omit list and
+the runtime blocked-key set. That is an existing experimental-plugin scope-surface inconsistency,
+not a reason to broaden #737 into a universal response cap. Track and fix it separately by updating
+`src/public/types.ts`, `src/server/safe-http-client.ts`, and their focused tests. Generic plugin GET
+responses and other non-data ADT reads remain subject to the existing general transport behavior;
+a universal response-size policy would need separate compatibility research.
 
 ## Contract and reference implementation research
 
@@ -452,30 +478,41 @@ budget and semaphore lease are initialized lazily. The scope owns one budget wit
 committed successful `consumedBytes`, and provisional successful bytes reserved by active response
 streams. A nested `handleToolCall()`—currently the hyperfocused `SAP` wrapper—must inherit this
 same scope and signal, with only the outermost owner responsible for final release.
-`getTableContents()`,
-`runQuery()`, `runQueryWithMetrics()`, and `runTableQuery()` must all obtain this context through one
-client-layer helper before issuing HTTP. This makes database-backed search, navigation, where-used,
-authorization trace, and auto-chunking share the same allowance automatically. Do not wrap a list
-of handlers. When no MCP `RequestContext` exists, each public operation creates and releases a safe
-fallback data context for that operation.
+`getTableContents()`, `runQuery()`, `runQueryWithMetrics()`, and `runTableQuery()` must all obtain
+this context through one client-layer helper before issuing HTTP. This makes database-backed
+search, navigation, where-used, authorization trace, and auto-chunking share the same allowance
+automatically. Do not wrap a list of handlers. When no MCP `RequestContext` exists, each public
+operation creates and releases a safe fallback data context for that operation.
 
-Attach the budget explicitly to `AdtRequestOptions` for the actual data POST. The HTTP layer must
-not infer policy by matching `/datapreview/{ddic,freestyle}` path strings: path sniffing would be
-fragile under endpoint variants, retries, and future callers. Before an automatic data POST fetches
-a CSRF token, call `fetchCsrfToken(withoutResponseBudget(options))`. That helper removes only the
-response budget; it must preserve the caller signal, deadline, fetch timeout, and other request
-controls. Discovery HEAD/GET responses are not result data and must neither consume nor trip the
-data allowance.
+Do not make the known data path depend on a caller remembering an optional option. Add one private
+data-preview transport sink (for example `postDataPreview(...)`) whose budget/context parameter is
+required. `postFreestyleQuery()` must also require and forward that value. The four public data
+methods remain safe-by-default: each obtains the current or fallback context and passes its budget
+to the required sink. This makes omission inside the known data chain a TypeScript error without
+forcing library consumers to construct an internal safety object. Add a structural regression test
+covering every `/datapreview/{ddic,freestyle}` call site. The generic HTTP layer still uses an
+optional `AdtRequestOptions.responseBudget` because ordinary ADT requests are intentionally outside
+this data-specific policy.
+
+The required sink attaches the budget explicitly to `AdtRequestOptions` for the actual data POST.
+The HTTP layer must not infer policy by matching `/datapreview/{ddic,freestyle}` path strings: path
+sniffing would be fragile under endpoint variants, retries, and future callers. Before an automatic
+data POST fetches a CSRF token, call `fetchCsrfToken(withoutResponseBudget(options))`. That helper
+removes only the response budget; it must preserve the caller signal, deadline, fetch timeout, and
+other request controls. Discovery HEAD/GET responses are not result data and must neither consume
+nor trip the data allowance.
 
 Count response-body `Uint8Array` chunks **after content decoding/decompression and before UTF-8
-string conversion**. This is neither encoded `Content-Length` nor JavaScript string length. A
-successful response stream reserves bytes as chunks arrive. The acceptance check is
+string conversion**. This is neither encoded `Content-Length` nor JavaScript string length. An
+HTTP success means status 200–299 (`response.ok`). A 2xx response stream reserves bytes as chunks
+arrive. The acceptance check is
 `consumedBytes + allInFlightReservedBytes + nextChunkBytes <= limitBytes`, so two future parallel
 responses in the same request cannot each start from the same stale cumulative count. On complete
-successful consumption, move that stream's reservation into `consumedBytes`; on cancellation or
-failure, release it. Non-success and discarded retry bodies use the same hard per-response limit
-but do not reduce the later successful-result allowance. When the next chunk would cross its
-applicable limit, cancel upstream, discard accumulated chunks, and throw a typed
+2xx consumption, move that stream's reservation into `consumedBytes`; on cancellation or failure,
+release it. Every non-2xx body—including 401, 406/415, 429, 500, and 503 retry candidates—uses the
+same hard per-response limit but never reduces the cumulative successful-result allowance. Status
+is known before the body is consumed, so this rule is deterministic. When the next chunk would
+cross its applicable limit, cancel upstream, discard accumulated chunks, and throw a typed
 `AdtResponseLimitError`. Do not include SQL, response prefixes, or row values in the error or audit
 event.
 
@@ -554,8 +591,15 @@ operator may raise either ceiling.
   effort-to-benefit mitigation: the direct fixture saved about 52 MiB for a small code change. It
   still does not bound one response or aggregate concurrency.
 - Apply `clampPreviewRows()` inside the freestyle sink, not only at callers, and clamp the outer
-  `runChunkedSapQuery()` total. Update the tool description to state max 10,000. Sink enforcement
-  prevents internal or future callers from bypassing it.
+  `runChunkedSapQuery()` total. Sink enforcement prevents internal or future callers from bypassing
+  it. When the user's positive finite requested limit exceeds 10,000, `SAPQuery` must add
+  `rowLimitClamped`, `requestedRows`, and `effectiveMaxRows` metadata to both single and chunked
+  results. Do not return partial rows after a byte-budget error.
+- Update the tool description to distinguish the two limits: 10,000 is the hard maximum requested
+  row count, while the 1 MiB cumulative decompressed-response ceiling can reject a wide result much
+  earlier. In the live TADIR sample, 6,690,675 bytes for 10,000 rows averaged about 669 raw XML
+  bytes per row, so a 1 MiB response is only roughly 1,500 rows for that shape. This is an
+  illustration, not a row guarantee or a basis for automatic retry sizing.
 - Avoid building aggregate `fullText` with `.map().join('')` in dispatch when there is only one
   text block; use the existing string directly, and compute multi-block size without concatenating
   when a preview does not require it. The current JavaScript engine may optimize the one-item join,
@@ -611,10 +655,11 @@ definition of done for #737:
 
 1. **Mitigation PR — does not close #737:** combine the one-pass rows/metrics parser and sink-level
    10,000-row clamp for raw and chunked `SAPQuery`. The parser change is intended to preserve
-   results. The clamp is a deliberate behavior change, although it matches the silent, graceful
-   policy already used by `TABLE_CONTENTS` and `TABLE_QUERY` after #388. Keep the shipped 448 MiB
-   old-space setting in this PR; lowering it before the response guard exists can make an unbounded
-   request fail fatally sooner.
+   results. The clamp is a deliberate behavior change and must be disclosed in `SAPQuery` result
+   metadata; its sink enforcement remains consistent with the safety ceiling used by
+   `TABLE_CONTENTS` and `TABLE_QUERY` after #388. Keep the shipped 448 MiB old-space setting in this
+   PR; lowering it before the response guard exists can make an unbounded request fail fatally
+   sooner.
 2. **Issue-closing PR:** add the lazy request-level data-result context, MCP cancellation plumbing,
    strict configuration contract, 1 MiB cumulative body budget, conditional direct/BTP response
    stream wrapper, CSRF budget stripping, correctly owned proxy teardown, shared data-result
@@ -625,9 +670,12 @@ definition of done for #737:
 Use the project's normal `fix:` convention for the resource-safety work. Independently of commit
 type, the release notes and upgrade guidance must prominently say that:
 
-- raw `SAPQuery.maxRows` values above 10,000 are now clamped;
+- raw `SAPQuery.maxRows` values above 10,000 are now clamped and the result reports the requested
+  and effective limits;
 - successful results above the default 1 MiB cumulative post-content-decoding body ceiling now
   fail with an actionable error;
+- 10,000 is only the maximum row request; wide rows can reach the byte ceiling and fail at a much
+  lower row count;
 - operators serving intentional batch/file consumers can raise the ceiling after sizing memory
   and data concurrency; and
 - both new limits reject zero or malformed values at startup rather than disabling the boundary.
@@ -648,7 +696,8 @@ Expected implementation surface:
   pass-through catches so it is not accidentally reclassified as `AdtNetworkError`; export it from
   `src/public/index.ts` for direct client consumers;
 - `src/adt/config.ts` and `src/adt/client.ts` — shared admission-controller plumbing, lazy/fallback
-  data-operation context, all data-method coverage, sink row clamp, and combined parser path;
+  data-operation context, required internal data-preview sink, all data-method coverage, sink row
+  clamp, and combined parser path;
 - `src/adt/xml-parser.ts` — one-parse data-preview result extraction;
 - `src/handlers/query.ts` — chunked row clamp; request-level budget ownership belongs below the
   handlers so `SAPRead`, `SAPSearch`, `SAPNavigate`, where-used, and authorization trace cannot be
@@ -682,9 +731,9 @@ No ADT feature discovery or SAP release gate is needed.
    behavior. `withoutResponseBudget()` prevents both CSRF HEAD and fallback GET from consuming or
    tripping the data allowance while preserving signal, deadline, fetch timeout, and request flags.
    An unrelated large response must not accidentally acquire a data lease or budget.
-3. **Retry coverage:** 401, 429, 503, and content-negotiation retry responses cannot bypass a hard
-   per-response ceiling. Assert that discarded error/retry bodies do not consume the cumulative
-   successful-result allowance, while no individual body can be read without a bound.
+3. **Retry coverage and charging:** 2xx bodies reserve and commit against the cumulative allowance.
+   The complete bodies of 401, 406/415, 429, 500 DB-reconnect, and 503 retry responses cannot bypass
+   the hard per-response ceiling but never charge the cumulative successful-result allowance.
 4. **Request ownership and aggregate accounting:** several individually sub-limit IN-list or
    internal data responses cross the cumulative tool budget and fail without retaining/serializing
    the combined rows. Two simultaneous successful response streams in one request must include
@@ -695,18 +744,22 @@ No ADT feature discovery or SAP release gate is needed.
    budget/signal, the inner dispatch does not release it, and the outer dispatch releases it once
    after its own audit/result work. A direct `AdtClient` operation outside MCP receives a bounded
    fallback context and releases it.
-5. **Row limits:** raw, single-statement, and chunked `SAPQuery` all clamp at the sink to 10,000;
-   NaN, infinity, fractions, zero, and negatives retain the existing fallback semantics.
+5. **Row limits:** raw, single-statement, and chunked `SAPQuery` all clamp at the required sink to
+   10,000; NaN, infinity, fractions, zero, and negatives retain the existing fallback semantics.
+   An above-limit request reports `rowLimitClamped`, `requestedRows`, and `effectiveMaxRows` for
+   both execution paths. Byte overflow still returns an error with no partial rows. Assert every
+   data-preview endpoint literal routes through the required-budget sink, while ordinary public
+   client callers receive a safe context automatically.
 6. **Parser equivalence:** old ASX and current data-preview fixtures produce identical rows and
    metrics through the one-parse function, including empty/null values.
 7. **Concurrency and cancellation:** five data calls never exceed the default data-result
    concurrency of four; an ordinary source read is not queued behind them; the semaphore is shared
-   across per-user, pinned,
-   and aggregate multi-target clients; queued work for a second target progresses in FIFO order as
-   a slot frees. Pass the SDK's MCP abort signal into dispatch: an aborted waiter leaves no slot
-   leak, and an active direct/BTP read is cancelled and cleaned up. The lease remains held through
-   tool JSON and terminal audit work and is released on every success/error path. Also test a
-   non-default value so the assertion proves configuration plumbing rather than a hard-coded value.
+   across per-user, pinned, and aggregate multi-target clients; queued work for a second target
+   progresses in FIFO order as a slot frees. Pass the SDK's MCP abort signal into dispatch: an
+   aborted waiter leaves no slot leak, and an active direct/BTP read is cancelled and cleaned up.
+   The lease remains held through tool JSON and terminal audit work and is released on every
+   success/error path. Also test a non-default value so the assertion proves configuration plumbing
+   rather than a hard-coded value.
 8. **Error contract:** single-target and multi-target routes return a stable, secret-free,
    actionable `DATA_RESPONSE_TOO_LARGE` error with `retryable:false`, the effective limit, and the
    request ID. Minimal-error mode must not hide the operator-defined limit or remediation. An
@@ -748,12 +801,16 @@ For affected operators:
 - Do not change the SAP SQL authorization model; the existing data/sql scope and safety gates are
   orthogonal and must remain.
 - Do not add automatic offset pagination without a verified ADT cursor/offset contract.
-- Do not silently return a partial result as if it were complete. If a future truncated mode is
-  added, it needs explicit `truncated`, returned/total counts, and continuation semantics.
+- Do not return a byte-budget-partial result. A row-limit clamp reports the requested and effective
+  limits without asserting that more matches existed. If a future partial/truncated mode is added,
+  it needs explicit `truncated`, returned/total counts, and continuation semantics.
 - Do not store query results on CF's ephemeral filesystem as the default workaround. A durable
   result-link feature would require separate storage, retention, authorization, and audit design.
 - Do not use `process.availableMemory()` as the primary admission decision; although stable in
   the required Node runtime, it is a racy snapshot under parallel allocation.
+- Do not turn the data-preview budget into a universal plugin/ADT response limit without separate
+  compatibility research. Track the exposed `runQueryWithMetrics()` plugin-facade omission as an
+  independent, surgical scope-hardening follow-up.
 
 **Recommendation:** accept #737 and implement the layered fix above. Treat the streaming cumulative
 byte budget and dedicated data semaphore together as the issue-closing boundary. Land the
