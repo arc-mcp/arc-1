@@ -1369,7 +1369,8 @@ export class AdtClient {
 
   /** Execute freestyle SQL query and return just the rows/columns. */
   async runQuery(sql: string, maxRows = 100): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
-    return parseTableContents(await this.postFreestyleQuery(sql, maxRows));
+    const { columns, rows } = await this.runQueryBatch([sql], maxRows);
+    return { columns, rows };
   }
 
   /**
@@ -1382,15 +1383,52 @@ export class AdtClient {
     sql: string,
     maxRows = 100,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
-    const body = await this.postFreestyleQuery(sql, maxRows);
-    return { ...parseTableContents(body), ...parseDataPreviewMeta(body) };
+    return this.runQueryBatch([sql], maxRows);
   }
 
-  private async postFreestyleQuery(sql: string, maxRows: number): Promise<string> {
+  /**
+   * Authorize a set of server-generated statements ONCE, then execute them.
+   *
+   * This is the single freestyle-SQL entry point. IN-list chunking splits one logical caller request
+   * into N statements; authorizing each separately would repeat the whole lineage resolution N times
+   * (a search plus a graph read plus a table-source read per distinct source, per chunk). Instead the
+   * union of every chunk's canonical direct sources is authorized in one decision, and only then are
+   * the already-authorized statements posted.
+   *
+   * Authorization and the POST deliberately live inside the same private operation: there is no
+   * caller-supplied `authorized`/`internal` receipt that could be forged to skip the guard, and the
+   * decision is a local const that cannot outlive this call. Metrics are reported only for a single
+   * statement, because an early break on the row cap would make a summed totalRows misleading.
+   */
+  async runQueryBatch(
+    statements: string[],
+    maxRows = 100,
+  ): Promise<{ columns: string[]; rows: Record<string, string>[] } & Partial<DataPreviewMeta>> {
     checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
-    await this.dataSourceBlocklistGuard().enforceSql(sql);
-    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
-    return resp.body;
+    if (statements.length === 0) throw new Error('runQueryBatch requires at least one statement');
+
+    // ONE policy decision covering every statement in this logical request.
+    await this.dataSourceBlocklistGuard().enforceSqlBatch(statements);
+
+    const rowLimit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 100;
+    const post = async (sql: string, limit: number): Promise<string> =>
+      (await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${limit}`, sql, 'text/plain')).body;
+
+    if (statements.length === 1) {
+      const body = await post(statements[0]!, rowLimit);
+      return { ...parseTableContents(body), ...parseDataPreviewMeta(body) };
+    }
+
+    const rows: Record<string, string>[] = [];
+    let columns: string[] = [];
+    for (const statement of statements) {
+      const remaining = rowLimit - rows.length;
+      if (remaining <= 0) break;
+      const chunk = parseTableContents(await post(statement, remaining));
+      if (columns.length === 0) columns = chunk.columns;
+      rows.push(...chunk.rows);
+    }
+    return { columns, rows: rows.slice(0, rowLimit) };
   }
 
   /**

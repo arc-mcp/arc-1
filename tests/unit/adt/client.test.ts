@@ -2054,6 +2054,96 @@ describe('AdtClient', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    // ── One decision per logical request (no cross-request cache) ──────────────
+    describe('batched authorization', () => {
+      const chunks = [
+        "SELECT * FROM SCARR WHERE CARRID IN ('A','B')",
+        "SELECT * FROM SCARR WHERE CARRID IN ('C','D')",
+        "SELECT * FROM SCARR WHERE CARRID IN ('E','F')",
+      ];
+
+      const allowMocks = () => {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation(async (url: string) => {
+          const u = String(url);
+          if (u.includes('/repository/informationsystem/search')) {
+            return objectSearchResponses([{ uri: '/sap/bc/adt/ddic/tables/scarr', type: 'TABL/DT', name: 'SCARR' }]);
+          }
+          if (u.includes('/ddic/tables/')) {
+            return mockResponse(200, 'define table scarr { key mandt : abap.clnt; }', { 'x-csrf-token': 'T' });
+          }
+          return mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' });
+        });
+      };
+
+      it('resolves lineage once for N chunks and posts each chunk', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        await client.runQueryBatch(chunks, 100);
+
+        const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+        // One search and one table-source read for the single distinct source across all chunks.
+        expect(urls.filter((u) => u.includes('/repository/informationsystem/search'))).toHaveLength(1);
+        expect(urls.filter((u) => u.includes('/ddic/tables/'))).toHaveLength(1);
+        // …but every chunk still executes.
+        expect(urls.filter((u) => u.includes('/datapreview/freestyle'))).toHaveLength(chunks.length);
+      });
+
+      it('covers the union of all chunk sources, not just the first chunk', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        // USR02 appears ONLY in the last chunk; it must still deny the whole batch.
+        await expect(client.runQueryBatch([...chunks, 'SELECT * FROM USR02'], 100)).rejects.toMatchObject({
+          code: 'DATA_SOURCE_BLOCKED',
+          sourcePath: ['USR02'],
+        });
+
+        // Direct block short-circuits before any SAP call at all.
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('makes zero SAP calls when any chunk names a directly blocked source', async () => {
+        mockFetch.mockReset();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        await expect(client.runQueryBatch(['SELECT * FROM USR02'], 100)).rejects.toMatchObject({
+          code: 'DATA_SOURCE_BLOCKED',
+        });
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('re-resolves lineage on a second request: no decision survives the first', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        await client.runQueryBatch(['SELECT * FROM SCARR'], 100);
+        const afterFirst = mockFetch.mock.calls.filter((c) =>
+          String(c[0]).includes('/repository/informationsystem/search'),
+        ).length;
+
+        await client.runQueryBatch(['SELECT * FROM SCARR'], 100);
+        const afterSecond = mockFetch.mock.calls.filter((c) =>
+          String(c[0]).includes('/repository/informationsystem/search'),
+        ).length;
+
+        // A cache would make the second request cost nothing; there is deliberately none.
+        expect(afterFirst).toBe(1);
+        expect(afterSecond).toBe(2);
+      });
+
+      it('runQuery and runQueryWithMetrics are a batch of one', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        await client.runQuery('SELECT * FROM SCARR');
+        const first = mockFetch.mock.calls.filter((c) => String(c[0]).includes('/datapreview/freestyle')).length;
+        expect(first).toBe(1);
+
+        const withMetrics = await client.runQueryWithMetrics('SELECT * FROM SCARR');
+        expect(withMetrics.columns.length).toBeGreaterThan(0);
+      });
+    });
+
     it('keeps empty-list behavior byte-for-byte and performs no metadata lookup', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));

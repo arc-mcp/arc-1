@@ -154,13 +154,32 @@ export class DataSourceBlocklistGuard {
     );
   }
 
-  async enforceSql(sql: string): Promise<void> {
+  /**
+   * Authorize every statement of one logical request together.
+   *
+   * The union of canonical direct sources is deduplicated before any SAP call, so N chunks that all
+   * read the same table cost exactly one lineage resolution, and a source appearing in only one chunk
+   * still denies the whole batch.
+   */
+  async enforceSqlBatch(statements: string[]): Promise<void> {
     if (this.blockedSources.length === 0) return;
-    let directSources: string[];
+    const union: string[] = [];
+    const seen = new Set<string>();
+    for (const statement of statements) {
+      for (const source of this.analyzeOrThrow(statement)) {
+        if (!seen.has(source)) {
+          seen.add(source);
+          union.push(source);
+        }
+      }
+    }
+    await this.enforceSources(union);
+  }
+
+  private analyzeOrThrow(sql: string): string[] {
     try {
-      directSources = analyzeSqlDataSources(sql);
+      return analyzeSqlDataSources(sql);
     } catch (error) {
-      // A statement outside the accepted grammar is a SQL problem, not an unprovable lineage.
       throw new DataSourcePolicyError(
         'DATA_SQL_UNSUPPORTED',
         'SQL',
@@ -168,7 +187,6 @@ export class DataSourceBlocklistGuard {
         error instanceof Error ? error.message : String(error),
       );
     }
-    await this.enforceSources(directSources);
   }
 
   async enforceSources(directSources: string[]): Promise<void> {
