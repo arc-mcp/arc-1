@@ -26,7 +26,12 @@ import { extractMethod, formatMethodListing, listMethods } from '../context/meth
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
-import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
+import {
+  detectLocalHandlerInclude,
+  inferObjectType,
+  normalizeObjectType,
+  objectUrlForTypeRaw,
+} from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 const BTP_HINTS: Record<string, string> = {
@@ -322,20 +327,52 @@ export async function handleSAPRead(
         return textResult(toolJson(structured));
       }
       const methodParam = args.method as string | undefined;
-      if (methodParam && !args.include) {
-        // Method-level read — fetch full source then extract (no cache indicator for derived results)
-        const { source: fullSource } = await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
-          client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
-        );
+      if (methodParam) {
+        // Method-level read (no cache indicator for derived results). The section that
+        // holds the method is resolved the way edit_method resolves it: an explicit
+        // include= wins; else a local-class specifier picks its include (lhc_*/lcl_* →
+        // implementations, ltc_* → testclasses); else MAIN, which covers global classes
+        // and zif_x~method interface implementations. Behavior pools keep their whole
+        // handler in the implementations include, so MAIN alone never finds them.
+        // include= values are validated by the SAPRead schema (SAPREAD_CLAS_READ_INCLUDES) and
+        // text_symbols is routed before this switch, so anything left here is a source include.
+        const rawInclude = (args.include as string | undefined)?.toLowerCase();
+        const explicitInclude = rawInclude && rawInclude !== 'main' ? rawInclude : undefined;
+        const resolvedInclude = explicitInclude ?? detectLocalHandlerInclude(methodParam);
+        let methodSource: string;
+        if (resolvedInclude) {
+          // Include reads bypass the source cache: its key is (type, name, version) and
+          // does not distinguish includes, so MAIN and CCIMP bytes must never share it.
+          try {
+            methodSource = (await client.getClassInclude(name, resolvedInclude, { version: effectiveVersion })).source;
+          } catch (err) {
+            if (isNotFoundError(err)) {
+              return errorResult(
+                `Include "${resolvedInclude}" is not available for class ${name}, so method "${methodParam}" cannot be read from it.`,
+              );
+            }
+            throw err;
+          }
+        } else {
+          methodSource = (
+            await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
+              client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
+            )
+          ).source;
+        }
         const probedAbapRelease = getCachedFeatures()?.abapRelease;
         const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         if (methodParam === '*') {
-          const listing = listMethods(fullSource, name, abaplintVer);
+          const listing = listMethods(methodSource, name, abaplintVer);
           return textResult(formatMethodListing(listing));
         }
-        const extracted = extractMethod(fullSource, name, methodParam, abaplintVer);
+        const extracted = extractMethod(methodSource, name, methodParam, abaplintVer);
         if (!extracted.success) {
-          return errorResult(extracted.error ?? `Method "${methodParam}" not found in ${name}.`);
+          const where = resolvedInclude ? ` (read from include=${resolvedInclude})` : '';
+          const hint = resolvedInclude
+            ? ''
+            : ' Methods of class-local classes live in an include: qualify the specifier as "lhc_x~method" (routes to include=implementations; ltc_* to testclasses) or pass include= explicitly.';
+          return errorResult(`${extracted.error ?? `Method "${methodParam}" not found in ${name}.`}${where}${hint}`);
         }
         return cachedTextResult(extracted.methodSource, false, false, versionWarning);
       }

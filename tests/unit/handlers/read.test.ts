@@ -2111,6 +2111,118 @@ ENDCLASS.`;
       expect(result.content[0]?.text).not.toContain('METHOD run');
     });
 
+    // Behavior pools keep their handler in a class-local include: MAIN holds only the
+    // empty `FOR BEHAVIOR OF` shell, so a method read against MAIN can never find them.
+    const behaviorPoolMain = `CLASS zbp_test DEFINITION PUBLIC ABSTRACT FINAL FOR BEHAVIOR OF zi_test.
+ENDCLASS.
+CLASS zbp_test IMPLEMENTATION.
+ENDCLASS.`;
+    const behaviorPoolImplementations = `CLASS lhc_test DEFINITION INHERITING FROM cl_abap_behavior_handler.
+  PRIVATE SECTION.
+    METHODS getphoto.
+    METHODS setphoto.
+ENDCLASS.
+CLASS lhc_test IMPLEMENTATION.
+  METHOD getphoto.
+    " read the photo
+  ENDMETHOD.
+  METHOD setphoto.
+    " set the photo
+  ENDMETHOD.
+ENDCLASS.`;
+    const mockBehaviorPool = (implementationsStatus = 200) => {
+      mockFetch.mockReset();
+      const urls: string[] = [];
+      mockFetch.mockImplementation((url: string | URL) => {
+        urls.push(String(url));
+        if (String(url).includes('/includes/implementations')) {
+          return Promise.resolve(
+            implementationsStatus === 200
+              ? mockResponse(200, behaviorPoolImplementations)
+              : mockResponse(implementationsStatus, 'Not Found'),
+          );
+        }
+        return Promise.resolve(mockResponse(200, behaviorPoolMain));
+      });
+      return urls;
+    };
+
+    it('routes a local-class specifier (lhc_x~method) to the implementations include, like edit_method does', async () => {
+      const urls = mockBehaviorPool();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'lhc_test~getphoto',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('METHOD getphoto');
+      expect(result.content[0]?.text).toContain('read the photo');
+      expect(result.content[0]?.text).not.toContain('METHOD setphoto');
+      expect(urls.some((u) => u.includes('/includes/implementations'))).toBe(true);
+      expect(urls.some((u) => u.includes('/source/main'))).toBe(false);
+    });
+
+    it('reads a bare method from an explicit include= (method used to be ignored when include was set)', async () => {
+      mockBehaviorPool();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'setphoto',
+        include: 'implementations',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('METHOD setphoto');
+      expect(result.content[0]?.text).not.toContain('METHOD getphoto');
+    });
+
+    it('lists the methods of an include with method="*" + include=', async () => {
+      mockBehaviorPool();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: '*',
+        include: 'implementations',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('getphoto');
+      expect(result.content[0]?.text).toContain('setphoto');
+    });
+
+    it('hints at lhc_x~method / include= when a bare method is not in MAIN', async () => {
+      mockBehaviorPool();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'getphoto',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not found');
+      expect(result.content[0]?.text).toContain('lhc_x~method');
+      expect(result.content[0]?.text).toContain('include=');
+    });
+
+    it('reports a missing include cleanly instead of "Available methods: (none)"', async () => {
+      mockBehaviorPool(404);
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'CLAS',
+        name: 'ZBP_TEST',
+        method: 'lhc_test~getphoto',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Include "implementations" is not available for class ZBP_TEST');
+      expect(result.content[0]?.text).not.toContain('(none)');
+    });
+
     it('returns error for nonexistent method', async () => {
       const classSource = `CLASS zcl_test DEFINITION PUBLIC.
   PUBLIC SECTION.
