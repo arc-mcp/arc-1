@@ -3,8 +3,7 @@
 Important product news, without the noise.
 
 Subscribe for major ARC-1 releases, upgrade and security information, practical SAP/AI guides,
-and occasional questions where your feedback can shape what comes next. Expect roughly one email
-per month; urgent security information may be sent separately.
+and occasional questions where your feedback can shape what comes next.
 
 <a class="md-button md-button--primary" href="https://t7f41a12d.emailsys1a.net/299/1775/e9729d7391/subscribe/form.html?_g=1788439997">Join ARC-1 Updates</a>
 

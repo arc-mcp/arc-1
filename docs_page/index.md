@@ -6,7 +6,7 @@ ARC-1 is a TypeScript MCP server (distributed as an npm package and Docker image
 
 !!! tip "Stay current with ARC-1"
 
-    Get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. Usually one email per month. [Join ARC-1 Updates →](newsletter.md)
+    Get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. [Join ARC-1 Updates →](newsletter.md)
 
 ## Why ARC-1?
 
