@@ -31,8 +31,8 @@ until they are promoted.
 Data-preview responses now have an explicit per-tool-call byte allowance and a separate process-wide
 admission limit held through parsing and serialization. This turns an oversized result into a stable,
 actionable tool error instead of allowing parallel XML/JSON expansion to exhaust a Cloud Foundry
-container. The shipped MTA also moves from a fixed old-space command to the Node.js buildpack's
-memory-aware 75% policy.
+container. The shipped MTA also moves from a fixed old-space value to a validated, memory-aware 75%
+CF launcher that `exec`s Node for reliable shutdown signals.
 
 | Change | What it means | Action |
 |---|---|---|

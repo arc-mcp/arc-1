@@ -50,10 +50,11 @@ The recommended fix is a bundle:
    XML-to-heap amplification ratio or aggregate process limit.
 3. Parse rows and metrics from one XML parse, and clamp every raw/chunked `SAPQuery` to the existing
    10,000-row ARC-1 ceiling as a secondary rail.
-4. In the same PR, remove the shipped fixed **448 MiB** CF old-space command and enable the Node
-   buildpack's supported 75% memory optimization. That produces 384 MiB old-space at the shipped
-   512 MiB container size and 768 MiB after a 1 GiB memory override. Ship this only together with
-   the response guard: lowering the 512 MiB deployment's old-space before bounding responses could
+4. In the same PR, replace the shipped fixed **448 MiB** CF old-space value with a fail-closed
+   launcher that validates the buildpack-provided `MEMORY_AVAILABLE`, computes 75%, and `exec`s
+   Node. That produces 384 MiB old-space at the shipped 512 MiB container size and 768 MiB after a
+   1 GiB memory override while preserving direct SIGTERM delivery. Ship this only together with the
+   response guard: lowering the 512 MiB deployment's old-space before bounding responses could
    merely reach a fatal V8 allocation failure sooner. Do not use Node's percentage flag without
    first raising ARC-1's runtime floor: it was added in Node 22.21, while ARC-1 currently permits
    Node 22.19. More CF memory remains a mitigation, not the correctness fix.
@@ -81,17 +82,23 @@ The draft PR now implements the approved design as reviewable commits:
 - `e506205e` adds strict configuration, the request-owned cumulative budget, the shared two-slot
   data-result semaphore, direct and BTP bounded streams, cancellation/teardown, stable errors, and
   safe audit events;
-- `d28f0bad` removes the fixed CF command, enables buildpack `OPTIMIZE_MEMORY`, and logs the
-  non-secret runtime memory envelope; and
+- `d28f0bad` removes the fixed 448 MiB value, enables `OPTIMIZE_MEMORY`, and logs the non-secret
+  runtime memory envelope;
 - `407e6dd9` refreshes the already-red audited transitive dependencies to patched lockfile versions;
   and
 - `4d4a5cc0` extracts the bounded transport, table-query, and runtime-memory helpers so every source
-  file remains within the existing CI size ratchets without increasing any budget.
+  file remains within the existing CI size ratchets without increasing any budget; and
+- `7cb2154e` replaces the BTP proxy's `Readable.toWeb()` cancellation path after a live CF soak
+  reproduced an uncaught late-data race, adds the regression test, closes the pending-admission
+  semaphore edge case, restores compressed SAPQuery guidance, and documents Docker sizing.
 
-The MTA build succeeds with no module `command`. A disposable live app using Cloud Foundry Node.js
-buildpack 1.9.3 and Node 22.23.1 produced `--max_old_space_size=384` at 512 MiB and `768` at 1 GiB,
-then was deleted. This validates the adaptive heap mechanics without altering an existing ARC-1
-deployment.
+The MTA build succeeds with a tracked `exec ./bin/start-cf.sh` module command. The launcher validates
+the buildpack-provided decimal-MiB value, applies the same 75% calculation, and fails closed if the
+input is absent or malformed. Disposable live apps using Cloud Foundry Node.js buildpack 1.9.3
+produced 384 MiB old-space at 512 MiB and 768 MiB at 1 GiB. A live restart and a memory-scale
+restart both delivered SIGTERM to ARC-1's shutdown hook and exited Node with status 0 before the
+replacement became healthy. This validates both adaptive heap mechanics and process ownership
+without altering an existing ARC-1 deployment.
 
 A read-only SAP_BASIS 758 acceptance run first used a deliberately lower 64 KiB ceiling: three
 parallel 10,000-row narrowed TADIR queries all returned `AdtResponseLimitError`, observed
@@ -104,25 +111,26 @@ system reads succeeded, and incremental peak RSS was 25 MiB. No SAP state was ch
 The final local regression pass is green:
 
 ```text
-npm test: 184 files, 5,444 tests passed
+npm test: 186 files, 5,449 tests passed
 npm run lint: passed (two pre-existing Biome migration notices)
 npm run typecheck: passed
-npm run check:sizes: passed (all 427 tracked source/test files and every tool-schema budget)
+npm run check:sizes: passed (all 428 tracked source/test files and every tool-schema budget)
 npm run build: passed
 npm audit --audit-level=high --omit=optional: 0 vulnerabilities
 npm audit --prefix btp/approuter --audit-level=high --omit=optional: 0 vulnerabilities
 btp/approuter npm ci && npm test: 3 tests passed
 npm run btp:validate: passed for the base and documented extension combinations
 npm run btp:build: passed
-npm run docs:build: passed in strict mode (one pre-existing release-note anchor notice)
+npm run docs:build: passed in strict mode
 ```
 
 The direct and BTP Connectivity transports have deterministic unit coverage for response
 boundaries, cancellation, retry charging, identity encoding, headers, and proxy-client teardown.
-A branch deployment through a live principal-propagation destination was not performed because it
-would require replacing or separately authenticating a shared deployed MCP application. That is a
-deployment acceptance check, not an untested transport branch: the live CF buildpack behavior and
-live SAP boundary are verified independently, and the BTP stream adapter is covered locally.
+The branch was also deployed through a disposable Basic-auth Destination → Connectivity → Cloud
+Connector → SAP route. Three waves of six concurrent 3,200-row TADIR requests returned bounded
+errors under the two-slot semaphore, recovery queries succeeded, and the same process remained
+healthy after each delayed-crash observation window. This is the real proxy transport branch, but
+not a principal-propagation identity acceptance test.
 
 ## Reported impact and scope
 
@@ -481,11 +489,19 @@ the semaphore mandatory, and gate release on the two-response 2 MiB regression b
 ### Transport-wrapper feasibility checks
 
 A focused prototype against the installed Undici 8.10.0 validated the smaller transport design.
-Wrapping `Response.body` in a `TransformStream` preserved a 206 status and status text, an ETag,
+Wrapping `Response.body` in a bounded Web stream preserved a 206 status and status text, an ETag,
 and two distinct `Set-Cookie` headers; a 304 retained its null body; and a body crossing the cap
-rejected at `.text()` before a complete string was returned. A local `undici.Client` response
-adapted through `Readable.toWeb()` was destroyed when the cap rejected. Both `error` and `close`
-can reach cleanup, so the per-request proxy-client teardown must be idempotent.
+rejected at `.text()` before a complete string was returned. The per-request proxy-client teardown
+is idempotent because both source errors and consumer cancellation can reach it.
+
+The first implementation adapted Undici's proxy `BodyReadable` through `Readable.toWeb()`. A real
+BTP Connectivity soak found a cancellation race that the initial simple fixture missed: all six
+over-limit calls returned the correct tool error, but queued body data later reached the already
+closed web-stream controller, raised uncaught `ERR_INVALID_STATE`, and exited the process with
+status 1. A focused late-data reproducer then triggered the old adapter 20/20 times. The corrected
+adapter consumes the Node readable through its async iterator, owns body/client teardown directly,
+and has no Node-to-Web controller for late source data to reach; the reproducer is 0/20 and three
+live waves of six over-limit BTP calls left the same CF process healthy.
 
 The prototype also showed why the BTP conversion must not become globally streaming in the first
 fix. With an unread 16 MiB response, the source stream, Web response body, and per-request Client
@@ -504,8 +520,8 @@ and reject an unexpected non-identity `Content-Encoding`; counting compressed pr
 create a large expansion bypass. This agrees with Undici's requirement that every Client response
 body be consumed or destroyed and that `Client.close()` waits for enqueued requests to complete;
 see the official [Dispatcher documentation](https://github.com/nodejs/undici/blob/main/docs/docs/api/Dispatcher.md#dispatcherclosecallback).
-`Readable.toWeb()` is stable since Node 22.17, below ARC-1's 22.19 floor; see the
-[Node stream documentation](https://nodejs.org/download/release/v22.19.0/docs/api/stream.html#streamreadabletowebstreamreadable-options).
+The Node stream is deliberately not bridged with `Readable.toWeb()` on this cancellation-sensitive
+path; API stability does not remove the late-event race between the adapter and client destruction.
 
 ### Cloud Foundry sizing
 
@@ -529,12 +545,12 @@ buildpack-provided `MEMORY_AVAILABLE` for its **default** `npm start` process. I
 verifies 1,024 MiB available memory produces a 768 MiB flag. See its
 [`bin/release`](https://github.com/cloudfoundry/nodejs-buildpack/blob/v1.9.2/bin/release) and
 [`memory_test.go`](https://github.com/cloudfoundry/nodejs-buildpack/blob/v1.9.2/src/nodejs/integration/memory_test.go).
-ARC-1's `package.json` already defines `npm start` as `node dist/index.js`. Therefore the preferred
-fix is to remove the custom MTA `command` and set `OPTIMIZE_MEMORY: "true"`, allowing the buildpack
-default process to produce 384 MiB old-space at 512 MiB and 768 MiB at 1 GiB. A deployment test
-must prove that updating the MTA clears the previously stored custom command; merely setting
-`OPTIMIZE_MEMORY` while retaining a custom command does not activate the buildpack-generated
-default process.
+The initial implementation removed the custom MTA command and used that default process. Live
+`cf restart` validation then showed that SIGTERM stopped at the npm process: ARC-1's shutdown hook
+did not run. The final design keeps `OPTIMIZE_MEMORY: "true"` but uses the tracked
+`exec ./bin/start-cf.sh` command. The launcher validates `MEMORY_AVAILABLE`, calculates the same 75%
+old-space value, and `exec`s Node directly. It therefore follows durable MTA memory overrides while
+restoring signal delivery and failing closed instead of evaluating an empty shell expression.
 
 This 75% choice leaves a more realistic allowance for young-generation heap, external buffers,
 native libraries, HTTP buffers, and platform process overhead. The existing claim that 448 MiB
@@ -546,8 +562,8 @@ Node >=22.19. Using the percentage flag in `mta.yaml` without also raising the r
 therefore make an otherwise supported deployment fail at process startup. The implementation also
 falls back from `uv_get_constrained_memory()` to total host memory when the constrained value is
 unavailable; that is a code-path risk, not an observed failure on the target Diego environment.
-Neither risk is justified when the buildpack already supplies a tested adaptive mechanism below
-ARC-1's Node floor. See the
+Neither risk is justified when the CF launcher can use the buildpack-provided decimal-MiB input
+with the existing old-space flag. See the
 [Node 22.21.0 release notes](https://nodejs.org/en/blog/release/v22.21.0) and the
 [percentage implementation](https://github.com/nodejs/node/blob/v22.21.1/src/node_options.cc#L2381-L2435).
 
@@ -603,7 +619,7 @@ This confirms the report is an uncovered limit case, not an already-failing impl
 | Stream-count post-content-decoding response bytes | **Yes** | No; it bounds each/cumulative tool result, not the process | Moderate, release-neutral | Primary individual-call boundary |
 | Dedicated data concurrency = 2 | No | Bounds the guarded data phase to the configured cap | Queues only data work across targets; configurable | Required aggregate boundary |
 | Parse rows and metrics once | No | Reduces amplification | About 52 MiB saved in the measured one-call fixture | Required amplification reduction in this PR |
-| Buildpack `OPTIMIZE_MEMORY=true` with its default process | No | No | Adapts old-space to CF memory at the buildpack-supported 75% ratio | Required CF defense-in-depth |
+| Validated CF launcher with `OPTIMIZE_MEMORY=true` | No | No | Adapts old-space to CF memory at 75% and `exec`s Node for direct signals | Required CF defense-in-depth |
 | SAX/streaming XML parser | Can reduce amplification | Helps | High complexity; final row result still occupies memory | Follow-up optimization |
 | Return files/object-store links | Avoids MCP result size | Depends on writer | Data governance, lifecycle, and authorization design required | Separate feature, not this fix |
 
@@ -670,15 +686,17 @@ a non-null `response.body` with a `TransformStream`, preserves status, status te
 and retry `.text()` call sites then cannot bypass the cap, while unrelated transport behavior stays
 unchanged.
 
-For a **budgeted BTP request only**, request `Accept-Encoding: identity`, convert `resp.body` with
-`Readable.toWeb()`, and construct the `Response` around that live stream; do not call
-`resp.body.text()` or round-trip a complete string through a second `Response`. Reject an unexpected
-non-identity `Content-Encoding` before returning the body, destroying the response and client; the
-low-level `Client.request()` API does not provide Fetch's automatic decompression. Transfer the
-short-lived Client's ownership to the returned stream and close or destroy it exactly once when the
-underlying body ends, errors, or is cancelled, including byte-limit cancellation. Also clean up a
-client when `client.request()` fails before a response exists. For 204/205/304, consume or destroy
-the Undici body, close the client, and return a null-body `Response`.
+For a **budgeted BTP request only**, request `Accept-Encoding: identity`, consume `resp.body`
+directly through its Node async iterator, and construct the `Response` around the explicitly owned
+live stream; do not use `Readable.toWeb()`, call `resp.body.text()`, or round-trip a complete string
+through a second `Response`. Reject an unexpected non-identity `Content-Encoding` before returning
+the body, destroying the response and client; the low-level `Client.request()` API does not provide
+Fetch's automatic decompression. Transfer the short-lived Client's ownership to the returned stream
+and close or destroy it exactly once when the underlying body ends, errors, or is cancelled,
+including byte-limit cancellation. Late Node-readable data after cancellation must have no closed
+Web controller to reach. Also clean up a client when `client.request()` fails before a response
+exists. For 204/205/304, consume or destroy the Undici body, close the client, and return a null-body
+`Response`.
 
 Preserve the current buffered proxy conversion and `finally` cleanup for requests without an
 explicit response budget. Making every proxy response live-streaming is a separate refactor and is
@@ -763,18 +781,19 @@ operator may raise either ceiling.
 
 ### D. Correct the CF safety margin
 
-In the same implementation PR, remove the custom `command: node --max-old-space-size=448
-dist/index.js` from `mta.yaml` and add `OPTIMIZE_MEMORY: "true"` to the module properties. The
-buildpack default process then runs the existing `npm start` and supplies 75% of
-`MEMORY_AVAILABLE` through `NODE_OPTIONS`. Expected old-space flags are 384 MiB for the shipped
-512 MiB module and 768 MiB for a 1 GiB `.mtaext` memory override.
+In the same implementation PR, replace `command: node --max-old-space-size=448 dist/index.js` with
+`command: exec ./bin/start-cf.sh` and add `OPTIMIZE_MEMORY: "true"` to the module properties. The
+launcher accepts only a positive decimal `MEMORY_AVAILABLE`, calculates 75%, and `exec`s Node with
+that old-space value. Expected flags are 384 MiB for the shipped 512 MiB module and 768 MiB for a
+1 GiB `.mtaext` memory override. Direct `exec` is required because live `cf restart` testing showed
+that the buildpack's default `npm start` process did not deliver SIGTERM to ARC-1's shutdown hook.
 
 Do not use `--max-old-space-size-percentage`: it is newer than ARC-1's declared minimum Node
 version and adds a host-memory fallback path. Do not use an unchecked shell expression derived
-from `MEMORY_LIMIT`. If removal of the stored custom command cannot be made reliable through MTA
-deployment, use the strictly validated, fail-closed 75% startup wrapper described above. Consider
-raising the generic direct-push manifest from 256 MiB only after measuring its startup and bounded
-query peaks.
+from `MEMORY_LIMIT`. Keep the strictly validated, fail-closed 75% launcher described above. Raise
+the generic Docker-based direct-push manifest to 512 MiB with a matching 384 MiB numeric old-space
+value; Docker does not run the buildpack launcher, so its memory and heap values must be changed in
+lockstep.
 
 Ship adaptive heap sizing atomically with the response budget and data semaphore in this PR.
 Without the guard, lowering the 512 MiB deployment's V8 ceiling can turn the same unbounded request
@@ -823,8 +842,8 @@ pinned. Organize the implementation as independently reviewable commits inside t
    bodies, decompression policy, and correctly owned proxy teardown.
 4. Add the stable non-retryable error, aligned but cause-specific query guidance, audit fields, and
    avoidable result-string cleanup.
-5. Remove the fixed CF start command, enable buildpack memory optimization, add startup sizing
-   diagnostics, and verify 512 MiB and 1 GiB MTA deployments.
+5. Replace the fixed CF start command with the fail-closed adaptive launcher, enable buildpack
+   memory input, add startup sizing diagnostics, and verify 512 MiB and 1 GiB MTA deployments.
 6. Update operator documentation and release notes, then run the complete local/live regression
    matrix.
 
@@ -857,9 +876,10 @@ The implementation uses this surface:
 - `src/adt/http-deadline.ts` — carry the optional response budget and provide
   `withoutResponseBudget()` for CSRF bootstrap;
 - `src/adt/bounded-response.ts` and `src/adt/http.ts` — bounded `Response.body` wrapper for
-  explicitly budgeted direct/proxy responses; use a live BTP Web stream only on that path, keep
-  non-budgeted proxy requests buffered, enforce identity encoding, handle null-body statuses, and
-  close/destroy the per-request proxy client exactly once on every terminal path;
+  explicitly budgeted direct/proxy responses; adapt the live BTP Node stream without
+  `Readable.toWeb()` only on that path, keep non-budgeted proxy requests buffered, enforce identity
+  encoding, handle null-body statuses, and close/destroy the per-request proxy client exactly once
+  on every terminal path, including late data after cancellation;
 - `src/adt/errors.ts` — typed response-limit error with secret-free fields; add it to both HTTP
   pass-through catches so it is not accidentally reclassified as `AdtNetworkError`; export it from
   `src/public/index.ts` for direct client consumers;
@@ -878,7 +898,7 @@ The implementation uses this surface:
   `src/server/server.ts` — defaults, strict CLI/env parsing, MCP signal propagation, process-wide
   semaphore shared by every server/client factory, startup envelope log, and warning;
 - `src/handlers/tools.ts` — describe the row and byte ceilings (the schema retains sink clamping);
-- `mta.yaml`, `.env.example`, `mta-overrides.mtaext.example`,
+- `mta.yaml`, `bin/start-cf.sh`, `manifest.yml`, `.env.example`, `mta-overrides.mtaext.example`,
   `docs_page/configuration-reference.md`,
   `docs_page/rate-limiting.md`, `docs_page/btp-administration.md`, `docs_page/tools.md`, and release
   notes — operator contract and deployment guidance.
@@ -894,8 +914,9 @@ No ADT feature discovery or SAP release gate is needed.
    BTP Connectivity adapter. Preserve status, status text, ETag, multiple `Set-Cookie` headers, and
    null-body 204/205/304 responses. Assert the proxy body is read exactly once, its per-request
    client closes exactly once on normal end, source error, cap cancellation, caller cancellation,
-   unexpected encoding, null-body status, and pre-response request failure. The parser must never
-   run after an over-limit response.
+   unexpected encoding, null-body status, and pre-response request failure. Reproduce a late Node
+   body event after cap cancellation and assert it cannot enqueue into a closed Web controller or
+   escape as an uncaught exception. The parser must never run after an over-limit response.
 2. **Transport scope and CSRF:** explicit `AdtRequestOptions.responseBudget`, not URL matching,
    activates the wrapper. A non-budgeted proxy response keeps the current buffer-and-close
    behavior. `withoutResponseBudget()` prevents both CSRF HEAD and fallback GET from consuming or
@@ -938,10 +959,11 @@ No ADT feature discovery or SAP release gate is needed.
 9. **Deployment/config:** default, environment, CLI precedence, exact flag names, positive decimal
    safe-integer validation, rejection of zero/malformed/unsafe values, 4 MiB startup envelope log,
    larger-envelope warning, no auto-adjustment, adaptive MTA heap sizing, and docs are synchronized.
-   Verify an MTA deployment clears the previous custom command and that buildpack optimization
-   produces a 384 MiB old-space flag at 512 MiB and 768 MiB at 1 GiB. The startup log must expose
-   the non-secret memory inputs and effective V8 heap limit. Run startup coverage on the minimum
-   supported Node version and assert that no deployment flag exceeds the declared engine floor.
+   Verify the MTA launcher rejects absent/malformed `MEMORY_AVAILABLE`, produces a 384 MiB old-space
+   flag at 512 MiB and 768 MiB at 1 GiB, and delivers CF SIGTERM to ARC-1 after `exec`. The startup
+   log must expose the non-secret memory inputs and effective V8 heap limit. Run startup coverage on
+   the minimum supported Node version and assert that no deployment flag exceeds the declared
+   engine floor.
 10. **Live regression:** against the 758 system, run three parallel `TADIR` queries that cross the
    2 MiB test cap. The calls must fail or queue individually under the default two-call admission cap,
    `/health` and a subsequent small query must succeed, and CF/local RSS must remain below the test
@@ -990,9 +1012,11 @@ For affected operators:
 **Implementation review status:** PR #739 contains the complete issue-closing boundary: the
 2 MiB streaming cumulative byte budget, two-slot data semaphore, one-pass parser, row clamp,
 request-level ownership, conditional transport stream, cancellation/config/error contract, and
-adaptive 75% CF heap sizing. The local, live-SAP, and disposable-CF regression evidence is green,
-so the implementation is ready for code review and can close #737 and #741. A live
-principal-propagation branch deployment remains an optional deployment acceptance check before
-release. These controls make the shipped 512 MiB topology defensible without claiming that the
-4 MiB raw admission product is a process-memory proof. A SAX/columnar response path remains a later
-performance feature, not a prerequisite for this fix.
+adaptive 75% CF heap sizing. The local, live-SAP, and disposable-CF BTP Connectivity regression
+evidence is green after replacing the cancellation-racy `Readable.toWeb()` bridge. The fail-closed
+launcher is live-verified at 512 MiB and 1 GiB, including direct SIGTERM delivery, clean exit, and
+healthy restart. PR #739 is ready to merge; principal-propagation identity acceptance remains
+optional because the tested Basic destination exercised the same proxy-body transport. These
+controls make the shipped 512 MiB topology defensible without claiming that the 4 MiB raw admission
+product is a process-memory proof. A SAX/columnar response path remains a later performance feature,
+not a prerequisite for this fix.

@@ -230,13 +230,15 @@ Choose the pair for the workload rather than raising both automatically:
   response and request memory that this table does not model; do not use it as a substitute for the
   data-result limit, and continue to size it against SAP dialog work processes.
 
-The shipped MTA sets `OPTIMIZE_MEMORY=true` and leaves the start command to the Node.js buildpack.
-Cloud Foundry recommends this option for memory-constrained Node applications, and the current
-buildpack assigns old-space 75% of `MEMORY_AVAILABLE`: 384 MiB at the shipped 512 MiB allocation,
-768 MiB at 1 GiB, 1,536 MiB at 2 GiB, and 3,072 MiB at 4 GiB. See the official
+The shipped MTA sets `OPTIMIZE_MEMORY=true` and starts through a small fail-closed launcher. The
+launcher validates the buildpack-provided `MEMORY_AVAILABLE`, assigns old-space 75% of it, and
+then `exec`s Node so CF termination signals reach ARC-1 directly: 384 MiB at the shipped 512 MiB
+allocation, 768 MiB at 1 GiB, 1,536 MiB at 2 GiB, and 3,072 MiB at 4 GiB. See the official
 [Node buildpack guidance](https://docs.cloudfoundry.org/buildpacks/node/node-tips.html#low-memory) and
 [`bin/release` policy](https://github.com/cloudfoundry/nodejs-buildpack/blob/master/bin/release).
-Memory overrides therefore remain in sync automatically.
+Memory overrides therefore remain in sync automatically. The `Runtime memory envelope` log reports
+the total V8 heap limit, which includes more than old space; for example, the 384 MiB old-space
+setting appears as approximately 432 MiB total V8 heap on the validated runtime.
 
 Put the RAM and limit changes together in the durable customer `.mtaext`:
 
