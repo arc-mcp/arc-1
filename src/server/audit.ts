@@ -76,6 +76,16 @@ export interface HttpRequestEvent extends AuditEventBase {
   responseHeaders?: Record<string, string>;
 }
 
+/** A guarded data response crossed the configured decompressed-byte ceiling. */
+export interface DataResponseLimitedEvent extends AuditEventBase {
+  event: 'data_response_limited';
+  tool: string;
+  limitBytes: number;
+  observedBytes: number;
+  endpointFamily: string;
+  queueWaitMs: number;
+}
+
 /** CSRF token fetch */
 export interface HttpCsrfFetchEvent extends AuditEventBase {
   event: 'http_csrf_fetch';
@@ -279,6 +289,7 @@ export type AuditEvent =
   | ToolCallStartEvent
   | ToolCallEndEvent
   | HttpRequestEvent
+  | DataResponseLimitedEvent
   | HttpCsrfFetchEvent
   | AuthScopeDeniedEvent
   | AuthPPCreatedEvent

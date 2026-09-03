@@ -1,6 +1,8 @@
+import { Readable } from 'node:stream';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
+import { DataResponseBudget } from '../../../src/adt/data-result-context.js';
+import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from '../../../src/adt/errors.js';
 import { requestContext } from '../../../src/server/context.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 
@@ -8,10 +10,12 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 const mockFetch = vi.fn();
 const mockClientRequest = vi.fn();
 const mockClientClose = vi.fn().mockResolvedValue(undefined);
+const mockClientDestroy = vi.fn().mockResolvedValue(undefined);
 
 class MockClient {
   request = mockClientRequest;
   close = mockClientClose;
+  destroy = mockClientDestroy;
 }
 
 vi.mock('undici', async (importOriginal) => {
@@ -53,11 +57,13 @@ function fetchBody(callIndex = 0): unknown {
 }
 
 /** Helper to create a mock undici Client response (for proxy tests) */
-function mockClientResponse(statusCode: number, body: string, headers: Record<string, string> = {}) {
+function mockClientResponse(statusCode: number, body: string, headers: Record<string, string | string[]> = {}) {
+  const responseBody = Readable.from([Buffer.from(body)]);
+  Object.assign(responseBody, { text: vi.fn(async () => body) });
   return {
     statusCode,
     headers,
-    body: { text: async () => body },
+    body: responseBody,
   };
 }
 
@@ -73,6 +79,20 @@ function clientRequestPath(callIndex = 0): string {
 
 function clientRequestBody(callIndex = 0): unknown {
   return mockClientRequest.mock.calls[callIndex]?.[0]?.body;
+}
+
+function streamedResponse(status: number, chunks: Uint8Array[], headers: Record<string, string> = {}): Response {
+  let index = 0;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const chunk = chunks[index++];
+        if (chunk) controller.enqueue(chunk);
+        else controller.close();
+      },
+    }),
+    { status, headers },
+  );
 }
 
 describe('AdtHttpClient', () => {
@@ -1857,6 +1877,180 @@ describe('AdtHttpClient', () => {
     });
   });
 
+  describe('bounded response bodies', () => {
+    it('rejects a known oversized identity body from Content-Length before reading it', async () => {
+      const cancelled = vi.fn();
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            cancel: cancelled,
+          }),
+          { status: 200, headers: { 'content-length': '9' } },
+        ),
+      );
+
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/path', undefined, {
+          responseBudget: new DataResponseBudget(3),
+        }),
+      ).rejects.toBeInstanceOf(AdtResponseLimitError);
+      expect(cancelled).toHaveBeenCalledOnce();
+    });
+
+    it('rejects and cancels when the first chunk crosses the byte ceiling', async () => {
+      const cancelled = vi.fn();
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('oversized'));
+            },
+            cancel: cancelled,
+          }),
+          { status: 200 },
+        ),
+      );
+      const budget = new DataResponseBudget(3);
+
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/path', undefined, { responseBudget: budget }),
+      ).rejects.toBeInstanceOf(AdtResponseLimitError);
+      expect(cancelled).toHaveBeenCalledOnce();
+      expect(budget.consumedBytes).toBe(0);
+      expect(budget.reservedBytes).toBe(0);
+    });
+
+    it('allows the exact decompressed-byte boundary and preserves UTF-8 split across chunks', async () => {
+      const encoded = new TextEncoder().encode('A€B');
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [encoded.slice(0, 2), encoded.slice(2)]));
+      const budget = new DataResponseBudget(encoded.byteLength);
+
+      const response = await new AdtHttpClient(getDefaultConfig()).get('/path', undefined, { responseBudget: budget });
+
+      expect(response.body).toBe('A€B');
+      expect(budget.consumedBytes).toBe(encoded.byteLength);
+      expect(budget.reservedBytes).toBe(0);
+    });
+
+    it('cancels before a later chunk can cross the byte ceiling', async () => {
+      const cancelled = vi.fn();
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('abc'));
+              controller.enqueue(new TextEncoder().encode('def'));
+            },
+            cancel: cancelled,
+          }),
+          { status: 200 },
+        ),
+      );
+      const budget = new DataResponseBudget(5);
+
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/path', undefined, { responseBudget: budget }),
+      ).rejects.toBeInstanceOf(AdtResponseLimitError);
+      expect(cancelled).toHaveBeenCalledOnce();
+      expect(budget.consumedBytes).toBe(0);
+      expect(budget.reservedBytes).toBe(0);
+    });
+
+    it('accounts successful responses cumulatively while keeping non-2xx retry bodies separate', async () => {
+      const budget = new DataResponseBudget(3);
+      mockFetch.mockResolvedValueOnce(streamedResponse(406, [new TextEncoder().encode('bad')]));
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('ok')]));
+
+      const response = await new AdtHttpClient(getDefaultConfig()).get(
+        '/path',
+        { Accept: 'application/xml' },
+        {
+          responseBudget: budget,
+        },
+      );
+
+      expect(response.body).toBe('ok');
+      expect(budget.consumedBytes).toBe(2);
+    });
+
+    it.each([
+      ['401 authentication', 401, 'bad', undefined],
+      ['406 content negotiation', 406, 'bad', undefined],
+      ['429 throttling', 429, 'bad', { 'retry-after': '0' }],
+      ['500 database reconnect', 500, 'database connection is not open', undefined],
+      ['503 availability', 503, 'bad', { 'retry-after': '0' }],
+    ])('does not charge a bounded %s retry body to the successful allowance', async (_name, status, body, headers) => {
+      const budget = new DataResponseBudget(64);
+      mockFetch.mockResolvedValueOnce(streamedResponse(status, [new TextEncoder().encode(body)], headers));
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('ok')]));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      const response = await client.get(
+        '/path',
+        status === 406 ? { Accept: 'application/vnd.sap.adt.custom+xml' } : undefined,
+        { responseBudget: budget },
+      );
+
+      expect(response.body).toBe('ok');
+      expect(budget.consumedBytes).toBe(2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not charge a bounded 415 retry body to the successful allowance', async () => {
+      const budget = new DataResponseBudget(3);
+      mockFetch.mockResolvedValueOnce(streamedResponse(415, [new TextEncoder().encode('bad')]));
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('ok')]));
+      const client = new AdtHttpClient(getDefaultConfig());
+      (client as any).csrfToken = 'T';
+
+      const response = await client.post('/path', '<x/>', 'text/xml', undefined, { responseBudget: budget });
+
+      expect(response.body).toBe('ok');
+      expect(budget.consumedBytes).toBe(2);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects an oversized non-2xx body before AdtApiError buffering', async () => {
+      mockFetch.mockResolvedValueOnce(streamedResponse(400, [new TextEncoder().encode('1234')]));
+
+      await expect(
+        new AdtHttpClient(getDefaultConfig()).get('/path', undefined, {
+          responseBudget: new DataResponseBudget(3),
+        }),
+      ).rejects.toBeInstanceOf(AdtResponseLimitError);
+    });
+
+    it('prevents parallel successful streams from oversubscribing one cumulative budget', async () => {
+      const budget = new DataResponseBudget(5);
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('abc')]));
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('def')]));
+      const client = new AdtHttpClient(getDefaultConfig());
+
+      const results = await Promise.allSettled([
+        client.get('/one', undefined, { responseBudget: budget }),
+        client.get('/two', undefined, { responseBudget: budget }),
+      ]);
+
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+      expect(budget.consumedBytes).toBe(3);
+      expect(budget.reservedBytes).toBe(0);
+    });
+
+    it('does not attach a data budget to CSRF bootstrap requests', async () => {
+      const budget = new DataResponseBudget(2);
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ignored bootstrap body', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(streamedResponse(200, [new TextEncoder().encode('ok')]));
+
+      const response = await new AdtHttpClient(getDefaultConfig()).post('/path', 'body', 'text/plain', undefined, {
+        responseBudget: budget,
+      });
+
+      expect(response.body).toBe('ok');
+      expect(budget.consumedBytes).toBe(2);
+    });
+  });
+
   // ─── Proxy Configuration ──────────────────────────────────────────
 
   describe('proxy configuration', () => {
@@ -1901,6 +2095,178 @@ describe('AdtHttpClient', () => {
       expect(clientRequestHeaders(0)['Proxy-Authorization']).toBe('Bearer proxy-token-xyz');
       // The path should be the full URL (standard HTTP proxy protocol)
       expect(clientRequestPath(0)).toBe('http://sap.example.com:8000/path?sap-client=001&sap-language=EN');
+    });
+
+    it('streams a budgeted proxy response with identity encoding and closes its client once', async () => {
+      const proxyResponse = mockClientResponse(200, 'okay', { etag: '"abc"' });
+      mockClientRequest.mockResolvedValueOnce(proxyResponse);
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      const response = await client.get('/path', undefined, { responseBudget: new DataResponseBudget(4) });
+
+      expect(response.body).toBe('okay');
+      expect(response.headers.etag).toBe('"abc"');
+      expect(clientRequestHeaders(0)['Accept-Encoding']).toBe('identity');
+      expect((proxyResponse.body as unknown as { text: ReturnType<typeof vi.fn> }).text).not.toHaveBeenCalled();
+      expect(mockClientClose).toHaveBeenCalledOnce();
+      expect(mockClientDestroy).not.toHaveBeenCalled();
+    });
+
+    it('preserves multiple Set-Cookie values across the bounded response wrapper', async () => {
+      mockClientRequest
+        .mockResolvedValueOnce(mockClientResponse(200, 'ok', { 'set-cookie': ['SID=one; Path=/', 'AUTH=two; Path=/'] }))
+        .mockResolvedValueOnce(mockClientResponse(200, 'next'));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await client.get('/path', undefined, { responseBudget: new DataResponseBudget(10) });
+      await client.get('/next');
+
+      expect(clientRequestHeaders(1).Cookie).toContain('SID=one');
+      expect(clientRequestHeaders(1).Cookie).toContain('AUTH=two');
+    });
+
+    it('destroys the proxy client when a bounded source stream fails', async () => {
+      const failingBody = Readable.from(
+        (async function* () {
+          yield Buffer.from('ok');
+          throw new Error('proxy body failed');
+        })(),
+      );
+      Object.assign(failingBody, { text: vi.fn() });
+      mockClientRequest.mockResolvedValueOnce({ statusCode: 200, headers: {}, body: failingBody });
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await expect(client.get('/path', undefined, { responseBudget: new DataResponseBudget(10) })).rejects.toThrow(
+        AdtNetworkError,
+      );
+      expect(mockClientDestroy).toHaveBeenCalledOnce();
+      expect(mockClientClose).not.toHaveBeenCalled();
+    });
+
+    it('aborts a bounded proxy body and destroys its client after headers arrive', async () => {
+      const stalledBody = new Readable({ read() {} });
+      Object.assign(stalledBody, { text: vi.fn() });
+      mockClientRequest.mockResolvedValueOnce({ statusCode: 200, headers: {}, body: stalledBody });
+      const abort = new AbortController();
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      const pending = client.get('/path', undefined, {
+        responseBudget: new DataResponseBudget(10),
+        signal: abort.signal,
+      });
+      await vi.waitFor(() => expect(mockClientRequest).toHaveBeenCalledOnce());
+      abort.abort(new Error('caller cancelled'));
+
+      await expect(pending).rejects.toThrow(AdtNetworkError);
+      expect(mockClientDestroy).toHaveBeenCalledOnce();
+      expect(mockClientClose).not.toHaveBeenCalled();
+    });
+
+    it('closes the proxy client when the request fails before a response exists', async () => {
+      mockClientRequest.mockRejectedValueOnce(new Error('proxy unavailable'));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await expect(client.get('/path', undefined, { responseBudget: new DataResponseBudget(10) })).rejects.toThrow(
+        AdtNetworkError,
+      );
+      expect(mockClientClose).toHaveBeenCalledOnce();
+      expect(mockClientDestroy).not.toHaveBeenCalled();
+    });
+
+    it('destroys a budgeted proxy stream and client when the byte ceiling is crossed', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, 'oversized'));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await expect(
+        client.get('/path', undefined, { responseBudget: new DataResponseBudget(4) }),
+      ).rejects.toBeInstanceOf(AdtResponseLimitError);
+      expect(mockClientDestroy).toHaveBeenCalledOnce();
+      expect(mockClientClose).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unexpected proxy content encoding before returning the bounded body', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(200, 'compressed', { 'content-encoding': 'gzip' }));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      await expect(client.get('/path', undefined, { responseBudget: new DataResponseBudget(100) })).rejects.toThrow(
+        AdtNetworkError,
+      );
+      expect(mockClientDestroy).toHaveBeenCalledOnce();
+      expect(mockClientClose).not.toHaveBeenCalled();
+    });
+
+    it('closes a budgeted null-body proxy response without constructing a body stream', async () => {
+      mockClientRequest.mockResolvedValueOnce(mockClientResponse(304, '', { etag: '"abc"' }));
+      const client = new AdtHttpClient({
+        ...getDefaultConfig(),
+        btpProxy: {
+          host: 'proxy.example.com',
+          port: 20003,
+          protocol: 'http',
+          getProxyToken: async () => 'proxy-token',
+        },
+      });
+
+      const response = await client.get('/path', undefined, { responseBudget: new DataResponseBudget(1) });
+      expect(response).toMatchObject({ statusCode: 304, body: '' });
+      expect(mockClientClose).toHaveBeenCalledOnce();
+      expect(mockClientDestroy).not.toHaveBeenCalled();
     });
 
     it('handles a 304 (null-body status) from the proxy without crashing the Response constructor', async () => {

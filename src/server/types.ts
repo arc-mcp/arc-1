@@ -210,6 +210,10 @@ export interface ServerConfig {
    *  enforces the cap across all per-user clients — not `maxConcurrent` per user.
    *  See docs/adr/0004-layered-rate-limiting.md (Layer 3). */
   maxConcurrent: number;
+  /** Cumulative decompressed data-preview response bytes per MCP tool call (default: 2 MiB). */
+  maxDataPreviewResponseBytes: number;
+  /** Concurrent admitted data-result calls across all users and targets (default: 2). */
+  maxConcurrentDataResults: number;
 
   // --- Rate limiting (Layer 1 + Layer 2) ---
   /** Per-IP cap on OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`) in
@@ -304,6 +308,8 @@ export const DEFAULT_CONFIG: ServerConfig = {
   cacheMode: 'auto',
   cacheFile: '.arc1-cache.db',
   maxConcurrent: 10,
+  maxDataPreviewResponseBytes: 2 * 1024 * 1024,
+  maxConcurrentDataResults: 2,
   authRateLimit: 20,
   mcpHttpRateLimit: undefined,
   rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)

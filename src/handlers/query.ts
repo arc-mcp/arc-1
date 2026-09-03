@@ -2,7 +2,7 @@
  * SAPQuery handler — freestyle SQL execution with IN-list chunking + SQL literal parsing.
  */
 
-import type { AdtClient } from '../adt/client.js';
+import { type AdtClient, clampPreviewRows } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
 import { classifySapQueryParserError, maskSqlStringLiterals } from './query-errors.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -155,6 +155,8 @@ function resolveUnknownColumnTable(sql: string, badColumn: string): string | und
 export async function handleSAPQuery(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const sql = String(args.sql ?? '');
   const maxRows = Number(args.maxRows ?? 100);
+  const effectiveMaxRows = clampPreviewRows(maxRows);
+  const rowLimitClamped = Number.isFinite(maxRows) && maxRows > 10_000;
   const chunkPlan = planSimpleInListChunking(sql);
   let chunkingAttempted = false;
 
@@ -171,6 +173,11 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
     if (data.totalRows !== undefined) out.totalRows = data.totalRows;
     if (data.queryExecutionTimeMs !== undefined) out.queryExecutionTimeMs = data.queryExecutionTimeMs;
     if (data.executedQueryString) out.executedQueryString = data.executedQueryString;
+    if (rowLimitClamped) {
+      out.rowLimitClamped = true;
+      out.requestedRows = maxRows;
+      out.effectiveMaxRows = effectiveMaxRows;
+    }
     out.rowsReturned = data.rows.length;
     out.columns = data.columns;
     out.rows = data.rows;

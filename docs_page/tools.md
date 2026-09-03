@@ -53,13 +53,13 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `fromLabel` | string | No | For `action="diff"`: optional display label for the OLD side in the summary and patch header, e.g. `DNT-6-6: Validate discounts (DS7K900123)`. Does not affect source resolution. |
 | `toLabel` | string | No | For `action="diff"`: optional display label for the NEW side in the summary and patch header, e.g. `active` or `inactive draft`. Does not affect source resolution. |
 | `format` | string | No | Output format: `"text"` (default) or `"structured"`. For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured is supported for CLAS only (see below). |
-| `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. For DDLS: `elements` (extract CDS view elements). |
-| `method` | string | No | For CLAS: method name to read (e.g., `get_name`), or `*` to list all methods |
+| `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). |
+| `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline |
 | `group` | string | No | For FUNC: function group name |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
-| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100). Known TABLE_CONTENTS limitation on 758: SAP returns `N+1`; use TABLE_QUERY or cap client-side when an exact maximum matters. |
+| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Known TABLE_CONTENTS limitation on 758: SAP can return `N+1`; prefer TABLE_QUERY when an exact cap matters. |
 | `maxResults` | number | No | For DEVC: maximum package objects to list (default 200, clamped to 1–1000). SAP may truncate larger packages at the requested limit. |
 | `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there. Prefer TABLE_QUERY `where`. |
 | `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
@@ -139,6 +139,8 @@ SAPRead(type="CLAS", name="ZCL_ORDER", include="testclasses")
 SAPRead(type="CLAS", name="ZCL_ORDER", format="structured")  — JSON with metadata + decomposed source
 SAPRead(type="CLAS", name="ZCL_ORDER", method="*")           — list all methods
 SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name")    — read a specific method
+SAPRead(type="CLAS", name="ZBP_TRAVEL", method="lhc_travel~accept") — auto-route a RAP handler to implementations
+SAPRead(type="CLAS", name="ZCL_ORDER", method="setup", include="testclasses") — extract one method from an explicit include
 SAPRead(type="CLAS", name="ZCL_ORDER", grep="select.*from")  — matching lines only, annotated by method
 SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols") — maintained text pool (on-prem; see Class text symbols)
 SAPRead(type="PROG", name="ZTEST_REPORT", grep="WRITE")      — search source, returns matches + context
@@ -818,7 +820,13 @@ Execute ABAP SQL queries against SAP tables.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `sql` | string | Yes | ABAP SQL SELECT statement |
-| `maxRows` | number | No | Maximum rows (default 100) |
+| `maxRows` | number | No | Maximum rows (default 100, clamped to 10,000). This is a request ceiling, not a guaranteed result size: wide results can hit the server byte ceiling much earlier. |
+
+Successful data-preview bodies share one cumulative allowance across the complete tool call,
+including automatic `IN`-list chunks. The default is 2 MiB of decompressed transfer bytes, counted
+before string conversion. Crossing the configured allowance returns `DATA_RESPONSE_TOO_LARGE`
+without partial rows or an automatic retry. Submit a new request with lower `maxRows`, fewer
+selected columns, or a restrictive, non-overlapping key-range `WHERE` clause.
 
 **Important:** Uses the ADT freestyle SQL endpoint (`/sap/bc/adt/datapreview/freestyle`) with ABAP SQL syntax, NOT standard SQL:
 - Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)

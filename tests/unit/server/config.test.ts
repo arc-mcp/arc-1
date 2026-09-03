@@ -915,6 +915,41 @@ describe('parseArgs', () => {
     expect(config.maxConcurrent).toBe(3);
   });
 
+  // --- Data-result safety envelope ---
+
+  it('defaults the data response budget to 2 MiB and data-result concurrency to 2', () => {
+    const config = parseArgs([]);
+    expect(config.maxDataPreviewResponseBytes).toBe(2 * 1024 * 1024);
+    expect(config.maxConcurrentDataResults).toBe(2);
+  });
+
+  it('parses data-result limits with CLI precedence over environment', () => {
+    process.env.ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES = '3000000';
+    process.env.ARC1_MAX_CONCURRENT_DATA_RESULTS = '3';
+    const { config, sources } = resolveConfig([
+      '--max-datapreview-response-bytes',
+      '4000000',
+      '--max-concurrent-data-results',
+      '4',
+    ]);
+    expect(config.maxDataPreviewResponseBytes).toBe(4_000_000);
+    expect(config.maxConcurrentDataResults).toBe(4);
+    expect(sources.maxDataPreviewResponseBytes).toEqual({ flag: '--max-datapreview-response-bytes' });
+    expect(sources.maxConcurrentDataResults).toEqual({ flag: '--max-concurrent-data-results' });
+  });
+
+  it.each([
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', '0'],
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', '-1'],
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', '1.5'],
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', ' 10'],
+    ['ARC1_MAX_CONCURRENT_DATA_RESULTS', 'not-a-number'],
+    ['ARC1_MAX_CONCURRENT_DATA_RESULTS', String(Number.MAX_SAFE_INTEGER + 1)],
+  ])('rejects invalid positive-integer setting %s=%s', (name, value) => {
+    process.env[name] = value;
+    expect(() => parseArgs([])).toThrow(/positive base-10 integer|safe-integer range/);
+  });
+
   // --- Rate limiting (Layer 1 + Layer 2) ---
 
   it('defaults authRateLimit to 20 (Layer 1 on) and rateLimit to 0 (Layer 2 off)', () => {

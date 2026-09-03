@@ -28,7 +28,12 @@ import { extractMethod, formatMethodListing, listMethods } from '../context/meth
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
-import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
+import {
+  detectLocalHandlerInclude,
+  inferObjectType,
+  normalizeObjectType,
+  objectUrlForTypeRaw,
+} from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 const BTP_HINTS: Record<string, string> = {
@@ -339,20 +344,55 @@ export async function handleSAPRead(
         return textResult(toolJson(structured));
       }
       const methodParam = args.method as string | undefined;
-      if (methodParam && !args.include) {
-        // Method-level read — fetch full source then extract (no cache indicator for derived results)
-        const { source: fullSource } = await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
-          client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
-        );
+      if (methodParam) {
+        // An explicit include is authoritative, including `main`. Only an omitted include may be
+        // inferred from a qualified local-class name (the same convention used by edit_method).
+        const requestedInclude = (args.include as string | undefined)?.toLowerCase();
+        const resolvedInclude =
+          requestedInclude === undefined
+            ? detectLocalHandlerInclude(methodParam)
+            : requestedInclude === 'main'
+              ? undefined
+              : requestedInclude;
+        let methodSource: string;
+        if (resolvedInclude) {
+          // Include reads bypass the source cache: its key has no class-section dimension, so a
+          // cached MAIN body must never satisfy an implementations/testclasses request.
+          try {
+            methodSource = (
+              await client.getClassInclude(name, resolvedInclude, {
+                version: effectiveVersion,
+              })
+            ).source;
+          } catch (err) {
+            if (isNotFoundError(err)) {
+              return errorResult(
+                `Include "${resolvedInclude}" is not available for class ${name}, so method "${methodParam}" cannot be read from it.`,
+              );
+            }
+            throw err;
+          }
+        } else {
+          methodSource = (
+            await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
+              client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
+            )
+          ).source;
+        }
         const probedAbapRelease = getCachedFeatures()?.abapRelease;
         const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         if (methodParam === '*') {
-          const listing = listMethods(fullSource, name, abaplintVer);
+          const listing = listMethods(methodSource, name, abaplintVer);
           return textResult(formatMethodListing(listing));
         }
-        const extracted = extractMethod(fullSource, name, methodParam, abaplintVer);
+        const extracted = extractMethod(methodSource, name, methodParam, abaplintVer);
         if (!extracted.success) {
-          return errorResult(extracted.error ?? `Method "${methodParam}" not found in ${name}.`);
+          const location = resolvedInclude ? ` (read from include=${resolvedInclude})` : '';
+          const hint =
+            requestedInclude === undefined && !resolvedInclude
+              ? ' Methods of class-local classes live in an include: qualify the method as "lhc_x~method" (or "ltc_x~method" for testclasses), or pass include= explicitly.'
+              : '';
+          return errorResult(`${extracted.error ?? `Method "${methodParam}" not found in ${name}.`}${location}${hint}`);
         }
         return cachedTextResult(extracted.methodSource, false, false, versionWarning);
       }

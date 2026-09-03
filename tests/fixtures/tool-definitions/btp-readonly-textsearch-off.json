@@ -75,7 +75,7 @@
         },
         "include": {
           "type": "string",
-          "description": "For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
+          "description": "For CLAS: omit include for full MAIN; otherwise select definitions, implementations, macros, or testclasses. With method=, an explicit include (including main) selects the source before extraction. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
         },
         "group": {
           "type": "string",
@@ -83,7 +83,7 @@
         },
         "method": {
           "type": "string",
-          "description": "For CLAS: method name to read a single method implementation (e.g., \"get_name\", \"zif_order~process\"). Use \"*\" to list all methods with signatures and visibility. Not used with other types."
+          "description": "For CLAS: read a method (e.g., \"get_name\", \"zif_order~process\", \"lhc_travel~accept\") or use \"*\" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. Not used with other types."
         },
         "grep": {
           "type": "string",
@@ -117,7 +117,7 @@
         },
         "maxRows": {
           "type": "number",
-          "description": "Row cap (default 100). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY or cap client-side."
+          "description": "Row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY for exact caps."
         },
         "maxResults": {
           "type": "number",

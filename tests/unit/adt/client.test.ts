@@ -2113,6 +2113,26 @@ describe('AdtClient', () => {
         expect(mockFetch).not.toHaveBeenCalled();
       });
 
+      it('bounds the whole batch with ONE shared response-memory budget', async () => {
+        // #739 bounds data-preview response memory per logical request. The batch must share a
+        // single scope, or N chunks would each get a fresh budget and together exceed the limit a
+        // single response may consume.
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        const postSpy = vi.spyOn(client.http, 'post');
+
+        await client.runQueryBatch(chunks, 100);
+
+        const budgets = postSpy.mock.calls
+          .filter((call) => String(call[0]).includes('/datapreview/freestyle'))
+          .map((call) => (call[4] as { responseBudget?: unknown } | undefined)?.responseBudget);
+
+        expect(budgets).toHaveLength(chunks.length);
+        expect(budgets.every((budget) => budget !== undefined)).toBe(true);
+        // Same object for every chunk — cumulative, not reset per chunk.
+        expect(new Set(budgets).size).toBe(1);
+      });
+
       it('re-resolves lineage on a second request: no decision survives the first', async () => {
         allowMocks();
         const client = createClient({ safety: strictSafety(['USR02']) });
@@ -2388,6 +2408,25 @@ describe('AdtClient', () => {
       await client.getTableContents('MARA', Number.NaN);
       const nan = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/ddic'));
       expect(String(nan?.[0])).toContain('rowNumber=100');
+    });
+
+    it('runQuery clamps rowNumber at the private freestyle sink', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.runQuery('SELECT * FROM T000', 999_999);
+      const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
+      expect(String(postCall?.[0])).toContain('rowNumber=10000');
+    });
+
+    it('routes every known data-preview endpoint through the required-budget sink', () => {
+      const source = readFileSync(new URL('../../../src/adt/client.ts', import.meta.url), 'utf8');
+      const endpointLiterals = source.match(/\/sap\/bc\/adt\/datapreview\/(?:ddic|freestyle)/g) ?? [];
+
+      expect(endpointLiterals).toEqual(['/sap/bc/adt/datapreview/ddic', '/sap/bc/adt/datapreview/freestyle']);
+      expect(source).not.toMatch(/this\.http\.post\([\s\S]{0,160}\/sap\/bc\/adt\/datapreview\//);
+      expect(source).toContain('private async postDataPreview(');
+      expect(source).toContain('budget: DataResponseBudget');
     });
   });
 

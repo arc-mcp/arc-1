@@ -442,7 +442,7 @@ describe('configuration option registration invariant', () => {
     const requested = new Set(
       [
         ...source.matchAll(
-          /(?:getFlag|getOptionalFlagValue|resolveStr|resolveBool|resolveFeature|resolveOptionalStr)\(\s*'([^']+)'/g,
+          /(?:getFlag|getOptionalFlagValue|resolveStr|resolveBool|resolveFeature|resolveOptionalStr|resolvePositiveSafeInteger)\(\s*'([^']+)'/g,
         ),
       ].map((match) => match[1]),
     );

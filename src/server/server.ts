@@ -68,6 +68,7 @@ import {
 import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { loadPlugins } from './plugin-loader.js';
+import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
 import { buildServerInstructions } from './server-instructions.js';
 import { FileSink } from './sinks/file.js';
 import { filterToolsByAuthScope } from './tool-auth.js';
@@ -209,6 +210,7 @@ export function buildAdtConfig(
   bearerTokenProvider?: () => Promise<string>,
   opts?: { perUser?: boolean },
   adtSemaphore?: Semaphore,
+  dataResultSemaphore?: Semaphore,
 ): Partial<AdtClientConfig> {
   const adtConfig: Partial<AdtClientConfig> = {
     baseUrl: config.url,
@@ -221,6 +223,9 @@ export function buildAdtConfig(
     bearerTokenProvider,
     maxConcurrent: config.maxConcurrent,
     adtSemaphore,
+    maxDataPreviewResponseBytes: config.maxDataPreviewResponseBytes,
+    maxConcurrentDataResults: config.maxConcurrentDataResults,
+    dataResultSemaphore,
     safety: {
       allowWrites: config.allowWrites,
       allowDataPreview: config.allowDataPreview,
@@ -299,6 +304,7 @@ async function createPerUserClient(
   btpProxy: BTPProxyConfig | undefined,
   userJwt: string,
   adtSemaphore?: Semaphore,
+  dataResultSemaphore?: Semaphore,
   multiTarget?: { target: TargetDescriptor; instanceConfig: ServerConfig },
 ): Promise<AdtClient> {
   const { createConnectivityProxy, lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
@@ -331,7 +337,14 @@ async function createPerUserClient(
     ? (createConnectivityProxy(btpConfig, destination.CloudConnectorLocationId, authLibLogger) ?? undefined)
     : selectPerUserProxy(destination, btpProxy);
 
-  const adtConfig = buildAdtConfig(config, effectiveProxy, undefined, { perUser: true }, adtSemaphore);
+  const adtConfig = buildAdtConfig(
+    config,
+    effectiveProxy,
+    undefined,
+    { perUser: true },
+    adtSemaphore,
+    dataResultSemaphore,
+  );
   // Override URL from destination (in case it differs from startup-resolved URL)
   adtConfig.baseUrl = resolvedUrl;
   // Set per-user auth for principal propagation.
@@ -647,6 +660,7 @@ export interface CreateServerOptions {
   startupProbePromise?: Promise<void>;
   startupAuthPreflightPromise?: Promise<StartupAuthPreflightResult>;
   adtSemaphore?: Semaphore;
+  dataResultSemaphore?: Semaphore;
   mcpRateLimiter?: McpRateLimiter;
   multiTarget?: MultiTargetServerOptions;
 }
@@ -660,6 +674,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     startupProbePromise,
     startupAuthPreflightPromise,
     adtSemaphore,
+    dataResultSemaphore,
     mcpRateLimiter,
     multiTarget,
   } = options;
@@ -679,7 +694,9 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   // time) share the same Layer 3 concurrency cap.
   const defaultClient = multiTarget
     ? undefined
-    : new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
+    : new AdtClient(
+        buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
+      );
 
   // Cookie-auth preflight propagation: when startup preflight returned a non-blocking
   // 401 in SAP_COOKIE_FILE mode, the throwaway preflight client marked itself stale —
@@ -864,6 +881,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         multiTargetMcpRateLimitConsumed ? undefined : mcpRateLimiter,
         requestId,
         postDispatchResult,
+        extra.signal,
       );
       return { ...result } as Record<string, unknown>;
     };
@@ -880,7 +898,8 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         clientId: extra.authInfo?.clientId,
         toolName,
         multiError,
-        buildClientConfig: (proxy) => buildAdtConfig(activeConfig, proxy, undefined, undefined, adtSemaphore),
+        buildClientConfig: (proxy) =>
+          buildAdtConfig(activeConfig, proxy, undefined, undefined, adtSemaphore, dataResultSemaphore),
         dispatch: (basicClient, postDispatchResult) => dispatchWithClient(basicClient, false, postDispatchResult),
       });
     }
@@ -922,6 +941,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           btpProxy,
           token,
           adtSemaphore,
+          dataResultSemaphore,
           selectedTarget
             ? { target: selectedTarget, instanceConfig: multiTarget?.instanceConfig ?? config }
             : undefined,
@@ -1076,6 +1096,7 @@ export async function createAndStartServer(
     logger.addSink(uiLogBuffer);
   }
   logAuthSummary(config);
+  logger.info('Runtime memory envelope', runtimeMemoryEnvelope());
 
   // Effective-policy log + contradiction warnings (Task 8 observability).
   // Sources is optional for test callers — defaults to 'default' for all fields.
@@ -1282,12 +1303,11 @@ export async function createAndStartServer(
   const sharedAuthState = config.multiTargetEndpoints ? new MultiTargetSharedAuthState() : undefined;
 
   // ─── Layer 3: shared SAP-bound Semaphore (server-wide cap) ────────
-  // One Semaphore for the whole process. Threaded into the shared startup client AND
-  // every per-user PP client built at request time, so ARC1_MAX_CONCURRENT is a true
-  // server-wide ceiling rather than a per-client one (the latter would multiply the cap
-  // by the number of active PP users — see ADR-0004).
+  // One process-wide instance gates the startup client and every per-user PP client;
+  // a per-client guard would multiply the cap by active users (ADR-0004).
   const adtSemaphore = new Semaphore(config.maxConcurrent);
   logger.info('SAP semaphore', { maxConcurrent: config.maxConcurrent, scope: 'server-wide' });
+  const dataResultSemaphore = createDataResultSemaphore(config);
 
   // ─── Layer 2: per-user MCP tool-call rate limiter ─────────────────
   // Applied inside handleToolCall. Stdio (no authInfo) is exempt — there's no user
@@ -1345,6 +1365,7 @@ export async function createAndStartServer(
       startupProbePromise,
       startupAuthPreflightPromise,
       adtSemaphore,
+      dataResultSemaphore,
       mcpRateLimiter,
     });
   const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
@@ -1354,6 +1375,7 @@ export async function createAndStartServer(
           createServer(aggregateConfig, {
             btpConfig,
             adtSemaphore,
+            dataResultSemaphore,
             mcpRateLimiter,
             multiTarget: { mode: 'aggregate', registry, instanceConfig: config, sharedAuthState },
           })
@@ -1459,6 +1481,7 @@ export async function createAndStartServer(
               return createServer(targetConfig, {
                 btpConfig,
                 adtSemaphore,
+                dataResultSemaphore,
                 mcpRateLimiter,
                 multiTarget: { mode: 'pinned', registry, instanceConfig: config, target, sharedAuthState },
               });

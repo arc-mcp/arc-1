@@ -16,10 +16,12 @@
  * This keeps the client class manageable (not a 2,400-line God class).
  */
 
+import { getCurrentContext } from '../server/context.js';
 import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
+import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
 import { canonicalDataSourceName } from './data-source-name.js';
 import {
   CDS_DEPENDENCY_GRAPH_PATH,
@@ -69,7 +71,7 @@ import {
   parseClassMetadata,
   parseClassStructure,
   parseDataElementMetadata,
-  parseDataPreviewMeta,
+  parseDataPreviewResult,
   parseDomainMetadata,
   parseEnhancementImplementation,
   parseFeatureToggleStates,
@@ -88,8 +90,7 @@ import {
   parseTransactionMetadata,
 } from './xml-parser.js';
 
-export { buildTableQuerySql, clampPreviewRows } from './table-query.js';
-export { clampSearchResults, toTextSearchObjectType };
+export { buildTableQuerySql, clampPreviewRows, clampSearchResults, toTextSearchObjectType };
 
 export interface SourceReadResult {
   source: string;
@@ -259,6 +260,10 @@ export class AdtClient {
   private internalUser?: string;
   /** The configured SAP client number (from --client / SAP_CLIENT) */
   readonly sapClient: string;
+  /** Per-call response ceiling shared by every data method in the current MCP request. */
+  private readonly maxDataPreviewResponseBytes: number;
+  /** Shared process-wide data admission guard (private fallback outside server-managed clients). */
+  private readonly dataResultSemaphore: Semaphore;
   /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
    *  /tables/, structure at /structures/). Populated by getTabl() via the
    *  /tables/→/structures/ 404 fallback. */
@@ -280,6 +285,8 @@ export class AdtClient {
     this.bearerTokenProvider = config.bearerTokenProvider;
     this.usesBearerAuth = !!config.bearerTokenProvider;
     this.sapClient = config.client;
+    this.maxDataPreviewResponseBytes = config.maxDataPreviewResponseBytes;
+    this.dataResultSemaphore = config.dataResultSemaphore ?? new Semaphore(config.maxConcurrentDataResults);
 
     const httpConfig: AdtHttpConfig = {
       baseUrl: config.baseUrl,
@@ -1351,6 +1358,35 @@ export class AdtClient {
     });
   }
 
+  /** Create the lazy request-level result scope inherited by nested handler dispatch. */
+  createDataResultScope(): DataResultScope {
+    return new DataResultScope(this.maxDataPreviewResponseBytes, this.dataResultSemaphore);
+  }
+
+  private async withDataResultScope<T>(
+    operation: (budget: DataResponseBudget, signal?: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const context = getCurrentContext();
+    const inheritedScope = context?.dataResultScope;
+    const scope = inheritedScope ?? this.createDataResultScope();
+    await scope.acquire(context?.signal);
+    try {
+      return await operation(scope.responseBudget, context?.signal);
+    } finally {
+      if (!inheritedScope) scope.release();
+    }
+  }
+
+  private async postDataPreview(
+    path: string,
+    body: string | undefined,
+    budget: DataResponseBudget,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const resp = await this.http.post(path, body, 'text/plain', undefined, { responseBudget: budget, signal });
+    return resp.body;
+  }
+
   /** Get table contents via data preview */
   async getTableContents(
     tableName: string,
@@ -1364,12 +1400,18 @@ export class AdtClient {
     const source = canonicalDataSourceName(tableName, 'TABLE_CONTENTS table name');
     await this.dataSourceBlocklistGuard().enforceTableContents(source, sqlFilter);
     const rowLimit = clampPreviewRows(maxRows);
-    const resp = await this.http.post(
-      `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(source)}`,
-      sqlFilter,
-      'text/plain',
+    // Response memory is bounded per logical request (#739); the URL uses the canonical `source`
+    // so the name the policy authorized is byte-for-byte the name SAP receives.
+    return this.withDataResultScope(async (budget, signal) =>
+      parseTableContents(
+        await this.postDataPreview(
+          `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(source)}`,
+          sqlFilter,
+          budget,
+          signal,
+        ),
+      ),
     );
-    return parseTableContents(resp.body);
   }
 
   /** Execute freestyle SQL query and return just the rows/columns. */
@@ -1402,8 +1444,12 @@ export class AdtClient {
    *
    * Authorization and the POST deliberately live inside the same private operation: there is no
    * caller-supplied `authorized`/`internal` receipt that could be forged to skip the guard, and the
-   * decision is a local const that cannot outlive this call. Metrics are reported only for a single
-   * statement, because an early break on the row cap would make a summed totalRows misleading.
+   * decision is a local const that cannot outlive this call.
+   *
+   * The whole batch runs inside ONE data-result scope, so the response-memory budget (#739) is
+   * cumulative across chunks rather than reset per chunk — N chunks cannot together exceed the limit
+   * a single response may consume. Metrics are reported only for a single statement, because an
+   * early break on the row cap would make a summed totalRows misleading.
    */
   async runQueryBatch(
     statements: string[],
@@ -1415,16 +1461,25 @@ export class AdtClient {
     // ONE policy decision covering every statement in this logical request.
     await this.dataSourceBlocklistGuard().enforceSqlBatch(statements);
 
-    const rowLimit = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : 100;
-    const post = async (sql: string, limit: number): Promise<string> =>
-      (await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${limit}`, sql, 'text/plain')).body;
+    const rowLimit = clampPreviewRows(maxRows);
+    return this.withDataResultScope(async (budget, signal) => {
+      const post = (sql: string, limit: number): Promise<string> => this.postFreestyleQuery(sql, limit, budget, signal);
 
-    if (statements.length === 1) {
-      const body = await post(statements[0]!, rowLimit);
-      return { ...parseTableContents(body), ...parseDataPreviewMeta(body) };
-    }
+      if (statements.length === 1) {
+        return parseDataPreviewResult(await post(statements[0]!, rowLimit));
+      }
+      return executeDataPreviewStatements(post, parseTableContents, statements, rowLimit);
+    });
+  }
 
-    return executeDataPreviewStatements(post, parseTableContents, statements, rowLimit);
+  private async postFreestyleQuery(
+    sql: string,
+    maxRows: number,
+    budget: DataResponseBudget,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const rowLimit = clampPreviewRows(maxRows);
+    return this.postDataPreview(`/sap/bc/adt/datapreview/freestyle?rowNumber=${rowLimit}`, sql, budget, signal);
   }
 
   /**
@@ -1448,8 +1503,9 @@ export class AdtClient {
     await this.dataSourceBlocklistGuard().enforceSources([source]);
     const sql = buildTableQuerySql(source, opts.columns, opts.where);
     const maxRows = clampPreviewRows(opts.maxRows);
-    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
-    return parseTableContents(resp.body);
+    return this.withDataResultScope(async (budget, signal) =>
+      parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal)),
+    );
   }
 
   // ─── System Information ────────────────────────────────────────────

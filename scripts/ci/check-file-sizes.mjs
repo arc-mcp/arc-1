@@ -53,18 +53,20 @@ const BUDGETS = {
   // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past
   // the default. Keep tight headroom.
   // + getFunctionModuleProperties and the getFunctionGroup pre-7.52 objectstructure fallback.
-  // Lowered after TABLE_QUERY construction and experimental data-source lineage moved into
-  // dedicated modules; do not let those domains grow back into the facade.
-  // +10 for runQueryBatch, the single freestyle-SQL entry point that authorizes a whole logical
-  // request once and then executes its statements. Authorization and the POSTs must stay inside one
-  // private client operation, so this genuinely belongs on the facade. The two parts that did not
-  // were extracted first: guard wiring to data-source-policy.ts and the execution loop to
-  // table-query.ts.
-  'src/adt/client.ts': 1690,
+  // + the #739 data-result scope/budget plumbing (main raised this to 1730 for it).
+  // +10 on top of that for runQueryBatch, the single freestyle-SQL entry point that authorizes a
+  // whole logical request once and then executes its statements inside one response-memory scope.
+  // Authorization and the POSTs must stay inside one private client operation, so this genuinely
+  // belongs on the facade; the two parts that did not were extracted first (guard wiring to
+  // data-source-policy.ts, the statement-execution loop to table-query.ts).
+  'src/adt/client.ts': 1740,
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
   'tests/integration/adt.integration.test.ts': 3100,
+  // Sits exactly on the default; +1 for copying the data-source blocklist through buildAdtConfig so
+  // every per-user client inherits the instance policy.
+  'src/server/server.ts': 1501,
 };
 
 const DEFAULT_SRC = 1500;

@@ -8,6 +8,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { DataResultScope } from '../adt/data-result-context.js';
 
 export interface RequestContext {
   requestId: string;
@@ -25,6 +26,10 @@ export interface RequestContext {
   tracestate?: string;
   /** Calling MCP client/agent (`clientInfo` on stdio, `User-Agent` on HTTP). Audit-only. */
   clientAgent?: string;
+  /** Caller cancellation propagated through semaphore waits and SAP HTTP requests. */
+  signal?: AbortSignal;
+  /** Lazily acquired data-result lease and cumulative response allowance for this tool call. */
+  dataResultScope?: DataResultScope;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();

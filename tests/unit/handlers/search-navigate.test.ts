@@ -610,6 +610,26 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.rows).toHaveLength(2);
     });
 
+    it('reports when an oversized maxRows value is clamped at the freestyle sink', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('MANDT', ['001'])));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: 'SELECT mandt FROM t000',
+        maxRows: 50_000,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed).toMatchObject({
+        rowLimitClamped: true,
+        requestedRows: 50_000,
+        effectiveMaxRows: 10_000,
+      });
+      expect(String(freestylePostCalls()[0]?.[0])).toContain('rowNumber=10000');
+    });
+
     it('flags dot-notation (alias.field) as the cause of "only one SELECT" — the real fix is a tilde', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -840,6 +860,29 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       const postCalls = freestylePostCalls();
       expect(postCalls).toHaveLength(1);
       expect(String(postCalls[0]?.[0])).toContain('rowNumber=3');
+    });
+
+    it('clamps the total chunked row limit and reports the effective limit', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z01'])));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z09'])));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09')",
+        maxRows: 50_000,
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text)).toMatchObject({
+        rowLimitClamped: true,
+        requestedRows: 50_000,
+        effectiveMaxRows: 10_000,
+      });
+      const postCalls = freestylePostCalls();
+      expect(postCalls).toHaveLength(2);
+      expect(String(postCalls[0]?.[0])).toContain('rowNumber=10000');
+      expect(String(postCalls[1]?.[0])).toContain('rowNumber=9999');
     });
 
     it('does not rewrite short IN lists', async () => {

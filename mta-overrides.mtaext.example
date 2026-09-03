@@ -32,6 +32,10 @@ extends: arc1-mcp
 
 modules:
   - name: arc1-mcp-server
+    # If data-result limits are raised, size this per-process memory together
+    # with them. See docs_page/btp-administration.md#data-preview-ram-sizing.
+    # parameters:
+    #   memory: 1G
     properties:
       # ── Single-target /mcp (optional) ────────────────────────────────
       # BasicAuth destination for startup feature probing
@@ -87,6 +91,19 @@ modules:
 
       # Enable freestyle SQL execution
       # SAP_ALLOW_FREE_SQL: "true"
+
+      # Successful data-preview response allowance per complete tool call,
+      # counted after transfer decompression and before string conversion.
+      # Positive integer bytes; default 2097152 (2 MiB). Wide rows can hit it
+      # before the 10,000-row request ceiling.
+      # ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES: "2097152"
+
+      # Process-wide data-result calls admitted through fetch, parse, result
+      # serialization, and terminal audit. Positive integer; default 2.
+      # Raise the byte limit only after benchmarking, and normally lower this
+      # value proportionally so their product remains controlled. Change the
+      # module memory above in the same reviewed deployment when needed.
+      # ARC1_MAX_CONCURRENT_DATA_RESULTS: "2"
 
       # Enable transport mutations (release, create, add to transport).
       # Also requires SAP_ALLOW_WRITES=true.

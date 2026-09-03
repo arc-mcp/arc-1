@@ -25,6 +25,22 @@ export class AdtError extends Error {
   }
 }
 
+/** A bounded data-preview response crossed the configured decompressed-byte ceiling. */
+export class AdtResponseLimitError extends AdtError {
+  readonly code = 'DATA_RESPONSE_TOO_LARGE';
+  readonly retryable = false;
+
+  constructor(
+    public readonly limitBytes: number,
+    public readonly observedBytes: number,
+    public readonly endpointFamily: string,
+    public readonly requestId?: string,
+  ) {
+    super(`ADT ${endpointFamily} response exceeded the configured ${limitBytes}-byte limit.`);
+    this.name = 'AdtResponseLimitError';
+  }
+}
+
 export interface DdicDiagnostic {
   messageId?: string;
   messageNumber?: string;

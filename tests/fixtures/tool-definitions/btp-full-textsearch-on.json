@@ -75,7 +75,7 @@
         },
         "include": {
           "type": "string",
-          "description": "For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
+          "description": "For CLAS: omit include for full MAIN; otherwise select definitions, implementations, macros, or testclasses. With method=, an explicit include (including main) selects the source before extraction. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
         },
         "group": {
           "type": "string",
@@ -83,7 +83,7 @@
         },
         "method": {
           "type": "string",
-          "description": "For CLAS: method name to read a single method implementation (e.g., \"get_name\", \"zif_order~process\"). Use \"*\" to list all methods with signatures and visibility. Not used with other types."
+          "description": "For CLAS: read a method (e.g., \"get_name\", \"zif_order~process\", \"lhc_travel~accept\") or use \"*\" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. Not used with other types."
         },
         "grep": {
           "type": "string",
@@ -117,7 +117,7 @@
         },
         "maxRows": {
           "type": "number",
-          "description": "Row cap (default 100). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY or cap client-side."
+          "description": "Row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY for exact caps."
         },
         "maxResults": {
           "type": "number",
@@ -951,7 +951,7 @@
   },
   {
     "name": "SAPQuery",
-    "description": "Execute ABAP SQL queries (BTP ABAP Environment). Returns structured data with column names and rows. ADT freestyle ABAP SQL: one read-only SELECT; use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted inline literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION, and subqueries work; schema prefixes, CTEs, derived tables, window functions, FULL JOIN, INTERSECT/EXCEPT, comments, and semicolons do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. IMPORTANT: On BTP, only custom Z/Y tables and released CDS entities can be queried. SAP standard tables (MARA, VBAK, DD02L, DD03L, TADIR, etc.) are blocked. Use released CDS views instead: I_LANGUAGE, I_COUNTRY, I_CURRENCY, I_UnitOfMeasure, etc. If a table is not found, similar table names will be suggested automatically.",
+    "description": "Query BTP ABAP Environment with ABAP SQL; returns columns + rows. ADT freestyle ABAP SQL: one read-only SELECT. Use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION and subqueries work. CTEs, FULL JOIN, derived/window tables, INTERSECT/EXCEPT, comments, semicolons and schema prefixes do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. BTP permits custom Z/Y tables and released CDS entities; standard tables are blocked. Use released views such as I_LANGUAGE. Unknown tables get suggestions.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -961,7 +961,7 @@
         },
         "maxRows": {
           "type": "number",
-          "description": "Maximum rows (default 100)"
+          "description": "Rows (default 100, max 10,000; byte limit may apply sooner)."
         }
       },
       "required": [

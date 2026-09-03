@@ -7,6 +7,7 @@
  */
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
+import { DEFAULT_CONCURRENT_DATA_RESULTS, DEFAULT_DATA_PREVIEW_RESPONSE_BYTES } from './data-result-context.js';
 import type { SafetyConfig } from './safety.js';
 import { unrestrictedSafetyConfig } from './safety.js';
 
@@ -121,6 +122,12 @@ export interface AdtClientConfig {
    *  constructed with this config. The server constructs one at startup so principal-propagation
    *  per-user clients all share the same cap. Takes precedence over `maxConcurrent`. */
   adtSemaphore?: import('./semaphore.js').Semaphore;
+  /** Cumulative decompressed response bytes allowed per data-result scope. */
+  maxDataPreviewResponseBytes: number;
+  /** Private fallback data-result concurrency when no shared semaphore is supplied. */
+  maxConcurrentDataResults: number;
+  /** Process-wide data-result semaphore shared by every server-created ADT client. */
+  dataResultSemaphore?: import('./semaphore.js').Semaphore;
 }
 
 /** Create default ADT client config */
@@ -137,5 +144,7 @@ export function defaultAdtClientConfig(): AdtClientConfig {
     safety: unrestrictedSafetyConfig(),
     features: defaultFeatureConfig(),
     verbose: false,
+    maxDataPreviewResponseBytes: DEFAULT_DATA_PREVIEW_RESPONSE_BYTES,
+    maxConcurrentDataResults: DEFAULT_CONCURRENT_DATA_RESULTS,
   };
 }

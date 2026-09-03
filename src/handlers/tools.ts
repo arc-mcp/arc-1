@@ -133,20 +133,18 @@ const SAPCONTEXT_DESC_BTP =
 // ─── SAPQuery ───────────────────────────────────────────────────────
 
 const SAPQUERY_DIALECT_GUIDE =
-  'ADT freestyle ABAP SQL: one read-only SELECT; use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted inline literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION, and subqueries work; schema prefixes, CTEs, derived tables, window functions, FULL JOIN, INTERSECT/EXCEPT, comments, and semicolons do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. ';
+  'ADT freestyle ABAP SQL: one read-only SELECT. Use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION and subqueries work. CTEs, FULL JOIN, derived/window tables, INTERSECT/EXCEPT, comments, semicolons and schema prefixes do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. ';
 
 const SAPQUERY_DESC_ONPREM =
-  'Execute ABAP SQL queries against SAP tables. Returns columns + rows. Good for reverse-engineering metadata tables (DD02L, DD03L, TADIR, TFDIR, SWOTLV). Unknown tables get name suggestions. ' +
+  'Query SAP tables with ABAP SQL; returns columns + rows. For reverse-engineering metadata: DD02L, DD03L, TADIR, TFDIR, SWOTLV. Unknown tables get suggestions. ' +
   SAPQUERY_DIALECT_GUIDE +
-  'To find CDS consumers do NOT text-scan DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC — use SAPContext(action="impact", type="DDLS") (where-used index, filtered buckets).';
+  'For CDS consumers, do not scan DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC; use SAPContext(action="impact", type="DDLS").';
 
 const SAPQUERY_DESC_BTP =
-  'Execute ABAP SQL queries (BTP ABAP Environment). Returns structured data with column names and rows. ' +
+  'Query BTP ABAP Environment with ABAP SQL; returns columns + rows. ' +
   SAPQUERY_DIALECT_GUIDE +
-  'IMPORTANT: On BTP, only custom Z/Y tables and released CDS entities can be queried. ' +
-  'SAP standard tables (MARA, VBAK, DD02L, DD03L, TADIR, etc.) are blocked. ' +
-  'Use released CDS views instead: I_LANGUAGE, I_COUNTRY, I_CURRENCY, I_UnitOfMeasure, etc. ' +
-  'If a table is not found, similar table names will be suggested automatically.';
+  'BTP permits custom Z/Y tables and released CDS entities; standard tables are blocked. ' +
+  'Use released views such as I_LANGUAGE. Unknown tables get suggestions.';
 
 // ─── SAPSearch ──────────────────────────────────────────────────────
 
@@ -448,7 +446,7 @@ export function getToolDefinitions(
           include: {
             type: 'string',
             description:
-              'For CLAS: DO NOT use this to read the main class — omit include entirely to get the full class source (CLASS DEFINITION + CLASS IMPLEMENTATION). This parameter reads class-LOCAL auxiliary files only: definitions (local type definitions, NOT the main class definition), implementations (local helper class implementations), macros, testclasses (ABAP Unit). Comma-separated. ' +
+              'For CLAS: omit include for full MAIN; otherwise select definitions, implementations, macros, or testclasses. With method=, an explicit include (including main) selects the source before extraction. ' +
               'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
               'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path.',
           },
@@ -460,8 +458,7 @@ export function getToolDefinitions(
           method: {
             type: 'string',
             description:
-              'For CLAS: method name to read a single method implementation (e.g., "get_name", "zif_order~process"). ' +
-              'Use "*" to list all methods with signatures and visibility. ' +
+              'For CLAS: read a method (e.g., "get_name", "zif_order~process", "lhc_travel~accept") or use "*" to list methods. Without include=, lhc_*/lcl_* use implementations, ltc_* uses testclasses, and others use MAIN; explicit include= wins. ' +
               (btp ? '' : 'For SOBJ: BOR method name to read. If omitted, returns the full BOR method catalog. ') +
               'Not used with other types.',
           },
@@ -509,7 +506,7 @@ export function getToolDefinitions(
           maxRows: {
             type: 'number',
             description:
-              'Row cap (default 100). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY or cap client-side.',
+              'Row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY for exact caps.',
           },
           maxResults: {
             type: 'number',
@@ -1033,7 +1030,10 @@ export function getToolDefinitions(
         type: 'object',
         properties: {
           sql: { type: 'string', description: 'ABAP SQL SELECT statement' },
-          maxRows: { type: 'number', description: 'Maximum rows (default 100)' },
+          maxRows: {
+            type: 'number',
+            description: 'Rows (default 100, max 10,000; byte limit may apply sooner).',
+          },
         },
         required: ['sql'],
       },
