@@ -9,6 +9,7 @@ docs_dir: docs_page
 
 theme:
   name: material
+  custom_dir: overrides
   palette:
     # `media` = follow the OS light/dark setting on first visit; the toggle then pins a choice.
     - media: '(prefers-color-scheme: light)'
@@ -26,6 +27,7 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - announce.dismiss
     - navigation.path
     - navigation.sections
     - navigation.top
@@ -40,6 +42,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Newsletter: newsletter.md
   - Quickstart: quickstart.md
   - Agent Plugin: agent-plugin.md
   - Install in Claude: install-in-claude.md

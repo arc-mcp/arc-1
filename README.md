@@ -8,7 +8,9 @@ ARC-1 connects AI assistants (Claude, GitHub Copilot, Copilot Studio, and any MC
 [![CodeQL](https://github.com/arc-mcp/arc-1/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/arc-mcp/arc-1/security/code-scanning)
 [![Dependency Review](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml)
 
-**[Full Documentation](https://docs.arc-1-mcp.com/)** | **[Quickstart](https://docs.arc-1-mcp.com/quickstart/)** | **[Tool Reference](https://docs.arc-1-mcp.com/tools/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
+**[Full Documentation](https://docs.arc-1-mcp.com/)** | **[Quickstart](https://docs.arc-1-mcp.com/quickstart/)** | **[Tool Reference](https://docs.arc-1-mcp.com/tools/)** | **[ARC-1 Updates](https://docs.arc-1-mcp.com/newsletter/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
+
+> 📬 **Stay current with ARC-1** — get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. **[Join ARC-1 Updates →](https://docs.arc-1-mcp.com/newsletter/)**
 
 > 📖 **New: AI ABAP Development blog series** — long-form posts on AI for ABAP, ARC-1 design, and real-world BTP / Copilot Studio / Joule walkthroughs. **[Read the series →](https://blog.zeis.de/tags/ai-abap-development-series/)**
 
