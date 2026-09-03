@@ -86,4 +86,21 @@ describe('DataResultScope', () => {
     queued.release();
     expect(semaphore.inflight).toBe(0);
   });
+
+  it('returns a slot granted after the waiting scope was released', async () => {
+    const semaphore = new Semaphore(1);
+    const active = new DataResultScope(10, semaphore);
+    const queued = new DataResultScope(10, semaphore);
+    await active.acquire();
+    const waiting = queued.acquire();
+    expect(semaphore.waiting).toBe(1);
+
+    queued.release();
+    active.release();
+
+    await expect(waiting).rejects.toThrow('released while waiting for admission');
+    expect(queued.hasLease).toBe(false);
+    expect(semaphore.inflight).toBe(0);
+    expect(semaphore.waiting).toBe(0);
+  });
 });

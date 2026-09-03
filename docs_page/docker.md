@@ -16,6 +16,7 @@ without spawning a new process per session.
 2. [Pre-Built Images (GHCR)](#pre-built-images-ghcr)
 3. [Building the Image](#building-the-image)
 4. [How arc1 Runs in Docker](#how-arc1-runs-in-docker)
+   - [Response-memory sizing](#response-memory-sizing)
 5. [Passing Configuration into Docker](#passing-configuration-into-docker)
    - [Env vars and env files](#env-vars-and-env-files)
    - [Cookie files inside the container](#cookie-files-inside-the-container)
@@ -44,7 +45,9 @@ to `http://localhost:8080/mcp`.
 ```bash
 # Start arc1 as a persistent HTTP MCP server
 docker run -d --rm \
+  --memory=512m \
   -p 8080:8080 \
+  -e NODE_OPTIONS=--max-old-space-size=384 \
   -e SAP_URL=https://host:44300 \
   -e SAP_USER=developer \
   -e SAP_PASSWORD=secret \
@@ -189,8 +192,8 @@ docker buildx build \
   --push .
 ```
 
-> **Build note:** The image uses `node:20-alpine` as builder. The runtime image
-> is `node:20-alpine` with only production dependencies installed.
+> **Build note:** The image uses `node:22-alpine` as builder. The runtime image
+> is `node:22-alpine` with only production dependencies installed.
 > `better-sqlite3` requires native compilation during `npm install`.
 
 ---
@@ -243,6 +246,32 @@ MCP Client
 | `SAP_HTTP_ADDR` | `--http-addr` | `0.0.0.0:8080` | Listen address for http-streamable |
 | `ARC1_UI` | `--ui` | `off` | Experimental read-only console. `web` mounts it at `/ui` and requires HTTP auth plus admin scope; `local` starts a loopback sidecar inside the container and is usually not useful unless you forward that port deliberately |
 | `ARC1_UI_ADDR` | `--ui-addr` | `127.0.0.1:8711` | Sidecar bind address for `ARC1_UI=local` |
+
+### Response-memory sizing
+
+The data-preview byte allowance and data-result concurrency guard also apply in Docker. The image
+starts `node dist/index.js` directly under `tini`; it does not use the Cloud Foundry Node.js
+buildpack, so `OPTIMIZE_MEMORY` and the buildpack-provided `MEMORY_AVAILABLE` policy do not apply.
+Give the container an explicit memory limit and, when predictable V8/native headroom matters, set a
+numeric old-space ceiling in the same deployment definition:
+
+```bash
+docker run -d --rm \
+  --memory=512m \
+  -e NODE_OPTIONS=--max-old-space-size=384 \
+  -e ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES=2097152 \
+  -e ARC1_MAX_CONCURRENT_DATA_RESULTS=2 \
+  ... \
+  ghcr.io/arc-mcp/arc-1:latest
+```
+
+For a different container limit, start with old-space at about 75% of RAM (for example 768 MiB at
+1 GiB) and leave the rest for native HTTP buffers, XML input, and serialization. Use the
+[data-preview RAM sizing model](btp-administration.md#data-preview-ram-sizing) for the two ARC-1
+limits, then load-test the widest approved result at full configured concurrency. Keep
+`--memory`, the numeric `NODE_OPTIONS` value, and the two data-result settings together; unlike the
+shipped MTA buildpack path, the numeric Docker value does not follow a later memory override
+automatically.
 
 ---
 

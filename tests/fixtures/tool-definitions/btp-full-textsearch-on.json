@@ -951,7 +951,7 @@
   },
   {
     "name": "SAPQuery",
-    "description": "Query BTP ABAP Environment with ABAP SQL; returns columns + rows. ADT freestyle ABAP SQL: one read-only SELECT. Use alias~field/alias~*, ASCENDING/DESCENDING, quoted literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION and subqueries work. CTEs, FULL JOIN, derived/window tables, INTERSECT/EXCEPT, comments, semicolons and schema prefixes do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. BTP permits custom Z/Y tables and released CDS entities; standard tables are blocked. Use released views such as I_LANGUAGE. Unknown tables get suggestions.",
+    "description": "Query BTP ABAP Environment with ABAP SQL; returns columns + rows. ADT freestyle ABAP SQL: one read-only SELECT. Use AS aliases, alias~field/alias~*, ASCENDING/DESCENDING, single-quoted literals (no @/:/? parameters), and maxRows (not TOP/LIMIT/OFFSET/FETCH). JOINs, GROUP BY, aggregates, UNION and subqueries work. CTEs, FULL JOIN, derived/window tables, INTERSECT/EXCEPT, comments, semicolons and schema prefixes do not. ARC-1 auto-chunks long literal IN-lists in plain projection SELECTs. BTP permits custom Z/Y tables and released CDS entities; standard tables are blocked. Use released views such as I_LANGUAGE. Unknown tables get suggestions.",
     "inputSchema": {
       "type": "object",
       "properties": {

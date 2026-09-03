@@ -1,4 +1,4 @@
-import { Readable } from 'node:stream';
+import type { Readable } from 'node:stream';
 import type { Client, Dispatcher } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import type { DataResponseBudget } from './data-result-context.js';
@@ -92,42 +92,88 @@ export async function capResponseBody(response: Response, budget: DataResponseBu
 }
 
 function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal): ReadableStream<Uint8Array> {
-  const source = Readable.toWeb(body) as ReadableStream<Uint8Array>;
-  const reader = source.pipeThrough(new TransformStream<Uint8Array>(), { signal }).getReader();
+  // Do not bridge Undici's BodyReadable through Readable.toWeb(). Cancelling that
+  // adapter closes its web-stream controller before Client.destroy() has drained
+  // already-queued BodyReadable data, so a late data event can enqueue into the
+  // closed controller and terminate the process with ERR_INVALID_STATE (#737).
+  // Reading the Node stream directly keeps cancellation and client ownership in
+  // this one adapter and gives late source events no web controller to reach.
+  const iterator = body[Symbol.asyncIterator]();
+  let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
   let settled = false;
+  let ended = false;
+
+  const asError = (reason: unknown, fallback: string): Error =>
+    reason instanceof Error ? reason : new Error(reason === undefined ? fallback : String(reason));
+
+  const onAbort = () => {
+    if (ended) return;
+    ended = true;
+    const cause = asError(signal.reason, 'The proxy response stream was aborted.');
+    try {
+      streamController?.error(cause);
+    } catch {
+      // A simultaneous consumer cancellation may already have closed the stream.
+    }
+    void settle(cause).catch(() => {
+      // The abort reason is already visible to the consumer.
+    });
+  };
+
   const settle = async (error?: Error) => {
     if (settled) return;
     settled = true;
-    if (error) await client.destroy(error);
-    else await client.close();
+    signal.removeEventListener('abort', onAbort);
+    if (error) {
+      // Stop the body without emitting a second error, then destroy its dedicated
+      // client with the original cause. The async iterator retains Node's error
+      // listener, so a transport error racing with teardown stays handled.
+      if (!body.destroyed) body.destroy();
+      await client.destroy(error);
+    } else {
+      await client.close();
+    }
   };
 
   return new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    },
     async pull(controller) {
       try {
-        const chunk = await reader.read();
+        const chunk = await iterator.next();
+        if (ended) return;
         if (chunk.done) {
-          await settle();
-          controller.close();
+          ended = true;
+          try {
+            await settle();
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          }
           return;
+        }
+        if (!(chunk.value instanceof Uint8Array)) {
+          throw new TypeError('The proxy response body emitted a non-byte chunk.');
         }
         controller.enqueue(chunk.value);
       } catch (error) {
-        const cause = error instanceof Error ? error : new Error(String(error));
+        if (ended) return;
+        ended = true;
+        const cause = asError(error, 'The proxy response stream failed.');
         try {
           await settle(cause);
         } finally {
-          controller.error(error);
+          controller.error(cause);
         }
       }
     },
     async cancel(reason) {
-      const cause = reason instanceof Error ? reason : new Error('The proxy response stream was cancelled.');
-      try {
-        await reader.cancel(reason);
-      } finally {
-        await settle(cause);
-      }
+      if (ended) return;
+      ended = true;
+      await settle(asError(reason, 'The proxy response stream was cancelled.'));
     },
   });
 }

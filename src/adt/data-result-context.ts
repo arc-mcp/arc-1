@@ -114,6 +114,10 @@ export class DataResultScope {
       const startedAt = Date.now();
       this.leasePromise = this.semaphore.acquire(signal).then(() => {
         this._queueWaitMs = Date.now() - startedAt;
+        if (this.released) {
+          this.semaphore?.release();
+          throw new Error('Data-result scope was released while waiting for admission.');
+        }
         this.leaseHeld = true;
       });
     }
