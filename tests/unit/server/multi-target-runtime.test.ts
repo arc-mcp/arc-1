@@ -138,6 +138,21 @@ describe('multi-target runtime isolation', () => {
     expect(config).toMatchObject({ ppEnabled: true, ppStrict: true, disableSaml2: false });
   });
 
+  it('preserves configured data-result limits for pinned and aggregate runtimes', () => {
+    const base = {
+      ...DEFAULT_CONFIG,
+      maxDataPreviewResponseBytes: 1024 * 1024,
+      maxConcurrentDataResults: 4,
+    };
+
+    for (const config of [buildMultiTargetConfig(base, registryTarget()), buildAggregateToolSurfaceConfig(base, [])]) {
+      expect(config).toMatchObject({
+        maxDataPreviewResponseBytes: 1024 * 1024,
+        maxConcurrentDataResults: 4,
+      });
+    }
+  });
+
   it('switches only a selected Basic target to the shared non-PP runtime', () => {
     const basicTarget = {
       ...registryTarget(),
