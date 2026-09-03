@@ -4,6 +4,10 @@
 
 ARC-1 is a TypeScript MCP server (distributed as an npm package and Docker image) that implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and translates AI tool calls into [SAP ABAP Development Tools (ADT)](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/about-abap-development-tools) REST API requests. It works with Claude, GitHub Copilot, VS Code, and any MCP-compatible client.
 
+!!! tip "Stay current with ARC-1"
+
+    Get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. [Join ARC-1 Updates →](newsletter.md)
+
 ## Why ARC-1?
 
 As an **admin**, you control what the AI can and cannot do via positive-opt-in flags:
