@@ -17,6 +17,7 @@ annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 
 ### Bug Fixes
 
+* **security:** patch pre-authentication decoder DoS in optional BTP AppRouter ([#738](https://github.com/arc-mcp/arc-1/issues/738)) ([3d89008](https://github.com/arc-mcp/arc-1/commit/3d8900852be296870626bd8ed40325bff75a2713))
 * read local-class methods from class includes ([#744](https://github.com/arc-mcp/arc-1/issues/744)) ([978c0fe](https://github.com/arc-mcp/arc-1/commit/978c0feef45902d221c7f6f79a86738dfa8bc767))
 
 ## [1.1.2](https://github.com/arc-mcp/arc-1/compare/v1.1.1...v1.1.2) (2026-08-31)
