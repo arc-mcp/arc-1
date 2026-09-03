@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,11 +18,12 @@ function fakeNodePath(): string {
   return directory;
 }
 
-function run(env: Record<string, string | undefined>) {
-  return spawnSync(START_SCRIPT, [], {
+function run(env: Record<string, string | undefined>, script = START_SCRIPT) {
+  const nodeDirectory = fakeNodePath();
+  return spawnSync('sh', [script], {
     cwd: ROOT,
     encoding: 'utf8',
-    env: { PATH: fakeNodePath(), ...env },
+    env: { PATH: `${nodeDirectory}:${process.env.PATH ?? ''}`, ...env },
   });
 }
 
@@ -56,5 +57,18 @@ describe('Cloud Foundry launcher', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout.trim()).toBe('dist/index.js');
+  });
+
+  it('starts when an archive does not preserve the launcher executable bit', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'arc1-cf-start-mode-'));
+    tempDirectories.push(directory);
+    const packagedScript = join(directory, 'start-cf.sh');
+    copyFileSync(START_SCRIPT, packagedScript);
+    chmodSync(packagedScript, 0o666);
+
+    const result = run({ OPTIMIZE_MEMORY: 'true', MEMORY_AVAILABLE: '512' }, packagedScript);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim().split('\n')).toEqual(['--max-old-space-size=384', 'dist/index.js']);
   });
 });

@@ -78,7 +78,7 @@ describe('shipped mta.yaml resolves through the config parser', () => {
 
     expect(config.transport).toBe('http-streamable');
     expect(process.env.OPTIMIZE_MEMORY).toBe('true');
-    expect(appModuleDescriptor().parameters?.command).toBe('exec ./bin/start-cf.sh');
+    expect(appModuleDescriptor().parameters?.command).toBe('exec sh ./bin/start-cf.sh');
     expect(process.env.SAP_BTP_DESTINATION).toBeUndefined();
     expect(process.env.SAP_BTP_PP_DESTINATION).toBeUndefined();
     expect(config.ppEnabled).toBe(true);

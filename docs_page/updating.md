@@ -259,6 +259,18 @@ identity mode; it determines whether process overlap is safe.
 | Multi-target with any shared Basic destination | **Non-rolling stop/deploy/start; exactly one process** |
 | Mixed multi-target PP + Basic | Basic restriction governs the entire application |
 
+Before retrying a deploy that failed or was interrupted, check `cf mta-ops`. A previous active or
+`ERROR` operation can make a non-interactive deploy appear to hang while it waits for confirmation.
+Abort only the operation ID for this MTA, then retry the reviewed deployment:
+
+```bash
+cf mta-ops --mta <mta-id>
+cf deploy -i <operation-id> -a abort
+```
+
+Do not use `-f` to bypass this check: first inspect the operation and confirm that aborting it is
+safe for the target space.
+
 ### Single-target or PP-only multi-target
 
 ```bash

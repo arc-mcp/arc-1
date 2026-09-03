@@ -505,7 +505,7 @@ values are positive integers; `0` is rejected at startup. Use the
 [BTP data-preview RAM sizing table](btp-administration.md#data-preview-ram-sizing) to change the two
 limits and the module's `parameters.memory` value as one reviewed deployment decision.
 
-The base MTA also sets `OPTIMIZE_MEMORY=true`; do not replace its `exec ./bin/start-cf.sh` launcher
+The base MTA also sets `OPTIMIZE_MEMORY=true`; do not replace its `exec sh ./bin/start-cf.sh` launcher
 with a fixed `node --max-old-space-size=...` command in the extension. The launcher validates the
 buildpack-provided `MEMORY_AVAILABLE`, derives old-space from the durable CF allocation (384 MiB at
 512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. Verify the `Runtime

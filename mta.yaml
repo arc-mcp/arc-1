@@ -72,10 +72,10 @@ modules:
       health-check-type: http
       health-check-http-endpoint: /health
       buildpack: nodejs_buildpack
-      # The wrapper validates the buildpack-provided MEMORY_AVAILABLE, applies
-      # OPTIMIZE_MEMORY's adaptive 75% policy, then execs Node directly so CF's
-      # SIGTERM reaches ARC-1 instead of stopping at npm.
-      command: exec ./bin/start-cf.sh
+      # Invoke the wrapper through sh because Windows-built MTARs do not preserve
+      # its executable bit. It validates MEMORY_AVAILABLE, applies the adaptive
+      # 75% policy, then execs Node so CF's SIGTERM reaches ARC-1.
+      command: exec sh ./bin/start-cf.sh
     build-parameters:
       builder: custom
       commands: []

@@ -92,9 +92,11 @@ The draft PR now implements the approved design as reviewable commits:
   reproduced an uncaught late-data race, adds the regression test, closes the pending-admission
   semaphore edge case, restores compressed SAPQuery guidance, and documents Docker sizing.
 
-The MTA build succeeds with a tracked `exec ./bin/start-cf.sh` module command. The launcher validates
-the buildpack-provided decimal-MiB value, applies the same 75% calculation, and fails closed if the
-input is absent or malformed. Disposable live apps using Cloud Foundry Node.js buildpack 1.9.3
+The MTA build succeeds with a tracked `exec sh ./bin/start-cf.sh` module command. Calling it through
+`sh` also survives Windows-built MTARs that store the script without its Git executable bit. The
+launcher validates the buildpack-provided decimal-MiB value, applies the same 75% calculation, and
+fails closed if the input is absent or malformed. Disposable live apps using Cloud Foundry Node.js
+buildpack 1.9.3
 produced 384 MiB old-space at 512 MiB and 768 MiB at 1 GiB. A live restart and a memory-scale
 restart both delivered SIGTERM to ARC-1's shutdown hook and exited Node with status 0 before the
 replacement became healthy. This validates both adaptive heap mechanics and process ownership
@@ -557,8 +559,9 @@ verifies 1,024 MiB available memory produces a 768 MiB flag. See its
 The initial implementation removed the custom MTA command and used that default process. Live
 `cf restart` validation then showed that SIGTERM stopped at the npm process: ARC-1's shutdown hook
 did not run. The final design keeps `OPTIMIZE_MEMORY: "true"` but uses the tracked
-`exec ./bin/start-cf.sh` command. The launcher validates `MEMORY_AVAILABLE`, calculates the same 75%
-old-space value, and `exec`s Node directly. It therefore follows durable MTA memory overrides while
+`exec sh ./bin/start-cf.sh` command. Invoking the script through `sh` keeps Windows-built MTARs from
+depending on a Unix executable bit. The launcher validates `MEMORY_AVAILABLE`, calculates the same
+75% old-space value, and `exec`s Node directly. It therefore follows durable MTA memory overrides while
 restoring signal delivery and failing closed instead of evaluating an empty shell expression.
 
 This 75% choice leaves a more realistic allowance for young-generation heap, external buffers,
@@ -791,11 +794,13 @@ operator may raise either ceiling.
 ### D. Correct the CF safety margin
 
 In the same implementation PR, replace `command: node --max-old-space-size=448 dist/index.js` with
-`command: exec ./bin/start-cf.sh` and add `OPTIMIZE_MEMORY: "true"` to the module properties. The
+`command: exec sh ./bin/start-cf.sh` and add `OPTIMIZE_MEMORY: "true"` to the module properties. The
 launcher accepts only a positive decimal `MEMORY_AVAILABLE`, calculates 75%, and `exec`s Node with
 that old-space value. Expected flags are 384 MiB for the shipped 512 MiB module and 768 MiB for a
 1 GiB `.mtaext` memory override. Direct `exec` is required because live `cf restart` testing showed
 that the buildpack's default `npm start` process did not deliver SIGTERM to ARC-1's shutdown hook.
+The explicit `sh` invocation is required because MTARs built on Windows can lose the launcher's
+executable bit.
 
 Do not use `--max-old-space-size-percentage`: it is newer than ARC-1's declared minimum Node
 version and adds a host-memory fallback path. Do not use an unchecked shell expression derived
