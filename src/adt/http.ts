@@ -32,9 +32,10 @@ import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
+import { capResponseBody, connectivityProxyResponse } from './bounded-response.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
-import { AdtApiError, AdtNetworkError } from './errors.js';
+import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
 import {
   type AdtRequestOptions,
   awaitWithinRequestBudget,
@@ -42,6 +43,7 @@ import {
   requestSignal,
   sleepWithinRequestBudget,
   throwIfRequestCancelled,
+  withoutResponseBudget,
 } from './http-deadline.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import type { Semaphore } from './semaphore.js';
@@ -321,7 +323,13 @@ export class AdtHttpClient {
         }
         return await this.requestInner(method, path, body, contentType, extraHeaders, options);
       } catch (error) {
-        if (error instanceof AdtApiError || error instanceof AdtNetworkError) throw error;
+        if (
+          error instanceof AdtApiError ||
+          error instanceof AdtNetworkError ||
+          error instanceof AdtResponseLimitError
+        ) {
+          throw error;
+        }
         if (!options?.signal && options?.deadline === undefined) throw error;
         const cause = error instanceof Error ? error : new Error(String(error));
         throw new AdtNetworkError(cause.message, cause);
@@ -374,7 +382,7 @@ export class AdtHttpClient {
     throwIfRequestCancelled(options);
     // Auto-fetch CSRF token for modifying requests
     if (isModifyingMethod(method) && !this.csrfToken) {
-      await this.fetchCsrfToken(options);
+      await this.fetchCsrfToken(withoutResponseBudget(options));
     }
 
     const headers: Record<string, string> = { Accept: '*/*' };
@@ -501,7 +509,7 @@ export class AdtHttpClient {
 
           // Re-fetch CSRF token (needed for modifying requests, harmless for reads)
           if (isModifyingMethod(method)) {
-            await this.fetchCsrfToken(options);
+            await this.fetchCsrfToken(withoutResponseBudget(options));
             headers['X-CSRF-Token'] = this.csrfToken;
           }
 
@@ -661,7 +669,7 @@ export class AdtHttpClient {
 
         // Re-fetch CSRF token for modifying requests
         if (isModifyingMethod(method)) {
-          await this.fetchCsrfToken(options);
+          await this.fetchCsrfToken(withoutResponseBudget(options));
           headers['X-CSRF-Token'] = this.csrfToken;
         }
 
@@ -700,7 +708,7 @@ export class AdtHttpClient {
 
       // Handle CSRF token refresh on 403 (modifying requests only)
       if (response.status === 403 && isModifyingMethod(method)) {
-        await this.fetchCsrfToken(options);
+        await this.fetchCsrfToken(withoutResponseBudget(options));
         headers['X-CSRF-Token'] = this.csrfToken;
         // Update cookie header after CSRF fetch may have set new cookies. Use the
         // merged builder (jar wins) so auth cookies in config.cookies (e.g.
@@ -880,7 +888,7 @@ export class AdtHttpClient {
         throw err;
       }
 
-      if (err instanceof AdtNetworkError) throw err;
+      if (err instanceof AdtNetworkError || err instanceof AdtResponseLimitError) throw err;
 
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(message, err instanceof Error ? err : undefined);
@@ -1306,22 +1314,25 @@ export class AdtHttpClient {
     // spreads these headers too).
     const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
 
+    let response: Response;
     if (this.config.btpProxy) {
-      return this.doProxyRequest(url, method, outbound, body, options);
+      response = await this.doProxyRequest(url, method, outbound, body, options);
+    } else {
+      // Let the explicit operation budget override undici's 300-second header timeout.
+      const dispatcher =
+        this.dispatcher ??
+        (options?.fetchTimeoutMs === undefined
+          ? undefined
+          : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
+      response = (await undiciFetch(url, {
+        method,
+        headers: outbound,
+        body,
+        signal: requestSignal(options),
+        ...(dispatcher ? { dispatcher } : {}),
+      })) as Response;
     }
-    // Let the explicit operation budget override undici's 300-second header timeout.
-    const dispatcher =
-      this.dispatcher ??
-      (options?.fetchTimeoutMs === undefined
-        ? undefined
-        : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
-    return undiciFetch(url, {
-      method,
-      headers: outbound,
-      body,
-      signal: requestSignal(options),
-      ...(dispatcher ? { dispatcher } : {}),
-    }) as Promise<Response>;
+    return options?.responseBudget ? await capResponseBody(response, options.responseBudget) : response;
   }
 
   /**
@@ -1369,6 +1380,12 @@ export class AdtHttpClient {
       Host: hostHeader,
       'Proxy-Authorization': proxyAuth,
     };
+    if (options?.responseBudget) {
+      for (const key of Object.keys(proxyHeaders)) {
+        if (key.toLowerCase() === 'accept-encoding') delete proxyHeaders[key];
+      }
+      proxyHeaders['Accept-Encoding'] = 'identity';
+    }
 
     // Cloud Connector Location ID — required when multiple Cloud Connectors
     // are connected to the same subaccount with different Location IDs.
@@ -1378,43 +1395,23 @@ export class AdtHttpClient {
 
     const clientOptions = options?.fetchTimeoutMs === undefined ? undefined : { headersTimeout: 0, bodyTimeout: 0 };
     const client = new Client(proxyOrigin, clientOptions);
+    let responseOwnsClient = false;
     try {
+      const signal = requestSignal(options);
       const resp = await client.request({
         method: method as Dispatcher.HttpMethod,
         // Full URL as path — standard HTTP proxy protocol
         path: url,
         headers: proxyHeaders,
         body: body ?? undefined,
-        signal: requestSignal(options),
+        signal,
       });
 
-      // Convert undici response to a Response-like object that matches
-      // what fetch() returns, so the rest of AdtHttpClient works unchanged.
-      const responseBody = await resp.body.text();
-      const responseHeaders = new Headers();
-      for (const [key, value] of Object.entries(resp.headers)) {
-        if (value !== undefined) {
-          const vals = Array.isArray(value) ? value : [String(value)];
-          for (const v of vals) {
-            responseHeaders.append(key, v);
-          }
-        }
-      }
-
-      // Statuses 204/205/304 are "null body status" per the Fetch spec — the
-      // Response constructor throws if given a non-null body (and `.text()`
-      // yields '' not null). Pass null so a 304 from a conditional GET (ETag
-      // revalidation) survives the proxy path instead of crashing the write
-      // (e.g. edit_method's read-before-write through the Cloud Connector).
-      // (1xx informational statuses are null-body too, but never surface here:
-      // undici's Client doesn't return them as a final status and ADT never emits them.)
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
-      return new Response(isNullBodyStatus ? null : responseBody, {
-        status: resp.statusCode,
-        headers: responseHeaders,
-      });
+      responseOwnsClient = options?.responseBudget !== undefined && !isNullBodyStatus;
+      return await connectivityProxyResponse(resp, client, signal, options?.responseBudget !== undefined);
     } finally {
-      await client.close();
+      if (!responseOwnsClient) await client.close();
     }
   }
 }

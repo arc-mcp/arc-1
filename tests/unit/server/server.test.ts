@@ -28,6 +28,7 @@ import { DestinationRegistry, targetConnectionFingerprint } from '../../../src/s
 import { logger } from '../../../src/server/logger.js';
 import { MULTI_TARGET_SERVER_INSTRUCTIONS } from '../../../src/server/multi-target-server.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
+import { dataResultAdmissionEnvelope, runtimeMemoryEnvelope } from '../../../src/server/runtime-memory.js';
 import {
   buildAdtConfig,
   canUseSharedSingleTargetCredentials,
@@ -78,6 +79,24 @@ async function initializeServer(
 }
 
 describe('MCP Server', () => {
+  it('computes the data-result admission envelope without unsafe-number rounding', () => {
+    expect(dataResultAdmissionEnvelope(2 * 1024 * 1024, 2)).toBe(4 * 1024 * 1024);
+    expect(dataResultAdmissionEnvelope(Number.MAX_SAFE_INTEGER, 2)).toBe('18014398509481982');
+  });
+
+  it('reports the non-secret Cloud Foundry memory inputs and effective V8 heap limit', () => {
+    expect(runtimeMemoryEnvelope({ MEMORY_AVAILABLE: '512', OPTIMIZE_MEMORY: 'true' }, 396 * 1024 * 1024)).toEqual({
+      cfMemoryAvailableMiB: 512,
+      optimizeMemory: true,
+      v8HeapSizeLimitMiB: 396,
+    });
+    expect(runtimeMemoryEnvelope({ MEMORY_AVAILABLE: 'invalid' }, 4 * 1024 * 1024 * 1024)).toEqual({
+      cfMemoryAvailableMiB: undefined,
+      optimizeMemory: false,
+      v8HeapSizeLimitMiB: 4096,
+    });
+  });
+
   it.each([
     ['default', DEFAULT_CONFIG, 'arc-1'],
     ['custom', { ...DEFAULT_CONFIG, serverName: 'arc1-erp-dev' }, 'arc1-erp-dev'],

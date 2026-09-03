@@ -59,7 +59,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `expand_includes` | boolean | No | For FUGR: expand include source inline |
 | `group` | string | No | For FUNC: function group name |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
-| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100). Known TABLE_CONTENTS limitation on 758: SAP returns `N+1`; use TABLE_QUERY or cap client-side when an exact maximum matters. |
+| `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Known TABLE_CONTENTS limitation on 758: SAP can return `N+1`; prefer TABLE_QUERY when an exact cap matters. |
 | `maxResults` | number | No | For DEVC: maximum package objects to list (default 200, clamped to 1–1000). SAP may truncate larger packages at the requested limit. |
 | `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there. Prefer TABLE_QUERY `where`. |
 | `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
@@ -805,7 +805,13 @@ Execute ABAP SQL queries against SAP tables.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `sql` | string | Yes | ABAP SQL SELECT statement |
-| `maxRows` | number | No | Maximum rows (default 100) |
+| `maxRows` | number | No | Maximum rows (default 100, clamped to 10,000). This is a request ceiling, not a guaranteed result size: wide results can hit the server byte ceiling much earlier. |
+
+Successful data-preview bodies share one cumulative allowance across the complete tool call,
+including automatic `IN`-list chunks. The default is 2 MiB of decompressed transfer bytes, counted
+before string conversion. Crossing the configured allowance returns `DATA_RESPONSE_TOO_LARGE`
+without partial rows or an automatic retry. Submit a new request with lower `maxRows`, fewer
+selected columns, or a restrictive, non-overlapping key-range `WHERE` clause.
 
 **Important:** Uses the ADT freestyle SQL endpoint (`/sap/bc/adt/datapreview/freestyle`) with ABAP SQL syntax, NOT standard SQL:
 - Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)

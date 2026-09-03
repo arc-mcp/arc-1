@@ -496,6 +496,21 @@ For multi-target v1, only named data preview and SQL can be added. They require 
 ceilings and target-local destination opt-ins. Writes, activation, transport/Git mutations, ATC,
 ABAP Unit, SAPLint, plugins, UI, and hyperfocused mode remain unavailable.
 
+When data preview or SQL is enabled, keep the shipped 2 MiB cumulative response allowance and two
+process-wide data-result slots initially. Wide rows can reach the byte ceiling below the 10,000-row
+request cap. If an approved batch/file consumer needs more, set
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` and `ARC1_MAX_CONCURRENT_DATA_RESULTS` together in the
+extension, benchmark peak RSS, and normally reduce concurrency as the byte allowance rises. Both
+values are positive integers; `0` is rejected at startup. Use the
+[BTP data-preview RAM sizing table](btp-administration.md#data-preview-ram-sizing) to change the two
+limits and the module's `parameters.memory` value as one reviewed deployment decision.
+
+The base MTA also sets `OPTIMIZE_MEMORY=true`; do not replace its `exec sh ./bin/start-cf.sh` launcher
+with a fixed `node --max-old-space-size=...` command in the extension. The launcher validates the
+buildpack-provided `MEMORY_AVAILABLE`, derives old-space from the durable CF allocation (384 MiB at
+512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. Verify the `Runtime
+memory envelope` and `Data-result safety envelope` startup logs after every memory or limit change.
+
 ## 11. Handover and ongoing operation
 
 Before customer users connect, complete the

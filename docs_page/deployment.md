@@ -47,7 +47,8 @@ Run the published image on any host with Docker. Works for on-prem SAP reachable
 ### Shared service account + API Key
 
 ```bash
-docker run -d --name arc1 -p 8080:8080 \
+docker run -d --name arc1 --memory=512m -p 8080:8080 \
+  -e NODE_OPTIONS=--max-old-space-size=384 \
   -e SAP_URL=https://your-sap-host:44300 \
   -e SAP_USER=SVC_ARC1 -e SAP_PASSWORD=... \
   -e SAP_CLIENT=100 \

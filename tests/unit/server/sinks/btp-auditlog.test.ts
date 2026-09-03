@@ -105,6 +105,30 @@ describe('BTP Audit Log Sink', () => {
       expect(auditCall[0]).toContain('/security-events');
     });
 
+    it('sends bounded data-response events without response or SQL bodies', async () => {
+      const sink = new BTPAuditLogSink(config);
+      sink.write({
+        timestamp: '',
+        level: 'warn',
+        event: 'data_response_limited',
+        tool: 'SAPQuery',
+        requestId: 'REQ-1',
+        limitBytes: 2_097_152,
+        observedBytes: 2_097_153,
+        endpointFamily: 'data-preview',
+        queueWaitMs: 4,
+      });
+      await sink.flush();
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      const auditCall = fetchSpy.mock.calls[1]!;
+      expect(auditCall[0]).toContain('/security-events');
+      const body = String(auditCall[1]?.body);
+      expect(body).toContain('2097152 bytes');
+      expect(body).not.toContain('SELECT');
+      expect(body).not.toContain('responseBody');
+    });
+
     it('attributes the calling agent on tool-call events', async () => {
       const sink = new BTPAuditLogSink(config);
       sink.write({

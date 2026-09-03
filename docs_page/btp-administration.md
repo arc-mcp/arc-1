@@ -171,6 +171,95 @@ number of ARC-1 processes × ARC1_MAX_CONCURRENT
 Include other ARC-1 deployments that reach the same SAP system when sizing against Basis dialog
 work processes. Sticky sessions do not turn process-local state into shared coordination.
 
+### Data-preview RAM sizing
+
+Data-preview memory admission is independently process-local. Each process admits at most
+`ARC1_MAX_CONCURRENT_DATA_RESULTS` data-result calls and gives each complete tool call a cumulative
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` successful-body allowance. Calculate the raw admission
+envelope `E` in MiB as:
+
+```text
+E = (ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES / 1,048,576)
+    × ARC1_MAX_CONCURRENT_DATA_RESULTS
+```
+
+At the defaults, `E = 2 MiB × 2 = 4 MiB` per process. With `N` instances, the fleet can admit
+`N × E`, but every instance still needs enough RAM for its own `E`; horizontal scaling does not
+protect one instance from an oversized result. This product is not a heap bound. The issue #737
+[full parse/result harness](https://github.com/arc-mcp/arc-1/blob/main/docs/research/issues/737-datapreview-response-memory-budget.md#arc-1-memory-amplification)
+measured about 19 times the combined raw XML bytes in incremental peak RSS before the fix, and XML
+shape, string widths, transport, and allocator behavior can change that ratio.
+
+For a new limit combination that has not yet been benchmarked, use this conservative planning
+estimate:
+
+```text
+planning RSS (MiB) = 256 + (32 × E)
+```
+
+Then choose the next available CF memory tier **above** the estimate. The `32×` multiplier rounds
+well above the measured `~19×` amplification; the 256 MiB reserve covers the server baseline,
+native/HTTP buffers, caches, non-data requests, GC movement, and platform variance. This is a
+starting allocation, not a guarantee. Do not use it to justify a smaller instance without a
+representative concurrent peak-RSS test through the deployed direct or BTP/Cloud Connector route.
+
+| Response allowance per tool call | Concurrent data results | Raw envelope `E` | Planning estimate | Recommended starting CF RAM |
+|---:|---:|---:|---:|---:|
+| 2 MiB (`2097152`) | 2 | 4 MiB | 384 MiB | **512M** (shipped default) |
+| 4 MiB (`4194304`) | 1 | 4 MiB | 384 MiB | **512M** |
+| 2 MiB | 4 | 8 MiB | 512 MiB | **1G** |
+| 4 MiB | 2 | 8 MiB | 512 MiB | **1G** |
+| 8 MiB (`8388608`) | 1 | 8 MiB | 512 MiB | **1G** |
+| 4 MiB | 4 | 16 MiB | 768 MiB | **1G** |
+| 8 MiB | 2 | 16 MiB | 768 MiB | **1G** |
+| 16 MiB (`16777216`) | 1 | 16 MiB | 768 MiB | **1G** |
+| 8 MiB | 4 | 32 MiB | 1,280 MiB | **2G** |
+| 16 MiB | 2 | 32 MiB | 1,280 MiB | **2G** |
+| 16 MiB | 4 | 64 MiB | 2,304 MiB | **4G** |
+
+Choose the pair for the workload rather than raising both automatically:
+
+- For a batch/file consumer that needs a larger single result, raise
+  `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` and normally lower concurrency to `1` first.
+- For more interactive users whose results stay small, keep the 2 MiB allowance and raise
+  `ARC1_MAX_CONCURRENT_DATA_RESULTS`; `4` should be the first load-tested step.
+- If both result size and throughput must grow, raise CF RAM from the table first, deploy, and run
+  the maximum-size requests concurrently. Keep at least 20% observed RSS headroom under the CF
+  limit; step up another tier if the test crosses 80%.
+- `ARC1_MAX_CONCURRENT` is the separate SAP HTTP-request limit. Raising it can add other in-flight
+  response and request memory that this table does not model; do not use it as a substitute for the
+  data-result limit, and continue to size it against SAP dialog work processes.
+
+The shipped MTA sets `OPTIMIZE_MEMORY=true` and starts through a small fail-closed launcher. The
+launcher validates the buildpack-provided `MEMORY_AVAILABLE`, assigns old-space 75% of it, and
+then `exec`s Node so CF termination signals reach ARC-1 directly: 384 MiB at the shipped 512 MiB
+allocation, 768 MiB at 1 GiB, 1,536 MiB at 2 GiB, and 3,072 MiB at 4 GiB. See the official
+[Node buildpack guidance](https://docs.cloudfoundry.org/buildpacks/node/node-tips.html#low-memory) and
+[`bin/release` policy](https://github.com/cloudfoundry/nodejs-buildpack/blob/master/bin/release).
+Memory overrides therefore remain in sync automatically. The `Runtime memory envelope` log reports
+the total V8 heap limit, which includes more than old space; for example, the 384 MiB old-space
+setting appears as approximately 432 MiB total V8 heap on the validated runtime.
+
+Put the RAM and limit changes together in the durable customer `.mtaext`:
+
+```yaml
+modules:
+  - name: arc1-mcp-server
+    parameters:
+      memory: 1G
+    properties:
+      ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES: "4194304"
+      ARC1_MAX_CONCURRENT_DATA_RESULTS: "2"
+```
+
+Build and deploy the MTA rather than relying on a temporary `cf scale`; Cloud Foundry's
+[`cf scale -m`](https://docs.cloudfoundry.org/devguide/deploy-apps/cf-scale.html#vertical) changes
+the live per-instance memory limit, but the next MTA deployment reapplies the descriptor. After
+deployment, confirm the `Runtime memory envelope` startup log shows the expected CF memory and V8
+heap limit and the `Data-result safety envelope` log shows the intended raw envelope. Exercise the
+widest approved row shape at full configured data concurrency, inspect `cf app`/platform memory,
+and keep the larger tier until sustained evidence justifies reducing it.
+
 ### Non-rolling update for shared Basic
 
 Use a maintenance window. Do not pass a rolling strategy and do not use blue-green deployment:

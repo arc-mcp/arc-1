@@ -237,9 +237,10 @@ export function parseSubpackageNodestructure(xml: string): string[] {
  * After namespace stripping, both converge but with different casing.
  * We try both patterns with fallback.
  */
-export function parseTableContents(xml: string): { columns: string[]; rows: Record<string, string>[] } {
-  const parsed = parseXml(xml);
-
+function parseTableContentsObject(parsed: Record<string, unknown>): {
+  columns: string[];
+  rows: Record<string, string>[];
+} {
   // Try old format first: abap > values > COLUMNS > COLUMN
   let columns = getDeepArray(parsed, ['abap', 'values', 'COLUMNS', 'COLUMN']);
   if (columns.length === 0) {
@@ -294,14 +295,12 @@ export interface DataPreviewMeta {
   executedQueryString?: string;
 }
 
-/**
- * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
- * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
- * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
- */
-export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
-  if (!xml || xml.trim().length === 0) return {};
-  const parsed = parseXml(xml);
+export interface DataPreviewResult extends DataPreviewMeta {
+  columns: string[];
+  rows: Record<string, string>[];
+}
+
+function parseDataPreviewMetaObject(parsed: Record<string, unknown>): DataPreviewMeta {
   const td = (parsed.tableData ?? parsed) as Record<string, unknown>;
   const meta: DataPreviewMeta = {};
 
@@ -320,6 +319,28 @@ export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
     meta.executedQueryString = executed.trim().replace(/\s+/g, ' ');
   }
   return meta;
+}
+
+/** Parse data-preview rows and metrics from one shared fast-xml-parser object tree. */
+export function parseDataPreviewResult(xml: string): DataPreviewResult {
+  if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
+  const parsed = parseXml(xml);
+  return { ...parseTableContentsObject(parsed), ...parseDataPreviewMetaObject(parsed) };
+}
+
+export function parseTableContents(xml: string): { columns: string[]; rows: Record<string, string>[] } {
+  if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
+  return parseTableContentsObject(parseXml(xml));
+}
+
+/**
+ * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
+ * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
+ * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
+ */
+export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
+  if (!xml || xml.trim().length === 0) return {};
+  return parseDataPreviewMetaObject(parseXml(xml));
 }
 
 /**

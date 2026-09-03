@@ -19,7 +19,9 @@ applications:
     docker:
       image: ghcr.io/arc-mcp/arc-1:latest
     instances: 1
-    memory: 256M
+    # Keep this Docker-path allocation and NODE_OPTIONS below in lockstep.
+    # The shipped MTA uses the Node.js buildpack's adaptive policy instead.
+    memory: 512M
     disk_quota: 512M
     health-check-type: http
     health-check-http-endpoint: /health
@@ -33,6 +35,9 @@ applications:
       SAP_SYSTEM_TYPE: "auto"
       # MCP transport (CF sets PORT env var automatically)
       SAP_TRANSPORT: "http-streamable"
+      # Docker bypasses the buildpack's OPTIMIZE_MEMORY start command. Reserve
+      # 25% of the 512M container for native/HTTP/XML/serialization memory.
+      NODE_OPTIONS: "--max-old-space-size=384"
       # BTP Destination Service (reads credentials from destination config)
       SAP_BTP_DESTINATION: "SAP_TRIAL"
       # Principal Propagation (per-user SAP auth)

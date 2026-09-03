@@ -70,6 +70,8 @@ function buildReadOnlyRuntimeConfig(
     checkBeforeWrite: false,
     cacheMode: 'none',
     maxConcurrent: base.maxConcurrent,
+    maxDataPreviewResponseBytes: base.maxDataPreviewResponseBytes,
+    maxConcurrentDataResults: base.maxConcurrentDataResults,
     authRateLimit: base.authRateLimit,
     mcpHttpRateLimit: base.mcpHttpRateLimit,
     rateLimit: base.rateLimit,

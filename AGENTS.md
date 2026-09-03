@@ -58,6 +58,7 @@ Docker/npx/stdio instead: [docs_page/deployment.md](docs_page/deployment.md).
 | Deleting an `.mtaext` line to disable a feature | An extension can add or override a property, never remove one — write the explicit off-value (`SAP_FOO: "false"`); `cf unset-env` is undone by the next deploy |
 | Assuming MTA reuses pre-existing services | `arc1-destination`/`arc1-connectivity` are `managed-service` and are named after their RESOURCE, so a space with differently-named instances gets ADDITIONAL ones, not reuse. An extension cannot change a resource's `type`, only repoint it with `service-name:` — which leaves MTA owning that instance. Run `cf services` first; consequences and the reuse limits are in the [runbook preflight](docs_page/btp-cloud-foundry-deployment.md) |
 | Assuming a first deploy | The runbook is greenfield; changes, upgrades, restart-vs-restage, and rollback are [docs_page/btp-administration.md](docs_page/btp-administration.md) |
+| Raising data-result limits without resizing CF RAM | Treat `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES × ARC1_MAX_CONCURRENT_DATA_RESULTS` as one per-process admission envelope. Use the [BTP RAM sizing table](docs_page/btp-administration.md#data-preview-ram-sizing), change `parameters.memory` and both limits together in `.mtaext`, then verify peak RSS at full configured data concurrency. `ARC1_MAX_CONCURRENT` is a separate SAP-pressure control, not a memory substitute. |
 | Trying to finish it alone | Cockpit destinations, XSUAA role collections, Cloud Connector, and SAP STRUST/CERTRULE/SU01 belong to other owners (runbook §2) — hand off with a specific evidence request instead of inventing CLI equivalents |
 
 ## Configuration (Priority: CLI > Env > .env > Defaults)
@@ -99,6 +100,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
 | `ARC1_CACHE[_FILE]` | Request-driven cache mode (auto/memory/sqlite/none) / SQLite file path |
 | `ARC1_MAX_CONCURRENT` | Server-wide SAP request cap (default 10); size vs `rdisp/wp_no_dia` |
+| `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` / `ARC1_MAX_CONCURRENT_DATA_RESULTS` | Cumulative successful data-preview body cap per tool call (default 2 MiB, after decompression/before string conversion) / process-wide data-result cap held through parse + serialization + audit (default 2); positive integers only, `0` does not disable; on BTP use the [RAM sizing table](docs_page/btp-administration.md#data-preview-ram-sizing) before raising either value |
 | `ARC1_AUTH_RATE_LIMIT` / `ARC1_MCP_HTTP_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Per-IP OAuth cap (20/min), optional shared MCP HTTP/IP override (unset derives `max(OAuth×30,600)`; 0 disables), and per-user MCP cap (default 0 = off; ADR-0004) |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
 | `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
@@ -217,7 +219,8 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
 | Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
 | SAPSearch tadir_lookup source variants | `src/handlers/search.ts`, `src/adt/client.ts`, `src/authz/policy.ts` — `db`/`both` escalate to sql scope |
-| SAPQuery freestyle SQL hints + IN-list chunking | `src/handlers/{query,query-errors}.ts` — ABAP Open SQL uses `alias~field` + `ASCENDING`/`DESCENDING`; auto-chunk plain SELECTs only |
+| SAPQuery freestyle SQL hints + IN-list chunking | `src/handlers/{query,query-errors}.ts`, `src/adt/table-query.ts` — ABAP Open SQL uses `alias~field` + `ASCENDING`/`DESCENDING`; auto-chunk plain SELECTs only |
+| Data-preview response memory boundary (#737) | `src/adt/{data-result-context,bounded-response,http,client}.ts`, `src/server/{context,runtime-memory,server}.ts`, `src/handlers/{dispatch,query}.ts` — the byte budget is cumulative per tool call and the data-result semaphore is process-wide; never infer scope from URL paths |
 | batch_create `activateAtEnd` | `src/handlers/write/create.ts` — prefer for interdependent objects (one activator pass) |
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/atc.ts` (`runAtcCheck`/`resolveCheckVariant`) — variant MUST bind at worklist creation; run with `clientWait=false`, poll a safe returned run location to `Completed` (unknown non-failure states keep polling), and use 10 s full-worklist settlement when SAP returns no usable location; protocol deviations preserve worklist findings but remain incomplete; `FINDING_STATS` is informational severity data, never completeness evidence (details: dev-guide) |
@@ -344,7 +347,7 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read before the 401 retry, and again on the next request after a persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.
-- **Error types**: `AdtApiError` / `AdtSafetyError` / `AdtNetworkError`; `dispatch.ts` formats them with LLM-friendly hints.
+- **Error types**: `AdtApiError` / `AdtSafetyError` / `AdtNetworkError` / `AdtResponseLimitError`; `dispatch.ts` formats them with LLM-friendly hints.
 - **Stateful sessions** for lock→modify→unlock; CSRF auto-managed (`src/adt/http.ts`).
 - **ADT locks never cross an MCP round-trip** — `lock→modify→unlock` completes inside ONE synchronous tool call; never elicit inside a lock block, never expose writes as async MCP Tasks holding a lock ([ADR-0006](docs/adr/0006-mcp-legacy-era-until-triggers.md)).
 - **Tool schema three-file sync** — every property must exist in `tools.ts` (JSON Schema → visible to LLMs), `schemas.ts` (Zod), and the per-tool handler. `batch_create` item schemas are separate from the top-level schema — update both.
