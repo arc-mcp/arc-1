@@ -5,6 +5,20 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.2.0](https://github.com/arc-mcp/arc-1/compare/v1.1.2...v1.2.0) (2026-09-03)
+
+
+### Features
+
+* add experimental data-source blocklist ([#740](https://github.com/arc-mcp/arc-1/issues/740)) ([97560ae](https://github.com/arc-mcp/arc-1/commit/97560ae1365a94ee7cf7c204b4318d762e812d9d))
+* bound data-preview response memory ([#739](https://github.com/arc-mcp/arc-1/issues/739)) ([e0320b3](https://github.com/arc-mcp/arc-1/commit/e0320b332fdd5ff54a4e907b239933d64c6a0609))
+* identify direct-connect SAP systems in instructions ([#735](https://github.com/arc-mcp/arc-1/issues/735)) ([7969a9b](https://github.com/arc-mcp/arc-1/commit/7969a9b2c39d06ce848656b2fbcd4b21a63aaf6b))
+
+
+### Bug Fixes
+
+* read local-class methods from class includes ([#744](https://github.com/arc-mcp/arc-1/issues/744)) ([978c0fe](https://github.com/arc-mcp/arc-1/commit/978c0feef45902d221c7f6f79a86738dfa8bc767))
+
 ## [1.1.2](https://github.com/arc-mcp/arc-1/compare/v1.1.1...v1.1.2) (2026-08-31)
 
 
