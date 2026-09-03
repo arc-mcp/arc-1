@@ -34,6 +34,11 @@ actionable tool error instead of allowing parallel XML/JSON expansion to exhaust
 container. The shipped MTA also moves from a fixed old-space value to a validated, memory-aware 75%
 CF launcher that `exec`s Node for reliable shutdown signals.
 
+Container-image and Docker-based direct-push deployments do not run that CF launcher, so keep their
+container limit and numeric `NODE_OPTIONS` old-space value in sync. The shipped `manifest.yml`
+template therefore moves from 256 MiB to 512 MiB and sets old-space to 384 MiB; custom Docker
+manifests must opt into equivalent sizing explicitly.
+
 | Change | What it means | Action |
 |---|---|---|
 | Bound data-preview response memory ([#739](https://github.com/arc-mcp/arc-1/pull/739), closes [#737](https://github.com/arc-mcp/arc-1/issues/737) and [#741](https://github.com/arc-mcp/arc-1/issues/741)) | Successful data-preview bodies are limited cumulatively to 2 MiB per complete tool call by default, including automatic query chunks. At most two data-result calls per process remain in fetch/parse/result/audit work concurrently. Overflow returns non-retryable `DATA_RESPONSE_TOO_LARGE` with the effective limit and request ID, without partial rows. `SAPQuery.maxRows` above 10,000 is clamped and reports `rowLimitClamped`, `requestedRows`, and `effectiveMaxRows`; wide rows may hit the byte limit far earlier. CF old-space now follows instance memory (384 MiB at 512 MiB; 768 MiB at 1 GiB). Audited transitive dependencies are also refreshed to patched versions. | Review intentional batch/file consumers. Prefer lower `maxRows`, selected columns, and restrictive non-overlapping key ranges. If larger results are required, use the [BTP RAM sizing table](btp-administration.md#data-preview-ram-sizing) to set `parameters.memory`, `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, and `ARC1_MAX_CONCURRENT_DATA_RESULTS` together, then test peak RSS at full configured concurrency. Both limits require positive integers and `0` is invalid. |

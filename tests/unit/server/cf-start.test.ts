@@ -31,11 +31,16 @@ afterEach(() => {
 });
 
 describe('Cloud Foundry launcher', () => {
-  it('computes the adaptive old-space flag and execs Node directly', () => {
-    const result = run({ OPTIMIZE_MEMORY: 'true', MEMORY_AVAILABLE: '512' });
+  it('computes the adaptive old-space flag for documented CF allocations and execs Node directly', () => {
+    for (const [memory, oldSpace] of [
+      ['512', '384'],
+      ['1024', '768'],
+    ] as const) {
+      const result = run({ OPTIMIZE_MEMORY: 'true', MEMORY_AVAILABLE: memory });
 
-    expect(result.status).toBe(0);
-    expect(result.stdout.trim().split('\n')).toEqual(['--max-old-space-size=384', 'dist/index.js']);
+      expect(result.status).toBe(0);
+      expect(result.stdout.trim().split('\n')).toEqual([`--max-old-space-size=${oldSpace}`, 'dist/index.js']);
+    }
   });
 
   it('fails closed when optimized startup has no trustworthy memory value', () => {

@@ -114,7 +114,7 @@ The final local regression pass is green:
 npm test: 186 files, 5,449 tests passed
 npm run lint: passed (two pre-existing Biome migration notices)
 npm run typecheck: passed
-npm run check:sizes: passed (all 428 tracked source/test files and every tool-schema budget)
+npm run check:sizes: passed (all 429 tracked source/test files and every tool-schema budget)
 npm run build: passed
 npm audit --audit-level=high --omit=optional: 0 vulnerabilities
 npm audit --prefix btp/approuter --audit-level=high --omit=optional: 0 vulnerabilities
