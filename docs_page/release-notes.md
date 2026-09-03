@@ -26,13 +26,19 @@ until they are promoted.
     line — nobody runs them today, and the one part that still matters when jumping from an ancient version
     is the **v0.7.0 authorization break**, which is spelled out in full at the bottom of this page.
 
-## Next patch — data-preview memory is bounded (unreleased)
+## 1.2.0 — bounded data access and deployment hardening (2026-09-03)
 
 Data-preview responses now have an explicit per-tool-call byte allowance and a separate process-wide
 admission limit held through parsing and serialization. This turns an oversized result into a stable,
 actionable tool error instead of allowing parallel XML/JSON expansion to exhaust a Cloud Foundry
 container. The shipped MTA also moves from a fixed old-space value to a validated, memory-aware 75%
 CF launcher that `exec`s Node for reliable shutdown signals.
+
+This release also adds a default-off, exact-name data-source blocklist for approved data/SQL
+deployments, makes direct-connect SAP system identity visible to models when configured, and fixes
+method reads for local and test classes. Deployments that include the optional BTP web UI/AppRouter
+should upgrade promptly: its pre-authentication URL path previously reached a vulnerable decoder that
+could block the single AppRouter process with one malformed request.
 
 Container-image and Docker-based direct-push deployments do not run that CF launcher, so keep their
 container limit and numeric `NODE_OPTIONS` old-space value in sync. The shipped `manifest.yml`
@@ -42,6 +48,10 @@ manifests must opt into equivalent sizing explicitly.
 | Change | What it means | Action |
 |---|---|---|
 | Bound data-preview response memory ([#739](https://github.com/arc-mcp/arc-1/pull/739), closes [#737](https://github.com/arc-mcp/arc-1/issues/737) and [#741](https://github.com/arc-mcp/arc-1/issues/741)) | Successful data-preview bodies are limited cumulatively to 2 MiB per complete tool call by default, including automatic query chunks. At most two data-result calls per process remain in fetch/parse/result/audit work concurrently. Overflow returns non-retryable `DATA_RESPONSE_TOO_LARGE` with the effective limit and request ID, without partial rows. `SAPQuery.maxRows` above 10,000 is clamped and reports `rowLimitClamped`, `requestedRows`, and `effectiveMaxRows`; wide rows may hit the byte limit far earlier. CF old-space now follows instance memory (384 MiB at 512 MiB; 768 MiB at 1 GiB). Audited transitive dependencies are also refreshed to patched versions. | Review intentional batch/file consumers. Prefer lower `maxRows`, selected columns, and restrictive non-overlapping key ranges. If larger results are required, use the [BTP RAM sizing table](btp-administration.md#data-preview-ram-sizing) to set `parameters.memory`, `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, and `ARC1_MAX_CONCURRENT_DATA_RESULTS` together, then test peak RSS at full configured concurrency. Both limits require positive integers and `0` is invalid. |
+| Add an experimental data-source blocklist ([#740](https://github.com/arc-mcp/arc-1/pull/740)) | A non-empty `SAP_BLOCKED_DATA_SOURCES` denies exact table/CDS names both directly and through live CDS and replacement-object lineage before `SAPQuery`, `TABLE_QUERY`, or `TABLE_CONTENTS` reaches the data endpoint. It only narrows already-enabled access, fails closed when active lineage cannot be proved, adds metadata requests with no cross-request cache, and is not an allowlist or a substitute for SAP authorization/CDS DCL. The empty default adds no metadata calls. Independently, malformed `TABLE_QUERY` identifiers that were previously lossily sanitized are now rejected. | `none` by default. To opt in, configure the exact comma-separated names through the normal deployment layer and test representative users for metadata authorization and latency. Read [Authorization & Roles](authorization.md#experimental-data-source-blocklist) before enabling it. |
+| Identify direct-connect SAP systems in model instructions ([#735](https://github.com/arc-mcp/arc-1/pull/735), closes [#733](https://github.com/arc-mcp/arc-1/issues/733)) | Optional `ARC1_SYSTEM_LABEL` / `--system-label` prepends a normalized one-line label to single-target MCP instructions, so models can distinguish SAP systems even when a remote connector replaces the advertised server name with an opaque ID. It is ignored in multi-target mode. | Optional: set a stable label such as `ERP production (read-only)` on each direct-connect instance whose client does not preserve `ARC1_SERVER_NAME`. |
+| Read local-class methods from their real class includes ([#744](https://github.com/arc-mcp/arc-1/pull/744)) | `SAPRead(type="CLAS", method=...)` now routes `lhc_*`/`lcl_*` methods to the implementations include and `ltc_*` methods to testclasses; global or bare methods remain on `main`. An explicit `include` remains authoritative, and include reads no longer reuse a MAIN-only cache entry. | `none` — local and test-class method reads that previously failed or read the wrong source now resolve correctly. |
+| Patch the optional BTP AppRouter's pre-authentication decoder ([#738](https://github.com/arc-mcp/arc-1/pull/738)) | The optional `arc1-ui-router` no longer uses the vulnerable `decode-uri-component` path that allowed one malformed, unauthenticated query string to block its single Node.js process. The compatibility bridge is guarded by install, version-lockstep, functional, and timing tests; the AppRouter now requires Node.js 22.12 or newer. The ARC-1 MCP server itself was not on this path. | If you deploy the web UI with `mta-ui-approuter.mtaext`, rebuild and redeploy the MTAR. No action for deployments without `arc1-ui-router`. |
 
 ## 1.1.2 — ATC completeness follows SAP's run lifecycle (2026-08-31)
 
