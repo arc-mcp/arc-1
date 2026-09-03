@@ -36,7 +36,7 @@ memory-aware 75% policy.
 
 | Change | What it means | Action |
 |---|---|---|
-| Bound data-preview response memory ([#739](https://github.com/arc-mcp/arc-1/pull/739), closes [#737](https://github.com/arc-mcp/arc-1/issues/737) and [#741](https://github.com/arc-mcp/arc-1/issues/741)) | Successful data-preview bodies are limited cumulatively to 2 MiB per complete tool call by default, including automatic query chunks. At most two data-result calls per process remain in fetch/parse/result/audit work concurrently. Overflow returns non-retryable `DATA_RESPONSE_TOO_LARGE` with the effective limit and request ID, without partial rows. `SAPQuery.maxRows` above 10,000 is clamped and reports `rowLimitClamped`, `requestedRows`, and `effectiveMaxRows`; wide rows may hit the byte limit far earlier. CF old-space now follows instance memory (384 MiB at 512 MiB; 768 MiB at 1 GiB). Audited transitive dependencies are also refreshed to patched versions. | Review intentional batch/file consumers. Prefer lower `maxRows`, selected columns, and restrictive non-overlapping key ranges. If larger results are required, set `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` and `ARC1_MAX_CONCURRENT_DATA_RESULTS` together only after peak-RSS testing; both require positive integers and `0` is invalid. Keep an enlarged CF instance during rollout until bounded peaks are known, and verify the two startup-envelope logs. |
+| Bound data-preview response memory ([#739](https://github.com/arc-mcp/arc-1/pull/739), closes [#737](https://github.com/arc-mcp/arc-1/issues/737) and [#741](https://github.com/arc-mcp/arc-1/issues/741)) | Successful data-preview bodies are limited cumulatively to 2 MiB per complete tool call by default, including automatic query chunks. At most two data-result calls per process remain in fetch/parse/result/audit work concurrently. Overflow returns non-retryable `DATA_RESPONSE_TOO_LARGE` with the effective limit and request ID, without partial rows. `SAPQuery.maxRows` above 10,000 is clamped and reports `rowLimitClamped`, `requestedRows`, and `effectiveMaxRows`; wide rows may hit the byte limit far earlier. CF old-space now follows instance memory (384 MiB at 512 MiB; 768 MiB at 1 GiB). Audited transitive dependencies are also refreshed to patched versions. | Review intentional batch/file consumers. Prefer lower `maxRows`, selected columns, and restrictive non-overlapping key ranges. If larger results are required, use the [BTP RAM sizing table](btp-administration.md#data-preview-ram-sizing) to set `parameters.memory`, `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES`, and `ARC1_MAX_CONCURRENT_DATA_RESULTS` together, then test peak RSS at full configured concurrency. Both limits require positive integers and `0` is invalid. |
 
 ## 1.1.2 — ATC completeness follows SAP's run lifecycle (2026-08-31)
 
@@ -99,7 +99,7 @@ as a minor release; pipelines that already trialed the CLI should review the act
 part-way — npm eventually published, but the CycloneDX SBOM never got attached to the GitHub Release and
 the MCP Registry still advertised 1.0.0. 1.0.2 exists to ship those, and to fix the release-workflow
 regression that caused the second half of that mess. If you are already on 1.0.1 there is nothing to gain
-by upgrading beyond consistency; if you are on 1.0.0, [read 1.0.1](#101--three-total-outage-fixes-2026-08-03)
+by upgrading beyond consistency; if you are on 1.0.0, [read 1.0.1](#101-three-total-outage-fixes-2026-08-03)
 — all of it is here.
 
 | Change | What it means | Action |

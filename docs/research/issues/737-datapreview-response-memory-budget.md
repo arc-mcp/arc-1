@@ -556,6 +556,13 @@ restarts an instance which crosses it. See the
 [environment-variable documentation](https://docs.cloudfoundry.org/devguide/deploy-apps/environment-variable.html#MEMORY_LIMIT)
 and the [status-137 log example](https://docs.cloudfoundry.org/devguide/deploy-apps/streaming-logs.html#proxy).
 
+The implementation publishes a conservative operator planning model and example combinations from
+512 MiB through 4 GiB in the canonical
+[BTP data-preview RAM sizing guide](../../../docs_page/btp-administration.md#data-preview-ram-sizing).
+It treats the byte allowance and concurrent-data-result limit as one per-process raw admission
+envelope, uses the measured amplification only as a planning input rather than a guarantee, and
+requires a representative full-concurrency peak-RSS test before reducing the starting allocation.
+
 Node 22's `process.constrainedMemory()` and `process.availableMemory()` could improve startup and
 audit diagnostics. Both are stable in Node >=22.16, but available memory is inherently racy under
 parallel requests. Log the non-secret CF memory inputs and effective V8 heap limit at startup so a

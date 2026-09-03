@@ -32,6 +32,10 @@ extends: arc1-mcp
 
 modules:
   - name: arc1-mcp-server
+    # If data-result limits are raised, size this per-process memory together
+    # with them. See docs_page/btp-administration.md#data-preview-ram-sizing.
+    # parameters:
+    #   memory: 1G
     properties:
       # ── Single-target /mcp (optional) ────────────────────────────────
       # BasicAuth destination for startup feature probing
@@ -97,7 +101,8 @@ modules:
       # Process-wide data-result calls admitted through fetch, parse, result
       # serialization, and terminal audit. Positive integer; default 2.
       # Raise the byte limit only after benchmarking, and normally lower this
-      # value proportionally so their product remains controlled.
+      # value proportionally so their product remains controlled. Change the
+      # module memory above in the same reviewed deployment when needed.
       # ARC1_MAX_CONCURRENT_DATA_RESULTS: "2"
 
       # Enable transport mutations (release, create, add to transport).

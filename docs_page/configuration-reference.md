@@ -264,6 +264,9 @@ Both data-result values must be positive base-10 safe integers. An explicitly em
 fractional, signed, zero, negative, exponent-form, or unsafe value fails startup; `0` is not a
 disable switch. Their product is logged as the raw-body admission envelope (4 MiB by default), but
 that product is not a heap guarantee because XML parsing and JSON serialization amplify memory.
+For BTP Cloud Foundry, use the
+[data-preview RAM sizing model and parameter table](btp-administration.md#data-preview-ram-sizing)
+before increasing either value.
 
 The UI is experimental, off by default, and inspection-only in v1: sanitized config, safety/auth state, feature-probe status, cache counts/source metadata, and recent sanitized audit events. It does not expose writes, config mutation, cache mutation, feature probes, or cached ABAP source bodies. In HTTP mode, ARC-1 refuses `ARC1_UI=web` unless an admin API key, OIDC, or XSUAA auth is configured, and every `/ui/*` route requires an `admin`-scoped bearer token. When `ARC1_UI=off`, no `/ui` static or API routes are mounted. On BTP CF, use `mta-ui-approuter.mtaext` for browser login via SAP AppRouter.
 
