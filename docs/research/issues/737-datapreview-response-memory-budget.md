@@ -130,7 +130,16 @@ The branch was also deployed through a disposable Basic-auth Destination → Con
 Connector → SAP route. Three waves of six concurrent 3,200-row TADIR requests returned bounded
 errors under the two-slot semaphore, recovery queries succeeded, and the same process remained
 healthy after each delayed-crash observation window. This is the real proxy transport branch, but
-not a principal-propagation identity acceptance test.
+was initially not a principal-propagation identity acceptance test.
+
+After the test landscape's Cloud Connector and certificate-mapping repairs, the exact branch was
+deployed again as a disposable multi-target app. OAuth/PKCE login and refresh succeeded; discovery
+loaded five targets with none quarantined; `SAPRead(SYSTEM)` succeeded through all four per-user
+principal-propagation targets and the shared Basic target. Six concurrent 3,200-row TADIR queries
+through the `A4H/001` PP route all returned `DATA_RESPONSE_TOO_LARGE`; their queue timings showed
+the two-slot admission boundary, a five-row recovery query succeeded, and the same process remained
+healthy after the delayed-crash window. The disposable apps and routes were deleted without changing
+the shared services, destinations, or existing applications.
 
 ## Reported impact and scope
 
@@ -1015,8 +1024,8 @@ request-level ownership, conditional transport stream, cancellation/config/error
 adaptive 75% CF heap sizing. The local, live-SAP, and disposable-CF BTP Connectivity regression
 evidence is green after replacing the cancellation-racy `Readable.toWeb()` bridge. The fail-closed
 launcher is live-verified at 512 MiB and 1 GiB, including direct SIGTERM delivery, clean exit, and
-healthy restart. PR #739 is ready to merge; principal-propagation identity acceptance remains
-optional because the tested Basic destination exercised the same proxy-body transport. These
-controls make the shipped 512 MiB topology defensible without claiming that the 4 MiB raw admission
-product is a process-memory proof. A SAX/columnar response path remains a later performance feature,
-not a prerequisite for this fix.
+healthy restart. Principal-propagation identity and oversized-response acceptance are now also
+live-verified through the exact branch. PR #739 is ready to merge. These controls make the shipped
+512 MiB topology defensible without claiming that the 4 MiB raw admission product is a process-memory
+proof. A SAX/columnar response path remains a later performance feature, not a prerequisite for this
+fix.
