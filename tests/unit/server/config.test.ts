@@ -38,6 +38,7 @@ describe('parseArgs', () => {
     expect(config.allowDataPreview).toBe(false);
     expect(config.allowTransportWrites).toBe(false);
     expect(config.allowGitWrites).toBe(false);
+    expect(config.blockedDataSources).toEqual([]);
     expect(config.denyActions).toEqual([]);
     expect(config.schemaNullableOptionals).toBe('auto');
     expect(config.multiTargetAllowBasicAuth).toBe(false);
@@ -136,6 +137,97 @@ describe('parseArgs', () => {
     const fromCli = resolveConfig(['--gzip-datapreview-body', 'false']);
     expect(fromCli.config.gzipDataPreviewBody).toBe(false);
     expect(fromCli.sources.gzipDataPreviewBody).toEqual({ flag: '--gzip-datapreview-body' });
+  });
+
+  it('normalizes, deduplicates, and source-attributes the experimental data-source blocklist', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = ' usr02,SCARR,usr02 ';
+    const fromEnv = resolveConfig([]);
+    expect(fromEnv.config.blockedDataSources).toEqual(['USR02', 'SCARR']);
+    expect(fromEnv.sources.blockedDataSources).toEqual({ env: 'SAP_BLOCKED_DATA_SOURCES' });
+
+    const fromCli = resolveConfig(['--blocked-data-sources', '/dmo/i_flight,spfli']);
+    expect(fromCli.config.blockedDataSources).toEqual(['/DMO/I_FLIGHT', 'SPFLI']);
+    expect(fromCli.sources.blockedDataSources).toEqual({ flag: '--blocked-data-sources' });
+  });
+
+  // Unset / empty / ASCII-whitespace-only are the documented OFF values. They must stay off so the
+  // shipped Dockerfile and MTA descriptors can carry a visible `""` default and operators keep a
+  // one-field rollback.
+  it.each([
+    ['empty string', ''],
+    ['single space', ' '],
+    ['tabs and newlines', ' \t\n '],
+  ])('treats %s as off', (_label, value) => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = value;
+    const { config, sources } = resolveConfig([]);
+    expect(config.blockedDataSources).toEqual([]);
+    // Still attributed to the environment: the operator DID set it, to the off value.
+    expect(sources.blockedDataSources).toEqual({ env: 'SAP_BLOCKED_DATA_SOURCES' });
+  });
+
+  // Once the value is active every field is mandatory. The prototype used .filter(Boolean), so a
+  // stray separator silently shortened the list and `,` silently disabled the whole control.
+  it.each([
+    ['separator only', ','],
+    ['repeated separators only', ',,,'],
+    ['leading comma', ',USR02'],
+    ['trailing comma', 'USR02,'],
+    ['repeated inner comma', 'USR02,,PA0002'],
+    ['whitespace-only field', 'USR02, ,PA0002'],
+  ])('fails startup on %s rather than silently dropping fields', (_label, value) => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = value;
+    expect(() => resolveConfig([])).toThrow(/SAP_BLOCKED_DATA_SOURCES entry #\d+ of \d+ is empty/);
+  });
+
+  it.each([
+    ['wildcard', 'SCARR*'],
+    ['embedded space', 'SCARR SPFLI'],
+    ['statement injection', 'SCARR;DELETE'],
+    ['type prefix', 'TABL:SCARR'],
+    ['negation', '!SCARR'],
+    ['quoting', "'SCARR'"],
+    ['punctuation only: slash', '/'],
+    ['punctuation only: dollar', '$'],
+    ['punctuation only: underscores', '___'],
+    ['non-ASCII that would case-fold into a valid name', 'u\u017Fr02'],
+    ['over the length limit', 'Z'.repeat(129)],
+  ])('fails fast on invalid blocked source: %s', (_label, value) => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = value;
+    expect(() => resolveConfig([])).toThrow(/SAP_BLOCKED_DATA_SOURCES/);
+  });
+
+  it('names the offending token position and source without dumping the environment', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02,SCARR*,PA0002';
+    process.env.SAP_PASSWORD = 'super-secret-value';
+    try {
+      resolveConfig([]);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      const message = (error as Error).message;
+      expect(message).toContain('SAP_BLOCKED_DATA_SOURCES');
+      expect(message).toContain('#2 of 3');
+      expect(message).toContain('SCARR*');
+      expect(message).not.toContain('super-secret-value');
+    }
+  });
+
+  it('reports the CLI flag rather than the env var when the flag is the active source', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02';
+    expect(() => resolveConfig(['--blocked-data-sources', 'USR02,'])).toThrow(/--blocked-data-sources/);
+  });
+
+  it('CLI takes precedence over the environment', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02,PA0002';
+    const { config, sources } = resolveConfig(['--blocked-data-sources', 'SCARR']);
+    expect(config.blockedDataSources).toEqual(['SCARR']);
+    expect(sources.blockedDataSources).toEqual({ flag: '--blocked-data-sources' });
+  });
+
+  it('a blank higher-precedence CLI value turns a non-empty environment value off', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02,PA0002';
+    const { config, sources } = resolveConfig(['--blocked-data-sources', '']);
+    expect(config.blockedDataSources).toEqual([]);
+    expect(sources.blockedDataSources).toEqual({ flag: '--blocked-data-sources' });
   });
 
   it('parses --allow-git-writes flag', () => {
@@ -1094,6 +1186,7 @@ describe('parseArgs', () => {
     const { sources } = resolveConfig([]);
     expect(sources.allowWrites).toBe('default');
     expect(sources.gzipDataPreviewBody).toBe('default');
+    expect(sources.blockedDataSources).toBe('default');
     expect(sources.allowedPackages).toBe('default');
     expect(sources.schemaNullableOptionals).toBe('default');
   });

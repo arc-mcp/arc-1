@@ -4,7 +4,6 @@
 
 import { type AdtClient, clampPreviewRows } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
-import type { DataPreviewMeta } from '../adt/xml-parser.js';
 import { classifySapQueryParserError, maskSqlStringLiterals } from './query-errors.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
@@ -153,28 +152,6 @@ function resolveUnknownColumnTable(sql: string, badColumn: string): string | und
   return qualifiers.size === 0 && sources.length === 1 ? sources[0]!.table : undefined;
 }
 
-async function runChunkedSapQuery(
-  client: AdtClient,
-  plan: SimpleInListChunkPlan,
-  maxRows: number,
-): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
-  // Metrics are intentionally omitted for the chunked path: an early break on the row cap would make
-  // totalRows a misleading partial sum, so we report metrics only for the single-statement path below.
-  const rowLimit = clampPreviewRows(maxRows);
-  const rows: Record<string, string>[] = [];
-  let columns: string[] = [];
-
-  for (const statement of plan.statements) {
-    const remaining = Math.max(0, rowLimit - rows.length);
-    if (remaining === 0) break;
-    const chunk = await client.runQuery(statement, remaining);
-    if (columns.length === 0) columns = chunk.columns;
-    rows.push(...chunk.rows);
-  }
-
-  return { columns, rows: rows.slice(0, rowLimit) };
-}
-
 export async function handleSAPQuery(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const sql = String(args.sql ?? '');
   const maxRows = Number(args.maxRows ?? 100);
@@ -185,9 +162,11 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
 
   try {
     chunkingAttempted = chunkPlan != null;
-    const data = chunkPlan
-      ? await runChunkedSapQuery(client, chunkPlan, maxRows)
-      : await client.runQueryWithMetrics(sql, maxRows);
+    // One logical request -> one authorization decision, whether or not IN-list chunking split it.
+    // The client owns both the decision and the POSTs; the handler never gets an authorization
+    // receipt it could reuse or forge. Metrics come back only for the single-statement case, because
+    // an early break on the row cap would make a summed totalRows misleading.
+    const data = await client.runQueryBatch(chunkPlan ? chunkPlan.statements : [sql], maxRows);
     // Surface ADT's own metrics first (real match count + server-side time) — most useful for perf triage
     // ("847 ms, 511927 rows matched") and not buried under a long rows array.
     const out: Record<string, unknown> = {};

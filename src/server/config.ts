@@ -16,6 +16,7 @@
  *   - See docs_page/updating.md for the full migration table.
  */
 
+import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
@@ -96,6 +97,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     description: 'Enable transport mutations (true/false)',
   },
   { name: 'allow-git-writes', valueName: 'boolean', description: 'Enable Git mutations (true/false)' },
+  {
+    name: 'blocked-data-sources',
+    valueName: 'names',
+    description: 'Experimental exact SQL/CDS source blocklist (comma-separated)',
+  },
   { name: 'allowed-packages', valueName: 'patterns', description: 'Comma-separated write package allowlist' },
   { name: 'allowed-transports', valueName: 'ids', description: 'Comma-separated transport allowlist' },
   { name: 'deny-actions', valueName: 'patterns', description: 'Action deny patterns or file path' },
@@ -633,6 +639,23 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'allowTransportWrites',
   );
   config.allowGitWrites = resolveBool('allow-git-writes', 'SAP_ALLOW_GIT_WRITES', false, 'allowGitWrites');
+
+  // Experimental data-source blocklist. Unset / empty / ASCII-whitespace-only all mean off, which is
+  // what lets the shipped Dockerfile and MTA descriptors carry a visible `""` default and still give
+  // operators a one-field rollback. Any other value is strict CSV: every field is mandatory, so a
+  // stray separator fails startup instead of quietly shortening or disabling a security control.
+  const blockedFlag = getFlag('blocked-data-sources');
+  const blockedDataSourcesRaw = blockedFlag ?? process.env.SAP_BLOCKED_DATA_SOURCES;
+  if (blockedDataSourcesRaw !== undefined) {
+    config.blockedDataSources = parseBlockedDataSourcesCsv(
+      blockedDataSourcesRaw,
+      blockedFlag !== undefined ? '--blocked-data-sources' : 'SAP_BLOCKED_DATA_SOURCES',
+    );
+    sources.blockedDataSources =
+      blockedFlag !== undefined ? { flag: '--blocked-data-sources' } : { env: 'SAP_BLOCKED_DATA_SOURCES' };
+  } else {
+    sources.blockedDataSources = 'default';
+  }
 
   const pkgs = getFlag('allowed-packages') ?? process.env.SAP_ALLOWED_PACKAGES;
   if (pkgs !== undefined) {

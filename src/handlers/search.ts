@@ -4,8 +4,10 @@
  */
 
 import type { AdtClient } from '../adt/client.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
 import { classifyTextSearchError } from '../adt/features.js';
+import { internalOperationDenial } from '../adt/internal-data-operations.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
 import { getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType } from './object-types.js';
@@ -84,16 +86,34 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     if (source === 'adt') {
       finalLookups = tagOrigin(await client.lookupObjects(names, { maxResults, objectTypes }), 'adt');
     } else if (source === 'db') {
+      // TADIR is a declared internal source; if policy blocks it, tell the model to use source="adt"
+      // rather than surfacing a bare policy error with no route forward.
       // The 'db' path bypasses ADT info-system entirely; `lookupObjectsViaDb` already
       // tags matches with `_origin:'db'`. Safety/scope gating runs at handleToolCall
       // and in client.runQuery (FreeSQL operation), so unauthorized callers never reach here.
-      finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
+      try {
+        finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
+      } catch (error) {
+        if (error instanceof DataSourcePolicyError) {
+          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+        }
+        throw error;
+      }
     } else {
       // 'both' — parallel ADT + DB, merge per name with dedupe.
-      const [adtLookups, dbLookups] = await Promise.all([
-        client.lookupObjects(names, { maxResults, objectTypes }).then((r) => tagOrigin(r, 'adt')),
-        client.lookupObjectsViaDb(names, { maxResults, objectTypes }),
-      ]);
+      let adtLookups: AdtObjectLookupResult[];
+      let dbLookups: AdtObjectLookupResult[];
+      try {
+        [adtLookups, dbLookups] = await Promise.all([
+          client.lookupObjects(names, { maxResults, objectTypes }).then((r) => tagOrigin(r, 'adt')),
+          client.lookupObjectsViaDb(names, { maxResults, objectTypes }),
+        ]);
+      } catch (error) {
+        if (error instanceof DataSourcePolicyError) {
+          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+        }
+        throw error;
+      }
 
       const dbByName = new Map(dbLookups.map((l) => [l.name.toUpperCase(), l]));
       const adtByName = new Map(adtLookups.map((l) => [l.name.toUpperCase(), l]));

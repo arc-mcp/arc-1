@@ -84,6 +84,12 @@
       "description": "Allow read-only ad-hoc ABAP SQL via SAPQuery. Can expose application data — review your data-governance rules.",
       "default": false
     },
+    "sap_blocked_data_sources": {
+      "type": "string",
+      "title": "Blocked Data Sources (experimental)",
+      "description": "Optional exact comma-separated table/CDS names denied on data reads after fail-closed live CDS lineage analysis. Empty disables the experimental policy.",
+      "default": ""
+    },
     "sap_allow_transport_writes": {
       "type": "boolean",
       "title": "Allow Transport Writes",
@@ -133,6 +139,7 @@
         "SAP_ALLOWED_PACKAGES": "${user_config.sap_allowed_packages}",
         "SAP_ALLOW_DATA_PREVIEW": "${user_config.sap_allow_data_preview}",
         "SAP_ALLOW_FREE_SQL": "${user_config.sap_allow_free_sql}",
+        "SAP_BLOCKED_DATA_SOURCES": "${user_config.sap_blocked_data_sources}",
         "SAP_ALLOW_TRANSPORT_WRITES": "${user_config.sap_allow_transport_writes}",
         "SAP_ALLOW_GIT_WRITES": "${user_config.sap_allow_git_writes}",
         "ARC1_UI": "${user_config.arc1_ui}",

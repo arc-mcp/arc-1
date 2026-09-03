@@ -228,6 +228,46 @@ npm run btp:validate
 | Modify CI coverage reporting | `scripts/ci/coverage-summary.mjs`, `.github/workflows/test.yml`, `.github/workflows/release.yml` |
 | Modify CI reliability reporting | `scripts/ci/collect-test-reliability.mjs`, `scripts/ci/assert-required-test-execution.mjs`, `.github/workflows/test.yml` |
 
+## Experimental data-source blocklist — developer map
+
+Spec: [docs/research/2026-09-02-data-source-policy-design-reassessment.md](research/2026-09-02-data-source-policy-design-reassessment.md)
+(normative; supersedes the earlier plan and allowlist dossier).
+
+| Concern | Where |
+|---|---|
+| Canonical identity + CSV grammar + fingerprint | `src/adt/data-source-name.ts` — the ONE normalizer for config, caller roots, parser results, search results, decoded URIs, graph names/aliases and replacement annotations |
+| Strict SQL subset | `src/adt/sql-source-analyzer.ts` — pre-parse lexer then `@abaplint/core`; pinned grammar |
+| Graph classification + lineage | `src/adt/data-source-policy.ts` |
+| Structured TABLE_QUERY builder | `src/adt/table-query.ts` |
+| Enforcement + batch authorization | `src/adt/client.ts` (`runQueryBatch`, `getTableContents`, `runTableQuery`) |
+| ARC-1's own fixed reads | `src/adt/internal-data-operations.ts` |
+| Config / startup visibility | `src/server/{config,effective-policy-log,ui-state}.ts`, `src/cli.ts` |
+| Multi-target propagation | `src/server/{destination-registry,multi-target-runtime}.ts` |
+| Client error rendering | `src/handlers/dispatch.ts` |
+| Audit event | `src/server/audit.ts` (`data_source_policy_decision`) |
+
+Gotchas worth knowing before changing anything here:
+
+- **Validate raw ASCII before case folding.** `String.toUpperCase()` maps `ſ`→`S`, `ß`→`SS` and
+  ligatures to `FF`/`FFI`, so folding first makes an "ASCII-only" validator accept non-ASCII. Trim
+  ASCII whitespace only — `String.trim()` would strip U+3000/U+00A0 and let a padded value collapse
+  onto a different identity.
+- **Never rewrite an identifier.** The old builder stripped `[^\w/]`, so `USR02$` was authorized and
+  `USR02` executed. Anything needing character removal is refused, blocklist on or off.
+- **Blank is off, but a stray comma is not.** Once the trimmed value is non-empty every field is
+  mandatory; `.filter(Boolean)` would silently disable the control.
+- **Node kinds are classified explicitly.** `CDS_VIEW`/`TABLE`/`CDS_TABLE_FUNCTION` are SQL; the exact
+  `RELATED_OBJECTS_TREE → RELATED_OBJECTS_ENTRY → DCLS_OBJECT_LIST → DCLS/DL` chain is auxiliary and is
+  validated then dropped. Match exact `TYPE` values and exact nesting — never a name *containing*
+  "RELATED"/"DCLS", or an auxiliary-looking subtree could hide a real source. A released view like
+  `I_BUSINESSPARTNER` has this branch, and `HAS_DCL=X` means `AC_STATE` is not the only DCL signal.
+- **`addMetrics=false`.** Metrics add payload, not topology. The v3 media type 406s on 750, which is
+  what drives the element-info fallback.
+- **One decision per logical request.** `runQueryBatch` unions all chunk sources and decides once;
+  there is no cache, and no caller-supplied authorization receipt exists.
+- **Fixtures are real captures.** `tests/fixtures/xml/cds-dependency-graph-*.xml` came from live 750 /
+  758 (byte-identical on 816). Do not hand-write graph XML for kind decisions.
+
 ## Testing — concurrent runs, isolation & teardown
 
 Multiple integration/e2e runs can target ONE SAP system at once (several git worktrees, or a local

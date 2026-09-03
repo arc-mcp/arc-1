@@ -22,6 +22,12 @@ import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { lockObject, unlockObject } from './crud.js';
 import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
+import { canonicalDataSourceName } from './data-source-name.js';
+import {
+  CDS_DEPENDENCY_GRAPH_PATH,
+  createDataSourceBlocklistGuard,
+  type DataSourceBlocklistGuard,
+} from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
@@ -30,7 +36,7 @@ import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './pa
 import { canonicalRevisionSourcePath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
-import { buildTableQuerySql, clampPreviewRows } from './table-query.js';
+import { buildTableQuerySql, clampPreviewRows, executeDataPreviewStatements } from './table-query.js';
 import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
 import type {
   AdtObjectLookupResult,
@@ -1336,6 +1342,22 @@ export class AdtClient {
 
   // ─── Table Data Operations ─────────────────────────────────────────
 
+  /** A fresh guard per logical request; instrumentation never leaks between decisions. */
+  private dataSourceBlocklistGuard(): DataSourceBlocklistGuard {
+    return createDataSourceBlocklistGuard({
+      blockedDataSources: this.safety.blockedDataSources,
+      searchObject: (name, maxResults) => this.searchObject(name, maxResults),
+      // Canonical /tables source only: the NW 7.50 /structures fallback omits
+      // replacementObject metadata and therefore cannot prove authorization.
+      readTableSource: async (name) => (await this.getTable(name)).source,
+      dependencyGraphAccept: () => this.http.discoveryAcceptFor(CDS_DEPENDENCY_GRAPH_PATH),
+      readDependencyGraph: async (path, accept) => {
+        checkOperation(this.safety, OperationType.Read, 'GetCdsDependencyGraph');
+        return (await this.http.get(path, { Accept: accept })).body;
+      },
+    });
+  }
+
   /** Create the lazy request-level result scope inherited by nested handler dispatch. */
   createDataResultScope(): DataResultScope {
     return new DataResultScope(this.maxDataPreviewResponseBytes, this.dataResultSemaphore);
@@ -1372,11 +1394,18 @@ export class AdtClient {
     sqlFilter?: string,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'GetTableContents');
+    // Canonicalize BEFORE authorizing and before building the URL so the name the policy checks is
+    // byte-for-byte the name SAP receives. This runs with the blocklist off too: identifier handling
+    // must not depend on policy state.
+    const source = canonicalDataSourceName(tableName, 'TABLE_CONTENTS table name');
+    await this.dataSourceBlocklistGuard().enforceTableContents(source, sqlFilter);
     const rowLimit = clampPreviewRows(maxRows);
+    // Response memory is bounded per logical request (#739); the URL uses the canonical `source`
+    // so the name the policy authorized is byte-for-byte the name SAP receives.
     return this.withDataResultScope(async (budget, signal) =>
       parseTableContents(
         await this.postDataPreview(
-          `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(tableName)}`,
+          `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(source)}`,
           sqlFilter,
           budget,
           signal,
@@ -1387,10 +1416,8 @@ export class AdtClient {
 
   /** Execute freestyle SQL query and return just the rows/columns. */
   async runQuery(sql: string, maxRows = 100): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
-    checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
-    return this.withDataResultScope(async (budget, signal) =>
-      parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal)),
-    );
+    const { columns, rows } = await this.runQueryBatch([sql], maxRows);
+    return { columns, rows };
   }
 
   /**
@@ -1403,10 +1430,45 @@ export class AdtClient {
     sql: string,
     maxRows = 100,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
+    return this.runQueryBatch([sql], maxRows);
+  }
+
+  /**
+   * Authorize a set of server-generated statements ONCE, then execute them.
+   *
+   * This is the single freestyle-SQL entry point. IN-list chunking splits one logical caller request
+   * into N statements; authorizing each separately would repeat the whole lineage resolution N times
+   * (a search plus a graph read plus a table-source read per distinct source, per chunk). Instead the
+   * union of every chunk's canonical direct sources is authorized in one decision, and only then are
+   * the already-authorized statements posted.
+   *
+   * Authorization and the POST deliberately live inside the same private operation: there is no
+   * caller-supplied `authorized`/`internal` receipt that could be forged to skip the guard, and the
+   * decision is a local const that cannot outlive this call.
+   *
+   * The whole batch runs inside ONE data-result scope, so the response-memory budget (#739) is
+   * cumulative across chunks rather than reset per chunk — N chunks cannot together exceed the limit
+   * a single response may consume. Metrics are reported only for a single statement, because an
+   * early break on the row cap would make a summed totalRows misleading.
+   */
+  async runQueryBatch(
+    statements: string[],
+    maxRows = 100,
+  ): Promise<{ columns: string[]; rows: Record<string, string>[] } & Partial<DataPreviewMeta>> {
     checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
+    if (statements.length === 0) throw new Error('runQueryBatch requires at least one statement');
+
+    // ONE policy decision covering every statement in this logical request.
+    await this.dataSourceBlocklistGuard().enforceSqlBatch(statements);
+
+    const rowLimit = clampPreviewRows(maxRows);
     return this.withDataResultScope(async (budget, signal) => {
-      const body = await this.postFreestyleQuery(sql, maxRows, budget, signal);
-      return parseDataPreviewResult(body);
+      const post = (sql: string, limit: number): Promise<string> => this.postFreestyleQuery(sql, limit, budget, signal);
+
+      if (statements.length === 1) {
+        return parseDataPreviewResult(await post(statements[0]!, rowLimit));
+      }
+      return executeDataPreviewStatements(post, parseTableContents, statements, rowLimit);
     });
   }
 
@@ -1436,7 +1498,10 @@ export class AdtClient {
     } = {},
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'RunTableQuery');
-    const sql = buildTableQuerySql(tableName, opts.columns, opts.where);
+    // One canonical identity: authorize it, then build the statement from the SAME string.
+    const source = canonicalDataSourceName(tableName, 'TABLE_QUERY table name');
+    await this.dataSourceBlocklistGuard().enforceSources([source]);
+    const sql = buildTableQuerySql(source, opts.columns, opts.where);
     const maxRows = clampPreviewRows(opts.maxRows);
     return this.withDataResultScope(async (budget, signal) =>
       parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal)),

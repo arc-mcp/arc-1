@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DataSourcePolicyError } from '../../../src/adt/data-source-policy.js';
 import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
@@ -35,6 +36,31 @@ function createClient(overrides: Record<string, unknown> = {}): InstanceType<typ
 /** Get headers from a specific fetch call */
 function fetchHeaders(callIndex = 0): Record<string, string> {
   return ((mockFetch.mock.calls[callIndex]?.[1] as RequestInit)?.headers as Record<string, string>) ?? {};
+}
+
+function objectSearchResponse(uri: string, type: string, name: string): Response {
+  return mockResponse(
+    200,
+    `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}" adtcore:packageName="SABAPDEMOS" adtcore:description="fixture"/>
+</adtcore:objectReferences>`,
+  );
+}
+
+function objectSearchResponses(entries: Array<{ uri: string; type: string; name: string }>): Response {
+  return mockResponse(
+    200,
+    `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  ${entries
+    .map(
+      ({ uri, type, name }) =>
+        `<adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}" adtcore:packageName="SABAPDEMOS" adtcore:description="fixture"/>`,
+    )
+    .join('\n  ')}
+</adtcore:objectReferences>`,
+  );
 }
 
 describe('AdtClient', () => {
@@ -1950,6 +1976,355 @@ describe('AdtClient', () => {
       await client.runTableQuery('T000', { maxRows: Number.NaN });
       const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
       expect(String(postCall?.[0])).toContain('rowNumber=100');
+    });
+  });
+
+  describe('experimental data-source blocklist', () => {
+    const strictSafety = (blockedDataSources: string[]) => ({
+      ...unrestrictedSafetyConfig(),
+      blockedDataSources,
+    });
+
+    it.each([
+      ['TABLE_CONTENTS', (client: InstanceType<typeof AdtClient>) => client.getTableContents('USR02')],
+      ['TABLE_QUERY', (client: InstanceType<typeof AdtClient>) => client.runTableQuery('USR02')],
+      ['SAPQuery', (client: InstanceType<typeof AdtClient>) => client.runQuery('SELECT * FROM USR02')],
+      [
+        'SAPQuery join with blocked second source',
+        (client: InstanceType<typeof AdtClient>) =>
+          client.runQuery('SELECT * FROM SCARR AS a INNER JOIN USR02 AS b ON a~MANDT = b~MANDT'),
+      ],
+    ])('denies a direct blocked source before any SAP request on %s', async (_label, call) => {
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(call(client)).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['USR02'],
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    // Phase 3 invariant: the identifier ARC-1 authorizes is byte-for-byte the identifier it sends.
+    // The old builder stripped anything outside [\w/], so `USR02$` was checked as USR02$ and
+    // executed as USR02. Identifier handling must not depend on whether the blocklist is active.
+    it('with the blocklist off, executes the exact canonical identity', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+
+      await client.runTableQuery('usr02$');
+
+      const post = mockFetch.mock.calls.find((call) => String(call[0]).includes('/datapreview/freestyle'));
+      expect(String(post?.[1]?.body)).toBe('SELECT * FROM USR02$');
+    });
+
+    it('with the blocklist on, authorizes that same exact identity', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(objectSearchResponses([]));
+      const client = createClient({ safety: strictSafety(['SCARR']) });
+
+      // Unresolvable here (the mocked search returns nothing), which is correct fail-closed
+      // behaviour. What this asserts is the identity the policy was handed: USR02$, not USR02.
+      await expect(client.runTableQuery('usr02$')).rejects.toMatchObject({ code: 'DATA_LINEAGE_UNRESOLVED' });
+
+      const searchUrl = mockFetch.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => url.includes('/repository/informationsystem/search'));
+      expect(decodeURIComponent(String(searchUrl))).toContain('USR02$');
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+
+    it('does not strip characters from a TABLE_CONTENTS entity name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+
+      await client.getTableContents('usr02$');
+
+      const url = mockFetch.mock.calls.map((call) => String(call[0])).find((u) => u.includes('/datapreview/ddic'));
+      expect(url).toContain('ddicEntityName=USR02%24');
+    });
+
+    it.each([
+      ['TABLE_QUERY', (c: InstanceType<typeof AdtClient>) => c.runTableQuery('US R02')],
+      ['TABLE_CONTENTS', (c: InstanceType<typeof AdtClient>) => c.getTableContents('T000; DROP')],
+    ])('refuses an identifier that would need rewriting on %s', async (_label, call) => {
+      mockFetch.mockReset();
+      const client = createClient({ safety: strictSafety([]) });
+      await expect(call(client)).rejects.toThrow(/not an exact technical name/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    // ── One decision per logical request (no cross-request cache) ──────────────
+    describe('batched authorization', () => {
+      const chunks = [
+        "SELECT * FROM SCARR WHERE CARRID IN ('A','B')",
+        "SELECT * FROM SCARR WHERE CARRID IN ('C','D')",
+        "SELECT * FROM SCARR WHERE CARRID IN ('E','F')",
+      ];
+
+      const allowMocks = () => {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation(async (url: string) => {
+          const u = String(url);
+          if (u.includes('/repository/informationsystem/search')) {
+            return objectSearchResponses([{ uri: '/sap/bc/adt/ddic/tables/scarr', type: 'TABL/DT', name: 'SCARR' }]);
+          }
+          if (u.includes('/ddic/tables/')) {
+            return mockResponse(200, 'define table scarr { key mandt : abap.clnt; }', { 'x-csrf-token': 'T' });
+          }
+          return mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' });
+        });
+      };
+
+      it('resolves lineage once for N chunks and posts each chunk', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        await client.runQueryBatch(chunks, 100);
+
+        const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+        // One search and one table-source read for the single distinct source across all chunks.
+        expect(urls.filter((u) => u.includes('/repository/informationsystem/search'))).toHaveLength(1);
+        expect(urls.filter((u) => u.includes('/ddic/tables/'))).toHaveLength(1);
+        // …but every chunk still executes.
+        expect(urls.filter((u) => u.includes('/datapreview/freestyle'))).toHaveLength(chunks.length);
+      });
+
+      it('covers the union of all chunk sources, not just the first chunk', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        // USR02 appears ONLY in the last chunk; it must still deny the whole batch.
+        await expect(client.runQueryBatch([...chunks, 'SELECT * FROM USR02'], 100)).rejects.toMatchObject({
+          code: 'DATA_SOURCE_BLOCKED',
+          sourcePath: ['USR02'],
+        });
+
+        // Direct block short-circuits before any SAP call at all.
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('makes zero SAP calls when any chunk names a directly blocked source', async () => {
+        mockFetch.mockReset();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        await expect(client.runQueryBatch(['SELECT * FROM USR02'], 100)).rejects.toMatchObject({
+          code: 'DATA_SOURCE_BLOCKED',
+        });
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('bounds the whole batch with ONE shared response-memory budget', async () => {
+        // #739 bounds data-preview response memory per logical request. The batch must share a
+        // single scope, or N chunks would each get a fresh budget and together exceed the limit a
+        // single response may consume.
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        const postSpy = vi.spyOn(client.http, 'post');
+
+        await client.runQueryBatch(chunks, 100);
+
+        const budgets = postSpy.mock.calls
+          .filter((call) => String(call[0]).includes('/datapreview/freestyle'))
+          .map((call) => (call[4] as { responseBudget?: unknown } | undefined)?.responseBudget);
+
+        expect(budgets).toHaveLength(chunks.length);
+        expect(budgets.every((budget) => budget !== undefined)).toBe(true);
+        // Same object for every chunk — cumulative, not reset per chunk.
+        expect(new Set(budgets).size).toBe(1);
+      });
+
+      it('re-resolves lineage on a second request: no decision survives the first', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        await client.runQueryBatch(['SELECT * FROM SCARR'], 100);
+        const afterFirst = mockFetch.mock.calls.filter((c) =>
+          String(c[0]).includes('/repository/informationsystem/search'),
+        ).length;
+
+        await client.runQueryBatch(['SELECT * FROM SCARR'], 100);
+        const afterSecond = mockFetch.mock.calls.filter((c) =>
+          String(c[0]).includes('/repository/informationsystem/search'),
+        ).length;
+
+        // A cache would make the second request cost nothing; there is deliberately none.
+        expect(afterFirst).toBe(1);
+        expect(afterSecond).toBe(2);
+      });
+
+      it('runQuery and runQueryWithMetrics are a batch of one', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        await client.runQuery('SELECT * FROM SCARR');
+        const first = mockFetch.mock.calls.filter((c) => String(c[0]).includes('/datapreview/freestyle')).length;
+        expect(first).toBe(1);
+
+        const withMetrics = await client.runQueryWithMetrics('SELECT * FROM SCARR');
+        expect(withMetrics.columns.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('keeps empty-list behavior byte-for-byte and performs no metadata lookup', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+      await client.runQuery('SELECT * FROM SCARR');
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(false);
+      expect(urls.some((url) => url.includes('/ddl/dependencies/graphdata'))).toBe(false);
+      expect(urls.some((url) => url.includes('/datapreview/freestyle'))).toBe(true);
+    });
+
+    it('rejects filtered DDIC preview before any request while strict analysis is active', async () => {
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.getTableContents('SCARR', 10, "CARRID = 'LH'")).rejects.toMatchObject({
+        code: 'DATA_SQL_UNSUPPORTED',
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'SELECT * FROM (lv_table)',
+      'SELECT * FROM SCARR WHERE CARRID = @lv_carrid',
+      'SELECT * FROM SCARR. DELETE FROM USR02',
+    ])('returns DATA_SQL_UNSUPPORTED before SAP for unsupported SQL: %s', async (sql) => {
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.runQuery(sql)).rejects.toMatchObject({
+        code: 'DATA_SQL_UNSUPPORTED',
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('allows an unrelated static table query only after exact lookup and replacement inspection', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('/repository/informationsystem/search')) {
+          return Promise.resolve(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
+        }
+        if (url.includes('/ddic/tables/SCARR/source/main')) {
+          return Promise.resolve(mockResponse(200, 'define table scarr { key mandt : abap.clnt; }'));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.runQuery('SELECT * FROM SCARR')).resolves.toMatchObject({ columns: expect.any(Array) });
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(true);
+      expect(urls.some((url) => url.includes('/ddic/tables/SCARR/source/main'))).toBe(true);
+      expect(urls.some((url) => url.includes('/datapreview/freestyle'))).toBe(true);
+    });
+
+    it('denies a blocked transitive CDS table using the live graph before the data POST', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('/repository/informationsystem/search')) {
+          return Promise.resolve(
+            objectSearchResponse(
+              '/sap/bc/adt/ddic/ddl/sources/DEMO_CDS_SUMDIST/source/main#name=DEMO_CDS_SUMDIST',
+              'STOB/DO',
+              'DEMO_CDS_SUMDIST',
+            ),
+          );
+        }
+        if (url.includes('/ddl/dependencies/graphdata')) {
+          return Promise.resolve(mockResponse(200, loadFixture('cds-dependency-graph-758.xml')));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['SPFLI']) });
+      client.http.setDiscoveryMap(
+        new Map([
+          ['/sap/bc/adt/ddic/ddl/dependencies/graphdata', ['application/vnd.sap.adt.ddl.SQLDependencyModel.v3+xml']],
+        ]),
+      );
+      await expect(client.runQuery('SELECT * FROM DEMO_CDS_SUMDIST')).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
+      });
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(
+        urls.some((url) => url.includes('ddlsourceName=DEMO_CDS_SUMDIST') && url.includes('addMetrics=false')),
+      ).toBe(true);
+      expect(urls.some((url) => url.includes('/datapreview/'))).toBe(false);
+    });
+
+    it('resolves decorated NW 7.50 entity and DDLS search results before reading the old graph', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('/repository/informationsystem/search')) {
+          return Promise.resolve(
+            objectSearchResponses([
+              {
+                uri: '/sap/bc/adt/vit/wb/object_type/stobdo/object_name/DEMO_CDS_SUMDIST',
+                type: 'STOB/DO',
+                name: 'DEMO_CDS_SUMDIST (Entity)',
+              },
+              {
+                uri: '/sap/bc/adt/ddic/ddl/sources/demo_cds_sumdist',
+                type: 'DDLS/DF',
+                name: 'DEMO_CDS_SUMDIST (Data Definition)',
+              },
+            ]),
+          );
+        }
+        if (url.includes('/ddl/dependencies/graphdata')) {
+          return Promise.resolve(mockResponse(200, loadFixture('cds-dependency-graph-750.xml')));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['SPFLI']) });
+      client.http.setDiscoveryMap(
+        new Map([['/sap/bc/adt/ddic/ddl/dependencies/graphdata', ['application/vnd.sap.adt.elementinfo+xml']]]),
+      );
+      await expect(client.runQuery('SELECT * FROM DEMO_CDS_SUMDIST')).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
+      });
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+
+    it('expands a DDIC replacement object before allowing the request', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('query=DEMO_SUMDIST')) {
+          return Promise.resolve(
+            objectSearchResponse('/sap/bc/adt/ddic/tables/DEMO_SUMDIST', 'TABL/DT', 'DEMO_SUMDIST'),
+          );
+        }
+        if (url.includes('/ddic/tables/DEMO_SUMDIST/source/main')) {
+          return Promise.resolve(
+            mockResponse(200, "@AbapCatalog.replacementObject: 'demo_cds_sumdist'\ndefine table demo_sumdist"),
+          );
+        }
+        if (url.includes('query=DEMO_CDS_SUMDIST')) {
+          return Promise.resolve(
+            objectSearchResponse(
+              '/sap/bc/adt/ddic/ddl/sources/DEMO_CDS_SUMDIST/source/main#name=DEMO_CDS_SUMDIST',
+              'STOB/DO',
+              'DEMO_CDS_SUMDIST',
+            ),
+          );
+        }
+        if (url.includes('/ddl/dependencies/graphdata')) {
+          return Promise.resolve(mockResponse(200, loadFixture('cds-dependency-graph-758.xml')));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['SCARR']) });
+      await expect(client.runTableQuery('DEMO_SUMDIST')).rejects.toMatchObject({
+        sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUMDIST', 'SCARR'],
+      });
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+
+    it('fails closed for a classic view and does not reach data preview', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        objectSearchResponse('/sap/bc/adt/vit/wb/object_type/viewdv/V_USR_NAME', 'VIEW/DV', 'V_USR_NAME'),
+      );
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.runQuery('SELECT * FROM V_USR_NAME')).rejects.toBeInstanceOf(DataSourcePolicyError);
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
     });
   });
 

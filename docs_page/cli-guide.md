@@ -228,6 +228,17 @@ the backend. Do not use that legacy filter/limit as a CI data boundary; use TABL
 final cap in your caller. On 758, spell inequality as `<>`; the currently accepted `!=` input is sent
 unchanged and SAP rejects it.
 
+For an approved but security-first deployment, `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` activates the
+experimental exact source blocklist. It performs strict SQL parsing and fresh live CDS/replacement lineage
+checks before execution; unsupported or unresolved requests are denied with a stable code, a decision id
+and a dependency path. This costs metadata round-trips and is slower by design (no cache). It is a
+blocklist, not a substitute for SAP authorization or a production allowlist.
+
+`arc1 config show` prints the exact normalized entries and their source — it is an explicit local
+administrator action, so unlike the startup log it is not redacted. Unset, empty and whitespace-only all
+mean off; once the value is non-empty every comma-separated field is mandatory, so a stray separator
+fails startup rather than silently disabling the policy.
+
 ## CI check commands
 
 ### `unittest`

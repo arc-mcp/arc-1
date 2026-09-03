@@ -67,12 +67,15 @@ describe('UI API', () => {
   });
 
   it('returns overview runtime state', async () => {
-    const res = await request(buildApp()).get('/ui/api/overview');
+    const res = await request(buildApp({ config: { ...DEFAULT_CONFIG, blockedDataSources: ['USR02'] } })).get(
+      '/ui/api/overview',
+    );
 
     expect(res.status).toBe(200);
     expect(res.body.app.name).toBe('ARC-1');
     expect(res.body.app.version).toBe('0.0.0-test');
     expect(res.body.transport.uiMode).toBe('off');
+    expect(res.body.safety.blockedDataSources).toEqual(['USR02']);
   });
 
   it('does not report a cache file for auto mode', async () => {

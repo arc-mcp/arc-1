@@ -777,19 +777,28 @@ export function sharedBasicSingleTargetConflicts(
   );
 }
 
-export function multiTargetSafety(policy: TargetPolicy): SafetyConfig {
+/**
+ * Safety ceiling for one multi-target route.
+ *
+ * `blockedDataSources` is a REQUIRED parameter, not a default. It previously returned `[]` here and
+ * happened to be correct only because the one caller overrode it from the server config afterwards;
+ * a second caller would silently have got an empty blocklist. Making it required turns that omission
+ * into a compile error. A destination may narrow the instance policy but can never remove it.
+ */
+export function multiTargetSafety(policy: TargetPolicy, blockedDataSources: readonly string[]): SafetyConfig {
   return {
     allowWrites: false,
     allowDataPreview: policy.allowDataPreview,
     allowFreeSQL: policy.allowFreeSQL,
     allowTransportWrites: false,
     allowGitWrites: false,
+    blockedDataSources: [...blockedDataSources],
     allowedPackages: ['$TMP'],
     allowedTransports: [],
     denyActions: [],
   };
 }
 
-export function targetSafety(target: TargetDescriptor): SafetyConfig {
-  return multiTargetSafety(target.effectivePolicy);
+export function targetSafety(target: TargetDescriptor, blockedDataSources: readonly string[]): SafetyConfig {
+  return multiTargetSafety(target.effectivePolicy, blockedDataSources);
 }

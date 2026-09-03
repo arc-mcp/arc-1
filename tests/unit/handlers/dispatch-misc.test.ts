@@ -451,6 +451,161 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
   });
 
   describe('error guidance', () => {
+    it.each([
+      ['SAPRead', { type: 'TABLE_CONTENTS', name: 'USR02' }],
+      ['SAPQuery', { sql: 'SELECT * FROM USR02' }],
+    ])('preserves the experimental policy reason for %s and classifies it in audit', async (tool, args) => {
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
+        const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+        const result = await handleToolCall(
+          client,
+          { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true, blockedDataSources: ['USR02'] },
+          tool,
+          args,
+        );
+        const text = result.content[0]?.text ?? '';
+        expect(result.isError).toBe(true);
+        expect(text).toContain('DATA_SOURCE_BLOCKED');
+        expect(text).toContain('request denied before data execution');
+        expect(text).toContain('USR02');
+        expect(text).not.toContain('Set SAP_ALLOW_DATA_PREVIEW');
+
+        const endEvent = auditSpy.mock.calls
+          .map(([event]) => event)
+          .find(
+            (event) =>
+              typeof event === 'object' &&
+              event !== null &&
+              (event as { event?: string; status?: string }).event === 'tool_call_end' &&
+              (event as { event?: string; status?: string }).status === 'error',
+          ) as { errorClass?: string } | undefined;
+        expect(endEvent?.errorClass).toBe('DataSourcePolicyError:DATA_SOURCE_BLOCKED');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
+    it('keeps lineage failures actionable without leaking SAP diagnostics in minimal-error mode', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(
+        new AdtApiError('locked by SECRETUSER in DEVK900001', 423, '/sap/bc/adt/repository/informationsystem/search'),
+      );
+      const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
+      const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+
+      const result = await handleToolCall(
+        client,
+        {
+          ...DEFAULT_CONFIG,
+          allowDataPreview: true,
+          allowFreeSQL: true,
+          blockedDataSources: ['USR02'],
+          minimalErrors: true,
+        },
+        'SAPQuery',
+        { sql: 'SELECT * FROM SCARR' },
+      );
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      // Minimal mode keeps exactly what the model needs to act...
+      expect(text).toContain('DATA_LINEAGE_UNRESOLVED');
+      expect(text).toContain('executed=false');
+      expect(text).toMatch(/decisionId=dsp_[0-9a-f]+/);
+      // ...and nothing that is policy-sensitive or backend-derived.
+      expect(text).not.toMatch(/SECRETUSER|DEVK900001|informationsystem/i);
+      expect(text).not.toContain('HTTP 423');
+      expect(text).not.toContain('SCARR');
+      expect(text).not.toContain('SAP_BLOCKED_DATA_SOURCES');
+    });
+
+    it('minimal mode redacts the client message but never the audit record', async () => {
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        mockFetch.mockReset();
+        const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
+        const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+
+        const result = await handleToolCall(
+          client,
+          {
+            ...DEFAULT_CONFIG,
+            allowDataPreview: true,
+            allowFreeSQL: true,
+            blockedDataSources: ['USR02'],
+            minimalErrors: true,
+          },
+          'SAPQuery',
+          { sql: 'SELECT * FROM USR02' },
+        );
+        const text = result.content[0]?.text ?? '';
+        expect(text).toContain('DATA_SOURCE_BLOCKED');
+        expect(text).not.toContain('USR02');
+
+        const decision = auditSpy.mock.calls
+          .map(([event]) => event as unknown as Record<string, unknown>)
+          .find((event) => event?.event === 'data_source_policy_decision');
+
+        // The protected record keeps the complete normalized decision.
+        expect(decision).toBeDefined();
+        expect(decision?.decision).toBe('deny');
+        expect(decision?.code).toBe('DATA_SOURCE_BLOCKED');
+        expect(decision?.executed).toBe(false);
+        expect(decision?.matchedSource).toBe('USR02');
+        expect(decision?.sourcePath).toEqual(['USR02']);
+        expect(decision?.policyFingerprint).toMatch(/^[0-9a-f]{64}$/);
+        expect(String(decision?.decisionId)).toMatch(/^dsp_/);
+        // …and no SQL text or row data.
+        expect(JSON.stringify(decision)).not.toContain('SELECT');
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
+    it('emits exactly one allow decision per logical request', async () => {
+      const auditSpy = vi.spyOn(logger, 'emitAudit');
+      try {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation(async (url: string) => {
+          const u = String(url);
+          if (u.includes('/repository/informationsystem/search')) {
+            return mockResponse(
+              200,
+              '<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">' +
+                '<adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/scarr" adtcore:type="TABL/DT" adtcore:name="SCARR"/>' +
+                '</adtcore:objectReferences>',
+            );
+          }
+          if (u.includes('/ddic/tables/')) return mockResponse(200, 'define table scarr { key mandt : abap.clnt; }');
+          return mockResponse(
+            200,
+            '<?xml version="1.0"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"/>',
+          );
+        });
+        const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
+        const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+
+        await handleToolCall(
+          client,
+          { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true, blockedDataSources: ['USR02'] },
+          'SAPQuery',
+          { sql: "SELECT * FROM SCARR WHERE CARRID IN ('A','B','C','D','E','F','G','H','I','J')" },
+        );
+
+        const decisions = auditSpy.mock.calls
+          .map(([event]) => event as unknown as Record<string, unknown>)
+          .filter((event) => event?.event === 'data_source_policy_decision');
+        // One decision for the whole logical request, even though chunking may split the SQL.
+        expect(decisions).toHaveLength(1);
+        expect(decisions[0]?.decision).toBe('allow');
+        expect(decisions[0]?.directRoots).toEqual(['SCARR']);
+      } finally {
+        auditSpy.mockRestore();
+      }
+    });
+
     it('404 error includes SAPSearch hint', async () => {
       mockFetch.mockReset();
       // Make the mock reject with a 404 AdtApiError

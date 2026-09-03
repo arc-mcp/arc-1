@@ -60,6 +60,8 @@ export interface ServerConfig {
   allowFreeSQL: boolean;
   allowTransportWrites: boolean;
   allowGitWrites: boolean;
+  /** Experimental exact-name denylist applied to every SQL/data-preview source and live CDS lineage. */
+  blockedDataSources: string[];
   allowedPackages: string[];
   allowedTransports: string[];
   /** Resolved deny-action patterns from SAP_DENY_ACTIONS (parsed + validated at startup). */
@@ -270,6 +272,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   allowFreeSQL: false,
   allowTransportWrites: false,
   allowGitWrites: false,
+  blockedDataSources: [],
   allowedPackages: ['$TMP'],
   allowedTransports: [],
   denyActions: [],

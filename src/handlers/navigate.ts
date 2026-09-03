@@ -5,7 +5,9 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { findDefinition, getCompletion } from '../adt/codeintel.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
+import { internalOperationDenial } from '../adt/internal-data-operations.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import type { ClassHierarchy } from '../adt/types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -113,9 +115,22 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
             100,
           );
         } else {
-          // Fall back to named table preview (Query op type)
-          ownRels = await client.getTableContents('SEOMETAREL', 100, `CLSNAME = '${safeName}'`);
-          subRels = await client.getTableContents('SEOMETAREL', 100, `REFCLSNAME = '${safeName}' AND RELTYPE = '2'`);
+          // Structured query rather than getTableContents(sqlFilter): the filtered DDIC preview is a
+          // condition language outside the analyzed subset and is refused whenever the blocklist is
+          // active. This is the supported path and expresses the same restriction.
+          ownRels = await client.runTableQuery('SEOMETAREL', {
+            columns: ['CLSNAME', 'REFCLSNAME', 'RELTYPE'],
+            where: [{ field: 'CLSNAME', op: '=', value: safeName }],
+            maxRows: 100,
+          });
+          subRels = await client.runTableQuery('SEOMETAREL', {
+            columns: ['CLSNAME', 'REFCLSNAME', 'RELTYPE'],
+            where: [
+              { field: 'REFCLSNAME', op: '=', value: safeName },
+              { field: 'RELTYPE', op: '=', value: '2' },
+            ],
+            maxRows: 100,
+          });
         }
 
         let superclass: string | null = null;
@@ -139,6 +154,11 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
         const result: ClassHierarchy = { className: safeName, superclass, interfaces, subclasses };
         return textResult(toolJson(result));
       } catch (err) {
+        // Core dependency: name the affected feature and the alternative rather than letting a bare
+        // policy error reach the model without context.
+        if (err instanceof DataSourcePolicyError) {
+          return errorResult(internalOperationDenial('class_hierarchy', err.message));
+        }
         if (err instanceof AdtApiError && err.statusCode === 404) {
           return errorResult('Cannot query SEOMETAREL — table may not be accessible on this system.');
         }
