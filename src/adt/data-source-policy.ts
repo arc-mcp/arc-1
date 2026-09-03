@@ -207,6 +207,16 @@ export class DataSourceBlocklistGuard {
         durationMs: Date.now() - started,
       });
     } catch (error) {
+      if (!(error instanceof DataSourcePolicyError)) {
+        // Unexpected failures still deny (fail closed), but the client only ever sees a generic,
+        // redacted reason. Log the real error here so a genuine defect cannot hide behind
+        // "lineage could not be proven" with no diagnostic anywhere.
+        logger.error(
+          `data-source policy decision ${decisionId} failed unexpectedly: ${
+            error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+          }`,
+        );
+      }
       const policyError =
         error instanceof DataSourcePolicyError
           ? error
@@ -246,7 +256,11 @@ export class DataSourceBlocklistGuard {
     // reports as blocked so the operator sees the real reason.
     await this.decide([tableName], async () => {
       const source = canonicalDataSourceName(tableName, 'TABLE_CONTENTS table name');
-      if (this.blockedSources.includes(source)) {
+      // Canonicalize the configured list here too. resolveConfig() already stores canonical entries,
+      // but enforceBlockedDataSources() re-normalizes defensively and this branch must not be the one
+      // place that trusts its input shape.
+      const blocked = this.blockedSources.map((name) => canonicalDataSourceName(name));
+      if (blocked.includes(source)) {
         throw new DataSourcePolicyError(
           'DATA_SOURCE_BLOCKED',
           source,

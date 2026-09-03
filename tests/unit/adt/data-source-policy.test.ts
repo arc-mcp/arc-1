@@ -335,6 +335,18 @@ describe('enforceBlockedDataSources', () => {
     });
   });
 
+  it('denies on an unexpected internal failure without leaking it to the client', async () => {
+    const r = resolver({
+      resolveDirectSource: vi.fn(() => {
+        throw new TypeError('cannot read properties of undefined');
+      }),
+    });
+    const result = enforceBlockedDataSources(['SCARR'], ['USR02'], r);
+    // Fail closed, and the client never sees the internal detail...
+    await expect(result).rejects.toMatchObject({ code: 'DATA_LINEAGE_UNRESOLVED' });
+    await expect(result).rejects.not.toThrow(/cannot read properties/);
+  });
+
   it('wraps resolver failures and never treats them as allow', async () => {
     const r = resolver({
       resolveDirectSource: vi.fn(async () => {
