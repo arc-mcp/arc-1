@@ -550,7 +550,7 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).not.toContain(base64);
     });
 
-    it('appends a compact index of the undocumented nodes SAP pre-created, after the decoded Markdown', async () => {
+    it('appends a compact index after the writer-ignored marker', async () => {
       mockFetch.mockReset();
       const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
       const envelope =
@@ -566,11 +566,71 @@ describe('SAPRead handler', () => {
       expect(result.isError).toBeUndefined();
       const text = result.content[0]?.text ?? '';
       expect(text.startsWith('Root docs.')).toBe(true);
+      expect(text).toContain('<!-- arc1:ktd-meta');
       expect(text).toContain('Undocumented nodes: 2');
       expect(text).toContain(`base: ${base}`);
       expect(text).toContain('BDEF/BAC (1): ZBDEF.SetPhoto');
       expect(text).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
       expect(text).not.toContain('<sktd:');
+    });
+
+    it('puts draft warnings after the KTD marker so the complete result remains writable', async () => {
+      mockFetch.mockReset();
+      const body = 'Root docs.';
+      const envelope =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+        `<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text>${Buffer.from(body).toString('base64')}</sktd:text></sktd:element>` +
+        '</sktd:docu>';
+      mockFetch
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core"><ioc:entry><ioc:object ioc:user="admin" ioc:deleted="false"><ioc:ref adtcore:uri="/sap/bc/adt/documentation/ktd/documents/zbdef" adtcore:type="SKTD/TYP" adtcore:name="ZBDEF"/></ioc:object></ioc:entry></ioc:inactiveObjects>',
+          ),
+        )
+        .mockResolvedValueOnce(mockResponse(200, envelope, { etag: 'e1' }));
+      const layer = new CachingLayer(new MemoryCache());
+
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPRead',
+        { type: 'SKTD', name: 'ZBDEF' },
+        undefined,
+        undefined,
+        layer,
+      );
+
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/^Root docs\.\n\n<!-- arc1:ktd-meta/);
+      expect(text).toContain('unactivated draft');
+    });
+
+    it('puts a revalidated-cache indicator after the KTD marker', async () => {
+      mockFetch.mockReset();
+      const body = 'Root docs.';
+      const envelope =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+        `<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text>${Buffer.from(body).toString('base64')}</sktd:text></sktd:element>` +
+        '</sktd:docu>';
+      mockFetch
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects"/>',
+          ),
+        )
+        .mockResolvedValueOnce(mockResponse(200, envelope, { etag: 'e1' }))
+        .mockResolvedValueOnce(mockResponse(304, '', { etag: 'e1' }));
+      const layer = new CachingLayer(new MemoryCache());
+      const args = { type: 'SKTD', name: 'ZBDEF' };
+
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', args, undefined, undefined, layer);
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', args, undefined, undefined, layer);
+
+      const text = result.content[0]?.text ?? '';
+      expect(text).toMatch(/^Root docs\.\n\n<!-- arc1:ktd-meta/);
+      expect(text).toContain('[cached:revalidated]');
     });
 
     it('greps the decoded Markdown only — the undocumented-node index is not searched', async () => {

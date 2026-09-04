@@ -684,6 +684,46 @@ export function formatKtdUndocumentedIndex(envelopeXml: string): string {
   return lines.join('\n');
 }
 
+/** Exact reserved line separating writable KTD Markdown from ARC-1 read-only context. */
+export const KTD_META_MARKER = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
+
+/** A Markdown level-two heading line. Greedy capture avoids quadratic matching on long input. */
+const KTD_HEADING_LINE = /^##[ \t]+(.*)$/m;
+
+/**
+ * Remove the read-only context that SAPRead appends after `KTD_META_MARKER`.
+ *
+ * The exact marker line is reserved in KTD Markdown. Matching it exactly avoids silently
+ * truncating ordinary comments that merely start with the same text. A heading below the marker
+ * is refused because it is most likely a node section appended in the wrong place and would
+ * otherwise be silently discarded.
+ */
+export function stripKtdMetaTrailer(markdown: string): string {
+  let markerAt = -1;
+  let lineStart = 0;
+  while (lineStart <= markdown.length) {
+    const newlineAt = markdown.indexOf('\n', lineStart);
+    const lineEnd = newlineAt < 0 ? markdown.length : newlineAt;
+    const line = markdown.slice(lineStart, lineEnd).replace(/\r$/, '');
+    if (line === KTD_META_MARKER) {
+      markerAt = lineStart;
+      break;
+    }
+    if (newlineAt < 0) break;
+    lineStart = newlineAt + 1;
+  }
+  if (markerAt < 0) return markdown;
+  const trailer = markdown.slice(markerAt + KTD_META_MARKER.length);
+  const strayHeading = trailer.match(KTD_HEADING_LINE);
+  if (strayHeading) {
+    throw new Error(
+      `KTD documentation update has a "## ${strayHeading[1].trim()}" section below the read-only SAPRead ` +
+        `marker "${KTD_META_MARKER}". Move the section above that line, or remove the marker and its context.`,
+    );
+  }
+  return markdown.slice(0, markerAt).trimEnd();
+}
+
 /**
  * Replace the per-node <sktd:text> bodies of a <sktd:docu> envelope with
  * base64(markdown), preserving all other attributes and elements (responsible,
@@ -691,8 +731,8 @@ export function formatKtdUndocumentedIndex(envelopeXml: string): string {
  *
  * ADDRESSING: a KTD holds one <sktd:element> per documented node — the object
  * root plus one per documentable element (BDEF actions, savers, entities, …).
- * `decodeKtdText` renders those as `## <node id>` sections, and this function is
- * its inverse: each section is written back to the element with that exact id.
+ * `decodeKtdText` renders those as `## <node id>` sections, and this function
+ * consumes that exact-id section format to write each section back to its node.
  * A body that addresses no node used to be written into whichever element came
  * first, which silently overwrote the root and dropped every other node's edit.
  *
@@ -700,6 +740,7 @@ export function formatKtdUndocumentedIndex(envelopeXml: string): string {
  * content-type `application/vnd.sap.adt.sktdv2+xml`.
  */
 export function rewriteKtdText(envelopeXml: string, markdown: string): string {
+  markdown = stripKtdMetaTrailer(markdown);
   if (!markdown.trim()) {
     throw new Error(
       'KTD documentation update has an empty body. ARC-1 will not erase documentation from a bodyless ' +
@@ -792,7 +833,7 @@ function unknownKtdNodeError(ids: string[], knownIds: Iterable<string>): Error {
 }
 
 /**
- * Split a Markdown body into per-node bodies — the inverse of `decodeKtdText`.
+ * Split a Markdown body in the exact-id section format emitted by `decodeKtdText`.
  *
  * A line is a node boundary only when it is `## ` followed by the EXACT id of an
  * element in this envelope, so ordinary Markdown headings inside a node's own
@@ -817,9 +858,8 @@ function splitKtdMarkdownByElementId(markdown: string, elements: KtdElement[]): 
   const unknown: string[] = [];
 
   lines.forEach((line, index) => {
-    const heading = line.match(/^##[ \t]+(.+?)[ \t]*$/);
-    if (!heading) return;
-    const id = heading[1];
+    const id = line.match(KTD_HEADING_LINE)?.[1].trim();
+    if (!id) return;
     const resolved = knownIds.get(id.toUpperCase());
     if (resolved) headings.push({ line: index, id: resolved });
     // Unmistakably an ADT node id, yet no element here carries it: a typo, or a node

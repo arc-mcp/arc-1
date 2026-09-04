@@ -11,11 +11,13 @@ import {
   buildTableTypeXml,
   decodeKtdText,
   formatKtdUndocumentedIndex,
+  KTD_META_MARKER,
   normalizeAdtResponsible,
   normalizeCloudResponsible,
   normalizeSrvbBindingType,
   parseTableType,
   rewriteKtdText,
+  stripKtdMetaTrailer,
 } from '../../../src/adt/ddic-xml.js';
 
 describe('ddic-xml builders', () => {
@@ -940,6 +942,23 @@ describe('ddic-xml builders', () => {
         });
         const rewritten = rewriteKtdText(envelope, decodeKtdText(envelope));
         expect(rewritten).toBe(envelope);
+      });
+
+      it('ignores the exact read-only SAPRead trailer when a complete result is written back', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root body', [BAT_ID]: 'bat body' });
+        const completeRead = `${decodeKtdText(envelope)}\n\n${KTD_META_MARKER}\n[cached:revalidated]\n\nUndocumented nodes: 0`;
+        expect(rewriteKtdText(envelope, completeRead)).toBe(envelope);
+      });
+
+      it('reserves only the exact metadata marker line and refuses a section appended below it', () => {
+        const bodyMention = `body\n<!-- arc1:ktd-meta is discussed here -->`;
+        expect(stripKtdMetaTrailer(bodyMention)).toBe(bodyMention);
+        expect(() =>
+          rewriteKtdText(
+            buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' }),
+            `## ${ROOT_ID}\n\nroot\n\n${KTD_META_MARKER}\ncontext\n\n## ${BAT_ID}\n\nbat`,
+          ),
+        ).toThrow(/below the read-only SAPRead marker/);
       });
 
       it('keeps "## ..." lines that are not node ids as body content', () => {

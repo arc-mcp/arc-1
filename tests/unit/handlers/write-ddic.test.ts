@@ -573,6 +573,83 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(calls.some((c) => c.method === 'PUT')).toBe(false);
     });
 
+    it('SKTD create reports partial success when the post-create envelope read fails', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'GET' && urlStr.includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(500, 'post-create read failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+        refObjectName: 'ZTR_C_PAYMENT_VALUE_DATE',
+        source: '# Initial docs',
+      });
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
+      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('verify it with SAPRead');
+      expect(text).toContain('action="update"');
+      expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+    });
+
+    it('SKTD create reports partial success and unlocks when the initial body PUT fails', async () => {
+      const lockBody =
+        '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>KTDLOCK</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+      const postCreateEnvelope =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZTR_C_PAYMENT_VALUE_DATE">' +
+        '<sktd:element><sktd:id>ZTR_C_PAYMENT_VALUE_DATE</sktd:id><sktd:text/></sktd:element>' +
+        '</sktd:docu>';
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'GET' && urlStr.includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, postCreateEnvelope, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'PUT') {
+          return Promise.resolve(mockResponse(500, 'post-create update failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+        refObjectName: 'ZTR_C_PAYMENT_VALUE_DATE',
+        source: '# Initial docs',
+      });
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
+      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('verify it with SAPRead');
+      expect(text).toContain('action="update"');
+      expect(calls.some((call) => call.method === 'PUT')).toBe(true);
+      expect(calls.some((call) => call.method === 'POST' && call.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
     it('SKTD create rejects missing refObjectType with an actionable error', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
