@@ -850,12 +850,12 @@ export function getToolDefinitions(
           },
           shortTexts: {
             type: 'array',
-            description: `SKTD/KTD create/update: exact SAPRead node ID; text max ${KTD_SHORT_TEXT_MAX_LENGTH}; empty clears; source optional.`,
+            description: `SKTD/KTD create/update: exact SAPRead node ID; text max ${KTD_SHORT_TEXT_MAX_LENGTH} UTF-16 units after whitespace normalization; empty clears; source optional.`,
             items: {
               type: 'object',
               properties: {
                 node: { type: 'string', minLength: 1 },
-                text: { type: 'string', maxLength: KTD_SHORT_TEXT_MAX_LENGTH },
+                text: { type: 'string' },
               },
               required: ['node', 'text'],
             },

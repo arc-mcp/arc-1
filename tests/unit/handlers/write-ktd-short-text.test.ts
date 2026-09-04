@@ -71,6 +71,40 @@ describe('SAPWrite KTD short texts', () => {
     expect(calls.some((call) => call.url.includes('_action=UNLOCK'))).toBe(true);
   });
 
+  it('validates the short-text limit after whitespace normalization through the real schema path', async () => {
+    const calls = recordKtdCalls(envelope());
+    const first = '🚀'.repeat(10);
+    const second = `${'🚀'.repeat(19)}x`;
+    const normalized = `${first} ${second}`;
+    const raw = `  ${first}\n${second}  `;
+    expect(raw.length).toBeGreaterThan(60);
+    expect(normalized.length).toBe(60);
+
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: ROOT_ID,
+      shortTexts: [{ node: FIELD_ID, text: raw }],
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(calls.find((call) => call.method === 'PUT')?.body).toContain(`sktd:text="${b64(normalized)}"`);
+  });
+
+  it('surfaces the Eclipse limit after normalization before locking', async () => {
+    const calls = recordKtdCalls(envelope());
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: ROOT_ID,
+      shortTexts: [{ node: FIELD_ID, text: `  ${'x'.repeat(61)}  ` }],
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/Eclipse ADT allows 60/);
+    expect(calls.some((call) => call.url.includes('_action=LOCK'))).toBe(false);
+  });
+
   it('creates a KTD and writes an initial short text without a Markdown body', async () => {
     const calls = recordKtdCalls(envelope());
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

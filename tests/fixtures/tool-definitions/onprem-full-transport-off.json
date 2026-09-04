@@ -655,7 +655,7 @@
         },
         "shortTexts": {
           "type": "array",
-          "description": "SKTD/KTD create/update: exact SAPRead node ID; text max 60; empty clears; source optional.",
+          "description": "SKTD/KTD create/update: exact SAPRead node ID; text max 60 UTF-16 units after whitespace normalization; empty clears; source optional.",
           "items": {
             "type": "object",
             "properties": {
@@ -664,8 +664,7 @@
                 "minLength": 1
               },
               "text": {
-                "type": "string",
-                "maxLength": 60
+                "type": "string"
               }
             },
             "required": [

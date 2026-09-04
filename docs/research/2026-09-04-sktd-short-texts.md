@@ -64,8 +64,10 @@ objects on both releases before publication.
    closed. ARC-1 does not invent XML the SAP server did not provide.
 5. `text=""` clears a short text. Non-empty input is normalized to one line, matching Eclipse's
    single-line widget and SAPRead's rendering.
-6. One exported constant drives the 60-character constraint in the MCP schema, Zod schema, and XML
-   helper. Runtime validation still protects internal callers and records the exact Eclipse limit.
+6. One exported constant drives the post-normalization 60-UTF-16-unit runtime constraint and the
+   MCP schema's prose guidance. Neither Zod nor JSON Schema applies a raw `maxLength`: both would
+   reject values whose collapsible whitespace makes the input longer than the value actually sent
+   to SAP, and JSON Schema would additionally count Unicode code points rather than Java chars.
 7. Every assignment is resolved and validated before the caller sends a PUT. Duplicate entries for
    the same node are refused rather than made order-dependent.
 8. SAPRead lists only populated short texts behind `KTD_META_MARKER`, with the exact ID and current
@@ -94,6 +96,12 @@ ceilings are unchanged; the measured full surfaces remain below them.
 
 The `KTD` condition was also removed from post-schema validation: `normalizeTypeArgsForValidation`
 canonicalizes the alias to `SKTD` before Zod runs, so the second branch was unreachable.
+
+A second review found that Zod's raw `.max(60)` contradicted the XML helper's normalized limit and
+even rejected the implementation's own 60-unit whitespace-normalization fixture through SAPWrite.
+The raw Zod and JSON Schema caps are removed; the handler now owns the enforceable limit after
+normalization and returns the Eclipse-specific error. The public schema retains explicit prose
+guidance without inviting clients to reject otherwise valid input before ARC-1 can normalize it.
 - The core multi-node research document is not expanded with another large implementation diary;
   this focused dossier owns the follow-up contract and evidence.
 
