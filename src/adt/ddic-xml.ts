@@ -632,8 +632,14 @@ export function decodeKtdText(envelopeXml: string): string {
     }
   }
 
-  // Single element: return just the text (most common case — root element doc)
-  if (elements.length === 1) {
+  // A lone documented node still needs its routing heading when writable empty siblings
+  // exist. Otherwise appending one of the ids from formatKtdUndocumentedIndex creates a
+  // non-empty preamble that the inverse writer must refuse. A genuinely single-target
+  // document keeps the compact, backwards-compatible bare body.
+  const addressableCount = findKtdElements(envelopeXml).filter(
+    (element) => element.id && canWriteKtdLongText(element.xml),
+  ).length;
+  if (elements.length === 1 && addressableCount <= 1) {
     return elements[0].text;
   }
 
@@ -651,7 +657,7 @@ export function decodeKtdText(envelopeXml: string): string {
  */
 export function formatKtdUndocumentedIndex(envelopeXml: string): string {
   const ids = findKtdElements(envelopeXml)
-    .filter((element) => element.id && !elementBase64(element.xml))
+    .filter((element) => element.id && !elementBase64(element.xml) && canWriteKtdLongText(element.xml))
     .map((element) => element.id);
   if (ids.length === 0) return '';
 
@@ -740,6 +746,7 @@ export function stripKtdMetaTrailer(markdown: string): string {
  * content-type `application/vnd.sap.adt.sktdv2+xml`.
  */
 export function rewriteKtdText(envelopeXml: string, markdown: string): string {
+  const hasReadOnlyContext = markdown.split(/\r?\n/).includes(KTD_META_MARKER);
   markdown = stripKtdMetaTrailer(markdown);
   if (!markdown.trim()) {
     throw new Error(
@@ -748,14 +755,37 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
     );
   }
   const elements = findKtdElements(envelopeXml);
+  const documented = elements.filter((element) => elementBase64(element.xml));
+  const root = rootKtdElement(envelopeXml, elements);
+  const unaddressedTarget = documented.length <= 1 ? (documented[0] ?? root) : undefined;
   const perElement = splitKtdMarkdownByElementId(markdown, elements);
-  if (perElement) return rewriteKtdElementTexts(envelopeXml, elements, perElement);
+  if (perElement) {
+    // The root id is a bare ABAP object name, so a lone `## ZI_FOO` is also a very
+    // natural document title. When the unaddressed fallback already resolves to that
+    // root, consuming the line as routing syntax would silently delete the title.
+    // A complete SAPRead result is unambiguous because it carries the metadata marker;
+    // several addressed nodes are likewise unambiguous. Refuse the remaining collision.
+    if (
+      !hasReadOnlyContext &&
+      root &&
+      root.id.toUpperCase() === envelopeKtdName(envelopeXml).toUpperCase() &&
+      unaddressedTarget === root &&
+      perElement.size === 1 &&
+      perElement.has(root.id)
+    ) {
+      throw new Error(
+        `KTD heading "## ${root.id}" is ambiguous: it can be the root-node route or a visible Markdown title. ` +
+          `ARC-1 will not silently remove it. Omit that heading to update the sole root body, use "# ${root.id}" ` +
+          'for a visible title, or start a multi-node edit from the complete SAPRead result.',
+      );
+    }
+    return rewriteKtdElementTexts(envelopeXml, elements, perElement);
+  }
 
   // An unaddressed body still has one unambiguous destination whenever at most one
   // node currently holds text — that is exactly what `decodeKtdText` rendered, and
   // it is the shape a freshly created KTD comes back in. More than one documented
   // node, though, and the body would overwrite one and silently drop the others.
-  const documented = elements.filter((element) => elementBase64(element.xml));
   if (documented.length > 1) {
     const addressable = documented.map((element) => element.id).filter(Boolean);
     throw new Error(
@@ -764,7 +794,7 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
         `Documented node ids in the version this write would modify:\n${addressable.map((id) => `  ${id}`).join('\n')}`,
     );
   }
-  const target = documented[0] ?? rootKtdElement(envelopeXml, elements);
+  const target = unaddressedTarget;
   if (target) {
     return envelopeXml.slice(0, target.start) + setKtdElementText(target, markdown) + envelopeXml.slice(target.end);
   }
@@ -788,6 +818,17 @@ interface KtdElement {
 /** Base64 payload currently held by an element, '' when it is empty or absent. */
 function elementBase64(elementXml: string): string {
   return elementXml.match(/<sktd:text[^>]*>([\s\S]*?)<\/sktd:text>/)?.[1]?.trim() ?? '';
+}
+
+/** Mirror Eclipse KtdElementUtil.canHaveLongText while retaining old envelopes with no flags. */
+function canWriteKtdLongText(elementXml: string): boolean {
+  const obligation = elementXml.match(/\bsktd:longTextObligation="([^"]*)"/)?.[1]?.toLowerCase();
+  if (obligation) return obligation === 'mandatory' || obligation === 'optional';
+  const canHaveDocumentation = elementXml.match(/\bsktd:canHaveDocumentation="([^"]*)"/)?.[1]?.toLowerCase();
+  if (canHaveDocumentation) return canHaveDocumentation === 'true';
+  // Older/simplified envelopes do not always carry either optional attribute. The
+  // server-provided text slot remains the strongest backwards-compatible evidence.
+  return /<sktd:text(?:\s|\/|>)/.test(elementXml);
 }
 
 /**
@@ -911,12 +952,20 @@ function rewriteKtdElementTexts(envelopeXml: string, elements: KtdElement[], bod
 
 function setKtdElementText(element: KtdElement, markdown: string): string {
   const spliced = spliceKtdTextBody(element.xml, markdown);
-  if (spliced !== undefined) return spliced;
-  throw new Error(
-    `KTD node "${element.id}" has no <sktd:text> element to write into. SAP gives every documentable ` +
-      `node an (initially empty) <sktd:text/>, so an element without one is not a documentation target; ` +
-      `ARC-1 does not synthesize one.`,
-  );
+  if (spliced === undefined) {
+    throw new Error(
+      `KTD node "${element.id}" has no <sktd:text> element to write into. SAP gives every documentable ` +
+        `node an (initially empty) <sktd:text/>, so an element without one is not a documentation target; ` +
+        `ARC-1 does not synthesize one.`,
+    );
+  }
+  if (!canWriteKtdLongText(element.xml)) {
+    throw new Error(
+      `KTD node "${element.id}" does not accept long-text documentation according to SAP's ` +
+        'canHaveDocumentation/longTextObligation contract.',
+    );
+  }
+  return spliced;
 }
 
 /**

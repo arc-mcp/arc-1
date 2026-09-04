@@ -969,6 +969,28 @@ describe('ddic-xml builders', () => {
         expect(rewritten).toContain(`<sktd:text>${b64('bat')}</sktd:text>`);
       });
 
+      it('refuses a lone root-name H2 instead of silently deleting a plausible title', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: '', [BAT_ID]: '' });
+        const markdown = `## ${ROOT_ID}\n\nThe travel business object.\n\n## Purpose\n\nExplain its purpose.`;
+
+        expect(() => rewriteKtdText(envelope, markdown)).toThrow(/ambiguous[\s\S]*silently remove/i);
+        const visibleTitle = `# ${ROOT_ID}\n\nThe travel business object.`;
+        const rewritten = rewriteKtdText(envelope, visibleTitle);
+        expect(rewritten).toContain(`<sktd:id>${ROOT_ID}</sktd:id><sktd:text>${b64(visibleTitle)}</sktd:text>`);
+      });
+
+      it('heads a lone documented node when writable empty siblings exist, so the index instruction round-trips', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root body', [BAT_ID]: '' });
+        const read = decodeKtdText(envelope);
+        const index = formatKtdUndocumentedIndex(envelope);
+
+        expect(read).toBe(`## ${ROOT_ID}\n\nroot body`);
+        expect(index).toContain(BAT_ID.split(';name=')[1]);
+        const edited = `${read}\n\n## ${BAT_ID}\n\nbat body\n\n${KTD_META_MARKER}\n${index}`;
+        const rewritten = rewriteKtdText(envelope, edited);
+        expect(decodeKtdText(rewritten)).toBe(`## ${ROOT_ID}\n\nroot body\n\n## ${BAT_ID}\n\nbat body`);
+      });
+
       it('refuses an unaddressed blob on a multi-node KTD instead of silently overwriting the root', () => {
         const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
         expect(() => rewriteKtdText(envelope, 'just some text')).toThrow(/addresses no node/i);
@@ -995,14 +1017,13 @@ describe('ddic-xml builders', () => {
       });
 
       it('writes an unaddressed body to the only documented node, leaving empty siblings alone', () => {
-        // decodeKtdText renders exactly this envelope as a bare body with no heading,
-        // so writing that body straight back must land on the same node.
+        // An explicitly unaddressed body still targets the sole documented node.
         // BAT_ID first, so the documented node is NOT elements[0]: the test tells the
         // "single documented node" selection apart from the old first-match write.
         const envelope = buildMultiEnvelope({ [BAT_ID]: '', [ROOT_ID]: 'only root documented', [BAF_ID]: '' });
         const rewritten = rewriteKtdText(envelope, 'root rewritten');
 
-        expect(decodeKtdText(rewritten)).toBe('root rewritten');
+        expect(decodeKtdText(rewritten)).toBe(`## ${ROOT_ID}\n\nroot rewritten`);
         expect(rewritten).toContain(`<sktd:id>${BAT_ID}</sktd:id><sktd:text></sktd:text>`);
         expect(rewritten).toContain(`<sktd:id>${BAF_ID}</sktd:id><sktd:text></sktd:text>`);
       });
@@ -1128,8 +1149,8 @@ describe('ddic-xml builders', () => {
       it('decodes line-wrapped Base64 and hides nodes SAP created but nobody documented', () => {
         const decoded = decodeKtdText(liveEnvelope);
         expect(decoded).toContain('RAP saver `FINALIZE` step. Determinations-on-save run here');
-        // Only one node carries text, so the reader emits a bare body with no heading.
-        expect(decoded).not.toContain('## ');
+        // One sibling is writable but empty, so the documented node keeps a routing heading.
+        expect(decoded).toContain(`## ${FINALIZE_ID}`);
         expect(decoded).not.toContain('ReadTravelSummaryHTML');
       });
 
@@ -1179,6 +1200,30 @@ describe('ddic-xml builders', () => {
         expect(index).toContain(`base: ${base}`);
         expect(index).toContain('BDEF/BAC (2): ZBDEF.SetPhoto, ZBDEF.DeletePhoto');
         expect(index).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
+      });
+
+      it('indexes and writes only nodes Eclipse considers long-text-capable', () => {
+        const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
+        const blockedId = `${base}#type=BDEF/BSO;name=ZBDEF.blocked`;
+        const obligationWinsId = `${base}#type=BDEF/BSO;name=ZBDEF.optional`;
+        const forbiddenId = `${base}#type=BDEF/BSO;name=ZBDEF.forbidden`;
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+          `<sktd:element sktd:canHaveDocumentation="false"><sktd:id>${blockedId}</sktd:id><sktd:text/></sktd:element>` +
+          `<sktd:element sktd:canHaveDocumentation="false" sktd:longTextObligation="optional"><sktd:id>${obligationWinsId}</sktd:id><sktd:text/></sktd:element>` +
+          `<sktd:element sktd:canHaveDocumentation="true" sktd:longTextObligation="forbidden"><sktd:id>${forbiddenId}</sktd:id><sktd:text/></sktd:element>` +
+          '</sktd:docu>';
+
+        const index = formatKtdUndocumentedIndex(envelope);
+        expect(index).toContain('Undocumented nodes: 1');
+        expect(index).toContain('ZBDEF.optional');
+        expect(index).not.toContain('ZBDEF.blocked');
+        expect(index).not.toContain('ZBDEF.forbidden');
+        expect(() => rewriteKtdText(envelope, `## ${blockedId}\n\nblocked`)).toThrow(/does not accept long-text/);
+        expect(() => rewriteKtdText(envelope, `## ${forbiddenId}\n\nblocked`)).toThrow(/does not accept long-text/);
+        expect(rewriteKtdText(envelope, `## ${obligationWinsId}\n\nallowed`)).toContain(
+          `<sktd:text>${Buffer.from('allowed').toString('base64')}</sktd:text>`,
+        );
       });
 
       it('returns an empty index when every node carries text', () => {

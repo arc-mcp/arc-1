@@ -168,9 +168,9 @@ No tool-schema change: nodes are addressed through the Markdown the reader alrea
 
 | Check | Result |
 |-------|--------|
-| `npx vitest run tests/unit/adt/ddic-xml.test.ts tests/unit/handlers/read.test.ts tests/unit/handlers/write-ddic.test.ts` | 356 passed `[E]` |
+| `npx vitest run tests/unit/adt/ddic-xml.test.ts tests/unit/handlers/read.test.ts tests/unit/handlers/write-ddic.test.ts` | 359 passed `[E]` |
 | …of which, against the verbatim wire capture | passed, including line-wrapped Base64 and self-closing text `[E]` |
-| `npm test` | 190 files, 5,725 tests passed `[E]` |
+| `npm test` | 190 files, 5,728 tests passed `[E]` |
 | `typecheck`, Biome, size/schema budget, action policy, build, strict docs build | green `[E]` |
 
 The first full-suite run had one unrelated IPv6 rate-limit test receive a transient 404. The same
@@ -192,7 +192,8 @@ and five-node KTD, then deleted every object in reverse dependency order.
 | Activate and read all three bodies from the active version | passed | passed |
 | Delete SKTD, BDEF, class, DDLS, and table | passed | passed |
 
-The 7.58 run completed in 38.5 seconds and the 8.16 run in 42.6 seconds. These runs exercise the
+After the follow-up review fixes, the 7.58 run completed in 40.7 seconds and the 8.16 run in 54.3
+seconds. These runs exercise the
 real GET/lock/PUT/unlock/activate path, not only the XML helper. KTD is unavailable on 7.50, where
 the existing read path returns the established soft “No Knowledge Transfer Document” result.
 
@@ -219,3 +220,31 @@ BDEF/BAC (14): ZI_TravelTP.SetPhoto, ZI_TravelTP.DeletePhoto, …
 Every id is reconstructible exactly (the index is produced by splitting real ids on the first
 `#type=` and `;name=`, never by synthesis). Roughly 2–3 KB on the largest live object, and nothing at
 all when every node is documented.
+
+## 7. Follow-up review: routing symmetry and node eligibility
+
+A post-implementation review found two real ambiguities and one eligibility question. The fixes are
+based on the ADT wire contract and Eclipse's own KTD model rather than treating every envelope child
+as writable:
+
+- A KTD with one documented node and writable empty siblings now renders the documented node's
+  `## <id>` heading. The old bare-body optimization made the empty-node index's instruction invalid:
+  appending a new addressed section left the existing body as an unaddressed preamble. Bare Markdown
+  remains only for a genuinely single-target document.
+- The root id is the plain ABAP object name, so a standalone `## Z...` can be either routing syntax
+  or an ordinary Markdown title. When an unaddressed write would already target that root, ARC-1 now
+  refuses this marker-free, one-section ambiguity instead of silently deleting the title. A complete
+  `SAPRead` result is unambiguous because it carries `KTD_META_MARKER`; multiple addressed sections
+  are also unambiguous. A visible root title should use H1.
+- The official `ktdObject.xsd` makes `canHaveDocumentation` and `longTextObligation` optional.
+  Decompiled `com.sap.adt.ktd` bytecode shows Eclipse's `KtdElementUtil.canHaveLongText` rule:
+  a present obligation is writable only for `mandatory` or `optional`; otherwise it falls back to
+  `canHaveDocumentation`. The index and writer now mirror that rule. For older/simplified envelopes
+  carrying neither attribute, an existing `<sktd:text>` slot remains backwards-compatible evidence
+  that SAP exposed the node as a target. Nodes marked forbidden/non-documentable are neither
+  advertised nor writable.
+
+The focused regression set now includes the complete reader-index-writer round trip, the root-title
+collision, obligation precedence over `canHaveDocumentation`, and refusal of forbidden nodes. The
+live E2E adds a root-only read, inserts an indexed BDEF action above the marker exactly as instructed,
+and writes the complete result before continuing the existing multi-node lifecycle.

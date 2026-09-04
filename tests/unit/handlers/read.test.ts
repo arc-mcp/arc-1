@@ -565,7 +565,7 @@ describe('SAPRead handler', () => {
 
       expect(result.isError).toBeUndefined();
       const text = result.content[0]?.text ?? '';
-      expect(text.startsWith('Root docs.')).toBe(true);
+      expect(text.startsWith('## ZBDEF\n\nRoot docs.')).toBe(true);
       expect(text).toContain('<!-- arc1:ktd-meta');
       expect(text).toContain('Undocumented nodes: 2');
       expect(text).toContain(`base: ${base}`);

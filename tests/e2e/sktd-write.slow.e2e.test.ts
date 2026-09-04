@@ -132,12 +132,22 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       });
       await activate({ type: 'SKTD', name: rootName });
 
-      await write({
-        action: 'update',
-        type: 'SKTD',
-        name: rootName,
-        source: `## ${createId}\n\nCreate documentation.`,
-      });
+      // Even with only the root documented, SAP has several writable empty BDEF nodes.
+      // SAPRead must therefore emit the root routing heading so adding a node above the
+      // metadata marker has no stray preamble and round-trips exactly as instructed.
+      const rootOnlyRead = expectToolSuccess(
+        await callTool(client, 'SAPRead', { type: 'SKTD', name: rootName, version: 'active' }),
+      );
+      const metaMarker = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
+      expect(rootOnlyRead).toContain(`## ${rootName}`);
+      expect(rootOnlyRead).toContain(metaMarker);
+      expect(rootOnlyRead).toContain(`${rootName}.create`);
+      const rootAndCreate = rootOnlyRead.replace(
+        metaMarker,
+        `## ${createId}\n\nCreate documentation.\n\n${metaMarker}`,
+      );
+      expect(rootAndCreate).not.toBe(rootOnlyRead);
+      await write({ action: 'update', type: 'SKTD', name: rootName, source: rootAndCreate });
       await write({
         action: 'update',
         type: 'SKTD',
