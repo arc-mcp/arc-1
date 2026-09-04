@@ -624,9 +624,10 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         return errorResult(
           `Created SKTD ${name} in package ${pkg}, but the ${documentationPart} was NOT written: ` +
             `${err instanceof Error ? err.message : String(err)}\n` +
-            `The object exists — verify it with SAPRead, then retry with ` +
-            `SAPWrite(action="update", type="SKTD", name="${name}", ` +
-            `${[hasSource && 'source=…', shortTexts?.length && 'shortTexts=[…]'].filter(Boolean).join(', ')}).`,
+            `The object exists — verify it with SAPRead. Inspect the reported cause: correct or remove invalid ` +
+            `${[hasSource && 'source', shortTexts?.length && 'shortTexts'].filter(Boolean).join(' and ')} input, ` +
+            `or wait for a transient read/PUT failure to recover. Then use ` +
+            `SAPWrite(action="update", type="SKTD", name="${name}", …); do not retry create.`,
         );
       }
       invalidateWrittenObject(type, name);

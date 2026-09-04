@@ -945,8 +945,12 @@ function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]):
         `KTD node "${element.id}" has no writable <sktd:shortText sktd:text="…"> value; ARC-1 will not synthesize one.`,
       );
     }
-    if (tag.match(KTD_SHORT_TEXT_OBLIGATION)?.[1] === 'forbidden') {
-      throw new Error(`KTD node "${element.id}" does not take a short text (sktd:obligation="forbidden").`);
+    const obligation = tag.match(KTD_SHORT_TEXT_OBLIGATION)?.[1]?.toLowerCase();
+    if (obligation !== 'mandatory' && obligation !== 'optional') {
+      throw new Error(
+        `KTD node "${element.id}" does not take a writable short text ` +
+          `(sktd:obligation="${obligation ?? 'missing'}"; expected "mandatory" or "optional").`,
+      );
     }
     resolved.set(key, { element, text });
   }

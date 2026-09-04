@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { KTD_SHORT_TEXT_MAX_LENGTH } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
@@ -355,7 +356,7 @@ const functionProcessingTypeSchema = z.enum(FUNCTION_PROCESSING_TYPES);
 const functionUpdateTaskKindSchema = z.enum(FUNCTION_UPDATE_TASK_KINDS);
 const ktdShortTextSchema = z.object({
   node: z.string().trim().min(1),
-  text: z.string().max(60),
+  text: z.string().max(KTD_SHORT_TEXT_MAX_LENGTH),
 });
 
 /**
@@ -402,7 +403,7 @@ function validateSapWriteInput(
   }
 
   if (input.shortTexts !== undefined && input.shortTexts.length > 0) {
-    if (input.type !== 'SKTD' && input.type !== 'KTD') {
+    if (input.type !== 'SKTD') {
       ctx.addIssue({
         code: 'custom',
         path: ['shortTexts'],

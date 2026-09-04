@@ -603,7 +603,8 @@
           "description": "SKTD/KTD create: name of the parent object the KTD documents (defaults to \"name\")."
         },
         "refObjectDescription": {
-          "type": "string"
+          "type": "string",
+          "description": "SKTD/KTD create: description of the parent object (shown in Eclipse tooltips)."
         },
         "shortTexts": {
           "type": "array",

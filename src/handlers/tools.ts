@@ -17,12 +17,12 @@
  * - On-premise: full tool set with all types and descriptions
  */
 
+import { KTD_SHORT_TEXT_MAX_LENGTH } from '../adt/ddic-xml.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
-import { KTD_SHORT_TEXTS_TOOL_SCHEMA } from './ktd-tool-schema.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
@@ -844,8 +844,22 @@ export function getToolDefinitions(
             type: 'string',
             description: 'SKTD/KTD create: name of the parent object the KTD documents (defaults to "name").',
           },
-          refObjectDescription: { type: 'string' },
-          shortTexts: KTD_SHORT_TEXTS_TOOL_SCHEMA,
+          refObjectDescription: {
+            type: 'string',
+            description: 'SKTD/KTD create: description of the parent object (shown in Eclipse tooltips).',
+          },
+          shortTexts: {
+            type: 'array',
+            description: `SKTD/KTD create/update: exact SAPRead node ID; text max ${KTD_SHORT_TEXT_MAX_LENGTH}; empty clears; source optional.`,
+            items: {
+              type: 'object',
+              properties: {
+                node: { type: 'string', minLength: 1 },
+                text: { type: 'string', maxLength: KTD_SHORT_TEXT_MAX_LENGTH },
+              },
+              required: ['node', 'text'],
+            },
+          },
           objects: {
             type: 'array',
             items: {

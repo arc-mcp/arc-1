@@ -35,7 +35,9 @@ const BUDGETS = {
   // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
   // +per-action SAPWrite description (one line per action, incl. the destructive/refusing ones).
   // +3 for SAPTransport action="diff" (action list + offset/limit properties).
-  'src/handlers/tools.ts': 1730,
+  // +30 for the inline shortTexts object schema and retained refObjectDescription guidance. Keeping
+  // this public schema beside SAPWrite avoids a one-constant module whose only purpose was the ratchet.
+  'src/handlers/tools.ts': 1760,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

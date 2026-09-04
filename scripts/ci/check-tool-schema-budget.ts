@@ -192,9 +192,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // properties). The description spends its tokens on the baselineStatus rule — without it an
       // LLM reports a missing baseline as "newly created", which is the exact misreading this
       // action exists to prevent. Only the on-prem write scenario moved; BTP stayed under budget.
-      schemaTokenEstimate: 17_700,
+      // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
+      // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
+      schemaTokenEstimate: 17_800,
       descriptionTokenEstimate: 12_550,
-      descriptionCount: 265,
+      descriptionCount: 270,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -206,9 +208,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: { ...ALL_FEATURES_AVAILABLE, systemType: 'btp' },
     budget: {
       // Post-trim: full BTP write surface ~64.5 KB / ~16.1k schema tokens / 248 descriptions.
-      schemaTokenEstimate: 16_800,
+      // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
+      // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
+      schemaTokenEstimate: 16_900,
       descriptionTokenEstimate: 12_000,
-      descriptionCount: 260,
+      descriptionCount: 265,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },

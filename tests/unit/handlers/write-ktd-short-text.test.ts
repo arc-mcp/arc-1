@@ -59,7 +59,7 @@ describe('SAPWrite KTD short texts', () => {
     const calls = recordKtdCalls(envelope());
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'update',
-      type: 'SKTD',
+      type: 'KTD',
       name: ROOT_ID,
       shortTexts: [{ node: FIELD_ID, text: 'Payment value date' }],
     });
@@ -100,7 +100,8 @@ describe('SAPWrite KTD short texts', () => {
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain(`Created SKTD ${ROOT_ID}`);
-    expect(result.content[0]?.text).toContain('shortTexts=[…]');
+    expect(result.content[0]?.text).toContain('correct or remove invalid shortTexts input');
+    expect(result.content[0]?.text).toContain('do not retry create');
     expect(result.content[0]?.text).toContain('verify it with SAPRead');
     expect(calls.some((call) => call.method === 'PUT')).toBe(false);
   });

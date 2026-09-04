@@ -61,7 +61,7 @@ describe('KTD short-text XML contract', () => {
 
   it('refuses forbidden, missing, duplicate, and over-limit assignments before a PUT can occur', () => {
     expect(() => rewriteKtdDocument(envelope(), undefined, [{ node: ROOT_ID, text: 'Root label' }])).toThrow(
-      /obligation="forbidden"/,
+      /obligation="forbidden"[\s\S]*expected "mandatory" or "optional"/,
     );
     expect(() =>
       rewriteKtdDocument(envelope('', 'optional', false), undefined, [{ node: FIELD_ID, text: 'Label' }]),
@@ -75,6 +75,20 @@ describe('KTD short-text XML contract', () => {
     expect(() =>
       rewriteKtdDocument(envelope(), undefined, [{ node: FIELD_ID, text: 'x'.repeat(KTD_SHORT_TEXT_MAX_LENGTH + 1) }]),
     ).toThrow(/allows 60/);
+  });
+
+  it('accepts obligation spelling case-insensitively and refuses missing or unknown obligations', () => {
+    expect(rewriteKtdDocument(envelope('', 'OPTIONAL'), undefined, [{ node: FIELD_ID, text: 'Allowed' }])).toContain(
+      `sktd:text="${b64('Allowed')}"`,
+    );
+    expect(() =>
+      rewriteKtdDocument(envelope().replace(' sktd:obligation="optional"', ''), undefined, [
+        { node: FIELD_ID, text: 'No contract' },
+      ]),
+    ).toThrow(/obligation="missing"/);
+    expect(() =>
+      rewriteKtdDocument(envelope('', 'recommended'), undefined, [{ node: FIELD_ID, text: 'Unknown' }]),
+    ).toThrow(/obligation="recommended"/);
   });
 
   it('accepts 60 UTF-16 units, normalizes whitespace, and can combine body and short-text writes', () => {
