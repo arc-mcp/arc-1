@@ -650,8 +650,28 @@
           "description": "SKTD/KTD create: name of the parent object the KTD documents (defaults to \"name\")."
         },
         "refObjectDescription": {
-          "type": "string",
-          "description": "SKTD/KTD create: description of the parent object (shown in Eclipse tooltips)."
+          "type": "string"
+        },
+        "shortTexts": {
+          "type": "array",
+          "description": "SKTD/KTD create/update: exact SAPRead node ID; text max 60; empty clears; source optional.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 60
+              }
+            },
+            "required": [
+              "node",
+              "text"
+            ]
+          }
         },
         "objects": {
           "type": "array",

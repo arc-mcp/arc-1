@@ -22,6 +22,7 @@ import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
+import { KTD_SHORT_TEXTS_TOOL_SCHEMA } from './ktd-tool-schema.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
@@ -843,10 +844,8 @@ export function getToolDefinitions(
             type: 'string',
             description: 'SKTD/KTD create: name of the parent object the KTD documents (defaults to "name").',
           },
-          refObjectDescription: {
-            type: 'string',
-            description: 'SKTD/KTD create: description of the parent object (shown in Eclipse tooltips).',
-          },
+          refObjectDescription: { type: 'string' },
+          shortTexts: KTD_SHORT_TEXTS_TOOL_SCHEMA,
           objects: {
             type: 'array',
             items: {

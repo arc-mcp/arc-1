@@ -353,6 +353,10 @@ const messageClassMessageSchema = z.object({
 
 const functionProcessingTypeSchema = z.enum(FUNCTION_PROCESSING_TYPES);
 const functionUpdateTaskKindSchema = z.enum(FUNCTION_UPDATE_TASK_KINDS);
+const ktdShortTextSchema = z.object({
+  node: z.string().trim().min(1),
+  text: z.string().max(60),
+});
 
 /**
  * Actions that may target a CLAS local include (CCDEF/CCIMP/macros/testclasses).
@@ -372,6 +376,7 @@ function validateSapWriteInput(
     include?: string;
     processingType?: string;
     updateTaskKind?: string;
+    shortTexts?: unknown[];
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -392,6 +397,23 @@ function validateSapWriteInput(
         code: 'custom',
         path: ['include'],
         message: 'SAPWrite include is only supported for type="CLAS".',
+      });
+    }
+  }
+
+  if (input.shortTexts !== undefined && input.shortTexts.length > 0) {
+    if (input.type !== 'SKTD' && input.type !== 'KTD') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shortTexts'],
+        message: 'shortTexts is only supported for type="SKTD" (alias "KTD").',
+      });
+    }
+    if (input.action !== 'update' && input.action !== 'create') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shortTexts'],
+        message: 'shortTexts is only supported with action="update" or action="create".',
       });
     }
   }
@@ -624,6 +646,7 @@ export const SAPWriteSchema = z
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
+    shortTexts: z.array(ktdShortTextSchema).optional(),
     bdefName: z.string().optional(),
     autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),
@@ -720,6 +743,7 @@ export const SAPWriteSchemaBtp = z
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
+    shortTexts: z.array(ktdShortTextSchema).optional(),
     bdefName: z.string().optional(),
     autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),

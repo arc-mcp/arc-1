@@ -10,7 +10,7 @@ import {
   unlockObject,
   updateObject,
 } from '../../adt/crud.js';
-import { normalizeAdtLanguage, rewriteKtdText } from '../../adt/ddic-xml.js';
+import { type KtdShortText, normalizeAdtLanguage, rewriteKtdDocument } from '../../adt/ddic-xml.js';
 import { activate, activateBatch } from '../../adt/devtools.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
@@ -449,6 +449,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     type,
     name,
     source,
+    hasSource,
     transport,
     lintOverride,
     preflightOverride,
@@ -599,14 +600,13 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       throw err;
     }
 
-    // If initial Markdown was provided, follow up with an update PUT to write it.
-    // Same envelope contract as the update path: fetch-then-rewrite ensures we
-    // PUT back exactly the shape SAP gave us (with all the server-assigned
-    // metadata), only swapping <sktd:text>.
-    if (source) {
+    // Bodies and/or short texts require a follow-up PUT of the server-provided envelope.
+    // The POST already succeeded, so every later failure is reported as partial success.
+    const shortTexts = args.shortTexts as KtdShortText[] | undefined;
+    if (hasSource || shortTexts?.length) {
       try {
         const { source: currentEnvelope } = await client.getKtd(name);
-        const body = rewriteKtdText(currentEnvelope, source);
+        const body = rewriteKtdDocument(currentEnvelope, hasSource ? source : undefined, shortTexts);
         await safeUpdateObject(
           client.http,
           client.safety,
@@ -620,21 +620,24 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         // The POST above already succeeded, so the KTD exists. Say so — a generic
         // read/rewrite/PUT failure invites the same create again, which 409s.
         invalidateWrittenObject(type, name);
+        const documentationPart = shortTexts?.length ? 'documentation' : 'documentation body';
         return errorResult(
-          `Created SKTD ${name} in package ${pkg}, but the documentation body was NOT written: ` +
+          `Created SKTD ${name} in package ${pkg}, but the ${documentationPart} was NOT written: ` +
             `${err instanceof Error ? err.message : String(err)}\n` +
             `The object exists — verify it with SAPRead, then retry with ` +
-            `SAPWrite(action="update", type="SKTD", name="${name}", source=…).`,
+            `SAPWrite(action="update", type="SKTD", name="${name}", ` +
+            `${[hasSource && 'source=…', shortTexts?.length && 'shortTexts=[…]'].filter(Boolean).join(', ')}).`,
         );
       }
       invalidateWrittenObject(type, name);
+      const writtenPart = shortTexts?.length ? 'its documentation' : 'Markdown content';
       return textResult(
-        `Created SKTD ${name} in package ${pkg} and wrote Markdown content.\nNext step: SAPActivate(type="SKTD", name="${name}").\n${ktdResult}`,
+        `Created SKTD ${name} in package ${pkg} and wrote ${writtenPart}.\nNext step: SAPActivate(type="SKTD", name="${name}").\n${ktdResult}`,
       );
     }
     invalidateWrittenObject();
     return textResult(
-      `Created SKTD ${name} in package ${pkg} (no Markdown content written — pass "source" to write the body).\nNext step: SAPActivate(type="SKTD", name="${name}").\n${ktdResult}`,
+      `Created SKTD ${name} in package ${pkg} (no Markdown content written — pass "source" for node bodies, and optionally "shortTexts" for per-node short texts).\nNext step: SAPActivate(type="SKTD", name="${name}").\n${ktdResult}`,
     );
   }
 

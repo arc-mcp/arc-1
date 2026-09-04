@@ -838,6 +838,34 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
   throw new Error('KTD envelope missing <sktd:text> element — cannot update documentation body.');
 }
 
+/** One exact-node short-text assignment for a Knowledge Transfer Document. */
+export interface KtdShortText {
+  node: string;
+  text: string;
+}
+
+/** Eclipse ADT applies this limit to its KTD short-text input widget. */
+export const KTD_SHORT_TEXT_MAX_LENGTH = 60;
+
+/**
+ * Apply optional Markdown bodies and optional short texts to one server-provided envelope.
+ * All mutations stay local until validation succeeds and the caller performs the PUT.
+ */
+export function rewriteKtdDocument(
+  envelopeXml: string,
+  markdown: string | undefined,
+  shortTexts: KtdShortText[] | undefined,
+): string {
+  const assignments = shortTexts ?? [];
+  if (markdown === undefined && assignments.length === 0) {
+    throw new Error(
+      'KTD documentation update has nothing to write: pass "source" (node bodies), "shortTexts", or both.',
+    );
+  }
+  const withBodies = markdown === undefined ? envelopeXml : rewriteKtdText(envelopeXml, markdown);
+  return assignments.length === 0 ? withBodies : rewriteKtdShortTexts(withBodies, assignments);
+}
+
 /** One `<sktd:element>` block located inside a `<sktd:docu>` envelope. */
 interface KtdElement {
   /** Value of `<sktd:id>`, or '' when the element carries none. */
@@ -862,6 +890,78 @@ function canWriteKtdLongText(elementXml: string): boolean {
   // Older/simplified envelopes do not always carry either optional attribute. The
   // server-provided text slot remains the strongest backwards-compatible evidence.
   return /<sktd:text(?:\s|\/|>)/.test(elementXml);
+}
+
+const KTD_SHORT_TEXT_TAG = /<sktd:shortText\b[^>]*\/?>/;
+const KTD_SHORT_TEXT_VALUE = /\bsktd:text="([^"]*)"/;
+const KTD_SHORT_TEXT_OBLIGATION = /\bsktd:obligation="([^"]*)"/;
+
+/** Existing short texts, with exact node ids that can be copied into `shortTexts[].node`. */
+export function formatKtdShortTexts(envelopeXml: string): string {
+  const lines = findKtdElements(envelopeXml)
+    .map((element) => {
+      const tag = element.xml.match(KTD_SHORT_TEXT_TAG)?.[0];
+      const encoded = tag?.match(KTD_SHORT_TEXT_VALUE)?.[1] ?? '';
+      if (!element.id || !encoded) return undefined;
+      const text = Buffer.from(encoded, 'base64').toString('utf-8').replace(/\s+/g, ' ').trim();
+      if (!text) return undefined;
+      const obligation = tag?.match(KTD_SHORT_TEXT_OBLIGATION)?.[1] || 'unspecified';
+      return `  ${element.id} [${obligation}]: ${text}`;
+    })
+    .filter((line): line is string => Boolean(line));
+  return lines.length === 0
+    ? ''
+    : [
+        'Short texts (read-only; update with SAPWrite shortTexts=[{node,text}] using the exact node id):',
+        ...lines,
+      ].join('\n');
+}
+
+/** Validate all assignments, then splice only their existing short-text value attributes. */
+function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]): string {
+  const elements = findKtdElements(envelopeXml);
+  const byId = new Map(elements.filter((element) => element.id).map((element) => [element.id.toUpperCase(), element]));
+  const resolved = new Map<string, { element: KtdElement; text: string }>();
+
+  for (const assignment of assignments) {
+    const requestedId = assignment.node.trim();
+    const element = byId.get(requestedId.toUpperCase());
+    if (!element) throw unknownKtdNodeError([requestedId], elements.map((known) => known.id).filter(Boolean));
+    const key = element.id.toUpperCase();
+    if (resolved.has(key)) {
+      throw new Error(`KTD node "${element.id}" appears twice in shortTexts — keep one entry per node.`);
+    }
+
+    const text = assignment.text.replace(/\s+/g, ' ').trim();
+    if (text.length > KTD_SHORT_TEXT_MAX_LENGTH) {
+      throw new Error(
+        `Short text for KTD node "${element.id}" is ${text.length} characters; Eclipse ADT allows ` +
+          `${KTD_SHORT_TEXT_MAX_LENGTH}.`,
+      );
+    }
+    const tag = element.xml.match(KTD_SHORT_TEXT_TAG)?.[0];
+    if (!tag || !KTD_SHORT_TEXT_VALUE.test(tag)) {
+      throw new Error(
+        `KTD node "${element.id}" has no writable <sktd:shortText sktd:text="…"> value; ARC-1 will not synthesize one.`,
+      );
+    }
+    if (tag.match(KTD_SHORT_TEXT_OBLIGATION)?.[1] === 'forbidden') {
+      throw new Error(`KTD node "${element.id}" does not take a short text (sktd:obligation="forbidden").`);
+    }
+    resolved.set(key, { element, text });
+  }
+
+  let rewritten = envelopeXml;
+  for (const { element, text } of [...resolved.values()].sort(
+    (left, right) => right.element.start - left.element.start,
+  )) {
+    const encoded = text ? Buffer.from(text, 'utf-8').toString('base64') : '';
+    const replacement = element.xml.replace(KTD_SHORT_TEXT_TAG, (tag) =>
+      tag.replace(KTD_SHORT_TEXT_VALUE, `sktd:text="${encoded}"`),
+    );
+    rewritten = rewritten.slice(0, element.start) + replacement + rewritten.slice(element.end);
+  }
+  return rewritten;
 }
 
 /**
