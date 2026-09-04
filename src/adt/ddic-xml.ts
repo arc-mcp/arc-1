@@ -595,7 +595,7 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
  * an `<sktd:id>` and a Base64-encoded `<sktd:text>`. We extract all of them
  * and return a combined Markdown document with element headings.
  */
-export function decodeKtdText(envelopeXml: string): string {
+export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolean } = {}): string {
   // Extract all <sktd:element> blocks with their id and text
   const elementPattern = /<sktd:element[^>]*>[\s\S]*?<sktd:id>([^<]*)<\/sktd:id>[\s\S]*?<\/sktd:element>/g;
   const elements: Array<{ id: string; text: string }> = [];
@@ -636,15 +636,22 @@ export function decodeKtdText(envelopeXml: string): string {
   // exist. Otherwise appending one of the ids from formatKtdUndocumentedIndex creates a
   // non-empty preamble that the inverse writer must refuse. A genuinely single-target
   // document keeps the compact, backwards-compatible bare body.
-  const addressableCount = findKtdElements(envelopeXml).filter(
-    (element) => element.id && canWriteKtdLongText(element.xml),
-  ).length;
-  if (elements.length === 1 && addressableCount <= 1) {
+  const allElements = findKtdElements(envelopeXml);
+  const documentedId = elements[0]?.id.toUpperCase();
+  const hasOtherWritableTarget = allElements.some(
+    (element) => element.id && element.id.toUpperCase() !== documentedId && canWriteKtdLongText(element.xml),
+  );
+  if (elements.length === 1 && !hasOtherWritableTarget) {
     return elements[0].text;
   }
 
-  // Multiple elements: format as structured Markdown with element headings
-  return elements.map((e) => `## ${e.id}\n\n${e.text}`).join('\n\n');
+  // Multiple elements: format as structured Markdown with element headings. Escape
+  // body headings that would otherwise be parsed as routing syntax on write. Prefixing
+  // one backslash is reversible even when the stored line already starts with one.
+  const knownIds = new Set(allElements.map((element) => element.id.toUpperCase()).filter(Boolean));
+  return elements
+    .map((e) => `## ${e.id}\n\n${options.routeSafe === false ? e.text : escapeKtdBodyRouteHeadings(e.text, knownIds)}`)
+    .join('\n\n');
 }
 
 /**
@@ -927,15 +934,41 @@ function splitKtdMarkdownByElementId(markdown: string, elements: KtdElement[]): 
     if (bodies.has(heading.id)) {
       throw new Error(`KTD node "${heading.id}" appears twice in the update body — keep one section per node.`);
     }
-    bodies.set(
-      heading.id,
-      lines
-        .slice(heading.line + 1, until)
-        .join('\n')
-        .trim(),
-    );
+    const body = lines
+      .slice(heading.line + 1, until)
+      .join('\n')
+      .trim();
+    bodies.set(heading.id, unescapeKtdBodyRouteHeadings(body, knownIds.keys()));
   });
   return bodies;
+}
+
+/** A heading shape reserved by the section parser, whether valid or fail-closed unknown. */
+function isKtdRouteHeadingId(id: string, knownIds: ReadonlySet<string>): boolean {
+  return knownIds.has(id.toUpperCase()) || id.startsWith('/sap/bc/adt/') || id.includes('#type=');
+}
+
+/**
+ * Protect a stored body line that is indistinguishable from KTD section routing.
+ *
+ * One leading backslash is added to every run of zero or more existing backslashes,
+ * so the inverse can remove exactly the transport escape and preserve the stored text.
+ */
+function escapeKtdBodyRouteHeadings(markdown: string, knownIds: ReadonlySet<string>): string {
+  return markdown.replace(/^(\\*)(##[ \t]+.*)$/gm, (line, _slashes: string, heading: string) => {
+    const id = heading.match(KTD_HEADING_LINE)?.[1].trim();
+    return id && isKtdRouteHeadingId(id, knownIds) ? `\\${line}` : line;
+  });
+}
+
+/** Remove the one transport escape added by `escapeKtdBodyRouteHeadings`. */
+function unescapeKtdBodyRouteHeadings(markdown: string, knownIds: Iterable<string>): string {
+  const known = new Set([...knownIds].map((id) => id.toUpperCase()));
+  return markdown.replace(/^\\(\\*##[ \t]+.*)$/gm, (line, escapedHeading: string) => {
+    const heading = escapedHeading.replace(/^\\*/, '');
+    const id = heading.match(KTD_HEADING_LINE)?.[1].trim();
+    return id && isKtdRouteHeadingId(id, known) ? escapedHeading : line;
+  });
 }
 
 /** Splice new base64 bodies into the addressed elements, leaving every other byte alone. */
@@ -951,6 +984,13 @@ function rewriteKtdElementTexts(envelopeXml: string, elements: KtdElement[], bod
 }
 
 function setKtdElementText(element: KtdElement, markdown: string): string {
+  const current = decodeKtdElementText(element.xml);
+  // A complete SAPRead result includes documented nodes even when SAP marks one of
+  // them non-writable. Preserve an unchanged section byte-for-byte; only an attempted
+  // mutation needs the writability gate below.
+  if (current !== undefined && normalizeKtdBodyForComparison(current) === normalizeKtdBodyForComparison(markdown)) {
+    return element.xml;
+  }
   const spliced = spliceKtdTextBody(element.xml, markdown);
   if (spliced === undefined) {
     throw new Error(
@@ -966,6 +1006,21 @@ function setKtdElementText(element: KtdElement, markdown: string): string {
     );
   }
   return spliced;
+}
+
+/** Decode one existing text slot; undefined means the element has no slot at all. */
+function decodeKtdElementText(elementXml: string): string | undefined {
+  const paired = elementXml.match(/<sktd:text[^>]*>([\s\S]*?)<\/sktd:text>/);
+  if (paired) {
+    const base64 = paired[1].trim();
+    return base64 ? Buffer.from(base64, 'base64').toString('utf-8') : '';
+  }
+  return /<sktd:text(?:\s[^>]*)?\/>/.test(elementXml) ? '' : undefined;
+}
+
+/** Section separators normalize outer whitespace and CRLF; compare the semantic body. */
+function normalizeKtdBodyForComparison(markdown: string): string {
+  return markdown.replace(/\r\n/g, '\n').trim();
 }
 
 /**

@@ -157,6 +157,12 @@ No tool-schema change: nodes are addressed through the Markdown the reader alrea
   inviting a create retry that 409s.
 - **Every unknown ADT-shaped heading is listed**, not only the first; the preamble refusal names
   the node the stray text would have joined.
+- **Stored headings that collide with routing remain round-trippable.** `SAPRead` prefixes one
+  backslash to a body line whose H2 text is an exact node id (or an unknown ADT-shaped id), and
+  `SAPWrite` removes exactly that transport escape. Existing leading backslashes are preserved.
+  This avoids the ambiguous "first duplicate wins" rule, which would still misroute a root body
+  containing another node's id. `SAPContext` and `SAPRead grep` explicitly request the unescaped
+  analysis form, so search/context semantics remain those of the stored Markdown.
 - The write-side GET intentionally does not force `version: 'active'`: SAP then returns the current
   working-area envelope and consecutive pre-activation writes accumulate instead of reverting to
   the last active version.
@@ -242,7 +248,8 @@ as writable:
   `canHaveDocumentation`. The index and writer now mirror that rule. For older/simplified envelopes
   carrying neither attribute, an existing `<sktd:text>` slot remains backwards-compatible evidence
   that SAP exposed the node as a target. Nodes marked forbidden/non-documentable are neither
-  advertised nor writable.
+  advertised nor writable. If SAP nevertheless returns stored text for such a node, the reader's
+  complete result can carry it through byte-identically; only an attempted change is refused.
 
 The focused regression set now includes the complete reader-index-writer round trip, the root-title
 collision, obligation precedence over `canHaveDocumentation`, and refusal of forbidden nodes. The

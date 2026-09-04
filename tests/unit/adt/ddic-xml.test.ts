@@ -944,6 +944,36 @@ describe('ddic-xml builders', () => {
         expect(rewritten).toBe(envelope);
       });
 
+      it('escapes a stored body heading equal to its own node id and round-trips it exactly', () => {
+        const rootBody = `## ${ROOT_ID}\n\nThe travel BO.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'bat body' });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toContain(`## ${ROOT_ID}\n\n\\## ${ROOT_ID}\n\nThe travel BO.`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+        expect(decodeKtdText(envelope, { routeSafe: false })).toContain(
+          `## ${ROOT_ID}\n\n## ${ROOT_ID}\n\nThe travel BO.`,
+        );
+      });
+
+      it('escapes a body heading equal to another node id without moving either body', () => {
+        const rootBody = `References this route literally:\n\n## ${BAT_ID}\n\nStill root text.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'actual bat body' });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toContain(`\\## ${BAT_ID}\n\nStill root text.`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+      });
+
+      it('preserves an existing backslash when escaping a route-shaped body heading', () => {
+        const rootBody = `\\## ${ROOT_ID}\n\nliteral escaped heading`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'bat body' });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toContain(`\\\\## ${ROOT_ID}\n\nliteral escaped heading`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+      });
+
       it('ignores the exact read-only SAPRead trailer when a complete result is written back', () => {
         const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root body', [BAT_ID]: 'bat body' });
         const completeRead = `${decodeKtdText(envelope)}\n\n${KTD_META_MARKER}\n[cached:revalidated]\n\nUndocumented nodes: 0`;
@@ -1084,6 +1114,39 @@ describe('ddic-xml builders', () => {
           `<sktd:element><sktd:id>${ROOT_ID}</sktd:id><sktd:parent/></sktd:element>` +
           '</sktd:docu>';
         expect(() => rewriteKtdText(envelope, `## ${ROOT_ID}\n\nx`)).toThrow(/does not synthesize one/);
+      });
+
+      it('preserves a documented non-writable section on read-edit-write but refuses changing it', () => {
+        const lockedId = `${BAT_ID}.LOCKED`;
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZI_TRAVELTP">' +
+          `<sktd:element sktd:longTextObligation="optional"><sktd:id>${ROOT_ID}</sktd:id>` +
+          `<sktd:text>${b64('root body')}</sktd:text></sktd:element>` +
+          `<sktd:element sktd:longTextObligation="none" sktd:canHaveDocumentation="false">` +
+          `<sktd:id>${lockedId}</sktd:id><sktd:text>${b64('server-owned body')}</sktd:text></sktd:element>` +
+          '</sktd:docu>';
+        const read = decodeKtdText(envelope);
+        const editedRoot = read.replace('root body', 'updated root');
+
+        const rewritten = rewriteKtdText(envelope, editedRoot);
+        expect(rewritten).toContain(`<sktd:text>${b64('updated root')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('server-owned body')}</sktd:text>`);
+        expect(() => rewriteKtdText(envelope, read.replace('server-owned body', 'changed locked body'))).toThrow(
+          /does not accept long-text/,
+        );
+      });
+
+      it('heads a lone documented non-writable node when a different writable target is empty', () => {
+        const lockedId = `${BAT_ID}.LOCKED`;
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZI_TRAVELTP">' +
+          `<sktd:element sktd:longTextObligation="none"><sktd:id>${lockedId}</sktd:id>` +
+          `<sktd:text>${b64('server-owned body')}</sktd:text></sktd:element>` +
+          `<sktd:element sktd:longTextObligation="optional"><sktd:id>${ROOT_ID}</sktd:id><sktd:text/></sktd:element>` +
+          '</sktd:docu>';
+
+        expect(decodeKtdText(envelope)).toBe(`## ${lockedId}\n\nserver-owned body`);
+        expect(formatKtdUndocumentedIndex(envelope)).toContain(`root: ${ROOT_ID}`);
       });
 
       it('refuses an empty body even on a single-node KTD (a bodyless update must not erase docs)', () => {

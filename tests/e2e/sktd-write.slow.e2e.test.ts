@@ -148,6 +148,14 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       );
       expect(rootAndCreate).not.toBe(rootOnlyRead);
       await write({ action: 'update', type: 'SKTD', name: rootName, source: rootAndCreate });
+      // A stored H2 equal to its own node id is indistinguishable from routing unless
+      // the read/write representation escapes it. Write the escaped form, then prove
+      // the exact live SAPRead result can be written back below.
+      const rootWithCollidingHeading = rootAndCreate.replace(
+        'Root documentation.',
+        `\\## ${rootName}\n\nRoot documentation.`,
+      );
+      await write({ action: 'update', type: 'SKTD', name: rootName, source: rootWithCollidingHeading });
       await write({
         action: 'update',
         type: 'SKTD',
@@ -159,6 +167,7 @@ describe('E2E SKTD multi-node write lifecycle', () => {
         await callTool(client, 'SAPRead', { type: 'SKTD', name: rootName, version: 'inactive' }),
       );
       expect(inactiveRead).toContain('Root documentation.');
+      expect(inactiveRead).toContain(`\\## ${rootName}`);
       expect(inactiveRead).toContain(`## ${createId}`);
       expect(inactiveRead).toContain('Create documentation.');
       expect(inactiveRead).toContain(`## ${updateId}`);

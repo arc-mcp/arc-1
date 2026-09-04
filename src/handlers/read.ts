@@ -567,7 +567,9 @@ export async function handleSAPRead(
         const { source, cacheHit, revalidated } = await cachedGet('SKTD', name, effectiveVersion, (ifNoneMatch) =>
           client.getKtd(name, { ifNoneMatch, version: effectiveVersion }),
         );
-        const markdown = decodeKtdText(source);
+        // Full reads use the reversible route-safe representation so their output can
+        // be pasted into SAPWrite. Grep searches the stored Markdown without escapes.
+        const markdown = decodeKtdText(source, { routeSafe: !args.grep });
         if (args.grep) return grepText(markdown);
         // decodeKtdText hides nodes SAP pre-created without text. List their ids compactly
         // so an undocumented node can be addressed in SAPWrite without first provoking the

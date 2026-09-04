@@ -635,9 +635,10 @@ describe('SAPRead handler', () => {
 
     it('greps the decoded Markdown only — the undocumented-node index is not searched', async () => {
       mockFetch.mockReset();
+      const storedBody = '## ZBDEF\n\nRoot docs.';
       const envelope =
         '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
-        `<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text>${Buffer.from('Root docs.', 'utf-8').toString('base64')}</sktd:text></sktd:element>` +
+        `<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text>${Buffer.from(storedBody, 'utf-8').toString('base64')}</sktd:text></sktd:element>` +
         '<sktd:element><sktd:id>/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main#type=BDEF/BAF;name=ZBDEF.GetPhoto</sktd:id><sktd:text/></sktd:element>' +
         '</sktd:docu>';
       mockFetch.mockResolvedValueOnce(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
@@ -650,6 +651,7 @@ describe('SAPRead handler', () => {
 
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Root docs.');
+      expect(result.content[0]?.text).not.toContain('\\## ZBDEF');
       expect(result.content[0]?.text).not.toContain('Undocumented nodes');
     });
 
