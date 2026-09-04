@@ -30,8 +30,7 @@ systems, fixes local-class method reads, and patches the optional BTP AppRouter.
 | Identify direct-connect systems ([#735](https://github.com/arc-mcp/arc-1/pull/735)) | `ARC1_SYSTEM_LABEL` / `--system-label` adds a single-target system label to MCP instructions. It is ignored in multi-target mode. | Optional: set a stable label such as `ERP production (read-only)` when the client hides `ARC1_SERVER_NAME`. |
 | Fix local-class method reads ([#744](https://github.com/arc-mcp/arc-1/pull/744)) | `SAPRead(type="CLAS", method=...)` now selects implementation or test-class includes for local methods. Explicit `include` still wins. | `none` |
 | Patch the optional BTP AppRouter ([#738](https://github.com/arc-mcp/arc-1/pull/738)) | Removes a pre-authentication denial-of-service path in `arc1-ui-router`. The AppRouter now requires Node.js 22.12 or newer; the MCP server was not affected. | If you use `mta-ui-approuter.mtaext`, rebuild and redeploy the MTAR. Otherwise, `none`. |
-
-Want major release, upgrade, and security updates by email? [Join ARC-1 Updates](newsletter.md).
+| Add the ARC-1 Updates newsletter | Major release, upgrade, and security updates are available by email. | [Join ARC-1 Updates](newsletter.md). |
 
 ## 1.1.2 — ATC completeness follows SAP's run lifecycle (2026-08-31)
 
