@@ -25,12 +25,12 @@ systems, fixes local-class method reads, and patches the optional BTP AppRouter.
 
 | Change | Impact | Action |
 |---|---|---|
+| Add the ARC-1 Updates newsletter | Major release, upgrade, and security updates are available by email. | [Join ARC-1 Updates](newsletter.md). |
 | Bound data-preview memory ([#739](https://github.com/arc-mcp/arc-1/pull/739)) | Data-preview bodies are capped at 2 MiB per tool call and two concurrent data results per process by default; `SAPQuery.maxRows` is capped at 10,000. Oversized results return `DATA_RESPONSE_TOO_LARGE` without partial rows, and CF Node old-space now scales with instance memory. | Review batch and file consumers. Prefer fewer rows and columns. To raise limits, size memory and both data-result settings together using the [RAM sizing table](btp-administration.md#data-preview-ram-sizing); Docker/direct-push deployments must also align their numeric `NODE_OPTIONS` limit. |
 | Add an experimental data-source blocklist ([#740](https://github.com/arc-mcp/arc-1/pull/740)) | `SAP_BLOCKED_DATA_SOURCES` can deny exact tables or CDS entities, including resolved lineage. It only narrows existing access and adds metadata requests when enabled. Malformed `TABLE_QUERY` identifiers are now rejected. | `none` by default. Before enabling it, read [Authorization & Roles](authorization.md#experimental-data-source-blocklist) and test metadata access and latency. |
 | Identify direct-connect systems ([#735](https://github.com/arc-mcp/arc-1/pull/735)) | `ARC1_SYSTEM_LABEL` / `--system-label` adds a single-target system label to MCP instructions. It is ignored in multi-target mode. | Optional: set a stable label such as `ERP production (read-only)` when the client hides `ARC1_SERVER_NAME`. |
 | Fix local-class method reads ([#744](https://github.com/arc-mcp/arc-1/pull/744)) | `SAPRead(type="CLAS", method=...)` now selects implementation or test-class includes for local methods. Explicit `include` still wins. | `none` |
 | Patch the optional BTP AppRouter ([#738](https://github.com/arc-mcp/arc-1/pull/738)) | Removes a pre-authentication denial-of-service path in `arc1-ui-router`. The AppRouter now requires Node.js 22.12 or newer; the MCP server was not affected. | If you use `mta-ui-approuter.mtaext`, rebuild and redeploy the MTAR. Otherwise, `none`. |
-| Add the ARC-1 Updates newsletter | Major release, upgrade, and security updates are available by email. | [Join ARC-1 Updates](newsletter.md). |
 
 ## 1.1.2 — ATC completeness follows SAP's run lifecycle (2026-08-31)
 
