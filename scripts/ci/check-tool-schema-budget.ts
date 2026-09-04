@@ -192,9 +192,13 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // properties). The description spends its tokens on the baselineStatus rule — without it an
       // LLM reports a missing baseline as "newly created", which is the exact misreading this
       // action exists to prevent. Only the on-prem write scenario moved; BTP stayed under budget.
-      schemaTokenEstimate: 17_700,
+      // Raised 17_700 -> 17_750 for SAPWrite shortTexts. The property's description points `node`
+      // at the name SAPRead's own trailer prints, so the two tools address a KTD node identically —
+      // without that anchor an LLM guesses the node id and the write is refused. Wire is 70.8 KB
+      // against the 72 KB wall.
+      schemaTokenEstimate: 17_750,
       descriptionTokenEstimate: 12_550,
-      descriptionCount: 265,
+      descriptionCount: 266,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -206,9 +210,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: { ...ALL_FEATURES_AVAILABLE, systemType: 'btp' },
     budget: {
       // Post-trim: full BTP write surface ~64.5 KB / ~16.1k schema tokens / 248 descriptions.
-      schemaTokenEstimate: 16_800,
+      schemaTokenEstimate: 16_900,
       descriptionTokenEstimate: 12_000,
-      descriptionCount: 260,
+      descriptionCount: 261,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },

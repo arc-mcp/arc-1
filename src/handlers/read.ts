@@ -6,7 +6,7 @@
 import { resolveBspNameAndPath } from '../adt/bsp-path.js';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
-import { decodeKtdText, formatKtdUndocumentedIndex } from '../adt/ddic-xml.js';
+import { decodeKtdText, formatKtdShortTexts, formatKtdUndocumentedIndex, KTD_META_MARKER } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
@@ -569,11 +569,13 @@ export async function handleSAPRead(
         );
         const markdown = decodeKtdText(source);
         if (args.grep) return grepText(markdown);
-        // decodeKtdText hides nodes SAP pre-created without text. List their ids compactly
-        // so an undocumented node can be addressed in SAPWrite without first provoking the
-        // write's refusal error to learn them.
-        const index = formatKtdUndocumentedIndex(source);
-        const text = index ? (markdown ? `${markdown}\n\n---\n${index}` : index) : markdown;
+        // decodeKtdText hides the nodes SAP pre-created without text, and never shows short
+        // texts. Both go into a read-only trailer behind a marker SAPWrite strips
+        // (KTD_META_MARKER): an undocumented node can be addressed in a write without first
+        // provoking the write's refusal to learn its id, and a pasted-back SAPRead result
+        // never writes this trailer into a node's body.
+        const trailer = [formatKtdShortTexts(source), formatKtdUndocumentedIndex(source)].filter(Boolean).join('\n\n');
+        const text = [markdown, trailer && `${KTD_META_MARKER}\n${trailer}`].filter(Boolean).join('\n\n');
         return cachedTextResult(text, cacheHit, revalidated, versionWarning);
       } catch (err) {
         if (isNotFoundError(err)) {

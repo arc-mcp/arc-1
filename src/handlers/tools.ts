@@ -847,6 +847,19 @@ export function getToolDefinitions(
             type: 'string',
             description: 'SKTD/KTD create: description of the parent object (shown in Eclipse tooltips).',
           },
+          shortTexts: {
+            type: 'array',
+            description:
+              'SKTD/KTD update/create: per-node short texts (max 60 chars; "" clears). node = full node id, or the name SAPRead\'s trailer lists before " [" (e.g. "GetPhoto"). Works without "source".',
+            items: {
+              type: 'object',
+              properties: {
+                node: { type: 'string' },
+                text: { type: 'string' },
+              },
+              required: ['node', 'text'],
+            },
+          },
           objects: {
             type: 'array',
             items: {

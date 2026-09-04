@@ -372,6 +372,7 @@ function validateSapWriteInput(
     include?: string;
     processingType?: string;
     updateTaskKind?: string;
+    shortTexts?: unknown[];
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -392,6 +393,25 @@ function validateSapWriteInput(
         code: 'custom',
         path: ['include'],
         message: 'SAPWrite include is only supported for type="CLAS".',
+      });
+    }
+  }
+
+  if (input.shortTexts !== undefined && input.shortTexts.length > 0) {
+    const type = input.type ?? '';
+    if (type !== 'SKTD' && type !== 'KTD') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shortTexts'],
+        message:
+          'shortTexts is only supported for type="SKTD" (alias "KTD"): per-node short texts of a Knowledge Transfer Document.',
+      });
+    }
+    if (input.action !== 'update' && input.action !== 'create') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shortTexts'],
+        message: 'shortTexts is only supported with action="update" or action="create".',
       });
     }
   }
@@ -439,6 +459,12 @@ function validateFunctionProcessingInput(
     });
   }
 }
+
+// KTD (SKTD) per-node short text. `node` is the full node id or a unique short name.
+const ktdShortTextSchema = z.object({
+  node: z.string().min(1),
+  text: z.string(),
+});
 
 // FM signature parameter (issue #252). One entry per IMPORTING/EXPORTING/CHANGING/
 // TABLES/EXCEPTIONS/RAISING line in the FUNCTION signature region. ARC-1 builds
@@ -624,6 +650,7 @@ export const SAPWriteSchema = z
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
+    shortTexts: z.array(ktdShortTextSchema).optional(),
     bdefName: z.string().optional(),
     autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),
@@ -720,6 +747,7 @@ export const SAPWriteSchemaBtp = z
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
+    shortTexts: z.array(ktdShortTextSchema).optional(),
     bdefName: z.string().optional(),
     autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),

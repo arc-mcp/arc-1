@@ -12,6 +12,7 @@ import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { stripLlmEmptyValues } = await import('../../../src/handlers/object-types.js');
 
 describe('SAPWrite handler — DDIC writes', () => {
   beforeEach(() => {
@@ -396,14 +397,14 @@ describe('SAPWrite handler — DDIC writes', () => {
     const KTD_ROOT_ID = 'ZTR_C_PAYMENT_VALUE_DATE';
     const KTD_FIELD_ID =
       '/sap/bc/adt/ddic/ddl/sources/ztr_c_payment_value_date/source/main#type=DDLS/DF;name=PaymentValueDate';
-    const twoNodeEnvelope = (rootText: string, fieldText: string) =>
+    const twoNodeEnvelope = (rootText: string, fieldText: string, fieldShortText = '') =>
       '<?xml version="1.0" encoding="UTF-8"?>' +
       '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" ' +
       `adtcore:name="${KTD_ROOT_ID}" adtcore:type="SKTD/TYP" adtcore:responsible="LEMAIWO">` +
       '<adtcore:packageRef adtcore:name="ZE_TR"/>' +
       `<sktd:refObject adtcore:name="${KTD_ROOT_ID}" adtcore:type="DDLS/DF"/>` +
-      `<sktd:element><sktd:id>${KTD_ROOT_ID}</sktd:id><sktd:text>${ktdB64(rootText)}</sktd:text></sktd:element>` +
-      `<sktd:element><sktd:id>${KTD_FIELD_ID}</sktd:id><sktd:text>${ktdB64(fieldText)}</sktd:text></sktd:element>` +
+      `<sktd:element><sktd:id>${KTD_ROOT_ID}</sktd:id><sktd:text>${ktdB64(rootText)}</sktd:text><sktd:shortText sktd:text="" sktd:obligation="forbidden"/></sktd:element>` +
+      `<sktd:element><sktd:id>${KTD_FIELD_ID}</sktd:id><sktd:text>${ktdB64(fieldText)}</sktd:text><sktd:shortText sktd:text="${fieldShortText ? ktdB64(fieldShortText) : ''}" sktd:obligation="optional"/></sktd:element>` +
       '</sktd:docu>';
     const recordKtdCalls = (envelope: string) => {
       mockFetch.mockReset();
@@ -459,6 +460,206 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(result.content[0]?.text).toContain(KTD_FIELD_ID);
       expect(calls.some((c) => c.method === 'PUT')).toBe(false);
       expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(false);
+    });
+
+    it('writes a short text alone (no source) through shortTexts, resolving the node by short name', async () => {
+      const calls = recordKtdCalls(twoNodeEnvelope('root', 'field'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'SKTD',
+        name: KTD_ROOT_ID,
+        shortTexts: [{ node: 'PaymentValueDate', text: 'Value date of the payment' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body).toContain(
+        `<sktd:shortText sktd:text="${ktdB64('Value date of the payment')}" sktd:obligation="optional"/>`,
+      );
+      // Bodies untouched.
+      expect(putCall?.body).toContain(`<sktd:text>${ktdB64('root')}</sktd:text>`);
+      expect(putCall?.body).toContain(`<sktd:text>${ktdB64('field')}</sktd:text>`);
+    });
+
+    // `text: ""` is a CLEAR, not pollution: stripLlmEmptyValues is shallow at the top level and
+    // deliberately does not recurse into leaf data arrays, so an empty short text survives to SAP.
+    it('clears an existing short text through the MCP boundary with text: ""', async () => {
+      const calls = recordKtdCalls(twoNodeEnvelope('root', 'field', 'Value date of the payment'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'SKTD',
+        name: KTD_ROOT_ID,
+        shortTexts: [{ node: 'PaymentValueDate', text: '' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body).toContain('<sktd:shortText sktd:text="" sktd:obligation="optional"/>');
+      expect(putCall?.body).not.toContain(ktdB64('Value date of the payment'));
+    });
+
+    it('refuses a short text on the root (obligation forbidden) before taking a lock', async () => {
+      const calls = recordKtdCalls(twoNodeEnvelope('root', 'field'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'SKTD',
+        name: KTD_ROOT_ID,
+        shortTexts: [{ node: KTD_ROOT_ID, text: 'nope' }],
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not take a short text');
+      expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(false);
+    });
+
+    // `source: ""` never reaches the handler: stripLlmEmptyValues (issue #360) drops empty/
+    // whitespace strings for every tool before validation, so an empty source is indistinguishable
+    // from an omitted one here and the short-text-only write proceeds. rewriteKtdDocument's
+    // "empty body" refusal — which protects a body-carrying update — is covered directly in
+    // tests/unit/adt/ddic-xml.test.ts, where the empty string survives to the contract.
+    it('an empty source is stripped upstream, so shortTexts alone still writes (no body change)', async () => {
+      const calls = recordKtdCalls(twoNodeEnvelope('root', 'field'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'SKTD',
+        name: KTD_ROOT_ID,
+        source: '',
+        shortTexts: [{ node: 'PaymentValueDate', text: 'x' }],
+      });
+
+      expect(stripLlmEmptyValues({ source: '' }).source).toBeUndefined();
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body).toContain(`sktd:text="${ktdB64('x')}"`);
+      // Bodies untouched.
+      expect(putCall?.body).toContain(`<sktd:text>${ktdB64('root')}</sktd:text>`);
+      expect(putCall?.body).toContain(`<sktd:text>${ktdB64('field')}</sktd:text>`);
+    });
+
+    it('rejects shortTexts on a non-KTD type at the schema', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'CLAS',
+        name: 'ZCL_X',
+        source: 'CLASS zcl_x DEFINITION PUBLIC. ENDCLASS. CLASS zcl_x IMPLEMENTATION. ENDCLASS.',
+        shortTexts: [{ node: 'x', text: 'y' }],
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('shortTexts');
+      expect(result.content[0]?.text).toContain('SKTD');
+    });
+
+    it('SKTD create accepts shortTexts without source', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      const created =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZTR_C_PAYMENT_VALUE_DATE">' +
+        `<sktd:element><sktd:id>${KTD_FIELD_ID}</sktd:id><sktd:text/><sktd:shortText sktd:text="" sktd:obligation="optional"/></sktd:element>` +
+        '</sktd:docu>';
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string | Buffer }) => {
+        const method = opts?.method ?? 'GET';
+        calls.push({ method, url: String(url), body: opts?.body ? String(opts.body) : undefined });
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, KTD_LOCK_BODY, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'GET' && String(url).includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, created, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+        shortTexts: [{ node: 'PaymentValueDate', text: 'Value date' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body).toContain(`sktd:text="${ktdB64('Value date')}"`);
+    });
+
+    // The POST already created the object, so the refusal must not read like a failed create —
+    // and the retry hint must name what the caller actually sent (shortTexts, not source).
+    it('SKTD create reports a short-text refusal as a partial success naming shortTexts', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      const created =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZTR_C_PAYMENT_VALUE_DATE">' +
+        `<sktd:element><sktd:id>${KTD_FIELD_ID}</sktd:id><sktd:text/><sktd:shortText sktd:text="" sktd:obligation="forbidden"/></sktd:element>` +
+        '</sktd:docu>';
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string | Buffer }) => {
+        const method = opts?.method ?? 'GET';
+        calls.push({ method, url: String(url), body: opts?.body ? String(opts.body) : undefined });
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, KTD_LOCK_BODY, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'GET' && String(url).includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, created, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+        shortTexts: [{ node: 'PaymentValueDate', text: 'Value date' }],
+      });
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Created SKTD');
+      expect(text).toContain('does not take a short text');
+      expect(text).toContain('shortTexts=[…]');
+      expect(text).not.toContain('source=…');
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('SKTD update with neither source nor shortTexts is refused before any lock, naming both parameters', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      const current =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZTR_C_PAYMENT_VALUE_DATE">' +
+        `<sktd:element><sktd:id>${KTD_ROOT_ID}</sktd:id><sktd:text/></sktd:element>` +
+        '</sktd:docu>';
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        calls.push({ method: opts?.method ?? 'GET', url: String(url) });
+        return Promise.resolve(mockResponse(200, current, { 'x-csrf-token': 'T' }));
+      });
+
+      for (const extra of [{}, { shortTexts: [] }]) {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'SKTD',
+          name: KTD_ROOT_ID,
+          ...extra,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toMatch(/nothing to write[\s\S]*"source"[\s\S]*"shortTexts"/);
+      }
+      expect(calls.some((c) => c.url.includes('_action=LOCK') || c.method === 'PUT')).toBe(false);
+    });
+
+    it('rejects shortTexts with an action other than update/create at the schema', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'delete',
+        type: 'SKTD',
+        name: KTD_ROOT_ID,
+        shortTexts: [{ node: 'PaymentValueDate', text: 'x' }],
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('action="update" or action="create"');
     });
 
     it('activates SKTD using the lowercased ADT URL in the objectReference', async () => {
@@ -566,6 +767,9 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
       expect(text).toContain('does not exist');
       expect(text).toContain('action="update"');
+      // The retry hint names exactly what the caller sent: source, and no shortTexts.
+      expect(text).toContain('source=…)');
+      expect(text).not.toContain('shortTexts=');
       // The collection URL carries sap-client/sap-language, so match the path, not the suffix.
       const postCall = calls.find((c) => c.method === 'POST' && c.url.includes('/documentation/ktd/documents'));
       expect(postCall).toBeDefined();
@@ -780,7 +984,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       });
 
       expect(result.isError).toBeUndefined();
-      expect(result.content[0]?.text).toContain('wrote Markdown content');
+      expect(result.content[0]?.text).toContain('wrote its documentation');
       // Follow-up PUT uses the vendor content type and base64-encodes the Markdown in <sktd:text>
       const putCall = calls.find(
         (c) => c.method === 'PUT' && c.url.includes('/documentation/ktd/documents/ztr_c_payment_value_date'),

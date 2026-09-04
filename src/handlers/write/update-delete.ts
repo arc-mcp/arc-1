@@ -10,7 +10,7 @@ import {
   safeUpdateSource,
   unlockObject,
 } from '../../adt/crud.js';
-import { rewriteKtdText } from '../../adt/ddic-xml.js';
+import { type KtdShortText, rewriteKtdDocument } from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import {
@@ -108,12 +108,9 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   }
 
   if (type === 'SKTD') {
-    // KTD update requires the full <sktd:docu> XML envelope with the Markdown
-    // body base64-encoded inside <sktd:text>, PUT with
-    // `application/vnd.sap.adt.sktdv2+xml`. PUTting raw text/plain silently
-    // no-ops (or 415s on strict systems). Fetch the current envelope,
-    // replace only the <sktd:text> body, and PUT it back — preserves
-    // responsible/masterLanguage/packageRef/refObject metadata.
+    // Fetch-modify-PUT of the full <sktd:docu> envelope as `application/vnd.sap.adt.sktdv2+xml`
+    // (why: the SKTD banner in src/adt/ddic-xml.ts): the addressed node bodies and short texts
+    // are swapped in place, every other byte is preserved.
     //
     // Deliberately no `version`: ADT's default view already carries the pending
     // inactive draft, so consecutive node writes without an activation in between
@@ -121,7 +118,11 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // 2026-09-02). SAPRead defaults to "active", so its node list can lag this one;
     // every refusal raised below lists the ids of the envelope it actually merged.
     const { source: currentEnvelope } = await client.getKtd(name);
-    const body = rewriteKtdText(currentEnvelope, source);
+    const body = rewriteKtdDocument(
+      currentEnvelope,
+      hasSource ? source : undefined,
+      args.shortTexts as KtdShortText[] | undefined,
+    );
     await safeUpdateObject(
       client.http,
       client.safety,
