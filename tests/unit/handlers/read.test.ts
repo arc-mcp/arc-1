@@ -550,6 +550,49 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).not.toContain(base64);
     });
 
+    it('appends a compact index of the undocumented nodes SAP pre-created, after the decoded Markdown', async () => {
+      mockFetch.mockReset();
+      const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
+      const envelope =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+        `<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text>${Buffer.from('Root docs.', 'utf-8').toString('base64')}</sktd:text></sktd:element>` +
+        `<sktd:element><sktd:id>${base}#type=BDEF/BAC;name=ZBDEF.SetPhoto</sktd:id><sktd:text/></sktd:element>` +
+        `<sktd:element><sktd:id>${base}#type=BDEF/BAF;name=ZBDEF.GetPhoto</sktd:id><sktd:text/></sktd:element>` +
+        '</sktd:docu>';
+      mockFetch.mockResolvedValueOnce(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'SKTD', name: 'ZBDEF' });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0]?.text ?? '';
+      expect(text.startsWith('Root docs.')).toBe(true);
+      expect(text).toContain('Undocumented nodes: 2');
+      expect(text).toContain(`base: ${base}`);
+      expect(text).toContain('BDEF/BAC (1): ZBDEF.SetPhoto');
+      expect(text).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
+      expect(text).not.toContain('<sktd:');
+    });
+
+    it('greps the decoded Markdown only — the undocumented-node index is not searched', async () => {
+      mockFetch.mockReset();
+      const envelope =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+        `<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text>${Buffer.from('Root docs.', 'utf-8').toString('base64')}</sktd:text></sktd:element>` +
+        '<sktd:element><sktd:id>/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main#type=BDEF/BAF;name=ZBDEF.GetPhoto</sktd:id><sktd:text/></sktd:element>' +
+        '</sktd:docu>';
+      mockFetch.mockResolvedValueOnce(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'SKTD',
+        name: 'ZBDEF',
+        grep: 'root',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Root docs.');
+      expect(result.content[0]?.text).not.toContain('Undocumented nodes');
+    });
+
     it('returns soft informational message when SKTD is not found (404)', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(404, 'Not Found', { 'x-csrf-token': 'mock-csrf-token' }));

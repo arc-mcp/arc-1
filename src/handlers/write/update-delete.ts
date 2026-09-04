@@ -114,6 +114,12 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // no-ops (or 415s on strict systems). Fetch the current envelope,
     // replace only the <sktd:text> body, and PUT it back — preserves
     // responsible/masterLanguage/packageRef/refObject metadata.
+    //
+    // Deliberately no `version`: ADT's default view already carries the pending
+    // inactive draft, so consecutive node writes without an activation in between
+    // accumulate instead of reverting to the active version (live-verified
+    // 2026-09-02). SAPRead defaults to "active", so its node list can lag this one;
+    // every refusal raised below lists the ids of the envelope it actually merged.
     const { source: currentEnvelope } = await client.getKtd(name);
     const body = rewriteKtdText(currentEnvelope, source);
     await safeUpdateObject(

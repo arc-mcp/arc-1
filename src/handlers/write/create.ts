@@ -605,7 +605,19 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     // metadata), only swapping <sktd:text>.
     if (source) {
       const { source: currentEnvelope } = await client.getKtd(name);
-      const body = rewriteKtdText(currentEnvelope, source);
+      let body: string;
+      try {
+        body = rewriteKtdText(currentEnvelope, source);
+      } catch (err) {
+        // The POST above already succeeded, so the KTD exists (empty). Say so — a
+        // message about the Markdown alone invites the same create again, which 409s.
+        invalidateWrittenObject(type, name);
+        return errorResult(
+          `Created SKTD ${name} in package ${pkg}, but the documentation body was NOT written: ` +
+            `${err instanceof Error ? err.message : String(err)}\n` +
+            `The object exists — retry with SAPWrite(action="update", type="SKTD", name="${name}", source=…).`,
+        );
+      }
       await safeUpdateObject(
         client.http,
         client.safety,
