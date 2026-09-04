@@ -642,7 +642,15 @@ export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolea
     (element) => element.id && element.id.toUpperCase() !== documentedId && canWriteKtdLongText(element.xml),
   );
   if (elements.length === 1 && !hasOtherWritableTarget) {
-    return elements[0].text;
+    const knownIds = new Set(allElements.map((element) => element.id.toUpperCase()).filter(Boolean));
+    const escaped =
+      options.routeSafe === false || !elements[0].id
+        ? elements[0].text
+        : escapeKtdBodyRouteHeadings(elements[0].text, knownIds);
+    // Keep the backwards-compatible bare body unless escaping exposed a line that the
+    // inverse writer would otherwise store with the transport backslash. In that rare
+    // collision, add the one route boundary needed to make the escape reversible.
+    return escaped === elements[0].text ? elements[0].text : `## ${elements[0].id}\n\n${escaped}`;
   }
 
   // Multiple elements: format as structured Markdown with element headings. Escape

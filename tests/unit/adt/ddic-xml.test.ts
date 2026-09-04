@@ -956,6 +956,16 @@ describe('ddic-xml builders', () => {
         );
       });
 
+      it('adds a reversible route boundary for a self-id heading in a single-element KTD', () => {
+        const rootBody = `## ${ROOT_ID}\n\nThe only-node body.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toBe(`## ${ROOT_ID}\n\n\\## ${ROOT_ID}\n\nThe only-node body.`);
+        expect(rewriteKtdText(envelope, `${read}\n\n${KTD_META_MARKER}\n[cached:revalidated]`)).toBe(envelope);
+        expect(decodeKtdText(envelope, { routeSafe: false })).toBe(rootBody);
+      });
+
       it('escapes a body heading equal to another node id without moving either body', () => {
         const rootBody = `References this route literally:\n\n## ${BAT_ID}\n\nStill root text.`;
         const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'actual bat body' });

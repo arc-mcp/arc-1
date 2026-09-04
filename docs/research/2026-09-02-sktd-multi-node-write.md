@@ -236,7 +236,9 @@ as writable:
 - A KTD with one documented node and writable empty siblings now renders the documented node's
   `## <id>` heading. The old bare-body optimization made the empty-node index's instruction invalid:
   appending a new addressed section left the existing body as an unaddressed preamble. Bare Markdown
-  remains only for a genuinely single-target document.
+  remains for a genuinely single-target document unless its stored body itself contains a
+  route-shaped H2. That rare collision receives a reversible route boundary and one transport
+  backslash, so a complete read can be written back byte-identically.
 - The root id is the plain ABAP object name, so a standalone `## Z...` can be either routing syntax
   or an ordinary Markdown title. When an unaddressed write would already target that root, ARC-1 now
   refuses this marker-free, one-section ambiguity instead of silently deleting the title. A complete
