@@ -5,6 +5,10 @@ on:
     branches:
       - main
     paths:
+      - 'docs/btp-setup-index.yaml'
+      - 'scripts/docs/**'
+      - 'examples/btp/**'
+      - 'AGENTS.md'
       - 'docs_page/**'
       - 'docs/overrides/**'
       - 'overrides/**'
@@ -13,10 +17,6 @@ on:
       - 'requirements-docs.txt'
       - 'package.json'
       - '.github/workflows/pages.yml'
-      - 'docs/btp-setup-index.yaml'
-      - 'scripts/docs/**'
-      - 'examples/btp/**'
-      - 'AGENTS.md'
   workflow_dispatch:
 
 permissions:
