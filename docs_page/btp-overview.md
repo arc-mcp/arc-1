@@ -9,7 +9,10 @@ commands remain in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.m
     For most teams connecting ARC-1 to one or more on-premise SAP systems, start with a
     **read-only BTP Cloud Foundry deployment using XSUAA and Principal Propagation**:
 
-    1. Follow the [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) runbook.
+    1. Prepare the [input and owner worksheet](btp-setup-worksheet.md), choose a
+       [single-PP or multi-PP setup pack](https://github.com/arc-mcp/arc-1/tree/main/examples/btp)
+       from your selected source checkout, then follow the
+       [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) runbook.
     2. Use [Principal Propagation](principal-propagation-setup.md) so SAP receives the real user.
     3. Choose the normal `/mcp` setup for one system/client, or add
        [Multi-Target Setup](multi-target-setup.md) for mutation-free access to several targets.
@@ -117,6 +120,9 @@ For the full commands and evidence checklist, continue with
 [handover](btp-cloud-foundry-deployment.md#11-handover-and-ongoing-operation).
 
 ## Find the right page quickly
+
+For first deployment, adding a client, granting access, login recovery or upgrades, the
+[task handoff table](btp-setup-worksheet.md#task-handoffs) identifies the owner and required evidence.
 
 | Question | Page |
 |----------|------|

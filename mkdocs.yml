@@ -49,6 +49,7 @@ nav:
   - Deployment:
       - Overview: deployment.md
       - SAP BTP - Start Here: btp-overview.md
+      - BTP Setup Worksheet: btp-setup-worksheet.md
       - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
       - Docker: docker.md
       - Multi-System Setup (Multi-Target): multi-target-setup.md
