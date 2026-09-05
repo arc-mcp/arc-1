@@ -7,6 +7,7 @@ This guide sets up BTP XSUAA authentication so MCP-native clients (Claude Deskto
 MCP-native clients use RFC 8414 OAuth discovery to find authorization endpoints at the MCP server's URL. ARC-1 proxies the OAuth flow to XSUAA using the MCP SDK's `ProxyOAuthServerProvider`.
 
 **Auth flow:**
+
 1. Client discovers OAuth via `/.well-known/oauth-authorization-server`
 2. Client redirects user to ARC-1's `/authorize` endpoint
 3. ARC-1 proxies to XSUAA's login page
@@ -22,7 +23,22 @@ MCP-native clients use RFC 8414 OAuth discovery to find authorization endpoints 
 - CF CLI installed and logged in
 - ARC-1 deployed on BTP CF (see [BTP Cloud Foundry deployment](btp-cloud-foundry-deployment.md))
 
-## Step 1: Create XSUAA Service Instance
+<a id="step-1-create-xsuaa-service-instance"></a>
+
+## Step 1: Identify the XSUAA lifecycle owner
+
+**Deployed with the repository MTA?** It already creates/binds XSUAA and enables
+`SAP_XSUAA_AUTH`. Do not create a second service or bind it again. Check `cf target`, then
+`cf services` and `cf app <app-name>` in the intended space. Record the bound XSUAA instance and
+its application identifier; inspect credentials locally only when needed and never paste them
+into chat or a ticket. Continue to [Step 3](#step-3-assign-role-collections).
+
+**Using a manually managed app or customer-owned service?** Agree on the owner first. The create
+command below is only for a new, manually managed XSUAA instance. For an existing instance, inspect
+it and agree on descriptor updates instead of recreating it. MTA and manual lifecycle changes must
+not compete for ownership. See [configuration ownership](btp-administration.md#configuration-ownership).
+
+### Manual path: create only when a new instance is intended
 
 The `xs-security.json` file defines scopes, roles, and OAuth configuration:
 
@@ -42,7 +58,10 @@ The included `xs-security.json` defines 7 scopes:
 | `git`          | Authorize gated abapGit mutation/egress actions; gCTS mutations remain quarantined | `SAPGit.external_info`/`clone`/`pull`/`push`/branch/unlink actions after server gates          |
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
-And 7 pre-defined role collections (defined in `mta.yaml`, assignable to users in BTP Cockpit):
+The MTA additionally defines 7 role collections (assignable in BTP Cockpit). The manual
+`create-service` command above reads only `xs-security.json`; it does not apply the collections in
+`mta.yaml`. A manual owner must create the required collections and add the current application
+roles before assigning users.
 
 | Role Collection           | Scopes                                                   | Use Case                                  |
 |---------------------------|----------------------------------------------------------|-------------------------------------------|
@@ -54,12 +73,13 @@ And 7 pre-defined role collections (defined in `mta.yaml`, assignable to users i
 | ARC-1 Developer + SQL     | `read`, `write`, `data`, `sql`, `transports`, `git`      | Developer + data + freestyle SQL          |
 | ARC-1 Admin               | all 7                                                    | Administrative access                     |
 
-> **Multi-space deployments.** `mta.yaml` derives the route host, the XSUAA
-> `xsappname`, and these role-collection names from the deploy-time `${space}`
+> **Multi-space deployments.** `mta.yaml` derives the XSUAA
+> `xsappname` and these role-collection names from the deploy-time `${space}`
 > placeholder, so the same mtar can be deployed into several spaces of one
 > subaccount side by side. The collections therefore appear in the cockpit with
 > the space appended — e.g. `ARC-1 Viewer (dev)` in space `dev`. Assign users to
-> the collection for *your* space (Step 3).
+> the collection for *your* space (Step 3). The route uses CF's generated default host unless
+> overridden; read the actual route from `cf app <app-name>` instead of guessing it from the space.
 >
 > **Migrating an existing instance** onto per-space naming changes its route host
 > and `xsappname`: update the MCP client URL, re-assign users to the new
@@ -88,7 +108,12 @@ Role collections are only the user-permission gate. Server flags still have to a
 
 See [authorization.md](authorization.md) for the full three-layer authorization model.
 
-## Step 2: Bind Service and Configure
+<a id="step-2-bind-service-and-configure"></a>
+
+## Step 2: Manual path — bind service and configure
+
+Skip these changes for a completed repository MTA deployment. For a manually managed app, replace
+the example app/service names with the reviewed names and confirm `cf target` before changing it.
 
 ```bash
 # Bind XSUAA to your app
@@ -122,11 +147,18 @@ cf logs arc1-mcp-server --recent | grep XSUAA
 **Assign before you hand out the MCP URL.** The assignment creates the shadow user, so it works for users who have never logged in — use the **Users** tab above, or:
 
 ```bash
-btp assign security/role-collection "ARC-1 Admin (<space>)" \
+btp assign security/role-collection "ARC-1 Viewer (<space>)" \
   --subaccount <subaccount-id> --to-user <email> --of-idp <origin-key>
 ```
 
-Order matters. If the user logs in first, that failed login leaves a cached XSUAA session behind, and every retry keeps returning `invalid_scope` after you grant the role — until they clear their browser cookies. A self-service rollout ("here's the URL, try it") produces that order by default, so it hits essentially every user once. See [`invalid_scope`](#insufficient-scope-invalid_scope) if you are already in that state.
+Choose the least-privilege collection for the task (normally Viewer for source-read acceptance),
+not Admin simply to make login work. Use the **application** identity-provider origin; a platform
+CLI/cockpit login is not proof of the user's application assignment.
+
+Assigning before first sign-in avoids one possible stale-session case. If a user signed in before
+the grant, they may need **Role assigned? Refresh access** and a new MCP sign-in. Cookie deletion
+is not a required setup step. First use the [`invalid_scope` decision table](#insufficient-scope-invalid_scope)
+to distinguish an invalid requested scope from missing authorization or stale client state.
 
 ## Step 4: Verify OAuth Discovery
 
@@ -377,7 +409,12 @@ Events flow through the existing audit sinks (stderr / file / BTP Audit Log Serv
 
 ## Updating xs-security.json
 
-If you need to add redirect URIs or change scopes:
+For MTA-owned services, change the reviewed source descriptor/extension and follow the normal
+MTA deployment procedure so its effective application name, roles and configuration stay aligned.
+Do not replace MTA's merged configuration with the bare base file as a troubleshooting shortcut.
+
+For a **manually managed** service, its owner can add approved redirect URIs or scopes and apply
+the matching descriptor:
 
 ```bash
 # Edit xs-security.json
@@ -501,35 +538,59 @@ Then run `cf update-service arc1-xsuaa -c xs-security.json`.
 API key tokens now include a synthetic expiration (1 year). If you see this error, ensure you're running the latest version of ARC-1.
 
 ### "XSUAA credentials not found"
-Ensure the XSUAA service is bound: `cf services` should show `arc1-xsuaa` bound to your app. If not: `cf bind-service arc1-mcp-server arc1-xsuaa && cf restage arc1-mcp-server`.
+Confirm `cf target` and inspect `cf services` for the intended binding. For MTA-owned resources,
+review the deployment operation and descriptor with its owner. Use [manual binding](#step-2-bind-service-and-configure)
+only for a manually managed app; do not attach a similarly named XSUAA instance just to clear the error.
 
 ### "Insufficient scope" / "invalid_scope"
-The user doesn't have the required role collection assigned. Go to BTP Cockpit → Security → Role Collections and assign the appropriate collection to the user.
+`invalid_scope` is not a diagnosis by itself. OAuth permits it for unknown or malformed scopes as
+well as scopes exceeding the grant ([RFC 6749](https://www.rfc-editor.org/rfc/rfc6749#section-4.1.2.1)).
+Read the exact error description, selected endpoint and intended application identity before
+changing roles or clearing state. Do not share full callback URLs, tokens or binding credentials.
 
-If the collection **is** already assigned and you still get `invalid_scope`, it is one of three things, in the order worth checking.
+| Evidence | Owner and next check |
+|---|---|
+| Scope name reported as invalid/unknown, e.g. an application-qualified `user_attributes` | Application/deployment owner: compare the request, endpoint metadata and effective XSUAA descriptor. Fix the unsupported scope/name qualification. Do not invent an application scope or grant Admin to suppress the error. |
+| User is not allowed any requested scopes | IAM owner: check the required collection is assigned to the correct application identity and contains roles for the bound application identifier. An assignment alone does not prove those roles exist. |
+| Collection exists but has no roles or references an old application identifier | IAM and deployment owners: inspect current role templates and collection contents; use the owner-safe repair below. |
+| Email is assigned but login uses another IdP origin | IAM owner: match the application trust's origin and user identity. Platform CLI/cockpit access does not establish application access. |
+| Correct current roles/origin are verified, but the browser session predates the change | User: try the application refresh action below, then start sign-in again from the MCP client. |
+| Sign-in succeeds but old permissions/tools remain | User: obtain a fresh token through the client's re-authentication flow, then refresh/reload its tool catalog. Reconnecting alone may reuse a cached token. |
 
-**1. Stale XSUAA browser session — the common one.** After an administrator assigns a role collection, the browser can still hold the XSUAA SSO session created before the grant. The failed ARC-1 sign-in page therefore includes **Role assigned? Refresh access**. Use it after the role assignment, wait for the **Access refreshed** page, then return to the MCP client and connect or retry sign-in. A new identity-provider login may be required.
+A fast callback or an absent login form is **not proof** of stale permissions: SSO can also return
+a current grant failure without an interactive form. Preserve a sanitized error code and request
+correlation for the owner instead of drawing conclusions from timing.
+
+#### Refresh access after a verified assignment
+
+After an administrator assigns a role collection, the browser can still hold an older XSUAA SSO
+session. The failed ARC-1 sign-in page includes **Role assigned? Refresh access**. Use it after
+checking the assignment, wait for **Access refreshed**, then return to the MCP client and retry
+sign-in. A new identity-provider login may be required. This cannot repair an unknown scope name.
 
 The action calls XSUAA's documented `/logout.do` endpoint with ARC-1's bound `client_id` and a fixed, allowlisted ARC-1 return URL. Callback query parameters never select the logout host or redirect. Standard Cloud Foundry routes are covered by the `https://*.hana.ondemand.com/**` entry in `xs-security.json`; if `ARC1_PUBLIC_URL` uses a custom domain or path, add its `/oauth/logged-out` URL to `oauth2-configuration.redirect-uris` before deploying.
 
-The action clears the browser SSO session; it does not revoke access tokens already issued to other sessions. If an MCP client cached an old token, disconnect/reconnect it after refreshing access. On ARC-1 versions without the action, use a private browser window or delete cookies for the XSUAA domain (`<identityzone>.authentication.<region>.hana.ondemand.com`) and retry. Read the exact domain from the `url` field under **Cockpit → Application → Service Bindings → arc1-xsuaa → Credentials**.
+The action ends the XSUAA browser SSO session; it does not revoke already issued access tokens or
+necessarily sign out the upstream IdP. Use the MCP client's re-authentication flow if it retains an
+old token, then refresh its tool catalog. On older ARC-1 versions without the action, a fresh private
+browser session is a useful comparison. Only if necessary, clear site data for the verified XSUAA
+domain—not all browser cookies. Read that domain from the intended binding locally, without
+copying its credentials into a support request.
 
 Do not use a bare `<xsuaa-url>/logout` or `/logout.do` URL. XSUAA requires the application client and an allowlisted return URL for a reliable application logout.
 
-Diagnostic, in `cf logs <app-name> --recent`:
+#### Repair missing or stale collection roles with the owner
 
-```
-GET /authorize?...                         302
-GET /oauth/callback?error=invalid_scope    400   ← <200ms later
-```
+In **Security → Role Collections → the intended collection → Roles**, compare the role template
+and application identifier with the currently bound XSUAA application. For example, a Viewer
+collection needs `MCPViewer` from that application, not a similarly named old instance. Roles and
+collections are different objects; templates existing under **Roles** is insufficient evidence.
 
-`/authorize` → `/oauth/callback?error=invalid_scope` in under ~200 ms with no IAS login form in between is a cached session, not a missing role collection — a genuine grant problem costs a full interactive login first. Corollary: if a retry never shows a login form, the cookie is still there.
-
-**2. Role collection with no roles.** Deleting and recreating an XSUAA service instance orphans its role collections — collections are subaccount-scoped and survive the instance, their roles do not. A later `cf deploy` will not re-link them, because the `role-collections` config in `mta.yaml` only creates collections whose names don't already exist.
-
-Check **Cockpit → Security → Role Collections → "ARC-1 Admin (<space>)" → Roles**: it must list role `MCPAdmin` with Application Identifier `arc1-mcp-<space>!t<idx>`. An empty **Roles** tab is the tell. Fix: delete the role collection in the cockpit, `cf deploy` again, re-assign.
-
-**3. Wrong IdP origin.** If the subaccount has a custom IAS tenant (trust configuration shows `sap.custom`), role collections must be assigned with the correct IdP origin. Assigning via `sap.default` when the user logs in via `sap.custom` will result in `invalid_scope`. Platform IdP users (origin `<tenant>-platform`) are for cockpit and CLI access only — a role collection assigned there does nothing for application logon.
+Service replacement can leave stale references. Before repair, record the collection's roles,
+user/group assignments, IdP mappings and lifecycle owner. Have that owner reconcile the current
+roles through the approved MTA/IAM process and verify a fresh user grant. Do not delete/recreate
+collections or XSUAA as a generic login fix: that can disrupt other users and lose assignments or
+mappings. A redeploy alone is not proof that existing collections were repaired.
 
 ### "Invalid client_id" (Copilot Studio)
 DCR registrations are stateless and survive ordinary restart, push, restage, and scale-out while the

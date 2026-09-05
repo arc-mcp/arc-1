@@ -492,9 +492,12 @@ For a single-target instance, widen the application ceiling in the reviewed `.mt
 assign the least-privilege XSUAA collection, and retest the negative boundary. Data, SQL, writes,
 transports, Git, and package scope are independent decisions.
 
-For multi-target v1, only named data preview and SQL can be added. They require both application
-ceilings and target-local destination opt-ins. Writes, activation, transport/Git mutations, ATC,
-ABAP Unit, SAPLint, plugins, UI, and hyperfocused mode remain unavailable.
+For multi-target v1, data preview and SQL require both application ceilings and target-local
+destination opt-ins. The [reviewed tool/action surface](multi-target-setup.md#allowed-tools) also
+includes offline lint, read-only transport inspection, ATC and ABAP Unit. ATC/Unit execute SAP
+workloads: keep them out of routine deployment smoke tests, and deny their actions when not approved.
+Writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI,
+and hyperfocused mode remain unavailable.
 
 When data preview or SQL is enabled, keep the shipped 2 MiB cumulative response allowance and two
 process-wide data-result slots initially. Wide rows can reach the byte ceiling below the 10,000-row
