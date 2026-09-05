@@ -34,6 +34,7 @@ describe('E2E SKTD multi-node write lifecycle', () => {
     const baseId = `/sap/bc/adt/bo/behaviordefinitions/${rootName.toLowerCase()}/source/main`;
     const createId = `${baseId}#type=BDEF/BSO;name=${rootName}.create`;
     const updateId = `${baseId}#type=BDEF/BSO;name=${rootName}.update`;
+    const metaMarker = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
 
     const write = async (args: Record<string, unknown>) =>
       expectToolSuccessOrSkip(ctx, await callTool(client, 'SAPWrite', args));
@@ -79,9 +80,9 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       });
       await activate({ type: 'DDLS', name: rootName });
 
-      // A DDLS/DF KTD has only its root node. Store a body H2 equal to that node id,
-      // then prove the marker-free route-safe SAPRead result survives both the exact
-      // paste-back and the documented recovery path that omits the outer route heading.
+      // A DDLS/DF KTD has only its root node. Store body lines equal to both reserved
+      // routing tokens, then prove the marker-free route-safe SAPRead result survives
+      // both the exact paste-back and recovery without its outer route heading.
       await write({
         action: 'create',
         type: 'SKTD',
@@ -90,15 +91,17 @@ describe('E2E SKTD multi-node write lifecycle', () => {
         refObjectType: 'DDLS/DF',
         refObjectName: rootName,
         refObjectDescription: 'ARC1 single-node KTD E2E view',
-        source: `\\## ${rootName}\n\nSingle-node view documentation.`,
+        source: `\\## ${rootName}\n\nSingle-node view documentation.\n\n\\${metaMarker}\n\nAfter the marker.`,
       });
       await activate({ type: 'SKTD', name: rootName });
 
       const singleNodeRead = expectToolSuccess(
         await callTool(client, 'SAPRead', { type: 'SKTD', name: rootName, version: 'active' }),
       );
-      expect(singleNodeRead).toBe(`## ${rootName}\n\n\\## ${rootName}\n\nSingle-node view documentation.`);
-      expect(singleNodeRead).not.toContain('<!-- arc1:ktd-meta');
+      expect(singleNodeRead).toBe(
+        `## ${rootName}\n\n\\## ${rootName}\n\nSingle-node view documentation.\n\n\\${metaMarker}\n\nAfter the marker.`,
+      );
+      expect(singleNodeRead.split(/\r?\n/)).not.toContain(metaMarker);
       await write({ action: 'update', type: 'SKTD', name: rootName, source: singleNodeRead });
       await write({
         action: 'update',
@@ -171,7 +174,6 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       const rootOnlyRead = expectToolSuccess(
         await callTool(client, 'SAPRead', { type: 'SKTD', name: rootName, version: 'active' }),
       );
-      const metaMarker = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
       expect(rootOnlyRead).toContain(`## ${rootName}`);
       expect(rootOnlyRead).toContain(metaMarker);
       expect(rootOnlyRead).toContain(`${rootName}.create`);

@@ -161,14 +161,18 @@ No tool-schema change: nodes are addressed through the Markdown the reader alrea
   backslash to a body line whose H2 text is an exact node id (or an unknown ADT-shaped id), and
   `SAPWrite` removes exactly that transport escape. Existing leading backslashes are preserved.
   This avoids the ambiguous "first duplicate wins" rule, which would still misroute a root body
-  containing another node's id. `SAPContext` and `SAPRead grep` explicitly request the unescaped
-  analysis form, so search/context semantics remain those of the stored Markdown.
+  containing another node's id. The exact metadata-marker line uses the same reversible escape,
+  including in a genuinely single-node DDLS KTD where no trailer is appended. For complete reads,
+  the writer treats the final unescaped marker as the trailer delimiter; an earlier occurrence is
+  body text. `SAPContext` and `SAPRead grep` explicitly request the unescaped analysis form, so
+  search/context semantics remain those of the stored Markdown.
 - The write-side GET intentionally does not force `version: 'active'`: SAP then returns the current
   working-area envelope and consecutive pre-activation writes accumulate instead of reverting to
   the last active version.
 - `SAPRead` puts its empty-node index and version/cache annotations after the exact reserved
-  `KTD_META_MARKER`. `SAPWrite` strips that context and refuses a heading appended below it, so
-  read-only text cannot be folded into the last node body or silently discard a new section.
+  `KTD_META_MARKER`. `SAPWrite` strips that context at the final marker and refuses a heading
+  appended below it, so read-only text cannot be folded into the last node body or silently
+  discard a new section.
 
 ## 5. Verification status
 
@@ -195,6 +199,7 @@ and five-node KTD, then deleted every object in reverse dependency order.
 | Preserve root and the earlier draft across the second call | passed | passed |
 | Read the inactive multi-node document and its empty-node index | passed | passed |
 | Paste that exact read result back; strip marker/index | passed | passed |
+| Round-trip stored route-heading and metadata-marker collisions | passed | passed |
 | Activate and read all three bodies from the active version | passed | passed |
 | Delete SKTD, BDEF, class, DDLS, and table | passed | passed |
 

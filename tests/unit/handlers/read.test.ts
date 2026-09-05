@@ -514,7 +514,8 @@ describe('SAPRead handler', () => {
     it('returns marker-free single-node route escapes that SAPWrite can consume verbatim', async () => {
       mockFetch.mockReset();
       const name = 'ZI_TRAVEL';
-      const body = `## ${name}\n\nThe travel view.`;
+      const marker = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
+      const body = `## ${name}\n\nThe travel view.\n\n${marker}\n\nStill body text.`;
       const envelope =
         `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="${name}">` +
         `<sktd:element><sktd:id>${name}</sktd:id><sktd:text>${Buffer.from(body).toString('base64')}</sktd:text></sktd:element>` +
@@ -524,8 +525,8 @@ describe('SAPRead handler', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'SKTD', name });
       const text = result.content[0]?.text ?? '';
 
-      expect(text).toBe(`## ${name}\n\n\\## ${name}\n\nThe travel view.`);
-      expect(text).not.toContain('<!-- arc1:ktd-meta');
+      expect(text).toBe(`## ${name}\n\n\\## ${name}\n\nThe travel view.\n\n\\${marker}\n\nStill body text.`);
+      expect(text.split(/\r?\n/)).not.toContain(marker);
       expect(rewriteKtdText(envelope, text)).toBe(envelope);
     });
 

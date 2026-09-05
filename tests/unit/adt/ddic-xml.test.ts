@@ -997,6 +997,43 @@ describe('ddic-xml builders', () => {
         expect(rewriteKtdText(envelope, read)).toBe(envelope);
       });
 
+      it('escapes a metadata-marker line in a marker-free single-node read and round-trips it exactly', () => {
+        const rootBody = `intro\n${KTD_META_MARKER}\nafter`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toBe(`intro\n\\${KTD_META_MARKER}\nafter`);
+        expect(read.split(/\r?\n/)).not.toContain(KTD_META_MARKER);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+        expect(decodeKtdText(envelope, { routeSafe: false })).toBe(rootBody);
+      });
+
+      it('preserves an existing backslash when escaping a metadata-marker body line', () => {
+        const rootBody = `intro\n\\${KTD_META_MARKER}\nafter`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toBe(`intro\n\\\\${KTD_META_MARKER}\nafter`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+      });
+
+      it('uses the last metadata marker as the trailer delimiter', () => {
+        const bodyBeforeTrailer = `## ${ROOT_ID}\n\nintro\n${KTD_META_MARKER}\nafter`;
+        const completeRead = `${bodyBeforeTrailer}\n\n${KTD_META_MARKER}\n[cached:revalidated]`;
+
+        expect(stripKtdMetaTrailer(completeRead)).toBe(bodyBeforeTrailer);
+      });
+
+      it('round-trips an escaped body marker before the real multi-node read trailer', () => {
+        const rootBody = `intro\n${KTD_META_MARKER}\nafter`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'bat body' });
+        const read = decodeKtdText(envelope);
+        const completeRead = `${read}\n\n${KTD_META_MARKER}\n[cached:revalidated]`;
+
+        expect(read).toContain(`\\${KTD_META_MARKER}\nafter`);
+        expect(rewriteKtdText(envelope, completeRead)).toBe(envelope);
+      });
+
       it('ignores the exact read-only SAPRead trailer when a complete result is written back', () => {
         const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root body', [BAT_ID]: 'bat body' });
         const completeRead = `${decodeKtdText(envelope)}\n\n${KTD_META_MARKER}\n[cached:revalidated]\n\nUndocumented nodes: 0`;

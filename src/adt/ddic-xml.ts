@@ -626,7 +626,8 @@ export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolea
     const base64 = singleMatch[1].trim();
     if (!base64) return '';
     try {
-      return Buffer.from(base64, 'base64').toString('utf-8');
+      const decoded = Buffer.from(base64, 'base64').toString('utf-8');
+      return options.routeSafe === false ? decoded : escapeKtdBodyMetaMarkers(decoded);
     } catch {
       return '';
     }
@@ -643,14 +644,13 @@ export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolea
   );
   if (elements.length === 1 && !hasOtherWritableTarget) {
     const knownIds = new Set(allElements.map((element) => element.id.toUpperCase()).filter(Boolean));
-    const escaped =
-      options.routeSafe === false || !elements[0].id
-        ? elements[0].text
-        : escapeKtdBodyRouteHeadings(elements[0].text, knownIds);
+    if (options.routeSafe === false) return elements[0].text;
+    const routeEscaped = elements[0].id ? escapeKtdBodyRouteHeadings(elements[0].text, knownIds) : elements[0].text;
+    const escaped = escapeKtdBodyMetaMarkers(routeEscaped);
     // Keep the backwards-compatible bare body unless escaping exposed a line that the
-    // inverse writer would otherwise store with the transport backslash. In that rare
-    // collision, add the one route boundary needed to make the escape reversible.
-    return escaped === elements[0].text ? elements[0].text : `## ${elements[0].id}\n\n${escaped}`;
+    // section parser would otherwise consume as a route. Metadata-marker escapes are
+    // independently reversible on the unaddressed path and need no outer heading.
+    return routeEscaped === elements[0].text ? escaped : `## ${elements[0].id}\n\n${escaped}`;
   }
 
   // Multiple elements: format as structured Markdown with element headings. Escape
@@ -658,7 +658,12 @@ export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolea
   // one backslash is reversible even when the stored line already starts with one.
   const knownIds = new Set(allElements.map((element) => element.id.toUpperCase()).filter(Boolean));
   return elements
-    .map((e) => `## ${e.id}\n\n${options.routeSafe === false ? e.text : escapeKtdBodyRouteHeadings(e.text, knownIds)}`)
+    .map(
+      (e) =>
+        `## ${e.id}\n\n${
+          options.routeSafe === false ? e.text : escapeKtdBodyMetaMarkers(escapeKtdBodyRouteHeadings(e.text, knownIds))
+        }`,
+    )
     .join('\n\n');
 }
 
@@ -705,7 +710,7 @@ export function formatKtdUndocumentedIndex(envelopeXml: string): string {
   return lines.join('\n');
 }
 
-/** Exact reserved line separating writable KTD Markdown from ARC-1 read-only context. */
+/** Exact transport line separating writable KTD Markdown from ARC-1 read-only context. */
 export const KTD_META_MARKER = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
 
 /** A Markdown level-two heading line. Greedy capture avoids quadratic matching on long input. */
@@ -714,10 +719,11 @@ const KTD_HEADING_LINE = /^##[ \t]+(.*)$/m;
 /**
  * Remove the read-only context that SAPRead appends after `KTD_META_MARKER`.
  *
- * The exact marker line is reserved in KTD Markdown. Matching it exactly avoids silently
- * truncating ordinary comments that merely start with the same text. A heading below the marker
- * is refused because it is most likely a node section appended in the wrong place and would
- * otherwise be silently discarded.
+ * A route-safe SAPRead escapes the same line when it belongs to a stored body. When a complete
+ * read contains both that escaped body line and an appended trailer, the final unescaped marker
+ * is therefore the delimiter. Using the final marker also keeps older complete reads lossless if
+ * their body still contains an unescaped occurrence. A heading below the delimiter is refused
+ * because it is most likely a node section appended in the wrong place.
  */
 export function stripKtdMetaTrailer(markdown: string): string {
   let markerAt = -1;
@@ -728,7 +734,6 @@ export function stripKtdMetaTrailer(markdown: string): string {
     const line = markdown.slice(lineStart, lineEnd).replace(/\r$/, '');
     if (line === KTD_META_MARKER) {
       markerAt = lineStart;
-      break;
     }
     if (newlineAt < 0) break;
     lineStart = newlineAt + 1;
@@ -777,11 +782,12 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
   // be parsed as node boundaries. Its presence makes a lone root route unambiguous,
   // even when that read had no metadata context to append. Compute the inverse once
   // as well so the unaddressed/recovery path cannot persist the transport escape.
-  const unescapedMarkdown = unescapeKtdBodyRouteHeadings(
+  const routeUnescapedMarkdown = unescapeKtdBodyRouteHeadings(
     markdown,
     elements.map((element) => element.id),
   );
-  const hasBodyRouteEscape = unescapedMarkdown !== markdown;
+  const hasBodyRouteEscape = routeUnescapedMarkdown !== markdown;
+  const unescapedMarkdown = unescapeKtdBodyMetaMarkers(routeUnescapedMarkdown);
   const perElement = splitKtdMarkdownByElementId(markdown, elements);
   if (perElement) {
     // The root id is a bare ABAP object name, so a lone `## ZI_FOO` is also a very
@@ -827,7 +833,7 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
   }
 
   // No <sktd:element> at all — rewrite the lone <sktd:text> wherever it sits.
-  const spliced = spliceKtdTextBody(envelopeXml, markdown);
+  const spliced = spliceKtdTextBody(envelopeXml, unescapedMarkdown);
   if (spliced !== undefined) return spliced;
   throw new Error('KTD envelope missing <sktd:text> element — cannot update documentation body.');
 }
@@ -958,7 +964,7 @@ function splitKtdMarkdownByElementId(markdown: string, elements: KtdElement[]): 
       .slice(heading.line + 1, until)
       .join('\n')
       .trim();
-    bodies.set(heading.id, unescapeKtdBodyRouteHeadings(body, knownIds.keys()));
+    bodies.set(heading.id, unescapeKtdBodyMetaMarkers(unescapeKtdBodyRouteHeadings(body, knownIds.keys())));
   });
   return bodies;
 }
@@ -989,6 +995,25 @@ function unescapeKtdBodyRouteHeadings(markdown: string, knownIds: Iterable<strin
     const id = heading.match(KTD_HEADING_LINE)?.[1].trim();
     return id && isKtdRouteHeadingId(id, known) ? escapedHeading : line;
   });
+}
+
+/** Escape an exact metadata-marker body line without losing existing leading backslashes. */
+function escapeKtdBodyMetaMarkers(markdown: string): string {
+  const marker = escapeRegExp(KTD_META_MARKER);
+  return markdown.replace(new RegExp(`^(\\\\*)${marker}(\\r?)$`, 'gm'), (line) => `\\${line}`);
+}
+
+/** Remove the one transport escape added by `escapeKtdBodyMetaMarkers`. */
+function unescapeKtdBodyMetaMarkers(markdown: string): string {
+  const marker = escapeRegExp(KTD_META_MARKER);
+  return markdown.replace(
+    new RegExp(`^\\\\(\\\\*${marker})(\\r?)$`, 'gm'),
+    (_line, escapedMarker: string, carriageReturn: string) => `${escapedMarker}${carriageReturn}`,
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /** Splice new base64 bodies into the addressed elements, leaving every other byte alone. */
