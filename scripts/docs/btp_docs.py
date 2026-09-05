@@ -259,6 +259,12 @@ def on_page_markdown(markdown, page, config, files):
     return heading + separator + "\n" + _banner(ROOT, info, entry) + body
 
 
+def on_pre_build(config):
+    # `on_config` alone is insufficient: mkdocs serve reuses config for watched rebuilds.
+    # Re-read the manifest and Git state so local edits cannot retain stale source labels.
+    on_config(config)
+
+
 def on_post_build(config):
     entries, info = _state
     (Path(config.site_dir) / "llms.txt").write_text(llms_text(ROOT, entries, info), encoding="utf-8")

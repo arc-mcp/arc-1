@@ -205,6 +205,21 @@ class IndexTests(unittest.TestCase):
         with patch.object(docs, "ROOT", self.root), self.assertRaises(PluginError):
             docs.on_config(SimpleNamespace())
 
+    def test_live_preview_rebuild_reloads_manifest_and_git_state(self):
+        (self.root / "docs").mkdir()
+        manifest = self.root / "docs/btp-setup-index.yaml"
+        manifest.write_text(yaml.safe_dump(self.data))
+        self.init_repo()
+        with patch.object(docs, "ROOT", self.root):
+            docs.on_config(SimpleNamespace())
+            self.assertEqual(docs._state[1]["state"], "development")
+            self.entry["feature_status"] = "proposed"
+            self.entry["kind"] = "proposal"
+            manifest.write_text(yaml.safe_dump(self.data))
+            docs.on_pre_build(SimpleNamespace())
+            self.assertEqual(docs._state[1]["state"], "local")
+            self.assertEqual(docs.operational(docs._state[0]), [])
+
 
 class RepositoryTests(unittest.TestCase):
     def test_actual_manifest_and_source_review_paths(self):
