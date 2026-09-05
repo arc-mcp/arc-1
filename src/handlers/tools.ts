@@ -17,6 +17,7 @@
  * - On-premise: full tool set with all types and descriptions
  */
 
+import { KTD_SHORT_TEXT_MAX_LENGTH } from '../adt/ddic-xml.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
@@ -846,6 +847,18 @@ export function getToolDefinitions(
           refObjectDescription: {
             type: 'string',
             description: 'SKTD/KTD create: description of the parent object (shown in Eclipse tooltips).',
+          },
+          shortTexts: {
+            type: 'array',
+            description: `SKTD/KTD create/update: exact SAPRead node ID; text max ${KTD_SHORT_TEXT_MAX_LENGTH} UTF-16 units after whitespace normalization; empty clears; source optional.`,
+            items: {
+              type: 'object',
+              properties: {
+                node: { type: 'string', minLength: 1 },
+                text: { type: 'string' },
+              },
+              required: ['node', 'text'],
+            },
           },
           objects: {
             type: 'array',

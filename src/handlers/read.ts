@@ -6,7 +6,7 @@
 import { resolveBspNameAndPath } from '../adt/bsp-path.js';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
-import { decodeKtdText, formatKtdUndocumentedIndex, KTD_META_MARKER } from '../adt/ddic-xml.js';
+import { decodeKtdText, formatKtdShortTexts, formatKtdUndocumentedIndex, KTD_META_MARKER } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
@@ -578,6 +578,7 @@ export async function handleSAPRead(
         const readOnlyContext = [
           versionWarning,
           cacheHit && revalidated ? '[cached:revalidated]' : undefined,
+          formatKtdShortTexts(source) || undefined,
           index || undefined,
         ]
           .filter((entry): entry is string => Boolean(entry))

@@ -653,6 +653,26 @@
           "type": "string",
           "description": "SKTD/KTD create: description of the parent object (shown in Eclipse tooltips)."
         },
+        "shortTexts": {
+          "type": "array",
+          "description": "SKTD/KTD create/update: exact SAPRead node ID; text max 60 UTF-16 units after whitespace normalization; empty clears; source optional.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "node": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "text"
+            ]
+          }
+        },
         "objects": {
           "type": "array",
           "items": {

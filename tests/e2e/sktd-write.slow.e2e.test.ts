@@ -196,6 +196,12 @@ describe('E2E SKTD multi-node write lifecycle', () => {
         type: 'SKTD',
         name: rootName,
         source: `## ${updateId}\n\nUpdate documentation.`,
+        // Deliberately later-node first: XML splices must follow envelope offsets,
+        // not the caller's array order, when Base64 lengths change.
+        shortTexts: [
+          { node: updateId, text: 'Update a KTD root' },
+          { node: createId, text: 'Create a KTD root' },
+        ],
       });
 
       const inactiveRead = expectToolSuccess(
@@ -205,8 +211,10 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       expect(inactiveRead).toContain(`\\## ${rootName}`);
       expect(inactiveRead).toContain(`## ${createId}`);
       expect(inactiveRead).toContain('Create documentation.');
+      expect(inactiveRead).toContain(`${createId} [optional]: Create a KTD root`);
       expect(inactiveRead).toContain(`## ${updateId}`);
       expect(inactiveRead).toContain('Update documentation.');
+      expect(inactiveRead).toContain(`${updateId} [optional]: Update a KTD root`);
       expect(inactiveRead).toContain('<!-- arc1:ktd-meta');
 
       // The exact SAPRead result includes the read-only empty-node index. The writer must strip
@@ -220,6 +228,22 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       expect(activeRead).toContain('Root documentation.');
       expect(activeRead).toContain('Create documentation.');
       expect(activeRead).toContain('Update documentation.');
+      expect(activeRead).toContain(`${createId} [optional]: Create a KTD root`);
+      expect(activeRead).toContain(`${updateId} [optional]: Update a KTD root`);
+
+      await write({
+        action: 'update',
+        type: 'SKTD',
+        name: rootName,
+        shortTexts: [{ node: createId, text: '' }],
+      });
+      await activate({ type: 'SKTD', name: rootName });
+      const afterClear = expectToolSuccess(
+        await callTool(client, 'SAPRead', { type: 'SKTD', name: rootName, version: 'active' }),
+      );
+      expect(afterClear).not.toContain('Create a KTD root');
+      expect(afterClear).toContain('Update a KTD root');
+      expect(afterClear).toContain('Create documentation.');
     } finally {
       await bestEffortDelete(client, 'SKTD', rootName);
       await bestEffortDelete(client, 'BDEF', rootName);

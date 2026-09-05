@@ -10,7 +10,7 @@ import {
   safeUpdateSource,
   unlockObject,
 } from '../../adt/crud.js';
-import { rewriteKtdText } from '../../adt/ddic-xml.js';
+import { type KtdShortText, rewriteKtdDocument } from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import {
@@ -121,7 +121,11 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // 2026-09-02). SAPRead defaults to "active", so its node list can lag this one;
     // every refusal raised below lists the ids of the envelope it actually merged.
     const { source: currentEnvelope } = await client.getKtd(name);
-    const body = rewriteKtdText(currentEnvelope, source);
+    const body = rewriteKtdDocument(
+      currentEnvelope,
+      hasSource ? source : undefined,
+      args.shortTexts as KtdShortText[] | undefined,
+    );
     await safeUpdateObject(
       client.http,
       client.safety,
