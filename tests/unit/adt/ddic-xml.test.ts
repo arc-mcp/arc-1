@@ -10,11 +10,14 @@ import {
   buildServiceBindingXml,
   buildTableTypeXml,
   decodeKtdText,
+  formatKtdUndocumentedIndex,
+  KTD_META_MARKER,
   normalizeAdtResponsible,
   normalizeCloudResponsible,
   normalizeSrvbBindingType,
   parseTableType,
   rewriteKtdText,
+  stripKtdMetaTrailer,
 } from '../../../src/adt/ddic-xml.js';
 
 describe('ddic-xml builders', () => {
@@ -870,6 +873,354 @@ describe('ddic-xml builders', () => {
         expect(() => rewriteKtdText(xml, 'x')).toThrow(/missing <sktd:text>/);
       });
 
+      // -- Multi-element envelopes (one <sktd:element> per documented node) --
+      //
+      // Shape mirrors the live ZI_TravelTP KTD read back from S/4HANA PCE
+      // 2025.1: the root node's <sktd:id> is the object name, every other node
+      // carries the ADT fragment URI of the element it documents.
+      const ROOT_ID = 'ZI_TRAVELTP';
+      const BAT_ID = '/sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main#type=BDEF/BAT;name=%25_OWN';
+      const BAF_ID =
+        '/sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main#type=BDEF/BAF;name=ZI_TravelTP.ReadTravelSummary';
+
+      const b64 = (text: string) => Buffer.from(text, 'utf-8').toString('base64');
+
+      const buildMultiEnvelope = (bodies: Record<string, string>) =>
+        '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" ' +
+        'adtcore:responsible="DEVELOPER" adtcore:masterLanguage="EN" adtcore:name="ZI_TRAVELTP" ' +
+        'adtcore:type="SKTD/TYP">' +
+        '<adtcore:packageRef adtcore:name="ZTRAVEL"/>' +
+        '<sktd:refObject adtcore:name="ZI_TravelTP" adtcore:type="BDEF/BDO"/>' +
+        Object.entries(bodies)
+          .map(
+            ([id, text]) => `<sktd:element><sktd:id>${id}</sktd:id><sktd:text>${b64(text)}</sktd:text></sktd:element>`,
+          )
+          .join('') +
+        '</sktd:docu>';
+
+      it('updates every addressed node, not just the first (regression: multi-node write hit root only)', () => {
+        const envelope = buildMultiEnvelope({
+          [ROOT_ID]: 'old root',
+          [BAT_ID]: 'old bat',
+          [BAF_ID]: 'old baf',
+        });
+        const markdown = `## ${ROOT_ID}\n\nnew root\n\n## ${BAT_ID}\n\nnew bat\n\n## ${BAF_ID}\n\nnew baf`;
+
+        const rewritten = rewriteKtdText(envelope, markdown);
+
+        expect(rewritten).toContain(`<sktd:text>${b64('new root')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('new bat')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('new baf')}</sktd:text>`);
+        // No stale bodies survive, and the whole document did NOT land in node #1.
+        expect(rewritten).not.toContain(b64('old bat'));
+        expect(rewritten).not.toContain(b64('old baf'));
+        expect(rewritten).not.toContain(b64(markdown));
+        // Each body must land in ITS node: a mutant rotating bodies among the three
+        // addressed elements passes every assertion above and only fails this one.
+        expect(decodeKtdText(rewritten)).toBe(markdown);
+      });
+
+      it('leaves unaddressed nodes byte-identical (partial update of one node)', () => {
+        const envelope = buildMultiEnvelope({
+          [ROOT_ID]: 'root stays',
+          [BAT_ID]: 'bat stays',
+          [BAF_ID]: 'baf changes',
+        });
+        const rewritten = rewriteKtdText(envelope, `## ${BAF_ID}\n\nbaf updated`);
+
+        expect(rewritten).toContain(`<sktd:text>${b64('root stays')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('bat stays')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('baf updated')}</sktd:text>`);
+        expect(rewritten).not.toContain(b64('baf changes'));
+      });
+
+      it('round-trips a multi-node envelope through decode -> rewrite unchanged', () => {
+        const envelope = buildMultiEnvelope({
+          [ROOT_ID]: 'root body',
+          [BAT_ID]: 'bat body',
+        });
+        const rewritten = rewriteKtdText(envelope, decodeKtdText(envelope));
+        expect(rewritten).toBe(envelope);
+      });
+
+      it('escapes a stored body heading equal to its own node id and round-trips it exactly', () => {
+        const rootBody = `## ${ROOT_ID}\n\nThe travel BO.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'bat body' });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toContain(`## ${ROOT_ID}\n\n\\## ${ROOT_ID}\n\nThe travel BO.`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+        expect(decodeKtdText(envelope, { routeSafe: false })).toContain(
+          `## ${ROOT_ID}\n\n## ${ROOT_ID}\n\nThe travel BO.`,
+        );
+      });
+
+      it('adds a reversible route boundary for a self-id heading in a single-element KTD', () => {
+        const rootBody = `## ${ROOT_ID}\n\nThe only-node body.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toBe(`## ${ROOT_ID}\n\n\\## ${ROOT_ID}\n\nThe only-node body.`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+        expect(decodeKtdText(envelope, { routeSafe: false })).toBe(rootBody);
+      });
+
+      it('removes the transport escape when a single-node update omits its outer route heading', () => {
+        const rootBody = `## ${ROOT_ID}\n\nThe only-node body.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+
+        expect(rewriteKtdText(envelope, `\\## ${ROOT_ID}\n\nThe only-node body.`)).toBe(envelope);
+
+        const literalBackslashBody = `\\## ${ROOT_ID}\n\nKeep one literal backslash.`;
+        const withLiteralBackslash = buildMultiEnvelope({ [ROOT_ID]: literalBackslashBody });
+        expect(rewriteKtdText(withLiteralBackslash, `\\\\## ${ROOT_ID}\n\nKeep one literal backslash.`)).toBe(
+          withLiteralBackslash,
+        );
+      });
+
+      it('escapes a body heading equal to another node id without moving either body', () => {
+        const rootBody = `References this route literally:\n\n## ${BAT_ID}\n\nStill root text.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'actual bat body' });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toContain(`\\## ${BAT_ID}\n\nStill root text.`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+      });
+
+      it('preserves an existing backslash when escaping a route-shaped body heading', () => {
+        const rootBody = `\\## ${ROOT_ID}\n\nliteral escaped heading`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'bat body' });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toContain(`\\\\## ${ROOT_ID}\n\nliteral escaped heading`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+      });
+
+      it('escapes a metadata-marker line in a marker-free single-node read and round-trips it exactly', () => {
+        const rootBody = `intro\n${KTD_META_MARKER}\nafter`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toBe(`intro\n\\${KTD_META_MARKER}\nafter`);
+        expect(read.split(/\r?\n/)).not.toContain(KTD_META_MARKER);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+        expect(decodeKtdText(envelope, { routeSafe: false })).toBe(rootBody);
+      });
+
+      it('preserves an existing backslash when escaping a metadata-marker body line', () => {
+        const rootBody = `intro\n\\${KTD_META_MARKER}\nafter`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+        const read = decodeKtdText(envelope);
+
+        expect(read).toBe(`intro\n\\\\${KTD_META_MARKER}\nafter`);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
+      });
+
+      it('uses the last metadata marker as the trailer delimiter', () => {
+        const bodyBeforeTrailer = `## ${ROOT_ID}\n\nintro\n${KTD_META_MARKER}\nafter`;
+        const completeRead = `${bodyBeforeTrailer}\n\n${KTD_META_MARKER}\n[cached:revalidated]`;
+
+        expect(stripKtdMetaTrailer(completeRead)).toBe(bodyBeforeTrailer);
+      });
+
+      it('round-trips an escaped body marker before the real multi-node read trailer', () => {
+        const rootBody = `intro\n${KTD_META_MARKER}\nafter`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody, [BAT_ID]: 'bat body' });
+        const read = decodeKtdText(envelope);
+        const completeRead = `${read}\n\n${KTD_META_MARKER}\n[cached:revalidated]`;
+
+        expect(read).toContain(`\\${KTD_META_MARKER}\nafter`);
+        expect(rewriteKtdText(envelope, completeRead)).toBe(envelope);
+      });
+
+      it('ignores the exact read-only SAPRead trailer when a complete result is written back', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root body', [BAT_ID]: 'bat body' });
+        const completeRead = `${decodeKtdText(envelope)}\n\n${KTD_META_MARKER}\n[cached:revalidated]\n\nUndocumented nodes: 0`;
+        expect(rewriteKtdText(envelope, completeRead)).toBe(envelope);
+      });
+
+      it('reserves only the exact metadata marker line and refuses a section appended below it', () => {
+        const bodyMention = `body\n<!-- arc1:ktd-meta is discussed here -->`;
+        expect(stripKtdMetaTrailer(bodyMention)).toBe(bodyMention);
+        expect(() =>
+          rewriteKtdText(
+            buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' }),
+            `## ${ROOT_ID}\n\nroot\n\n${KTD_META_MARKER}\ncontext\n\n## ${BAT_ID}\n\nbat`,
+          ),
+        ).toThrow(/below the read-only SAPRead marker/);
+      });
+
+      it('keeps "## ..." lines that are not node ids as body content', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'old', [BAT_ID]: 'bat' });
+        const body = '## Overview\n\nSome prose.\n\n## Details\n\nMore prose.';
+        const rewritten = rewriteKtdText(envelope, `## ${ROOT_ID}\n\n${body}`);
+        expect(rewritten).toContain(`<sktd:text>${b64(body)}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('bat')}</sktd:text>`);
+      });
+
+      it('refuses a lone root-name H2 instead of silently deleting a plausible title', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: '', [BAT_ID]: '' });
+        const markdown = `## ${ROOT_ID}\n\nThe travel business object.\n\n## Purpose\n\nExplain its purpose.`;
+
+        expect(() => rewriteKtdText(envelope, markdown)).toThrow(/ambiguous[\s\S]*silently remove/i);
+        const visibleTitle = `# ${ROOT_ID}\n\nThe travel business object.`;
+        const rewritten = rewriteKtdText(envelope, visibleTitle);
+        expect(rewritten).toContain(`<sktd:id>${ROOT_ID}</sktd:id><sktd:text>${b64(visibleTitle)}</sktd:text>`);
+      });
+
+      it('heads a lone documented node when writable empty siblings exist, so the index instruction round-trips', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root body', [BAT_ID]: '' });
+        const read = decodeKtdText(envelope);
+        const index = formatKtdUndocumentedIndex(envelope);
+
+        expect(read).toBe(`## ${ROOT_ID}\n\nroot body`);
+        expect(index).toContain(BAT_ID.split(';name=')[1]);
+        const edited = `${read}\n\n## ${BAT_ID}\n\nbat body\n\n${KTD_META_MARKER}\n${index}`;
+        const rewritten = rewriteKtdText(envelope, edited);
+        expect(decodeKtdText(rewritten)).toBe(`## ${ROOT_ID}\n\nroot body\n\n## ${BAT_ID}\n\nbat body`);
+      });
+
+      it('refuses an unaddressed blob on a multi-node KTD instead of silently overwriting the root', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
+        expect(() => rewriteKtdText(envelope, 'just some text')).toThrow(/addresses no node/i);
+      });
+
+      it('names the unknown node and lists the valid ids when a heading does not match', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
+        expect(() => rewriteKtdText(envelope, `## ${BAF_ID}\n\nbody`)).toThrow(
+          /ReadTravelSummary[\s\S]*does not exist[\s\S]*Known node ids:[\s\S]*I_TRAVELTP/i,
+        );
+      });
+
+      it('still writes the single-element body with no heading (back-compat)', () => {
+        const rewritten = rewriteKtdText(buildEnvelope('b2xk'), '# Plain\n\nBody');
+        expect(rewritten).toContain(`<sktd:text>${b64('# Plain\n\nBody')}</sktd:text>`);
+      });
+
+      it('treats a path-shaped prose heading as body content, not as an unknown node', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'old', [BAT_ID]: 'bat' });
+        const body = '## /notes/package layout\n\nProse, not a node id.';
+        const rewritten = rewriteKtdText(envelope, `## ${ROOT_ID}\n\n${body}`);
+        expect(rewritten).toContain(`<sktd:text>${b64(body)}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('bat')}</sktd:text>`);
+      });
+
+      it('writes an unaddressed body to the only documented node, leaving empty siblings alone', () => {
+        // An explicitly unaddressed body still targets the sole documented node.
+        // BAT_ID first, so the documented node is NOT elements[0]: the test tells the
+        // "single documented node" selection apart from the old first-match write.
+        const envelope = buildMultiEnvelope({ [BAT_ID]: '', [ROOT_ID]: 'only root documented', [BAF_ID]: '' });
+        const rewritten = rewriteKtdText(envelope, 'root rewritten');
+
+        expect(decodeKtdText(rewritten)).toBe(`## ${ROOT_ID}\n\nroot rewritten`);
+        expect(rewritten).toContain(`<sktd:id>${BAT_ID}</sktd:id><sktd:text></sktd:text>`);
+        expect(rewritten).toContain(`<sktd:id>${BAF_ID}</sktd:id><sktd:text></sktd:text>`);
+      });
+
+      it('writes an unaddressed body to the root node when nothing is documented yet (fresh create)', () => {
+        const envelope = buildMultiEnvelope({ [BAT_ID]: '', [ROOT_ID]: '', [BAF_ID]: '' });
+        const rewritten = rewriteKtdText(envelope, 'first ever body');
+
+        // Root is matched by id, not by document order — BAT_ID comes first here.
+        expect(rewritten).toContain(`<sktd:id>${ROOT_ID}</sktd:id><sktd:text>${b64('first ever body')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:id>${BAT_ID}</sktd:id><sktd:text></sktd:text>`);
+      });
+
+      it('matches node ids case-insensitively and resolves to the envelope spelling (root is upper-cased on the wire)', () => {
+        // Live shape: the root id is `ZI_TRAVELTP` while the object is spelled
+        // `ZI_TravelTP` in every other id of the same envelope. A heading in the
+        // second spelling used to be folded into the previous node's text — silently.
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'old root', [BAT_ID]: 'old bat' });
+        const rewritten = rewriteKtdText(envelope, `## ${BAT_ID}\n\nnew bat\n\n## ZI_TravelTP\n\nnew root`);
+
+        expect(rewritten).toContain(`<sktd:id>${ROOT_ID}</sktd:id><sktd:text>${b64('new root')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:id>${BAT_ID}</sktd:id><sktd:text>${b64('new bat')}</sktd:text>`);
+        expect(rewritten).not.toContain(b64('new bat\n\n## ZI_TravelTP\n\nnew root'));
+      });
+
+      it('refuses a node addressed twice in one body', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
+        expect(() => rewriteKtdText(envelope, `## ${ROOT_ID}\n\nx\n\n## ${ROOT_ID}\n\ny`)).toThrow(/appears twice/);
+      });
+
+      it('refuses stray text before the first heading and names the node it would have joined', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
+        expect(() => rewriteKtdText(envelope, `stray\n\n## ${BAT_ID}\n\nx`)).toThrow(
+          new RegExp(
+            `before its first "## <node id>" heading[\\s\\S]*${BAT_ID.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`,
+          ),
+        );
+      });
+
+      it('refuses one unknown ADT-shaped heading even when another heading is valid (no partial write)', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
+        expect(() => rewriteKtdText(envelope, `## ${ROOT_ID}\n\nok\n\n## ${BAF_ID}\n\nnope`)).toThrow(
+          /ReadTravelSummary[\s\S]*does not exist/,
+        );
+      });
+
+      it('lists every unknown heading, not just the first', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root' });
+        const other = BAF_ID.replace('ReadTravelSummary', 'GetPhoto');
+        expect(() => rewriteKtdText(envelope, `## ${BAF_ID}\n\na\n\n## ${other}\n\nb`)).toThrow(
+          /nodes[\s\S]*ReadTravelSummary[\s\S]*GetPhoto[\s\S]*do not exist/,
+        );
+      });
+
+      it('refuses to write into an element that carries no <sktd:text> instead of inventing one', () => {
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZX">' +
+          `<sktd:element><sktd:id>${ROOT_ID}</sktd:id><sktd:parent/></sktd:element>` +
+          '</sktd:docu>';
+        expect(() => rewriteKtdText(envelope, `## ${ROOT_ID}\n\nx`)).toThrow(/does not synthesize one/);
+      });
+
+      it('preserves a documented non-writable section on read-edit-write but refuses changing it', () => {
+        const lockedId = `${BAT_ID}.LOCKED`;
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZI_TRAVELTP">' +
+          `<sktd:element sktd:longTextObligation="optional"><sktd:id>${ROOT_ID}</sktd:id>` +
+          `<sktd:text>${b64('root body')}</sktd:text></sktd:element>` +
+          `<sktd:element sktd:longTextObligation="none" sktd:canHaveDocumentation="false">` +
+          `<sktd:id>${lockedId}</sktd:id><sktd:text>${b64('server-owned body')}</sktd:text></sktd:element>` +
+          '</sktd:docu>';
+        const read = decodeKtdText(envelope);
+        const editedRoot = read.replace('root body', 'updated root');
+
+        const rewritten = rewriteKtdText(envelope, editedRoot);
+        expect(rewritten).toContain(`<sktd:text>${b64('updated root')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('server-owned body')}</sktd:text>`);
+        expect(() => rewriteKtdText(envelope, read.replace('server-owned body', 'changed locked body'))).toThrow(
+          /does not accept long-text/,
+        );
+      });
+
+      it('heads a lone documented non-writable node when a different writable target is empty', () => {
+        const lockedId = `${BAT_ID}.LOCKED`;
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZI_TRAVELTP">' +
+          `<sktd:element sktd:longTextObligation="none"><sktd:id>${lockedId}</sktd:id>` +
+          `<sktd:text>${b64('server-owned body')}</sktd:text></sktd:element>` +
+          `<sktd:element sktd:longTextObligation="optional"><sktd:id>${ROOT_ID}</sktd:id><sktd:text/></sktd:element>` +
+          '</sktd:docu>';
+
+        expect(decodeKtdText(envelope)).toBe(`## ${lockedId}\n\nserver-owned body`);
+        expect(formatKtdUndocumentedIndex(envelope)).toContain(`root: ${ROOT_ID}`);
+      });
+
+      it('refuses an empty body even on a single-node KTD (a bodyless update must not erase docs)', () => {
+        expect(() => rewriteKtdText(buildEnvelope(b64('precious')), '')).toThrow(/empty body/);
+        expect(() => rewriteKtdText(buildEnvelope(b64('precious')), '   \n\n')).toThrow(/empty body/);
+      });
+
+      it('clears one node when it is addressed explicitly with an empty section', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
+        const rewritten = rewriteKtdText(envelope, `## ${BAT_ID}\n\n`);
+        expect(rewritten).toContain(`<sktd:id>${BAT_ID}</sktd:id><sktd:text></sktd:text>`);
+        expect(rewritten).toContain(`<sktd:text>${b64('root')}</sktd:text>`);
+      });
+
       it('Markdown body is encoded, not interpolated as raw text (prevents XML injection via user input)', () => {
         const malicious = '</sktd:text><evil/>not-encoded';
         const rewritten = rewriteKtdText(buildEnvelope(''), malicious);
@@ -877,6 +1228,148 @@ describe('ddic-xml builders', () => {
         expect(rewritten).not.toContain('not-encoded');
         // And the round-trip still gives the exact input back
         expect(decodeKtdText(rewritten)).toBe(malicious);
+      });
+    });
+
+    describe('live envelope shape (S/4HANA PCE 2025.1 capture of ZI_TravelTP)', () => {
+      // Three <sktd:element> blocks copied verbatim from the wire, exercising every
+      // structural feature the simplified fixtures above do not have: element
+      // attributes, line-wrapped Base64, <adtcore:objectReference>, <sktd:parent>,
+      // the <sktd:shortText> ATTRIBUTE form, <atom:link>, and — for a node SAP has
+      // created but nobody has documented — a self-closing <sktd:text/>.
+      const HTML_FN_ID =
+        '/sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main#type=BDEF/BAF;name=ZI_TravelTP.ReadTravelSummaryHTML';
+      const FINALIZE_ID =
+        '/sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main#type=BDEF/BSO;name=ZI_TRAVELTP.finalize';
+
+      const liveEnvelope = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<sktd:docu adtcore:responsible="DEVELOPER" adtcore:masterLanguage="EN" adtcore:name="ZI_TRAVELTP" adtcore:type="SKTD/TYP" xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core">',
+        '    <adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/ztravel" adtcore:type="DEVC/K" adtcore:name="ZTRAVEL" adtcore:description="Travel"/>',
+        '    <sktd:refObject adtcore:uri="/sap/bc/adt/bo/behaviordefinitions/zi_traveltp" adtcore:type="BDEF/BDO" adtcore:name="ZI_TRAVELTP" adtcore:description="Interface for Travel"/>',
+        '    <sktd:element sktd:canHaveDocumentation="true" sktd:notAssigned="false" sktd:longTextObligation="optional" sktd:displayName="finalize" sktd:collapseNode="false">',
+        `        <sktd:id>${FINALIZE_ID}</sktd:id>`,
+        '        <sktd:text>UkFQIHNhdmVyIGBGSU5BTElaRWAgc3RlcC4gRGV0ZXJtaW5hdGlvbnMtb24tc2F2ZSBydW4gaGVy',
+        'ZSwgYmVmb3JlIHRoZSBjb25zaXN0ZW5jeSBjaGVjay4gVGhlIEJPIGlzIGV4dGVuc2libGUgZm9y',
+        'IGRldGVybWluYXRpb25zIG9uIHNhdmUu</sktd:text>',
+        '        <adtcore:objectReference adtcore:type="BDEF/BSO" adtcore:name="finalize" adtcore:description="Saver: FINALIZE — last determinations before save"/>',
+        '        <sktd:parent>ZI_TRAVELTP</sktd:parent>',
+        '        <sktd:shortText sktd:text="U2F2ZXI6IEZJTkFMSVpFIOKAlCBsYXN0IGRldGVybWluYXRpb25zIGJlZm9yZSBzYXZl" sktd:obligation="optional"/>',
+        '        <atom:link href="/sap/bc/adt/repository/informationsystem/elementinfo?path=zi_traveltp.finalize&amp;type=bdef/bso" rel="http://www.sap.com/adt/relations/elementinfo" title="Show Element Information" xmlns:atom="http://www.w3.org/2005/Atom"/>',
+        '    </sktd:element>',
+        '    <sktd:element sktd:canHaveDocumentation="true" sktd:notAssigned="false" sktd:longTextObligation="mandatory" sktd:displayName="ReadTravelSummaryHTML" sktd:collapseNode="false">',
+        `        <sktd:id>${HTML_FN_ID}</sktd:id>`,
+        '        <sktd:text/>',
+        '        <adtcore:objectReference adtcore:type="BDEF/BAF" adtcore:name="ReadTravelSummaryHTML"/>',
+        '        <sktd:parent>/sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main#type=BDEF/BAE;name=ZI_TravelTP</sktd:parent>',
+        '        <sktd:shortText sktd:text="" sktd:obligation="optional"/>',
+        '        <atom:link href="/sap/bc/adt/repository/informationsystem/elementinfo?path=zi_traveltp.zi_traveltp.readtravelsummaryhtml&amp;type=bdef/baf" rel="http://www.sap.com/adt/relations/elementinfo" title="Show Element Information" xmlns:atom="http://www.w3.org/2005/Atom"/>',
+        '    </sktd:element>',
+        '    <sktd:instruction sktd:instructionId="shorttext" sktd:instructionText="Provide a meaningful short text with 60 characters max."/>',
+        '</sktd:docu>',
+      ].join('\n');
+
+      it('decodes line-wrapped Base64 and hides nodes SAP created but nobody documented', () => {
+        const decoded = decodeKtdText(liveEnvelope);
+        expect(decoded).toContain('RAP saver `FINALIZE` step. Determinations-on-save run here');
+        // One sibling is writable but empty, so the documented node keeps a routing heading.
+        expect(decoded).toContain(`## ${FINALIZE_ID}`);
+        expect(decoded).not.toContain('ReadTravelSummaryHTML');
+      });
+
+      it('fills a self-closing <sktd:text/> and leaves the rest of the document byte-identical', () => {
+        const body = 'Function, `result [0..1] ZD_Base64`, `authorization : instance`.';
+        const rewritten = rewriteKtdText(
+          liveEnvelope,
+          `## ${FINALIZE_ID}\n\nRAP saver \`FINALIZE\` step. Determinations-on-save run here, before the consistency check. The BO is extensible for determinations on save.\n\n## ${HTML_FN_ID}\n\n${body}`,
+        );
+
+        const encoded = Buffer.from(body, 'utf-8').toString('base64');
+        expect(rewritten).toContain(`<sktd:text>${encoded}</sktd:text>`);
+        expect(rewritten).not.toContain('<sktd:text/>');
+        // The <sktd:shortText> ATTRIBUTE form must never be mistaken for the body.
+        expect(rewritten).toContain('<sktd:shortText sktd:text="" sktd:obligation="optional"/>');
+        expect(rewritten).toContain(
+          '<sktd:shortText sktd:text="U2F2ZXI6IEZJTkFMSVpFIOKAlCBsYXN0IGRldGVybWluYXRpb25zIGJlZm9yZSBzYXZl" sktd:obligation="optional"/>',
+        );
+        // Element attributes, objectReference, parent, atom:link and the instruction all survive.
+        expect(rewritten).toContain('sktd:longTextObligation="mandatory"');
+        expect(rewritten).toContain('<sktd:parent>ZI_TRAVELTP</sktd:parent>');
+        expect(rewritten).toContain('<sktd:instruction sktd:instructionId="shorttext"');
+        expect(rewritten).toContain('adtcore:responsible="DEVELOPER"');
+      });
+
+      it('indexes the nodes SAP pre-created but nobody documented, grouped by base and type', () => {
+        const index = formatKtdUndocumentedIndex(liveEnvelope);
+        expect(index).toContain('Undocumented nodes: 1');
+        expect(index).toContain('base: /sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main');
+        expect(index).toContain('BDEF/BAF (1): ZI_TravelTP.ReadTravelSummaryHTML');
+        // The documented sibling is not an undocumented node.
+        expect(index).not.toContain('finalize');
+      });
+
+      it('lists an undocumented root by its bare name and groups several types under one base', () => {
+        const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+          '<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text/></sktd:element>' +
+          `<sktd:element><sktd:id>${base}#type=BDEF/BAC;name=ZBDEF.SetPhoto</sktd:id><sktd:text/></sktd:element>` +
+          `<sktd:element><sktd:id>${base}#type=BDEF/BAC;name=ZBDEF.DeletePhoto</sktd:id><sktd:text/></sktd:element>` +
+          `<sktd:element><sktd:id>${base}#type=BDEF/BAF;name=ZBDEF.GetPhoto</sktd:id><sktd:text/></sktd:element>` +
+          '</sktd:docu>';
+        const index = formatKtdUndocumentedIndex(envelope);
+        expect(index).toContain('Undocumented nodes: 4');
+        expect(index).toContain('root: ZBDEF');
+        expect(index).toContain(`base: ${base}`);
+        expect(index).toContain('BDEF/BAC (2): ZBDEF.SetPhoto, ZBDEF.DeletePhoto');
+        expect(index).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
+      });
+
+      it('indexes and writes only nodes Eclipse considers long-text-capable', () => {
+        const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
+        const blockedId = `${base}#type=BDEF/BSO;name=ZBDEF.blocked`;
+        const obligationWinsId = `${base}#type=BDEF/BSO;name=ZBDEF.optional`;
+        const forbiddenId = `${base}#type=BDEF/BSO;name=ZBDEF.forbidden`;
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+          `<sktd:element sktd:canHaveDocumentation="false"><sktd:id>${blockedId}</sktd:id><sktd:text/></sktd:element>` +
+          `<sktd:element sktd:canHaveDocumentation="false" sktd:longTextObligation="optional"><sktd:id>${obligationWinsId}</sktd:id><sktd:text/></sktd:element>` +
+          `<sktd:element sktd:canHaveDocumentation="true" sktd:longTextObligation="forbidden"><sktd:id>${forbiddenId}</sktd:id><sktd:text/></sktd:element>` +
+          '</sktd:docu>';
+
+        const index = formatKtdUndocumentedIndex(envelope);
+        expect(index).toContain('Undocumented nodes: 1');
+        expect(index).toContain('ZBDEF.optional');
+        expect(index).not.toContain('ZBDEF.blocked');
+        expect(index).not.toContain('ZBDEF.forbidden');
+        expect(() => rewriteKtdText(envelope, `## ${blockedId}\n\nblocked`)).toThrow(/does not accept long-text/);
+        expect(() => rewriteKtdText(envelope, `## ${forbiddenId}\n\nblocked`)).toThrow(/does not accept long-text/);
+        expect(rewriteKtdText(envelope, `## ${obligationWinsId}\n\nallowed`)).toContain(
+          `<sktd:text>${Buffer.from('allowed').toString('base64')}</sktd:text>`,
+        );
+      });
+
+      it('returns an empty index when every node carries text', () => {
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd">' +
+          `<sktd:element><sktd:id>ZX</sktd:id><sktd:text>${Buffer.from('docs').toString('base64')}</sktd:text></sktd:element>` +
+          '</sktd:docu>';
+        expect(formatKtdUndocumentedIndex(envelope)).toBe('');
+      });
+
+      it('writes one undocumented node without touching the documented sibling', () => {
+        const rewritten = rewriteKtdText(liveEnvelope, `## ${HTML_FN_ID}\n\nHTML variant.`);
+
+        // The finalize body keeps SAP's original line-wrapped Base64, untouched.
+        expect(rewritten).toContain('UkFQIHNhdmVyIGBGSU5BTElaRWAgc3RlcC4gRGV0ZXJtaW5hdGlvbnMtb24tc2F2ZSBydW4gaGVy');
+        expect(rewritten).toContain(
+          `<sktd:text>${Buffer.from('HTML variant.', 'utf-8').toString('base64')}</sktd:text>`,
+        );
+        // And both nodes now read back as addressable sections.
+        const decoded = decodeKtdText(rewritten);
+        expect(decoded).toContain(`## ${FINALIZE_ID}`);
+        expect(decoded).toContain(`## ${HTML_FN_ID}`);
+        expect(decoded).toContain('HTML variant.');
       });
     });
   });

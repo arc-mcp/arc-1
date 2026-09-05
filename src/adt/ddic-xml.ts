@@ -595,7 +595,7 @@ export function buildServiceBindingXml(params: ServiceBindingCreateParams): stri
  * an `<sktd:id>` and a Base64-encoded `<sktd:text>`. We extract all of them
  * and return a combined Markdown document with element headings.
  */
-export function decodeKtdText(envelopeXml: string): string {
+export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolean } = {}): string {
   // Extract all <sktd:element> blocks with their id and text
   const elementPattern = /<sktd:element[^>]*>[\s\S]*?<sktd:id>([^<]*)<\/sktd:id>[\s\S]*?<\/sktd:element>/g;
   const elements: Array<{ id: string; text: string }> = [];
@@ -626,38 +626,459 @@ export function decodeKtdText(envelopeXml: string): string {
     const base64 = singleMatch[1].trim();
     if (!base64) return '';
     try {
-      return Buffer.from(base64, 'base64').toString('utf-8');
+      const decoded = Buffer.from(base64, 'base64').toString('utf-8');
+      return options.routeSafe === false ? decoded : escapeKtdBodyMetaMarkers(decoded);
     } catch {
       return '';
     }
   }
 
-  // Single element: return just the text (most common case — root element doc)
-  if (elements.length === 1) {
-    return elements[0].text;
+  // A lone documented node still needs its routing heading when writable empty siblings
+  // exist. Otherwise appending one of the ids from formatKtdUndocumentedIndex creates a
+  // non-empty preamble that the inverse writer must refuse. A genuinely single-target
+  // document keeps the compact, backwards-compatible bare body.
+  const allElements = findKtdElements(envelopeXml);
+  const documentedId = elements[0]?.id.toUpperCase();
+  const hasOtherWritableTarget = allElements.some(
+    (element) => element.id && element.id.toUpperCase() !== documentedId && canWriteKtdLongText(element.xml),
+  );
+  if (elements.length === 1 && !hasOtherWritableTarget) {
+    const knownIds = new Set(allElements.map((element) => element.id.toUpperCase()).filter(Boolean));
+    if (options.routeSafe === false) return elements[0].text;
+    const routeEscaped = elements[0].id ? escapeKtdBodyRouteHeadings(elements[0].text, knownIds) : elements[0].text;
+    const escaped = escapeKtdBodyMetaMarkers(routeEscaped);
+    // Keep the backwards-compatible bare body unless escaping exposed a line that the
+    // section parser would otherwise consume as a route. Metadata-marker escapes are
+    // independently reversible on the unaddressed path and need no outer heading.
+    return routeEscaped === elements[0].text ? escaped : `## ${elements[0].id}\n\n${escaped}`;
   }
 
-  // Multiple elements: format as structured Markdown with element headings
-  return elements.map((e) => `## ${e.id}\n\n${e.text}`).join('\n\n');
+  // Multiple elements: format as structured Markdown with element headings. Escape
+  // body headings that would otherwise be parsed as routing syntax on write. Prefixing
+  // one backslash is reversible even when the stored line already starts with one.
+  const knownIds = new Set(allElements.map((element) => element.id.toUpperCase()).filter(Boolean));
+  return elements
+    .map(
+      (e) =>
+        `## ${e.id}\n\n${
+          options.routeSafe === false ? e.text : escapeKtdBodyMetaMarkers(escapeKtdBodyRouteHeadings(e.text, knownIds))
+        }`,
+    )
+    .join('\n\n');
 }
 
 /**
- * Replace the <sktd:text> body of a <sktd:docu> envelope with base64(markdown),
- * preserving all other attributes and elements (responsible, packageRef, refObject, etc.).
+ * Compact index of the nodes SAP pre-created in a KTD that nobody has documented yet —
+ * exactly the elements `decodeKtdText` leaves out. Empty string when every node has text.
+ *
+ * Every id stays reconstructible without listing ~140-character URIs one per line: the
+ * root id is the object name, and every other id is `<base>#type=<TYPE>;name=<NAME>` with
+ * a single <base> per document, so names are grouped under their base and type.
+ */
+export function formatKtdUndocumentedIndex(envelopeXml: string): string {
+  const ids = findKtdElements(envelopeXml)
+    .filter((element) => element.id && !elementBase64(element.xml) && canWriteKtdLongText(element.xml))
+    .map((element) => element.id);
+  if (ids.length === 0) return '';
+
+  const roots: string[] = [];
+  const namesByBaseAndType = new Map<string, Map<string, string[]>>();
+  for (const id of ids) {
+    const typeAt = id.indexOf('#type=');
+    const nameAt = typeAt < 0 ? -1 : id.indexOf(';name=', typeAt);
+    if (typeAt < 0 || nameAt < 0) {
+      roots.push(id);
+      continue;
+    }
+    const base = id.slice(0, typeAt);
+    const type = id.slice(typeAt + '#type='.length, nameAt);
+    const nodeName = id.slice(nameAt + ';name='.length);
+    const byType = namesByBaseAndType.get(base) ?? new Map<string, string[]>();
+    byType.set(type, [...(byType.get(type) ?? []), nodeName]);
+    namesByBaseAndType.set(base, byType);
+  }
+
+  const lines = [
+    `Undocumented nodes: ${ids.length}. SAP pre-created them with empty text; document one by adding a ` +
+      '"## <id>" section, where <id> is the node name for the root and <base>#type=<TYPE>;name=<NAME> otherwise.',
+  ];
+  for (const root of roots) lines.push(`root: ${root}`);
+  for (const [base, byType] of namesByBaseAndType) {
+    lines.push(`base: ${base}`);
+    for (const [type, names] of byType) lines.push(`${type} (${names.length}): ${names.join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+/** Exact transport line separating writable KTD Markdown from ARC-1 read-only context. */
+export const KTD_META_MARKER = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
+
+/** A Markdown level-two heading line. Greedy capture avoids quadratic matching on long input. */
+const KTD_HEADING_LINE = /^##[ \t]+(.*)$/m;
+
+/**
+ * Remove the read-only context that SAPRead appends after `KTD_META_MARKER`.
+ *
+ * A route-safe SAPRead escapes the same line when it belongs to a stored body. When a complete
+ * read contains both that escaped body line and an appended trailer, the final unescaped marker
+ * is therefore the delimiter. Using the final marker also keeps older complete reads lossless if
+ * their body still contains an unescaped occurrence. A heading below the delimiter is refused
+ * because it is most likely a node section appended in the wrong place.
+ */
+export function stripKtdMetaTrailer(markdown: string): string {
+  let markerAt = -1;
+  let lineStart = 0;
+  while (lineStart <= markdown.length) {
+    const newlineAt = markdown.indexOf('\n', lineStart);
+    const lineEnd = newlineAt < 0 ? markdown.length : newlineAt;
+    const line = markdown.slice(lineStart, lineEnd).replace(/\r$/, '');
+    if (line === KTD_META_MARKER) {
+      markerAt = lineStart;
+    }
+    if (newlineAt < 0) break;
+    lineStart = newlineAt + 1;
+  }
+  if (markerAt < 0) return markdown;
+  const trailer = markdown.slice(markerAt + KTD_META_MARKER.length);
+  const strayHeading = trailer.match(KTD_HEADING_LINE);
+  if (strayHeading) {
+    throw new Error(
+      `KTD documentation update has a "## ${strayHeading[1].trim()}" section below the read-only SAPRead ` +
+        `marker "${KTD_META_MARKER}". Move the section above that line, or remove the marker and its context.`,
+    );
+  }
+  return markdown.slice(0, markerAt).trimEnd();
+}
+
+/**
+ * Replace the per-node <sktd:text> bodies of a <sktd:docu> envelope with
+ * base64(markdown), preserving all other attributes and elements (responsible,
+ * packageRef, refObject, and every node the body does not address).
+ *
+ * ADDRESSING: a KTD holds one <sktd:element> per documented node — the object
+ * root plus one per documentable element (BDEF actions, savers, entities, …).
+ * `decodeKtdText` renders those as `## <node id>` sections, and this function
+ * consumes that exact-id section format to write each section back to its node.
+ * A body that addresses no node used to be written into whichever element came
+ * first, which silently overwrote the root and dropped every other node's edit.
  *
  * The returned XML is suitable for a PUT to the KTD object URL with
  * content-type `application/vnd.sap.adt.sktdv2+xml`.
  */
 export function rewriteKtdText(envelopeXml: string, markdown: string): string {
-  const base64 = Buffer.from(markdown, 'utf-8').toString('base64');
-  const textPattern = /(<sktd:text[^>]*>)([\s\S]*?)(<\/sktd:text>)/;
-  if (textPattern.test(envelopeXml)) {
-    return envelopeXml.replace(textPattern, `$1${base64}$3`);
+  const hasReadOnlyContext = markdown.split(/\r?\n/).includes(KTD_META_MARKER);
+  markdown = stripKtdMetaTrailer(markdown);
+  if (!markdown.trim()) {
+    throw new Error(
+      'KTD documentation update has an empty body. ARC-1 will not erase documentation from a bodyless ' +
+        'update; to clear one node, address it with "## <node id>" followed by an empty section.',
+    );
   }
-  // Self-closing form: <sktd:text ... /> (rare but possible on an empty KTD)
-  const selfClosing = /<sktd:text([^>]*)\/>/;
-  if (selfClosing.test(envelopeXml)) {
-    return envelopeXml.replace(selfClosing, `<sktd:text$1>${base64}</sktd:text>`);
+  const elements = findKtdElements(envelopeXml);
+  const documented = elements.filter((element) => elementBase64(element.xml));
+  const root = rootKtdElement(envelopeXml, elements);
+  const unaddressedTarget = documented.length <= 1 ? (documented[0] ?? root) : undefined;
+  // A route-safe SAPRead prefixes one backslash to body H2s that would otherwise
+  // be parsed as node boundaries. Its presence makes a lone root route unambiguous,
+  // even when that read had no metadata context to append. Compute the inverse once
+  // as well so the unaddressed/recovery path cannot persist the transport escape.
+  const routeUnescapedMarkdown = unescapeKtdBodyRouteHeadings(
+    markdown,
+    elements.map((element) => element.id),
+  );
+  const hasBodyRouteEscape = routeUnescapedMarkdown !== markdown;
+  const unescapedMarkdown = unescapeKtdBodyMetaMarkers(routeUnescapedMarkdown);
+  const perElement = splitKtdMarkdownByElementId(markdown, elements);
+  if (perElement) {
+    // The root id is a bare ABAP object name, so a lone `## ZI_FOO` is also a very
+    // natural document title. When the unaddressed fallback already resolves to that
+    // root, consuming the line as routing syntax would silently delete the title.
+    // A complete SAPRead result is unambiguous because it carries the metadata marker;
+    // several addressed nodes are likewise unambiguous. Refuse the remaining collision.
+    if (
+      !hasReadOnlyContext &&
+      !hasBodyRouteEscape &&
+      root &&
+      root.id.toUpperCase() === envelopeKtdName(envelopeXml).toUpperCase() &&
+      unaddressedTarget === root &&
+      perElement.size === 1 &&
+      perElement.has(root.id)
+    ) {
+      throw new Error(
+        `KTD heading "## ${root.id}" is ambiguous: it can be the root-node route or a visible Markdown title. ` +
+          `ARC-1 will not silently remove it. Omit that heading to update the sole root body, use "# ${root.id}" ` +
+          'for a visible title, or start a multi-node edit from the complete SAPRead result.',
+      );
+    }
+    return rewriteKtdElementTexts(envelopeXml, elements, perElement);
   }
+
+  // An unaddressed body still has one unambiguous destination whenever at most one
+  // node currently holds text — that is exactly what `decodeKtdText` rendered, and
+  // it is the shape a freshly created KTD comes back in. More than one documented
+  // node, though, and the body would overwrite one and silently drop the others.
+  if (documented.length > 1) {
+    const addressable = documented.map((element) => element.id).filter(Boolean);
+    throw new Error(
+      `KTD documentation update addresses no node. "${envelopeKtdName(envelopeXml)}" documents ` +
+        `${documented.length} nodes, so the body must address them with "## <node id>" headings. ` +
+        `Documented node ids in the version this write would modify:\n${addressable.map((id) => `  ${id}`).join('\n')}`,
+    );
+  }
+  const target = unaddressedTarget;
+  if (target) {
+    return (
+      envelopeXml.slice(0, target.start) + setKtdElementText(target, unescapedMarkdown) + envelopeXml.slice(target.end)
+    );
+  }
+
+  // No <sktd:element> at all — rewrite the lone <sktd:text> wherever it sits.
+  const spliced = spliceKtdTextBody(envelopeXml, unescapedMarkdown);
+  if (spliced !== undefined) return spliced;
   throw new Error('KTD envelope missing <sktd:text> element — cannot update documentation body.');
+}
+
+/** One `<sktd:element>` block located inside a `<sktd:docu>` envelope. */
+interface KtdElement {
+  /** Value of `<sktd:id>`, or '' when the element carries none. */
+  id: string;
+  /** Offsets of the block within the envelope, for byte-preserving splices. */
+  start: number;
+  end: number;
+  xml: string;
+}
+
+/** Base64 payload currently held by an element, '' when it is empty or absent. */
+function elementBase64(elementXml: string): string {
+  return elementXml.match(/<sktd:text[^>]*>([\s\S]*?)<\/sktd:text>/)?.[1]?.trim() ?? '';
+}
+
+/** Mirror Eclipse KtdElementUtil.canHaveLongText while retaining old envelopes with no flags. */
+function canWriteKtdLongText(elementXml: string): boolean {
+  const obligation = elementXml.match(/\bsktd:longTextObligation="([^"]*)"/)?.[1]?.toLowerCase();
+  if (obligation) return obligation === 'mandatory' || obligation === 'optional';
+  const canHaveDocumentation = elementXml.match(/\bsktd:canHaveDocumentation="([^"]*)"/)?.[1]?.toLowerCase();
+  if (canHaveDocumentation) return canHaveDocumentation === 'true';
+  // Older/simplified envelopes do not always carry either optional attribute. The
+  // server-provided text slot remains the strongest backwards-compatible evidence.
+  return /<sktd:text(?:\s|\/|>)/.test(elementXml);
+}
+
+/**
+ * The element documenting the object itself, for an envelope where nothing is
+ * documented yet. Live reads show the root node's `<sktd:id>` repeating the
+ * object name from `<sktd:docu adtcore:name>`; when nothing matches, fall back to
+ * document order, which is where an unaddressed body has always gone.
+ */
+function rootKtdElement(envelopeXml: string, elements: KtdElement[]): KtdElement | undefined {
+  const name = envelopeKtdName(envelopeXml).toUpperCase();
+  return elements.find((element) => element.id.toUpperCase() === name) ?? elements[0];
+}
+
+/** `<sktd:element>` blocks, paired or self-closing, in document order. */
+function findKtdElements(envelopeXml: string): KtdElement[] {
+  const pattern = /<sktd:element\b(?:[^>]*\/>|[\s\S]*?<\/sktd:element>)/g;
+  const elements: KtdElement[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(envelopeXml)) !== null) {
+    const xml = match[0];
+    elements.push({
+      id: xml.match(/<sktd:id>([\s\S]*?)<\/sktd:id>/)?.[1]?.trim() ?? '',
+      start: match.index,
+      end: match.index + xml.length,
+      xml,
+    });
+  }
+  return elements;
+}
+
+function envelopeKtdName(envelopeXml: string): string {
+  return envelopeXml.match(/<sktd:docu\b[^>]*\badtcore:name="([^"]*)"/)?.[1] ?? 'this KTD';
+}
+
+function unknownKtdNodeError(ids: string[], knownIds: Iterable<string>): Error {
+  const subject =
+    ids.length === 1 ? `KTD node "${ids[0]}" does not` : `KTD nodes ${ids.map((id) => `"${id}"`).join(', ')} do not`;
+  return new Error(
+    `${subject} exist in this document. SAP creates one <sktd:element> per documentable element of ` +
+      `the referenced object; ARC-1 will not invent one. Known node ids:\n` +
+      [...knownIds].map((known) => `  ${known}`).join('\n'),
+  );
+}
+
+/**
+ * Split a Markdown body in the exact-id section format emitted by `decodeKtdText`.
+ *
+ * A line is a node boundary only when it is `## ` followed by the EXACT id of an
+ * element in this envelope, so ordinary Markdown headings inside a node's own
+ * documentation survive the round-trip untouched.
+ *
+ * Returns undefined when the body addresses no node (single-node KTD, or a freshly
+ * created one); the caller then treats the whole body as that one node's text.
+ */
+function splitKtdMarkdownByElementId(markdown: string, elements: KtdElement[]): Map<string, string> | undefined {
+  // Keyed case-insensitively, resolving to the element's own spelling. ABAP names are
+  // case-insensitive, and the root node's id is upper-cased (`ZI_TRAVELTP`) while
+  // the same object is spelled `ZI_TravelTP` everywhere else in the envelope — a
+  // heading in the second spelling used to be folded into the previous node's text.
+  // First spelling wins, so a case collision can never silently pick the other element.
+  const knownIds = new Map<string, string>();
+  for (const element of elements) {
+    const key = element.id.toUpperCase();
+    if (element.id && !knownIds.has(key)) knownIds.set(key, element.id);
+  }
+  const lines = markdown.split(/\r?\n/);
+  const headings: Array<{ line: number; id: string }> = [];
+  const unknown: string[] = [];
+
+  lines.forEach((line, index) => {
+    const id = line.match(KTD_HEADING_LINE)?.[1].trim();
+    if (!id) return;
+    const resolved = knownIds.get(id.toUpperCase());
+    if (resolved) headings.push({ line: index, id: resolved });
+    // Unmistakably an ADT node id, yet no element here carries it: a typo, or a node
+    // that does not exist yet. Never silently fold it into a neighbouring node's text.
+    // The test is deliberately narrow so ordinary prose headings stay prose.
+    else if (knownIds.size > 0 && (id.startsWith('/sap/bc/adt/') || id.includes('#type='))) unknown.push(id);
+  });
+
+  if (unknown.length > 0) throw unknownKtdNodeError(unknown, knownIds.values());
+  if (headings.length === 0) return undefined;
+
+  const preamble = lines.slice(0, headings[0].line).join('\n').trim();
+  if (preamble) {
+    throw new Error(
+      `KTD documentation update has text before its first "## <node id>" heading (the one for ` +
+        `"${headings[0].id}"). Every line must belong to a node, so move that text under a heading. ` +
+        `Stray text starts: "${preamble.slice(0, 80)}"`,
+    );
+  }
+
+  const bodies = new Map<string, string>();
+  headings.forEach((heading, index) => {
+    const until = index + 1 < headings.length ? headings[index + 1].line : lines.length;
+    if (bodies.has(heading.id)) {
+      throw new Error(`KTD node "${heading.id}" appears twice in the update body — keep one section per node.`);
+    }
+    const body = lines
+      .slice(heading.line + 1, until)
+      .join('\n')
+      .trim();
+    bodies.set(heading.id, unescapeKtdBodyMetaMarkers(unescapeKtdBodyRouteHeadings(body, knownIds.keys())));
+  });
+  return bodies;
+}
+
+/** A heading shape reserved by the section parser, whether valid or fail-closed unknown. */
+function isKtdRouteHeadingId(id: string, knownIds: ReadonlySet<string>): boolean {
+  return knownIds.has(id.toUpperCase()) || id.startsWith('/sap/bc/adt/') || id.includes('#type=');
+}
+
+/**
+ * Protect a stored body line that is indistinguishable from KTD section routing.
+ *
+ * One leading backslash is added to every run of zero or more existing backslashes,
+ * so the inverse can remove exactly the transport escape and preserve the stored text.
+ */
+function escapeKtdBodyRouteHeadings(markdown: string, knownIds: ReadonlySet<string>): string {
+  return markdown.replace(/^(\\*)(##[ \t]+.*)$/gm, (line, _slashes: string, heading: string) => {
+    const id = heading.match(KTD_HEADING_LINE)?.[1].trim();
+    return id && isKtdRouteHeadingId(id, knownIds) ? `\\${line}` : line;
+  });
+}
+
+/** Remove the one transport escape added by `escapeKtdBodyRouteHeadings`. */
+function unescapeKtdBodyRouteHeadings(markdown: string, knownIds: Iterable<string>): string {
+  const known = new Set([...knownIds].map((id) => id.toUpperCase()));
+  return markdown.replace(/^\\(\\*##[ \t]+.*)$/gm, (line, escapedHeading: string) => {
+    const heading = escapedHeading.replace(/^\\*/, '');
+    const id = heading.match(KTD_HEADING_LINE)?.[1].trim();
+    return id && isKtdRouteHeadingId(id, known) ? escapedHeading : line;
+  });
+}
+
+/** Escape an exact metadata-marker body line without losing existing leading backslashes. */
+function escapeKtdBodyMetaMarkers(markdown: string): string {
+  const marker = escapeRegExp(KTD_META_MARKER);
+  return markdown.replace(new RegExp(`^(\\\\*)${marker}(\\r?)$`, 'gm'), (line) => `\\${line}`);
+}
+
+/** Remove the one transport escape added by `escapeKtdBodyMetaMarkers`. */
+function unescapeKtdBodyMetaMarkers(markdown: string): string {
+  const marker = escapeRegExp(KTD_META_MARKER);
+  return markdown.replace(
+    new RegExp(`^\\\\(\\\\*${marker})(\\r?)$`, 'gm'),
+    (_line, escapedMarker: string, carriageReturn: string) => `${escapedMarker}${carriageReturn}`,
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Splice new base64 bodies into the addressed elements, leaving every other byte alone. */
+function rewriteKtdElementTexts(envelopeXml: string, elements: KtdElement[], bodies: Map<string, string>): string {
+  let rewritten = envelopeXml;
+  // Back to front, so the elements still ahead keep their offsets.
+  for (const element of [...elements].reverse()) {
+    const body = bodies.get(element.id);
+    if (body === undefined) continue;
+    rewritten = rewritten.slice(0, element.start) + setKtdElementText(element, body) + rewritten.slice(element.end);
+  }
+  return rewritten;
+}
+
+function setKtdElementText(element: KtdElement, markdown: string): string {
+  const current = decodeKtdElementText(element.xml);
+  // A complete SAPRead result includes documented nodes even when SAP marks one of
+  // them non-writable. Preserve an unchanged section byte-for-byte; only an attempted
+  // mutation needs the writability gate below.
+  if (current !== undefined && normalizeKtdBodyForComparison(current) === normalizeKtdBodyForComparison(markdown)) {
+    return element.xml;
+  }
+  const spliced = spliceKtdTextBody(element.xml, markdown);
+  if (spliced === undefined) {
+    throw new Error(
+      `KTD node "${element.id}" has no <sktd:text> element to write into. SAP gives every documentable ` +
+        `node an (initially empty) <sktd:text/>, so an element without one is not a documentation target; ` +
+        `ARC-1 does not synthesize one.`,
+    );
+  }
+  if (!canWriteKtdLongText(element.xml)) {
+    throw new Error(
+      `KTD node "${element.id}" does not accept long-text documentation according to SAP's ` +
+        'canHaveDocumentation/longTextObligation contract.',
+    );
+  }
+  return spliced;
+}
+
+/** Decode one existing text slot; undefined means the element has no slot at all. */
+function decodeKtdElementText(elementXml: string): string | undefined {
+  const paired = elementXml.match(/<sktd:text[^>]*>([\s\S]*?)<\/sktd:text>/);
+  if (paired) {
+    const base64 = paired[1].trim();
+    return base64 ? Buffer.from(base64, 'base64').toString('utf-8') : '';
+  }
+  return /<sktd:text(?:\s[^>]*)?\/>/.test(elementXml) ? '' : undefined;
+}
+
+/** Section separators normalize outer whitespace and CRLF; compare the semantic body. */
+function normalizeKtdBodyForComparison(markdown: string): string {
+  return markdown.replace(/\r\n/g, '\n').trim();
+}
+
+/**
+ * Swap the payload of the first <sktd:text> in `xml` — paired or self-closing — for
+ * base64(markdown). Returns undefined when `xml` holds no <sktd:text> at all, so each
+ * caller raises the error that fits its own context. `<sktd:shortText sktd:text="…"/>`
+ * never matches: the literal `<sktd:text` requires the element name, not the attribute.
+ */
+function spliceKtdTextBody(xml: string, markdown: string): string | undefined {
+  const base64 = Buffer.from(markdown, 'utf-8').toString('base64');
+  const paired = /(<sktd:text[^>]*>)([\s\S]*?)(<\/sktd:text>)/;
+  if (paired.test(xml)) return xml.replace(paired, `$1${base64}$3`);
+  const selfClosing = /<sktd:text([^>]*)\/>/;
+  if (selfClosing.test(xml)) return xml.replace(selfClosing, `<sktd:text$1>${base64}</sktd:text>`);
+  return undefined;
 }

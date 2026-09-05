@@ -604,17 +604,29 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     // PUT back exactly the shape SAP gave us (with all the server-assigned
     // metadata), only swapping <sktd:text>.
     if (source) {
-      const { source: currentEnvelope } = await client.getKtd(name);
-      const body = rewriteKtdText(currentEnvelope, source);
-      await safeUpdateObject(
-        client.http,
-        client.safety,
-        objectUrl,
-        body,
-        SKTD_V2_CONTENT_TYPE,
-        effectiveTransport,
-        getCachedFeatures()?.abapRelease,
-      );
+      try {
+        const { source: currentEnvelope } = await client.getKtd(name);
+        const body = rewriteKtdText(currentEnvelope, source);
+        await safeUpdateObject(
+          client.http,
+          client.safety,
+          objectUrl,
+          body,
+          SKTD_V2_CONTENT_TYPE,
+          effectiveTransport,
+          getCachedFeatures()?.abapRelease,
+        );
+      } catch (err) {
+        // The POST above already succeeded, so the KTD exists. Say so — a generic
+        // read/rewrite/PUT failure invites the same create again, which 409s.
+        invalidateWrittenObject(type, name);
+        return errorResult(
+          `Created SKTD ${name} in package ${pkg}, but the documentation body was NOT written: ` +
+            `${err instanceof Error ? err.message : String(err)}\n` +
+            `The object exists — verify it with SAPRead, then retry with ` +
+            `SAPWrite(action="update", type="SKTD", name="${name}", source=…).`,
+        );
+      }
       invalidateWrittenObject(type, name);
       return textResult(
         `Created SKTD ${name} in package ${pkg} and wrote Markdown content.\nNext step: SAPActivate(type="SKTD", name="${name}").\n${ktdResult}`,

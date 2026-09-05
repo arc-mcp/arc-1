@@ -520,7 +520,8 @@ async function readKtdMarkdown(
           )
         ).source
       : (await client.getKtd(name, { version: 'active' })).source;
-    const markdown = decodeKtdText(envelope).trim();
+    // Context is analysis-only: expose the stored Markdown without write-routing escapes.
+    const markdown = decodeKtdText(envelope, { routeSafe: false }).trim();
     return markdown.length > 0 ? markdown : undefined;
   } catch (err) {
     if (isNotFoundError(err)) return undefined;
