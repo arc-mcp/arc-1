@@ -217,11 +217,19 @@ explicit functional consent. The recommended contract is to preserve verified ra
 `AuthInfo` and require an explicitly granted raw `write`, `transports`, or `git` scope plus
 the exact target grant. An Admin token without that raw functional scope remains diagnostic.
 
-Target-specific mutation-free visibility is optional and default-off, but customers may now add it
-before writes by following [XSUAA target authorization](xsuaa-target-authorization.md). It filters
-`SAPTargets` and every target-derived route/schema surface from an authoritative XSUAA role
-attribute; it never probes SAP or remembers prior successes/failures. Its generic read target list
-must not authorize future writes, which still require capability-bound grants.
+Target-specific mutation-free visibility is mandatory once the XSUAA target-authorization work is
+implemented. There is no ARC-1 property that restores all-reader access; broad read access is an
+explicit XSUAA `*` role. The design in
+[XSUAA target authorization](xsuaa-target-authorization.md) filters `SAPTargets` and every
+target-derived route/schema surface from an authoritative XSUAA role attribute; it never probes SAP
+or remembers prior successes/failures. Its generic read target list, including `*`, must not
+authorize future writes, which still require exact capability-bound grants.
+
+That cutover also requires multi-only applications: a coexisting independent `/mcp` is rejected so
+it cannot bypass target grants. Normal single-target-only deployments remain unchanged. Static
+cohort roles and dedicated IAS attributes feed one enforcement path; ordinary exact roles have no
+default and a separate template provides the explicit `*` role. Existing global data/SQL scopes
+apply across the target union, so this read model does not provide per-target capability pairing.
 
 The authorization design must also decide what an exact grant is bound to. Renaming an alias or
 changing a destination's physical identity must not silently transfer a capability to an unrelated
@@ -622,9 +630,11 @@ destinations, enable writes, or contact SAP with a technical fallback identity.
 
 ## Proposed Pull Request Work Packages
 
-Each PR should start from the latest main after #579 merges, keep new behavior default-off, and be
-mergeable without the next PR. The numeric IDs group dependencies; independent work such as V2-06
-may land earlier. Avoid a long-lived stacked beta branch.
+Each PR should start from the latest main after #579 merges and be mergeable without the next PR.
+New operational capabilities remain default-off. The target-authorization cutover is the explicit
+exception: its descriptor artifacts land additively first, then enforcement becomes mandatory with
+a documented role migration and no fail-open runtime switch. The numeric IDs group dependencies;
+independent work such as V2-06 may land earlier. Avoid a long-lived stacked beta branch.
 
 ### V2-00 — Stabilize the v1 baseline
 
@@ -747,8 +757,8 @@ capability cross-products in either branch.
 **Acceptance:** exhaustive target A/B and capability read/write matrix, including forged,
 duplicate, oversized, missing, and malformed claims or entitlement responses according to the
 chosen branch. Both branches prove explicit raw functional scope can be distinguished from Admin
-implication. With enforcement disabled, v1 behavior is observably unchanged at the HTTP/tool
-surface.
+implication. Before writes are enabled, write-capability grants are behaviorally inert; mandatory
+read target authorization still follows the separate XSUAA target-authorization specification.
 
 **Rollback:** before writes exist, this code is behaviorally inert and may be rolled back without
 destination changes. Once V2-08 exists, multi-target writes must imply target-grant enforcement and
@@ -781,10 +791,9 @@ documented.
 - enforce `allowedTransports` for every `SAPWrite` path that accepts a transport, not only
   `SAPTransport`;
 - verify real-package checks for create/update/activate/include/batch paths;
-- detect physical overlap between independent `/mcp` and discovered targets; keep current
-  read-only coexistence with a warning, but make the discovered target ineligible for multi-target
-  writes whenever the independent `/mcp` is writable, regardless of whether policies look equal;
-  do not silently disable or alter `/mcp`;
+- preserve the target-authorization cutover's multi-only guard: reject a coexisting independent
+  `/mcp` runtime rather than merely warning on physical overlap. Writable single-target access uses
+  a separate application/XSUAA identity with independently reviewed grants;
 - detect discovered PP destinations that claim the same physical URL/client/Cloud Connector
   location under different public aliases; if any claimant requests writes, make every claimant
   write-ineligible (or quarantine all of them) regardless of equal/different policy so another alias
@@ -1026,7 +1035,7 @@ ADR/research PR when its trigger is real:
 
 | Item | Trigger and prerequisites | First future PR | Explicit non-goal |
 |------|---------------------------|-----------------|-------------------|
-| Target-specific read visibility | Customer must hide configured targets before SAP contact; V2-02A grant representation scales | Define exact `#read` semantics and filtered `SAPTargets` behavior | No SAP access probing or success/failure cache |
+| Target-specific read visibility | Customer must hide configured targets before SAP contact | Implement the separate [XSUAA target-authorization spec](xsuaa-target-authorization.md): exact IDs or literal `*`, mandatory projection and explicit migration | No SAP access probing, success/failure cache, or future-write authorization |
 | API-key/direct OIDC multi auth | Supported client demand; equivalent raw scopes, exact grants, resource binding, revocation, and audit exist | Identity ADR plus verifier contract | “Authenticated” never means all targets |
 | S/4HANA Public Cloud | Working SAML assertion destination and test tenant | Identity/runtime spike with live reads | No technical-user fallback |
 | Basic Internet/Private Link | Concrete non-Cloud-Connector deployment | TLS/SSRF/credential threat model and mutation-free live spike | No Basic writes |
@@ -1060,7 +1069,8 @@ If those conditions are not met, pinned write routes remain the final architectu
 ### Compatibility
 
 - multi-target flag off with every existing single-target auth/deployment style;
-- independent writable `/mcp` beside mutation-free multi routes;
+- reject mixed independent `/mcp` plus multi runtimes after the authorization cutover; verify
+  independent single-target-only deployments still work;
 - zero, one, two, 16, 17, 100, 256, and 257 enabled candidates;
 - duplicate destination names, physical IDs, aliases, and route shadows;
 - PP-only, Basic-only, and mixed read-only registries;
@@ -1227,7 +1237,8 @@ destinations rather than serving them with ambiguous policy.
 - no per-user SAP failure cache or remembered target;
 - no automatic destination polling initially;
 - no technical/design-time destination fallback;
-- no wildcard target grants initially;
+- no wildcard target/capability grants for mutations; the read-visibility-only `*` grant from the
+  separate XSUAA target-authorization specification does not authorize writes;
 - Admin diagnostics do not imply target mutation permission;
 - no direct OIDC/API-key write path in the initial beta;
 - no mutation scopes on aggregate metadata or the Copilot aggregate `/authorize` alias;
@@ -1245,8 +1256,8 @@ destinations rather than serving them with ambiguous policy.
 4. Is explicit package configuration mandatory for customer beta even though `$TMP` remains the
    safe code default?
 5. Which high-risk actions require elicitation or short-lived target-bound consent?
-6. What policy prevents an independently configured writable `/mcp` destination from shadowing or
-   bypassing a discovered target policy?
+6. Has the target-authorization cutover's multi-only guard and migration been implemented and
+   verified, including distinct application identities for separate writable single-target apps?
 7. Is a public target ID sufficient grant identity under the Destination-admin trust model, or is a
    separate stable authorization identity/re-grant workflow required?
 8. What evidence threshold changes ADR-0006 from Proposed/experimental?
