@@ -238,7 +238,9 @@ as writable:
   appending a new addressed section left the existing body as an unaddressed preamble. Bare Markdown
   remains for a genuinely single-target document unless its stored body itself contains a
   route-shaped H2. That rare collision receives a reversible route boundary and one transport
-  backslash, so a complete read can be written back byte-identically.
+  backslash, so a complete marker-free read can be written back byte-identically. The escape is
+  also recognized on the unaddressed compatibility path: omitting the outer route boundary removes
+  exactly the transport backslash, while doubling it preserves one literal stored backslash.
 - The root id is the plain ABAP object name, so a standalone `## Z...` can be either routing syntax
   or an ordinary Markdown title. When an unaddressed write would already target that root, ARC-1 now
   refuses this marker-free, one-section ambiguity instead of silently deleting the title. A complete

@@ -962,8 +962,21 @@ describe('ddic-xml builders', () => {
         const read = decodeKtdText(envelope);
 
         expect(read).toBe(`## ${ROOT_ID}\n\n\\## ${ROOT_ID}\n\nThe only-node body.`);
-        expect(rewriteKtdText(envelope, `${read}\n\n${KTD_META_MARKER}\n[cached:revalidated]`)).toBe(envelope);
+        expect(rewriteKtdText(envelope, read)).toBe(envelope);
         expect(decodeKtdText(envelope, { routeSafe: false })).toBe(rootBody);
+      });
+
+      it('removes the transport escape when a single-node update omits its outer route heading', () => {
+        const rootBody = `## ${ROOT_ID}\n\nThe only-node body.`;
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: rootBody });
+
+        expect(rewriteKtdText(envelope, `\\## ${ROOT_ID}\n\nThe only-node body.`)).toBe(envelope);
+
+        const literalBackslashBody = `\\## ${ROOT_ID}\n\nKeep one literal backslash.`;
+        const withLiteralBackslash = buildMultiEnvelope({ [ROOT_ID]: literalBackslashBody });
+        expect(rewriteKtdText(withLiteralBackslash, `\\\\## ${ROOT_ID}\n\nKeep one literal backslash.`)).toBe(
+          withLiteralBackslash,
+        );
       });
 
       it('escapes a body heading equal to another node id without moving either body', () => {

@@ -773,6 +773,15 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
   const documented = elements.filter((element) => elementBase64(element.xml));
   const root = rootKtdElement(envelopeXml, elements);
   const unaddressedTarget = documented.length <= 1 ? (documented[0] ?? root) : undefined;
+  // A route-safe SAPRead prefixes one backslash to body H2s that would otherwise
+  // be parsed as node boundaries. Its presence makes a lone root route unambiguous,
+  // even when that read had no metadata context to append. Compute the inverse once
+  // as well so the unaddressed/recovery path cannot persist the transport escape.
+  const unescapedMarkdown = unescapeKtdBodyRouteHeadings(
+    markdown,
+    elements.map((element) => element.id),
+  );
+  const hasBodyRouteEscape = unescapedMarkdown !== markdown;
   const perElement = splitKtdMarkdownByElementId(markdown, elements);
   if (perElement) {
     // The root id is a bare ABAP object name, so a lone `## ZI_FOO` is also a very
@@ -782,6 +791,7 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
     // several addressed nodes are likewise unambiguous. Refuse the remaining collision.
     if (
       !hasReadOnlyContext &&
+      !hasBodyRouteEscape &&
       root &&
       root.id.toUpperCase() === envelopeKtdName(envelopeXml).toUpperCase() &&
       unaddressedTarget === root &&
@@ -811,7 +821,9 @@ export function rewriteKtdText(envelopeXml: string, markdown: string): string {
   }
   const target = unaddressedTarget;
   if (target) {
-    return envelopeXml.slice(0, target.start) + setKtdElementText(target, markdown) + envelopeXml.slice(target.end);
+    return (
+      envelopeXml.slice(0, target.start) + setKtdElementText(target, unescapedMarkdown) + envelopeXml.slice(target.end)
+    );
   }
 
   // No <sktd:element> at all — rewrite the lone <sktd:text> wherever it sits.

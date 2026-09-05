@@ -17,6 +17,7 @@ import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { rewriteKtdText } = await import('../../../src/adt/ddic-xml.js');
 
 describe('SAPRead handler', () => {
   beforeEach(() => {
@@ -508,6 +509,24 @@ describe('SAPRead handler', () => {
       const getUrl = calls.find((u) => u.includes('/documentation/ktd/'));
       expect(getUrl).toContain('/sap/bc/adt/documentation/ktd/documents/ztr_c_payment_value_date');
       expect(getUrl).not.toContain('version=workingArea');
+    });
+
+    it('returns marker-free single-node route escapes that SAPWrite can consume verbatim', async () => {
+      mockFetch.mockReset();
+      const name = 'ZI_TRAVEL';
+      const body = `## ${name}\n\nThe travel view.`;
+      const envelope =
+        `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="${name}">` +
+        `<sktd:element><sktd:id>${name}</sktd:id><sktd:text>${Buffer.from(body).toString('base64')}</sktd:text></sktd:element>` +
+        '</sktd:docu>';
+      mockFetch.mockResolvedValueOnce(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'SKTD', name });
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).toBe(`## ${name}\n\n\\## ${name}\n\nThe travel view.`);
+      expect(text).not.toContain('<!-- arc1:ktd-meta');
+      expect(rewriteKtdText(envelope, text)).toBe(envelope);
     });
 
     it('accepts KTD as a friendly alias for SKTD reads', async () => {
