@@ -1,5 +1,8 @@
 # Multi-Target Administration
 
+<!-- Source-only readers: experimental, mutation-free and default off. Match this checkout
+to the deployed artifact; see btp-documentation.md and docs/btp-setup-index.yaml. -->
+
 !!! warning "Experimental v1"
 
     Multi-target mode is default-off and mutation-free. Treat it as a shared read gateway, not as

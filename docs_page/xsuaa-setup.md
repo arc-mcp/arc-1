@@ -1,5 +1,8 @@
 # XSUAA OAuth for MCP-Native Clients
 
+<!-- Source-only readers: match this checkout to the deployed artifact. Single-target and
+experimental multi-target sections coexist; see btp-documentation.md and docs/btp-setup-index.yaml. -->
+
 This guide sets up BTP XSUAA authentication so MCP-native clients (Claude Desktop, Cursor, VS Code, MCP Inspector) can authenticate via OAuth when connecting to ARC-1.
 
 ## Overview

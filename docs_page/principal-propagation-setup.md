@@ -8,6 +8,9 @@ to that identity.
 
 ## When to Use
 
+<!-- Source-only readers: match this checkout to the deployed artifact. Single-target and
+experimental multi-target sections coexist; see btp-documentation.md and docs/btp-setup-index.yaml. -->
+
 - Enterprise environments requiring per-user SAP authorization
 - Compliance/audit requirements (who did what in SAP)
 - When different users should have different SAP permissions

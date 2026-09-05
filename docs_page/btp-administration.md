@@ -1,5 +1,8 @@
 # BTP Administration
 
+<!-- Source-only readers: match this checkout to the deployed artifact. Single-target and
+experimental multi-target sections coexist; see btp-documentation.md and docs/btp-setup-index.yaml. -->
+
 Operate an ARC-1 deployment on SAP BTP Cloud Foundry after the first successful read. This page
 covers the controls shared by single-target and multi-target deployments. For initial installation,
 start with [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md). For registry reason codes

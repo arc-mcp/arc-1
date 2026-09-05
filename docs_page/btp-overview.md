@@ -1,5 +1,8 @@
 # SAP BTP: Start Here
 
+<!-- Source-only readers: match this checkout to the deployed artifact. Single-target and
+experimental multi-target sections coexist; see btp-documentation.md and docs/btp-setup-index.yaml. -->
+
 Use this page to choose the correct ARC-1 topology and documentation path before creating services,
 destinations, or role collections. It is a map, not a second deployment runbook. The canonical
 commands remain in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md).
@@ -82,6 +85,9 @@ ownership, role-collection repair, DCR signing-secret handling, change/restart d
 upgrades, rollback, monitoring, and customer acceptance.
 
 ## Keep each value in one place
+
+Before applying a setting from a newer guide, check the
+[documentation source and feature status](btp-documentation.md) against your deployed artifact.
 
 | Control plane | Store here | Do not store here |
 |---------------|------------|-------------------|
