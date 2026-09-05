@@ -67,7 +67,7 @@ source-applicability notes remain useful. No service migration or customer chang
 
 ## Implementation evidence (2026-09-05)
 
-- Sixteen Python tests pass, including real temporary Git repositories and malformed metadata,
+- Seventeen Python tests pass, including real temporary Git repositories and malformed metadata,
   private/symlinked paths, dead anchors, exact tags, main/spec branches and proposal exclusion.
 - Full existing unit suite: 192 files / 5,757 tests passed. Typecheck and lint passed; existing
   Biome configuration notices remain. No runtime source or lockfile changed.
@@ -76,5 +76,10 @@ source-applicability notes remain useful. No service migration or customer chang
 - Local browser review checked the task table, source banner and experimental multi-target page.
   Source validation caught an outdated evidence path; it now references the actual HTTP/OAuth
   recovery implementation on the recorded baseline.
+- A clean-checkout build correctly reports development/source documentation and pins source links
+  to its actual commit. Live-preview rebuild tests confirm metadata/Git state are refreshed.
+- A separate detached worktree integrates PRs 01–03 cleanly after aligning the shared Pages
+  checkout settings. Combined validation: 194 unit files / 5,766 tests, 17 Python tests, typecheck,
+  lint, strict MkDocs build and all five MBT validations passed. No merge was made on main.
 - Remote publication, customer acceptance and human/LLM setup improvement are not established by
-  these checks. Clean-checkout and combined-branch verification follow before PR handoff.
+  these checks. No remaining blocking finding was identified in the final scoped review.
