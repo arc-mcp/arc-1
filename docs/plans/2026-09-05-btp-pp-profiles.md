@@ -41,6 +41,8 @@ Rechecked main `5c36f2a734870081780a5d4be734f605b1036318` (package 1.2.0).
   temporary directories and prove existing customer overrides survive.
 - Prepare single-PP destinations before deployment; keep file-specific notes in examples and
   ordered setup/acceptance in the runbook. Do not require the optional worksheet first.
+- Replace the overview's second numbered deployment sequence with a runbook handoff, preserving
+  old section anchors. Put the optional worksheet under administration, not ahead of deployment.
 - Correct SYSTEM identity claims in the runbook and PP guide. Its user comes from configured
   identity/token claims; safe-read success is separate from SAP-side, request-correlated evidence.
 - SM20 verification is conditional on recorded events; missing evidence stays unverified rather
