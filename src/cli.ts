@@ -36,6 +36,8 @@ import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
 import { setCachedDiscovery, setCachedFeatures } from './handlers/feature-cache.js';
 import { errorResult, type ToolResult } from './handlers/shared.js';
 import type { LintResult } from './lint/lint.js';
+import { createRepositoryGraphRuntime } from './repository-graph/runtime.js';
+import { addGraphTool } from './repository-graph/tools.js';
 import { sanitizeArgs } from './server/audit.js';
 import { assertNoRemovedCliFlags, CLI_CONFIG_OPTION_SPECS, resolveConfig } from './server/config.js';
 import { generateRequestId } from './server/context.js';
@@ -51,6 +53,7 @@ import {
   VERSION,
 } from './server/server.js';
 import { FileSink } from './server/sinks/file.js';
+import { filterToolsByAuthScope } from './server/tool-auth.js';
 import type { ConfigSource, ServerConfig } from './server/types.js';
 
 loadDotEnv({ quiet: true });
@@ -436,6 +439,15 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
   });
 
   program
+    .command('graph')
+    .description('Optional repository graph diagnostics')
+    .command('status')
+    .description('Check the graph connection without contacting SAP')
+    .action(async () => {
+      runtime.state.exitCode = await runToolCall(runtime, 'SAPGraph', { action: 'status' }, 'json');
+    });
+
+  program
     .command('tools [tool]')
     .description("List advertised MCP tools, or show one tool's JSON input schema")
     .action(async (tool: string | undefined) => {
@@ -454,7 +466,19 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
               ]
             : [],
         );
-      const definitions = [...getConfiguredToolDefinitions(config), ...pluginDefs];
+      let definitions = [...getConfiguredToolDefinitions(config), ...pluginDefs];
+      const graph = createRepositoryGraphRuntime(config);
+      try {
+        await graph?.probe();
+        if (graph?.listed)
+          definitions = filterToolsByAuthScope(
+            addGraphTool(definitions, config.toolMode === 'hyperfocused'),
+            ['admin'],
+            config.denyActions,
+          );
+      } finally {
+        graph?.stop();
+      }
       if (!tool) {
         for (const definition of definitions) {
           console.log(`${definition.name.padEnd(14)} ${definition.description.split('\n')[0].trim()}`);
@@ -861,6 +885,45 @@ export async function executeCliToolCall(
 ): Promise<CliToolCallOutcome> {
   const { config } = runtime.getResolvedConfig();
   const localOnly = options.localOnly === true || isLocalOnlyCall(toolName, args);
+  if (toolName === 'SAPGraph' || (toolName === 'SAP' && args.action === 'graph')) {
+    const graph = createRepositoryGraphRuntime(config);
+    // Construct a transport-free placeholder only to reuse the common dispatcher. No SAP
+    // secrets, Destination lookup, source cache, feature probe or auth preflight is needed.
+    const client = new AdtClient(
+      buildAdtConfig({
+        ...config,
+        url: 'https://unused.invalid',
+        username: '',
+        password: '',
+        cookieFile: '',
+        cookieString: '',
+        btpServiceKey: '',
+        btpServiceKeyFile: '',
+      }),
+    );
+    try {
+      return {
+        kind: 'tool',
+        result: await runtime.deps.dispatchToolCall(
+          client,
+          config,
+          toolName,
+          args,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { repositoryGraph: graph },
+        ),
+      };
+    } finally {
+      graph?.stop();
+    }
+  }
   await runtime.loadConfiguredPlugins(config);
 
   if (!getToolRegistry().get(toolName)) {

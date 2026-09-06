@@ -105,6 +105,11 @@ Fails when: a new write path skips the package gate (see R4), or gates a user-su
 instead of the resolved one, or package resolution fails *open*.
 
 ### I2 — Per-user isolation of anything cached or keyed
+Experimental `SAPGraph` is a separate, explicitly shared dataset under
+[ADR-0008](adr/0008-optional-shared-repository-graph.md), not a SAP-authenticated cache hit.
+Only an administrator-declared common metadata audience may enable it. Unknown/restricted
+visibility and multi-target use remain unsupported; live SAP/cache paths below are unchanged.
+
 Wherever SAP authorization differs per user, a cache or in-memory map must **either** key on a
 *verified, unique* user identity **or** still force a per-user SAP round-trip on every hit. Never
 serve user A's SAP-gated content to user B without B's own authorization check.

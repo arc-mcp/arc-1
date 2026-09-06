@@ -16,6 +16,7 @@
 import { z } from 'zod';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { graphInputSchema } from '../repository-graph/contract.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import {
@@ -1180,6 +1181,8 @@ export const SAPHyperfocusedSchema = z
  */
 export function getToolSchema(toolName: string, isBtp: boolean, textSearchAvailable?: boolean): z.ZodType | undefined {
   switch (toolName) {
+    case 'SAPGraph':
+      return graphInputSchema;
     case 'SAPRead':
       return isBtp ? SAPReadSchemaBtp : SAPReadSchema;
     case 'SAPSearch':

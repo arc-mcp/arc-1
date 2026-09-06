@@ -25,6 +25,10 @@ export type ConfigSource = 'default' | { env: string } | { flag: string } | { fi
 
 /** Server configuration — all fields needed to start ARC-1 */
 export interface ServerConfig {
+  /** Optional external shared-metadata service; credentials remain outside this config. */
+  graphMode?: 'auto' | 'off';
+  graphConnectionFile?: string;
+  graphServiceBinding?: string;
   // --- SAP Connection ---
   url: string;
   username: string;

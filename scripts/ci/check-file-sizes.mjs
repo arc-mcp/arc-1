@@ -68,7 +68,8 @@ const BUDGETS = {
   'tests/integration/adt.integration.test.ts': 3100,
   // Sits exactly on the default; +1 for copying the data-source blocklist through buildAdtConfig so
   // every per-user client inherits the instance policy.
-  'src/server/server.ts': 1501,
+  // +19 for optional graph runtime ownership and the pre-SAP bridge; graph logic lives outside this file.
+  'src/server/server.ts': 1520,
 };
 
 const DEFAULT_SRC = 1500;

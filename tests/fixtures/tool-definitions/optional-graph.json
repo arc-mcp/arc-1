@@ -1,0 +1,97 @@
+{
+  "name": "SAPGraph",
+  "description": "Indexed metadata, not live SAP authorization. Check coverage/limits; missing evidence is not no dependency. impact = potential callers; SAPRead = live source.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "status",
+          "search",
+          "neighbors",
+          "impact",
+          "path",
+          "package_coupling"
+        ]
+      },
+      "query": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      },
+      "type": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40
+      },
+      "targetName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+      },
+      "targetType": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40
+      },
+      "depth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3
+      },
+      "direction": {
+        "type": "string",
+        "enum": [
+          "incoming",
+          "outgoing",
+          "both"
+        ]
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "maxNodes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "maxEdges": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 300
+      },
+      "kinds": {
+        "minItems": 1,
+        "maxItems": 10,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "belongs_to",
+            "inherits_from",
+            "implements",
+            "references",
+            "static_call",
+            "function_call",
+            "reads_from",
+            "projects_on",
+            "associates_to",
+            "composes"
+          ]
+        }
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  }
+}

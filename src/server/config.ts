@@ -150,6 +150,13 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     description: 'Optional-schema null mode: auto/on/off',
   },
   { name: 'plugins', valueName: 'paths', description: 'Comma-separated extension paths' },
+  { name: 'graph', valueName: 'mode', description: 'Optional repository graph: auto/off' },
+  { name: 'graph-connection-file', valueName: 'path', description: 'Private repository graph connection descriptor' },
+  {
+    name: 'graph-service-binding',
+    valueName: 'name',
+    description: 'Explicit repository graph CF user-provided binding',
+  },
   { name: 'allow-plugin-execute', valueName: 'boolean', description: 'Enable plugin class execution (true/false)' },
   {
     name: 'allow-plugin-raw-writes',
@@ -859,6 +866,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.schemaNullableOptionals = parseNullableOptionalsMode(schemaNullableOptionals);
 
   // ── Extensions (FEAT-61) ───────────────────────────────────────────
+  config.graphMode = resolveStr('graph', 'ARC1_GRAPH', 'auto', 'graphMode') === 'auto' ? 'auto' : 'off';
+  config.graphConnectionFile = resolveOptionalStr(
+    'graph-connection-file',
+    'ARC1_GRAPH_CONNECTION_FILE',
+    'graphConnectionFile',
+  );
+  config.graphServiceBinding = resolveOptionalStr(
+    'graph-service-binding',
+    'ARC1_GRAPH_SERVICE_BINDING',
+    'graphServiceBinding',
+  );
+
   // CSV of absolute paths to extension plugins (local dirs/files, NOT npm names). Loaded at startup.
   const pluginsRaw = getFlag('plugins') ?? process.env.ARC1_PLUGINS;
   config.plugins = (pluginsRaw ?? '')
