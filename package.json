@@ -93,6 +93,7 @@
     "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext && npx mbt validate -e examples/btp/single-pp/profile.mtaext && npx mbt validate -e examples/btp/multi-pp/profile.mtaext",
     "btp:build": "npx mbt build",
     "btp:build-ui-ext": "npx mbt build -e mta-ui-approuter.mtaext",
+    "btp:inspect-mtar": "node scripts/btp/inspect-mtar.mjs",
     "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",
     "btp:deploy-ext": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-overrides.mtaext',{stdio:'inherit'})\"",
     "btp:deploy-ui-ext": "node scripts/btp/prepare-ui-mtaext.mjs && node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar -e mta-ui-deploy.mtaext',{stdio:'inherit'})\"",
@@ -145,6 +146,7 @@
     "tsx": "^4.23.12",
     "typescript": "~7.0.2",
     "vitest": "^4.1.1",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "yauzl": "^3.4.0"
   }
 }

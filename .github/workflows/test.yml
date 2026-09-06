@@ -36,6 +36,20 @@ jobs:
       - name: Validate mta.yaml + mta-overrides.mtaext.example
         run: npm run btp:validate
 
+  # The inspector replaces both Bash and PowerShell instructions. Linux coverage also runs
+  # in the full unit suite; this focused Windows job needs no SAP/CF credentials or unzip.
+  mtar-inspection-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+      - run: npx vitest run tests/unit/scripts/mtar-inspection.test.ts
+
   # Gates only the SAP-hitting jobs below based on PR title (conventional
   # commit prefix). Cheap checks in the `test` job always run. SAP jobs skip on
   # `docs:` and `chore:` PRs to save SAP work processes; auto-run for everything

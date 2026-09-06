@@ -236,6 +236,7 @@ modules:
       supported-platforms: []
       ignore:
         - node_modules/
+        - test/
     parameters:
       memory: 128M
       disk-quota: 256M
