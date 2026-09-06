@@ -513,7 +513,10 @@ stopped. Do not enable gzip merely to make an unexplained authorization failure 
 
 ### MCP sign-in ends on a blank page / "this site can't be reached" / "Missing required parameters … code, state, nonce"
 
-These client-side symptoms almost always share one server-side cause: XSUAA authenticated the user but rejected the authorization with **`invalid_scope`** ("this user is not allowed any of the requested scopes"), so no `code` was issued. The MCP client's loopback callback then receives no `code` — and its listener may already be closed, which is why the browser shows `ERR_CONNECTION_REFUSED`.
+One possible cause is a rejected XSUAA authorization, so no `code` was issued. For example,
+`invalid_scope` with "this user is not allowed any of the requested scopes" points to the user's
+grant. A closed loopback listener can produce `ERR_CONNECTION_REFUSED`, but that symptom alone
+does not identify the authorization problem.
 
 Confirm the real error in the server log — it lands on ARC-1's callback, not the client:
 
@@ -524,20 +527,27 @@ cf logs arc1-mcp-server --recent | grep '/oauth/callback?error='
 
 Since v0.9.8 ARC-1 renders this reason on its `/oauth/callback` error page (instead of bouncing to the dead loopback), so the browser shows the cause directly.
 
-`invalid_scope` means the signed-in identity holds **no ARC-1 role collection** — usually because the role was assigned under a **different IdP origin** than the one the login uses. Fix it with the next two entries.
+For the specific message **"this user is not allowed any of the requested scopes"**, check the
+collection's roles and the signed-in IdP origin below. `invalid_scope` can also mean an unknown or
+malformed requested scope; use the [XSUAA diagnosis table](xsuaa-setup.md#insufficient-scope-invalid_scope)
+before changing roles or browser state.
 
 ### "I changed the user's role but the new scopes don't appear"
 
-XSUAA caches the user's authorities in their browser session. When you change role-collection assignments in BTP Cockpit, **existing JWTs keep the old scopes until they expire** (typically 1 hour) AND the user's SSO session at XSUAA / IAS still references the old authorities.
+Changing role collections does not rewrite already issued JWTs. Their claims remain unchanged
+until expiry; an XSUAA browser session can also retain old authorities. Check the actual grant
+and token lifetime rather than assuming a reconnect refreshes either.
 
-To force fresh scopes immediately:
+After a verified role change:
 
-1. If sign-in failed with `invalid_scope`, have an administrator assign the correct ARC-1 role collection under the identity provider used for login.
+1. Verify the required role collection contains current application roles and is assigned under the IdP used for login. An unknown scope name needs configuration repair, not another role.
 2. On ARC-1's failure page, select **Role assigned? Refresh access**. ARC-1 sends the browser through XSUAA's logout endpoint with its bound client ID and a fixed, allowlisted return URL.
-3. After **Access refreshed** appears, return to the MCP client and disconnect/reconnect or retry sign-in. A new identity-provider login may be required.
+3. After **Access refreshed** appears, use the MCP client's re-authentication flow and refresh its tool catalog. Reconnecting alone may reuse a token. A new identity-provider login may be required.
 4. If the deployment predates this recovery action, retry in a private browser window or clear the XSUAA-domain cookies manually. See [XSUAA Setup → invalid_scope](xsuaa-setup.md#insufficient-scope-invalid_scope).
 
-After that, the new JWT will be issued from a fresh session and carry only the user's currently assigned scopes. You can verify by reading the JWT at [jwt.ms](https://jwt.ms) - the `scope` claim should match the role collection's scopes.
+A fresh token should reflect the current grant. If claim inspection is needed, inspect it locally;
+do not paste bearer tokens into websites, tickets or chat. Decoding claims alone does not validate
+the token or prove SAP access.
 
 The recovery action does not revoke access tokens already issued to other sessions. Do not construct a logout URL from request parameters or use an arbitrary redirect: XSUAA application logout requires an allowlisted redirect to prevent open redirects.
 
@@ -553,11 +563,12 @@ From the CLI, assign under the right origin — `--of-idp` is the critical part.
 # list the IdP origins (the IAS "business users" trust is the usual app-login IdP)
 btp list security/trust --subaccount <subaccount-id>
 
-# assign under the origin the OAuth flow actually uses
-btp assign security/role-collection "ARC-1 Admin" --subaccount <subaccount-id> --to-user <email> --of-idp sap.custom
+# Example only: substitute the required collection and the verified origin from the trust list.
+btp assign security/role-collection "ARC-1 Viewer (<space>)" --subaccount <subaccount-id> --to-user <email> --of-idp sap.custom
 ```
 
-Assigning under only `sap.default` while logging in via the IAS tenant is the single most common cause of `invalid_scope`.
+Assigning under only `sap.default` while logging in via another origin is one cause of the
+"not allowed any requested scopes" error. Do not assume every IAS tenant uses `sap.custom`.
 
 ---
 

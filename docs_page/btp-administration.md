@@ -112,10 +112,13 @@ The MTA creates seven role collections with the CF space suffix, for example
 4. Assign the least-privilege collection before the user's first MCP login.
 5. Have the user sign in again and restart/reconnect the MCP client if its tool catalog is cached.
 
-An older or recreated XSUAA instance can leave same-name collections with empty/orphaned roles. Do
-not infer that an assignable collection exists merely because a role template exists. If a
-collection is empty, remove the orphaned collection, perform the reviewed MTA deployment, inspect
-the recreated roles, and reassign users.
+An older or recreated XSUAA instance can leave same-name collections with empty/orphaned roles.
+First [inspect and reconcile the collection with its owner](xsuaa-setup.md#repair-missing-or-stale-collection-roles-with-the-owner);
+empty roles alone do not justify deletion. Only when the owner confirms an orphaned collection
+requires replacement, record its roles, user/group assignments and IdP mappings before removal.
+Then perform the reviewed MTA deployment, inspect the recreated roles, restore the approved
+assignments/mappings and verify a fresh user grant. This is not a generic login fix and does not
+require deleting XSUAA.
 
 When changing the roles contained in a predefined collection, prefer a newly named/versioned
 collection: deploy it, inspect it, assign users/groups, reauthenticate and test, then remove old
@@ -324,7 +327,8 @@ Record evidence rather than only checking configuration screens.
 - [ ] Multi-target Admin `SAPTargets` shows no unexpected quarantine, duplicate, shadow, or policy narrowing.
 - [ ] Pinned, aggregate, unknown-target, lowercase-route, bare `/mcp`, and absent `/targets` behavior match the selected topology.
 - [ ] Named data preview and SQL work only where both instance and destination allow them.
-- [ ] Multi-target routes expose no mutation, transport, Git, ATC, ABAP Unit, plugin, UI, or hyperfocused capability.
+- [ ] Multi-target routes expose no writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI, or hyperfocused mode. Permitted lint/transport reads match the [reviewed action surface](multi-target-setup.md#allowed-tools).
+- [ ] ATC and ABAP Unit workload access is deliberately retained or denied; neither is run as a routine deployment smoke test.
 - [ ] Shared Basic, if enabled, uses a least-privilege non-`SAP_ALL` user, monitored lockout/expiry, one CF process, and a rehearsed non-rolling update.
 - [ ] PP-only scale testing includes total process concurrency and consistent registry revisions.
 - [ ] VS Code/GitHub Copilot, Cursor, and any customer-required MCP client completed OAuth, reconnect, catalog refresh, and one safe call.
