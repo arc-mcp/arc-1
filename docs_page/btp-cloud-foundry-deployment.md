@@ -1,8 +1,5 @@
 # BTP Cloud Foundry Deployment
 
-<!-- Source-only readers: match this checkout to the deployed artifact. Single-target and
-experimental multi-target sections coexist; see btp-documentation.md and docs/btp-setup-index.yaml. -->
-
 This is the canonical administrator runbook for deploying ARC-1 on SAP BTP Cloud Foundry. It uses
 the repository's SAP Multi-Target Application (MTA) descriptor so XSUAA, Destination, Connectivity,
 bindings, role collections, health checks, and safe defaults are deployed together.

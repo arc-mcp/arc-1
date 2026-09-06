@@ -87,9 +87,8 @@ arc1*.tmp.json
 sessions/
 node_modules/
 
-# Generated documentation and local Python bytecode are not source provenance changes.
+# Local documentation build output.
 /site/
-__pycache__/
 
 # Claude worktrees
 .claude/worktrees/

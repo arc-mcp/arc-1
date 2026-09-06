@@ -5,18 +5,11 @@ on:
     branches:
       - main
     paths:
-      - 'docs/btp-setup-index.yaml'
-      - 'scripts/docs/**'
-      - 'examples/btp/**'
-      - 'AGENTS.md'
       - 'docs_page/**'
       - 'docs/overrides/**'
       - 'overrides/**'
       - 'README.md'
       - 'mkdocs.yml'
-      - 'requirements-docs.txt'
-      - 'package.json'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -33,21 +26,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+        uses: actions/checkout@v7
 
       - name: Setup Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version: '3.x'
 
       - name: Install MkDocs
-        run: pip install -r requirements-docs.txt
+        run: pip install "mkdocs-material>=9.5,<10" "mkdocs-redirects>=1.2,<2"
 
       - name: Build docs
-        run: mkdocs build --strict
+        run: mkdocs build
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v5

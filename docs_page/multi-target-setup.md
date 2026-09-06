@@ -1,8 +1,5 @@
 # Multi-System Setup (Multi-Target v1)
 
-<!-- Source-only readers: experimental, mutation-free and default off. Match this checkout
-to the deployed artifact; see btp-documentation.md and docs/btp-setup-index.yaml. -->
-
 If ARC-1 and its BTP services are not deployed yet, begin with
 [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md), then return here for the
 multi-target-specific override, destinations, endpoints, and acceptance test. Common role, secret,

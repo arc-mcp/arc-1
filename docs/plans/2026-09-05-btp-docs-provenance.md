@@ -1,85 +1,45 @@
-# BTP documentation provenance — implementation plan
+# BTP documentation entry points — revised plan
 
 ## Summary
 
-Add visible checkout/status information to eight canonical BTP guides, plus a small task manifest
-that generates human navigation and a compact `llms.txt`. Keep Markdown and MkDocs. No runtime,
-authorization, deployment, model dependency, chatbot or documentation-platform change.
+Keep one Markdown task map in BTP Start Here, add short source-revision guidance there, and publish
+a small static `llms.txt` pointing to it. Remove the YAML manifest, Python generator/tests, custom
+MkDocs hook, per-page metadata banners, additional public index page and dedicated source-index CI.
+The ordinary MkDocs build and docs checks from #752 remain the verification path.
 
-This is approved PR 03. Merge the operational corrections (#752) first and PP examples (#753) next;
-this branch is independently based on main `5c36f2a734870081780a5d4be734f605b1036318` (package 1.2.0).
-The index initially covers existing canonical guides, so it never links to unmerged example files.
+This supersedes the initial generated-provenance design after the 2026-09-06 usability review.
+The extra machinery validated metadata, but duplicated navigation and interrupted setup reading.
+MTA/destination configuration and runtime behavior are unchanged.
 
-## Refined decisions
+## Implementation
 
-- Use one small local MkDocs hook, with a closed Python-validated manifest schema. Reuse MkDocs'
-  existing Markdown/PyYAML dependencies, not a generic CMS, generator or new schema dependency.
-- Store review date, reviewed commit and source-evidence paths explicitly. Builds do not refresh
-  review dates or claim that existence of a test file means a test ran.
-- A matching exact `v<package version>` tag is labeled **exact release-tag checkout**, not a
-  cryptographically verified or published release. Untagged main/spec branches are development
-  documentation; dirty builds are local/uncommitted; unavailable Git metadata is unverified.
-- Pin generated remote source links only for clean, known commits and confirm each file exists at
-  that commit. Local/unknown builds show repository paths without claiming remote publication.
-  A clean commit does not prove a deployed artifact was built from it.
-- Require exact matching source as the initial compatibility rule. No guessed release ranges.
-- Generate only into MkDocs output. Exclude proposed, historical and unknown-status entries from
-  operational navigation/index. Preserve their metadata for review, never promote by build date.
-- Add concise raw-Markdown applicability notes and one AGENTS routing row. Keep existing URLs and
-  advanced/single-target guidance reachable.
-- Use the same documentation dependency file as PR 01 (identical content, allowing independent
-  builds); add a focused credential-free Python test workflow. The strict PR build remains PR 01's
-  responsibility, while the Pages build invokes the hook and tracks its source inputs.
+1. Remove only files and wiring introduced for generated documentation metadata. Preserve the
+   existing site and the operational corrections in #752; do not require a documentation migration.
+2. Keep topology/task selection in `docs_page/btp-overview.md`, readable directly as Markdown.
+   State once that main may be newer than a deployed artifact; do not infer a compatible range.
+3. Make `docs_page/llms.txt` a short pointer to Start Here, not another catalog. Its main link is
+   explicitly development guidance; local/release readers use the same-revision checkout.
+4. Route AGENTS to Start Here; put maintainer and optional evaluation advice in the existing
+   developer guide, not another operator page.
+5. Integrate #752, #753 and this PR in a temporary worktree to check the combined paths. Keep
+   existing published PR history; apply review changes as a new commit with a normal push.
 
-## Implementation sequence
+## Verification plan
 
-1. Add manifest and hook: strict schema, canonical files/anchors, source-evidence paths, provenance,
-   deterministic generation and proposal exclusion.
-2. Add Python tests for valid/invalid manifests, exact tag/development/dirty/unknown provenance,
-   real temporary Git repositories, immutable source-link correspondence and output determinism.
-3. Wire MkDocs labels, generated task navigation and `llms.txt`; add maintenance instructions,
-   raw-source warnings and a terse AGENTS task route. Do not add old research/specs as setup steps.
-4. Wire credential-free CI tests and publication triggers for manifest/hook/source-version inputs.
-5. Run tests, strict MkDocs build, negative build checks and rendered browser inspection. Verify
-   clean checkout output after committing, then review scope and create a separate PR.
+- Strict MkDocs build, including the integrated three-PR state; check local links and old anchors.
+- Inspect Start Here and multi-target setup in a browser: no generated metadata before each task,
+  no third task map, and no new public maintenance page.
+- Check the built `llms.txt` matches its tracked text and its source link reaches Start Here.
+- Walk through single PP and multi PP from HTML and raw Markdown. The runbook selects the file,
+  preserves existing settings, prepares single startup connectivity before deploy and separates
+  safe-read success from correlated backend identity. #753 adds copy-command regressions.
+- Run the relevant unit tests, typecheck/lint and descriptor validation in the integrated tree.
+  No live IAM/SAP changes or paid-model calls are needed.
+- Optional user/LLM comparisons record task correctness, unsafe suggestions, unresolved inputs and
+  backtracking for the same task/revision. A passing build is not proof of usability improvement.
 
-## Acceptance and evidence boundaries
+## Scope boundaries
 
-Required: schema errors and dead anchors fail builds; no stale review dates are invented; generated
-links resolve to files in the asserted Git tree; local edits never borrow an exact-release label;
-current guides remain usable without an LLM. Check the three PRs together for integration conflicts.
-
-Optional: compare wrong-version advice, unnecessary source reads and setup-task correctness with
-and without the index. No LLM evaluation service or measured usability improvement is required or
-claimed. Live BTP/SAP acceptance remains separate and is not attempted by documentation tooling.
-
-## References checked
-
-- [MkDocs local hooks](https://www.mkdocs.org/user-guide/configuration/#hooks) and
-  [page/build events](https://www.mkdocs.org/dev-guide/plugins/): use the existing build lifecycle.
-- [llms.txt proposal](https://llmstxt.org/): publish a deliberately small linked index, not an
-  assertion that clients discover it automatically or that every convention is implemented.
-
-## Rollback
-
-Remove the hook/generated surfaces, manifest and focused test job. Canonical guides and their
-source-applicability notes remain useful. No service migration or customer change is involved.
-
-## Implementation evidence (2026-09-05)
-
-- Seventeen Python tests pass, including real temporary Git repositories and malformed metadata,
-  private/symlinked paths, dead anchors, exact tags, main/spec branches and proposal exclusion.
-- Full existing unit suite: 192 files / 5,757 tests passed. Typecheck and lint passed; existing
-  Biome configuration notices remain. No runtime source or lockfile changed.
-- A deliberately broken real manifest anchor aborted `mkdocs build --strict`; restoring it made
-  the build pass. The test fixture was not retained in the manifest.
-- Local browser review checked the task table, source banner and experimental multi-target page.
-  Source validation caught an outdated evidence path; it now references the actual HTTP/OAuth
-  recovery implementation on the recorded baseline.
-- A clean-checkout build correctly reports development/source documentation and pins source links
-  to its actual commit. Live-preview rebuild tests confirm metadata/Git state are refreshed.
-- A separate detached worktree integrates PRs 01–03 cleanly after aligning the shared Pages
-  checkout settings. Combined validation: 194 unit files / 5,766 tests, 17 Python tests, typecheck,
-  lint, strict MkDocs build and all five MBT validations passed. No merge was made on main.
-- Remote publication, customer acceptance and human/LLM setup improvement are not established by
-  these checks. No remaining blocking finding was identified in the final scoped review.
+No documentation metadata schema, per-page review-date obligations, custom publisher, wizard,
+prebuilt MTAR, Terraform or chatbot. Research/specs remain separate from shipped setup guidance.
+New customer deployment, authentication and identity acceptance remain owner-approved live tasks.

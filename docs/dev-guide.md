@@ -8,6 +8,24 @@ to a task and you need the deep background (exact endpoints, version quirks, ver
 read the matching row here. Content moved verbatim from the pre-2026-06 root file; module pointers
 reflect the post-consolidation handler layout (dispatch.ts + per-tool modules + write/ package).
 
+## BTP documentation
+
+`docs_page/btp-overview.md` is the shared task map for people and assistants; the deployment
+runbook owns the ordered commands. Example READMEs explain their files, not another setup sequence.
+Keep the map readable as raw Markdown as well as HTML. `docs_page/llms.txt` is only a short link to
+that entry point, copied unchanged by MkDocs; there is no manifest or custom build hook.
+
+When changing setup guidance, check the relevant runtime/descriptor and existing examples together.
+Run the focused documentation/profile tests and strict MkDocs build, then follow the affected task
+from Start Here. Verify one next step, no overwritten settings and distinct evidence for safe reads
+and SAP identity. Keep code-review notes and test results out of public setup instructions.
+
+Optional human/LLM comparison: give readers the same task and source revision (single PP, multi PP,
+unknown OAuth scope, or adding a client). Record correct profile/next step, unresolved inputs,
+unsafe suggestions and unnecessary page changes, before and after. Supply Start Here explicitly
+and note whether HTML or raw Markdown was used. A passing build is not a measured usability gain;
+ordinary corrections need no paid model run or live deployment.
+
 ## Configuration — full reference
 
 Lives in [docs_page/configuration-reference.md](../docs_page/configuration-reference.md) (defaults,

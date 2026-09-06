@@ -1,8 +1,5 @@
 # BTP Destination Reference
 
-<!-- Source-only readers: match this checkout to the deployed artifact. Single-target and
-experimental multi-target sections coexist; see btp-documentation.md and docs/btp-setup-index.yaml. -->
-
 Use this page to choose and configure the BTP destination consumed by ARC-1. It is a property
 reference, not a second Principal Propagation procedure. For Cloud Connector certificates, SAP
 trust, CERTRULE, SU01, ICM/SICF, and end-to-end testing, follow

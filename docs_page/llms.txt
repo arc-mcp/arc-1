@@ -1,0 +1,11 @@
+# ARC-1 documentation
+
+> Use the documentation from the source revision used to build the deployed artifact.
+> The link below follows main and may describe unreleased changes.
+
+## SAP BTP setup and administration
+
+- [BTP Start Here](https://raw.githubusercontent.com/arc-mcp/arc-1/main/docs_page/btp-overview.md): choose the topology, then follow its deployment or administration links. In a local checkout, read docs_page/btp-overview.md instead.
+
+Use the same revision for linked guides and examples. Research and plans are not shipped settings.
+Ask for missing landscape inputs, not passwords, tokens, private keys or raw service bindings.
