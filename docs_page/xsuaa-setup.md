@@ -81,10 +81,10 @@ roles before assigning users.
 > the collection for *your* space (Step 3). The route uses CF's generated default host unless
 > overridden; read the actual route from `cf app <app-name>` instead of guessing it from the space.
 >
-> **Migrating an existing instance** onto per-space naming changes its route host
-> and `xsappname`: update the MCP client URL, re-assign users to the new
-> `ARC-1 … (<space>)` collections, and set `ARC1_DCR_SIGNING_SECRET` before the
-> redeploy so cached OAuth `client_id`s survive the `xsappname` change.
+> **Migrating an existing instance:** compare its current `xsappname`, collections and route
+> with the reviewed deployment. Re-assign users if the collection/application identifier changes;
+> update MCP client URLs only if the actual route changes. Preserve the
+> [stable DCR signing key](#stable-dcr-signing-key-recommended) across redeployments.
 >
 > Updating an existing XSUAA service with
 > `cf update-service arc1-xsuaa -c xs-security.json` updates the scopes and role
@@ -162,16 +162,21 @@ to distinguish an invalid requested scope from missing authorization or stale cl
 
 ## Step 4: Verify OAuth Discovery
 
+Read the route from `cf app <app-name>`; do not derive it from the space or copy another region's
+hostname. If using a custom public URL, use that reviewed URL. Replace `<arc1-route>` in the client
+examples below with this same host.
+
 ```bash
-curl -s https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/.well-known/oauth-authorization-server | jq .
+ARC1_URL="https://<arc1-route>"
+curl -fsS "$ARC1_URL/.well-known/oauth-authorization-server" | jq .
 ```
 
 Expected response:
 ```json
 {
-  "issuer": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/",
-  "authorization_endpoint": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/authorize",
-  "token_endpoint": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/token",
+  "issuer": "https://<arc1-route>/",
+  "authorization_endpoint": "https://<arc1-route>/authorize",
+  "token_endpoint": "https://<arc1-route>/token",
   "scopes_supported": ["read", "write", "data", "sql", "transports", "git", "admin"],
   "response_types_supported": ["code"],
   "code_challenge_methods_supported": ["S256"],
@@ -209,7 +214,7 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "arc1-sap": {
-      "url": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp"
+      "url": "https://<arc1-route>/mcp"
     }
   }
 }
@@ -224,7 +229,7 @@ In Cursor settings → MCP Servers, add:
 ```json
 {
   "arc1-sap": {
-    "url": "https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp"
+    "url": "https://<arc1-route>/mcp"
   }
 }
 ```
@@ -233,7 +238,7 @@ In Cursor settings → MCP Servers, add:
 
 Connect to:
 ```
-https://arc1-mcp-<space>.cfapps.us10-001.hana.ondemand.com/mcp
+https://<arc1-route>/mcp
 ```
 
 The inspector will perform OAuth discovery and redirect to XSUAA login.

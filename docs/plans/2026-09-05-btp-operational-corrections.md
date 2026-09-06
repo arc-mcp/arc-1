@@ -36,6 +36,13 @@ No cloud credentials, browser login, role changes or deployment are required.
 - New PR workflow has no secrets, deployment, or write permissions.
 - Changes remain documentation, documentation tests and CI only.
 
+## Review refinement (2026-09-06)
+
+Use the observed CF/custom public route throughout the OAuth examples; space-qualified XSUAA names
+do not define the route. Migration instructions make URL changes conditional. Add a regression for
+the actual-route command and remove the remaining derived-host examples; retain the existing
+correctness/strict-build checks without expanding the operator documentation.
+
 ## Implementation evidence
 
 - Full unit suite: 193 files / 5,760 tests passed; focused contracts: 58 tests passed.

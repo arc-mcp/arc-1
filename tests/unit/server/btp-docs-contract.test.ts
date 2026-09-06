@@ -39,6 +39,14 @@ function assertParity(markdown: string): void {
 }
 
 describe('BTP documentation contracts', () => {
+  it('uses the observed CF route rather than deriving OAuth URLs from the space', () => {
+    const xsuaa = read('docs_page/xsuaa-setup.md');
+    expect(xsuaa).toContain('cf app <app-name>');
+    expect(xsuaa).toContain('curl -fsS "$ARC1_URL/.well-known/oauth-authorization-server"');
+    expect(xsuaa).not.toContain('https://arc1-mcp-<space>.');
+    expect(xsuaa).not.toContain('onto per-space naming changes its route host');
+  });
+
   it('keeps the maintained maximum action table in sync with the real schema', () => assertParity(guide));
 
   it('detects a missing or invented action (guard regression)', () => {
