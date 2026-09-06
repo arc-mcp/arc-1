@@ -5,6 +5,18 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.3.0](https://github.com/arc-mcp/arc-1/compare/v1.2.0...v1.3.0) (2026-09-06)
+
+
+### Features
+
+* support per-node KTD short texts ([#750](https://github.com/arc-mcp/arc-1/issues/750)) ([5c36f2a](https://github.com/arc-mcp/arc-1/commit/5c36f2a734870081780a5d4be734f605b1036318))
+
+
+### Bug Fixes
+
+* safely update multi-node Knowledge Transfer Documents ([#749](https://github.com/arc-mcp/arc-1/issues/749)) ([347d83f](https://github.com/arc-mcp/arc-1/commit/347d83f37dc8eec1bb14938ddaa1d9f3849e5cfd))
+
 ## [1.2.0](https://github.com/arc-mcp/arc-1/compare/v1.1.2...v1.2.0) (2026-09-03)
 
 
