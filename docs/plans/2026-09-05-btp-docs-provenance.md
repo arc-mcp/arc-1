@@ -17,8 +17,9 @@ MTA/destination configuration and runtime behavior are unchanged.
    existing site and the operational corrections in #752; do not require a documentation migration.
 2. Keep topology/task selection in `docs_page/btp-overview.md`, readable directly as Markdown.
    State once that main may be newer than a deployed artifact; do not infer a compatible range.
-3. Make `docs_page/llms.txt` a short pointer to Start Here, not another catalog. Its main link is
-   explicitly development guidance; local/release readers use the same-revision checkout.
+3. Make `docs_page/llms.txt` a short pointer to Start Here on the documentation site, not another
+   catalog. Offer raw Markdown as an alternative, state both follow main, and direct local/release
+   readers to the same-revision checkout.
 4. Route AGENTS to Start Here; put maintainer and optional evaluation advice in the existing
    developer guide, not another operator page.
 5. Integrate #752, #753 and this PR in a temporary worktree to check the combined paths. Keep
