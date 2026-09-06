@@ -77,6 +77,7 @@ nav:
   - Using ARC-1:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
+      - Repository Graph (Experimental): repository-graph.md
       - MCP Usage Guide: mcp-usage.md
       - Skills: skills.md
       - More:

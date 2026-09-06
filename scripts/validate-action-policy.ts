@@ -17,6 +17,7 @@ import { dirname, resolve } from 'node:path';
 import { ACTION_POLICY, allPolicyKeys } from '../src/authz/policy.js';
 import { OperationType, type OperationTypeCode } from '../src/adt/safety.js';
 import { SAPREAD_TYPES_ONPREM } from '../src/handlers/tool-registry.js';
+import { GRAPH_ACTIONS } from '../src/repository-graph/contract.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCHEMAS_PATH = resolve(__dirname, '..', 'src', 'handlers', 'schemas.ts');
@@ -61,6 +62,7 @@ function extractToolActions(source: string): { tool: string; actions: string[] }
   // Keep it in the same bidirectional policy validation so deleting its read policy
   // or leaving a stale policy row still fails CI.
   results.push({ tool: 'SAPTargets', actions: [] });
+  results.push({ tool: 'SAPGraph', actions: [...GRAPH_ACTIONS] });
 
   return results;
 }

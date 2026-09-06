@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 
-// FEAT-61 PR1.2 parity: the registry must expose exactly the 12 built-ins + the `SAP`
-// hyperfocused wrapper, all sourced as 'builtin', with a real policy — i.e. the switch→registry
-// refactor dropped nothing and added nothing.
+// 12 default tools + optional SAPGraph + hyperfocused wrapper. The optional handler is
+// stateless here: its client comes from the per-runtime dispatch context, never this singleton.
 const BUILTINS = [
   'SAPRead',
   'SAPSearch',
@@ -18,11 +17,12 @@ const BUILTINS = [
   'SAPGit',
   'SAPContext',
   'SAPManage',
+  'SAPGraph',
   'SAP',
 ];
 
 describe('built-in tool registration (FEAT-61 PR1.2)', () => {
-  it('registers exactly the 13 built-ins, all source=builtin with a policy', () => {
+  it('registers exactly the 14 handlers, all source=builtin with a policy', () => {
     const r = getToolRegistry();
     for (const name of BUILTINS) {
       const e = r.get(name);

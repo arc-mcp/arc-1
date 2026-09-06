@@ -226,10 +226,19 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPManage.flp_add_tile_to_group': { scope: 'write', opType: OperationType.Workflow, featureGate: 'flp' },
   'SAPManage.flp_delete_catalog': { scope: 'write', opType: OperationType.Workflow, featureGate: 'flp' },
 
+  // ── Optional external repository metadata (native, not a plugin) ──
+  SAPGraph: { scope: 'read', opType: OperationType.Read },
+  'SAPGraph.status': { scope: 'read', opType: OperationType.Read },
+  'SAPGraph.search': { scope: 'read', opType: OperationType.Read },
+  'SAPGraph.neighbors': { scope: 'read', opType: OperationType.Read },
+  'SAPGraph.impact': { scope: 'read', opType: OperationType.Read },
+  'SAPGraph.path': { scope: 'read', opType: OperationType.Read },
+  'SAPGraph.package_coupling': { scope: 'read', opType: OperationType.Read },
   // ── Hyperfocused SAP (single-tool mode) ──────────────────────────
   // Mirrors the action surface of the non-hyperfocused tools. Keys are SAP.<action>.
   // Most are identical to the per-tool entries above.
   SAP: { scope: 'read', opType: OperationType.Read },
+  'SAP.graph': { scope: 'read', opType: OperationType.Read },
   'SAP.read': { scope: 'read', opType: OperationType.Read },
   'SAP.search': { scope: 'read', opType: OperationType.Search },
   'SAP.query': { scope: 'sql', opType: OperationType.FreeSQL },

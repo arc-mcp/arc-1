@@ -32,6 +32,8 @@ import {
 } from '../handlers/feature-cache.js';
 import type { ToolResult } from '../handlers/shared.js';
 import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
+import { createRepositoryGraphRuntime, type RepositoryGraphRuntime } from '../repository-graph/runtime.js';
+import { attachRepositoryGraph } from '../repository-graph/server-bridge.js';
 import { logAuthSummary } from './auth-summary.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId } from './context.js';
@@ -653,6 +655,7 @@ export function formatStartupAuthPreflightToolError(preflight: StartupAuthPrefli
 }
 
 export interface CreateServerOptions {
+  repositoryGraph?: RepositoryGraphRuntime;
   btpProxy?: BTPProxyConfig;
   btpConfig?: BTPConfig;
   bearerTokenProvider?: () => Promise<string>;
@@ -698,6 +701,12 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
       );
 
+  const graphBridge = defaultClient
+    ? attachRepositoryGraph(config, server, defaultClient, options, (token) =>
+        configuredApiKeyProfile(apiKeyProvenanceVerifier, token),
+      )
+    : undefined;
+
   // Cookie-auth preflight propagation: when startup preflight returned a non-blocking
   // 401 in SAP_COOKIE_FILE mode, the throwaway preflight client marked itself stale —
   // but the long-lived defaultClient was constructed independently with cookies read at
@@ -742,6 +751,8 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
       }
     }
 
+    tools = graphBridge?.tools(tools) ?? tools;
+
     // When authenticated, only show tools the user has scopes for
     if (extra.authInfo) {
       tools = filterToolsByAuthScope(tools, extra.authInfo.scopes, config.denyActions);
@@ -783,6 +794,9 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     let multiTargetMcpRateLimitConsumed = false;
     let multiError: MultiTargetErrorBuilder = (code, message, details = {}) =>
       structuredToolError(code, message, details);
+
+    const graphResult = graphBridge?.call(toolName, rawArgs, extra, requestId);
+    if (graphResult) return graphResult;
 
     if (multiTarget) {
       const prepared = await prepareMultiTargetCall({
@@ -1356,8 +1370,11 @@ export async function createAndStartServer(
       })()
     : Promise.resolve();
 
+  const repositoryGraph = createRepositoryGraphRuntime(config);
+  repositoryGraph?.start();
   const buildDefaultServer = () =>
     createServer(config, {
+      repositoryGraph,
       btpProxy,
       btpConfig,
       bearerTokenProvider,
@@ -1404,6 +1421,7 @@ export async function createAndStartServer(
     const cleanup = (signal: string) => {
       if (cacheClosed) return;
       cacheClosed = true;
+      repositoryGraph?.stop();
       try {
         cachingLayer?.cache.close();
       } catch {
@@ -1417,6 +1435,7 @@ export async function createAndStartServer(
   } else {
     // No cache — still log clean shutdown on explicit signals so operators see it in logs.
     process.on('SIGTERM', () => {
+      repositoryGraph?.stop();
       logger.info('ARC-1 shutting down (SIGTERM)');
       process.exit(0);
     });

@@ -588,6 +588,13 @@ export function getToolRegistry(): ToolRegistry {
   reg('SAPGit', (ctx) => handleSAPGit(ctx.client, ctx.args, ctx.authInfo));
   reg('SAPContext', (ctx) => handleSAPContext(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
   reg('SAPManage', (ctx) => handleSAPManage(ctx.client, ctx.config, ctx.args, ctx.cache, ctx.isPerUserClient));
+  reg('SAPGraph', (ctx) => {
+    if (ctx.config.graphMode === 'off' || ctx.config.multiTargetEndpoints || !ctx.repositoryGraph)
+      return Promise.resolve(errorResult('Repository graph: not configured for this runtime'));
+    if (ctx.config.ppEnabled && ctx.config.ppStrictExplicit && ctx.config.ppStrict && !ctx.repositoryGraphJwtVerified)
+      return Promise.resolve(errorResult('Repository graph: strict JWT authentication required'));
+    return ctx.repositoryGraph.call(ctx.args, getCurrentContext()?.signal);
+  });
   reg('SAP', async (ctx) => {
     const expanded = expandHyperfocusedArgs(ctx.args);
     if ('error' in expanded) return errorResult(expanded.error);
@@ -602,6 +609,9 @@ export function getToolRegistry(): ToolRegistry {
       ctx.isPerUserClient,
       undefined,
       ctx.requestId,
+      undefined,
+      undefined,
+      { repositoryGraph: ctx.repositoryGraph, repositoryGraphJwtVerified: ctx.repositoryGraphJwtVerified },
     );
   });
   _toolRegistry = r;
@@ -726,6 +736,10 @@ export async function handleToolCall(
   postDispatchResult?: () => ToolResult | undefined,
   /** MCP caller cancellation; nested dispatch inherits it through RequestContext. */
   signal?: AbortSignal,
+  runtime: {
+    repositoryGraph?: import('../repository-graph/runtime.js').RepositoryGraphRuntime;
+    repositoryGraphJwtVerified?: boolean;
+  } = {},
 ): Promise<ToolResult> {
   const reqId = requestId ?? generateRequestId();
   const start = Date.now();
@@ -733,7 +747,8 @@ export async function handleToolCall(
   // Build user context for audit logging
   const user = authInfo?.extra?.userName as string | undefined;
   const clientId = authInfo?.clientId;
-  const identity = config.targetId ? (config.ppEnabled ? 'per-user' : 'shared') : undefined;
+  const graphCall = toolName === 'SAPGraph' || (toolName === 'SAP' && args.action === 'graph');
+  const identity = graphCall ? 'shared' : config.targetId ? (config.ppEnabled ? 'per-user' : 'shared') : undefined;
   // For plugin (Custom_*) tools, tag every audit event with the contributing plugin (spec §9).
   const pluginName = getToolRegistry().get(toolName)?.pluginName;
   // Which agent acted, for audit attribution. The MCP handshake identifies the client precisely,
@@ -942,6 +957,8 @@ export async function handleToolCall(
           result = errorResult(`Unknown tool: ${toolName}`);
         } else {
           const dispatchCtx: ToolDispatchContext = {
+            repositoryGraph: runtime.repositoryGraph,
+            repositoryGraphJwtVerified: runtime.repositoryGraphJwtVerified,
             client,
             config,
             args,

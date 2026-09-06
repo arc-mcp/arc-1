@@ -25,6 +25,7 @@
 import { pathToFileURL } from 'node:url';
 import type { FeatureStatus, ResolvedFeatures } from '../../src/adt/types.js';
 import { getToolDefinitions, type ToolDefinition } from '../../src/handlers/tools.js';
+import { addGraphTool } from '../../src/repository-graph/tools.js';
 import type { TargetDescriptor } from '../../src/server/destination-registry.js';
 import {
   injectTargetSchema,
@@ -163,6 +164,16 @@ const MULTI_TARGET_BUDGET: ToolSchemaBudget = {
 };
 
 export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
+  {
+    name: 'standard-full-git-graph', config: FULL_ACCESS_CONFIG, textSearchAvailable: true,
+    definitions: addGraphTool(getToolDefinitions(FULL_ACCESS_CONFIG, true, ALL_FEATURES_AVAILABLE), false),
+    budget: { schemaTokenEstimate: 18000, descriptionTokenEstimate: 13000, descriptionCount: 280, maxTotalWireBytes: WRITE_WIRE_WALL, maxPerToolWireBytes: PER_TOOL_WIRE_WALL },
+  },
+  {
+    name: 'hyperfocused-graph', config: { ...DEFAULT_CONFIG, toolMode: 'hyperfocused' }, textSearchAvailable: true,
+    definitions: addGraphTool(getToolDefinitions({ ...DEFAULT_CONFIG, toolMode: 'hyperfocused' }), true),
+    budget: { schemaTokenEstimate: 320, descriptionTokenEstimate: 170, descriptionCount: 6, maxTotalWireBytes: 1280, maxPerToolWireBytes: 1260 },
+  },
   {
     name: 'standard-default',
     config: DEFAULT_CONFIG,

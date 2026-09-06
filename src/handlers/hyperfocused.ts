@@ -29,6 +29,7 @@ const ACTION_TO_TOOL: Record<string, string> = {
   git: 'SAPGit',
   context: 'SAPContext',
   manage: 'SAPManage',
+  graph: 'SAPGraph',
 };
 
 /**

@@ -14,6 +14,7 @@ import type { OperationTypeCode } from '../adt/safety.js';
 import { hasRequiredScope, OPTYPE_SCOPE, type Scope } from '../authz/policy.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { CacheSecurityContext } from '../handlers/cache-security.js';
+import type { RepositoryGraphRuntime } from '../repository-graph/runtime.js';
 import type { ServerConfig } from '../server/types.js';
 
 /**
@@ -33,6 +34,8 @@ export interface ToolResult {
  * adapters use this internal bundle directly.
  */
 export interface ToolDispatchContext {
+  readonly repositoryGraph?: RepositoryGraphRuntime;
+  readonly repositoryGraphJwtVerified?: boolean;
   readonly client: AdtClient;
   readonly config: ServerConfig;
   readonly args: Record<string, unknown>;
