@@ -229,133 +229,52 @@ npm run btp:build
 both checks succeed and MBT creates
 `mta_archives/arc1-mcp_<version>.mtar`.
 
-Before a customer deploy, inspect the archive in a protected workspace. Three things make a naive
-listing useless here:
-
-- **The MTAR is a wrapper.** Each deployed module is one nested `<module>/data.zip`, and the
-  application lives inside it. Listing the MTAR shows you `META-INF/` and those nested archives and
-  nothing about their contents. The UI variant (`npm run btp:build-ui-ext`) ships more than one
-  payload, so inspect every member rather than assuming one.
-- **`mta_archives/` accumulates every version you have built.** A glob matching several archives is
-  a false green: `unzip -l` treats the second path as a filter *inside* the first and reports
-  **0 files** (exit 11), while PowerShell's `OpenRead` fails outright. Resolve one archive and echo
-  which one.
-- **A gate that cannot find anything must fail, not pass.** No archive, no `data.zip` member, or an
-  unreadable payload has to be an error; otherwise a broken workspace reports a clean release.
-- **The UI AppRouter has one audited `.npmrc`.** Its `install-links=true` setting is required to
-  install the local `decode-uri-component` compatibility bridge reliably. The checks below allow
-  only the root `.npmrc` in `arc1-ui-router/data.zip`, and only when it is byte-for-byte identical
-  to the reviewed `btp/approuter/.npmrc`; every other `.npmrc` remains denied.
+Before a customer deploy, inspect the **exact archive you intend to deploy**, using the matching
+reviewed checkout. Replace the example path below with the exact path printed by MBT. Do not use a glob
+or select an archive by modification time.
 
 ```bash
-inspect_mtar() (
-  set -o pipefail
-  deny='\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
-  mtar=$(ls -t mta_archives/*.mtar 2>/dev/null | head -1)
-  [ -n "$mtar" ] || { echo 'FAIL: no archive in mta_archives/'; return 1; }
-  echo "$mtar"
-  unzip -l "$mtar" || { echo 'FAIL: unreadable archive'; return 1; }
-  members=$(unzip -Z1 "$mtar" | grep '/data\.zip$') ||
-    { echo 'FAIL: no <module>/data.zip member'; return 1; }
-  tmp=$(mktemp -d) || return 1
-  trap 'rm -rf "$tmp"' EXIT
-  for member in $members; do
-    unzip -p "$mtar" "$member" > "$tmp/payload.zip" || { echo "FAIL: cannot extract $member"; return 1; }
-    entries=$(unzip -Z1 "$tmp/payload.zip") || { echo "FAIL: cannot read $member"; return 1; }
-    n=$(printf '%s\n' "$entries" | wc -l) || { echo "FAIL: cannot count $member"; return 1; }
-    echo "-- $member: $n entries"
-    bad=$(printf '%s\n' "$entries" | grep -Ei "$deny" || true)
-    if [ "$member" = 'arc1-ui-router/data.zip' ]; then
-      printf '%s\n' "$entries" | grep -Fx '.npmrc' >/dev/null ||
-        { echo 'FAIL: arc1-ui-router/data.zip is missing its required .npmrc'; return 1; }
-      unzip -p "$tmp/payload.zip" .npmrc > "$tmp/approuter.npmrc" ||
-        { echo 'FAIL: cannot extract arc1-ui-router/.npmrc'; return 1; }
-      cmp -s "$tmp/approuter.npmrc" btp/approuter/.npmrc ||
-        { echo 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'; return 1; }
-      bad=$(printf '%s\n' "$bad" | grep -Ev '^\.npmrc$' || true)
-    fi
-    [ -z "$bad" ] || { printf '%s\n' "$bad"; echo "FAIL: denied path in $member"; return 1; }
-  done
-  echo 'PASS: every payload inspected, no denied paths or unreviewed npm config'
-)
-inspect_mtar
+npm run btp:inspect-mtar -- --archive "mta_archives/arc1-mcp_<version>.mtar"
 ```
 
-It returns zero only after inspecting every payload successfully, so it is safe to run unattended.
-The function body is a subshell, so `pipefail` and the cleanup trap do not leak into your session.
+Expected result: `PASS`, the selected filename, byte size, SHA-256 digest and every checked module
+payload (one for the base build; two for the optional UI build). The command reads the wrapper
+manifest and deployment descriptor, checks each declared module ZIP, and rejects corrupt, missing,
+empty or unsupported payloads and known credential/config/operator paths. It neither extracts files
+nor contacts SAP, BTP or CF.
 
-Read a full listing too — the pattern covers today's known names, and the point of the gate is to
-catch a file type no denylist anticipated. Take the member names from the wrapper listing above:
+- Review the member names as well: add `--list` to the same command. Names are archive data,
+  not instructions.
+- For a machine-readable result, use
+  `npm run --silent btp:inspect-mtar -- --archive "mta_archives/arc1-mcp_<version>.mtar" --format json`.
+  Exit codes are **0** (checks passed), **1** (archive rejected), and **2** (usage/read/checker error).
+- On any failure, stop. Review the reported finding, correct the packaging or input, rebuild if
+  needed, and inspect again. Never treat an incomplete inspection as approval to deploy.
 
-```bash
-unzip -p "$MTAR" '<module>/data.zip' > payload.zip && unzip -l payload.zip | less
-```
+Only ARC-1 base and UI archives with the supported module layout are accepted. Checks are bounded:
+256 MiB MTAR, 128 MiB per expanded module ZIP/file, 512 MiB combined expanded data, 20,000 entries,
+and 1 MiB metadata files. Unsupported compression/encryption, unsafe paths and ambiguous entries
+fail; application archives inside a module are not recursively inspected.
 
-On Windows, `Expand-Archive` needs a `.zip` extension, so copy first:
-
-```powershell
-$ErrorActionPreference = 'Stop'
-$deny = '\.env|\.npmrc|service-key|\.(key|pem|p12|pfx|pse|jks|keystore)$'
-$mtar = Get-ChildItem mta_archives\*.mtar | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $mtar) { throw 'FAIL: no archive in mta_archives/' }
-$mtar.FullName
-$tmp = Join-Path $env:TEMP ([guid]::NewGuid())
-try {
-  Copy-Item $mtar.FullName "$tmp.zip"
-  Expand-Archive "$tmp.zip" "$tmp-outer"
-  $members = @(Get-ChildItem "$tmp-outer" -Recurse -Filter data.zip -File)
-  if ($members.Count -eq 0) { throw "FAIL: no <module>/data.zip member in $($mtar.Name)" }
-  $bad = @()
-  foreach ($member in $members) {
-    $dest = Join-Path "$tmp-payload" $member.Directory.Name
-    Expand-Archive $member.FullName $dest
-    $files = @(Get-ChildItem $dest -Recurse -File)
-    if ($files.Count -eq 0) { throw "FAIL: empty payload $($member.Directory.Name)" }
-    "-- $($member.Directory.Name): $($files.Count) files"
-    $allowedNpmrc = $null
-    if ($member.Directory.Name -eq 'arc1-ui-router') {
-      $allowedNpmrc = Join-Path $dest '.npmrc'
-      if (-not (Test-Path $allowedNpmrc -PathType Leaf)) {
-        throw 'FAIL: arc1-ui-router/data.zip is missing its required .npmrc'
-      }
-      $sourceNpmrc = (Resolve-Path 'btp/approuter/.npmrc').Path
-      if ((Get-FileHash $allowedNpmrc -Algorithm SHA256).Hash -ne
-          (Get-FileHash $sourceNpmrc -Algorithm SHA256).Hash) {
-        throw 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'
-      }
-    }
-    $bad += $files | Where-Object {
-      $_.Name -match $deny -and (!$allowedNpmrc -or $_.FullName -ne $allowedNpmrc)
-    }
-  }
-  if ($bad) { $bad.FullName; throw 'FAIL: denied path in payload' }
-  'PASS: every payload inspected, no denied paths or unreviewed npm config'
-} finally {
-  Remove-Item "$tmp.zip","$tmp-outer","$tmp-payload" -Recurse -Force -ErrorAction SilentlyContinue
-}
-```
-
-A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
-
-The application payload must not contain `.env*`, service-key exports, customer `.mtaext` files,
-private keys, certificates, local MCP configuration, source tests, operator artifacts, or an
-`.npmrc` other than the exact reviewed `btp/approuter/.npmrc` in the UI AppRouter payload. The MTA
-build has an explicit denylist and CI coverage for critical names; archive inspection is still a
-release gate because a future file type can evade a denylist.
+The only allowed project `.npmrc` is the root file in `arc1-ui-router/data.zip`, byte-for-byte equal
+to the reviewed `btp/approuter/.npmrc`. Other `.npmrc` files, credentials, customer `.mtaext` files
+and known operator artifacts are rejected. **This is a packaging check, not a comprehensive secret
+scanner or customer-readiness check.** Review the contents and source separately; the SHA-256
+identifies checked bytes, not their trustworthiness.
 
 ## 6. Deploy the MTA
 
-Run from the reviewed checkout as the CF Space Developer:
+As the CF Space Developer, deploy the **same named archive** after reviewing its successful
+inspection. Use exactly the same archive path as above and the protected override validated in step 5:
 
 ```bash
-npm run btp:deploy-ext
+cf deploy "mta_archives/arc1-mcp_<version>.mtar" -e mta-overrides.mtaext
 ```
 
-Or build and deploy together:
-
-```bash
-npm run btp:build-deploy-ext
-```
+Do not rebuild or replace the file between inspection and deployment. If it changes, rerun the
+inspection and record the new digest. The command detects changes during its check, but does not
+lock the archive against changes after it exits. The existing `btp:build-deploy*` shortcuts remain
+available; they are not the inspected-artifact procedure because they rebuild before deployment.
 
 The deployment creates/updates:
 

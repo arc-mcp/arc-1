@@ -39,6 +39,31 @@ function assertParity(markdown: string): void {
 }
 
 describe('BTP documentation contracts', () => {
+  it('inspects and deploys the same explicitly named archive without a rebuild step', () => {
+    const runbook = read('docs_page/btp-cloud-foundry-deployment.md');
+    const inspected = /npm run btp:inspect-mtar -- --archive "([^"]+)"/.exec(runbook)?.[1];
+    const deployment = runbook.split('## 6. Deploy the MTA')[1]?.split('## 7.')[0] ?? '';
+    expect(inspected).toBe('mta_archives/arc1-mcp_<version>.mtar');
+    expect(deployment).toContain(`cf deploy "${inspected}" -e mta-overrides.mtaext`);
+    const commands = [...deployment.matchAll(/```[^\n]*\n([\s\S]*?)```/g)].map((match) => match[1]).join('\n');
+    expect(commands).not.toMatch(/btp:build|btp:deploy|mbt build/);
+    expect(runbook).not.toMatch(/inspect_mtar\(\)|\$MTAR|Sort-Object LastWriteTime|ls -t mta_archives/);
+    const pkg = JSON.parse(read('package.json'));
+    expect(pkg.scripts['btp:inspect-mtar']).toBe('node scripts/btp/inspect-mtar.mjs');
+  });
+
+  it('routes administration acceptance to SAP-side identity evidence, not SYSTEM.user', () => {
+    const admin = read('docs_page/btp-administration.md');
+    expect(admin).toContain('principal-propagation-setup.md#verify-the-backend-identity');
+    expect(admin).not.toContain('must identify the human SAP user');
+  });
+
+  it('does not package the AppRouter regression-test directory', () => {
+    const descriptor = parse(read('mta.yaml'));
+    const router = descriptor.modules.find((module: { name: string }) => module.name === 'arc1-ui-router');
+    expect(router['build-parameters'].ignore).toContain('test/');
+  });
+
   it('uses the observed CF route rather than deriving OAuth URLs from the space', () => {
     const xsuaa = read('docs_page/xsuaa-setup.md');
     expect(xsuaa).toContain('cf app <app-name>');
