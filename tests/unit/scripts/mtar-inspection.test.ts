@@ -372,6 +372,9 @@ describe('explicit MTAR inspection', () => {
   it.each([
     ['EIO', 'READ_ERROR'],
     [undefined, 'CHECKER_ERROR'],
+    ['toString', 'CHECKER_ERROR'],
+    ['constructor', 'CHECKER_ERROR'],
+    ['__proto__', 'CHECKER_ERROR'],
   ])('distinguishes final verification I/O errors from unexpected failures: %s', async (code, expected) => {
     await fs.writeFile(archive, zipFixture(mtarEntries()));
     vi.mocked(fs.stat)
@@ -380,7 +383,7 @@ describe('explicit MTAR inspection', () => {
       .mockRejectedValueOnce(Object.assign(new Error('DO_NOT_DISCLOSE_SECRET'), { code }));
     const result = await inspectMtar(archive);
     expect(result.outcome).toBe('ERROR');
-    expect(result.findings[0]?.code).toBe(expected);
+    expect(JSON.parse(JSON.stringify(result)).findings).toEqual([{ code: expected, message: expect.any(String) }]);
     expect(JSON.stringify(result)).not.toContain('DO_NOT_DISCLOSE_SECRET');
   });
 });

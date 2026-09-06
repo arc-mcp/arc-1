@@ -264,11 +264,13 @@ export async function inspectMtar(path, { limits = LIMITS } = {}) {
     result.findings.push(
       error instanceof InspectionFailure
         ? { code: error.code, message: error.message, ...(error.member === undefined ? {} : { member: error.member }) }
-        : (ioErrors[error?.code] ?? {
-            code: 'CHECKER_ERROR',
-            message:
-              'Unexpected inspection error. Retry from the matching reviewed checkout and report persistent failures; do not deploy.',
-          }),
+        : Object.hasOwn(ioErrors, error?.code)
+          ? ioErrors[error.code]
+          : {
+              code: 'CHECKER_ERROR',
+              message:
+                'Unexpected inspection error. Retry from the matching reviewed checkout and report persistent failures; do not deploy.',
+            },
     );
   }
   return result;
