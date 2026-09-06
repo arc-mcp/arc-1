@@ -4,6 +4,11 @@ Use this page to choose the correct ARC-1 topology and documentation path before
 destinations, or role collections. It is a map, not a second deployment runbook. The canonical
 commands remain in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md).
 
+**Documentation version:** the website and repository `main` can be newer than your deployment.
+For an existing installation, use the guides and examples from the source revision used to build
+its artifact; ask the deployment owner if that revision is unknown. Proposed settings in
+`docs/plans/` or `docs/research/` are not setup requirements.
+
 !!! tip "Recommended starting path"
 
     For most teams connecting ARC-1 to one or more on-premise SAP systems, start with a
