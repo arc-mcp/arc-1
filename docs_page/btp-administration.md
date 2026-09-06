@@ -112,10 +112,13 @@ The MTA creates seven role collections with the CF space suffix, for example
 4. Assign the least-privilege collection before the user's first MCP login.
 5. Have the user sign in again and restart/reconnect the MCP client if its tool catalog is cached.
 
-An older or recreated XSUAA instance can leave same-name collections with empty/orphaned roles. Do
-not infer that an assignable collection exists merely because a role template exists. If a
-collection is empty, remove the orphaned collection, perform the reviewed MTA deployment, inspect
-the recreated roles, and reassign users.
+An older or recreated XSUAA instance can leave same-name collections with empty/orphaned roles.
+First [inspect and reconcile the collection with its owner](xsuaa-setup.md#repair-missing-or-stale-collection-roles-with-the-owner);
+empty roles alone do not justify deletion. Only when the owner confirms an orphaned collection
+requires replacement, record its roles, user/group assignments and IdP mappings before removal.
+Then perform the reviewed MTA deployment, inspect the recreated roles, restore the approved
+assignments/mappings and verify a fresh user grant. This is not a generic login fix and does not
+require deleting XSUAA.
 
 When changing the roles contained in a predefined collection, prefer a newly named/versioned
 collection: deploy it, inspect it, assign users/groups, reauthenticate and test, then remove old

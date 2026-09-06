@@ -86,10 +86,10 @@ roles before assigning users.
 > update MCP client URLs only if the actual route changes. Preserve the
 > [stable DCR signing key](#stable-dcr-signing-key-recommended) across redeployments.
 >
-> Updating an existing XSUAA service with
+> For a manually managed service, applying the base file with
 > `cf update-service arc1-xsuaa -c xs-security.json` updates the scopes and role
 > templates only. It does **not** create role collections declared in
-> `mta.yaml`. Run a full MTA deployment when adopting these collections, then
+> `mta.yaml`. Agree on lifecycle ownership before adopting the MTA, then
 > verify in **Security → Role Collections** that all seven collections exist and
 > contain the expected roles. This matters especially for older deployments:
 > seeing `MCPViewer`, `MCPDataViewer`, or `MCPSqlUser` under **Roles** does not
@@ -530,14 +530,14 @@ The first successful validation wins. This means:
 ## Troubleshooting
 
 ### "AADSTS50011: Redirect URI mismatch"
-The redirect URI used by the MCP client isn't in `xs-security.json`. Add the URI pattern:
-```json
-"redirect-uris": [
-  "http://localhost:*/**",
-  "https://*.cfapps.us10-001.hana.ondemand.com/**"
-]
-```
-Then run `cf update-service arc1-xsuaa -c xs-security.json`.
+Identify the issuer reporting the mismatch. `AADSTS50011` is a Microsoft Entra error: the IAM
+owner must compare the redirect URI and application ID in the error with the intended Entra
+registration ([Microsoft troubleshooting](https://learn.microsoft.com/en-us/troubleshoot/entra/entra-id/app-integration/error-code-aadsts50011-redirect-uri-mismatch)).
+Changing ARC-1's XSUAA allowlist does not repair that upstream registration.
+
+For a mismatch reported by XSUAA instead, review the intended URI in `xs-security.json` and follow
+[Updating xs-security.json](#updating-xs-securityjson) for the MTA or manual lifecycle. Do not add
+another region's wildcard or apply the bare base file to an MTA-owned instance as a shortcut.
 
 ### "Token has no expiration time"
 API key tokens now include a synthetic expiration (1 year). If you see this error, ensure you're running the latest version of ARC-1.
@@ -558,7 +558,7 @@ changing roles or clearing state. Do not share full callback URLs, tokens or bin
 | Scope name reported as invalid/unknown, e.g. an application-qualified `user_attributes` | Application/deployment owner: compare the request, endpoint metadata and effective XSUAA descriptor. Fix the unsupported scope/name qualification. Do not invent an application scope or grant Admin to suppress the error. |
 | User is not allowed any requested scopes | IAM owner: check the required collection is assigned to the correct application identity and contains roles for the bound application identifier. An assignment alone does not prove those roles exist. |
 | Collection exists but has no roles or references an old application identifier | IAM and deployment owners: inspect current role templates and collection contents; use the owner-safe repair below. |
-| Email is assigned but login uses another IdP origin | IAM owner: match the application trust's origin and user identity. Platform CLI/cockpit access does not establish application access. |
+| Email is assigned but login uses another IdP origin | IAM owner: use the [IdP-origin check and `--of-idp` example](authorization.md#i-have-two-marianexamplecom-users-in-btp-and-only-one-shows-the-role-i-changed) to match the application login identity. Platform CLI/cockpit access does not establish application access. |
 | Correct current roles/origin are verified, but the browser session predates the change | User: try the application refresh action below, then start sign-in again from the MCP client. |
 | Sign-in succeeds but old permissions/tools remain | User: obtain a fresh token through the client's re-authentication flow, then refresh/reload its tool catalog. Reconnecting alone may reuse a cached token. |
 
@@ -596,6 +596,8 @@ user/group assignments, IdP mappings and lifecycle owner. Have that owner reconc
 roles through the approved MTA/IAM process and verify a fresh user grant. Do not delete/recreate
 collections or XSUAA as a generic login fix: that can disrupt other users and lose assignments or
 mappings. A redeploy alone is not proof that existing collections were repaired.
+For the exceptional, owner-approved replacement of a verified orphaned collection, see
+[Role and user administration](btp-administration.md#role-and-user-administration).
 
 ### "Invalid client_id" (Copilot Studio)
 DCR registrations are stateless and survive ordinary restart, push, restage, and scale-out while the

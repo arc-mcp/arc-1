@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
+import { parse, parseDocument } from 'yaml';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -65,16 +65,26 @@ describe('BTP documentation contracts', () => {
     expect(text).not.toContain('secrets.');
     expect(
       workflow.jobs.docs.steps.filter((step: { run?: string }) => step.run).map((step: { run: string }) => step.run),
-    ).toEqual(['pip install -r requirements-docs.txt', 'npm run docs:build']);
-    for (const step of workflow.jobs.docs.steps) {
-      if (step.uses) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
-    }
+    ).toEqual(['pip install -r requirements-docs.txt', 'mkdocs build --strict']);
     const pages = parse(read('.github/workflows/pages.yml'));
+    for (const job of [workflow.jobs.docs, pages.jobs.build, pages.jobs.deploy]) {
+      for (const step of job.steps) {
+        if (step.uses) {
+          expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
+          expect(step.uses).not.toContain('actions/setup-node');
+        }
+        expect(step.with?.['fetch-depth']).not.toBe(0);
+      }
+    }
     expect(pages.jobs.build.steps).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ run: 'pip install -r requirements-docs.txt' }),
         expect.objectContaining({ run: 'mkdocs build --strict' }),
       ]),
     );
+  });
+
+  it('makes broken local anchors fail the strict documentation build', () => {
+    expect(parseDocument(read('mkdocs.yml')).getIn(['validation', 'links', 'anchors'])).toBe('warn');
   });
 });

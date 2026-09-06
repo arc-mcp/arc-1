@@ -43,7 +43,13 @@ do not define the route. Migration instructions make URL changes conditional. Ad
 the actual-route command and remove the remaining derived-host examples; retain the existing
 correctness/strict-build checks without expanding the operator documentation.
 
-## Implementation evidence
+The independent review also removes Node/full-history checkout from the docs build, pins all
+actions in the two touched workflows, and enables MkDocs' built-in anchor warnings under strict
+mode. Reconcile verified-orphan recovery and IdP-origin links across the existing guides; avoid
+generic role grants, collection deletion or token uploads as troubleshooting steps. Prove a broken
+anchor fails, then rebuild the clean tree. No custom link checker or additional public page.
+
+## Initial implementation evidence
 
 - Full unit suite: 193 files / 5,760 tests passed; focused contracts: 58 tests passed.
 - Type checks and strict MkDocs build passed on Node 24.11.1.

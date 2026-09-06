@@ -7,6 +7,10 @@ edit_uri: edit/main/docs_page/
 
 docs_dir: docs_page
 
+validation:
+  links:
+    anchors: warn
+
 theme:
   name: material
   custom_dir: overrides
