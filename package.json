@@ -90,7 +90,7 @@
     "test:reliability-report": "node scripts/ci/collect-test-reliability.mjs",
     "test:runtime-report": "node scripts/ci/test-runtime-summary.mjs",
     "test:assert-execution": "node scripts/ci/assert-required-test-execution.mjs",
-    "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext",
+    "btp:validate": "npx mbt validate && npx mbt validate -e mta-overrides.mtaext.example && npx mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext && npx mbt validate -e examples/btp/single-pp/profile.mtaext && npx mbt validate -e examples/btp/multi-pp/profile.mtaext",
     "btp:build": "npx mbt build",
     "btp:build-ui-ext": "npx mbt build -e mta-ui-approuter.mtaext",
     "btp:deploy": "node -e \"const v=require('./package.json').version;require('child_process').execSync('cf deploy mta_archives/arc1-mcp_'+v+'.mtar',{stdio:'inherit'})\"",

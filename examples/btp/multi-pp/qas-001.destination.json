@@ -1,0 +1,13 @@
+{
+  "Name": "ARC1_QAS_001_PP",
+  "Type": "HTTP",
+  "URL": "http://qas-pp.example.invalid:8080",
+  "ProxyType": "OnPremise",
+  "Authentication": "PrincipalPropagation",
+  "sap-sysid": "QAS",
+  "sap-client": "001",
+  "Description": "QAS client 001 - per-user source reads",
+  "arc1.enabled": "true",
+  "arc1.allow_data_preview": "false",
+  "arc1.allow_free_sql": "false"
+}

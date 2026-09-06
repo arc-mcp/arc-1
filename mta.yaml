@@ -105,6 +105,8 @@ modules:
         - tests/
         - docs/
         - docs_page/
+        - examples/
+        - .arc1/
         - btp/
         - skills/
         - coverage/

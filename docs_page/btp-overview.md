@@ -9,10 +9,8 @@ commands remain in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.m
     For most teams connecting ARC-1 to one or more on-premise SAP systems, start with a
     **read-only BTP Cloud Foundry deployment using XSUAA and Principal Propagation**:
 
-    1. Follow the [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) runbook.
-    2. Use [Principal Propagation](principal-propagation-setup.md) so SAP receives the real user.
-    3. Choose the normal `/mcp` setup for one system/client, or add
-       [Multi-Target Setup](multi-target-setup.md) for mutation-free access to several targets.
+    Follow [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md). Step 4 selects a
+    single-PP or multi-PP example from the same checkout; keep following that runbook through acceptance.
 
     Start with the topology table below only when that recommendation does not fit your landscape.
 
@@ -20,8 +18,8 @@ commands remain in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.m
 
 | Your SAP landscape | ARC-1 shape | SAP identity | Continue with |
 |--------------------|-------------|--------------|---------------|
-| One on-premise SAP system/client | One `/mcp` endpoint | Principal Propagation recommended | [Cloud Foundry Deployment](btp-cloud-foundry-deployment.md), then [Destination Reference](btp-destination-setup.md) and [Principal Propagation](principal-propagation-setup.md) |
-| Several on-premise systems or clients, mutation-free access | Pinned `/<SYSTEM>/<CLIENT>/mcp` routes plus `/multi/mcp` | Principal Propagation recommended; shared Basic is an explicit exception | [Cloud Foundry Deployment](btp-cloud-foundry-deployment.md), then [Multi-Target Setup](multi-target-setup.md) |
+| One on-premise SAP system/client | One `/mcp` endpoint | Principal Propagation recommended | [Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) — single-PP profile |
+| Several on-premise systems or clients, mutation-free access | Pinned `/<SYSTEM>/<CLIENT>/mcp` routes plus `/multi/mcp` | Principal Propagation recommended; shared Basic is an explicit exception | [Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) — multi-PP profile |
 | One general `/mcp` endpoint beside mutation-free multi-target routes | Independent single-target and multi-target configurations in one app | Configure each path independently | Read the [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) before deployment |
 | BTP ABAP Environment | One `/mcp` endpoint | `OAuth2UserTokenExchange` | [BTP ABAP Environment](btp-abap-environment.md) |
 | S/4HANA Public Cloud developer extensibility | One `/mcp` endpoint | Per-user SAML/OAuth exchange | [S/4HANA Public Cloud](s4hana-public-cloud.md) |
@@ -36,50 +34,20 @@ commands remain in [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.m
 
 ## Follow the setup in this order
 
-### 1. Deploy the BTP application boundary
+<a id="1-deploy-the-btp-application-boundary"></a>
+<a id="2-configure-who-may-call-arc-1"></a>
+<a id="3-configure-how-each-call-reaches-sap"></a>
+<a id="4-add-multi-system-routing-only-when-required"></a>
+<a id="5-hand-over-operations"></a>
 
-Follow [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) to build the MTAR, create the
-XSUAA, Destination, and Connectivity services, bind them to ARC-1, apply a customer-owned MTA
-extension, and complete the initial health check.
+Follow the [deployment runbook](btp-cloud-foundry-deployment.md) from prerequisites through
+acceptance. It brings in the Destination, Connector, Basis and IAM owners at the required steps;
+single-PP startup destinations must exist before the configured app starts. Do not treat the
+specialist pages as additional deployments to perform afterward.
 
-The first accepted deployment should be read-only. Prove identity, target routing, authorization,
-audit, and rollback before widening any single-target safety ceiling.
-
-### 2. Configure who may call ARC-1
-
-[XSUAA](xsuaa-setup.md) authenticates MCP users. [Authorization & Roles](authorization.md) explains
-the ARC-1 scopes and the instance safety ceiling. Assign the least-privilege role collection before
-the user's first login; after changing a role, obtain a new token and reconnect clients that cache
-their tool catalog.
-
-This is Layer A authorization. It does not choose a SAP user and cannot override SAP authorization.
-
-### 3. Configure how each call reaches SAP
-
-The [BTP Destination Reference](btp-destination-setup.md) defines supported destination fields and
-authentication modes. For on-premise per-user identity, complete the
-[Principal Propagation](principal-propagation-setup.md) sequence across Destination Service, Cloud
-Connector, STRUST/CERTRULE, SU01, and SAP roles.
-
-This is Layer B identity. In strict Principal Propagation mode, a mapping failure is an error; ARC-1
-never falls back to a technical user.
-
-### 4. Add multi-system routing only when required
-
-For the experimental shared read gateway, follow [Multi-Target Setup](multi-target-setup.md). It
-defines the destination marker, route IDs, data/SQL opt-ins, MCP client examples, and safe smoke
-tests. Then use [Multi-Target Administration](multi-target-administration.md) for exclusions,
-registry revisions, scaling, shared-Basic controls, and incidents.
-
-A new or non-secret changed multi-target destination becomes active only after every ARC-1 process
-has restarted. Destination username/password rotation for the shared-Basic exception is the narrow
-request-time exception documented in the administration guide.
-
-### 5. Hand over operations
-
-[BTP Administration](btp-administration.md) owns the post-deployment lifecycle: configuration
-ownership, role-collection repair, DCR signing-secret handling, change/restart decisions, scaling,
-upgrades, rollback, monitoring, and customer acceptance.
+For an existing deployment, use the [task map below](#find-the-right-page-quickly) to add a target,
+change access, diagnose a failure or plan an upgrade. Destination changes and role changes have
+different activation rules; the linked administration guides own those details.
 
 ## Keep each value in one place
 
@@ -117,6 +85,9 @@ For the full commands and evidence checklist, continue with
 [handover](btp-cloud-foundry-deployment.md#11-handover-and-ongoing-operation).
 
 ## Find the right page quickly
+
+For a shared customer handoff, the [optional worksheet](btp-setup-worksheet.md) records inputs and
+results. It does not add setup steps.
 
 | Question | Page |
 |----------|------|

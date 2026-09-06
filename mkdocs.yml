@@ -62,6 +62,7 @@ nav:
           - S/4HANA Public Cloud: s4hana-public-cloud.md
       - Administration & Alternatives:
           - BTP Administration: btp-administration.md
+          - Optional Setup Worksheet: btp-setup-worksheet.md
           - Multi-Target Administration: multi-target-administration.md
           - Best Practices: deployment-best-practices.md
   - Auth & Permissions:

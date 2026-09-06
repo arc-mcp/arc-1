@@ -37,7 +37,7 @@ multi-target app containing any Basic destination must run exactly one non-rolli
 ## 2. Assign owners
 
 Deployment crosses several independent control planes. Confirm the handoffs before the change
-window.
+window. The [optional worksheet](btp-setup-worksheet.md) can help record them.
 
 | Task | Typical owner |
 |---|---|
@@ -137,8 +137,11 @@ git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
 git checkout <reviewed-tag-or-commit>
 npm ci
-cp mta-overrides.mtaext.example mta-overrides.mtaext
 ```
+
+Choose **one** profile below from this checkout. If `mta-overrides.mtaext` already exists, compare
+and adapt it instead of copying another template over it. The `cp -n` commands preserve an existing
+file; a skipped copy does not mean the selected profile was applied.
 
 The real `mta-overrides.mtaext` is gitignored. Store the reviewed copy in the customer's protected
 configuration process. Never add secrets to it and never edit generated `mtad.yaml`.
@@ -148,46 +151,43 @@ configuration process. Never add secrets to it and never edit generated `mtad.ya
 For an on-premise `/mcp`, the current runtime uses a Basic destination to resolve the startup target
 and a PP destination for every JWT-backed user request:
 
-```yaml
-_schema-version: "3.1"
-ID: arc1-mcp-overrides
-extends: arc1-mcp
-
-modules:
-  - name: arc1-mcp-server
-    properties:
-      SAP_BTP_DESTINATION: "A4H_100_STARTUP"
-      SAP_BTP_PP_DESTINATION: "A4H_100_PP"
-      SAP_PP_ENABLED: "true"
-      SAP_PP_STRICT: "true"
+```bash
+cp -n examples/btp/single-pp/profile.mtaext mta-overrides.mtaext
 ```
 
-The startup destination is not a PP fallback. In strict mode, authenticated tool calls use only the
-PP identity. Its technical user should still be least-privileged because startup feature discovery
-contacts SAP. Do not enable writes, data preview, SQL, transports, Git, or broad package patterns for
-initial acceptance.
+Prepare private copies of `examples/btp/single-pp/startup.destination.json` and
+`request.destination.json` under the ignored `.arc1/btp/` directory. Replace the fictional values
+and update the two destination names in the extension together. The example README explains the
+startup/request pairing. Its least-privileged startup user is not a PP fallback.
 
 ### Multi-target PP-only profile
 
-```yaml
-_schema-version: "3.1"
-ID: arc1-mcp-overrides
-extends: arc1-mcp
-
-modules:
-  - name: arc1-mcp-server
-    properties:
-      ARC1_MULTI_TARGET_ENDPOINTS: "true"
-      ARC1_CACHE: none
+```bash
+cp -n examples/btp/multi-pp/profile.mtaext mta-overrides.mtaext
 ```
 
-The base descriptor already supplies HTTP transport, XSUAA, standard tools, UI/plugins off, no
-direct credentials, and mutation ceilings off. `SAP_PP_ENABLED`/`SAP_PP_STRICT` control only an
-optional `/mcp`; every discovered PP target is strict independently.
+Prepare private copies of the two `examples/btp/multi-pp/*.destination.json` files under
+`.arc1/btp/`. Replace the fictional QAS targets with your system/client values; add one file per
+additional target if needed. These are subaccount-level PP destinations; no startup destination is
+needed. Keep `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` absent, including in existing app env.
 
-Do not add destination names to this profile. After deployment, mark the intended subaccount
-destinations with `arc1.enabled=true` and restart the application. Follow
-[Multi-System Setup](multi-target-setup.md) for the destination contract and route examples.
+### Prepare the selected PP profile
+
+Both examples keep strict PP on, all mutation/data/SQL flags off, UI/plugins off and cache none.
+They also deny ATC/Unit workloads for initial acceptance; that is a profile choice, not a general
+multi-target limitation. Do not combine the profiles or add UI overlays.
+
+Replace names, virtual URLs, real SID/client and descriptions in your private destination files.
+Keep clients such as `001` quoted. Add `CloudConnectorLocationId` only if the Connector owner
+supplies one. JSON files show the destination fields to create in the cockpit; they do not provision
+anything or guarantee a particular import format. Keep startup credentials in the owner's secure
+process, not in a PR or LLM prompt.
+
+Ask the Connector/Basis owners to complete [Principal Propagation Setup](principal-propagation-setup.md)
+and create/review the destinations using [Destination Reference](btp-destination-setup.md).
+**For single PP, both destinations must exist before deploying this profile:** startup resolves
+the startup destination and fails if it is missing. Multi PP can start empty, but requires all
+processes to restart after destinations are added. Then continue to step 5 below.
 
 ### Multi-target with a shared Basic exception
 
@@ -364,8 +364,8 @@ The deployment creates/updates:
 - Destination and Connectivity service instances and bindings; and
 - a health check on `/health`.
 
-The base application can start with no SAP target. This is intentional: the deployment owner does
-not have to create a fake destination or race destination setup.
+The unconfigured base application and multi-target mode can start with no SAP targets. The
+single-PP profile is different: its startup destination must already exist, as checked in step 4.
 
 Verify platform state:
 
@@ -412,6 +412,9 @@ have missing or orphaned collections. A collection with an empty **Roles** tab g
 details.
 
 ## 9. Configure SAP connectivity and destinations
+
+If step 4 already prepared the destinations and PP mapping, verify those settings here; do not
+recreate them. Otherwise complete the setup now (multi-target can start with an empty catalog).
 
 The deployment owner can hand off these stable values now:
 
@@ -476,11 +479,17 @@ Use the Viewer identity. After OAuth:
 4. call `SAPRead` with `type: "COMPONENTS"`; and
 5. call `SAPSearch` for one known object.
 
-For PP, `SAPRead SYSTEM` must identify the human SAP user. A Destination Service success only proves
-one intermediate layer. SAP `401` usually points to certificate trust/mapping/logon; SAP `403` after
-successful login points to the propagated user's SAP authorization. For Basic, `SAPRead SYSTEM`
-must identify the destination's intended technical SAP user, while Admin `SAPTargets` must label the
-target `identity: "shared"`.
+These calls establish safe-read access, not the backend login identity: `SYSTEM.user` can come from
+configuration or token claims. Follow [backend identity verification](principal-propagation-setup.md#verify-the-backend-identity)
+with Basis and record that result separately. For shared Basic, verify the intended technical user
+in the backend evidence; Admin `SAPTargets` labels that target `identity: "shared"`.
+
+For the multi-only example, verify that `/mcp` is unavailable and pinned routes do not expose
+`SAPTargets`. The aggregate catalog is configuration inventory, not proof of the user's SAP access.
+For each PP target, use an owner-approved negative identity to verify that failed mapping or SAP
+authorization does not become shared-user access. Do not change working users or grant Admin just
+to manufacture a test. Repository metadata alone does not prove client isolation; keep any separate
+client-data check unverified until approved rather than enabling data/SQL for the smoke test.
 
 As Admin on multi-target, call `SAPTargets` and review zero/one/many behavior, registry revision,
 quarantined/disabled entries, duplicate/shadow warnings, and instance policy narrowing. There is no
