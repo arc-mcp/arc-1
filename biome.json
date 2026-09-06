@@ -49,6 +49,6 @@
     }
   ],
   "files": {
-    "includes": ["src/**", "tests/**", "bin/**", "scripts/btp/*mtar*.mjs", "!tests/fixtures/tool-definitions"]
+    "includes": ["src/**", "tests/**", "bin/**", "scripts/btp/**", "!tests/fixtures/tool-definitions"]
   }
 }

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { crc32 } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 import { inspectMtar } from '../../../scripts/btp/mtar-inspection.mjs';
 import { LIMITS } from '../../../scripts/btp/mtar-zip.mjs';
 import {
@@ -19,7 +20,7 @@ import {
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof fs>();
-  return { ...actual, open: vi.fn(actual.open) };
+  return { ...actual, open: vi.fn(actual.open), stat: vi.fn(actual.stat), readFile: vi.fn(actual.readFile) };
 });
 const realFs = await vi.importActual<typeof fs>('node:fs/promises');
 
@@ -33,6 +34,8 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   vi.mocked(fs.open).mockImplementation(realFs.open);
+  vi.mocked(fs.stat).mockImplementation(realFs.stat);
+  vi.mocked(fs.readFile).mockImplementation(realFs.readFile);
   vi.clearAllMocks();
   await fs.rm(directory, { recursive: true, force: true });
 });
@@ -69,6 +72,8 @@ describe('explicit MTAR inspection', () => {
     expect(result.members).toContainEqual({ archive: SERVER, path: 'dist/index.js', bytes: 4 });
     expect(await fs.readdir(directory)).toEqual(before);
     expect(await fs.readFile(archive)).toEqual(buffer);
+    expect(fs.open).toHaveBeenCalledTimes(1);
+    expect(fs.stat).toHaveBeenCalledTimes(3);
   });
 
   it('checks every UI payload and permits only the exact reviewed root npmrc', async () => {
@@ -81,6 +86,32 @@ describe('explicit MTAR inspection', () => {
     );
     expect(result.outcome).toBe('PASS');
     expect(result.checkedPayloads).toHaveLength(2);
+    expect(result.qualification).toContain('local reviewed checkout (including its exact AppRouter .npmrc)');
+    expect(result.qualification).toContain('use the matching checkout for the artifact');
+  });
+
+  it('accepts the MTA ID and module names from the real build descriptor', async () => {
+    const descriptor = parse(await fs.readFile('mta.yaml', 'utf8'));
+    const modules = Object.fromEntries(
+      descriptor.modules.map((module: { name: string; path: string }) => [
+        module.name,
+        zipFixture([
+          {
+            name: module.path === 'btp/approuter' ? '.npmrc' : 'dist/index.js',
+            data: module.path === 'btp/approuter' ? npmrc : 'code',
+          },
+        ]),
+      ]),
+    );
+    const entries = mtarEntries(modules).map((entry) =>
+      entry.name === DESCRIPTOR
+        ? { ...entry, data: JSON.stringify({ ...JSON.parse(String(entry.data)), ID: descriptor.ID }) }
+        : entry,
+    );
+    expect(
+      (await inspect(entries)).outcome,
+      'Update the inspector when mta.yaml changes its ID or module layout.',
+    ).toBe('PASS');
   });
 
   it.each([
@@ -94,6 +125,8 @@ describe('explicit MTAR inspection', () => {
     'cookies.txt',
     'customer.mtaext',
     'customer.mtaext.backup',
+    'sub/customer.mtaext',
+    'sub/customer.mtaext.backup',
     'scripts/deploy.mjs',
     'tests/a.ts',
     '.git/config',
@@ -152,6 +185,17 @@ describe('explicit MTAR inspection', () => {
   it.each(['.env', 'service-key.json', '.npmrc'])('rejects credential paths in the wrapper: %s', async (name) => {
     failure(await inspect([...mtarEntries(), { name, data: 'hidden' }]), 'PROHIBITED_PATH');
   });
+
+  it.each(['customer.mtaext', 'sub/customer.MTAEXT.backup'])(
+    'classifies packaged overrides as operator files, not credentials: %s',
+    async (name) => {
+      for (const result of [await payload([{ name }]), await inspect([...mtarEntries(), { name }])]) {
+        failure(result, 'PROHIBITED_PATH');
+        expect(result.findings[0]?.message).toContain('operator path');
+        expect(result.findings[0]?.message).not.toContain('credential');
+      }
+    },
+  );
 
   it.each([
     [SERVER, '.npmrc', 'install-links=true\n', 'PROHIBITED_PATH'],
@@ -274,34 +318,69 @@ describe('explicit MTAR inspection', () => {
 
   it('detects archive replacement between snapshot and final verification', async () => {
     await fs.writeFile(archive, zipFixture(mtarEntries()));
-    let opens = 0;
-    vi.mocked(fs.open).mockImplementation(async (...args) => {
-      if (String(args[0]) === archive && ++opens === 2)
-        await fs.writeFile(
-          archive,
-          zipFixture(mtarEntries({ [SERVER]: zipFixture([{ name: 'different', data: 'x' }]) })),
-        );
-      return realFs.open(...args);
+    let stats = 0;
+    vi.mocked(fs.stat).mockImplementation(async (...args) => {
+      if (String(args[0]) === archive && ++stats === 3) {
+        const replacement = join(directory, 'replacement.mtar');
+        await fs.writeFile(replacement, zipFixture(mtarEntries()));
+        await fs.rename(replacement, archive);
+      }
+      return realFs.stat(...args);
     });
     failure(await inspectMtar(archive), 'ARTIFACT_CHANGED');
   });
 
-  it('returns ERROR for missing/unreadable input, not a misleading PASS', async () => {
+  it('identifies a missing selected archive without exposing the absolute path', async () => {
     const result = await inspectMtar(archive);
     expect(result.outcome).toBe('ERROR');
     expect(result.artifact.sha256).toBeNull();
+    expect(result.findings[0]).toMatchObject({
+      code: 'NOT_FOUND',
+      message: expect.stringContaining('Cannot find selected archive'),
+    });
     expect(JSON.stringify(result)).not.toContain(directory);
+  });
+
+  it.each(['EACCES', 'EPERM'])('distinguishes %s from a missing file or checker failure', async (code) => {
+    vi.mocked(fs.stat).mockRejectedValueOnce(Object.assign(new Error('DO_NOT_DISCLOSE_SECRET'), { code }));
+    const result = await inspectMtar(archive);
+    expect(result.outcome).toBe('ERROR');
+    expect(result.findings[0]).toMatchObject({
+      code: 'ACCESS_DENIED',
+      message: expect.stringContaining('Permission denied reading selected archive'),
+    });
+    expect(JSON.stringify(result)).not.toContain('DO_NOT_DISCLOSE_SECRET');
+  });
+
+  it('identifies a missing reviewed checkout file separately from a missing archive', async () => {
+    vi.mocked(fs.readFile).mockRejectedValueOnce(
+      Object.assign(new Error('DO_NOT_DISCLOSE_SECRET'), { code: 'ENOENT' }),
+    );
+    const result = await payload([{ name: '.npmrc', data: npmrc }], ROUTER);
+    expect(result.outcome).toBe('ERROR');
+    expect(result.findings[0]).toMatchObject({
+      code: 'NOT_FOUND',
+      message: expect.stringContaining('Cannot find reviewed checkout AppRouter .npmrc'),
+    });
+    expect(JSON.stringify(result)).not.toContain('DO_NOT_DISCLOSE_SECRET');
   });
 
   it('rejects a directory as the selected archive', async () => {
     failure(await inspectMtar(directory), 'NOT_FILE');
   });
 
-  it('treats an I/O failure during the final verification as ERROR without raw exception disclosure', async () => {
+  it.each([
+    ['EIO', 'READ_ERROR'],
+    [undefined, 'CHECKER_ERROR'],
+  ])('distinguishes final verification I/O errors from unexpected failures: %s', async (code, expected) => {
     await fs.writeFile(archive, zipFixture(mtarEntries()));
-    vi.mocked(fs.open).mockImplementationOnce(realFs.open).mockRejectedValueOnce(new Error('DO_NOT_DISCLOSE_SECRET'));
+    vi.mocked(fs.stat)
+      .mockImplementationOnce(realFs.stat)
+      .mockImplementationOnce(realFs.stat)
+      .mockRejectedValueOnce(Object.assign(new Error('DO_NOT_DISCLOSE_SECRET'), { code }));
     const result = await inspectMtar(archive);
     expect(result.outcome).toBe('ERROR');
+    expect(result.findings[0]?.code).toBe(expected);
     expect(JSON.stringify(result)).not.toContain('DO_NOT_DISCLOSE_SECRET');
   });
 });
@@ -355,5 +434,7 @@ describe('inspection command', () => {
     const missing = run(['--archive', archive, '--format', 'json']);
     expect(missing.status).toBe(2);
     expect(JSON.parse(missing.stdout).outcome).toBe('ERROR');
+    expect(JSON.parse(missing.stdout).findings[0].code).toBe('NOT_FOUND');
+    expect(run(['--archive', archive]).stdout).toContain('Cannot find selected archive');
   });
 });

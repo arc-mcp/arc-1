@@ -27,9 +27,9 @@ new documentation page in the site, or general-purpose secret scanner.
    Permit reviewed wrapper descriptors, but apply credential-name checks to the wrapper too.
    Apply module/operator-path checks to payloads; only the exact reviewed AppRouter root
    `.npmrc` is exempt. Report names, never file contents or raw parser errors.
-5. Hash the captured bytes; recheck the selected file before success to detect changes during
-   inspection. A later deploy is a separate action: the digest is not a signature and cannot
-   close the time gap after inspection.
+5. Read/hash the captured bytes once; recheck file identity, size and timestamps before success
+   to detect changes during inspection. A later deploy is a separate action: the digest is not a
+   signature and cannot close the time gap after inspection.
 6. Shorten the runbook to command, expected evidence, failure action and exact-file deploy.
    Link the administration identity check to the canonical PP procedure, not a second recipe.
 
