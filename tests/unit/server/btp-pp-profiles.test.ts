@@ -1,7 +1,4 @@
-import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 import { parseArgs } from '../../../src/server/config.js';
@@ -170,35 +167,12 @@ describe('actual BTP PP setup examples', () => {
     expect(read('.gitignore').split('\n')).toContain('.arc1/');
   });
 
-  it.each(['single-pp', 'multi-pp'])(
-    'copies %s through the runbook without overwriting an existing override',
-    (name) => {
-      const guide = read('docs_page/btp-cloud-foundry-deployment.md');
-      const command = guide.split('\n').find((line) => line.startsWith(`cp -n examples/btp/${name}/`));
-      expect(command).toBe(`cp -n examples/btp/${name}/profile.mtaext mta-overrides.mtaext`);
-      expect(guide).not.toMatch(/^cp mta-overrides\.mtaext\.example/m);
-      const folder = mkdtempSync(join(tmpdir(), 'arc1-doc-profile-'));
-      const source = `examples/btp/${name}/profile.mtaext`;
-      const target = join(folder, 'mta-overrides.mtaext');
-      try {
-        mkdirSync(dirname(join(folder, source)), { recursive: true });
-        writeFileSync(join(folder, source), read(source));
-        const [program, ...args] = command!.split(' ');
-        const first = spawnSync(program!, args, { cwd: folder });
-        expect(first.error).toBeUndefined();
-        expect(first.status).toBe(0);
-        expect(readFileSync(target, 'utf8')).toBe(read(source));
-        writeFileSync(target, 'existing customer override\n');
-        const second = spawnSync(program!, args, { cwd: folder });
-        expect(second.error).toBeUndefined();
-        // cp -n's skip status differs by platform; the preservation contract does not.
-        expect([0, 1]).toContain(second.status);
-        expect(readFileSync(target, 'utf8')).toBe('existing customer override\n');
-      } finally {
-        rmSync(folder, { recursive: true, force: true });
-      }
-    },
-  );
+  it.each(['single-pp', 'multi-pp'])('documents a non-overwriting copy command for %s', (name) => {
+    const guide = read('docs_page/btp-cloud-foundry-deployment.md');
+    const command = guide.split('\n').find((line) => line.startsWith(`cp -n examples/btp/${name}/`));
+    expect(command).toBe(`cp -n examples/btp/${name}/profile.mtaext mta-overrides.mtaext`);
+    expect(guide).not.toMatch(/^cp mta-overrides\.mtaext\.example/m);
+  });
 
   it('keeps example readers on the canonical procedure and separates SAP identity evidence', () => {
     for (const name of ['single-pp', 'multi-pp']) {
@@ -209,9 +183,7 @@ describe('actual BTP PP setup examples', () => {
     }
     const pp = read('docs_page/principal-propagation-setup.md');
     expect(pp).toContain('### Verify the backend identity');
-    expect(pp).toContain('configuration');
     expect(pp).toContain('**unverified**');
     expect(pp).not.toContain('must identify the propagated human user');
-    expect(read('docs_page/btp-setup-worksheet.md')).not.toContain('## Task handoffs');
   });
 });

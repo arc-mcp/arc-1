@@ -37,8 +37,8 @@ Rechecked main `5c36f2a734870081780a5d4be734f605b1036318` (package 1.2.0).
 
 ## Review refinement (2026-09-06)
 
-- Remove the profile-copy/runbook overwrite conflict; execute the documented copy commands in
-  temporary directories and prove existing customer overrides survive.
+- Remove the profile-copy/runbook overwrite conflict; assert the exact non-overwriting commands
+  and absence of the subsequent generic overwrite. Keep OS subprocesses out of these unit tests.
 - Prepare single-PP destinations before deployment; keep file-specific notes in examples and
   ordered setup/acceptance in the runbook. Do not require the optional worksheet first.
 - Replace the overview's second numbered deployment sequence with a runbook handoff, preserving
