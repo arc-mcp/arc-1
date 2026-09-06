@@ -6,6 +6,12 @@
 - **Code baseline:** ARC-1 `origin/main` at `347d83f3`, version 1.2.0 with
   `@arc-mcp/xsuaa-auth ^1.0.2`; current auth-package source was inspected as well.
 
+**Policy update, 2026-09-06:** the user subsequently approved a non-breaking, explicit opt-in.
+The [current specification](../plans/xsuaa-target-authorization.md) supersedes this record's
+mandatory-rollout recommendation: unset/`legacy` preserves current behavior; `xsuaa-attribute`
+enforces grants without fallback. The historical provisioning evidence and untested-token limits
+below are unchanged. This note records a design decision, not a new live test.
+
 ## Outcome
 
 Keep BTP-native XSUAA attributes, mandatory enforcement and the explicit all-target value `*`.
