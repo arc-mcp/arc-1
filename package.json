@@ -114,7 +114,7 @@
     "diff": "^9.0.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.6.2",
+    "express-rate-limit": "^8.7.0",
     "fast-xml-parser": "^5.11.1",
     "helmet": "^8.3.0",
     "jose": "^6.2.10",
