@@ -56,11 +56,21 @@ reported rather than resolved with paid capacity or broader authorization.
 - [x] Prepare nine grounded prompts including package-coupling, multi-hop impact and controls
   for current source, dynamic dispatch and an unindexed-but-live object.
 - [x] Measure twenty graph-only MCP queries with a positive-control SAP request counter.
+- [x] Exercise all nine scenarios in a guided two-instance pilot; record matching controls,
+  unequal-cache/workflow limitations and counterexamples, without claiming a blind benchmark.
+- [ ] Cover class implementation/local/test includes; reproduce and restore the missing
+  `ZBP_SSI_R_IMPRUN → ZCL_SSI_IMPORT` edge with honest per-resource coverage and replacement.
+- [ ] Add normal SAPContext cache regressions for depth/maxDeps changes in both orders;
+  prevent context-shaping options from incorrectly sharing a cached result.
+- [ ] Clarify/extend dynamic-target accounting for object creation and method dispatch, and
+  retain a live-source counterexample for where-used versus graph relation-kind coverage.
 - [ ] Complete the actual LLM A/B evaluation before claiming better answers or maintenance ROI.
 
 See [comparison evidence](../research/2026-09-07-graph-ab-comparison.md) and the
 [human/LLM prompt guide](../../docs_page/repository-graph-comparison.md). This is a usefulness
 gate, not permission to enable the experimental graph by default.
+The [guided pilot answers and gaps](../research/2026-09-07-graph-guided-pilot.md) are review
+evidence, not proof that these newly identified acceptance gaps have been fixed.
 
 ### Backend delivery evidence
 

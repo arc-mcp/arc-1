@@ -151,6 +151,10 @@ describe('experimental repository graph documentation', () => {
     expect(comparison).toContain('dynamicTargets=0');
     expect(comparison).toContain('CL_DEMO_OUTPUT');
     expect(comparison).toContain('Do not publish a speedup');
+    expect(comparison).toContain('not a blind LLM A/B benchmark');
+    expect(comparison).toContain('ZBP_SSI_R_IMPRUN');
+    expect(comparison).toContain('depth/maxDeps');
+    expect(comparison).toContain('Restart both comparison containers');
   });
 
   it('keeps Cloud Connector setup collector-only and separates capacity measurements from estimates', () => {

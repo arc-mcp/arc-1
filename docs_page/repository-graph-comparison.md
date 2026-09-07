@@ -191,3 +191,24 @@ saved effort is worth ongoing collection, database and parser maintenance.
   model for serving users with different or unknown SAP object visibility.
 - Client connection formats differ. Localhost endpoints work with local desktop MCP clients,
   not cloud-hosted connectors without an explicitly secured remote deployment.
+
+## First guided pilot: findings and known gaps
+
+All nine scenarios were exercised against both instances on 2026-09-07. This was a guided
+investigation with prior knowledge and warm caches, **not a blind LLM A/B benchmark**.
+Package coupling was the clearest additional capability. Both approaches found seven interface
+implementers, and the three live-source controls returned matching evidence without graph calls.
+
+Two important caveats for your own comparison:
+
+- The current collector reads class `/source/main`, not all includes. Live where-used and the
+  `implementations` include confirmed `ZBP_SSI_R_IMPRUN → ZCL_SSI_IMPORT`, but the graph held
+  only package membership for that behavior pool. Graph impact is therefore incomplete even
+  for some indexed classes. Inspect RAP handlers/local/test includes live when relevant.
+- Normal `SAPContext` can reuse a previously cached deeper result after depth/maxDeps are
+  reduced. This is separate from SAPGraph. Restart both comparison containers between
+  independent scenarios; a fresh chat alone does not reset their server caches. This does
+  not invalidate source reads, but it prevents treating these pilot timings as a fair speedup.
+
+Both deployments remain unchanged; these findings are open. The experimental graph must
+remain an aid to investigation, not a sole authority for change safety or test completeness.

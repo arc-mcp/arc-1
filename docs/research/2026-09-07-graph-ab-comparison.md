@@ -3,6 +3,10 @@
 2026-09-07. Experimental PR #756 remains unmerged. This is deployment and deterministic tool
 verification evidence, **not a completed LLM answer-quality benchmark**.
 
+Follow-up: the [guided nine-scenario pilot](2026-09-07-graph-guided-pilot.md) records actual
+investigations, matching source controls and newly confirmed gaps. It remains distinct from
+the fresh-chat repeated A/B evaluation below.
+
 ## Deployment decision and boundaries
 
 CF preflight found 3,712/4,096 MiB in use and 10/10 routes. An unmapped SAP-docs route belongs
