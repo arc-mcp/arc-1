@@ -41,9 +41,67 @@ and [Cloud Foundry Node.js buildpack documentation](https://docs.cloudfoundry.or
 | CF staging | Selected buildpack, stack, Node/npm versions, dependency-install result and staged application/deployment identity. Collect the actual installed inventory where the customer's platform permits; label lockfile-only evidence accordingly. |
 | Ongoing maintenance | Reassess dependencies at the approved source revision as advisories change. Repeat relevant validation after source changes, dependency updates, or restaging with updated runtime/buildpack inputs. |
 
-This is evidence guidance, not an additional deployment procedure. Follow the canonical runbook
-for commands and topology. No automatic BTP evidence exporter or cryptographic attestation is
-claimed here. Keep bindings, credentials, tokens and unredacted staging logs out of public evidence.
+Follow the canonical runbook for deployment commands and topology. The source evidence command
+below helps collect dependency information; the platform owner must still supply the build and
+staging record. Keep bindings, credentials, tokens and unredacted staging logs out of public evidence.
+
+### Generate a readable dependency report
+
+Source revisions containing `scripts/security/evidence.mjs` provide this command. It is source
+checkout tooling; do not assume it exists in an older release or an installed npm package.
+From the repository root with Node and npm available, run:
+
+```bash
+npm run security:evidence
+```
+
+Open the printed `summary.md` path. It shows the source commit, working-tree state, root and
+AppRouter scan results, links to component inventories, and a staging worksheet your BTP owner
+can complete. Generated files go into a new directory under `reports/security/`.
+
+The command generates full and production CycloneDX inventories from each lockfile and audits
+both full graphs, including optional and build dependencies. It does not install dependencies
+or execute their lifecycle scripts. Audits send dependency information to the configured npm
+registry, which must support the audit API. npm 10.9.4 was exercised locally; the maintenance
+workflow pins npm 11.11.1. Reports record the version actually used.
+
+For a reviewed clean checkout, add `--require-clean`. For an already-built MTAR, add
+`--mtar PATH_TO_ARCHIVE`. A checksum identifies that file; your build record must establish
+which source produced it. Follow the existing [BTP runbook](btp-cloud-foundry-deployment.md)
+to build and deploy.
+
+```bash
+npm run security:evidence -- --require-clean --mtar mta_archives/arc1-mcp_1.2.0.mtar
+```
+
+Replace the filename with your actual archive. `--out NEW_DIRECTORY` chooses the output
+location; existing directories are refused. `--fail-on-high` returns exit 1 for high/critical
+findings. Exit 2 means incomplete or unavailable evidence. Without `--fail-on-high`, a completed
+report returns 0 even when findings need review; read the summary before approving deployment.
+
+The report never claims to inventory the final CF droplet, operating system or staged runtime.
+Review registry URLs and dependency details before sharing customer-generated output. Retain
+the report with the customer's build record and [Security Assessment](security-assessment.md).
+
+## Source checkout security checks
+
+The source containing this page separates `Dependency security` from `Dependency licenses`.
+Dependency security checks introduced high/critical vulnerabilities across runtime, development
+and unknown dependency scopes. It runs without installing packages or writing PR comments.
+The existing license policy remains in its own job.
+
+A separate **Dependency evidence** workflow produces dated reports on Monday, Wednesday and
+Friday and on manual dispatch. Its artifacts are retained for 30 days; download them for longer
+retention. High/critical findings or unavailable scans make that maintenance run fail. It is not
+a required PR check or a new publication gate. Scheduled `main` evidence does not cover every
+older release automatically.
+
+An initially disabled ruleset template selects only Dependency security and CodeQL security
+findings at high or higher. Release Please supports an optional GitHub App token so its PRs can
+trigger these checks. Socket configuration is also provided; installation and dashboard policy
+are separate steps. These files alone do not establish enforcement. The maintainer's
+[security operations runbook](https://github.com/arc-mcp/arc-1/blob/main/docs/security-operations.md)
+documents activation and verification; the dated settings observation below remains the baseline.
 
 ## Artifact coverage
 
@@ -51,7 +109,7 @@ claimed here. Keep bindings, credentials, tokens and unredacted staging logs out
 |---|---|---|
 | npm package | npm provenance; `arc-1-<version>-sbom.cdx.json` on GitHub Releases, best-effort | SBOM comes from the release tag's root production lockfile. It is a reference inventory; a fresh npm install can resolve a different dependency tree. |
 | Docker image | BuildKit provenance metadata; Trivy release scan per `linux/amd64` and `linux/arm64` | Release scanning is advisory. A dedicated image SBOM and Cosign signing step are not implemented in the reviewed workflow. Build metadata alone is not a verified publisher signature. |
-| BTP Cloud Foundry deployment | Source manifests/lockfiles and customer build/deployment records | Inventory the built application, selected buildpack/runtime, and optional `btp/approuter` independently. The root npm SBOM excludes the AppRouter's separate tree. |
+| BTP Cloud Foundry deployment | Source manifests/lockfiles, the source evidence command where available, and customer build/deployment records | Inventory the built application, selected buildpack/runtime, and optional `btp/approuter` independently. The root npm SBOM excludes the AppRouter's separate tree. |
 | MCPB bundle | Versioned `.mcpb` release asset; assembled-bundle startup check | Assembly removes native `better-sqlite3`. The root npm SBOM therefore does not describe the bundle exactly; no bundle-specific SBOM is published by the reviewed workflow. |
 | Custom extensions | Customer-controlled local code and dependencies | Loaded into the server process and outside the core release inventory. Review and inventory each extension separately; see [Extensions](extensions.md). |
 
@@ -75,13 +133,14 @@ current ARC-1 guarantee. Reproducibility still requires an update process when d
 
 ## Controls and evidence
 
-Links below point to the reviewed source revision so the claims remain inspectable.
+This table records the original review baseline. Links point to that source revision;
+the source tooling described above is an addition to it.
 
 | Control | Observed behavior | Evidence |
 |---|---|---|
 | Dependency updates | Weekly version-update configuration for root npm, AppRouter npm, GitHub Actions, and Docker. Security updates are enabled separately. No same-day remediation guarantee. | [Dependabot configuration](https://github.com/arc-mcp/arc-1/blob/38910bbf0cea9027cbe6e69fc2749820cd9c2993/.github/dependabot.yml) |
 | Known npm vulnerabilities | Root and AppRouter `npm audit --audit-level=high --omit=optional` checks fail on high/critical findings. Includes development dependencies; optional dependencies are omitted. | [Test workflow](https://github.com/arc-mcp/arc-1/blob/38910bbf0cea9027cbe6e69fc2749820cd9c2993/.github/workflows/test.yml) |
-| Dependency changes and licenses | Dependency Review fails its check on high/critical advisories and configured license denials. A version-specific `node-forge` license exception is documented. | [Dependency Review workflow](https://github.com/arc-mcp/arc-1/blob/38910bbf0cea9027cbe6e69fc2749820cd9c2993/.github/workflows/dependency-review.yml) |
+| Dependency changes and licenses | Configured to check high/critical advisories and license denials, with a version-specific `node-forge` exception. During implementation the old `v5` action tag could not be resolved; the new workflow pins the verified `v5.0.0` commit and separates the checks. | [Baseline workflow](https://github.com/arc-mcp/arc-1/blob/38910bbf0cea9027cbe6e69fc2749820cd9c2993/.github/workflows/dependency-review.yml) |
 | Static analysis | GitHub CodeQL default setup configured; weekly schedule reported by the API | [Code scanning](https://github.com/arc-mcp/arc-1/security/code-scanning) |
 | Container vulnerabilities | Trivy scans release images by digest/platform and reports findings without blocking publication | [Release workflow](https://github.com/arc-mcp/arc-1/blob/38910bbf0cea9027cbe6e69fc2749820cd9c2993/.github/workflows/release.yml) |
 | Scheduled container maintenance | Mon/Wed/Fri job builds fresh images for both architectures and fails on high/critical findings | [Scheduled workflow](https://github.com/arc-mcp/arc-1/blob/38910bbf0cea9027cbe6e69fc2749820cd9c2993/.github/workflows/security-scan.yml). This checks a new build, not an already-deployed release digest. |
@@ -188,10 +247,11 @@ must not be confused with an implemented Cosign signature-verification policy.
 
 ## Next improvements under evaluation
 
-Enforcing security checks on pull requests, improving evidence for BTP builds from source,
-and adding malicious-package review are the current priorities. Scanning retained Docker
-release digests and providing image/MCPB-specific inventories are secondary improvements for
-those distribution paths. These are proposals, not completed controls. The maintainer's
+Activating and verifying the security ruleset, configuring the Release Please App, and installing
+and calibrating Socket are the next account-level steps. The source evidence command and workflow
+are implemented in this source revision; customer staging evidence still needs the platform owner.
+Scanning retained Docker release digests and providing image/MCPB-specific inventories are
+secondary proposals for those distribution paths. The maintainer's
 [enterprise acceptance research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-07-enterprise-security-acceptance.md)
 records costs, tradeoffs, and implementation order.
 

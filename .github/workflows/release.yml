@@ -22,8 +22,23 @@ jobs:
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
     steps:
+      # Configure this App before enabling required security checks. The default
+      # GITHUB_TOKEN does not trigger PR workflows. No PR code runs in this job.
+      - name: Create Release Please token
+        if: ${{ vars.RELEASE_APP_CLIENT_ID != '' }}
+        id: release-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Omitting owner/repositories scopes the token to this repository.
+          permission-contents: write
+          permission-pull-requests: write
+
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7  # v5
         id: release
+        with:
+          token: ${{ steps.release-token.outputs.token || github.token }}
         # No release-type here — the action reads release-please-config.json.
         # From 1.0 the pre-major bump flags are gone, so semver applies normally:
         # feat→minor, fix→patch, breaking→major.
@@ -61,9 +76,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Sole test gate for the release: release-please opens its PR with the default
-      # GITHUB_TOKEN, so test.yml never runs on it (GITHUB_TOKEN events don't trigger
-      # workflows) — nothing else tests the released commit. Do not remove.
+      # Preserve the release-time test gate. PR workflows only run automatically
+      # once the Release Please App is configured; the default GITHUB_TOKEN path
+      # still does not trigger them. Required PR checks are security-only.
       # Coverage is dropped here: it's non-gating and no one reads it at publish time.
       #
       # release-notes.test.ts is excluded for the same reason link-release-notes is

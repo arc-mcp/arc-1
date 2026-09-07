@@ -27,6 +27,10 @@ The [CISA/FBI Secure by Demand guide, 6 August 2024](https://www.ic3.gov/CSA/202
 supports asking for vulnerability handling, dependency transparency, authentication, logging,
 and evidence of secure development.
 
+## Implementation follow-through
+
+The selected work is implemented in the accompanying [implementation plan](../plans/2026-09-07-enterprise-security-implementation.md) and [security operations runbook](../security-operations.md): separate dependency security/license jobs, release-App support, a disabled security ruleset, source dependency evidence, and Socket configuration. Account activation remains post-merge. The research observations below retain their original date and scope.
+
 ## Current decisions after maintainer feedback
 
 - **Documentation:** one prominent Security & Trust entry on the existing site, with an overview,
@@ -94,8 +98,8 @@ customers retain control of their own build pipeline.
 disclosed after a dependency was merged. Give applicable findings an owner and remediation or
 mitigation decision under the security policy. They should appear in dated release/build evidence.
 Do not make the entire existing `Test` job required merely because it contains `npm audit`:
-that would also enforce the test and quality checks the maintainer declined. A separate scheduled
-security workflow can report whole-tree results without blocking unrelated PRs automatically.
+that would also enforce the test and quality checks the maintainer declined. The separate scheduled
+security evidence workflow reports whole-tree results without blocking unrelated PRs automatically.
 Retain current workflows until any such extraction is implemented and verified.
 
 **Enforcement:** a required scanner must report for normal and Release Please PRs; missing or
@@ -341,8 +345,9 @@ observable without inventing an adoption percentage.
 - Existing supported-version policy clarified so the table no longer suggests all 1.x minors
   receive fixes, and response targets are consistently described as best-effort.
 
-These are local documentation changes. They do not enable checks, install Socket, sign images,
-change release gates, purchase services, establish independent assurance, or publish the site.
+The branch now also contains the workflow/tooling changes described in the implementation plan.
+It does not activate repository rules, install Socket, add signing, change existing release gates,
+purchase services, establish independent assurance, or publish the site before merge.
 
 ## Evidence method and limitations
 
@@ -355,8 +360,9 @@ pages are living sources accessed on 7 September 2026; dated sources are identif
 
 The legacy branch-protection endpoint returned 404, so the effective rules endpoint was checked
 instead; that 404 is not evidence that rulesets are absent. CISA-hosted pages returned 403 for some
-requests; the Secure by Demand guidance was available from co-publisher FBI. No full dependency
-vulnerability audit, artifact signature verification, production penetration test, private account
+requests; the Secure by Demand guidance was available from co-publisher FBI. The original research did not perform a full dependency
+vulnerability audit; implementation subsequently exercised root/AppRouter lockfile audits. No artifact
+signature verification, production penetration test, private account
 installation audit, or customer questionnaire review was performed. No exact certification quote
 or suitable full pentest at the proposed budget was verified.
 

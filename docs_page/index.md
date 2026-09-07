@@ -235,6 +235,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
 | [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
 | [security.md](security.md) | Enterprise security overview, evidence, and assessment questions |
+| [security-assessment.md](security-assessment.md) | Plain-language answers and a copyable approval record |
 | [dependency-security.md](dependency-security.md) | Dependency controls, release evidence, SBOM scope, and verification |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |

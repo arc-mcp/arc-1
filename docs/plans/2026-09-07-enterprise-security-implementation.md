@@ -23,7 +23,7 @@ audits, pentests and certifications are outside scope. Docker/MCPB improvements 
 - [x] Explain the complete client/model/SAP data path and customer responsibilities.
 - [x] Provide plain questions, short answers and a copyable approval record.
 - [x] Preserve existing hardening links and distinguish dated observations from guarantees.
-- [ ] Update dependency documentation to describe the implementation in this PR and pending
+- [x] Update dependency documentation to describe the implementation in this PR and pending
       account activation, without presenting the latter as enabled.
 
 Acceptance: strict MkDocs build; internal links and retained anchors resolve; browser review
@@ -31,26 +31,26 @@ of the overview, dependency page and copyable assessment template.
 
 ### 2. Separate dependency security from license policy
 
-- [ ] Use the verified Dependency Review v5.0.0 commit rather than the unresolved `v5` tag.
-- [ ] Create a stable `Dependency security` job that checks runtime, development and unknown
+- [x] Use the verified Dependency Review v5.0.0 commit rather than the unresolved `v5` tag.
+- [x] Create a stable `Dependency security` job that checks runtime, development and unknown
       scopes; fails for introduced high/critical vulnerabilities; does not check licenses.
-- [ ] Keep existing license policy in a separate job, excluded from required status checks.
-- [ ] Keep PR analysis read-only, without package installation, lifecycle execution, secrets,
+- [x] Keep existing license policy in a separate job, excluded from required status checks.
+- [x] Keep PR analysis read-only, without package installation, lifecycle execution, secrets,
       PR-comment write permissions or path/title filters.
-- [ ] Record the root and optional AppRouter graphs as in-scope.
+- [x] Record the root and optional AppRouter graphs as in-scope.
 
 Acceptance: workflow validation and contract tests; GitHub runs the named check on this PR.
 Current full-tree npm audits and release SBOM/container behavior remain unchanged.
 
 ### 3. Prepare reliable enforcement and release PR events
 
-- [ ] Add optional Release Please GitHub App token wiring, restricted to this repository and
+- [x] Add optional Release Please GitHub App token wiring, restricted to this repository and
       contents/pull-request writes. Keep the current token path until the App is configured.
-- [ ] Fail visibly when an App is selected but its key is unavailable; never silently fall
+- [x] Fail visibly when an App is selected but its key is unavailable; never silently fall
       back after App token creation fails. Keep npm publication on existing OIDC credentials.
-- [ ] Add an importable, initially disabled security ruleset: required `Dependency security`
+- [x] Add an importable, initially disabled security ruleset: required `Dependency security`
       from GitHub Actions; CodeQL `high_or_higher` security threshold and ordinary alerts `none`.
-- [ ] Document installation, normal/release PR verification, activation and rollback.
+- [x] Document installation, normal/release PR verification, activation and rollback.
 
 Acceptance before activation: successful checks on normal and App-generated release PRs;
 CodeQL results for the intended revisions; no missing mandatory checks; no blanket bypass.
@@ -59,19 +59,19 @@ release-PR triggering without that App installation. These are explicit post-mer
 
 ### 4. Generate BTP source dependency evidence
 
-- [ ] Add `npm run security:evidence` without adding a runtime dependency.
-- [ ] Record source commit, dirty state, Node/npm versions, timestamps and input hashes.
-- [ ] Generate root and AppRouter CycloneDX inventories with separate full and production
+- [x] Add `npm run security:evidence` without adding a runtime dependency.
+- [x] Record source commit, dirty state, Node/npm versions, timestamps and input hashes.
+- [x] Generate root and AppRouter CycloneDX inventories with separate full and production
       scopes, using lockfiles without installing packages or running lifecycle scripts.
-- [ ] Audit both full lockfile graphs, including optional/build dependencies; distinguish
+- [x] Audit both full lockfile graphs, including optional/build dependencies; distinguish
       findings from unavailable/invalid scans. Save a readable summary and machine-readable data.
-- [ ] Optionally hash a customer-supplied MTAR; explain that its relationship to the source
+- [x] Optionally hash a customer-supplied MTAR; explain that its relationship to the source
       and its actual staging inputs still require the customer's build record.
-- [ ] Reject reused output directories and incomplete or changed input evidence; keep generated
+- [x] Reject reused output directories and incomplete or changed input evidence; keep generated
       output gitignored. Do not collect CF environment, service keys or unfiltered command logs.
-- [ ] Add a separate scheduled/manual workflow with dated downloadable evidence. It is not
+- [x] Add a separate scheduled/manual workflow with dated downloadable evidence. It is not
       a required PR check and does not change release publication gates.
-- [ ] Link the command from dependency documentation; leave deployment commands in the canonical
+- [x] Link the command from dependency documentation; leave deployment commands in the canonical
       BTP runbook. Add a short staging worksheet for the human operator.
 
 Acceptance: real lockfile generation on this checkout; tests for vulnerable, clean, missing,
@@ -80,11 +80,11 @@ missing evidence is never labelled clean. No claim to inventory the final CF dro
 
 ### 5. Prepare Socket and routine maintenance
 
-- [ ] Add minimal Socket configuration with all PRs eligible and no manifest exclusions.
-- [ ] Document OSS application and installation for ARC-1 and the auth repository where eligible.
-- [ ] Specify malware blocking and initial warnings for behavioral signals; inspect dashboard
+- [x] Add minimal Socket configuration with all PRs eligible and no manifest exclusions.
+- [x] Document OSS application and installation for ARC-1 and the auth repository where eligible.
+- [x] Specify malware blocking and initial warnings for behavioral signals; inspect dashboard
       defaults, repository overrides and existing resolutions before enforcing.
-- [ ] Provide a short vulnerability/exception record: finding, affected versions, applicability,
+- [x] Provide a short vulnerability/exception record: finding, affected versions, applicability,
       decision, owner, mitigation and review date. Do not create automatic blanket exceptions.
 
 Acceptance after installation: root and AppRouter visible in the App, intended results on a
@@ -94,10 +94,10 @@ no paid subscription is needed for this implementation and no application email 
 
 ### 6. Review, test and publish the PR
 
-- [ ] Commit the initial plan/documentation, integrate current `main`, then implement.
-- [ ] Run focused evidence/workflow/BTP documentation tests, type checking, formatting and
+- [x] Commit the initial plan/documentation, integrate current `main`, then implement.
+- [x] Run focused evidence/workflow/BTP documentation tests, type checking, formatting and
       strict documentation build. Run relevant existing release and container contract tests.
-- [ ] Exercise the actual evidence command, inspect generated scope/hash/status data.
+- [x] Exercise the actual evidence command, inspect generated scope/hash/status data.
 - [ ] Push the branch and create one new PR with purpose, validation and activation boundaries.
 - [ ] Review every changed file against this plan, including workflow trust/permission boundaries.
 - [ ] Inspect GitHub checks and reviewer feedback; reproduce actionable failures and fix them.
@@ -117,6 +117,15 @@ no paid subscription is needed for this implementation and no application email 
 5. Try the assessment with one enterprise customer. Record unanswered questions and actual
    approval blockers; use those to prioritize further spending.
 
-The detailed account steps and rollback procedure will live in `docs/security-operations.md`.
+The detailed account steps and rollback procedure are in [security operations](../security-operations.md).
 Allow roughly 2–4 focused days for this first implementation and review, plus customer/vendor
 waiting time. These are planning estimates, not a commitment or a measured adoption uplift.
+
+## Implementation validation record
+
+- Initial evidence/workflow tests: 17 passed. Existing release, container, MTA and CI contracts: 31 passed.
+- Type checking, actionlint for the three changed workflows, strict MkDocs build and diff whitespace checks passed.
+- Actual root and AppRouter lockfile audits completed with zero reported vulnerabilities on 7 September 2026.
+- npm SBOM display names can follow checkout directories; package URL/version validation handles this without rewriting the inventory.
+- Final PR review, current-commit CI results and any subsequent corrections are recorded below when complete.
+- Account activation and customer BTP staging remain the explicit post-merge steps above.

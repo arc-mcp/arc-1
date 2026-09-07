@@ -69,7 +69,8 @@ does not inventory your complete BTP deployment.
 
 **Your decision:** have the build/BTP owner retain the
 [source, build, and staging evidence](dependency-security.md#btp-builds-from-source)
-and assess applicable findings before deploying.
+and assess applicable findings before deploying. The linked page explains how to generate
+a readable dependency report and a worksheet for the BTP owner.
 
 ### What is logged or stored?
 
