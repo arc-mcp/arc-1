@@ -148,3 +148,7 @@ reported rather than resolved with paid capacity or broader authorization.
 - Remote GitHub CI is separate from this local/live evidence; its status must be checked before
   any later merge. No production readiness, unsupported transport or future-milestone gate is
   implied by the checked experimental delivery steps above.
+- The first Linux CI run exposed Compose file-secret UID mismatch (Mac Docker did not reproduce
+  it). Setup now keeps original ARC files at 0600 and stages individual read-only mount copies
+  inside a 0700 host-only directory. No container is changed to run as root. Existing secrets are
+  preserved; mismatched staged copies fail closed. Linux Docker CI must pass before final handoff.

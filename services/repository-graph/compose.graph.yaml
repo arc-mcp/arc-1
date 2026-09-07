@@ -123,12 +123,12 @@ volumes:
 
 secrets:
   graph_api_key:
-    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/graph_api_key
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/docker-mounts/graph_api_key
   pg_admin_password:
-    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/pg_admin_password
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/docker-mounts/pg_admin_password
   pg_api_password:
-    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/pg_api_password
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/docker-mounts/pg_api_password
   pg_writer_password:
-    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/pg_writer_password
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/docker-mounts/pg_writer_password
   destination_service_key:
-    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/destination-service-key.json
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/docker-mounts/destination-service-key.json

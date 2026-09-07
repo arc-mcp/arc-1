@@ -43,6 +43,13 @@ Expected output includes passing v2 API, extraction/retention, snapshot and leas
 
 The API is bound to loopback only. PostgreSQL has no host port. API, collector and migration
 containers receive reader, writer and admin secrets respectively. Querying does not call SAP.
+Setup keeps original ARC credentials at `0600`. For Linux Compose it prepares separate `0444`
+mount files inside `.secrets/.../docker-mounts/`, whose host directory is `0700`; other host users
+cannot traverse that directory. Only explicitly granted files are mounted into each container.
+Do not move these mount copies outside their private directory or mount the whole directory into
+ARC. Re-run `graph:setup` with the original settings when upgrading an older local installation;
+it preserves credentials and refuses mismatched copies. File-backed Compose secrets do not
+support UID/mode remapping. [Docker secret mount behavior](https://docs.docker.com/reference/compose-file/services/#secrets).
 For local ARC, set `ARC1_GRAPH_CONNECTION_FILE` to the generated absolute path, keep
 `ARC1_GRAPH_TOOLS=false`, and follow [acceptance checks](repository-graph.md#verify-before-client-exposure).
 Docker-host ARC containers need an adjusted descriptor using service DNS and read-only mounts;

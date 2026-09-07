@@ -47,6 +47,33 @@ export function setupLocal(env = process.env) {
   }
   if (!existsSync(descriptor))
     writeFileSync(descriptor, JSON.stringify(data, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+  // Compose file secrets are bind mounts: uid/gid/mode remapping is ignored on Linux.
+  // Keep original ARC files 0600. Individually mounted copies are 0444 INSIDE an owner-only
+  // 0700 host directory, so unrelated host users cannot traverse to them. Containers see
+  // only their explicitly granted files, regardless of their numeric uid (node vs postgres).
+  const mounts = join(secrets, 'docker-mounts');
+  if (existsSync(mounts) && (lstatSync(mounts).isSymbolicLink() || !lstatSync(mounts).isDirectory()))
+    throw new Error('Unsafe Docker secret directory');
+  mkdirSync(mounts, { recursive: true, mode: 0o700 });
+  chmodSync(mounts, 0o700);
+  for (const name of [
+    'graph_api_key',
+    'pg_admin_password',
+    'pg_api_password',
+    'pg_writer_password',
+    'destination-service-key.json',
+  ]) {
+    const source = join(secrets, name);
+    if (!existsSync(source)) continue; // Optional live Destination binding is absent offline.
+    if (lstatSync(source).isSymbolicLink() || !lstatSync(source).isFile()) throw new Error('Unsafe secret source');
+    const target = join(mounts, name);
+    const content = readFileSync(source);
+    if (existsSync(target)) {
+      if (lstatSync(target).isSymbolicLink() || !lstatSync(target).isFile() || !readFileSync(target).equals(content))
+        throw new Error('Existing Docker secret differs; coordinate credential rotation explicitly');
+    } else writeFileSync(target, content, { flag: 'wx', mode: 0o444 });
+    chmodSync(target, 0o444);
+  }
   return { descriptor, createdOrPreserved: true };
 }
 
