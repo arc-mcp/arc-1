@@ -47,6 +47,10 @@ separate release gates. No additional paid provisioning is authorized by enablin
 
 ## Verification
 
+The [experimental specification](../../docs_page/repository-graph-specification.md) defines the
+current implementation boundary and open gates. It does not promote this ADR to a production
+security sign-off or add restricted-audience support.
+
 Default tool snapshots; independent runtimes; real SDK standard/hyperfocused/HTTP exchanges;
 denied-scope/action/rate and strict-JWT paths; redirect/size/deadline/cancellation/key-rotation
 tests; malformed/cross-system response rejection; read-only local live-index smoke. See

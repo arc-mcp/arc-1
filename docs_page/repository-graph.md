@@ -1,4 +1,11 @@
-# Optional repository graph (experimental)
+# Repository graph (experimental)
+
+!!! warning "Experimental — compatible backend required"
+
+    This is an opt-in preview, not part of the default setup. Use an ARC build that contains
+    [the adapter](https://github.com/arc-mcp/arc-1/pull/756); do not assume an older installed
+    release or `latest` contains it. The separate PostgreSQL backend is still a local PoC,
+    without a published supported installer. **Do not create services just to configure ARC.**
 
 `SAPGraph` queries a separately deployed metadata/relationship index. ARC does not collect
 objects, store source, connect to PostgreSQL/HANA, or use AI Core for this feature. Existing
@@ -6,11 +13,26 @@ SAPRead, SAPContext and request-driven caches are unchanged. This is **not live 
 
 The adapter requires a compatible **v2 graph API**. The independent local PostgreSQL collector
 is a proof of concept, not part of the ARC npm/Docker distribution or a hosted service. This page
-configures the ARC adapter; it does not install that backend. HANA parity and automated BTP
-deployment are not shipped. See the [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/optional-repository-graph.md)
-and [validation record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/repository-graph-validation.md).
-The separate [BTP PoC validation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/repository-graph-internal-docker-btp-2026-09-07.md)
-records tested free-plan deployment, network limitations and lifecycle constraints.
+configures the ARC adapter; it does not install that backend. HANA parity, Cloud Connector
+collection, and a portable BTP backend installer are not shipped. The
+[detailed specification](repository-graph-specification.md) separates the implemented contract
+from the remaining decisions and release gates; proposed settings there are not setup requirements.
+
+## Choose your next step
+
+Keep your existing ARC setup and SAP authentication unchanged. New ARC installations start with
+[Deployment](deployment.md) or [BTP Start Here](btp-overview.md); graph setup is optional afterward.
+
+| Situation | Next step |
+|---|---|
+| You do not have a compatible graph backend | Obtain a version-matched backend artifact/runbook from its maintainer. There is no published one-command backend installation yet; do not guess service names or database credentials. |
+| A local/Docker backend is ready | Confirm the audience below, then [connect locally](#local-connection-one-arc-setting). |
+| A BTP backend is ready | Confirm the audience below, then [bind the connection](#btp-cloud-foundry-connection). Same-space deployment is not required by the API contract and does not make the route private. |
+| CLI queries work and you want client access | Complete the [acceptance checks](#verify-before-client-exposure), then explicitly enable tools. |
+
+Before connecting, obtain the backend's API version, HTTPS/loopback origin, system key (including
+the intended SAP client), audience, and private API key. These values must agree with the backend;
+ARC does not create or discover them for you. Start with `ARC1_GRAPH_TOOLS=false`.
 
 ## Audience and safety
 
@@ -34,12 +56,15 @@ characters). Create an absolute-path connection file, also owner-readable (`0600
 {
   "version": 1,
   "url": "http://127.0.0.1:8091",
-  "systemKey": "TRIAL-001",
+  "systemKey": "TRIAL-2023-001",
   "audience": "trial",
   "sharing": "shared-repository-metadata",
   "apiKeyFile": "/absolute/private/graph-api-key"
 }
 ```
+
+The example system/audience matches the offline PoC fixture. Replace both for a live index;
+do not label your SAP installation with the example identity just to make a query succeed.
 
 Set `ARC1_GRAPH_CONNECTION_FILE=/absolute/private/graph-connection.json` for internal setup and CLI
 diagnostics. MCP clients still see no graph tool and cannot invoke it. Set `ARC1_GRAPH_TOOLS=true`
@@ -59,11 +84,36 @@ an operator configured the correct system. Do not reuse a key/audience across un
 
 ## BTP Cloud Foundry connection
 
+This section attaches an **already running** compatible backend. It does not provision PostgreSQL,
+install the collector, or change SAP destinations. For existing ARC deployments, follow
+[BTP Administration](btp-administration.md) for binding/restart changes and preserve the current
+customer configuration.
+
 Alternatively set `ARC1_GRAPH_SERVICE_BINDING=arc1-repository-graph` and bind exactly one
 **user-provided** service instance with that name. Its `credentials` have the same descriptor
-fields, except `apiKey` replaces `apiKeyFile`. Pass credentials to CF using a private JSON file,
-not shell history. ARC does not search arbitrary service bindings. A connection file takes
-precedence over a binding; `ARC1_GRAPH=off` overrides both.
+fields, except `apiKey` replaces `apiKeyFile`. Have the backend maintainer supply that credential
+JSON in an owner-only private file. For example, with its absolute path in `GRAPH_CREDENTIALS_FILE`
+and your observed ARC app name in `ARC1_APP`:
+
+```sh
+cf target
+cf services
+# Only if this graph connection service does not already exist:
+cf create-user-provided-service arc1-repository-graph -p "$GRAPH_CREDENTIALS_FILE"
+cf bind-service "$ARC1_APP" arc1-repository-graph
+```
+
+Review the target org/space and service ownership before these changes. For an existing service,
+verify it is the intended graph connection; do not overwrite its credentials or adopt an unrelated
+service. Persist both the binding and `ARC1_GRAPH_SERVICE_BINDING=arc1-repository-graph` in the
+deployment configuration that owns ARC, with `ARC1_GRAPH_TOOLS=false`, then follow that deployment's
+binding refresh/restart procedure. For MTA, `.mtaext` properties can set the ARC flags, but the
+existing-service resource and module binding must also be modeled correctly; a property alone
+does not bind a service. A graph-specific MTA attachment example is not shipped yet.
+
+Do not use `.env` for CF deployment settings, paste keys in shell arguments, or rely only on a
+temporary `cf set-env` that the next MTA deployment can undo. ARC does not search arbitrary service
+bindings. A connection file takes precedence over a binding; `ARC1_GRAPH=off` overrides both.
 
 Same-space deployment does **not** imply private connectivity. SAP BTP lists container-to-container
 networking as [unsupported](https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/f8a351c8d81544a2942c911dccaba3c7.html);
@@ -79,6 +129,33 @@ can configure independently built artifacts. See CF's
 
 No service provisioning is performed by this adapter. Free/trial entitlement, region, quota,
 network support and the backend's lifecycle must be verified separately before deployment.
+PostgreSQL free is time-limited, not a permanent production service; record an export/upgrade owner
+and deadline using the [lifecycle requirements](repository-graph-specification.md#85-cost-lifecycle-and-operations).
+
+!!! warning "Cloud Connector collection is not yet verified"
+
+    The collector PoC used a publicly reachable HTTPS SAP destination. ARC's existing PP/Cloud
+    Connector setup does not give the separate collector that transport or a background SAP
+    identity. Do not copy a Principal Propagation destination into a headless collector and assume
+    it will work. This does not affect graph retrieval from an already populated backend.
+
+## Verify before client exposure
+
+1. With tools still off, run `arc1-cli graph status` from a process with the private descriptor or
+   named service binding. Expect `state=ready` and the intended system key. This proves graph
+   readiness, **not** SAP identity, non-empty useful data, or whole-system coverage.
+2. Search a known collected object and inspect a known non-empty relationship. Check the latest
+   scope/time, unresolved nodes and truncation. Use actual indexed names, not the examples below.
+3. Confirm MCP `tools/list` contains no `SAPGraph` and no hyperfocused graph action. Direct graph
+   invocation must also fail while `ARC1_GRAPH_TOOLS=false`.
+4. Confirm the operator approves shared metadata for all permitted readers. Test ordinary ARC
+   safe reads and SAP identity separately; graph success proves neither of those paths.
+5. Only then set `ARC1_GRAPH_TOOLS=true` in ARC's owned configuration and restart. Refresh/reconnect
+   the MCP client, test one graph query, and retain the backend's experimental limitations.
+
+If not ready, use the status table below. Do not enable tools or broaden SAP permissions to hide a
+backend setup failure. CLI examples run where their connection file/binding is available; your
+laptop does not automatically inherit a CF app's bindings.
 
 ## Use and diagnose
 
@@ -116,8 +193,10 @@ systemKey/audience. No caller URL, SQL, Cypher, collection or administrative mut
 Unconfigured: no graph probe, timer, network request or listed tool. Connected but internal-only:
 no MCP graph runtime/probe, tool/list notification, or accepted client call; CLI calls remain available.
 A configured and MCP-enabled backend is
-probed asynchronously with a two-second deadline. Initially unavailable/empty indexes stay
-hidden; retries back off from two seconds to sixty seconds. Healthy rechecks run every thirty
+probed asynchronously with a two-second deadline. Initially unavailable indexes or those without
+a completed generation stay hidden; failed probes back off from two seconds to sixty seconds.
+The no-generation state retries after one second. A generation does not guarantee non-empty data
+or complete coverage. Healthy rechecks run every thirty
 seconds. First availability emits `tools/list_changed` on persistent stdio sessions. A short outage preserves the tool name,
 but queries fail explicitly; invalid credentials/protocol responses hide it. No query-result
 cache or SAP fallback is used. Reconnect clients that ignore tool-list notifications; stateless
@@ -132,3 +211,17 @@ only the graph and appear as `invalid_connection` in status. Status exits nonzer
 Set `ARC1_GRAPH=off` and restart to disable with no backend removal. `SAP_DENY_ACTIONS=SAPGraph`
 blocks the tool, `SAPGraph.impact` blocks one action, and `SAP.graph` blocks its hyperfocused
 alias. Denial does not stop operator-configured background health probes; explicit off does.
+
+| Status/problem | Check next |
+|---|---|
+| `not_configured` | Explicit off, missing connection setting, or CLI process without the intended binding |
+| `invalid_connection` | Absolute paths/owner permissions, exact named user-provided binding, descriptor identity/URL, unsupported multi-target configuration |
+| `unauthorized` | Backend key and matching system/audience; do not change the caller's SAP role |
+| `incompatible` | Backend API/response contract and identity; use matched artifact versions |
+| `not_indexed` | Backend collection has not published a generation; collection runs outside ARC |
+| `unavailable` / `busy` | Backend health, reachability, query bounds and load; no automatic SAP fallback |
+| CLI ready, tool absent | Default internal-only setting, reader scope/deny policy, or a client needing a refreshed tool list |
+
+Disabling ARC does not stop the separate API, collector schedule, or database lifecycle. Backend
+stop/export/removal belongs to its runbook. Keep data volumes on normal Docker shutdown; do not
+delete databases or regenerate credentials as a routine retry step.

@@ -357,7 +357,7 @@ Optional pre-write validation layers and tool/schema selection.
 
 ---
 
-## Extensions (FEAT-61)
+## Repository graph (experimental)
 
 The optional native graph is separate from extensions: `ARC1_GRAPH_CONNECTION_FILE`
 (`--graph-connection-file`) or explicitly selected `ARC1_GRAPH_SERVICE_BINDING`
@@ -367,6 +367,11 @@ connection. `ARC1_GRAPH_TOOLS` (`--graph-tools`) separately controls MCP exposur
 `false`: a connected backend stays internal until explicitly enabled. CLI diagnostics still work.
 Invalid graph settings fail only graph closed. See [Repository Graph](repository-graph.md)
 for audience restrictions, private file format, precedence, bounds and availability behavior.
+
+This optional adapter needs a separately deployed compatible backend; it does not provision a
+database or collect SAP objects. It is not a prerequisite for local or BTP ARC setup.
+
+## Extensions (FEAT-61)
 
 Load your own `Custom_*` tools (the [extension framework](extensions.md)). Plugins are **trusted
 in-process code** — see the security note on that page before enabling.

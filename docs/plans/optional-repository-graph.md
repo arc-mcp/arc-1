@@ -1,5 +1,12 @@
 # Optional repository graph — implementation and acceptance plan
 
+**Historical PoC plan.** The current implementation target, decision register and release gates
+are maintained in the [experimental feature specification](../../docs_page/repository-graph-specification.md).
+Use [the setup guide](../../docs_page/repository-graph.md) for implemented configuration. The older
+future-gate list below is a dated record: BTP public-HTTPS testing subsequently passed, private
+container networking was ruled out for BTP, and HANA remains deferred rather than a PostgreSQL
+experimental-release prerequisite.
+
 2026-09-06. Base: current ARC-1 main (`38910bbf`). Delivery: one ARC-1 PR; the existing
 standalone collector/PostgreSQL project remains independently built in its own repository.
 This is an experimental, single-system, explicitly shared-metadata integration, not a

@@ -38,6 +38,10 @@ For single-developer setups on your own laptop, use [local-development.md](local
 | BTP Cloud Foundry, BTP ABAP backend | [BTP CF + BTP ABAP](#btp-cloud-foundry-btp-abap-environment) |
 | BTP Cloud Foundry, S/4HANA Public Cloud backend | [S/4HANA Public Cloud (PP via SAMLAssertion)](s4hana-public-cloud.md) |
 
+Optional after ARC is working: [Repository Graph (Experimental)](repository-graph.md) attaches a
+separate metadata backend on a single-system instance. It requires no database or graph tools in
+the default ARC deployment; client exposure remains off unless explicitly enabled.
+
 ---
 
 ## Docker on any VM
