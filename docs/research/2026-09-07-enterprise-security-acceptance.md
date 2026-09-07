@@ -51,8 +51,9 @@ The selected work is implemented in the accompanying [implementation plan](../pl
   installation boundary. Record source/lockfile hashes, build tools, MTAR checksum, selected
   buildpack/stack/Node/npm, and installed dependency inventory where supported. The optional
   AppRouter has its own graph. Do not claim the upstream npm SBOM inventories the final BTP runtime.
-- **Socket:** accepted as a direction; application, installation and policy activation have not
-  occurred. Start with the OSS program and observe real dependency-PR results.
+- **Socket:** selected. Implementation later observed the existing Socket App reporting on PR #765.
+  Its project report passed and PR alert analysis skipped because no dependencies changed. Reuse
+  that installation; verify OSS entitlement, graph coverage and the dashboard policy before requiring it.
 - **Attestations:** new signing/attestation work declined. Retain existing npm provenance and
   current release controls. BTP evidence should still identify the source, dependencies, build
   and staging inputs, but adding a cryptographic signing system is outside this plan.

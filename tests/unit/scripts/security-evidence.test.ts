@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateEvidence, hashFile, validateAudit, validateSbom } from '../../../scripts/security/evidence.mjs';
 
@@ -58,6 +59,52 @@ function fixture() {
 }
 
 describe('dependency evidence', () => {
+  it.each([
+    { high: 0, fail: false, invalid: false, exit: 0 },
+    { high: 1, fail: false, invalid: false, exit: 0 },
+    { high: 1, fail: true, invalid: false, exit: 1 },
+    { high: 0, fail: true, invalid: true, exit: 2 },
+  ])('uses the documented CLI exit status with real subprocesses: $exit', ({ high, fail, invalid, exit }) => {
+    const options = fixture();
+    const bin = join(options.root, 'fake-tools');
+    mkdirSync(bin);
+    const scripts = {
+      git: `#!/usr/bin/env node\nif (process.argv[2] === 'rev-parse') console.log('${'a'.repeat(40)}'); else if (process.argv[2] !== 'status') process.exit(44);`,
+      npm: `#!/usr/bin/env node\nconst fs = require('node:fs');
+        const args = process.argv.slice(2);
+        if (args[0] === '--version') { console.log('11.11.1'); process.exit(0); }
+        if (!['sbom', 'audit'].includes(args[0]) || !args.includes('--ignore-scripts') || !args.includes('--package-lock-only')) process.exit(44);
+        if (args[0] === 'audit') { console.log(${JSON.stringify(invalid ? 'invalid output' : JSON.stringify(audit(high)))}); process.exit(${high ? 1 : 0}); }
+        const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+        const bom = ${JSON.stringify(bom('placeholder'))};
+        bom.metadata.component.purl = 'pkg:npm/' + manifest.name + '@' + manifest.version;
+        console.log(JSON.stringify(bom));`,
+    };
+    for (const [name, content] of Object.entries(scripts)) {
+      writeFileSync(join(bin, name), content);
+      chmodSync(join(bin, name), 0o755);
+    }
+    const script = resolve('scripts/security/evidence.mjs');
+    const args = [script, '--out', options.out, '--require-clean', ...(fail ? ['--fail-on-high'] : [])];
+    const env = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` };
+    const result = spawnSync(process.execPath, args, { cwd: options.root, env, encoding: 'utf8' });
+    expect(result.status, result.stderr).toBe(exit);
+    const saved = JSON.parse(readFileSync(join(options.out, 'evidence.json'), 'utf8'));
+    expect(saved.complete).toBe(!invalid);
+    expect(existsSync(join(options.root, 'node_modules'))).toBe(false);
+    const repeat = spawnSync(process.execPath, args, { cwd: options.root, env, encoding: 'utf8' });
+    expect(repeat.status).toBe(2);
+    expect(repeat.stderr).toContain('Output directory already exists');
+  });
+
+  it('rejects dependency declaration drift even when package name and version match', () => {
+    const options = fixture();
+    const path = join(options.root, 'package.json');
+    const manifest = JSON.parse(readFileSync(path, 'utf8'));
+    writeFileSync(path, JSON.stringify({ ...manifest, dependencies: { added: '1.0.0' } }));
+    expect(generateEvidence(options).evidence.complete).toBe(false);
+  });
+
   it('collects both graphs and scopes without installation, preserves earlier evidence and hashes local bridges', () => {
     const options = fixture();
     const { evidence, directory } = generateEvidence(options);

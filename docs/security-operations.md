@@ -83,12 +83,18 @@ until release PR events are working again. Prefer fixing the missing check to a 
 
 See [GitHub's code-scanning rules](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/manage-your-configuration/set-merge-protection).
 
-## 4. Install and calibrate Socket
+## 4. Verify Socket access and calibrate its policy
 
-1. Follow the [Socket OSS program application](https://www.socket.dev/blog/free-business-plan-upgrades-for-open-source).
-   Request the upgrade for the GitHub organization. Approval is a vendor decision; no paid plan
-   or minimum-seat subscription is needed to prepare this integration.
-2. Install the Socket GitHub App for ARC-1. Include the separate auth package repository where
+On 7 September 2026, [PR #765](https://github.com/arc-mcp/arc-1/pull/765) received a successful
+Socket Project Report from App `socket-security` (ID `156372`). Its Pull Request Alerts check
+reported success with **no net dependency changes**, so alert analysis was skipped. This verifies
+that the integration responds; it does not verify a malware block, AppRouter coverage or plan entitlement.
+
+1. Check the existing organization's entitlement. If the OSS upgrade is still needed, follow
+   the [Socket OSS program application](https://www.socket.dev/blog/free-business-plan-upgrades-for-open-source).
+   Approval is a vendor decision; no paid plan or minimum-seat subscription is needed to prepare
+   this integration. This task has not verified entitlement or submitted an application.
+2. Reuse the existing Socket GitHub App installation for ARC-1. Include the separate auth package repository where
    eligible and authorized; it is still part of the product's dependency boundary.
 3. Confirm Socket sees both root and `btp/approuter` manifests/lockfiles. `socket.yml` keeps all
    PRs eligible and adds no manifest exclusions. It does not install the App or set its policy.
@@ -99,7 +105,7 @@ See [GitHub's code-scanning rules](https://docs.github.com/en/code-security/how-
 5. Inspect repository overrides and resolved alerts: they can override dashboard policy. Review
    actual dependency PRs for a week or several updates. Record false positives and the reasons
    for any narrowly scoped resolution.
-6. Once calibrated, record the observed check name and Socket App identity. Add that check to
+6. Once calibrated, recheck the observed `Socket Security: Pull Request Alerts` name and App identity. Add that check to
    the security ruleset with the correct provider. Verify it reports on normal, dependency and
    release PRs before requiring it. Do not invent a check name from this guide.
 

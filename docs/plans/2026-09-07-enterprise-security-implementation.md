@@ -88,8 +88,8 @@ missing evidence is never labelled clean. No claim to inventory the final CF dro
       decision, owner, mitigation and review date. Do not create automatic blanket exceptions.
 
 Acceptance after installation: root and AppRouter visible in the App, intended results on a
-real dependency PR, exact check name and App identity recorded, policy calibrated. Socket is
-not a required check until then. Application approval and installation remain account actions;
+real dependency PR, exact check name and App identity recorded, policy calibrated. Socket reported successfully on PR #765; its PR alert analysis skipped because no dependencies changed.
+Socket is not a required check until policy and blocking behavior are verified. Application approval and installation remain account actions;
 no paid subscription is needed for this implementation and no application email is sent by it.
 
 ### 6. Review, test and publish the PR
@@ -98,10 +98,10 @@ no paid subscription is needed for this implementation and no application email 
 - [x] Run focused evidence/workflow/BTP documentation tests, type checking, formatting and
       strict documentation build. Run relevant existing release and container contract tests.
 - [x] Exercise the actual evidence command, inspect generated scope/hash/status data.
-- [ ] Push the branch and create one new PR with purpose, validation and activation boundaries.
-- [ ] Review every changed file against this plan, including workflow trust/permission boundaries.
-- [ ] Inspect GitHub checks and reviewer feedback; reproduce actionable failures and fix them.
-- [ ] Push corrections as new commits and update the PR description to reflect the final result.
+- [x] Push the branch and create one new PR with purpose, validation and activation boundaries.
+- [x] Review every changed file against this plan, including workflow trust/permission boundaries.
+- [x] Inspect GitHub checks and reviewer feedback; reproduce actionable failures and fix them.
+- [x] Push corrections as new commits and update the PR description to reflect the final result.
 
 ## After merge: maintainer checklist
 
@@ -110,7 +110,7 @@ no paid subscription is needed for this implementation and no application email 
    trigger publishes npm. Use the next ordinary `main` push.
 2. Follow the security operations runbook to import the disabled ruleset, verify the observed
    check names and results, then enable it. Export and date the effective rules afterwards.
-3. Apply for Socket OSS, install it for selected repositories and calibrate the policy. Add
+3. Verify the existing Socket installation and OSS entitlement, then calibrate its policy. Add
    its observed check to the ruleset only after verification.
 4. Run the evidence command for an approved clean source revision; retain the output with the
    MTAR/build record and complete the customer staging worksheet.
@@ -129,3 +129,15 @@ waiting time. These are planning estimates, not a commitment or a measured adopt
 - npm SBOM display names can follow checkout directories; package URL/version validation handles this without rewriting the inventory.
 - Final PR review, current-commit CI results and any subsequent corrections are recorded below when complete.
 - Account activation and customer BTP staging remain the explicit post-merge steps above.
+
+### Post-push review
+
+- PR: https://github.com/arc-mcp/arc-1/pull/765.
+- Full local suite on initial implementation: **5,789 tests across 196 files passed**.
+- Clean-checkout evidence on npm **11.11.1** completed: four inventories and both audits; zero vulnerabilities reported by the registry on the collection date. An earlier collection overlapped a commit and correctly marked its input/source state inconsistent; rerunning on the stable commit passed.
+- Socket App **156372** already delivers checks. The project report passed; PR alert analysis skipped because the PR has no net dependency changes. Policy, graph coverage and OSS entitlement remain unverified. The account runbook now reuses that installation.
+- Review added direct CLI subprocess coverage for exit codes 0/1/2 and refusal to overwrite previous evidence, plus dependency-declaration drift coverage. It also improved safe preflight error messages for human operators.
+
+- Post-review focused suite: **22 tests passed**, including four CLI subprocess scenarios. Type checking, lint and strict documentation build passed again.
+- Initial PR commit `cd843284` passed GitHub Dependency security, Dependency licenses, CodeQL, documentation, MTA validation, and Node 22/24 jobs. Live SAP jobs skipped under the existing `chore:` policy; no SAP runtime behavior changed.
+- Post-review corrections are a separate commit. The PR checks show the authoritative result for its latest head.

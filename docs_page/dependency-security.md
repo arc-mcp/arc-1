@@ -62,8 +62,8 @@ can complete. Generated files go into a new directory under `reports/security/`.
 The command generates full and production CycloneDX inventories from each lockfile and audits
 both full graphs, including optional and build dependencies. It does not install dependencies
 or execute their lifecycle scripts. Audits send dependency information to the configured npm
-registry, which must support the audit API. npm 10.9.4 was exercised locally; the maintenance
-workflow pins npm 11.11.1. Reports record the version actually used.
+registry, which must support the audit API. npm 10.9.4 and 11.11.1 were exercised locally; the
+maintenance workflow pins npm 11.11.1. Reports record the version actually used.
 
 For a reviewed clean checkout, add `--require-clean`. For an already-built MTAR, add
 `--mtar PATH_TO_ARCHIVE`. A checksum identifies that file; your build record must establish
@@ -98,8 +98,9 @@ older release automatically.
 
 An initially disabled ruleset template selects only Dependency security and CodeQL security
 findings at high or higher. Release Please supports an optional GitHub App token so its PRs can
-trigger these checks. Socket configuration is also provided; installation and dashboard policy
-are separate steps. These files alone do not establish enforcement. The maintainer's
+trigger these checks. Socket configuration is also provided. Its App returned a project report on
+[PR #765](https://github.com/arc-mcp/arc-1/pull/765); the PR alert check skipped analysis because
+there were no dependency changes. Dashboard policy and blocking behavior still need verification. These files alone do not establish enforcement. The maintainer's
 [security operations runbook](https://github.com/arc-mcp/arc-1/blob/main/docs/security-operations.md)
 documents activation and verification; the dated settings observation below remains the baseline.
 
@@ -247,8 +248,8 @@ must not be confused with an implemented Cosign signature-verification policy.
 
 ## Next improvements under evaluation
 
-Activating and verifying the security ruleset, configuring the Release Please App, and installing
-and calibrating Socket are the next account-level steps. The source evidence command and workflow
+Activating and verifying the security ruleset, configuring the Release Please App, and verifying
+and calibrating the existing Socket integration are the next account-level steps. The source evidence command and workflow
 are implemented in this source revision; customer staging evidence still needs the platform owner.
 Scanning retained Docker release digests and providing image/MCPB-specific inventories are
 secondary proposals for those distribution paths. The maintainer's

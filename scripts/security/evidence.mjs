@@ -23,12 +23,14 @@ const scopes = [
   { id: 'approuter', path: 'btp/approuter' },
 ];
 
+class EvidenceInputError extends Error {}
+
 export function runCommand(command, args, cwd) {
   return spawnSync(command, args, { cwd, encoding: 'utf8', timeout: 120_000, maxBuffer: 32 * 1024 * 1024 });
 }
 
 export function hashFile(path) {
-  if (!lstatSync(path).isFile()) throw new Error('Evidence inputs must be regular files, not symlinks.');
+  if (!lstatSync(path).isFile()) throw new EvidenceInputError('Evidence inputs must be regular files, not symlinks.');
   const hash = createHash('sha256');
   const buffer = Buffer.alloc(1024 * 1024);
   const fd = openSync(path, 'r');
@@ -65,7 +67,7 @@ function readSource(root, run) {
   const commit = run('git', ['rev-parse', 'HEAD'], root);
   const status = run('git', ['status', '--porcelain', '--untracked-files=normal'], root);
   if (commit.status !== 0 || status.status !== 0 || !/^[a-f0-9]{40,64}$/.test(commit.stdout.trim())) {
-    throw new Error('Cannot identify the Git source revision and working-tree state.');
+    throw new EvidenceInputError('Cannot identify the Git source revision and working-tree state.');
   }
   return { commit: commit.stdout.trim(), dirty: status.stdout.trim().length > 0 };
 }
@@ -123,15 +125,17 @@ export function generateEvidence({ root = process.cwd(), out, mtar, requireClean
   root = resolve(root);
   const source = readSource(root, run);
   if (requireClean && source.dirty)
-    throw new Error('A clean source checkout is required. Commit or remove local changes first.');
+    throw new EvidenceInputError('A clean source checkout is required. Commit or remove local changes first.');
   const inputs = inputHashes(root);
   const npm = run('npm', ['--version'], root);
   if (npm.status !== 0 || !/^\d+\.\d+\.\d+$/.test(npm.stdout.trim()))
-    throw new Error('Cannot identify the npm version.');
+    throw new EvidenceInputError('Cannot identify the npm version.');
   const startedAt = new Date().toISOString();
   const directory = resolve(out ?? join(root, 'reports/security', startedAt.replaceAll(':', '-')));
   if (existsSync(directory))
-    throw new Error('Output directory already exists; choose a new directory to preserve earlier evidence.');
+    throw new EvidenceInputError(
+      'Output directory already exists; choose a new directory to preserve earlier evidence.',
+    );
   // Validate the optional artifact before creating output. Its build/source relationship is unverified.
   const artifact = mtar
     ? {
@@ -258,9 +262,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       console.log(`Complete: ${evidence.complete}; high/critical findings across graphs: ${evidence.highOrCritical}`);
       process.exitCode = !evidence.complete ? 2 : values['fail-on-high'] && evidence.highOrCritical > 0 ? 1 : 0;
     }
-  } catch {
+  } catch (error) {
     console.error(
-      'Could not generate evidence. Check Git state, input files, npm availability and that the output directory is new.',
+      error instanceof EvidenceInputError
+        ? error.message
+        : 'Could not generate evidence. Check Git state, input files, npm availability and that the output directory is new.',
     );
     process.exitCode = 2;
   }
