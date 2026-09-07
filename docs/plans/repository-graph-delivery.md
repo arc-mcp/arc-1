@@ -47,6 +47,23 @@ reported rather than resolved with paid capacity or broader authorization.
 
 ## Verified evidence (2026-09-07)
 
+### Live-versus-graph usefulness comparison
+
+- [x] Start two matched local Docker ARC instances, baseline graph-off and graph-enabled,
+  using the existing BTP HANA graph without consuming additional CF route quota.
+- [x] Verify identical live schemas/configuration/source, auth and graph visibility boundaries,
+  real relationship paths and implementers; repeat after restarting both containers.
+- [x] Prepare nine grounded prompts including package-coupling, multi-hop impact and controls
+  for current source, dynamic dispatch and an unindexed-but-live object.
+- [x] Measure twenty graph-only MCP queries with a positive-control SAP request counter.
+- [ ] Complete the actual LLM A/B evaluation before claiming better answers or maintenance ROI.
+
+See [comparison evidence](../research/2026-09-07-graph-ab-comparison.md) and the
+[human/LLM prompt guide](../../docs_page/repository-graph-comparison.md). This is a usefulness
+gate, not permission to enable the experimental graph by default.
+
+### Backend delivery evidence
+
 - Metadata-only backend imported into the ARC repo; its package/lockfile/build remain independent.
   Root CF/MTA upload ignore lists now exclude `services/` as well as the npm files allowlist.
 - Independent backend unit/typecheck/lint/audit gates pass; fresh and existing Docker flows passed,

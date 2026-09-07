@@ -164,6 +164,9 @@ laptop does not automatically inherit a CF app's bindings.
 
 ## Use and diagnose
 
+Want to judge whether this is worth enabling? The [live-versus-graph comparison prompts](repository-graph-comparison.md)
+cover impact, package coupling, interface changes and live-source controls using verified trial objects.
+
 ```sh
 arc1-cli graph status
 arc1-cli call SAPGraph --json '{"action":"search","query":"order"}'

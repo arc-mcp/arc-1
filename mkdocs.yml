@@ -81,6 +81,7 @@ nav:
           - Setup: repository-graph.md
           - Backend Setup & Operations: repository-graph-backend.md
           - Storage Sizing: repository-graph-sizing.md
+          - Comparison Prompts: repository-graph-comparison.md
           - Specification & Release Gates: repository-graph-specification.md
       - MCP Usage Guide: mcp-usage.md
       - Skills: skills.md

@@ -134,8 +134,23 @@ describe('experimental repository graph documentation', () => {
       { Setup: 'repository-graph.md' },
       { 'Backend Setup & Operations': 'repository-graph-backend.md' },
       { 'Storage Sizing': 'repository-graph-sizing.md' },
+      { 'Comparison Prompts': 'repository-graph-comparison.md' },
       { 'Specification & Release Gates': 'repository-graph-specification.md' },
     ]);
+  });
+
+  it('links a bounded comparison with live-source controls instead of assuming graph superiority', () => {
+    const comparison = read('docs_page/repository-graph-comparison.md');
+    expect(setup).toContain('(repository-graph-comparison.md)');
+    const prompts = [...comparison.matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1]!);
+    expect(prompts).toHaveLength(10); // Common instruction + nine copy-paste questions.
+    expect(prompts[0]).toContain('Work read-only');
+    expect(prompts[0]).toContain('at most 20 tool calls');
+    expect(prompts[0]).toContain('Do not execute tests or change SAP objects');
+    expect(comparison).toContain('Do not force the graph arm to use SAPGraph');
+    expect(comparison).toContain('dynamicTargets=0');
+    expect(comparison).toContain('CL_DEMO_OUTPUT');
+    expect(comparison).toContain('Do not publish a speedup');
   });
 
   it('keeps Cloud Connector setup collector-only and separates capacity measurements from estimates', () => {
