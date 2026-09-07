@@ -341,6 +341,11 @@ When a feature is `off` (either set explicitly or detected as unavailable), ever
 
 `auto` probes one specific endpoint per feature and classifies the response: 2xx/400/405/5xx → available; 401/403/404 → unavailable. The reason is surfaced in startup logs and in the `SAPManage.system_info` response.
 
+For restrictive BTP Cloud Connector mappings, `gcts`, `flp`, and `ui5repo` probe paths outside
+`/sap/bc/adt`. The tracked initial BTP profiles set those three features to `off`; see the
+[Cloud Connector path reference](btp-destination-setup.md#cloud-connector-url-path-reference) before
+changing them to `auto` or `on`.
+
 ---
 
 ## Code-quality gates

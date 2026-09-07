@@ -505,6 +505,16 @@ describe('Feature Detection', () => {
       expect(urls).not.toContain('/sap/bc/adt/filestore/ui5-bsp');
     });
 
+    it('does not request non-ADT capability paths when the BTP acceptance profile disables them', async () => {
+      const client = mockProbeClient();
+      await probeFeatures(client, { ...defaultConfig, gcts: 'off', ui5repo: 'off', flp: 'off' });
+      const urls = ((client as any).get.mock.calls as Array<[string]>).map((call) => call[0]);
+
+      expect(urls).not.toContain('/sap/bc/cts_abapvcs/system');
+      expect(urls).not.toContain('/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV');
+      expect(urls).not.toContain('/sap/opu/odata/UI2/PAGE_BUILDER_CUST/');
+    });
+
     it('does not fail feature probing when discovery request fails', async () => {
       const client = mockProbeClient({ discoveryFails: true });
       const result = await probeFeatures(client, defaultConfig);

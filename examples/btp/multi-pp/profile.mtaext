@@ -20,4 +20,8 @@ modules:
       SAP_ALLOW_FREE_SQL: "false"
       SAP_ALLOW_TRANSPORT_WRITES: "false"
       SAP_ALLOW_GIT_WRITES: "false"
+      # Keep the initial Cloud Connector exposure on /sap/bc/adt only.
+      SAP_FEATURE_GCTS: "off"
+      SAP_FEATURE_UI5REPO: "off"
+      SAP_FEATURE_FLP: "off"
       SAP_DENY_ACTIONS: "SAPDiagnose.atc,SAPDiagnose.unittest"

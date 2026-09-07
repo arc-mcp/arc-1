@@ -33,7 +33,7 @@ For single-developer setups on your own laptop, use [local-development.md](local
 | Answer | Path |
 |---|---|
 | Docker on any VM / container host | [Docker deployment](#docker-on-any-vm) |
-| BTP Cloud Foundry, one on-prem SAP target | [BTP CF with PP](#btp-cloud-foundry-with-principal-propagation) |
+| BTP Cloud Foundry, one on-prem SAP target | [BTP Cloud Foundry deployment](btp-cloud-foundry-deployment.md) — choose single-PP or single-Basic |
 | BTP Cloud Foundry, many on-prem SAP system/clients | [Multi-System Setup](multi-target-setup.md) |
 | BTP Cloud Foundry, BTP ABAP backend | [BTP CF + BTP ABAP](#btp-cloud-foundry-btp-abap-environment) |
 | BTP Cloud Foundry, S/4HANA Public Cloud backend | [S/4HANA Public Cloud (PP via SAMLAssertion)](s4hana-public-cloud.md) |

@@ -54,7 +54,17 @@ Password=<managed-secret>
 sap-client=100
 ```
 
-Point the application at it with `SAP_BTP_DESTINATION=A4H_100_BASIC`. ARC-1 resolves this destination
+Point the application at it and explicitly disable the PP defaults inherited from the base MTA:
+
+```yaml
+SAP_BTP_DESTINATION: "A4H_100_BASIC"
+SAP_PP_ENABLED: "false"
+SAP_PP_STRICT: "false"
+```
+
+The tracked
+[single-Basic profile](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile)
+provides the complete read-only extension and destination template. ARC-1 resolves this destination
 at startup for the single target. Use internal HTTPS between Cloud Connector and SAP even if the
 destination uses the virtual `http://` URL.
 
@@ -229,13 +239,21 @@ Use restrictive resource mappings:
 | URL path | Policy | Needed for |
 |---|---|---|
 | `/sap/bc/adt` | Path and all sub-paths | ARC-1 core ADT operations and all multi-target v1 routes |
-| `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` | Path and all sub-paths | Optional single-target FLP management |
-| `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` | Path and all sub-paths | Optional single-target UI5 repository operations |
+| `/sap/bc/cts_abapvcs` | Path and all sub-paths | Optional gCTS operations and the `SAP_FEATURE_GCTS=auto` startup probe |
+| `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` | Path and all sub-paths | Optional single-target FLP management and the `SAP_FEATURE_FLP=auto` startup probe |
+| `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` | Path and all sub-paths | Optional single-target UI5 repository operations and the `SAP_FEATURE_UI5REPO=auto` startup probe |
 
-Do not expose `/` just to make troubleshooting easier. Add optional paths only when the associated
-single-target feature is enabled and approved. Cloud Connector path matching is case-sensitive.
-The internal Cloud Connector-to-SAP connection should use HTTPS with normal hostname/certificate
-verification.
+The tracked initial BTP profiles set `SAP_FEATURE_GCTS=off`, `SAP_FEATURE_FLP=off`, and
+`SAP_FEATURE_UI5REPO=off`, so an ADT-only deployment needs only `/sap/bc/adt`. Without those
+overrides, the default `auto` mode sends a lightweight startup request to each feature endpoint;
+an unmapped or unauthorized endpoint is classified as unavailable, but can produce an expected
+401/403/404 in connectivity traces. Do not expose a path merely to silence that probe. Add the
+exact optional path and change its feature setting to `auto` or `on` only when the capability is
+approved.
+
+Do not expose `/` just to make troubleshooting easier. Cloud Connector path matching is
+case-sensitive. The internal Cloud Connector-to-SAP connection should use HTTPS with normal
+hostname/certificate verification.
 
 For PP, select strict user-certificate propagation with no system-certificate fallback. In newer
 Cloud Connector versions this is an X.509 mapping with the separate system-certificate-for-logon
@@ -276,6 +294,7 @@ change matrix.
 | PP setup succeeds but SAP returns `401` | STRUST/trusted proxy/ICF/CERTRULE/SU01, not destination discovery |
 | SAP returns `403` after login | Propagated/technical user's SAP authorization |
 | Basic destination returns SSO HTML | ADT ICF does not accept Basic; ARC-1 rejects the login page |
+| ADT works but a feature probe reports `401`/`403`/`404` | Optional non-ADT path is unmapped/unauthorized; keep the feature `off` for ADT-only or approve and map its exact path |
 | Basic password changed but call remains blocked | Verify both fields were saved; a rejected generation is bounded, while a changed valid generation proceeds immediately |
 | Connectivity exposure error | Virtual host/location/resource path mismatch |
 

@@ -39,6 +39,36 @@ function assertParity(markdown: string): void {
 }
 
 describe('BTP documentation contracts', () => {
+  it('routes one-target readers to both supported on-premise identity profiles', () => {
+    const overview = read('docs_page/btp-overview.md');
+    const deployment = read('docs_page/deployment.md');
+    const runbook = read('docs_page/btp-cloud-foundry-deployment.md');
+    const destinations = read('docs_page/btp-destination-setup.md');
+
+    for (const entrypoint of [overview, deployment]) {
+      expect(entrypoint).toContain('single-PP');
+      expect(entrypoint).toContain('single-Basic');
+    }
+    expect(runbook).toContain('cp -n examples/btp/single-basic/profile.mtaext mta-overrides.mtaext');
+    expect(destinations).toContain('SAP_PP_ENABLED: "false"');
+    expect(destinations).toContain('SAP_PP_STRICT: "false"');
+  });
+
+  it('documents the non-ADT auto-probe paths and the ADT-only opt-out', () => {
+    const destinations = read('docs_page/btp-destination-setup.md');
+    for (const value of ['SAP_FEATURE_GCTS=off', 'SAP_FEATURE_FLP=off', 'SAP_FEATURE_UI5REPO=off']) {
+      expect(destinations).toContain(value);
+    }
+    for (const path of [
+      '/sap/bc/cts_abapvcs',
+      '/sap/opu/odata/UI2/PAGE_BUILDER_CUST',
+      '/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV',
+    ]) {
+      expect(destinations).toContain(path);
+    }
+    expect(destinations).toContain('an ADT-only deployment needs only `/sap/bc/adt`');
+  });
+
   it('uses the observed CF route rather than deriving OAuth URLs from the space', () => {
     const xsuaa = read('docs_page/xsuaa-setup.md');
     expect(xsuaa).toContain('cf app <app-name>');
