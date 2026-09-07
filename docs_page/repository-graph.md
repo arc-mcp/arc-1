@@ -15,8 +15,8 @@ SAPRead, SAPContext and request-driven caches are unchanged. This is **not live 
 The adapter requires a compatible **v2 graph API**. The optional backend is in
 `services/repository-graph/`, not the ARC npm/Docker distribution or a hosted service. Follow
 [backend setup](repository-graph-backend.md) for Docker PostgreSQL or BTP PostgreSQL/HANA.
-Both databases have live API/ARC test evidence. Cloud Connector collection and an unattended
-BTP installer are not shipped. The
+Both databases have live API/ARC test evidence. Cloud Connector technical-user collection is
+available; an unattended BTP installer is not shipped. The
 [detailed specification](repository-graph-specification.md) separates the implemented contract
 from the remaining decisions and release gates; proposed settings there are not setup requirements.
 
@@ -135,13 +135,14 @@ network support and the backend's lifecycle must be verified separately before d
 PostgreSQL free is time-limited, not a permanent production service; record an export/upgrade owner
 and deadline using the [lifecycle requirements](repository-graph-specification.md#85-cost-lifecycle-and-operations).
 
-!!! warning "Cloud Connector collection is unsupported"
+!!! note "Cloud Connector collection uses its own technical identity"
 
-    The collector explicitly rejects OnPremise and PrincipalPropagation destinations. Live tests
-    used a publicly reachable HTTPS SAP destination. ARC's existing PP/Cloud
-    Connector setup does not give the separate collector that transport or a background SAP
-    identity. Do not copy a Principal Propagation destination into a headless collector and assume
-    it will work. This does not affect graph retrieval from an already populated backend.
+    The collector supports OnPremise/BasicAuthentication with an explicitly selected Connectivity
+    binding. Follow [the collector setup](repository-graph-backend.md#cloud-connector-sap-source).
+    ARC's existing bindings are not inherited by a separate app. PrincipalPropagation destinations
+    remain rejected: a background task has no end-user JWT. Ordinary ARC PP is unchanged.
+
+For disk, refresh headroom and collector resources, use the [storage sizing guide](repository-graph-sizing.md).
 
 ## Verify before client exposure
 

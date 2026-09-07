@@ -44,8 +44,8 @@ is not imported. Record an immutable backend revision before distributing it.
 |---|---|---|
 | Internal ARC | Standard/hyperfocused/HTTP tests; default-hidden tools; native calls to local and BTP APIs; zero SAP transport calls during graph retrieval | A released ARC version containing the adapter; deployment into the existing CF ARC apps |
 | Fresh Docker | New isolated volume; setup and repeat setup; schema/roles, seed, API, failure retention, and non-empty retrieval | Every external PostgreSQL provider or arbitrary production scale |
-| BTP PostgreSQL | Actual `postgresql-db/free`, separate reader/writer apps, HTTPS API, live collection through an Internet destination, dedicated ARC test app: all six graph actions and ordinary SAP read | Cloud Connector collection, private app networking, managed backup restore, or an unattended installer |
-| BTP HANA | New `hana-cloud/hana-free`; validated SQL TLS; owner/reader/writer separation; identical API suite; snapshot, rollback, lease and refresh tests; live collection; dedicated ARC end-to-end test | Production operations, native graph acceleration performance, Cloud Connector collection or full-system accuracy |
+| BTP PostgreSQL | Actual `postgresql-db/free`, separate reader/writer apps, HTTPS API, Internet and technical-user Cloud Connector collection, dedicated ARC test app: all six graph actions and ordinary SAP read | Private app networking, managed backup restore, or an unattended installer |
+| BTP HANA | New `hana-cloud/hana-free`; validated SQL TLS; owner/reader/writer separation; identical API suite; snapshot, rollback, lease and refresh tests; Internet and technical-user Cloud Connector collection; dedicated ARC end-to-end test | Production operations, native graph acceleration performance or full-system accuracy |
 
 Representative original PostgreSQL results: 75 live objects produced 505 observations from 380,456 source bytes in
 12.73 seconds. The CF-to-CF HTTPS sample had p95 55.22 ms; local ARC-to-BTP had p95 501.09 ms.
@@ -185,8 +185,9 @@ Implemented protection and remaining limits:
 - Decoded source responses are streamed into a **1 MiB/source** cap; larger objects are rejected
   and retain last-good evidence. Parsing runs in isolated workers with a 5-second deadline and
   128 MiB old-space limit. Large sources are intentionally unsupported in this experimental profile.
-- A request counter primarily counts logical collector operations, not every SAP retry or Destination
-  token request. It is not yet a reliable total-backend-load counter.
+- `requests` counts logical collector operations. `sapRequestAttempts` additionally counts SAP/proxy
+  attempts including retries; `proxyTokenRequests` counts Connectivity token requests separately.
+  Destination-resolution/OAuth calls are not included, so this is not total platform HTTP traffic.
 - Conditional HTTP support exists in the lower client, but live graph collection does not yet use
   durable per-source validators to skip unchanged reads/parses.
 - Collector exclusion is implemented: PostgreSQL uses a session advisory lock on the exact writer
@@ -389,17 +390,20 @@ CF tasks inherit their parent app's bindings. Therefore reader API, writer colle
 must be distinct apps even if built from the same backend artifact. The single installer must not
 collapse those identities for convenience. [Cloud Foundry tasks](https://docs.cloudfoundry.org/devguide/using-tasks.html).
 
-### 8.3 Unproven on-premise collector path
+### 8.3 Cloud Connector collector path (experimental)
 
-The live BTP test used a publicly reachable HTTPS destination. Code inspection shows the PoC SAP
-client resolving a URL/auth header and using direct HTTP, without Connectivity proxy handling.
-An existing working ARC Cloud Connector configuration does not automatically make this collector
-Cloud Connector-capable.
+The independent collector now supports `OnPremise`/`BasicAuthentication` through a named
+Connectivity binding. A small bounded Undici transport uses the standard absolute-form proxy
+protocol also proven in ARC's transport; no Cloud SDK dependency or database dependency was
+added to core ARC. The SDK was evaluated, but its default first-binding selection and generic
+HTTP stack were unnecessary for this GET-only, explicitly bound collector.
 
-**Recommended implementation spike:** use SAP Cloud SDK connectivity and generic HTTP support
-inside the separate collector. Verify named service selection, `ProxyType=OnPremise`, location ID,
-proxy authorization, TLS, cancellation and bounded responses. The SDK documents the Connectivity
-binding/proxy flow and a generic HTTP client suitable for non-OData requests.
+The implementation verifies HTTPS for OAuth, caches/refreshes proxy tokens, carries the configured
+location ID, and bounds decoded bodies/cancellation. It never follows redirects or falls back to
+direct networking. Direct HTTPS remains available as an alternative; ambiguous direct/destination
+configuration is refused. Only HTTP virtual targets are supported in this profile; the connector
+controls the physical SAP transport. See [setup](repository-graph-backend.md#cloud-connector-sap-source).
+SAP documents the Connectivity binding/proxy flow and generic HTTP support:
 [On-premise connectivity](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/on-premise),
 [HTTP client](https://sap.github.io/cloud-sdk/docs/js/features/connectivity/http-client).
 
@@ -407,8 +411,10 @@ A background collector has no interactive end-user JWT to propagate. Use only an
 read-only technical identity for the explicitly shared scope; do not invent a new broad role or
 reuse a human token as a scheduler credential. If that identity cannot be supplied, live background
 collection for that installation remains unsupported. Live ARC calls keep their own PP identity.
-Proof requires a real Cloud Connector-only endpoint and SAP identity evidence, not merely a
-successful public endpoint or anonymous graph health check.
+Live proof used a CF-unresolvable virtual hostname, protected source read, SID A4H/client 001,
+anonymous HTTP 401, invalid proxy token HTTP 407 and wrong-location HTTP 503. No SAP roles,
+destinations, connector mappings or source were changed. The [sizing guide](repository-graph-sizing.md)
+separates multi-batch capacity evidence from full-system discovery and accuracy claims.
 
 ### 8.4 Portable setup and future installer
 
@@ -479,7 +485,7 @@ evidence or an operator-specific input; they are not permission to invent creden
 | D3 | Settled, per-install approval | Shared metadata, existing ARC read scope | Unknown/restricted audience blocks MCP exposure; no new end-user role |
 | D4 | Settled, topology constraint | BTP authenticated public HTTPS | Private-only requirement blocks this CF profile; same space is not sufficient |
 | D5 | Ownership settled; release gate open | Backend stays under ARC-1, independently packaged/deployed | Publish immutable artifacts, lockfile/SBOM/license/secret checks and ARC/API compatibility matrix; do not advertise an unattended installer first |
-| D6 | Open on-premise gate | Cloud Connector transport and headless collector identity | SDK spike plus live proxy-only read, wrong-location/expired-credential negatives and Basis identity evidence |
+| D6 | Verified narrow profile | Cloud Connector technical Basic identity; PP remains unsupported headlessly | Named binding; live proxy-only source/SID/client proof; wrong-location/invalid-token negatives; local expiry/refresh/cancellation tests |
 | D7 | Partially verified | Snapshot/lease/rollback tested; scope freshness, deletion and durable jobs remain limited | Preserve conservative coverage; do not claim authoritative deletion or resumable scheduling |
 | D8 | Partially verified | Response/parser caps and 100k/1m PG synthetic test pass; discovery/search plans remain limited | Test supported-type starvation/partitions and actual metadata-search index use before full-system claims |
 | D9 | Local gates verified; managed operations open | Local restore, bounded overlap-key rotation and DB deadlines pass | Live managed-service restore/credential rotation and future schema upgrades still require rehearsal |
@@ -496,12 +502,12 @@ There is no need to choose HANA versus PostgreSQL again to complete the next imp
 | A. Freeze the experimental boundary | ARC `src/repository-graph/`, config/dispatch/policy bridge; contract fixtures and this specification | Default tools byte-identical; configured-but-hidden standard/hyperfocused/HTTP paths make no graph requests; ordinary SAP identity/cache tests pass |
 | B. Portable backend + fresh Docker | Backend package/Compose/setup scripts, schema and graph tests | Clean checkout install with no SAP/BTP secrets; two isolated projects; safe rerun and restart; reader/write/admin separation; known non-empty query; no secret/source artifacts |
 | C. Collector correctness and scale | Backend `src/collector/`, SAP transport, job reports, query snapshot/coverage | Byte/parser/discovery bounds, partition fallback, session lease fencing, failure retention and concurrent generation tests; explicitly defer resume/conditional refresh/deletion and full-system claims |
-| D. Optional BTP profile | Parameterized CF artifacts/bootstrap, technical HTTPS collector, connection handoff | Actual free-plan preflight; separate app roles; HTTPS rejection tests; no existing ARC mutation during backend-only setup; explicitly refuse Cloud Connector collection and document managed recovery limits |
+| D. Optional BTP profile | Parameterized CF artifacts/bootstrap, Internet/Cloud Connector technical collector, connection handoff | Actual free-plan preflight; separate app roles; TLS/proxy/auth rejection tests; no existing ARC mutation during backend-only setup; headless PP refused; managed recovery limits documented |
 | E. ARC attachment and limited exposure | Existing graph adapter plus configuration/docs/examples only where needed | CLI first; named binding and private files; explicit opt-in; scope/deny/rate/strict-JWT/audit negatives; production live SAP auth unchanged; no auto collection |
 | F. Experimental release and handoff | Published artifacts, compatibility matrix, canonical setup/operations docs, reviewed PR | All applicable gates below pass; remaining unsupported paths prominent; independent fresh-reader walkthrough succeeds |
 
-A–E now have experimental evidence for the documented HTTPS path. F still requires final review
-and PR handoff. Broader production/Cloud Connector gates remain visible below; do not repeat
+A–E now have experimental evidence for the documented Internet/technical Cloud Connector paths. F still requires final review
+and PR handoff. Broader production gates remain visible below; do not repeat
 successful provisioning or claim those unsupported paths just to mark every future gate complete.
 
 ### Required test matrix

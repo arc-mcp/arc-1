@@ -4,6 +4,8 @@ const COUNTERS = [
   'discoveredObjects',
   'downloadedBytes',
   'requests',
+  'sapRequestAttempts',
+  'proxyTokenRequests',
   'saturatedSearches',
   'successfulSources',
   'failedSources',

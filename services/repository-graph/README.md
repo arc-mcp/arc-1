@@ -25,9 +25,15 @@ Optional larger test: `npm run graph:test:large`; restore rehearsal:
 `sh scripts/graph/test-restore.sh`. These use the current Compose project; choose a dedicated
 project/secret directory/port before setup to avoid touching another installation.
 
-Live collection is manual and bounded to 500 supported objects per run. Cloud Connector and
-principal-propagation collection are refused. Shared metadata requires administrator approval
+Live collection is manual and bounded to 500 supported objects per run. Cloud Connector collection
+supports an explicitly bound Connectivity service and an OnPremise/BasicAuthentication technical
+destination. Headless principal propagation is still refused. Shared metadata requires administrator approval
 for all ARC readers. MCP tools remain off until separately enabled in ARC.
+
+For capacity planning, see [storage sizing](../../docs_page/repository-graph-sizing.md).
+`node dist/graph/cc-probe.js` verifies a CF-only SAP path and authentication negatives without
+storing source. The separate `dist/graph/soak.js` comparison experiment imports bounded metadata
+into **both** configured databases; it is not a normal collector command or dual-write mode.
 
 Third-party packages retain their own licenses. In particular, `@sap/hana-client` declares
 `SEE LICENSE IN developer-license-3_2.txt`; installing it does not relicense SAP's native driver

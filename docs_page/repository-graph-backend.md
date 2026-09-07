@@ -9,12 +9,12 @@ released ARC npm package. [Start with the audience decision](repository-graph.md
 | Where | Database | Verified path |
 |---|---|---|
 | Local Docker | PostgreSQL 17 | Offline fixtures, repeated refresh, permissions, API, large synthetic graph, restore |
-| SAP BTP CF | PostgreSQL `free` | TLS, separate runtime roles, live HTTPS SAP collection, ARC MCP |
-| SAP BTP CF | HANA Cloud `hana-free` | TLS, separate runtime users, transaction/lock tests, live HTTPS collection, ARC MCP |
+| SAP BTP CF | PostgreSQL `free` | TLS, separate runtime roles, Internet/Cloud Connector SAP collection, ARC MCP |
+| SAP BTP CF | HANA Cloud `hana-free` | TLS, separate runtime users, transaction/lock tests, Internet/Cloud Connector collection, ARC MCP |
 
 **Stop before provisioning** if the metadata audience is restricted, private-only CF routing is
-required, the free plan is absent, or your only SAP connection is Cloud Connector/principal
-propagation. The current collector rejects those SAP transports. Do not open an on-premise SAP
+required, the free plan is absent, or your only SAP identity uses principal
+propagation without an approved technical identity. The current collector rejects headless PP. Do not open an on-premise SAP
 system to the Internet as a workaround. Local collection from an already authorized HTTPS
 endpoint is an alternative; graph retrieval itself does not need a SAP connection.
 
@@ -231,13 +231,19 @@ node scripts/graph/preflight-btp.mjs "$SUBACCOUNT" "$DATABASE" 1024 1
 cf push "$PREFIX-api" -f "$MANIFEST" --vars-file "$VARS"
 node scripts/graph/preflight-btp.mjs "$SUBACCOUNT" "$DATABASE" 1024 0
 cf push "$PREFIX-collector" --task -f "$MANIFEST" --vars-file "$VARS"
+```
+
+For OnPremise SAP, complete [Cloud Connector SAP source](#cloud-connector-sap-source) now.
+For an approved Internet destination, skip that section. Then start collection:
+
+```sh
 node scripts/graph/preflight-btp.mjs "$SUBACCOUNT" "$DATABASE" 512 0
 cf run-task "$PREFIX-collector" --name graph-collect --command 'node dist/graph/cli.js collect-live-source' -m 512M -k 1G
 cf tasks "$PREFIX-collector"
 ```
 
-Collector requirements: an explicitly selected Destination service binding, HTTPS Internet
-destination with an approved technical identity, TLS verification, an explicit system/client,
+Collector requirements: an explicitly selected Destination service binding, either an HTTPS Internet
+destination or the Cloud Connector profile below, an approved technical identity, an explicit system/client,
 and a narrow package/query scope. Start with 150 objects/concurrency 1 as in the manifest.
 `collect-live-metadata` avoids source reads but yields primarily object/package membership.
 `collect-live-source` transiently parses active CLAS/INTF/PROG/DDLS; no source body is stored.
@@ -252,6 +258,64 @@ ETag skip is claimed. Do not describe a successful job as complete whole-system 
 The public `/healthz` checks only the process. Database `/readyz` and all queries require the graph
 key. An empty index is not useful readiness: inspect a known non-empty relationship after collection.
 API and collector are separate apps because CF tasks inherit their parent app's bindings.
+
+### Cloud Connector SAP source
+
+This changes **only the collector**. PostgreSQL and HANA use the same transport. No database,
+Connectivity or SAP credentials are added to core ARC or to the graph query API.
+
+1. Reuse a working Destination service and Cloud Connector mapping in the selected subaccount.
+   The destination must have `ProxyType=OnPremise`, `Authentication=BasicAuthentication`, the
+   mapped **HTTP virtual** host/port, and the intended `sap-client`. Set
+   `CloudConnectorLocationId` only when the connector has a location ID. The physical SAP leg
+   (including HTTPS where required) is configured in Cloud Connector, not in this virtual URL.
+   Permit read access to `/sap/bc/adt/` and its subpaths; do not widen unrelated mappings.
+2. Use an approved technical SAP user with existing authorization for the chosen read scope.
+   This does not create a new ARC role or establish that all ARC users may see the metadata;
+   the separate shared-audience approval still applies. Do not reuse an end-user JWT.
+3. Select an existing Connectivity service in the same space. Confirm its offering/plan before
+   binding; the tested service is `connectivity/lite` with `free=true`. If absent, verify the
+   entitlement and free plan before creating it. Never substitute a paid plan automatically.
+4. After the collector app exists, bind it and select the names explicitly:
+
+```sh
+# Replace with observed existing names; no credentials go in these arguments.
+export CONNECTIVITY=YOUR_CONNECTIVITY_SERVICE
+export CC_DESTINATION=YOUR_TECHNICAL_ONPREMISE_DESTINATION
+cf bind-service "$PREFIX-collector" "$CONNECTIVITY"
+cf set-env "$PREFIX-collector" ARC_GRAPH_CONNECTIVITY_BINDING "$CONNECTIVITY"
+cf set-env "$PREFIX-collector" SAP_DESTINATION "$CC_DESTINATION"
+```
+
+Keep the Destination binding and `ARC_GRAPH_DESTINATION_BINDING` from the manifest. Persist the
+added Connectivity binding and environment values in your private collector manifest so a future
+deploy preserves them. Subsequent CF tasks receive current bindings/environment. A running task
+does not receive changes; wait for it to finish before reconfiguration. Do not set direct
+`ARC_GRAPH_SAP_URL/USER/PASSWORD` together with a destination.
+
+5. Run the read-only proof, then the normal bounded collector command above:
+
+```sh
+node scripts/graph/preflight-btp.mjs "$SUBACCOUNT" "$DATABASE" 512 0
+cf run-task "$PREFIX-collector" --name graph-cc-proof --command 'node dist/graph/cc-probe.js' -m 512M -k 1G
+cf tasks "$PREFIX-collector"
+```
+
+Wait for `SUCCEEDED`. The proof expects a CF-unresolvable virtual hostname and a readable
+`CL_ABAP*` class (override `ARC_GRAPH_PROBE_QUERY` with an actual class prefix if necessary).
+It checks source access, SAP SID/client cookie **names**, anonymous rejection, invalid proxy
+token rejection and wrong-location rejection; logs contain counts/status only, not source,
+credentials or session-cookie values. An intentionally anonymous SAP configuration will not
+pass this security proof. Confirm the reported SID/client against the intended destination.
+
+The collector caches short-lived proxy tokens, refreshes once on proxy HTTP 407, and stops on
+SAP HTTP 401 or failed proxy authentication. It does not follow redirects, bypass TLS checks,
+or fall back to a public SAP endpoint. Source byte/time/parser limits apply to both transports.
+PrincipalPropagation and HTTPS **virtual** destinations are outside this experimental profile.
+Local Docker does not acquire CF network access merely by copying a service key; use approved
+direct HTTPS locally or run the collector as a CF task.
+
+For a reproducible multi-batch experiment and capacity planning, see [storage sizing](repository-graph-sizing.md).
 
 ## 5. Connect ARC, without exposing tools yet
 

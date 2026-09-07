@@ -1,8 +1,9 @@
 import { performance } from 'node:perf_hooks';
+import { ConnectivityAuthenticationError } from '../connectivity.js';
 import type { GraphStore } from '../graph/store/store.js';
 import type { GraphEdgeInput, GraphImport, GraphNodeInput, SourceOutcome } from '../graph/types.js';
 import { type RepositoryObject, searchRepository } from '../inventory.js';
-import { SapClient } from '../sap.js';
+import { SapAuthenticationError, SapClient } from '../sap.js';
 import { sourcePathFromObject } from '../sources.js';
 import { extractBounded } from './bounded-parser.js';
 import { SourceParseError } from './extractor.js';
@@ -150,6 +151,8 @@ export interface LiveCollectionResult {
   failedSources: number;
   observations: number;
   requests: number;
+  sapRequestAttempts: number;
+  proxyTokenRequests: number;
   saturatedSearches: number;
   successfulSources: number;
   systemKey: string;
@@ -236,6 +239,7 @@ export async function collectLiveGraph(
           });
           return result;
         } catch (error) {
+          if (error instanceof SapAuthenticationError || error instanceof ConnectivityAuthenticationError) throw error;
           failedSources += 1;
           if (!sourceRead) failedReads += 1;
           else if (error instanceof SourceParseError && error.analysis.status === 'partial') partialParses += 1;
@@ -270,6 +274,7 @@ export async function collectLiveGraph(
           discoveredObjects: objects.length,
           downloadedBytes,
           requests,
+          ...sap.metrics(),
           saturatedSearches,
           successfulSources,
           failedSources,
@@ -294,6 +299,7 @@ export async function collectLiveGraph(
       failedSources,
       observations: observations.length,
       requests,
+      ...sap.metrics(),
       saturatedSearches,
       successfulSources,
       systemKey,

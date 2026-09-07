@@ -6,7 +6,7 @@ vi.mock('../inventory.js', () => ({
 
 import type { GraphImport } from '../graph/types.js';
 import { type RepositoryObject, searchRepository } from '../inventory.js';
-import { SapClient } from '../sap.js';
+import { SapAuthenticationError, SapClient } from '../sap.js';
 import { collectLiveGraph, discoverLiveObjects } from './live-collector.js';
 
 function object(type: string, name: string, packageName: string): RepositoryObject {
@@ -40,6 +40,7 @@ describe('live collector last-good evidence', () => {
         return { body: value!, status: 200, attempts: 1 };
       }),
       close: vi.fn(async () => undefined),
+      metrics: () => ({ sapRequestAttempts: cursor, proxyTokenRequests: 0 }),
     };
     vi.spyOn(SapClient, 'create').mockResolvedValue(sap as unknown as SapClient);
     const store = {
@@ -104,6 +105,14 @@ describe('live collector last-good evidence', () => {
     expect(result).toMatchObject({ successfulSources: 1, dynamicTargets: 1 });
     expect(store.importGraph.mock.calls[0]![0].collection?.counters.dynamicTargets).toBe(1);
     expect(store.importGraph.mock.calls[0]![0].observations.every((edge) => edge.relation === 'belongs_to')).toBe(true);
+  });
+
+  it('stops on authentication failure instead of repeating bad credentials across the catalogue', async () => {
+    const { store, sap } = setup([new SapAuthenticationError(), 'REPORT zquality_1.']);
+    await expect(collectLiveGraph(store, 'transient-source')).rejects.toThrow('authentication failed');
+    expect(sap.getText).toHaveBeenCalledOnce();
+    expect(store.importGraph).not.toHaveBeenCalled();
+    expect(sap.close).toHaveBeenCalledOnce();
   });
 });
 

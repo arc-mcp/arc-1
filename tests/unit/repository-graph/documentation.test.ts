@@ -67,7 +67,9 @@ describe('experimental repository graph documentation', () => {
 
   it('keeps prerelease, cloud transport and audience limits explicit before activation', () => {
     expect(setup).toContain('without a published supported installer');
-    expect(setup).toContain('Cloud Connector collection is unsupported');
+    expect(setup).toContain('Cloud Connector collection uses its own technical identity');
+    expect(setup).toContain('PrincipalPropagation destinations');
+    expect(setup).toContain('remain rejected');
     expect(setup).toContain('internet-reachable');
     expect(setup).toContain('ARC1_GRAPH_TOOLS=false');
     expect(setup).toContain('does not bind a service');
@@ -131,7 +133,29 @@ describe('experimental repository graph documentation', () => {
     expect(group).toEqual([
       { Setup: 'repository-graph.md' },
       { 'Backend Setup & Operations': 'repository-graph-backend.md' },
+      { 'Storage Sizing': 'repository-graph-sizing.md' },
       { 'Specification & Release Gates': 'repository-graph-specification.md' },
     ]);
+  });
+
+  it('keeps Cloud Connector setup collector-only and separates capacity measurements from estimates', () => {
+    const backend = read('docs_page/repository-graph-backend.md');
+    expect(backend).toContain('cf bind-service "$PREFIX-collector" "$CONNECTIVITY"');
+    expect(backend).toContain('ARC_GRAPH_CONNECTIVITY_BINDING');
+    expect(backend).toContain('Do not set direct');
+    expect(backend).toContain('Do not reuse an end-user JWT');
+    expect(backend).not.toContain('cf bind-service "$ARC1_APP" "$CONNECTIVITY"');
+    const sizing = read('docs_page/repository-graph-sizing.md');
+    for (const marker of [
+      'not complete SAP source',
+      'cluster WAL generated',
+      'not retained WAL',
+      'linear estimate',
+      'one** database',
+      'already populated',
+      'not an\natomic cross-database',
+    ])
+      expect(sizing).toContain(marker);
+    expect(read('services/repository-graph/src/graph/soak.ts')).toContain('Use a separate SOAK- system key');
   });
 });

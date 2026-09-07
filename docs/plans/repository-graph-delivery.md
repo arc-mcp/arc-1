@@ -116,7 +116,9 @@ reported rather than resolved with paid capacity or broader authorization.
 
 ## Explicit next-milestone limits
 
-- Cloud Connector and principal-propagation **collection** remain unsupported and fail closed.
+- At this delivery checkpoint, Cloud Connector and principal-propagation **collection** were unsupported.
+  Cloud Connector technical Basic support is now covered by
+  [the follow-up plan](repository-graph-cloud-connector-and-sizing.md); headless PP remains refused.
   This does not change ordinary ARC PP/Cloud Connector operations or graph retrieval.
 - No unattended installer, scheduling, durable resume, conditional-source refresh, authoritative
   deletion, per-edge freshness, full-system precision/recall score or production managed restore.
