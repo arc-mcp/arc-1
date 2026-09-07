@@ -928,9 +928,11 @@ const KTD_SHORT_TEXT_TAG = /<sktd:shortText\b[^>]*\/?>/;
 const KTD_SHORT_TEXT_VALUE = /\bsktd:text="([^"]*)"/;
 const KTD_SHORT_TEXT_OBLIGATION = /\bsktd:obligation="([^"]*)"/;
 
-/** Existing short texts, with exact node ids that can be copied into `shortTexts[].node`. */
+/** Existing short texts, each labelled with a reference that resolves back to its node. */
 export function formatKtdShortTexts(envelopeXml: string): string {
-  const lines = findKtdElements(envelopeXml)
+  const elements = findKtdElements(envelopeXml);
+  const routes = ktdRoutes(envelopeXml, elements);
+  const lines = elements
     .map((element) => {
       const tag = element.xml.match(KTD_SHORT_TEXT_TAG)?.[0];
       const encoded = tag?.match(KTD_SHORT_TEXT_VALUE)?.[1] ?? '';
@@ -938,26 +940,29 @@ export function formatKtdShortTexts(envelopeXml: string): string {
       const text = Buffer.from(encoded, 'base64').toString('utf-8').replace(/\s+/g, ' ').trim();
       if (!text) return undefined;
       const obligation = tag?.match(KTD_SHORT_TEXT_OBLIGATION)?.[1] || 'unspecified';
-      return `  ${element.id} [${obligation}]: ${text}`;
+      return `  ${addressableKtdRoute(routes, envelopeXml, element)} [${obligation}]: ${text}`;
     })
     .filter((line): line is string => Boolean(line));
   return lines.length === 0
     ? ''
-    : [
-        'Short texts (read-only; update with SAPWrite shortTexts=[{node,text}] using the exact node id):',
-        ...lines,
-      ].join('\n');
+    : ['Short texts (read-only; update with SAPWrite shortTexts=[{node,text}] using the name shown):', ...lines].join(
+        '\n',
+      );
 }
 
 /** Validate all assignments, then splice only their existing short-text value attributes. */
 function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]): string {
   const elements = findKtdElements(envelopeXml);
+  // The same resolver the "## " section headings use, so one spelling addresses a node
+  // everywhere: exact id, case variant, or the node name the SAPRead index prints.
+  const routes = ktdRoutes(envelopeXml, elements);
   const byId = new Map(elements.filter((element) => element.id).map((element) => [element.id.toUpperCase(), element]));
   const resolved = new Map<string, { element: KtdElement; text: string }>();
 
   for (const assignment of assignments) {
     const requestedId = assignment.node.trim();
-    const element = byId.get(requestedId.toUpperCase());
+    const resolvedId = resolveKtdRoute(routes, envelopeXml, requestedId);
+    const element = resolvedId ? byId.get(resolvedId.toUpperCase()) : undefined;
     if (!element) throw unknownKtdNodeError([requestedId], elements.map((known) => known.id).filter(Boolean));
     const key = element.id.toUpperCase();
     if (resolved.has(key)) {

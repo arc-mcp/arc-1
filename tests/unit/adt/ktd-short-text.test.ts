@@ -53,8 +53,12 @@ describe('KTD short-text XML contract', () => {
     expect(rewritten).toContain(`<sktd:text>${b64('field body')}</sktd:text>`);
   });
 
-  it('requires the exact full node id instead of introducing a second shorthand resolver', () => {
-    expect(() => rewriteKtdDocument(envelope(), undefined, [{ node: 'PaymentValueDate', text: 'Label' }])).toThrow(
+  // Node names are resolved by the SAME resolver the "## " section headings use — one shorthand
+  // for the whole tool, not a second one. A reference that matches nothing still fails closed.
+  it('resolves the node name the index prints, and still refuses one that matches nothing', () => {
+    const byName = rewriteKtdDocument(envelope(), undefined, [{ node: 'PaymentValueDate', text: 'Label' }]);
+    expect(byName).toBe(rewriteKtdDocument(envelope(), undefined, [{ node: FIELD_ID, text: 'Label' }]));
+    expect(() => rewriteKtdDocument(envelope(), undefined, [{ node: 'PaymentValueDates', text: 'Label' }])).toThrow(
       /does not exist[\s\S]*Known node ids/,
     );
   });
@@ -103,15 +107,37 @@ describe('KTD short-text XML contract', () => {
     expect(rewritten).toContain(`sktd:text="${b64(normalized)}"`);
   });
 
-  it('formats only populated short texts behind an exact copyable node id', () => {
+  it('formats only populated short texts, labelled with a reference that resolves back', () => {
     const text = formatKtdShortTexts(envelope('Payment value date'));
     expect(text).toContain('Short texts (read-only');
-    expect(text).toContain(`${FIELD_ID} [optional]: Payment value date`);
+    // The label is the node name, and that exact string is accepted as shortTexts[].node.
+    expect(text).toContain('PaymentValueDate [optional]: Payment value date');
     expect(text).not.toContain(`${ROOT_ID} [forbidden]`);
     expect(formatKtdShortTexts(envelope())).toBe('');
   });
 
   it('refuses a bodyless and assignment-free call', () => {
     expect(() => rewriteKtdDocument(envelope(), undefined, [])).toThrow(/nothing to write/);
+  });
+});
+
+describe('shortTexts node resolution', () => {
+  it('accepts the node name the SAPRead index prints, not only the full id', () => {
+    const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
+    const action = `${base}#type=BDEF/BAC;name=ZBDEF.SetPhoto`;
+    const envelope =
+      '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+      '<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text/></sktd:element>' +
+      `<sktd:element><sktd:id>${action}</sktd:id><sktd:text/>` +
+      '<sktd:shortText sktd:text="" sktd:obligation="optional"/></sktd:element>' +
+      '</sktd:docu>';
+
+    const byName = rewriteKtdDocument(envelope, undefined, [{ node: 'ZBDEF.SetPhoto', text: 'Upload a photo' }]);
+    const byId = rewriteKtdDocument(envelope, undefined, [{ node: action, text: 'Upload a photo' }]);
+
+    expect(byName).toBe(byId);
+    expect(byName).toContain(`sktd:text="${Buffer.from('Upload a photo', 'utf-8').toString('base64')}"`);
+    // And the read-back label is the very spelling that was accepted.
+    expect(formatKtdShortTexts(byName)).toContain('  ZBDEF.SetPhoto [optional]: Upload a photo');
   });
 });

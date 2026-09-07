@@ -162,7 +162,8 @@ describe('SAPWrite KTD short texts', () => {
 
     const text = result.content[0]?.text ?? '';
     expect(text).toContain('<!-- arc1:ktd-meta');
-    expect(text).toContain(`${FIELD_ID} [optional]: Payment value date`);
+    // Labelled with the node name, which is exactly what shortTexts[].node accepts back.
+    expect(text).toContain('PaymentValueDate [optional]: Payment value date');
     expect(text.indexOf('<!-- arc1:ktd-meta')).toBeLessThan(text.indexOf('Short texts (read-only'));
   });
 
