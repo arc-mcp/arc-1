@@ -1,5 +1,15 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -29,7 +39,7 @@ function bom(name: string) {
 }
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), 'arc1-evidence-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'arc1-evidence-')));
   temporary.push(root);
   mkdirSync(join(root, 'btp/approuter/vendor/bridge'), { recursive: true });
   for (const [path, name] of [
@@ -45,7 +55,7 @@ function fixture() {
   writeFileSync(join(root, 'btp/approuter/.npmrc'), 'install-links=true\n');
   writeFileSync(join(root, 'btp/approuter/vendor/bridge/index.cjs'), 'module.exports = {};\n');
   writeFileSync(join(root, 'mta.yaml'), 'ID: example\n');
-  const run = vi.fn((command: string, args: string[], cwd: string) => {
+  const run = vi.fn((command: string, args: string[], cwd: string): { status: number | null; stdout: string } => {
     if (command === 'git') return { status: 0, stdout: args[0] === 'rev-parse' ? 'a'.repeat(40) : '' };
     if (args[0] === '--version') return { status: 0, stdout: '11.11.1' };
     return {
@@ -60,17 +70,21 @@ function fixture() {
 
 describe('dependency evidence', () => {
   it.each([
-    { high: 0, fail: false, invalid: false, exit: 0 },
-    { high: 1, fail: false, invalid: false, exit: 0 },
-    { high: 1, fail: true, invalid: false, exit: 1 },
-    { high: 0, fail: true, invalid: true, exit: 2 },
-  ])('uses the documented CLI exit status with real subprocesses: $exit', ({ high, fail, invalid, exit }) => {
-    const options = fixture();
-    const bin = join(options.root, 'fake-tools');
-    mkdirSync(bin);
-    const scripts = {
-      git: `#!/usr/bin/env node\nif (process.argv[2] === 'rev-parse') console.log('${'a'.repeat(40)}'); else if (process.argv[2] !== 'status') process.exit(44);`,
-      npm: `#!/usr/bin/env node\nconst fs = require('node:fs');
+    { high: 0, fail: false, invalid: false, exit: 0, entry: 'direct' },
+    { high: 0, fail: false, invalid: false, exit: 0, entry: 'file-symlink' },
+    { high: 0, fail: false, invalid: false, exit: 0, entry: 'directory-symlink' },
+    { high: 1, fail: false, invalid: false, exit: 0, entry: 'direct' },
+    { high: 1, fail: true, invalid: false, exit: 1, entry: 'direct' },
+    { high: 0, fail: true, invalid: true, exit: 2, entry: 'direct' },
+  ])(
+    'uses the documented CLI exit status with real subprocesses: $exit ($entry)',
+    ({ high, fail, invalid, exit, entry }) => {
+      const options = fixture();
+      const bin = join(options.root, 'fake-tools');
+      mkdirSync(bin);
+      const scripts = {
+        git: `#!/usr/bin/env node\nif (process.argv[2] === 'rev-parse') console.log('${'a'.repeat(40)}'); else if (process.argv[2] !== 'status') process.exit(44);`,
+        npm: `#!/usr/bin/env node\nconst fs = require('node:fs');
         const args = process.argv.slice(2);
         if (args[0] === '--version') { console.log('11.11.1'); process.exit(0); }
         if (!['sbom', 'audit'].includes(args[0]) || !args.includes('--ignore-scripts') || !args.includes('--package-lock-only')) process.exit(44);
@@ -79,22 +93,122 @@ describe('dependency evidence', () => {
         const bom = ${JSON.stringify(bom('placeholder'))};
         bom.metadata.component.purl = 'pkg:npm/' + manifest.name + '@' + manifest.version;
         console.log(JSON.stringify(bom));`,
-    };
-    for (const [name, content] of Object.entries(scripts)) {
-      writeFileSync(join(bin, name), content);
-      chmodSync(join(bin, name), 0o755);
-    }
-    const script = resolve('scripts/security/evidence.mjs');
-    const args = [script, '--out', options.out, '--require-clean', ...(fail ? ['--fail-on-high'] : [])];
-    const env = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` };
-    const result = spawnSync(process.execPath, args, { cwd: options.root, env, encoding: 'utf8' });
-    expect(result.status, result.stderr).toBe(exit);
-    const saved = JSON.parse(readFileSync(join(options.out, 'evidence.json'), 'utf8'));
-    expect(saved.complete).toBe(!invalid);
+      };
+      for (const [name, content] of Object.entries(scripts)) {
+        writeFileSync(join(bin, name), content);
+        chmodSync(join(bin, name), 0o755);
+      }
+      let script = resolve('scripts/security/evidence.mjs');
+      if (entry === 'file-symlink') {
+        const link = join(options.root, 'evidence-cli.mjs');
+        symlinkSync(script, link);
+        script = link;
+      } else if (entry === 'directory-symlink') {
+        const link = join(options.root, 'linked-checkout');
+        symlinkSync(resolve('.'), link, 'dir');
+        script = join(link, 'scripts/security/evidence.mjs');
+      }
+      const args = [script, '--out', options.out, '--require-clean', ...(fail ? ['--fail-on-high'] : [])];
+      const env = { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` };
+      const result = spawnSync(process.execPath, args, { cwd: options.root, env, encoding: 'utf8' });
+      expect(result.status, result.stderr).toBe(exit);
+      const saved = JSON.parse(readFileSync(join(options.out, 'evidence.json'), 'utf8'));
+      expect(saved.complete).toBe(!invalid);
+      expect(existsSync(join(options.root, 'node_modules'))).toBe(false);
+      const repeat = spawnSync(process.execPath, args, { cwd: options.root, env, encoding: 'utf8' });
+      expect(repeat.status).toBe(2);
+      expect(repeat.stderr).toContain('Output directory already exists');
+    },
+  );
+
+  it.each(['out', 'mtar'])('refuses an explicitly empty --%s path at the CLI boundary', (option) => {
+    const options = fixture();
+    const result = spawnSync(process.execPath, [resolve('scripts/security/evidence.mjs'), `--${option}`, ''], {
+      cwd: options.root,
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(`--${option} requires a non-empty path`);
+    expect(existsSync(options.out)).toBe(false);
+  });
+
+  it.each(['none', 'untracked', 'tracked', 'unexpected-output'])(
+    'keeps custom output and MBT artifacts out of Git dirtiness without hiding changes: %s',
+    (change) => {
+      const options = fixture();
+      options.out = join(options.root, 'custom evidence [1]');
+      writeFileSync(join(options.root, '.gitignore'), readFileSync('.gitignore'));
+      writeFileSync(join(options.root, 'README.md'), 'original source');
+      const git = (args: string[]) => spawnSync('git', args, { cwd: options.root, encoding: 'utf8' });
+      expect(git(['init', '-q']).status).toBe(0);
+      expect(git(['add', '.']).status).toBe(0);
+      const commit = git([
+        '-c',
+        'user.name=Evidence test',
+        '-c',
+        'user.email=evidence@example.invalid',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '-qm',
+        'fixture',
+        '--no-verify',
+      ]);
+      expect(commit.status, commit.stderr).toBe(0);
+      writeFileSync(join(options.root, 'Makefile_20260907.mta'), 'generated MBT artifact');
+      const normal = options.run.getMockImplementation();
+      options.run.mockImplementation((command, args, cwd) => {
+        if (command === 'git') return git(args);
+        if (args[0] === 'audit') {
+          if (change === 'tracked') writeFileSync(join(options.root, 'README.md'), 'changed source');
+          if (change === 'untracked') writeFileSync(join(options.root, 'new-source.ts'), 'changed source');
+          if (change === 'unexpected-output') writeFileSync(join(options.out, 'unexpected.ts'), 'changed source');
+        }
+        return normal!(command, args, cwd);
+      });
+      const { evidence } = generateEvidence({ ...options, requireClean: true });
+      expect(evidence.complete).toBe(change === 'none');
+      expect(evidence.source.dirty).toBe(change !== 'none');
+      expect(git(['status', '--porcelain']).stdout).toContain('custom evidence');
+    },
+  );
+
+  it('lets real npm reject override drift even though overrides are absent from the lockfile root', () => {
+    const options = fixture();
+    const manifest = { name: 'arc-1', version: '1.2.0', dependencies: { parent: '1.0.0' } };
+    writeFileSync(join(options.root, 'package.json'), JSON.stringify({ ...manifest, overrides: { child: '1.0.0' } }));
+    writeFileSync(
+      join(options.root, 'package-lock.json'),
+      JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          '': manifest,
+          'node_modules/parent': { version: '1.0.0', dependencies: { child: '1.0.0' } },
+          'node_modules/child': { version: '1.0.0' },
+        },
+      }),
+    );
+    const baseline = spawnSync('npm', ['sbom', '--package-lock-only', '--ignore-scripts', '--sbom-format=cyclonedx'], {
+      cwd: options.root,
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    expect(baseline.status, baseline.stderr).toBe(0);
+    writeFileSync(join(options.root, 'package.json'), JSON.stringify({ ...manifest, overrides: { child: '2.0.0' } }));
+    const normal = options.run.getMockImplementation();
+    options.run.mockImplementation((command, args, cwd) => {
+      if (command === 'npm' && args[0] === 'sbom' && cwd === options.root) {
+        return spawnSync(command, args, { cwd, encoding: 'utf8', timeout: 10_000 });
+      }
+      return normal!(command, args, cwd);
+    });
+    const { evidence } = generateEvidence(options);
+    expect(evidence.complete).toBe(false);
+    expect(
+      evidence.checks.filter((check) => check.scope === 'root' && check.kind !== 'audit').map((check) => check.status),
+    ).toEqual(['unavailable', 'unavailable']);
     expect(existsSync(join(options.root, 'node_modules'))).toBe(false);
-    const repeat = spawnSync(process.execPath, args, { cwd: options.root, env, encoding: 'utf8' });
-    expect(repeat.status).toBe(2);
-    expect(repeat.stderr).toContain('Output directory already exists');
+    expect(existsSync(join(options.out, 'root-full.cdx.json'))).toBe(false);
   });
 
   it('rejects dependency declaration drift even when package name and version match', () => {
@@ -130,6 +244,7 @@ describe('dependency evidence', () => {
     expect(validateSbom(bom(manifest.name), 0, manifest)).toBe(true);
     expect(validateSbom(bom('different-package'), 0, manifest)).toBe(false);
     expect(validateSbom(bom(manifest.name), 1, manifest)).toBe(false);
+    expect(validateSbom({ ...bom(manifest.name), specVersion: '1.99' }, 0, manifest)).toBe(false);
   });
 
   it('records high findings as completed scans requiring review, not tool errors or a clean result', () => {

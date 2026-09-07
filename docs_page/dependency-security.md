@@ -88,7 +88,9 @@ the report with the customer's build record and [Security Assessment](security-a
 The source containing this page separates `Dependency security` from `Dependency licenses`.
 Dependency security checks introduced high/critical vulnerabilities across runtime, development
 and unknown dependency scopes. It runs without installing packages or writing PR comments.
-The existing license policy remains in its own job.
+The existing license policy remains in its own, non-required job. Denied licenses appear as a
+failed **Dependency licenses** check with details in the Actions summary. Maintainers review that
+result before merging dependency changes; it is not an automatic merge requirement.
 
 A separate **Dependency evidence** workflow produces dated reports on Monday, Wednesday and
 Friday and on manual dispatch. Its artifacts are retained for 30 days; download them for longer
@@ -97,8 +99,11 @@ a required PR check or a new publication gate. Scheduled `main` evidence does no
 older release automatically.
 
 An initially disabled ruleset template selects only Dependency security and CodeQL security
-findings at high or higher. Release Please supports an optional GitHub App token so its PRs can
-trigger these checks. Socket configuration is also provided. Its App returned a project report on
+findings at high or higher. GitHub exempts Dependabot PRs analyzed by CodeQL default setup from
+code-scanning merge protection; their required vulnerability review is Dependency security.
+See [GitHub's documented exceptions](https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection#exceptions-and-limitations).
+Release Please keeps its existing token, with native maintainer approval of bot-created PR workflows
+when prompted. Socket configuration is also provided. Its App returned a project report on
 [PR #765](https://github.com/arc-mcp/arc-1/pull/765); the PR alert check skipped analysis because
 there were no dependency changes. Dashboard policy and blocking behavior still need verification. These files alone do not establish enforcement. The maintainer's
 [security operations runbook](https://github.com/arc-mcp/arc-1/blob/main/docs/security-operations.md)

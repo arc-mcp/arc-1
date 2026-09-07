@@ -11,10 +11,11 @@ import {
   readFileSync,
   readdirSync,
   readSync,
+  realpathSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { formatSummary } from './summary.mjs';
 
@@ -63,9 +64,22 @@ function inputHashes(root) {
   return Object.fromEntries(paths.sort().map((path) => [path, hashFile(join(root, path))]));
 }
 
-function readSource(root, run) {
+function readSource(root, run, generatedFiles = []) {
   const commit = run('git', ['rev-parse', 'HEAD'], root);
-  const status = run('git', ['status', '--porcelain', '--untracked-files=normal'], root);
+  // Exclude only files this run created, never the whole output directory: other
+  // changes must still make --require-clean fail, including unexpected output files.
+  const status = run(
+    'git',
+    [
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+      '--',
+      '.',
+      ...generatedFiles.map((path) => `:(exclude,literal)${path}`),
+    ],
+    root,
+  );
   if (commit.status !== 0 || status.status !== 0 || !/^[a-f0-9]{40,64}$/.test(commit.stdout.trim())) {
     throw new EvidenceInputError('Cannot identify the Git source revision and working-tree state.');
   }
@@ -107,7 +121,7 @@ export function validateSbom(bom, status, manifest) {
   return (
     status === 0 &&
     bom?.bomFormat === 'CycloneDX' &&
-    /^1\.\d+$/.test(bom.specVersion) &&
+    bom.specVersion === '1.5' &&
     bom.metadata?.component?.purl === `pkg:npm/${manifest.name}@${manifest.version}` &&
     bom.metadata?.component?.version === manifest.version &&
     Array.isArray(bom.components) &&
@@ -122,7 +136,10 @@ export function validateSbom(bom, status, manifest) {
  * run?: (command: string, args: string[], cwd: string) => {status: number | null, stdout: string, error?: unknown, signal?: string | null}}} options
  */
 export function generateEvidence({ root = process.cwd(), out, mtar, requireClean = false, run = runCommand } = {}) {
-  root = resolve(root);
+  for (const [name, value] of Object.entries({ out, mtar })) {
+    if (value !== undefined && !value.trim()) throw new EvidenceInputError(`--${name} requires a non-empty path.`);
+  }
+  root = realpathSync(root);
   const source = readSource(root, run);
   if (requireClean && source.dirty)
     throw new EvidenceInputError('A clean source checkout is required. Commit or remove local changes first.');
@@ -137,14 +154,15 @@ export function generateEvidence({ root = process.cwd(), out, mtar, requireClean
       'Output directory already exists; choose a new directory to preserve earlier evidence.',
     );
   // Validate the optional artifact before creating output. Its build/source relationship is unverified.
-  const artifact = mtar
-    ? {
-        name: basename(mtar),
-        sha256: hashFile(resolve(mtar)),
-        size: lstatSync(resolve(mtar)).size,
-        sourceRelationship: 'not-verified',
-      }
-    : null;
+  const artifact =
+    mtar !== undefined
+      ? {
+          name: basename(mtar),
+          sha256: hashFile(resolve(mtar)),
+          size: lstatSync(resolve(mtar)).size,
+          sourceRelationship: 'not-verified',
+        }
+      : null;
   mkdirSync(dirname(directory), { recursive: true });
   mkdirSync(directory);
   const evidence = {
@@ -222,7 +240,11 @@ export function generateEvidence({ root = process.cwd(), out, mtar, requireClean
       }
     }
   }
-  const finalSource = readSource(root, run);
+  const finalSource = readSource(
+    root,
+    run,
+    Object.keys(evidence.files).map((name) => join(realpathSync(directory), name)),
+  );
   evidence.inputsUnchanged =
     JSON.stringify(inputs) === JSON.stringify(inputHashes(root)) && source.commit === finalSource.commit;
   evidence.source.dirty ||= finalSource.dirty;
@@ -237,7 +259,11 @@ export function generateEvidence({ root = process.cwd(), out, mtar, requireClean
   return { evidence, directory };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (
+  process.argv[1] &&
+  existsSync(process.argv[1]) &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
   try {
     const { values } = parseArgs({
       options: {

@@ -101,6 +101,7 @@ node_modules/
 
 # MTA build artifacts
 mta_archives/
+/Makefile_*.mta
 
 # MTA extension descriptors with per-landscape values (destinations, safety
 # flags, etc.). Deployers copy `mta-overrides.mtaext.example` to

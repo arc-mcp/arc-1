@@ -38,7 +38,8 @@ describe('enterprise security workflow boundaries', () => {
       'license-check': false,
       'comment-summary-in-pr': 'never',
     });
-    expect(review.with['warn-only']).not.toBe(true);
+    // Action inputs are strings at runtime; quoted 'true' must not evade this guard.
+    expect(review.with['warn-only']).toBeUndefined();
     expect(review.with['allow-ghsas']).toBeUndefined();
     for (const job of Object.values(data.jobs) as {
       steps: { uses: string; run?: string; if?: string; with?: Record<string, unknown> }[];

@@ -14,6 +14,12 @@ checks. The selected new merge requirements are **Dependency security** and **Co
 results at high or higher**. Do not add the Test jobs, license job, evidence workflow, docs,
 coverage, build or SAP integration checks to this security ruleset.
 
+`Dependency licenses` remains a **non-required** check by design. A denied license makes that
+job fail and appears in the PR checks and Actions job summary. Before merging a dependency PR,
+open that summary and resolve the finding or record why the dependency is acceptable. PR comments
+are disabled to keep the workflow read-only, including for forks; this does not hide the job result.
+See [the action's results and inputs](https://github.com/actions/dependency-review-action#viewing-the-results).
+
 ## 2. Verify release PR checks with the existing token
 
 Release Please keeps the built-in `GITHUB_TOKEN`; no dedicated App, personal token or additional
@@ -25,9 +31,10 @@ by someone with repository write access. This covers `pull_request` events for `
    ordinary `main` push. Review its current changes and workflow definitions.
 2. If GitHub shows **Approve workflows to run** in the PR merge box, approve those runs.
    This approves workflow execution, not the PR or a release. Check again after bot updates.
-3. Verify **Dependency security** completes on the current PR revision and CodeQL results are
-   available for the PR and target revision. Also check a normal PR, a dependency PR and a fork
-   PR when available. Do not treat `action_required`, missing results or an older success as a pass.
+3. Verify **Dependency security** completes on the current PR revision and the applicable CodeQL
+   analysis completes. Check a code-changing PR, a documentation-only PR, a human dependency-only
+   PR, a Dependabot PR and a fork PR when available. Account for the documented CodeQL exception
+   in step 3 below. Do not treat `action_required` or an older success as a pass.
 4. Keep the new ruleset disabled until these checks complete successfully. If the approval
    control or a required result is unavailable, investigate that event/run before enforcement;
    do not introduce an App, new token or blanket bypass as an automatic workaround.
@@ -54,13 +61,25 @@ Sources: [GitHub's bot-PR approval announcement](https://github.blog/changelog/2
    The template pins GitHub Actions integration ID `15368`, observed in this repository.
    Recheck that provider when using this template on a different GitHub host.
 3. Verify the CodeQL security threshold is **High or higher**, and ordinary **Alerts** is **None**.
-   CodeQL results must be available for the PR and target revision. Default setup is already
-   configured for this repository; do not add a duplicate advanced-setup workflow.
-4. Inspect completed normal and release PR checks from step 2. Keep enforcement disabled if a
-   check is missing, waiting forever, or failing because of setup. A missing scan is not a pass.
+   Default setup is already configured for this repository; do not add a duplicate advanced-setup
+   workflow or require the generic `CodeQL` status check in place of the alert-severity rule.
+4. Inspect the PR types listed in section 2, including release and dependency-only changes.
+   Check the effective merge rule as well as the status-check conclusion. Keep enforcement
+   disabled if an applicable required result is missing, waiting forever, or failing because of setup.
 5. Enable the ruleset. It requires an up-to-date branch for the selected status check and has
    no bypass actors. Verify the effective rules and the PR merge panel; do not merge a failing
    probe. Record evidence of a harmless check failure being refused before calling it enforced.
+
+**CodeQL exception:** GitHub documents that code-scanning merge protection does **not** apply to
+Dependabot PRs analyzed by default setup. It is also separate from required status checks. On
+7 September 2026, [Dependabot PR #763](https://github.com/arc-mcp/arc-1/pull/763) had a `neutral`
+CodeQL check reporting missing configurations; that alone does not prove this ruleset would block
+the PR. The exception also means CodeQL enforcement must not be claimed for those PRs:
+`Dependency security` provides their required vulnerability review. Do not interpret arbitrary
+neutral or missing results on other PRs as a successful analysis. Verify their actual merge-panel
+behavior before enabling the ruleset, which remains disabled in this template.
+
+Source: [GitHub's merge-protection exceptions](https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection#exceptions-and-limitations).
 
 Read-only verification from a repository clone:
 
@@ -134,9 +153,17 @@ npm run security:evidence -- --require-clean --mtar mta_archives/arc1-mcp_1.2.0.
 ```
 
 Use the actual MTAR filename/version. `--out NEW_DIRECTORY` selects a different output location;
-an existing directory is refused. `--fail-on-high` returns exit 1 for high/critical findings.
+an existing directory or an explicitly empty path is refused. Output may be inside the checkout:
+only the report files created by that run are excluded from its final Git cleanliness check.
+Unrelated tracked or untracked changes still make `--require-clean` fail. MBT's generated
+`Makefile_*.mta` files at the repository root are ignored like `mta_archives/`.
+`--fail-on-high` returns exit 1 for high/critical findings.
 Exit 2 means unavailable, invalid or inconsistent evidence. Without that option, completed
 collection returns 0 even with findings: **read the summary before approving a deployment**.
+
+The collector validates the CycloneDX 1.5 format emitted by the pinned npm version and identifies
+each root package by package URL and version. npm itself checks the locked graph, including active
+overrides, during SBOM generation; the manifest/lockfile declaration check alone does not do that.
 
 The separate **Dependency evidence** workflow runs Monday/Wednesday/Friday and on manual
 dispatch, pins npm 11.11.1, and retains artifacts for 30 days. Its red result is a maintenance

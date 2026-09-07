@@ -143,3 +143,16 @@ waiting time. These are planning estimates, not a commitment or a measured adopt
 - Post-review corrections are a separate commit. The PR checks show the authoritative result for its latest head.
 - The workflow summary now links directly to its downloadable evidence artifact; folder-relative JSON links remain in the downloaded report rather than pointing to missing files on the run page.
 - Release automation follow-up: retained the built-in token and documented native bot-workflow approval. The parsed Release workflow exactly matches `origin/main`; only explanatory comments differ. All 26 focused workflow/release tests, type checking and the strict documentation build passed. Release PR #751 confirms the `action_required` wait; execution after approval and ruleset activation remain pending.
+
+### External review follow-up — 7 September 2026
+
+- Fixed silent success through a symlinked script or checkout path; CLI subprocess tests now require actual report output for both forms.
+- Fixed custom output inside a checkout making its own run fail `--require-clean`. Only files created by this run are excluded from the final Git check. Real-Git tests verify that other tracked, untracked and unexpected output-directory files still make the report incomplete.
+- Ignore MBT's root `Makefile_*.mta` artifacts alongside `mta_archives/`, and reject explicitly empty `--mtar`/`--out` arguments before collection.
+- Restrict collected SBOMs to the supported CycloneDX 1.5 version; retain package URL/version identity checks for arbitrary checkout directory names. Existing release SBOM workflow behavior remains unchanged.
+- Tightened the workflow contract to reject any `warn-only` override. A mutation run with quoted `warn-only: 'true'` failed the test as intended; the actual workflow was restored afterwards.
+- The reported Dependabot merge deadlock is not supported by GitHub's documented default-setup exception. Kept the disabled ruleset and added that limitation plus code, documentation, human dependency-only, Dependabot, fork and release PR checks to the rollout runbook. Server-side enforcement is still pending; a `neutral` check alone proves neither success nor blocking.
+- A conflicting active version override is already rejected by npm's SBOM graph validation, even though the preliminary lockfile identity check cannot compare `overrides`. Added a real-npm regression with a passing aligned graph and a failing override mismatch, without installing dependencies.
+- License findings already produce a failed non-required job and Actions summary. Documented where maintainers review them; retained read-only permissions and the agreed exclusion from mandatory merge checks.
+- Removed a remaining customer-docs reference to an optional Release Please App; the documented path now consistently uses the existing token and native workflow approval.
+- Validation: **5,803 tests across 196 files passed**, including **34 focused collector/workflow/release tests**. Type checking, repository lint, strict MkDocs build and whitespace checks passed. Exact-commit live collection and remote checks are recorded in the PR after pushing.
