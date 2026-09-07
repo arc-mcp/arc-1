@@ -15,6 +15,10 @@ This PR does not add shorthand node names, percent-decoding, fuzzy matching, or 
 resolver. Both Markdown sections and short-text assignments use the exact node IDs SAPRead shows.
 That keeps addressing explainable and leaves the already-tested body parser unchanged.
 
+> **Superseded on 2026-09-07 (branch fix/ktd-node-name-routing).** Both surfaces now resolve node
+> NAMES as well as ids, through one shared resolver — the concern above was a *second* resolver
+> drifting from the first, and there is exactly one. See docs/research/2026-09-02-sktd-multi-node-write.md §4.
+
 ## Authoritative contract evidence
 
 ### SAP Eclipse ADT model
