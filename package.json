@@ -120,7 +120,7 @@
     "jose": "^6.2.10",
     "rate-limiter-flexible": "^11.2.0",
     "undici": "^8.10.1",
-    "zod": "^4.3.6"
+    "zod": "^4.5.4"
   },
   "overrides": {
     "@hono/node-server": "2.0.10",
