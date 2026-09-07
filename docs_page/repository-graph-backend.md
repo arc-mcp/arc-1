@@ -36,8 +36,9 @@ npm run graph:test:offline
 ```
 
 Use a private directory excluded from Git (`.secrets/` and its children are already excluded).
-For other custom directories, add a local Git exclude rule first. Setup prints the generated absolute
-ARC connection-file path, never its key. Keep these environment values for subsequent commands.
+For other custom directories, add a local Git exclude rule first. The ARC connection file is
+`<ARC_GRAPH_SECRET_DIR>/arc1-graph-connection.json`; resolve it to an absolute path for ARC.
+Setup prints no environment-derived private path or key. Keep these environment values for subsequent commands.
 The test seeds an offline system `TRIAL-2023-001`; it must not be confused with a live SAP system.
 Expected output includes passing v2 API, extraction/retention, snapshot and lease checks.
 

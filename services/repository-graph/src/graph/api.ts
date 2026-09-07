@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { graphApiKeys } from './config.js';
 import { graphInputSchema } from './contract-v2.js';
@@ -8,17 +8,17 @@ import type { GraphStore } from './store/store.js';
 const MAX_BODY_BYTES = 32_768;
 const MAX_RESPONSE_BYTES = 512_000;
 
-function digest(value: string): Buffer {
-  return createHash('sha256').update(value).digest();
-}
-
-function authorized(request: IncomingMessage, keys: string[]): boolean {
-  const bearer = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+function authorized(request: IncomingMessage, keys: Buffer[]): boolean {
+  const authorization = request.headers.authorization;
+  if (authorization && (authorization.length > 4103 || authorization.slice(0, 7).toLowerCase() !== 'bearer '))
+    return false;
   const rawHeader = request.headers['x-api-key'];
-  const supplied = bearer ?? (Array.isArray(rawHeader) ? rawHeader[0] : rawHeader);
-  if (!supplied) return false;
-  const suppliedDigest = digest(supplied);
-  return keys.some((key) => timingSafeEqual(suppliedDigest, digest(key)));
+  const supplied = authorization ? authorization.slice(7) : Array.isArray(rawHeader) ? undefined : rawHeader;
+  if (!supplied || supplied.length > 4096 || !/^[\x21-\x7e]+$/.test(supplied)) return false;
+  const bytes = Buffer.from(supplied, 'ascii');
+  // These are high-entropy API credentials, not human passwords or stored password hashes.
+  // Value comparison is constant-time; only the non-secret credential length is checked first.
+  return keys.some((key) => bytes.length === key.length && timingSafeEqual(bytes, key));
 }
 
 function json(response: ServerResponse, status: number, value: unknown): void {
@@ -51,6 +51,7 @@ export function createGraphApi(
 ) {
   if (!/^[A-Z0-9][A-Z0-9._:-]{0,127}$/.test(scope.systemKey) || !/^[A-Za-z0-9._:-]{1,128}$/.test(scope.audience))
     throw new Error('Explicit graph scope required');
+  const keyBytes = apiKeys.map((key) => Buffer.from(key, 'ascii'));
   let active = 0;
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     response.setHeader('cache-control', 'no-store');
@@ -60,7 +61,7 @@ export function createGraphApi(
       json(response, 200, { status: 'ok' });
       return;
     }
-    if (!authorized(request, apiKeys)) {
+    if (!authorized(request, keyBytes)) {
       response.setHeader('www-authenticate', 'Bearer');
       json(response, 401, { error: 'unauthorized' });
       return;

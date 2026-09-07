@@ -30,6 +30,11 @@ it('rotates through an overlap window and revokes the old credential over HTTP',
         expect(response.status).toBe(keys.includes(key) ? 200 : 401);
         expect(await response.text()).not.toContain(key);
       }
+      for (const header of ['Bearer\t' + '\t'.repeat(4000), 'Bearer ' + 'x'.repeat(4097), 'Basic invalid']) {
+        const response = await fetch(`http://127.0.0.1:${address.port}/readyz`, { headers: { authorization: header } });
+        expect(response.status).toBe(401);
+        await response.text();
+      }
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

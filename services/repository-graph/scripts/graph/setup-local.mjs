@@ -78,5 +78,8 @@ export function setupLocal(env = process.env) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  console.log(JSON.stringify(setupLocal()));
+  setupLocal();
+  console.log(
+    'Local graph setup ready. Connection: <ARC_GRAPH_SECRET_DIR>/arc1-graph-connection.json (default directory: .secrets).',
+  );
 }

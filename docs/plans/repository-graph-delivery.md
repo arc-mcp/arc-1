@@ -152,3 +152,7 @@ reported rather than resolved with paid capacity or broader authorization.
   it). Setup now keeps original ARC files at 0600 and stages individual read-only mount copies
   inside a 0700 host-only directory. No container is changed to run as root. Existing secrets are
   preserved; mismatched staged copies fail closed. Linux Docker CI must pass before final handoff.
+- CodeQL review also prompted removal of the bearer-token whitespace regex, direct timing-safe
+  comparison of bounded high-entropy API-key bytes (no password-hash primitive), and removal of
+  environment-derived setup paths from console output. Malformed/long authorization headers are
+  covered by the HTTP credential tests; no scanner alert is suppressed or dismissed.
