@@ -13,13 +13,13 @@ type DependabotConfig = {
 };
 
 describe('Dependabot configuration', () => {
-  it('monitors both independent npm lockfiles', () => {
+  it('monitors the root and optional-service npm lockfiles', () => {
     const source = readFileSync(join(import.meta.dirname, '../../../.github/dependabot.yml'), 'utf8');
     const config = parse(source) as DependabotConfig;
     const npmDirectories = (config.updates ?? [])
       .filter((update) => update['package-ecosystem'] === 'npm')
       .map((update) => update.directory);
 
-    expect(npmDirectories).toEqual(expect.arrayContaining(['/', '/btp/approuter']));
+    expect(npmDirectories).toEqual(expect.arrayContaining(['/', '/btp/approuter', '/services/repository-graph']));
   });
 });

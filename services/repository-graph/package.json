@@ -1,0 +1,55 @@
+{
+  "name": "@arc-mcp/repository-graph",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Experimental optional metadata graph backend for ARC-1",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json",
+    "test": "npm run build && vitest run",
+    "graph:setup": "sh scripts/graph/setup-local.sh",
+    "graph:build": "docker compose -f compose.graph.yaml build",
+    "graph:up": "docker compose -f compose.graph.yaml up -d graph-api",
+    "graph:down": "docker compose -f compose.graph.yaml down",
+    "graph:test:offline": "sh scripts/graph/test-offline.sh",
+    "graph:test:large": "sh scripts/graph/test-large.sh",
+    "graph:doctor": "node dist/graph/cli.js doctor",
+    "graph:migrate": "node dist/graph/cli.js migrate",
+    "graph:seed": "node dist/graph/cli.js seed-golden",
+    "graph:verify": "node dist/graph/cli.js verify-golden",
+    "graph:benchmark": "node dist/graph/cli.js benchmark",
+    "graph:retention-check": "node dist/graph/cli.js retention-check",
+    "graph:collect:mock": "node dist/graph/cli.js collect-mock",
+    "graph:verify:extraction": "node dist/graph/cli.js verify-extraction",
+    "graph:verify:refresh": "node dist/graph/cli.js verify-refresh",
+    "graph:seed:scale": "node dist/graph/cli.js seed-scale",
+    "graph:benchmark:scale": "node dist/graph/cli.js benchmark-scale",
+    "graph:verify:bounds": "node dist/graph/cli.js verify-bounds",
+    "graph:collect:live:metadata": "node dist/graph/cli.js collect-live-metadata",
+    "graph:collect:live:source": "node dist/graph/cli.js collect-live-source",
+    "graph:api": "node dist/graph/server.js",
+    "start": "node dist/graph/server.js",
+    "graph:package:cf": "npm run build && node scripts/graph/package-cf.mjs"
+  },
+  "dependencies": {
+    "@abaplint/core": "^2.119.37",
+    "@sap/hana-client": "^2.29.27",
+    "@sap/xsenv": "^6.2.1",
+    "fast-xml-parser": "^5.9.3",
+    "pg": "^8.16.3",
+    "undici": "^7.29.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.5",
+    "@types/node": "^22.20.0",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.22.4",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.1"
+  }
+}

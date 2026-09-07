@@ -1,0 +1,4 @@
+define view entity ZC_EXTRACT as projection on ZI_EXTRACT
+{
+  key id
+}

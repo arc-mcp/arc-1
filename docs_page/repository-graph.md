@@ -4,17 +4,19 @@
 
     This is an opt-in preview, not part of the default setup. Use an ARC build that contains
     [the adapter](https://github.com/arc-mcp/arc-1/pull/756); do not assume an older installed
-    release or `latest` contains it. The separate PostgreSQL backend is still a local PoC,
+    release or `latest` contains it. PostgreSQL and HANA backends now live in this repository,
+    with independent builds and experimental setup instructions, but still
     without a published supported installer. **Do not create services just to configure ARC.**
 
 `SAPGraph` queries a separately deployed metadata/relationship index. ARC does not collect
 objects, store source, connect to PostgreSQL/HANA, or use AI Core for this feature. Existing
 SAPRead, SAPContext and request-driven caches are unchanged. This is **not live SAP where-used**.
 
-The adapter requires a compatible **v2 graph API**. The independent local PostgreSQL collector
-is a proof of concept, not part of the ARC npm/Docker distribution or a hosted service. This page
-configures the ARC adapter; it does not install that backend. HANA parity, Cloud Connector
-collection, and a portable BTP backend installer are not shipped. The
+The adapter requires a compatible **v2 graph API**. The optional backend is in
+`services/repository-graph/`, not the ARC npm/Docker distribution or a hosted service. Follow
+[backend setup](repository-graph-backend.md) for Docker PostgreSQL or BTP PostgreSQL/HANA.
+Both databases have live API/ARC test evidence. Cloud Connector collection and an unattended
+BTP installer are not shipped. The
 [detailed specification](repository-graph-specification.md) separates the implemented contract
 from the remaining decisions and release gates; proposed settings there are not setup requirements.
 
@@ -25,7 +27,7 @@ Keep your existing ARC setup and SAP authentication unchanged. New ARC installat
 
 | Situation | Next step |
 |---|---|
-| You do not have a compatible graph backend | Obtain a version-matched backend artifact/runbook from its maintainer. There is no published one-command backend installation yet; do not guess service names or database credentials. |
+| You do not have a compatible graph backend | Start with the [offline Docker backend](repository-graph-backend.md#1-local-docker-first-useful-result), then choose BTP only if needed. Use the same reviewed revision for ARC/backend. |
 | A local/Docker backend is ready | Confirm the audience below, then [connect locally](#local-connection-one-arc-setting). |
 | A BTP backend is ready | Confirm the audience below, then [bind the connection](#btp-cloud-foundry-connection). Same-space deployment is not required by the API contract and does not make the route private. |
 | CLI queries work and you want client access | Complete the [acceptance checks](#verify-before-client-exposure), then explicitly enable tools. |
@@ -109,7 +111,8 @@ service. Persist both the binding and `ARC1_GRAPH_SERVICE_BINDING=arc1-repositor
 deployment configuration that owns ARC, with `ARC1_GRAPH_TOOLS=false`, then follow that deployment's
 binding refresh/restart procedure. For MTA, `.mtaext` properties can set the ARC flags, but the
 existing-service resource and module binding must also be modeled correctly; a property alone
-does not bind a service. A graph-specific MTA attachment example is not shipped yet.
+does not bind a service. See the [MTA attachment fragment](repository-graph-backend.md#5-connect-arc-without-exposing-tools-yet);
+merge it into operator-owned configuration without replacing existing ARC requirements.
 
 Do not use `.env` for CF deployment settings, paste keys in shell arguments, or rely only on a
 temporary `cf set-env` that the next MTA deployment can undo. ARC does not search arbitrary service
@@ -132,9 +135,10 @@ network support and the backend's lifecycle must be verified separately before d
 PostgreSQL free is time-limited, not a permanent production service; record an export/upgrade owner
 and deadline using the [lifecycle requirements](repository-graph-specification.md#85-cost-lifecycle-and-operations).
 
-!!! warning "Cloud Connector collection is not yet verified"
+!!! warning "Cloud Connector collection is unsupported"
 
-    The collector PoC used a publicly reachable HTTPS SAP destination. ARC's existing PP/Cloud
+    The collector explicitly rejects OnPremise and PrincipalPropagation destinations. Live tests
+    used a publicly reachable HTTPS SAP destination. ARC's existing PP/Cloud
     Connector setup does not give the separate collector that transport or a background SAP
     identity. Do not copy a Principal Propagation destination into a headless collector and assume
     it will work. This does not affect graph retrieval from an already populated backend.
@@ -170,6 +174,8 @@ When `ARC1_GRAPH_TOOLS=true`, MCP exposes the same flat `SAPGraph` arguments. Hy
 `SAP(action="graph", params={"action":"impact","name":"ZCL_ORDER","type":"CLAS"})`.
 Actions: `status`, `search`, `neighbors`, `impact`, `path`, `package_coupling`. Search uses `query`;
 traversals require `name`/`type`; path additionally needs `targetName`/`targetType`.
+Search is case-insensitive literal substring matching on metadata, not source text or SAP
+wildcard syntax: search for `order`, not `*order*`.
 
 Defaults: depth 1 (max 3), direction `both` (`impact` always incoming), limit 20 (max 100),
 maxNodes 100, maxEdges 300. Optional `kinds` selects up to ten relation types; impact excludes

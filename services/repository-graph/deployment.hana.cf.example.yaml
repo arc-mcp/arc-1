@@ -1,0 +1,53 @@
+---
+# Independent HANA backend. Bootstrap/collector are pushed with --task, never as web apps.
+applications:
+  - name: ((prefix))-bootstrap
+    path: .graph-cf
+    memory: 256M
+    disk_quota: 1G
+    no-route: true
+    buildpacks: [nodejs_buildpack]
+    command: node dist/graph/hana-bootstrap.js
+    services: [((prefix))-bootstrap-auth]
+    env:
+      ARC_GRAPH_BACKEND: hana
+      ARC_GRAPH_HANA_BOOTSTRAP: "true"
+      ARC_GRAPH_HANA_SERVICE_BINDING: ((prefix))-bootstrap-auth
+      NODE_OPTIONS: --max-old-space-size=160
+  - name: ((prefix))-api
+    path: .graph-cf
+    memory: 256M
+    disk_quota: 1G
+    routes:
+      - route: ((route))
+    buildpacks: [nodejs_buildpack]
+    command: node dist/graph/server.js
+    health-check-type: http
+    health-check-http-endpoint: /healthz
+    services: [((prefix))-reader, ((prefix))-api-auth]
+    env:
+      ARC_GRAPH_BACKEND: hana
+      ARC_GRAPH_HANA_SERVICE_BINDING: ((prefix))-reader
+      ARC_GRAPH_API_AUTH_BINDING: ((prefix))-api-auth
+      ARC_GRAPH_API_SYSTEM_KEY: ((systemKey))
+      ARC_GRAPH_API_AUDIENCE: ((audience))
+      NODE_OPTIONS: --max-old-space-size=160
+  - name: ((prefix))-collector
+    path: .graph-cf
+    memory: 512M
+    disk_quota: 1G
+    no-route: true
+    buildpacks: [nodejs_buildpack]
+    command: node dist/graph/cli.js doctor
+    services: [((prefix))-writer, ((destinationService))]
+    env:
+      ARC_GRAPH_BACKEND: hana
+      ARC_GRAPH_HANA_SERVICE_BINDING: ((prefix))-writer
+      ARC_GRAPH_DESTINATION_BINDING: ((destinationService))
+      ARC_GRAPH_SYSTEM_KEY: ((systemKey))
+      SAP_DESTINATION: ((destination))
+      ARC_GRAPH_LIVE_QUERY: ((query))
+      ARC_GRAPH_LIVE_PACKAGES: ((packages))
+      ARC_GRAPH_LIVE_MAX_OBJECTS: 150
+      ARC_GRAPH_LIVE_CONCURRENCY: 1
+      NODE_OPTIONS: --max-old-space-size=256

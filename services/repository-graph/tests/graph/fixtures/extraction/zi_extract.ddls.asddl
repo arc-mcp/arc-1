@@ -1,0 +1,9 @@
+define root view entity ZI_EXTRACT as select from ztab_extract
+  inner join ztab_item on ztab_item.id = ztab_extract.id
+  association [0..1] to ZI_CUSTOMER as _Customer on _Customer.id = ztab_extract.customer
+  composition [0..*] of ZI_CHILD as _Children
+  // association [0..1] to ZI_COMMENT_CANARY as _Never
+{
+  key ztab_extract.id,
+  'ARC_SOURCE_CANARY_SECRET' as Marker
+}

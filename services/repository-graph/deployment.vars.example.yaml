@@ -1,0 +1,10 @@
+# Non-secret operator choices. Use the same values in btp-settings.json and the ARC descriptor.
+prefix: arc-graph
+database: arc-graph-pg
+route: REPLACE_WITH_UNIQUE_HOST.cfapps.REPLACE_WITH_REGION.hana.ondemand.com
+systemKey: REPLACE-WITH-SAP-SYSTEM-CLIENT
+audience: shared-development-metadata
+destinationService: REPLACE_WITH_EXISTING_DESTINATION_SERVICE
+destination: REPLACE_WITH_HTTPS_TECHNICAL_USER_DESTINATION
+query: Z*
+packages: ZEXAMPLE*

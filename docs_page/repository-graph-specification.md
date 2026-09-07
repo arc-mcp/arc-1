@@ -1,15 +1,17 @@
 # Repository graph specification (experimental)
 
-**Revision:** 2026-09-07, draft for implementation. **Feature milestone:** experimental v1.
+**Revision:** 2026-09-07, implementation and validation in progress. **Feature milestone:** experimental v1.
 This milestone name is not the wire version: the existing connection descriptor is version **1**
 and the query API is version **2**.
 
 !!! warning "A specification is not an installation prerequisite"
 
-    Only the [setup guide](repository-graph.md) describes the currently implemented ARC adapter.
-    Requirements marked **Required next** below are not shipped settings or commands. The independent
-    backend is still a local PoC, without a published, supported installation artifact. Neither
-    this document nor successful PoC tests establish production readiness.
+    The [setup guide](repository-graph.md) and [backend runbook](repository-graph-backend.md)
+    describe the currently implemented experimental deployment. Requirements marked **Future gate**
+    below are not shipped settings or commands. The independent
+    backend now lives in `services/repository-graph/` in the ARC-1 repository, with its own
+    dependencies/build/deployment. It is not included in the normal ARC npm/image/MTA and is not
+    a supported production release. Neither this document nor successful tests establish production readiness.
 
 ## 1. Outcome and scope
 
@@ -21,7 +23,7 @@ The graph is an additional evidence source, not an authorization cache, source m
 for SAPRead/SAPContext, or proof of runtime use. It can later supply retrieval context to an LLM;
 experimental v1 does not require an embedding model, AI Core, vector database extension, or LLM call.
 
-**In scope:** one SAP system/client, one explicitly shared metadata audience, PostgreSQL, bounded
+**In scope:** one SAP system/client, one explicitly shared metadata audience, PostgreSQL or HANA, bounded
 read-only queries, internal diagnostics first, Docker setup, then an optional SAP BTP CF deployment.
 Existing ARC readers must not need a new role solely for this feature.
 
@@ -34,24 +36,34 @@ that historical experiment's data has been deleted.
 ## 2. Evidence baseline and limits
 
 The implementation reviewed here is ARC PR [#756](https://github.com/arc-mcp/arc-1/pull/756), runtime
-baseline `ef5f0e26b685e1a6719f29f2dbba2314ae6f4915`, and the independent `arc-repository-index`
-PoC as exercised on 2026-09-07. Record an immutable backend revision before distributing it.
+baseline `ef5f0e26b685e1a6719f29f2dbba2314ae6f4915`, followed by the metadata-only service import
+under `services/repository-graph/`. The original `arc-repository-index` source-storage experiment
+is not imported. Record an immutable backend revision before distributing it.
 
 | Stage | Verified | Not established by that evidence |
 |---|---|---|
 | Internal ARC | Standard/hyperfocused/HTTP tests; default-hidden tools; native calls to local and BTP APIs; zero SAP transport calls during graph retrieval | A released ARC version containing the adapter; deployment into the existing CF ARC apps |
 | Fresh Docker | New isolated volume; setup and repeat setup; schema/roles, seed, API, failure retention, and non-empty retrieval | Every external PostgreSQL provider or arbitrary production scale |
-| BTP | Actual `postgresql-db/free`, separate reader/writer apps, HTTPS API, live collection through an Internet destination, same-space consumer and native ARC binding checks | Cloud Connector collection, private app networking, HANA backend, managed backup restore, or a portable installer |
+| BTP PostgreSQL | Actual `postgresql-db/free`, separate reader/writer apps, HTTPS API, live collection through an Internet destination, dedicated ARC test app: all six graph actions and ordinary SAP read | Cloud Connector collection, private app networking, managed backup restore, or an unattended installer |
+| BTP HANA | New `hana-cloud/hana-free`; validated SQL TLS; owner/reader/writer separation; identical 13-check API suite; snapshot, rollback, lease and refresh tests; live collection; dedicated ARC end-to-end test | Production operations, native graph acceleration performance, Cloud Connector collection or full-system accuracy |
 
-Representative results: 75 live objects produced 505 observations from 380,456 source bytes in
+Representative original PostgreSQL results: 75 live objects produced 505 observations from 380,456 source bytes in
 12.73 seconds. The CF-to-CF HTTPS sample had p95 55.22 ms; local ARC-to-BTP had p95 501.09 ms.
 These are small samples with different network locations, not an SLA or general sizing result.
 The combined database's 1,661 nodes included 1,579 unresolved references; those are not 1,661
 successfully collected sources. The separate 100k-node/1m-observation Docker test is synthetic
 storage/traversal evidence, not a live SAP accuracy measurement.
 
+The new HANA run collected the same 75 objects/505 observations in 38.75 seconds with bounded
+parser workers. The broader custom-package run found 125 objects/715 observations in 67.42 seconds:
+122 sources parsed, one empty source failed and two unsupported/macro parses were partial. This
+correctly publishes **partial**, not complete, coverage. No source is retained. The new local
+PostgreSQL synthetic rerun used 502,259,712 bytes of relations/indexes plus 1,073,862,048 bytes WAL;
+warm bounded traversals had p95 1.51–13.25 ms at concurrency 1–10. Three-hop samples hit explicit
+result bounds. Do not interpret these numbers as complete impact traversal or SAP ingestion speed.
+
 Detailed evidence is maintained in `docs/research/repository-graph-internal-docker-btp-2026-09-07.md`
-in the same ARC source checkout, and the backend's `docs/results/` directory. Setup instructions
+in the same ARC source checkout, with current work tracked in `docs/plans/repository-graph-delivery.md`. Setup instructions
 must not substitute proposed behavior for these distinctions.
 
 ## 3. Architecture and ownership
@@ -59,10 +71,10 @@ must not substitute proposed behavior for these distinctions.
 ```text
 Existing live path: MCP client -> ARC auth/safety -> SAP (caller identity) + normal ARC cache
 
-Optional graph:     MCP client -> ARC auth/safety -> graph HTTPS API -> PostgreSQL reader
+Optional graph:     MCP client -> ARC auth/safety -> graph HTTPS API -> PG/HANA reader
                                   tools off by default       ^
                                                             |
-                   scheduled/manual collector -> PostgreSQL writer
+                   manual collector -> PG/HANA writer
                               |
                               +-> SAP active metadata/source (approved collector identity)
 
@@ -83,7 +95,7 @@ and tests under the graph module. The normal 12-tool surface remains unchanged u
 enabled; no graph runtime, polling, or graph network traffic in unconfigured or internal-only MCP.
 This is a behavioral isolation guarantee, not a claim of zero additional package bytes/imports.
 
-**Decision:** build and release the backend separately. One future setup workflow may orchestrate
+**Decision:** keep the backend in the ARC-1 repository, but build and release it separately. One future setup workflow may orchestrate
 both artifacts, but must offer backend-only installation and attach-to-existing-ARC as independent
 steps. Do not put the graph in the default ARC MTA or Docker startup path. Feature removal must
 not require replacing the normal cache or editing the plugin framework.
@@ -98,6 +110,12 @@ indexes; do not require a graph extension. The schema contains a metadata full-t
 but the current search implementation uses `ILIKE` substring matching rather than that index.
 Choose and benchmark prefix/token/substring semantics with `EXPLAIN (ANALYZE, BUFFERS)` before
 claiming indexed full-text performance. Limit returned rows and database work independently.
+
+HANA uses column-store node/evidence/generation tables in a dedicated `ARC_GRAPH` schema, a
+small row-table collector lock, and separate schema owner/reader/writer accounts. Queries use
+parameterized SQL and the same bounded traversal implementation as PostgreSQL. The free-instance
+spike successfully created a native property-graph workspace over those tables; the API does not
+yet use native graph algorithms or vectors, and no acceleration benefit is claimed.
 
 | Record | Identity / content | Rules |
 |---|---|---|
@@ -121,17 +139,26 @@ Metadata search covers names, packages and descriptions, not full source text. P
 counts observations between known packages, not execution frequency or automatically deduplicated
 dependency counts. Unknown package metadata limits the result.
 
+The 2026-09-07 PostgreSQL metadata-search test used 100,001 synthetic nodes, concurrency 1 and
+30 warm queries per case: exact-looking substring p95 **70.85 ms**, missing term **73.28 ms**,
+broad substring **39.87 ms**, including the read snapshot. `EXPLAIN ANALYZE` confirms the current
+`ILIKE` query uses a system-filtered node scan, **not** `nodes_metadata_search_idx` (that GIN
+index is for `to_tsvector`, a different search semantic). Do not cite the existence of that index
+as proof of accelerated substring retrieval. A future migration should evaluate `pg_trgm` where
+available, or an explicit full-text search mode, against a HANA search implementation while
+preserving contract semantics. No extension or schema change was silently applied to BTP.
+
 ### 4.2 Retention boundary
 
 **Existing:** the graph stores metadata and relationships, not complete source bodies. Source is
 read transiently to extract relationships. Metadata-only mode can collect object/package membership
 without source parsing; it cannot produce the same dependency richness.
 
-**Required next:** make the retention policy cover logs, exceptions, temporary files, task output,
-crash diagnostics, backups and deployment artifacts, not just SQL columns. Persist only bounded,
-allowlisted diagnostics, never source excerpts, arbitrary SAP error bodies, auth headers or tokens.
-Parsing large input must have explicit memory/byte/time bounds. Source retention tests must exercise
-failure and cancellation, not only successful imports.
+**Implemented:** bounded source downloads and isolated parsing; allowlisted persisted diagnostics;
+sanitized runtime failures; artifact allowlisting; source/error canary tests on failed refresh and
+publication rollback. No intentional source files, source snippets or SAP error bodies are persisted.
+**Future gate:** provider log retention, crash-dump handling, encrypted durable exports and restore
+must be reviewed for each production deployment, not inferred from the SQL schema.
 
 Object names, descriptions and graph results are untrusted model context and may be sensitive even
 without source code. Do not treat text found in the graph as instructions or proof of authorization.
@@ -140,7 +167,7 @@ without source code. Do not treat text found in the graph as instructions or pro
 
 ### 5.1 Existing collector
 
-The PoC collects active `CLAS`, `INTF`, `PROG` and `DDLS`, plus package membership. It discovers
+The collector collects active `CLAS`, `INTF`, `PROG` and `DDLS`, plus package membership. It discovers
 packages first, reads bounded repository search results and filters supported types. The current
 object cap is 500; SAP concurrency defaults to 2 and accepts 1–5. Source reads have a 15-second
 request deadline and up to two retries. This is not a system-wide inventory algorithm.
@@ -150,25 +177,33 @@ empty output removes that source's old evidence. Read/parse failures preserve la
 Other evidence owners must not be removed. Repeating collection is semantically idempotent even
 though observation IDs and timestamps may change. A failed import rolls back atomically.
 
-Known gaps from code inspection:
+Implemented protection and remaining limits:
 
-- Search results are capped before supported-type filtering; unsupported objects can starve later
-  supported objects. Hitting a cap is partial discovery, not end-of-catalog evidence.
-- The collector currently reads the full source body into memory. HTTP timeouts alone do not bound
-  response bytes or synchronous parser work. A live standalone program was about 5 MB.
+- A saturated mixed search falls back to supported-type partitions, mitigating starvation by
+  unsupported objects. Discovery is bounded to 200 logical requests/1,000 packages. Hitting a cap
+  is partial discovery, not end-of-catalog evidence; this remains a bounded package collector.
+- Decoded source responses are streamed into a **1 MiB/source** cap; larger objects are rejected
+  and retain last-good evidence. Parsing runs in isolated workers with a 5-second deadline and
+  128 MiB old-space limit. Large sources are intentionally unsupported in this experimental profile.
 - A request counter primarily counts logical collector operations, not every SAP retry or Destination
   token request. It is not yet a reliable total-backend-load counter.
 - Conditional HTTP support exists in the lower client, but live graph collection does not yet use
   durable per-source validators to skip unchanged reads/parses.
-- Job/lease columns exist but do not implement a durable worker, resume or collection lease. The
-  migration lock is not a collector lock. Run one collector at a time until this is implemented.
+- Collector exclusion is implemented: PostgreSQL uses a session advisory lock on the exact writer
+  connection; HANA holds a row lock and publishes on that same transaction/session. Losing the
+  connection fences its writes. Durable scheduling, queued jobs and resumable collection are not implemented.
 - Absent objects are not safely reconciled as deletions; overlapping scopes accumulate evidence.
 - `coverage` describes the latest collection scope, not the union of all indexed scopes. A completed
   run can still contain unresolved/dynamic references and cannot establish semantic completeness.
-- The API checks generation before/after queries, but this is not a general snapshot guarantee under
-  concurrent writers. Do not equate monotonic allocated IDs with commit order.
+- Multi-query responses use one read-only repeatable-read snapshot on both backends. Concurrent
+  publication tests verify old/new visibility. Allocated IDs are still not commit-order clocks.
 
-### 5.2 Required next: reliable bounded refresh
+### 5.2 Future gate: unattended and system-wide refresh
+
+The experimental release uses explicit, manual, bounded scopes with conservative retention and
+session-fenced collection. The following is the follow-on design, **not a claim that scheduling,
+resume, conditional refresh or authoritative deletion are implemented**. Snapshot/publication,
+parser bounds and failure retention below already have tests; the wider lifecycle does not.
 
 1. Store a collection specification: installation/client identity, package/query/type allowlist,
    extractor version, and deterministic scope fingerprint. Do not identify scope by free text alone.
@@ -176,8 +211,8 @@ Known gaps from code inspection:
    writer. Crash recovery must not allow an old worker to publish after its lease has been replaced.
 3. Discover using verified paging or deterministic partitions. Persist cursors/checkpoints and
    distinguish `exhausted`, `capped`, `failed`, and `unsupported`. Never delete from a capped result.
-4. Stream and cap source reads before materialization. Start the next implementation with a proposed
-   10 MiB/source cap, concurrency 2, bounded batch memory and a cancellable parser worker. Measure
+4. Keep streaming caps and parser isolation. The implemented conservative limit is **1 MiB/source**,
+   concurrency 2, and a cancellable parser worker. Measure
    peak RSS and tune before enabling larger batches. Oversize/timeout preserves old evidence and
    records a sanitized partial outcome; it does not trigger automatic heap enlargement.
 5. Retain only validators/hashes and extraction outcomes needed for refresh, not source. Use ETag
@@ -269,9 +304,11 @@ explicitly approved internal HTTP. `SAP_INSECURE` is not a graph override. Key-f
 on the next request; changing descriptor endpoints/scope requires restart. CF binding updates need
 the platform's binding refresh/restart or restage workflow, not a claim of hot rotation.
 
-**Required next:** document a coordinated backend/consumer rotation procedure and test interruption
-and rollback. The current single-key design does not promise zero-downtime rotation. Overlapping
-key generations may be added later, but must be bounded, scoped and explicitly revoked.
+**Implemented:** the backend supports at most two API keys, including explicitly selected CF UPS
+credentials. HTTP tests prove old-only, overlap and new-only rejection behavior. The
+[rotation runbook](repository-graph-backend.md#6-operations-rotation-and-recovery) coordinates API
+and ARC restarts and rollback during overlap. This is not a zero-downtime database-password
+rotation mechanism; live managed credential rotation remains an operator acceptance exercise.
 
 ## 7. Authorization and trust boundaries
 
@@ -303,7 +340,7 @@ secret-free errors. ARC's MCP rate limit alone does not protect the public backe
 
 ### 8.1 Internal and local Docker first
 
-The first supported backend package should include an offline Compose profile with PostgreSQL,
+The experimental backend includes an offline Compose profile with PostgreSQL,
 migrations, API and deterministic fixture. No SAP connection, BTP login or paid service is required.
 Generate private secrets once and preserve them on rerun; bind the API only to loopback by default,
 do not publish the database port, and give ARC read-only mounted connection/key files.
@@ -330,11 +367,17 @@ optional follow-on task, not a new default topology or a second copy of the ARC 
 | Bootstrap task app | Stopped; 256 MiB during migration | Managed DB administrator + explicit role material |
 | Diagnostic consumer | Optional stopped 128 MiB task app | Graph connection only; no DB or SAP credentials |
 | PostgreSQL | `postgresql-db/free` where actually entitled | Dedicated instance; no implicit paid fallback |
+| HANA alternative | `hana-cloud/hana-free`: verified 16 GiB memory / 80 GiB storage | Dedicated graph schema; temporary bootstrap administration, never DBADMIN in API/collector |
 | ARC | Existing allocation unchanged by backend setup | Add only selected graph connection when explicitly attaching |
 
 These allocations are starting measurements, not production capacity recommendations. The PoC
 uses a maximum API pool of three and writer pool of two; account for bootstrap, diagnostics and
 replica/task overlap when budgeting database connections.
+
+This account has 4,096 MiB CF memory and ten routes. Staging requests below 1,024 MiB were clamped
+to 1,024 MiB, so reserve a full GiB and stage sequentially. The test temporarily stopped only its
+own graph/ARC test apps. HANA tests reused the graph HTTPS route rather than exceeding route quota.
+Node native-client artifacts use a 1 GiB app disk limit; this is distinct from HANA's database storage.
 
 SAP BTP CF lists container-to-container networking as unsupported. The tested profile uses a
 standard **internet-reachable authenticated HTTPS route**; sharing a space is not a private network.
@@ -367,7 +410,12 @@ collection for that installation remains unsupported. Live ARC calls keep their 
 Proof requires a real Cloud Connector-only endpoint and SAP identity evidence, not merely a
 successful public endpoint or anonymous graph health check.
 
-### 8.4 Portable installer requirements (not shipped)
+### 8.4 Portable setup and future installer
+
+The [backend runbook](repository-graph-backend.md) now ships parameterized CF manifests, free-plan
+preflight, private non-overwriting credential preparation, separate PostgreSQL/HANA bootstrap and
+the ARC connection handoff. The checked-in examples contain placeholders, not this trial's
+credentials. The following describes a future unattended installer; these scripts are not one.
 
 1. Preflight reports target org/space, artifact versions, existing service names and ownership,
    supported plans/entitlements, remaining CF quota, intended HTTPS route and collection scope.
@@ -375,7 +423,8 @@ successful public endpoint or anonymous graph health check.
    existing ARC Destination/XSUAA/Connectivity resources. In MTA, model reused services as existing
    services in the correct base descriptor; an `.mtaext` cannot change a resource's type/ownership.
 3. Generate a customer-owned graph deployment configuration and private credentials. No account,
-   route, Destination, system/client or test object may be hardcoded in the published artifact.
+   route, Destination or system/client may be hardcoded as a deployment default. Deterministic
+   offline fixtures and explicitly named validation scripts are test-only, never live defaults.
 4. Deploy only the bootstrap, verify roles/migration, then query app. Run offline contract checks,
    then an explicitly bounded live collector and non-empty known-object retrieval.
 5. Produce a versioned connection descriptor/UPS payload. Attaching to ARC is a separate selected
@@ -404,9 +453,15 @@ synthetic local test used about 502 MB for graph relations/indexes and generated
 initial WAL. Neither establishes the free plan's hard disk/RAM ceiling; the retrieved broker data
 did not expose those values. Capacity testing must measure relations, indexes, WAL, temporary
 space and restore headroom separately. Stop before exhausting available storage; increasing a
-plan requires a separate explicit cost decision. HANA capacity/parity is unverified and not a fallback.
+plan requires a separate explicit cost decision. HANA free creation and API parity are now tested;
+the new instance's broker parameters confirm 16 GiB memory and 80 GiB storage. Free HANA stops
+nightly and can be deleted after 30 inactive days. An old CF/HDI record can outlive the actual
+database: check Cloud Central and real SQL readiness, not `cf services` alone.
+[HANA free-plan restrictions](https://help.sap.com/docs/hana-cloud/sap-hana-cloud-administration-guide/sap-hana-database-license).
 
-Before calling the profile supported, rehearse encrypted backup/export and restore into a clean
+The local logical restore rehearsal passed for 100,086 nodes and 1,020,153 observations, including
+reader access in a scratch database; the original graph remained intact. Before calling a production
+profile supported, rehearse encrypted backup/export and restore into a clean
 database, verify counts and known paths, preserve logical scope identity, and publish recovery
 instructions. Rebuilding from SAP is a fallback with load/time consequences, not a backup test.
 Keep one compatible prior app artifact and test schema-aware rollback. Do not automatically run
@@ -420,16 +475,16 @@ evidence or an operator-specific input; they are not permission to invent creden
 | ID | State | Decision / uncertainty | Resolution and gate |
 |---|---|---|---|
 | D1 | Settled | Minimal native ARC adapter; separate backend | Preserve default schemas/cache and internal-only default; no plugin rewrite |
-| D2 | Settled | PostgreSQL first; HANA/vector later | Keep backend-neutral HTTP contract; no HANA/AI Core prerequisite |
+| D2 | Settled and tested | PostgreSQL and HANA are optional alternatives; vectors later | Same API v2 contract; neither HANA nor AI Core is a core ARC prerequisite |
 | D3 | Settled, per-install approval | Shared metadata, existing ARC read scope | Unknown/restricted audience blocks MCP exposure; no new end-user role |
 | D4 | Settled, topology constraint | BTP authenticated public HTTPS | Private-only requirement blocks this CF profile; same space is not sufficient |
-| D5 | Open distribution gate | Backend repository/package ownership, image/package registry and release linkage | Publish immutable artifacts, lockfile/SBOM/license/secret checks and ARC/API compatibility matrix; do not advertise one-command install first |
+| D5 | Ownership settled; release gate open | Backend stays under ARC-1, independently packaged/deployed | Publish immutable artifacts, lockfile/SBOM/license/secret checks and ARC/API compatibility matrix; do not advertise an unattended installer first |
 | D6 | Open on-premise gate | Cloud Connector transport and headless collector identity | SDK spike plus live proxy-only read, wrong-location/expired-credential negatives and Basis identity evidence |
-| D7 | Open correctness gate | Scope completeness, evidence freshness, deletion, durable jobs | Implement fenced refresh/snapshot design; choose richer versioned coverage contract; pass overlapping-scope/crash/visibility tests |
-| D8 | Open scale gate | SAP response/parser bounds, efficient discovery and metadata search plans | Cap before buffering, isolate parser CPU, partition inventory, benchmark supported-type starvation/resume and actual SQL index use |
-| D9 | Open operational gate | Remote PG, backup/restore, rotation, direct API abuse and upgrade | Automated provider-neutral checks plus live managed-service restore/rotation rehearsal |
+| D7 | Partially verified | Snapshot/lease/rollback tested; scope freshness, deletion and durable jobs remain limited | Preserve conservative coverage; do not claim authoritative deletion or resumable scheduling |
+| D8 | Partially verified | Response/parser caps and 100k/1m PG synthetic test pass; discovery/search plans remain limited | Test supported-type starvation/partitions and actual metadata-search index use before full-system claims |
+| D9 | Local gates verified; managed operations open | Local restore, bounded overlap-key rotation and DB deadlines pass | Live managed-service restore/credential rotation and future schema upgrades still require rehearsal |
 | D10 | Open adoption gate | Dependency precision/recall and actual user benefit | Human-reviewed static oracle + recorded retrieval questions; report blind spots, not only latency |
-| D11 | Deferred | HANA graph/vector parity, restricted audiences, multi-target | Separate design/release; not blockers for the narrow PostgreSQL/shared-audience experimental release |
+| D11 | Deferred | Native graph acceleration, vectors, restricted audiences, multi-target | HANA SQL contract parity is implemented; these broader capabilities require separate evidence/design |
 
 D1–D4 are the recommended architecture for this specification, not a production security sign-off.
 There is no need to choose HANA versus PostgreSQL again to complete the next implementation.
@@ -440,13 +495,14 @@ There is no need to choose HANA versus PostgreSQL again to complete the next imp
 |---|---|---|
 | A. Freeze the experimental boundary | ARC `src/repository-graph/`, config/dispatch/policy bridge; contract fixtures and this specification | Default tools byte-identical; configured-but-hidden standard/hyperfocused/HTTP paths make no graph requests; ordinary SAP identity/cache tests pass |
 | B. Portable backend + fresh Docker | Backend package/Compose/setup scripts, schema and graph tests | Clean checkout install with no SAP/BTP secrets; two isolated projects; safe rerun and restart; reader/write/admin separation; known non-empty query; no secret/source artifacts |
-| C. Collector correctness and scale | Backend `src/collector/`, SAP transport, migrations/job store, query snapshot/coverage | Byte/parser/run bounds, retry-attempt metrics, partition/resume/lease fencing, conditional refresh, failure retention, safe deletion and concurrent generation tests |
-| D. Optional BTP profile | Parameterized backend CF artifacts/bootstrap, collector SDK transport, connection handoff | Actual free-plan preflight; separate app roles; HTTPS rejection tests; real Cloud Connector identity/read if advertising on-premise collection; managed restore/rotation; no existing ARC mutation during backend-only setup |
+| C. Collector correctness and scale | Backend `src/collector/`, SAP transport, job reports, query snapshot/coverage | Byte/parser/discovery bounds, partition fallback, session lease fencing, failure retention and concurrent generation tests; explicitly defer resume/conditional refresh/deletion and full-system claims |
+| D. Optional BTP profile | Parameterized CF artifacts/bootstrap, technical HTTPS collector, connection handoff | Actual free-plan preflight; separate app roles; HTTPS rejection tests; no existing ARC mutation during backend-only setup; explicitly refuse Cloud Connector collection and document managed recovery limits |
 | E. ARC attachment and limited exposure | Existing graph adapter plus configuration/docs/examples only where needed | CLI first; named binding and private files; explicit opt-in; scope/deny/rate/strict-JWT/audit negatives; production live SAP auth unchanged; no auto collection |
 | F. Experimental release and handoff | Published artifacts, compatibility matrix, canonical setup/operations docs, reviewed PR | All applicable gates below pass; remaining unsupported paths prominent; independent fresh-reader walkthrough succeeds |
 
-A, B and the public-HTTPS subset of D have PoC evidence, not final release completion. Do not
-repeat successful provisioning just to follow this table; implement/test the missing gates first.
+A–E now have experimental evidence for the documented HTTPS path. F still requires final review
+and PR handoff. Broader production/Cloud Connector gates remain visible below; do not repeat
+successful provisioning or claim those unsupported paths just to mark every future gate complete.
 
 ### Required test matrix
 

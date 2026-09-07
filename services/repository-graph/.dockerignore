@@ -1,0 +1,13 @@
+.git
+.env
+.secrets
+.graph-cf
+node_modules
+db/node_modules
+dist
+coverage
+mta_archives
+docs/results
+*.service-key.json
+*.pem
+*.key

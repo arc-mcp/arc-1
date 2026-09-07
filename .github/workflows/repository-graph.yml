@@ -1,0 +1,41 @@
+name: Experimental repository graph
+
+on:
+  pull_request:
+    paths:
+      - services/repository-graph/**
+      - src/repository-graph/**
+      - .github/workflows/repository-graph.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: services/repository-graph
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: services/repository-graph/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npx biome check .
+      - run: npm run typecheck
+      - run: npm test
+      - name: Offline Docker contracts, retention and transaction boundaries
+        if: matrix.node == 22
+        run: npm run graph:setup && npm run graph:test:offline && sh scripts/graph/test-restore.sh
+      - name: Stop only this job's containers; never request volume deletion
+        if: always() && matrix.node == 22
+        run: docker compose -f compose.graph.yaml down

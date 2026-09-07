@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 import { resolveGraphConnection } from '../../../src/repository-graph/connection.js';
 import { GRAPH_ACTIONS, graphInputSchema } from '../../../src/repository-graph/contract.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -66,12 +67,71 @@ describe('experimental repository graph documentation', () => {
 
   it('keeps prerelease, cloud transport and audience limits explicit before activation', () => {
     expect(setup).toContain('without a published supported installer');
-    expect(setup).toContain('Cloud Connector collection is not yet verified');
+    expect(setup).toContain('Cloud Connector collection is unsupported');
     expect(setup).toContain('internet-reachable');
     expect(setup).toContain('ARC1_GRAPH_TOOLS=false');
     expect(setup).toContain('does not bind a service');
     expect(setup.indexOf('## Audience and safety')).toBeLessThan(setup.indexOf('## Local connection'));
     expect(spec).toContain('Unknown/restricted audience blocks MCP exposure');
     expect(spec).toContain('No new broad');
+  });
+
+  it('keeps the optional backend outside core distribution and links real setup artifacts', () => {
+    const backend = read('docs_page/repository-graph-backend.md');
+    expect(backend).toContain('independent');
+    expect(backend).toContain('No paid fallback');
+    expect(backend).toContain('ARC1_GRAPH_TOOLS=false');
+    expect(read('package.json')).not.toContain('"workspaces"');
+    for (const path of ['.cfignore', '.dockerignore', 'mta.yaml']) expect(read(path)).toContain('services/');
+    for (const path of [
+      'deployment.cf.example.yaml',
+      'deployment.hana.cf.example.yaml',
+      'deployment.vars.example.yaml',
+    ]) {
+      expect(backend).toContain(path);
+      expect(read(`services/repository-graph/${path}`)).toBeTruthy();
+    }
+    for (const command of backend.matchAll(/node (scripts\/graph\/[a-z-]+\.mjs)/g))
+      expect(read(`services/repository-graph/${command[1]}`)).toBeTruthy();
+    const dependencies = JSON.parse(read('package.json')).dependencies;
+    expect(dependencies).not.toHaveProperty('pg');
+    expect(dependencies).not.toHaveProperty('@sap/hana-client');
+  });
+
+  it('keeps both CF manifest paths role-separated and the graph navigation grouped', () => {
+    const vars = parse(read('services/repository-graph/deployment.vars.example.yaml'));
+    for (const backend of ['deployment.cf.example.yaml', 'deployment.hana.cf.example.yaml']) {
+      const template = read(`services/repository-graph/${backend}`);
+      const resolved = template.replace(/\(\(([a-zA-Z]+)\)\)/g, (_match, key: string) => {
+        expect(vars[key], `Missing template variable ${key}`).toBeDefined();
+        return String(vars[key]);
+      });
+      const apps = parse(resolved).applications;
+      expect(apps).toHaveLength(3);
+      const [bootstrap, api, collector] = apps;
+      expect(bootstrap['no-route']).toBe(true);
+      expect(collector['no-route']).toBe(true);
+      expect(api.services).toEqual(['arc-graph-reader', 'arc-graph-api-auth']);
+      expect(collector.services).toEqual(['arc-graph-writer', vars.destinationService]);
+      expect(api.disk_quota).toBe('1G');
+      expect(JSON.stringify(api)).not.toContain('bootstrap-auth');
+      expect(JSON.stringify(collector)).not.toContain('bootstrap-auth');
+    }
+    const findGraph = (value: unknown): unknown => {
+      if (!value || typeof value !== 'object') return undefined;
+      if ('Repository Graph (Experimental)' in value) return value['Repository Graph (Experimental)'];
+      return Object.values(value).map(findGraph).find(Boolean);
+    };
+    // MkDocs uses Python YAML tags for extensions: only its plain nav subtree is relevant here.
+    const navText = read('mkdocs.yml')
+      .split('\nnav:\n')[1]
+      ?.split(/\n(?=[a-zA-Z_][a-zA-Z_]*:)/)[0];
+    expect(navText).toBeDefined();
+    const group = findGraph(parse(navText!));
+    expect(group).toEqual([
+      { Setup: 'repository-graph.md' },
+      { 'Backend Setup & Operations': 'repository-graph-backend.md' },
+      { 'Specification & Release Gates': 'repository-graph-specification.md' },
+    ]);
   });
 });

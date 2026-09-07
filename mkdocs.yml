@@ -79,6 +79,7 @@ nav:
       - Extensions (Custom Tools): extensions.md
       - Repository Graph (Experimental):
           - Setup: repository-graph.md
+          - Backend Setup & Operations: repository-graph-backend.md
           - Specification & Release Gates: repository-graph-specification.md
       - MCP Usage Guide: mcp-usage.md
       - Skills: skills.md

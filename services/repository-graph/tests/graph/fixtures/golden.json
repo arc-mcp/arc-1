@@ -1,0 +1,39 @@
+{
+  "systemKey": "TRIAL-2023-001",
+  "scope": "golden-offline",
+  "extractorVersion": "fixture-1",
+  "nodes": [
+    { "type": "DEVC", "name": "ZSALES", "packageName": "ZSALES", "description": "Sales package" },
+    { "type": "DEVC", "name": "ZSHARED", "packageName": "ZSHARED", "description": "Shared package" },
+    { "type": "TABL", "name": "ZORDER", "packageName": "ZSALES", "description": "Order table" },
+    { "type": "DDLS", "name": "ZI_ORDER", "packageName": "ZSALES", "description": "Order interface" },
+    { "type": "DDLS", "name": "ZC_ORDER", "packageName": "ZSALES", "description": "Order projection" },
+    { "type": "DDLS", "name": "ZI_ORDER_REPORT", "packageName": "ZSALES", "description": "Order report" },
+    { "type": "INTF", "name": "ZIF_ORDER_READER", "packageName": "ZSHARED", "description": "Reader contract" },
+    { "type": "CLAS", "name": "ZCL_ORDER_READER", "packageName": "ZSALES", "description": "Reader" },
+    { "type": "CLAS", "name": "ZCL_SPECIAL_READER", "packageName": "ZSALES", "description": "Special reader" },
+    { "type": "CLAS", "name": "ZCL_ORDER_SERVICE", "packageName": "ZSALES", "description": "Order service" },
+    { "type": "CLAS", "name": "ZCL_ORDER_REPORT", "packageName": "ZSALES", "description": "Report service" },
+    { "type": "FUGR", "name": "ZORDER_FG", "packageName": "ZSHARED", "description": "Order functions" },
+    { "type": "CLAS", "name": "/DEMO/CL_NAMESPACED", "packageName": "ZSHARED", "description": "Namespace example" },
+    { "type": "CLAS", "name": "ZCL_CYCLE_A", "packageName": "ZSHARED", "description": "Cycle A" },
+    { "type": "CLAS", "name": "ZCL_CYCLE_B", "packageName": "ZSHARED", "description": "Cycle B" },
+    { "systemKey": "SECOND-001", "type": "CLAS", "name": "ZCL_ORDER_SERVICE", "packageName": "ZOTHER", "description": "Same name, other system" }
+  ],
+  "observations": [
+    { "source": ["DDLS", "ZI_ORDER"], "target": ["TABL", "ZORDER"], "relation": "reads_from" },
+    { "source": ["DDLS", "ZC_ORDER"], "target": ["DDLS", "ZI_ORDER"], "relation": "projects_on" },
+    { "source": ["DDLS", "ZI_ORDER_REPORT"], "target": ["DDLS", "ZI_ORDER"], "relation": "reads_from" },
+    { "source": ["CLAS", "ZCL_ORDER_READER"], "target": ["INTF", "ZIF_ORDER_READER"], "relation": "implements" },
+    { "source": ["CLAS", "ZCL_SPECIAL_READER"], "target": ["CLAS", "ZCL_ORDER_READER"], "relation": "inherits_from" },
+    { "source": ["CLAS", "ZCL_SPECIAL_READER"], "target": ["INTF", "ZIF_ORDER_READER"], "relation": "implements" },
+    { "source": ["CLAS", "ZCL_ORDER_SERVICE"], "target": ["CLAS", "ZCL_ORDER_READER"], "relation": "static_call" },
+    { "source": ["CLAS", "ZCL_ORDER_SERVICE"], "target": ["DDLS", "ZI_ORDER"], "relation": "references" },
+    { "source": ["CLAS", "ZCL_ORDER_REPORT"], "target": ["CLAS", "ZCL_ORDER_SERVICE"], "relation": "static_call" },
+    { "source": ["CLAS", "ZCL_ORDER_REPORT"], "target": ["DDLS", "ZI_ORDER_REPORT"], "relation": "references" },
+    { "source": ["CLAS", "ZCL_ORDER_REPORT"], "target": ["FUGR", "ZORDER_FG"], "relation": "function_call" },
+    { "source": ["CLAS", "ZCL_CYCLE_A"], "target": ["CLAS", "ZCL_CYCLE_B"], "relation": "references" },
+    { "source": ["CLAS", "ZCL_CYCLE_B"], "target": ["CLAS", "ZCL_CYCLE_A"], "relation": "references" },
+    { "source": ["CLAS", "/DEMO/CL_NAMESPACED"], "target": ["INTF", "ZIF_ORDER_READER"], "relation": "implements" }
+  ]
+}

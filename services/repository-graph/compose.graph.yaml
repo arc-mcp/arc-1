@@ -1,0 +1,134 @@
+name: arc1-repository-graph
+
+x-graph-app: &graph-app
+  build:
+    context: .
+    dockerfile: Dockerfile.graph
+  image: arc1-repository-graph:local
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  init: true
+  networks:
+    - graph
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm@sha256:f3bd19c606e442c3d7bdfa8002e03fe260a1023351e0ea4598032022b68dd6e3
+    environment:
+      POSTGRES_DB: arc_graph
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_admin_password
+      POSTGRES_USER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d arc_graph"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 2g
+    shm_size: 512m
+    cpus: 2
+    networks:
+      - graph
+    secrets:
+      - pg_admin_password
+      - pg_api_password
+      - pg_writer_password
+    volumes:
+      - graph_pg_data:/var/lib/postgresql/data
+      - ./db/pg/init:/docker-entrypoint-initdb.d:ro
+
+  migrate:
+    <<: *graph-app
+    command: ["node", "dist/graph/cli.js", "migrate"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ARC_GRAPH_PG_PASSWORD_FILE: /run/secrets/pg_admin_password
+      PGDATABASE: arc_graph
+      PGHOST: postgres
+      PGUSER: postgres
+    mem_limit: 512m
+    cpus: 0.5
+    secrets:
+      - pg_admin_password
+
+  graph-api:
+    <<: *graph-app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      ARC_GRAPH_API_KEY_FILE: /run/secrets/graph_api_key
+      ARC_GRAPH_APPLICATION_NAME: graph-api
+      ARC_GRAPH_API_SYSTEM_KEY: ${ARC_GRAPH_API_SYSTEM_KEY:-TRIAL-2023-001}
+      ARC_GRAPH_API_AUDIENCE: ${ARC_GRAPH_API_AUDIENCE:-trial}
+      ARC_GRAPH_PG_PASSWORD_FILE: /run/secrets/pg_api_password
+      PGDATABASE: arc_graph
+      PGHOST: postgres
+      PGUSER: arc_graph_api
+      PORT: 8091
+    mem_limit: 512m
+    cpus: 1
+    ports:
+      - "127.0.0.1:${ARC_GRAPH_HOST_PORT:-8091}:8091"
+    networks:
+      - graph
+      - ingress
+    secrets:
+      - graph_api_key
+      - pg_api_password
+
+  collector: &collector
+    <<: *graph-app
+    profiles: ["collect"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      ARC_GRAPH_APPLICATION_NAME: graph-collector
+      ARC_GRAPH_PG_PASSWORD_FILE: /run/secrets/pg_writer_password
+      PGDATABASE: arc_graph
+      PGHOST: postgres
+      PGUSER: arc_graph_writer
+    mem_limit: 1g
+    cpus: 1
+    networks:
+      - graph
+      - ingress
+    secrets:
+      - pg_writer_password
+
+  collector-live:
+    <<: *collector
+    profiles: ["live"]
+    environment:
+      ARC_GRAPH_APPLICATION_NAME: graph-collector
+      ARC_GRAPH_DESTINATION_SERVICE_KEY_FILE: /run/secrets/destination_service_key
+      ARC_GRAPH_PG_PASSWORD_FILE: /run/secrets/pg_writer_password
+      PGDATABASE: arc_graph
+      PGHOST: postgres
+      PGUSER: arc_graph_writer
+    secrets:
+      - pg_writer_password
+      - destination_service_key
+
+networks:
+  graph:
+    internal: true
+  ingress:
+
+volumes:
+  graph_pg_data:
+
+secrets:
+  graph_api_key:
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/graph_api_key
+  pg_admin_password:
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/pg_admin_password
+  pg_api_password:
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/pg_api_password
+  pg_writer_password:
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/pg_writer_password
+  destination_service_key:
+    file: ${ARC_GRAPH_SECRET_DIR:-.secrets}/destination-service-key.json

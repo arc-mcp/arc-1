@@ -1,0 +1,16 @@
+{
+  "systemKey": "MOCK-001",
+  "scope": "mock-extraction",
+  "extractorVersion": "extractor-2",
+  "objects": [
+    { "type": "CLAS", "name": "ZCL_EXTRACT_CHILD", "packageName": "ZGRAPH", "sourceFile": "zcl_extract_child.clas.abap" },
+    { "type": "CLAS", "name": "ZCL_EXTRACT_PARENT", "packageName": "ZGRAPH", "sourceFile": "zcl_extract_parent.clas.abap" },
+    { "type": "INTF", "name": "ZIF_EXTRACT", "packageName": "ZGRAPH", "sourceFile": "zif_extract.intf.abap" },
+    { "type": "DDLS", "name": "ZI_EXTRACT", "packageName": "ZGRAPH", "sourceFile": "zi_extract.ddls.asddl" },
+    { "type": "DDLS", "name": "ZC_EXTRACT", "packageName": "ZGRAPH", "sourceFile": "zc_extract.ddls.asddl" },
+    { "type": "TABL", "name": "ZTAB_EXTRACT", "packageName": "ZGRAPH" },
+    { "type": "TABL", "name": "ZTAB_ITEM", "packageName": "ZGRAPH" },
+    { "type": "DDLS", "name": "ZI_CUSTOMER", "packageName": "ZGRAPH" },
+    { "type": "DDLS", "name": "ZI_CHILD", "packageName": "ZGRAPH" }
+  ]
+}

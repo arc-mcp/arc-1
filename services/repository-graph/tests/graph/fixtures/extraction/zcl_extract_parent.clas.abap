@@ -1,0 +1,4 @@
+CLASS zcl_extract_parent DEFINITION.
+ENDCLASS.
+CLASS zcl_extract_parent IMPLEMENTATION.
+ENDCLASS.

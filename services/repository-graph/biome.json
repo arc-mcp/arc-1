@@ -1,0 +1,10 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
+  "root": false,
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 120 },
+  "javascript": { "formatter": { "quoteStyle": "single", "trailingCommas": "all" } },
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "linter": { "rules": { "recommended": true, "style": { "noNonNullAssertion": "off" } } },
+  "files": { "includes": ["src/**", "scripts/**", "tests/**", "*.json", "vitest.config.ts", "!tests/graph/fixtures"] }
+}

@@ -126,6 +126,7 @@ modules:
         - mta-op-*/
         - node_modules/
         - scripts/
+        - services/
         - reports/
         - research/
         - Dockerfile

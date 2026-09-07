@@ -1,0 +1,3 @@
+INTERFACE zif_extract PUBLIC.
+  METHODS run.
+ENDINTERFACE.

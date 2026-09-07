@@ -1,0 +1,10 @@
+{
+  "subaccount": "REPLACE_WITH_SUBACCOUNT_UUID",
+  "database": "arc-graph-pg",
+  "databaseKey": "arc-graph-bootstrap",
+  "prefix": "arc-graph",
+  "url": "https://REPLACE_WITH_YOUR_GRAPH_ROUTE",
+  "systemKey": "REPLACE-WITH-SAP-SYSTEM-CLIENT",
+  "audience": "shared-development-metadata",
+  "sharing": "shared-repository-metadata"
+}

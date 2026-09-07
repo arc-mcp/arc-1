@@ -44,6 +44,9 @@ go.work.sum
 # Reports (large, not needed in image)
 reports/
 
+# Independently built optional services (including their private runtime artifacts)
+services/
+
 # Articles
 articles/
 
