@@ -17,10 +17,10 @@
  *    dynamically AFTER `mockFetch` is assigned (the mock factory runs on undici's first load, so
  *    the binding must exist by then — the same ordering the per-file prologues relied on).
  */
-import { vi } from 'vitest';
+import { type Mock, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
-export const mockFetch = vi.fn();
+export const mockFetch: Mock<(...args: any[]) => any> = vi.fn();
 vi.mock('undici', async (importOriginal) => {
   const actual = await importOriginal<typeof import('undici')>();
   return { ...actual, fetch: mockFetch };

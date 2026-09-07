@@ -23,12 +23,21 @@ updates:
     reviewers:
       - "marianfoo"
     groups:
+      # Vitest packages have exact cross-package peer requirements. Keep every
+      # update type (including majors) in one PR so npm can resolve the graph.
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
       # Bundle dev-only minor + patch updates into a single PR — low review cost.
       dev-dependencies:
         dependency-type: "development"
         update-types:
           - "minor"
           - "patch"
+        exclude-patterns:
+          - "vitest"
+          - "@vitest/*"
       # @types/* packages are noisy — group them so they don't clutter the PR list.
       types:
         patterns:
