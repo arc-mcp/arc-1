@@ -8,8 +8,9 @@ The latest published `1.x` minor line receives security fixes. Older minors are 
 
 | Version | Supported              |
 | ------- | ---------------------- |
-| 1.x     | :white_check_mark:     |
-| < 1.0   | :x: — please upgrade   |
+| Latest published 1.x minor line | :white_check_mark: — use its latest patch |
+| Earlier 1.x minor lines | :x: — upgrade to the current minor line |
+| < 1.0 | :x: — please upgrade |
 
 ## Reporting a Vulnerability
 
@@ -50,11 +51,16 @@ Confirmed vulnerabilities receive a [GitHub Security Advisory (GHSA)](https://gi
 ARC-1 supports good-faith security research. Researchers acting in good faith and following this policy will not face legal action.
 
 We commit to:
-- Responding within the timelines above.
+- Working toward the best-effort response targets above.
 - Working with you to reproduce and understand the issue.
 - Crediting you in the resulting GHSA / CVE if you wish (or honoring an anonymous-disclosure request).
 - Not pursuing legal action against research conducted in accordance with this policy.
 
 ## Hardening Recommendations for Operators
 
-This policy covers vulnerability *reporting*. For runtime hardening recommendations (auth modes, safety flags, audit logging, network policy, secrets management, incident-response playbooks), see the [Security Best Practices Guide](https://docs.arc-1-mcp.com/security-guide/).
+This policy covers vulnerability *reporting*. For enterprise assessment, start with
+[Security & Trust](https://docs.arc-1-mcp.com/security/) and
+[Dependency & Release Security](https://docs.arc-1-mcp.com/dependency-security/).
+For runtime hardening recommendations (auth modes, safety flags, audit logging, network policy,
+secrets management, incident-response playbooks), see the
+[Security Best Practices Guide](https://docs.arc-1-mcp.com/security-guide/).
