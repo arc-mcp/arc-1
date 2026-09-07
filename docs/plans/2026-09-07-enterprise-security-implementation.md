@@ -141,3 +141,4 @@ waiting time. These are planning estimates, not a commitment or a measured adopt
 - Post-review focused suite: **22 tests passed**, including four CLI subprocess scenarios. Type checking, lint and strict documentation build passed again.
 - Initial PR commit `cd843284` passed GitHub Dependency security, Dependency licenses, CodeQL, documentation, MTA validation, and Node 22/24 jobs. Live SAP jobs skipped under the existing `chore:` policy; no SAP runtime behavior changed.
 - Post-review corrections are a separate commit. The PR checks show the authoritative result for its latest head.
+- The workflow summary now links directly to its downloadable evidence artifact; folder-relative JSON links remain in the downloaded report rather than pointing to missing files on the run page.

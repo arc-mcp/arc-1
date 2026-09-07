@@ -33,15 +33,22 @@ jobs:
         if: always()
         run: |
           if [ -f reports/security/current/summary.md ]; then
-            cat reports/security/current/summary.md >> "$GITHUB_STEP_SUMMARY"
+            # Relative JSON links work in the downloaded folder, not on a run page.
+            sed -E 's/\[JSON\]\([^)]+\)/See evidence artifact/g' reports/security/current/summary.md >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'Evidence unavailable. Inspect the failed collection step; this is not a clean scan.' >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Retain evidence and incomplete results
         if: always()
+        id: evidence-files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: dependency-evidence-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: reports/security/current/
           if-no-files-found: error
           retention-days: 30
+      - name: Link the downloadable evidence
+        if: ${{ always() && steps.evidence-files.outputs.artifact-url != '' }}
+        env:
+          EVIDENCE_URL: ${{ steps.evidence-files.outputs.artifact-url }}
+        run: printf '\n[Download dependency evidence](%s) — extract the folder to use its JSON links.\n' "$EVIDENCE_URL" >> "$GITHUB_STEP_SUMMARY"
