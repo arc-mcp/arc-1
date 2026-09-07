@@ -37,7 +37,7 @@ latest request is interpreted as testing separate ARC instances against PostgreS
    unverified. Unsupported SAP transports fail explicitly, never bypass Cloud Connector or identity.
 7. [x] Replace PoC-only docs with one reproducible human/LLM entry and environment-specific steps.
    Validate examples against actual artifacts and walk fresh/existing/unsupported setup scenarios.
-8. [ ] Full core/backend/build/typecheck/lint/policy/schema/docs gates, final diff/secret review,
+8. [x] Full core/backend/build/typecheck/lint/policy/schema/docs gates, final diff/secret review,
    push reviewable commits to the open PR and leave it unmerged. Report remaining gaps honestly.
 
 Production-only scope expansion (restricted audiences, multi-target, vectors, full-system semantic
@@ -128,3 +128,23 @@ reported rather than resolved with paid capacity or broader authorization.
   apps stopped. Old stale HANA/HDI entries and unrelated ARC apps remain untouched.
 - Future release packaging needs an immutable backend image/SBOM/license review; this delivery
   is a source PR and independently buildable experimental profile, not a published hosted service.
+
+## Final handoff
+
+- Implementation committed and pushed as `4d49822b` to open PR
+  [#756](https://github.com/arc-mcp/arc-1/pull/756); **not merged**.
+- Final local gate: **5,841 ARC tests and 83 backend unit tests**, zero failures/skips. Build,
+  typecheck, lint, policy/schema/file budgets, MTA validation and strict MkDocs pass. Seven
+  documentation tests validate schemas, distribution exclusions, CF templates and navigation.
+- The final CF backend artifact was staged once, then reused without extra staging. HANA API
+  droplet `951a3759-ab65-4f31-9cbb-c7dd038e3a09`; collector droplet
+  `4ec2136e-134c-41cd-98dc-853d68b9f441`. ARC enabled MCP suite passed at 09:56 UTC, then
+  `ARC1_GRAPH_TOOLS=false` was restored and hidden/non-invokable behavior rechecked.
+- Both bootstrap apps have their administrator bindings removed. Collector web app is stopped;
+  no unattended collection is configured. Free preflight remains 3,712/4,096 MiB and 10/10 routes.
+- HANA administrator password is newly generated, **not** the older password from the conversation.
+  It remains only in owner-private local preparation artifacts and the unbound bootstrap UPS;
+  no credentials are in Git, task arguments, the API or ARC connection descriptor.
+- Remote GitHub CI is separate from this local/live evidence; its status must be checked before
+  any later merge. No production readiness, unsupported transport or future-milestone gate is
+  implied by the checked experimental delivery steps above.
