@@ -105,7 +105,9 @@ See [GitHub's documented exceptions](https://docs.github.com/en/code-security/co
 Release Please keeps its existing token, with native maintainer approval of bot-created PR workflows
 when prompted. Socket configuration is also provided. Its App returned a project report on
 [PR #765](https://github.com/arc-mcp/arc-1/pull/765); the PR alert check skipped analysis because
-there were no dependency changes. Dashboard policy and blocking behavior still need verification. These files alone do not establish enforcement. The maintainer's
+there were no dependency changes. On 7 September 2026, the authenticated dashboard confirmed
+Business entitlement and inventory coverage of ARC-1's root/AppRouter graphs and `xsuaa-auth`.
+Policy calibration and merge-blocking behavior still need verification. These files alone do not establish enforcement. The maintainer's
 [security operations runbook](https://github.com/arc-mcp/arc-1/blob/main/docs/security-operations.md)
 documents activation and verification; the dated settings observation below remains the baseline.
 

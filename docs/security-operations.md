@@ -106,27 +106,49 @@ See [GitHub's code-scanning rules](https://docs.github.com/en/code-security/how-
 
 On 7 September 2026, [PR #765](https://github.com/arc-mcp/arc-1/pull/765) received a successful
 Socket Project Report from App `socket-security` (ID `156372`). Its Pull Request Alerts check
-reported success with **no net dependency changes**, so alert analysis was skipped. This verifies
-that the integration responds; it does not verify a malware block, AppRouter coverage or plan entitlement.
+reported success with **no net dependency changes**, so alert analysis was skipped. This confirms
+the integration responds, but does not demonstrate enforcement on a dependency change.
 
-1. Check the existing organization's entitlement. If the OSS upgrade is still needed, follow
-   the [Socket OSS program application](https://www.socket.dev/blog/free-business-plan-upgrades-for-open-source).
-   Approval is a vendor decision; no paid plan or minimum-seat subscription is needed to prepare
-   this integration. This task has not verified entitlement or submitted an application.
-2. Reuse the existing Socket GitHub App installation for ARC-1. Include the separate auth package repository where
-   eligible and authorized; it is still part of the product's dependency boundary.
-3. Confirm Socket sees both root and `btp/approuter` manifests/lockfiles. `socket.yml` keeps all
-   PRs eligible and adds no manifest exclusions. It does not install the App or set its policy.
-4. In the dashboard choose the **Essential** baseline, which blocks malware. Add warning rules
-   for the behavioral signals you want reviewed, including install scripts, network access and
-   obfuscation. Check the exact alert types available in the account. These signals can be valid
-   behavior; do not block every install script or assume the default Balanced policy matches this plan.
+The same day's authenticated dashboard check confirmed **Business** as the current plan and
+13 scanned repositories. ARC-1 showed 453 dependency entries, including root development
+dependencies and the AppRouter graph; `xsuaa-auth` showed 359 entries. Those dashboard counts
+use Socket's inventory model and should not be equated with the separate npm SBOM component counts.
+
+1. Keep the existing Business entitlement and GitHub App installation. Approval and installation
+   are complete; no new application, paid upgrade or additional API token is needed for the GitHub
+   integration. Recheck [Plans](https://socket.dev/dashboard/org/arc-mcp/settings/plans) if access changes.
+2. Keep ARC-1 and the separate `xsuaa-auth` repository covered. The auth package remains part of
+   the product's dependency boundary. Confirm new product repositories are included when added.
+3. Keep both root and `btp/approuter` manifests/lockfiles visible. `socket.yml` keeps all PRs
+   eligible and adds no manifest exclusions. It does not install the App or set its policy.
+4. In [Security Policy](https://socket.dev/dashboard/org/arc-mcp/settings/alerts/security-policy),
+   retain the existing **Standard** baseline shown by this account. Known malware is already
+   **Block**; AI-detected potential malware, typosquatting and obfuscation are **Warn**. Install
+   scripts and network access currently inherit **Ignore**: start with **Warn** for these signals
+   in the intended repository scope and review the resulting noise. Changing the organization
+   default affects its other repositories too. Preset names vary between Socket UI versions;
+   verify the effective actions instead of resetting a working baseline to match a documentation
+   label. Legitimate dependencies can use these capabilities, so they are not automatic malware verdicts.
 5. Inspect repository overrides and resolved alerts: they can override dashboard policy. Review
    actual dependency PRs for a week or several updates. Record false positives and the reasons
    for any narrowly scoped resolution.
 6. Once calibrated, recheck the observed `Socket Security: Pull Request Alerts` name and App identity. Add that check to
    the security ruleset with the correct provider. Verify it reports on normal, dependency and
    release PRs before requiring it. Do not invent a check name from this guide.
+
+Current [ARC-1 alerts](https://socket.dev/dashboard/org/arc-mcp/alerts?current_repo_full_name=arc-1)
+observed on 7 September 2026:
+
+| Finding | Scope | Initial disposition |
+|---|---|---|
+| `validator@13.15.26`: one high obfuscation flag on `lib/isMimeType.js` | AppRouter production dependency through `@sap/approuter@23.0.0` | Review first because it is shipped when the AppRouter is deployed. Socket's detailed notes describe benign validation code, in tension with the headline. A false positive is plausible; verify the file before resolving the exact alert. |
+| `@noble/hashes@1.8.0`: two high obfuscation flags on `esm/blake3.js` and `src/sha3.ts` | Root development dependency | Socket's detailed notes describe conventional hash implementations. Review the exact files and record any resolution; keep obfuscation detection enabled. |
+| `@vitest/istanbul-lib-report@1.0.1` and `@vitest/istanbul-lib-coverage@1.0.1`: two medium low-adoption flags | Root development dependencies | Package-popularity signals, not vulnerability findings. Monitor and retain their dependency provenance. |
+
+The dedicated ARC-1 **Vulnerabilities** view showed no active CVE alerts at this check. The five
+behavior/popularity alerts above are still active. This inspection did not resolve alerts, change Socket policy,
+or activate GitHub requirements. Other organization repositories have separate findings; use
+the repository selector to avoid attributing the organization-wide totals to ARC-1.
 
 Socket's PR integration analyzes dependencies; it does not enforce what a customer's independent
 BTP build installs. Customers retain their own build controls. Details:
@@ -178,7 +200,7 @@ staging worksheet with the platform owner; a checksum alone does not establish t
 
 ## 6. Weekly triage and exceptions
 
-Review Dependabot, CodeQL, Socket (once installed) and the scheduled evidence/container results.
+Review Dependabot, CodeQL, Socket and the scheduled evidence/container results.
 Prioritize applicable high/critical findings and new malicious-package alerts. Do not wait for
 a release if customers need a mitigation or advisory. Use the response targets in
 [SECURITY.md](../SECURITY.md); no new contractual response SLA is introduced here.

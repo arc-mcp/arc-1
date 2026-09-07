@@ -89,8 +89,9 @@ missing evidence is never labelled clean. No claim to inventory the final CF dro
 
 Acceptance after installation: root and AppRouter visible in the App, intended results on a
 real dependency PR, exact check name and App identity recorded, policy calibrated. Socket reported successfully on PR #765; its PR alert analysis skipped because no dependencies changed.
-Socket is not a required check until policy and blocking behavior are verified. Application approval and installation remain account actions;
-no paid subscription is needed for this implementation and no application email is sent by it.
+Socket is not a required check until policy and blocking behavior are verified. Business approval,
+installation, and root/AppRouter/auth-repository coverage were verified on 7 September 2026;
+policy calibration and actual merge-blocking verification remain account actions.
 
 ### 6. Review, test and publish the PR
 
@@ -110,7 +111,7 @@ no paid subscription is needed for this implementation and no application email 
    results. Do not dispatch `Release` to test this: its manual trigger publishes npm.
 2. Follow the security operations runbook to import the disabled ruleset, verify the observed
    check names and results, then enable it. Export and date the effective rules afterwards.
-3. Verify the existing Socket installation and OSS entitlement, then calibrate its policy. Add
+3. Keep the verified Socket Business installation and calibrate its existing policy. Add
    its observed check to the ruleset only after verification.
 4. Run the evidence command for an approved clean source revision; retain the output with the
    MTAR/build record and complete the customer staging worksheet.
@@ -156,3 +157,10 @@ waiting time. These are planning estimates, not a commitment or a measured adopt
 - License findings already produce a failed non-required job and Actions summary. Documented where maintainers review them; retained read-only permissions and the agreed exclusion from mandatory merge checks.
 - Removed a remaining customer-docs reference to an optional Release Please App; the documented path now consistently uses the existing token and native workflow approval.
 - Validation: **5,803 tests across 196 files passed**, including **34 focused collector/workflow/release tests**. Type checking, repository lint, strict MkDocs build and whitespace checks passed. Exact-commit live collection and remote checks are recorded in the PR after pushing.
+
+### Socket activation status follow-up — 7 September 2026
+
+- Business is the current plan; the GitHub App scans 13 repositories, including ARC-1 (453 dashboard dependency entries) and `xsuaa-auth` (359). Root and AppRouter coverage is visible.
+- Existing **Standard** policy blocks known malware and warns on obfuscation, suspected malware and typosquatting. Install-script and network-access signals currently inherit Ignore; the runbook recommends starting with Warn and reviewing noise in the intended repository scope.
+- ARC-1 has three active high obfuscation flags and two medium low-adoption flags. The runbook records their versions, production/development scope and initial review priorities. Scanner detail notes conflict with the obfuscation headlines; no alert was dismissed and no benignity conclusion was independently established.
+- The security ruleset remains disabled. No Socket policy or alert resolution was changed during this inspection. PR #765's passing Socket alert check still means no net dependency changes; verify actual dependency PR analysis before requiring it.
