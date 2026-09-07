@@ -511,7 +511,7 @@ describe('SAPRead handler', () => {
       expect(getUrl).not.toContain('version=workingArea');
     });
 
-    it('returns marker-free single-node route escapes that SAPWrite can consume verbatim', async () => {
+    it('keeps single-node route escapes in the writable half and the node index behind the marker', async () => {
       mockFetch.mockReset();
       const name = 'ZI_TRAVEL';
       const marker = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
@@ -595,8 +595,9 @@ describe('SAPRead handler', () => {
       expect(text).toContain('Nodes: 3 (2 with no text yet');
       expect(text).toContain('root: ZBDEF');
       expect(text).toContain(`base: ${base}`);
-      expect(text).toContain('BDEF/BAC (1): ZBDEF.SetPhoto (empty)');
-      expect(text).toContain('BDEF/BAF (1): ZBDEF.GetPhoto (empty)');
+      expect(text).toContain('BDEF/BAC (1): ZBDEF.SetPhoto');
+      expect(text).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
+      expect(text).toContain('empty (2): ZBDEF.SetPhoto, ZBDEF.GetPhoto');
       expect(text).not.toContain('<sktd:');
     });
 
@@ -678,7 +679,9 @@ describe('SAPRead handler', () => {
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Root docs.');
       expect(result.content[0]?.text).not.toContain('\\## ZBDEF');
-      expect(result.content[0]?.text).not.toContain('Undocumented nodes');
+      // The node index lives behind the marker, so grep — which searches the bare Markdown — never sees it.
+      expect(result.content[0]?.text).not.toContain('Nodes:');
+      expect(result.content[0]?.text).not.toContain('<!-- arc1:ktd-meta');
     });
 
     it('returns soft informational message when SKTD is not found (404)', async () => {

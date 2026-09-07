@@ -209,8 +209,75 @@ describe('SAPWrite SKTD dryRun', () => {
     expect(result.isError).toBeFalsy();
     expect(text).toContain('nothing was written');
     // Only the node whose text actually differs is reported; the untouched root is counted.
-    expect(text).toContain('Would change 1 node(s); 1 node(s) would keep their current text');
-    expect(text).toContain(action);
+    expect(text).toContain('Would change 1 node(s); 1 node(s) would keep their current text:');
+    // Reported by the same spelling the read prints, not the full id.
+    expect(text).toContain('  ZBDEF.SetPhoto');
+    expect(text).not.toContain(action);
     expect(calls.some((c) => c.method === 'PUT' || c.url.includes('_action=LOCK'))).toBe(false);
+  });
+});
+
+describe('SAPWrite SKTD source routing at the handler boundary', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('aborts before the lock when one heading is a node reference that matches nothing', async () => {
+    const calls = recordKtdCalls(envelope());
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: ROOT_ID,
+      source: `## ${ROOT_ID}\n\nroot v2\n\n## ${FIELD_ID}x\n\ntypo in a full id`,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toMatch(/does not exist[\s\S]*Known node ids/);
+    expect(calls.some((call) => call.url.includes('_action=LOCK') || call.method === 'PUT')).toBe(false);
+  });
+
+  it('writes a by-name section and reports a bare heading it had to keep as prose', async () => {
+    // DDLS field names carry no qualifier, so a typo in one is indistinguishable from a prose heading;
+    // the write succeeds and names the heading it kept as prose so the caller can catch the misroute.
+    const calls = recordKtdCalls(envelope());
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: ROOT_ID,
+      source: `## ${ROOT_ID}\n\nroot v2\n\n## PaymentValueDate\n\nfield v2\n\n## PaymentValueDates\n\nstray`,
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain(
+      'Headings kept as prose inside their node (not node routes): PaymentValueDates',
+    );
+    // The stray heading belongs to the node whose section it appeared in — the field, not the root.
+    const put = calls.find((call) => call.method === 'PUT');
+    expect(put?.body).toContain(`<sktd:text>${b64('root v2')}</sktd:text>`);
+    expect(put?.body).toContain(`<sktd:text>${b64('field v2\n\n## PaymentValueDates\n\nstray')}</sktd:text>`);
+  });
+
+  it('dryRun covers shortTexts too and reports nothing to change without a dangling list', async () => {
+    const calls = recordKtdCalls(envelope('Payment value date'));
+    const unchanged = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: ROOT_ID,
+      dryRun: true,
+      shortTexts: [{ node: 'PaymentValueDate', text: 'Payment value date' }],
+    });
+    expect(unchanged.content[0]?.text).toContain('Would change 0 node(s); 2 node(s) would keep their current text.');
+
+    const changed = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: ROOT_ID,
+      dryRun: true,
+      shortTexts: [{ node: 'PaymentValueDate', text: 'New label' }],
+    });
+    expect(changed.content[0]?.text).toContain(
+      'Would change 1 node(s); 1 node(s) would keep their current text:\n  PaymentValueDate',
+    );
+    expect(calls.some((call) => call.method === 'PUT' || call.url.includes('_action=LOCK'))).toBe(false);
   });
 });

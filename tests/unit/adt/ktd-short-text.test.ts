@@ -140,4 +140,39 @@ describe('shortTexts node resolution', () => {
     // And the read-back label is the very spelling that was accepted.
     expect(formatKtdShortTexts(byName)).toContain('  ZBDEF.SetPhoto [optional]: Upload a photo');
   });
+
+  it('refuses a name several nodes share and labels such a node by its full id', () => {
+    const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
+    const asEntity = `${base}#type=BDEF/BAE;name=ZBDEF.Booking`;
+    const asAction = `${base}#type=BDEF/BAC;name=ZBDEF.Booking`;
+    const enc = (t: string) => Buffer.from(t, 'utf-8').toString('base64');
+    const shared =
+      '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+      `<sktd:element><sktd:id>${asEntity}</sktd:id><sktd:text/><sktd:shortText sktd:text="" sktd:obligation="optional"/></sktd:element>` +
+      `<sktd:element><sktd:id>${asAction}</sktd:id><sktd:text/><sktd:shortText sktd:text="${enc('Book it')}" sktd:obligation="optional"/></sktd:element>` +
+      '</sktd:docu>';
+
+    expect(() => rewriteKtdDocument(shared, undefined, [{ node: 'ZBDEF.Booking', text: 'x' }])).toThrow(
+      /"ZBDEF\.Booking" is ambiguous[\s\S]*BDEF\/BAE[\s\S]*BDEF\/BAC/,
+    );
+    // The label falls back to the full id, which is the only spelling that resolves.
+    expect(formatKtdShortTexts(shared)).toContain(`  ${asAction} [optional]: Book it`);
+    expect(rewriteKtdDocument(shared, undefined, [{ node: asAction, text: 'Book it now' }])).toContain(
+      `sktd:text="${enc('Book it now')}"`,
+    );
+  });
+
+  it('every printed short-text label is accepted back as shortTexts[].node', () => {
+    const text = formatKtdShortTexts(envelope('Payment value date'));
+    const labels = text
+      .split('\n')
+      .slice(1)
+      .map((line) => line.trim().split(' [')[0]);
+    expect(labels).toEqual(['PaymentValueDate']);
+    for (const label of labels) {
+      expect(() =>
+        rewriteKtdDocument(envelope('Payment value date'), undefined, [{ node: label, text: 'ok' }]),
+      ).not.toThrow();
+    }
+  });
 });

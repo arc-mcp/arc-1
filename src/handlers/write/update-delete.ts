@@ -10,7 +10,7 @@ import {
   safeUpdateSource,
   unlockObject,
 } from '../../adt/crud.js';
-import { type KtdShortText, rewriteKtdDocument, summarizeKtdChanges } from '../../adt/ddic-xml.js';
+import { type KtdShortText, type KtdWriteReport, rewriteKtdDocument, summarizeKtdChanges } from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import {
@@ -121,20 +121,29 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // 2026-09-02). SAPRead defaults to "active", so its node list can lag this one;
     // every refusal raised below lists the ids of the envelope it actually merged.
     const { source: currentEnvelope } = await client.getKtd(name);
+    const report: KtdWriteReport = { proseHeadings: [] };
     const body = rewriteKtdDocument(
       currentEnvelope,
       hasSource ? source : undefined,
       args.shortTexts as KtdShortText[] | undefined,
+      report,
     );
+    // A typo in a node name that carries no qualifier is indistinguishable from a prose heading,
+    // so the caller is told which headings stayed prose and can catch a misrouted section.
+    const proseNote =
+      report.proseHeadings.length > 0
+        ? `\nHeadings kept as prose inside their node (not node routes): ${report.proseHeadings.join(', ')}`
+        : '';
     // A KTD update is a merge: only the addressed nodes change. dryRun runs the identical
     // validation and reports the outcome without the PUT, so a 90-node edit can be checked
     // before it touches SAP.
     if (args.dryRun === true) {
       const { changed, untouched } = summarizeKtdChanges(currentEnvelope, body);
+      const changedList = changed.length > 0 ? `:\n${changed.map((node) => `  ${node}`).join('\n')}` : '.';
       return textResult(
         `Dry run for ${type} ${name} — nothing was written.\n` +
-          `Would change ${changed.length} node(s); ${untouched} node(s) would keep their current text:\n` +
-          `${changed.map((id) => `  ${id}`).join('\n')}`,
+          `Would change ${changed.length} node(s); ${untouched} node(s) would keep their current text${changedList}` +
+          proseNote,
       );
     }
     await safeUpdateObject(
@@ -147,7 +156,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       getCachedFeatures()?.abapRelease,
     );
     invalidateWrittenObject(type, name);
-    return textResult(`Successfully updated ${type} ${name}.`);
+    return textResult(`Successfully updated ${type} ${name}.${proseNote}`);
   }
 
   if (isMetadataWriteType(type)) {

@@ -1036,7 +1036,7 @@ describe('ddic-xml builders', () => {
 
       it('ignores the exact read-only SAPRead trailer when a complete result is written back', () => {
         const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root body', [BAT_ID]: 'bat body' });
-        const completeRead = `${decodeKtdText(envelope)}\n\n${KTD_META_MARKER}\n[cached:revalidated]\n\nUndocumented nodes: 0`;
+        const completeRead = `${decodeKtdText(envelope)}\n\n${KTD_META_MARKER}\n[cached:revalidated]\n\n${formatKtdNodeIndex(envelope)}`;
         expect(rewriteKtdText(envelope, completeRead)).toBe(envelope);
       });
 
@@ -1143,6 +1143,85 @@ describe('ddic-xml builders', () => {
         expect(decodeKtdText(rewritten, { routeSafe: false })).toContain('## Booking\n\nprose');
       });
 
+      it('routes the raw wire spelling of a node name too, so a name copied from a full id resolves', () => {
+        // decodeKtdText prints `## <full id>` with the name percent-ENCODED (%25_OWN); the index prints it
+        // decoded (%_OWN). Both spellings must be routes, or one surface's copy is prose on the other.
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root v1', [BAT_ID]: 'bat v1' });
+        const decoded = rewriteKtdText(envelope, `## ${ROOT_ID}\n\nroot v2\n\n## %_OWN\n\nbat v2`);
+        const raw = rewriteKtdText(envelope, `## ${ROOT_ID}\n\nroot v2\n\n## %25_OWN\n\nbat v2`);
+        expect(raw).toBe(decoded);
+        expect(decodeKtdText(raw, { routeSafe: false })).toBe(`## ${ROOT_ID}\n\nroot v2\n\n## ${BAT_ID}\n\nbat v2`);
+        // A stored body line equal to either spelling is escaped on read and restored on write.
+        const stored = buildMultiEnvelope({ [ROOT_ID]: 'see\n\n## %25_OWN\n\nfor the wire form', [BAT_ID]: 'b' });
+        const read = decodeKtdText(stored);
+        expect(read).toContain('\\## %25_OWN');
+        expect(rewriteKtdText(stored, read)).toBe(stored);
+      });
+
+      it('refuses an index label copied with its "(empty)" marker instead of folding it into the previous node', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: '', [BAF_ID]: 'f1' });
+        // The index keeps the copyable tokens clean and lists the empty ones separately.
+        const index = formatKtdNodeIndex(envelope);
+        expect(index).toContain(`root: ${ROOT_ID}\n`);
+        expect(index).toContain(`empty (1): ${ROOT_ID}`);
+        expect(() => rewriteKtdText(envelope, `## ${BAF_ID}\n\nf2\n\n## ${ROOT_ID} (empty)\n\nroot text`)).toThrow(
+          /"ZI_TRAVELTP \(empty\)" does not exist/,
+        );
+      });
+
+      it('treats two ids that differ only by case as one node, never as an ambiguity or a second target', () => {
+        const envelope =
+          '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZX">' +
+          `<sktd:element><sktd:id>ZX</sktd:id><sktd:text>${b64('a')}</sktd:text></sktd:element>` +
+          `<sktd:element><sktd:id>zx</sktd:id><sktd:text>${b64('b')}</sktd:text></sktd:element>` +
+          '</sktd:docu>';
+        const rewritten = rewriteKtdText(envelope, '## ZX\n\nnew');
+        // First spelling wins, exactly as the id map does; the case-variant element is left alone.
+        expect(rewritten).toContain(`<sktd:id>ZX</sktd:id><sktd:text>${b64('new')}</sktd:text>`);
+        expect(rewritten).toContain(`<sktd:id>zx</sktd:id><sktd:text>${b64('b')}</sktd:text>`);
+      });
+
+      it('lists a root-entity node named like the object by its full id, and routes that id to the entity', () => {
+        // Every BDEF has a BDEF/BAE node for its root entity, spelled like the object in mixed case;
+        // the name resolves to the ROOT (case-insensitive id wins), so the entity must be listed by id.
+        const BAE_ID = '/sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main#type=BDEF/BAE;name=ZI_TravelTP';
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root docs', [BAE_ID]: '' });
+        const index = formatKtdNodeIndex(envelope);
+        expect(index).toContain(`BDEF/BAE (1): ${BAE_ID}`);
+        expect(index).toContain(`empty (1): ${BAE_ID}`);
+        const rewritten = rewriteKtdText(envelope, `## ${BAE_ID}\n\nentity docs`);
+        expect(decodeKtdText(rewritten, { routeSafe: false })).toBe(
+          `## ${ROOT_ID}\n\nroot docs\n\n## ${BAE_ID}\n\nentity docs`,
+        );
+        // (A second section keeps the lone-root "visible title" guard out of the way.)
+        expect(rewriteKtdText(envelope, `## ZI_TravelTP\n\nfor the root\n\n## ${BAE_ID}\n\nentity`)).toContain(
+          `<sktd:id>${ROOT_ID}</sktd:id><sktd:text>${b64('for the root')}</sktd:text>`,
+        );
+      });
+
+      it('escapes a stored body line equal to a node NAME on read and restores it on write', () => {
+        // The function node is still empty, so the read shows only the root — with the colliding line escaped.
+        const stored = buildMultiEnvelope({
+          [ROOT_ID]: 'The function is described under\n\n## ZI_TravelTP.ReadTravelSummary\n\nbelow.',
+          [BAF_ID]: '',
+        });
+        const read = decodeKtdText(stored);
+        expect(read).toContain('\\## ZI_TravelTP.ReadTravelSummary\n\nbelow.');
+        expect(rewriteKtdText(stored, read)).toBe(stored);
+        // Without the escape the same line is a route and moves the text into the function node.
+        const moved = rewriteKtdText(
+          stored,
+          read.replace('\\## ZI_TravelTP.ReadTravelSummary', '## ZI_TravelTP.ReadTravelSummary'),
+        );
+        expect(decodeKtdText(moved, { routeSafe: false })).toContain(`## ${BAF_ID}\n\nbelow.`);
+      });
+
+      it('resolves names across CRLF line endings', () => {
+        const envelope = buildMultiEnvelope({ [ROOT_ID]: 'r1', [BAT_ID]: 'b1' });
+        const rewritten = rewriteKtdText(envelope, `## ${ROOT_ID}\r\n\r\nr2\r\n\r\n## %_OWN\r\n\r\nb2`);
+        expect(decodeKtdText(rewritten, { routeSafe: false })).toBe(`## ${ROOT_ID}\n\nr2\n\n## ${BAT_ID}\n\nb2`);
+      });
+
       it('refuses an unaddressed blob on a multi-node KTD instead of silently overwriting the root', () => {
         const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
         expect(() => rewriteKtdText(envelope, 'just some text')).toThrow(/addresses no node/i);
@@ -1151,7 +1230,7 @@ describe('ddic-xml builders', () => {
       it('names the unknown node and lists the valid ids when a heading does not match', () => {
         const envelope = buildMultiEnvelope({ [ROOT_ID]: 'root', [BAT_ID]: 'bat' });
         expect(() => rewriteKtdText(envelope, `## ${BAF_ID}\n\nbody`)).toThrow(
-          /ReadTravelSummary[\s\S]*does not exist[\s\S]*Known node ids:[\s\S]*I_TRAVELTP/i,
+          /ReadTravelSummary[\s\S]*does not exist[\s\S]*Known node ids[\s\S]*ZI_TRAVELTP\n[\s\S]*%_OWN/i,
         );
       });
 
@@ -1365,10 +1444,11 @@ describe('ddic-xml builders', () => {
         const index = formatKtdNodeIndex(liveEnvelope);
         expect(index).toContain('Nodes: 2 (1 with no text yet');
         expect(index).toContain('base: /sap/bc/adt/bo/behaviordefinitions/zi_traveltp/source/main');
-        expect(index).toContain('BDEF/BAF (1): ZI_TravelTP.ReadTravelSummaryHTML (empty)');
+        expect(index).toContain('BDEF/BAF (1): ZI_TravelTP.ReadTravelSummaryHTML');
+        // Empty nodes are listed on their own line, so the tokens above stay copyable as-is.
+        expect(index).toContain('empty (1): ZI_TravelTP.ReadTravelSummaryHTML');
         // The documented sibling is listed too — reading is the only way to learn its address.
         expect(index).toContain('ZI_TRAVELTP.finalize');
-        expect(index).not.toContain('finalize (empty)');
       });
 
       it('lists an undocumented root by its bare name and groups several types under one base', () => {
@@ -1382,10 +1462,11 @@ describe('ddic-xml builders', () => {
           '</sktd:docu>';
         const index = formatKtdNodeIndex(envelope);
         expect(index).toContain('Nodes: 4 (4 with no text yet');
-        expect(index).toContain('root: ZBDEF (empty)');
+        expect(index).toContain('root: ZBDEF');
         expect(index).toContain(`base: ${base}`);
-        expect(index).toContain('BDEF/BAC (2): ZBDEF.SetPhoto (empty), ZBDEF.DeletePhoto (empty)');
-        expect(index).toContain('BDEF/BAF (1): ZBDEF.GetPhoto (empty)');
+        expect(index).toContain('BDEF/BAC (2): ZBDEF.SetPhoto, ZBDEF.DeletePhoto');
+        expect(index).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
+        expect(index).toContain('empty (4): ZBDEF, ZBDEF.SetPhoto, ZBDEF.DeletePhoto, ZBDEF.GetPhoto');
       });
 
       it('indexes and writes only nodes Eclipse considers long-text-capable', () => {
@@ -1419,7 +1500,7 @@ describe('ddic-xml builders', () => {
           '</sktd:docu>';
         const index = formatKtdNodeIndex(envelope);
         expect(index).toContain('Nodes: 1.');
-        expect(index).not.toContain('(empty)');
+        expect(index).not.toContain('empty (');
         expect(index).toContain('root: ZX');
       });
 
