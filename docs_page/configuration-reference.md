@@ -323,9 +323,13 @@ All ARC-1 logging goes to **stderr** to keep stdout clean for MCP JSON-RPC. Neve
 
 ## ABAP feature toggles
 
-Each toggle gates a class of ADT tools that depend on a SAP component being installed or active. All default to `auto` — ARC-1 probes the SAP system once on startup and decides. Override to `on`/`off` when probing is wrong, slow, or you want deterministic behaviour in tests.
+Each toggle controls a SAP-dependent feature. All default to `auto`: single-target deployments
+probe at startup, while discovered multi-targets probe on demand during SAP tool calls. `off`
+skips the feature's probe and disables it; `on` skips the probe and assumes the feature is available.
 
-When a feature is `off` (either set explicitly or detected as unavailable), every tool action that depends on it is hidden from tool listings *and* rejected at call time with a clear error.
+Feature-dependent handlers use the resolved availability, but not every unavailable action is
+removed from tool listings. Feature toggles do not replace the instance's action policy or Cloud
+Connector resource mappings.
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
@@ -334,15 +338,19 @@ When a feature is `off` (either set explicitly or detected as unavailable), ever
 | `--feature-rap` | `SAP_FEATURE_RAP` | `auto` | RAP behavior definitions, services, drafts. Required for `SAPWrite` of BDEF/SRVD/SRVB and the RAP-specific code-intel and preflight tools. |
 | `--feature-amdp` | `SAP_FEATURE_AMDP` | `auto` | ABAP Managed Database Procedures. Required for AMDP-specific read/write paths. |
 | `--feature-ui5` | `SAP_FEATURE_UI5` | `auto` | UI5 application development tools (general). |
-| `--feature-ui5repo` | `SAP_FEATURE_UI5REPO` | `auto` | UI5 ABAP Repository OData service. Required for `SAPManage` UI5 repo upload/download actions. |
-| `--feature-flp` | `SAP_FEATURE_FLP` | `auto` | FLP `PAGE_BUILDER_CUST` OData service. Required for `SAPManage` FLP page/role mutations. |
+| `--feature-ui5repo` | `SAP_FEATURE_UI5REPO` | `auto` | UI5 ABAP Repository OData service used by `SAPRead` type `BSP_DEPLOY` to read deployed app metadata. |
+| `--feature-flp` | `SAP_FEATURE_FLP` | `auto` | FLP `PAGE_BUILDER_CUST` OData service used by `SAPManage` FLP catalog/group/tile reads and mutations. |
 | `--feature-transport` | `SAP_FEATURE_TRANSPORT` | `auto` | CTS transport endpoints. Required for `SAPTransport` (even reads). |
 | `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | HANA-specific developer tools. |
 
-`auto` probes one specific endpoint per feature and classifies the response: 2xx/400/405/5xx → available; 401/403/404 → unavailable. The reason is surfaced in startup logs and in the `SAPManage.system_info` response.
+`auto` probes one specific endpoint per feature and classifies the response: 2xx/400/405/5xx →
+available; 401/403/404 → unavailable. On single-target `/mcp`, inspect the cached result using
+`SAPManage` with `action: "features"`. Discovered targets apply additional
+[authentication controls](multi-target-administration.md#basic-shared-identity-controls);
+`SAPManage` is not part of their tool surface.
 
 For restrictive BTP Cloud Connector mappings, `gcts`, `flp`, and `ui5repo` probe paths outside
-`/sap/bc/adt`. The tracked initial BTP profiles set those three features to `off`; see the
+`/sap/bc/adt`. The three tracked profiles under `examples/btp/` set those features to `off`; see the
 [Cloud Connector path reference](btp-destination-setup.md#cloud-connector-url-path-reference) before
 changing them to `auto` or `on`.
 

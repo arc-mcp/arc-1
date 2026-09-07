@@ -137,22 +137,16 @@ back to the startup user. See [BTP Destination Reference](btp-destination-setup.
    accept an IP SAN when the internal host is an IP literal. Do not solve a name mismatch by disabling
    backend certificate checks.
 
+<a id="required-cloud-connector-resource-paths"></a>
+
 ### Cloud Connector Resource Paths
 
-For the initial ADT-only profiles, expose `/sap/bc/adt` with all sub-paths. Add the other exact
-paths only when the corresponding capability is approved:
-
-| URL Path | Access Policy | Purpose |
-|----------|---------------|---------|
-| `/sap/bc/adt` | Path and all sub-paths | ADT API used by ARC-1 core read/write operations |
-| `/sap/bc/cts_abapvcs` | Path and all sub-paths | Optional gCTS operations and feature probe |
-| `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` | Path and all sub-paths | Optional FLP launchpad management and feature probe |
-| `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` | Path and all sub-paths | Optional UI5 ABAP Repository operations and feature probe |
-
-The default `auto` feature modes probe the three optional paths at startup. The tracked initial BTP
-profiles set `SAP_FEATURE_GCTS=off`, `SAP_FEATURE_FLP=off`, and `SAP_FEATURE_UI5REPO=off` to avoid
-those requests in an ADT-only deployment. Map a path before re-enabling its feature. Avoid exposing
-`/` unless another documented integration needs it.
+For the initial ADT-only profiles, expose `/sap/bc/adt` with **Path and all sub-paths**. These
+profiles disable the gCTS, FLP and UI5 Repository probes. The
+[Cloud Connector URL path reference](btp-destination-setup.md#cloud-connector-url-path-reference)
+owns the optional paths, feature settings and probe behavior. Use it when enabling additional
+capabilities within the selected topology's supported tool surface. Avoid exposing `/` unless
+another documented integration needs it.
 
 ## Step 3: Configure SAP System
 

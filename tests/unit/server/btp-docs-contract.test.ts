@@ -46,8 +46,13 @@ describe('BTP documentation contracts', () => {
     const destinations = read('docs_page/btp-destination-setup.md');
 
     for (const entrypoint of [overview, deployment]) {
-      expect(entrypoint).toContain('single-PP');
-      expect(entrypoint).toContain('single-Basic');
+      const singleTargetRow = entrypoint.split('\n').find((line) => /^\|.*one on-prem/i.test(line));
+      expect(singleTargetRow).toContain(
+        '[single-PP](btp-cloud-foundry-deployment.md#single-target-read-only-pp-profile)',
+      );
+      expect(singleTargetRow).toContain(
+        '[single-Basic](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile)',
+      );
     }
     expect(runbook).toContain('cp -n examples/btp/single-basic/profile.mtaext mta-overrides.mtaext');
     expect(destinations).toContain('SAP_PP_ENABLED: "false"');

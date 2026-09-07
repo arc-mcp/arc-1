@@ -18,7 +18,7 @@ mutation-free in v1 regardless of the single-target ceiling.
 
 | Topology | Public MCP URL | SAP identity | Capabilities | Start here |
 |---|---|---|---|---|
-| One general SAP target | `/mcp` | Principal Propagation recommended; shared Basic is possible | Full ARC-1 feature set, still constrained by instance flags and roles | This page, then [Destination Reference](btp-destination-setup.md) |
+| One general SAP target | `/mcp` | Principal Propagation recommended; shared Basic is possible | Full ARC-1 feature set, still constrained by instance flags and roles | This page — [single-PP](#single-target-read-only-pp-profile) or [single-Basic](#single-target-read-only-shared-basic-profile) profile |
 | Many SAP system/clients | `/<SYSTEM>/<CLIENT>/mcp` and `/multi/mcp` | PP recommended; optional shared Basic exception | Mutation-free v1: read/search/query/navigate/diagnose/context | This page, then [Multi-System Setup](multi-target-setup.md) |
 | One `/mcp` beside multi-target routes | All of the above | Configured independently | `/mcp` may be writable; multi routes never are | Read [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) first |
 | BTP ABAP Environment | `/mcp` | `OAuth2UserTokenExchange` | Single target | [BTP ABAP Environment](btp-abap-environment.md) |
@@ -195,14 +195,15 @@ needed. Keep `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` absent, includin
 
 All three examples keep mutation/data/SQL flags off, UI/plugins off and cache none. They also deny
 ATC/Unit workloads and disable non-ADT gCTS, FLP and UI5 Repository probes for initial acceptance;
-that is a profile choice, not a general single- or multi-target limitation. The PP profiles keep
-strict PP on, while single-Basic explicitly turns it off. Do not combine the profiles or add UI
-overlays.
+single-target deployments can enable additional capabilities after acceptance. Multi-target v1
+keeps its [restricted tool surface](multi-target-setup.md#allowed-tools), which excludes `SAPGit`
+and `SAPManage` regardless of feature toggles. The PP profiles keep strict PP on,
+while single-Basic explicitly turns it off. Do not combine the profiles or add UI overlays.
 
 Replace names, virtual URLs, real SID/client and descriptions in your private destination files.
 Keep clients such as `001` quoted. Add `CloudConnectorLocationId` only if the Connector owner
 supplies one. JSON files show the destination fields to create in the cockpit; they do not provision
-anything or guarantee a particular import format. Keep startup credentials in the owner's secure
+anything or guarantee a particular import format. Keep SAP credentials in the owner's secure
 process, not in a PR or LLM prompt.
 
 For single-Basic, ask the Connector owner for a principal-type-None mapping with internal HTTPS and

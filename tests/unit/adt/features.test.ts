@@ -507,12 +507,36 @@ describe('Feature Detection', () => {
 
     it('does not request non-ADT capability paths when the BTP acceptance profile disables them', async () => {
       const client = mockProbeClient();
-      await probeFeatures(client, { ...defaultConfig, gcts: 'off', ui5repo: 'off', flp: 'off' });
-      const urls = ((client as any).get.mock.calls as Array<[string]>).map((call) => call[0]);
+      const result = await probeFeatures(client, { ...defaultConfig, gcts: 'off', ui5repo: 'off', flp: 'off' });
+      const urls = vi.mocked(client.get).mock.calls.map(([url]) => url);
 
-      expect(urls).not.toContain('/sap/bc/cts_abapvcs/system');
-      expect(urls).not.toContain('/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV');
-      expect(urls).not.toContain('/sap/opu/odata/UI2/PAGE_BUILDER_CUST/');
+      expect(urls).toContain('/sap/bc/adt/discovery');
+      expect(urls.every((url) => url.startsWith('/sap/bc/adt/'))).toBe(true);
+      for (const id of ['gcts', 'ui5repo', 'flp'] as const) {
+        expect(result[id]).toMatchObject({ available: false, mode: 'off' });
+      }
+    });
+
+    it.each([401, 403, 404])('retains ADT evidence when optional OData probes return %i', async (status) => {
+      const client = mockProbeClient();
+      const get = vi.mocked(client.get);
+      const originalGet = get.getMockImplementation()!;
+      get.mockImplementation((url, headers, options) => {
+        if (url.startsWith('/sap/opu/odata/')) {
+          return Promise.reject(new AdtApiError('Optional service unavailable', status, url));
+        }
+        return originalGet(url, headers, options);
+      });
+
+      const result = await probeFeatures(client, defaultConfig);
+
+      expect(get).toHaveBeenCalledWith('/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV', undefined, { probe: true });
+      expect(get).toHaveBeenCalledWith('/sap/opu/odata/UI2/PAGE_BUILDER_CUST/', undefined, { probe: true });
+      expect(result.ui5repo.available).toBe(false);
+      expect(result.flp.available).toBe(false);
+      expect(result.rap.available).toBe(true);
+      expect(result.authProbe?.searchAccess).toBe(true);
+      expect(result.discoveryMap?.get('/sap/bc/adt/oo/classes')).toEqual(['application/vnd.sap.adt.oo.classes.v4+xml']);
     });
 
     it('does not fail feature probing when discovery request fails', async () => {

@@ -54,7 +54,8 @@ Password=<managed-secret>
 sap-client=100
 ```
 
-Point the application at it and explicitly disable the PP defaults inherited from the base MTA:
+Under `modules[].properties` for `arc1-mcp-server` in the customer's `mta-overrides.mtaext`, point
+the application at it and explicitly disable the PP defaults inherited from the base MTA:
 
 ```yaml
 SAP_BTP_DESTINATION: "A4H_100_BASIC"
@@ -67,6 +68,11 @@ The tracked
 provides the complete read-only extension and destination template. ARC-1 resolves this destination
 at startup for the single target. Use internal HTTPS between Cloud Connector and SAP even if the
 destination uses the virtual `http://` URL.
+
+Use a Cloud Connector mapping with principal type **None**. Have Basis verify that the ADT ICF
+service accepts HTTP Basic for the selected SAP client and technical user; a destination password
+alone cannot make an SSO-only service accept Basic. This topology does not need a PP destination
+or user-certificate mapping in CERTRULE.
 
 This is a shared SAP identity. XSUAA can still identify the MCP caller to ARC-1, but SAP audit sees
 the technical user. Use a dedicated least-privileged user; never use an administrator's account or
@@ -239,17 +245,26 @@ Use restrictive resource mappings:
 | URL path | Policy | Needed for |
 |---|---|---|
 | `/sap/bc/adt` | Path and all sub-paths | ARC-1 core ADT operations and all multi-target v1 routes |
-| `/sap/bc/cts_abapvcs` | Path and all sub-paths | Optional gCTS operations and the `SAP_FEATURE_GCTS=auto` startup probe |
-| `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` | Path and all sub-paths | Optional single-target FLP management and the `SAP_FEATURE_FLP=auto` startup probe |
-| `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` | Path and all sub-paths | Optional single-target UI5 repository operations and the `SAP_FEATURE_UI5REPO=auto` startup probe |
+| `/sap/bc/cts_abapvcs` | Path and all sub-paths | Optional single-target gCTS operations and the `SAP_FEATURE_GCTS=auto` probe |
+| `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` | Path and all sub-paths | Optional single-target FLP management and the `SAP_FEATURE_FLP=auto` probe |
+| `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` | Path and all sub-paths | Optional UI5 Repository metadata reads (`SAPRead` type `BSP_DEPLOY`) and the `SAP_FEATURE_UI5REPO=auto` probe |
 
-The tracked initial BTP profiles set `SAP_FEATURE_GCTS=off`, `SAP_FEATURE_FLP=off`, and
+The three tracked profiles under `examples/btp/` set `SAP_FEATURE_GCTS=off`, `SAP_FEATURE_FLP=off`, and
 `SAP_FEATURE_UI5REPO=off`, so an ADT-only deployment needs only `/sap/bc/adt`. Without those
-overrides, the default `auto` mode sends a lightweight startup request to each feature endpoint;
-an unmapped or unauthorized endpoint is classified as unavailable, but can produce an expected
-401/403/404 in connectivity traces. Do not expose a path merely to silence that probe. Add the
-exact optional path and change its feature setting to `auto` or `on` only when the capability is
-approved.
+overrides, `auto` sends GET requests to the feature endpoints even when users only request ADT
+operations. Single targets probe at startup; discovered multi-targets probe on demand during SAP
+tool calls. For an existing ADT-only deployment, set all three flags to `"off"` in the module's
+`.mtaext` properties and redeploy. When enabling an optional capability, add its exact resource
+path and change the associated flag to `auto` or `on` after approval. Multi-target v1 excludes
+`SAPGit` and `SAPManage`, so keep gCTS and FLP probes off there. Its optional `SAPRead` type
+`BSP_DEPLOY` uses the UI5 Repository path and is outside this initial ADT-only profile.
+
+A single-target optional probe returning 401/403/404 marks that feature unavailable; it does not
+by itself establish why the MCP connection failed. A 401/403 at the single-Basic startup preflight
+path `/sap/bc/adt/core/discovery` blocks shared SAP tool calls and requires repair followed by a
+restart. Discovered Basic targets have a separate [authentication guard](multi-target-administration.md#basic-shared-identity-controls)
+that can block the shared credentials after any SAP 401, including a feature probe. Diagnose the
+exact failed request path and layer before treating an error as an expected optional-feature miss.
 
 Do not expose `/` just to make troubleshooting easier. Cloud Connector path matching is
 case-sensitive. The internal Cloud Connector-to-SAP connection should use HTTPS with normal
@@ -294,8 +309,9 @@ change matrix.
 | PP setup succeeds but SAP returns `401` | STRUST/trusted proxy/ICF/CERTRULE/SU01, not destination discovery |
 | SAP returns `403` after login | Propagated/technical user's SAP authorization |
 | Basic destination returns SSO HTML | ADT ICF does not accept Basic; ARC-1 rejects the login page |
-| ADT works but a feature probe reports `401`/`403`/`404` | Optional non-ADT path is unmapped/unauthorized; keep the feature `off` for ADT-only or approve and map its exact path |
-| Basic password changed but call remains blocked | Verify both fields were saved; a rejected generation is bounded, while a changed valid generation proceeds immediately |
+| Single-target ADT works but an optional probe reports `401`/`403`/`404` | Check that probe's mapping, service activation and SAP authorization; keep unused features `off` for ADT-only |
+| Single-target Basic password changed but call remains blocked | Verify the destination credentials and restart every app instance; this destination is resolved at startup |
+| Multi-target Basic password changed but call remains blocked | Verify both fields were saved; the next protected request detects a changed credential generation |
 | Connectivity exposure error | Virtual host/location/resource path mismatch |
 
 Use a request ID and diagnose from route → XSUAA → registry → Destination/Connectivity → Cloud
