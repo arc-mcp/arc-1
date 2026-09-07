@@ -56,7 +56,14 @@ export function createGraphApi(
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     response.setHeader('cache-control', 'no-store');
     response.setHeader('x-content-type-options', 'nosniff');
-    const url = new URL(request.url ?? '/', 'http://localhost');
+    let url: URL;
+    try {
+      url = new URL(request.url ?? '/', 'http://localhost');
+    } catch {
+      // Node does not await async request listeners: a rejected URL parse would stop the process.
+      json(response, 400, { error: 'invalid_request_target' });
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/healthz') {
       json(response, 200, { status: 'ok' });
       return;

@@ -45,7 +45,7 @@ is not imported. Record an immutable backend revision before distributing it.
 | Internal ARC | Standard/hyperfocused/HTTP tests; default-hidden tools; native calls to local and BTP APIs; zero SAP transport calls during graph retrieval | A released ARC version containing the adapter; deployment into the existing CF ARC apps |
 | Fresh Docker | New isolated volume; setup and repeat setup; schema/roles, seed, API, failure retention, and non-empty retrieval | Every external PostgreSQL provider or arbitrary production scale |
 | BTP PostgreSQL | Actual `postgresql-db/free`, separate reader/writer apps, HTTPS API, live collection through an Internet destination, dedicated ARC test app: all six graph actions and ordinary SAP read | Cloud Connector collection, private app networking, managed backup restore, or an unattended installer |
-| BTP HANA | New `hana-cloud/hana-free`; validated SQL TLS; owner/reader/writer separation; identical 13-check API suite; snapshot, rollback, lease and refresh tests; live collection; dedicated ARC end-to-end test | Production operations, native graph acceleration performance, Cloud Connector collection or full-system accuracy |
+| BTP HANA | New `hana-cloud/hana-free`; validated SQL TLS; owner/reader/writer separation; identical API suite; snapshot, rollback, lease and refresh tests; live collection; dedicated ARC end-to-end test | Production operations, native graph acceleration performance, Cloud Connector collection or full-system accuracy |
 
 Representative original PostgreSQL results: 75 live objects produced 505 observations from 380,456 source bytes in
 12.73 seconds. The CF-to-CF HTTPS sample had p95 55.22 ms; local ARC-to-BTP had p95 501.09 ms.

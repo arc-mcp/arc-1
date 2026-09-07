@@ -133,10 +133,10 @@ reported rather than resolved with paid capacity or broader authorization.
 
 - Implementation committed and pushed as `4d49822b` to open PR
   [#756](https://github.com/arc-mcp/arc-1/pull/756); **not merged**.
-- Final local gate: **5,841 ARC tests and 83 backend unit tests**, zero failures/skips. Build,
+- Final local gate: **5,841 ARC tests and 85 backend unit tests**, zero failures/skips. Build,
   typecheck, lint, policy/schema/file budgets, MTA validation and strict MkDocs pass. Seven
   documentation tests validate schemas, distribution exclusions, CF templates and navigation.
-- The final CF backend artifact was staged once, then reused without extra staging. HANA API
+- The 09:56 UTC CF backend artifact was staged once, then reused without extra staging. HANA API
   droplet `951a3759-ab65-4f31-9cbb-c7dd038e3a09`; collector droplet
   `4ec2136e-134c-41cd-98dc-853d68b9f441`. ARC enabled MCP suite passed at 09:56 UTC, then
   `ARC1_GRAPH_TOOLS=false` was restored and hidden/non-invokable behavior rechecked.
@@ -151,8 +151,14 @@ reported rather than resolved with paid capacity or broader authorization.
 - The first Linux CI run exposed Compose file-secret UID mismatch (Mac Docker did not reproduce
   it). Setup now keeps original ARC files at 0600 and stages individual read-only mount copies
   inside a 0700 host-only directory. No container is changed to run as root. Existing secrets are
-  preserved; mismatched staged copies fail closed. Linux Docker CI must pass before final handoff.
+  preserved; mismatched staged copies fail closed. Linux Docker CI passed on the corrected build
+  (runs `34109422849` and `34109701835`).
 - CodeQL review also prompted removal of the bearer-token whitespace regex, direct timing-safe
   comparison of bounded high-entropy API-key bytes (no password-hash primitive), and removal of
   environment-derived setup paths from console output. Malformed/long authorization headers are
   covered by the HTTP credential tests; no scanner alert is suppressed or dismissed.
+- Final HTTP review reproduced an unauthenticated malformed request target rejecting the async
+  listener before its error boundary. URL parsing now returns a generic HTTP 400; direct-listener
+  and real HTTP regression tests prove the process still serves health checks afterwards.
+  The regression was observed failing before the fix. Updated deployment/CI receipts are recorded
+  on PR #756 so later status changes do not require documentation-only CI reruns.

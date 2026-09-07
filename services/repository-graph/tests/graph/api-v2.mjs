@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { createServer } from 'node:http';
+import { createServer, request } from 'node:http';
 import { createGraphApi } from '../../dist/graph/api.js';
 import { HanaGraphStore } from '../../dist/graph/store/hana.js';
 import { PgGraphStore } from '../../dist/graph/store/pg.js';
@@ -62,6 +62,19 @@ async function query(args) {
 }
 let checks = 0;
 try {
+  const malformed = await new Promise((resolve, reject) => {
+    const req = request({ hostname: '127.0.0.1', port: server.address().port, path: '//[' }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => (body += chunk));
+      response.once('error', reject);
+      response.once('end', () => resolve({ status: response.statusCode, body }));
+    });
+    req.once('error', reject);
+    req.end();
+  });
+  assert.deepEqual(malformed, { status: 400, body: JSON.stringify({ error: 'invalid_request_target' }) });
+  checks++;
   const limited = await query({ action: 'search', query: 'ZV2_', limit: 1 });
   assert.equal(limited.nodes.length, 1);
   assert.equal(limited.hasMore, true);
