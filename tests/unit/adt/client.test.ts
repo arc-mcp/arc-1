@@ -821,8 +821,9 @@ describe('AdtClient', () => {
     });
   });
 
-  describe('class text symbols', () => {
+  describe('text elements (text pool)', () => {
     const SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
+    const SELECTIONS_CT = 'application/vnd.sap.adt.textelements.selections.v1';
     const LOCK_BODY =
       '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H9</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL><MODIFICATION_SUPPORT>X</MODIFICATION_SUPPORT></DATA></asx:values></asx:abap>';
 
@@ -877,6 +878,68 @@ describe('AdtClient', () => {
       await expect(client.writeClassTextSymbols('ZCL_FOO', 'bad')).rejects.toBeInstanceOf(AdtApiError);
       const calls = mockFetch.mock.calls as [string, RequestInit][];
       expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it("writeTextElementPart PUTs a program's selection texts with the selections media type", async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        const m = (init?.method ?? 'GET').toUpperCase();
+        if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK_BODY));
+        if (u.includes('_action=UNLOCK')) return Promise.resolve(mockResponse(200, ''));
+        if (m === 'PUT') return Promise.resolve(mockResponse(200, ''));
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient();
+      await client.writeTextElementPart('PROG', 'ZHU_CREATE', 'selections', 'P_LGNUM=Warehouse\n', 'EWDK900524');
+      const calls = mockFetch.mock.calls as [string, RequestInit][];
+      const put = calls.find(([, i]) => (i?.method ?? 'GET').toUpperCase() === 'PUT');
+      expect(String(put?.[0])).toContain('/sap/bc/adt/textelements/programs/ZHU_CREATE/source/selections');
+      expect(String(put?.[0])).toContain('corrNr=EWDK900524');
+      const ph = put?.[1]?.headers as Record<string, string>;
+      expect(ph['Content-Type']).toBe(SELECTIONS_CT);
+      expect(ph.Accept).toBe(SELECTIONS_CT);
+      expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('getTextElements labels every non-empty part and skips the ones SAP rejects with 406', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/source/symbols')) return Promise.resolve(mockResponse(200, ''));
+        if (u.includes('/source/selections')) return Promise.resolve(mockResponse(200, 'P_LGNUM=Warehouse'));
+        return Promise.resolve(mockResponse(406, '<exc:exception><message>not acceptable</message></exc:exception>'));
+      });
+      const client = createClient();
+      const body = await client.getTextElements('ZHU_CREATE', { objectType: 'PROG' });
+      expect(body).toContain('=== selections ===');
+      expect(body).toContain('P_LGNUM=Warehouse');
+      // symbols came back empty and headings answered 406 — neither is an error, neither is listed.
+      expect(body).not.toContain('=== symbols ===');
+      expect(body).not.toContain('=== headings ===');
+    });
+
+    it('getTextElements reports an empty pool instead of returning nothing', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, ''));
+      const client = createClient();
+      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).resolves.toContain(
+        'No text elements maintained for PROG ZHU_CREATE.',
+      );
+    });
+
+    it('getTextElements rejects an object type that has no text pool', async () => {
+      const client = createClient();
+      await expect(client.getTextElements('ZIF_FOO', { objectType: 'INTF' })).rejects.toThrow(/exist only for/i);
+    });
+
+    it('getTextElements falls back to the legacy program resource when the service is absent (NW 7.50)', async () => {
+      const client = createClient();
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['text/plain']]]));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'legacy-pool'));
+      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).resolves.toBe('legacy-pool');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/sap/bc/adt/programs/programs/ZHU_CREATE/textelements');
     });
 
     it('fails clean when discovery is loaded but the textelements service is absent (NW 7.50)', async () => {

@@ -64,6 +64,8 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 // Kept separate from SAPREAD_CLAS_INCLUDES so VERSIONS (which shares that list) stays strict.
 const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
+// TEXT_ELEMENTS reads accept one textpool subobject in `include`; omitted means the whole pool.
+const SAPREAD_TEXT_ELEMENT_INCLUDES = ['symbols', 'selections', 'headings'] as const;
 
 function validateSapReadInput(
   input: { type: string; name?: string; action?: string; include?: string; versionUri?: string; sqlFilter?: string },
@@ -94,6 +96,17 @@ function validateSapReadInput(
         code: 'custom',
         path: ['include'],
         message: `Invalid include value "${input.include}" for type VERSIONS. Valid values: ${SAPREAD_CLAS_INCLUDES.join(', ')}`,
+      });
+    }
+
+    if (
+      input.type === 'TEXT_ELEMENTS' &&
+      !SAPREAD_TEXT_ELEMENT_INCLUDES.includes(include as (typeof SAPREAD_TEXT_ELEMENT_INCLUDES)[number])
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['include'],
+        message: `Invalid include value "${input.include}" for type TEXT_ELEMENTS. Valid values: ${SAPREAD_TEXT_ELEMENT_INCLUDES.join(', ')}`,
       });
     }
 
@@ -592,6 +605,8 @@ export const SAPWriteSchema = z
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
+    /** For action="edit_text_symbols": which textpool subobject to write. Defaults to symbols. */
+    textPart: z.enum(SAPREAD_TEXT_ELEMENT_INCLUDES).optional(),
     method: z.string().optional(),
     /** For action="edit_unit": FORM or MODULE name to replace. */
     unit: z.string().optional(),

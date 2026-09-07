@@ -28,7 +28,7 @@ const SAPWRITE_BODY_ONPREM =
   'edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: create+activate multiple objects in dependency order via the "objects" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +
   'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. ' +
-  'edit_text_symbols (type=CLAS): write a global class\'s text symbols. Pass the body in "source" as per-symbol "@MaxLength:NN\\n{NNN}={text}\\n" (blank-line separated); immediately active, no SAPActivate. Read it back via SAPRead(type=CLAS, include=text_symbols). Requires the ADT textelements service (absent on NW 7.50). ' +
+  'edit_text_symbols (CLAS/PROG/FUGR): write one textpool part via "textPart" — symbols (default; "@MaxLength:NN\\n{NNN}={text}\\n"), selections (a report\'s selection texts, "P_PARAM=Label" per line) or headings. Classes have symbols only; immediately active, no SAPActivate. Needs the ADT textelements service (absent on NW 7.50). ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
 const SAPWRITE_BODY_BTP =

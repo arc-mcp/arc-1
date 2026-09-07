@@ -53,7 +53,7 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `fromLabel` | string | No | For `action="diff"`: optional display label for the OLD side in the summary and patch header, e.g. `DNT-6-6: Validate discounts (DS7K900123)`. Does not affect source resolution. |
 | `toLabel` | string | No | For `action="diff"`: optional display label for the NEW side in the summary and patch header, e.g. `active` or `inactive draft`. Does not affect source resolution. |
 | `format` | string | No | Output format: `"text"` (default) or `"structured"`. For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured is supported for CLAS only (see below). |
-| `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). |
+| `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for all of them. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline |
@@ -277,7 +277,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes a global class's text pool — see [Class text symbols](#class-text-symbols). |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
 | `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update` and `edit_unit`. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. |
@@ -288,6 +288,7 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | `name` | string | No | Object name (for single object actions) |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`: the complete replacement `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
+| `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
 | `unit` | string | No | For on-prem `edit_unit`: case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
@@ -699,22 +700,43 @@ Moves a method's METHODS clause from its current visibility section to a target 
 
 Verified live on a4h (S/4HANA 2023, kernel 7.58) end-to-end. The underlying `/objectstructure` endpoint also works on NW 7.50 SP02 (reads verified); on that release methods are split across `CLAS/OO` (def) + `CLAS/OM` (impl) elements and merged by name in the parser. Writes on the un-patched NW 7.50 dev edition can trip [SAP Note 2727890](https://launchpad.support.sap.com/#/notes/2727890) "ADT: fix unstable adt lock handle" — a system-level bug affecting every ADT write, not specific to this feature; ARC-1 detects the 423 status and emits a hint.
 
-### Class text symbols
+### Text elements
 
-Read and write a global class's **text symbols** (`Textsymbole` / class text elements — `'Text'(001)` literals) via the ADT textelements service.
+Read and write an object's **text pool** via the ADT textelements service. Three subobjects, each
+with its own media type: `symbols` (the numbered `'Text'(001)` literals), `selections` (a report's
+selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`) and `headings` (list header and
+column headers). Classes have only `symbols`; `PROG` and `FUGR` have all three.
 
 ```
-SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols")   — read the maintained text pool
+SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols")      — class text symbols
+SAPRead(type="TEXT_ELEMENTS", name="ZHU_CREATE", objectType="PROG") — whole program pool
+SAPRead(type="TEXT_ELEMENTS", name="ZHU_CREATE", objectType="PROG", include="selections")
+
 SAPWrite(action="edit_text_symbols", type="CLAS", name="ZCL_ORDER",
          source="@MaxLength:20\n001=Order\n\n@MaxLength:30\n002=Order created\n")
+
+SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="selections",
+         source="P_LGNUM=Warehouse\nP_WRKST=Work center\n")
 ```
 
-- **Body format:** one `@MaxLength:NN` line per symbol, then `NNN=text`; symbols are blank-line separated. A shared/missing `@MaxLength` is rejected (`406 "Text elements contain errors"`).
-- **Immediately active** — no `SAPActivate` needed. Defining the referenced symbols is what clears the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves behind.
-- **On-prem only, discovery-gated.** The service is present on SAP_BASIS ≥ 7.51 (verified on 758 + 816) and absent on NW 7.50 — ARC-1 returns a clean "textelements service not available" error there.
-- **Scope:** text symbols only. Selection texts are a program selection-screen concept — a class has none, so `source/selections` is always empty and un-writable (SAP `406`); program/function-group text elements are a planned follow-up.
+- **Body formats:** `symbols` — one `@MaxLength:NN` line per symbol, then `NNN=text`, blank-line
+  separated (a shared or missing `@MaxLength` is rejected with `406 "Text elements contain errors"`).
+  `selections` — one `PARAM=text` line per selection-screen field. `headings` — `listHeader=` plus
+  `columnHeader_N=` lines.
+- **Immediately active** — no `SAPActivate` needed. Defining the referenced symbols is what clears
+  the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
+  behind; maintaining `selections` is what stops a report's selection screen from showing raw
+  parameter names.
+- **On-prem only, discovery-gated.** The service is present on SAP_BASIS ≥ 7.51 (verified on 757,
+  758 and 816) and absent on NW 7.50 — ARC-1 returns a clean "textelements service not available"
+  error there, and `SAPRead(type="TEXT_ELEMENTS")` falls back to the legacy per-program resource.
+- **Wrong part for the type:** asking a class for `selections` or `headings` is refused up front;
+  SAP itself answers `406` for those, and a whole-pool read simply skips them.
 
-Verified live end-to-end on a4h (758): create a `$TMP` class referencing `'Hi'(001)` → `edit_text_symbols` → read back → `SAPActivate` clean.
+Verified live end-to-end on a4h (758) for class symbols: create a `$TMP` class referencing
+`'Hi'(001)` → `edit_text_symbols` → read back → `SAPActivate` clean. The program/function-group
+collections (`/sap/bc/adt/textelements/programs`, `.../functiongroups`) and their three media types
+were verified against a 757 S/4HANA system.
 
 ---
 

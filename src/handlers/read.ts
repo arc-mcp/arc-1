@@ -4,7 +4,7 @@
  */
 
 import { resolveBspNameAndPath } from '../adt/bsp-path.js';
-import type { AdtClient, SourceReadResult } from '../adt/client.js';
+import type { AdtClient, SourceReadResult, TextElementPart } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { decodeKtdText, formatKtdShortTexts, formatKtdUndocumentedIndex, KTD_META_MARKER } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
@@ -835,8 +835,17 @@ export async function handleSAPRead(
         return textResult(await client.getMessages(name));
       }
     }
-    case 'TEXT_ELEMENTS':
-      return textResult(await client.getTextElements(name));
+    case 'TEXT_ELEMENTS': {
+      // objectType picks the textelements collection (PROG default, also CLAS/FUGR); include picks
+      // one subobject (symbols | selections | headings) instead of the whole pool.
+      const part = (args.include as string | undefined)?.toLowerCase() as TextElementPart | undefined;
+      return textResult(
+        await client.getTextElements(name, {
+          objectType: (args.objectType as string | undefined) ?? 'PROG',
+          part,
+        }),
+      );
+    }
     case 'VARIANTS':
       return textResult(await client.getVariants(name));
     case 'BSP': {

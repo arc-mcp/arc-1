@@ -20,7 +20,6 @@ import { getCurrentContext } from '../server/context.js';
 import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
-import { lockObject, unlockObject } from './crud.js';
 import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
 import { canonicalDataSourceName } from './data-source-name.js';
 import {
@@ -37,6 +36,13 @@ import { canonicalRevisionSourcePath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
 import { buildTableQuerySql, clampPreviewRows, executeDataPreviewStatements } from './table-query.js';
+import {
+  readTextElementPart,
+  readTextElements,
+  type TextElementObjectType,
+  type TextElementPart,
+  writeTextElementPart,
+} from './text-elements.js';
 import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
 import type {
   AdtObjectLookupResult,
@@ -181,12 +187,6 @@ function tadirObjectUrl(tadirType: string, name: string): string {
   }
 }
 
-/** Media type for a class's text symbols on the top-level ADT textelements service. Used as BOTH
- *  Content-Type and Accept on the write PUT (SAP returns 400 "Accept header missing" otherwise).
- *  Symbols only — a class has no selection screen, so its `source/selections` segment is always
- *  empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
-const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
-
 /** Floor + clamp a caller-supplied result limit to [1, 1000] before it is interpolated into an
  *  ADT search/listing URL query param (`maxResults=`, `rowNumber=`). Non-finite input — NaN from a
  *  coerced non-numeric, or undefined — falls back to the caller's default, so no float or
@@ -243,6 +243,14 @@ const REVISION_URL_BUILDERS: Record<
 
 /** Types with an addressable revisions feed — derived, never hand-maintained. */
 export const REVISION_TYPES: ReadonlySet<string> = new Set(Object.keys(REVISION_URL_BUILDERS));
+
+export {
+  isTextElementObjectType,
+  TEXT_ELEMENT_OBJECT_TYPES,
+  TEXT_ELEMENT_PARTS,
+  type TextElementObjectType,
+  type TextElementPart,
+} from './text-elements.js';
 
 export class AdtClient {
   readonly http: AdtHttpClient;
@@ -1578,58 +1586,37 @@ export class AdtClient {
     return parseMessageClass(resp.body);
   }
 
-  /** Get program text elements */
-  async getTextElements(program: string): Promise<string> {
-    checkOperation(this.safety, OperationType.Read, 'GetTextElements');
-    const resp = await this.http.get(`/sap/bc/adt/programs/programs/${encodeURIComponent(program)}/textelements`);
-    return resp.body;
+  /** Read an object's text elements (CLAS/PROG/FUGR). Without `part`, every subobject that carries
+   *  text is returned under a `=== part ===` marker. See adt/text-elements.ts. */
+  async getTextElements(name: string, options?: { objectType?: string; part?: TextElementPart }): Promise<string> {
+    return readTextElements(this.http, this.safety, name, options);
   }
 
-  /** Fail clean when the ADT textelements service is absent (SAP_BASIS < 7.51, e.g. NW 7.50 — the
-   *  whole collection is missing from discovery). Only blocks when discovery is loaded, so a
-   *  not-yet-populated map does not false-block 758/816; otherwise a real 404 surfaces. */
-  private assertClassTextElementsService(): void {
-    if (
-      this.http.hasDiscoveryData() &&
-      this.http.discoveryAcceptFor('/sap/bc/adt/textelements/classes') === undefined
-    ) {
-      throw new AdtApiError(
-        'Class text elements require the ADT textelements service (SAP_BASIS ≥ 7.51; not available on this system).',
-        404,
-        '/sap/bc/adt/textelements/classes',
-      );
-    }
+  /** Read one subobject of a textpool (symbols | selections | headings). */
+  async getTextElementPart(objectType: TextElementObjectType, name: string, part: TextElementPart): Promise<string> {
+    return readTextElementPart(this.http, this.safety, objectType, name, part);
   }
 
-  /** Read a global class's text symbols. Returns the raw properties-style body
-   *  (`@MaxLength:NN` then `NNN=text`, blank-line separated). */
+  /** Read a global class's text symbols. */
   async getClassTextSymbols(name: string): Promise<string> {
-    checkOperation(this.safety, OperationType.Read, 'GetClassTextSymbols');
-    this.assertClassTextElementsService();
-    const resp = await this.http.get(`/sap/bc/adt/textelements/classes/${encodeURIComponent(name)}/source/symbols`, {
-      Accept: TEXT_SYMBOLS_CT,
-    });
-    return resp.body;
+    return readTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols');
   }
 
-  /** Write a global class's text symbols. Locks the textelements object (not the class), PUTs the
-   *  body with the symbols media type as BOTH Content-Type and Accept (SAP returns 400 "Accept header
-   *  missing" otherwise), then unlocks. Immediately active — no SAPActivate needed. */
+  /** Write one subobject of a textpool. Locks the textelements object, PUTs, unlocks. Immediately
+   *  active — no SAPActivate needed. */
+  async writeTextElementPart(
+    objectType: TextElementObjectType,
+    name: string,
+    part: TextElementPart,
+    source: string,
+    transport?: string,
+  ): Promise<void> {
+    return writeTextElementPart(this.http, this.safety, objectType, name, part, source, transport);
+  }
+
+  /** Write a global class's text symbols. */
   async writeClassTextSymbols(name: string, source: string, transport?: string): Promise<void> {
-    checkOperation(this.safety, OperationType.Update, 'WriteClassTextSymbols');
-    this.assertClassTextElementsService();
-    const obj = `/sap/bc/adt/textelements/classes/${encodeURIComponent(name)}`;
-    await this.http.withStatefulSession(async (session) => {
-      const lock = await lockObject(session, this.safety, obj, 'MODIFY');
-      const corr = transport ?? (lock.corrNr || undefined);
-      try {
-        let url = `${obj}/source/symbols?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
-        if (corr) url += `&corrNr=${encodeURIComponent(corr)}`;
-        await session.put(url, source, TEXT_SYMBOLS_CT, { Accept: TEXT_SYMBOLS_CT });
-      } finally {
-        await unlockObject(session, obj, lock.lockHandle);
-      }
-    });
+    return writeTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols', source, transport);
   }
 
   /** Get program variants */
