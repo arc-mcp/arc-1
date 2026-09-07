@@ -29,7 +29,7 @@ and evidence of secure development.
 
 ## Implementation follow-through
 
-The selected work is implemented in the accompanying [implementation plan](../plans/2026-09-07-enterprise-security-implementation.md) and [security operations runbook](../security-operations.md): separate dependency security/license jobs, release-App support, a disabled security ruleset, source dependency evidence, and Socket configuration. Account activation remains post-merge. The research observations below retain their original date and scope.
+The selected work is implemented in the accompanying [implementation plan](../plans/2026-09-07-enterprise-security-implementation.md) and [security operations runbook](../security-operations.md): separate dependency security/license jobs, a disabled security ruleset, source dependency evidence, and Socket configuration. Release Please retains its built-in token with GitHub's native workflow approval. Account activation remains post-merge. The research observations below retain their original date and scope.
 
 ## Current decisions after maintainer feedback
 
@@ -41,11 +41,11 @@ The selected work is implemented in the accompanying [implementation plan](../pl
   vulnerability review and CodeQL security findings as the initial required checks, then a
   narrowly configured Socket malware check after calibration. Existing workflows and release
   controls remain in place; no repository rules have been changed.
-- **Release automation:** use a narrowly scoped GitHub App installation token for Release Please
-  so its PR events can trigger the required workflows. This entails an App setup and private-key
-  secret; do not enable required checks before normal and release PR behavior has been tested.
-  A personal access token is an alternative with more personal-account lifecycle coupling.
-  [Release Please's token guidance](https://github.com/googleapis/release-please-action).
+- **Release automation:** retain the existing `GITHUB_TOKEN` and publication behavior. The maintainer
+  declined a dedicated App. GitHub supports approval of bot-created PR workflows by a user with
+  write access; review the changes and select **Approve workflows to run** when prompted.
+  Require successful current-revision checks before enabling the new rules. No additional token
+  or secret is needed. [GitHub's June 2026 change](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/).
 - **BTP source builds:** root lockfiles are available and `mta.yaml` uses `npm ci` before the
   TypeScript build. The archive excludes `node_modules`, so staging remains a separate dependency
   installation boundary. Record source/lockfile hashes, build tools, MTAR checksum, selected
@@ -177,12 +177,12 @@ completed below. Estimates include focused verification but not unpredictable re
 | P2 | Add a dependency triage/exception record and trial OpenSSF assessment | 1–2 days | Short weekly triage; quarterly evidence review |
 | Later | npm shrinkwrap for registry consumers and customer-driven LTS/support | Separate scoped projects | Driven by actual procurement blockers; external assurance is outside the chosen plan |
 
-**Required-check gotcha:** the release workflow documents that Release Please PRs created with
-`GITHUB_TOKEN` do not trigger the ordinary PR test workflow. Turning on required checks without
-fixing that lifecycle can strand release PRs. First demonstrate that every required check runs
-on normal and release PRs, using a supported triggering/authentication approach with minimal
-permissions. Avoid a permanent blanket bypass. Require only the selected security checks;
-preserve the separate existing release-time test gate.
+**Required-check gotcha:** Release Please PR workflows created with `GITHUB_TOKEN` can wait for
+maintainer approval. On 7 September 2026, release PR #751 showed `action_required` for Dependency
+Review, Test and Validate Documentation while CodeQL had succeeded. First demonstrate that every
+required check runs on the current normal and release PR revisions, using GitHub's native approval
+for bot workflows. Until then, keep the new rules disabled. Avoid a permanent blanket bypass.
+Require only the selected security checks; preserve the separate existing release-time test gate.
 
 **Release evidence gotcha:** repository instructions deliberately require the npm SBOM job and
 release container scan to stay non-gating. Preserve that contract. Add a separate evidence

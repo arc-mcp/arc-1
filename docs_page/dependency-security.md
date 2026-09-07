@@ -248,8 +248,9 @@ must not be confused with an implemented Cosign signature-verification policy.
 
 ## Next improvements under evaluation
 
-Activating and verifying the security ruleset, configuring the Release Please App, and verifying
-and calibrating the existing Socket integration are the next account-level steps. The source evidence command and workflow
+Verifying release PR checks through GitHub's native workflow approval, activating the security
+ruleset, and verifying and calibrating the existing Socket integration are the next account-level
+steps. Release Please keeps its existing token; no dedicated release App is required. The source evidence command and workflow
 are implemented in this source revision; customer staging evidence still needs the platform owner.
 Scanning retained Docker release digests and providing image/MCPB-specific inventories are
 secondary proposals for those distribution paths. The maintainer's

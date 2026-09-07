@@ -44,18 +44,18 @@ Current full-tree npm audits and release SBOM/container behavior remain unchange
 
 ### 3. Prepare reliable enforcement and release PR events
 
-- [x] Add optional Release Please GitHub App token wiring, restricted to this repository and
-      contents/pull-request writes. Keep the current token path until the App is configured.
-- [x] Fail visibly when an App is selected but its key is unavailable; never silently fall
-      back after App token creation fails. Keep npm publication on existing OIDC credentials.
+- [x] Preserve Release Please's built-in `GITHUB_TOKEN` and existing publication behavior;
+      no dedicated App, new token or additional secret. Keep npm publication on existing OIDC credentials.
+- [x] Document GitHub's native maintainer approval for bot-created PR workflows and verify
+      that the existing release PR shows the expected approval wait.
 - [x] Add an importable, initially disabled security ruleset: required `Dependency security`
       from GitHub Actions; CodeQL `high_or_higher` security threshold and ordinary alerts `none`.
-- [x] Document installation, normal/release PR verification, activation and rollback.
+- [x] Document workflow approval, normal/release PR verification, activation and rollback.
 
-Acceptance before activation: successful checks on normal and App-generated release PRs;
+Acceptance before activation: successful checks on normal and approved bot-created release PRs;
 CodeQL results for the intended revisions; no missing mandatory checks; no blanket bypass.
-The PR cannot activate a workflow that is not on `main`, create an App private key, or prove
-release-PR triggering without that App installation. These are explicit post-merge steps.
+The PR cannot prove execution after approval or activate the new workflow definition on release
+PRs before it is on `main`. Approval and successful current-revision checks are post-merge verification.
 
 ### 4. Generate BTP source dependency evidence
 
@@ -105,9 +105,9 @@ no paid subscription is needed for this implementation and no application email 
 
 ## After merge: maintainer checklist
 
-1. Install/configure the Release Please App and wait for a release PR update that triggers the
-   normal dependency and CodeQL analyses. Do not dispatch `Release` to test this: its manual
-   trigger publishes npm. Use the next ordinary `main` push.
+1. Keep the existing Release Please token. On its next release PR update, review the changes,
+   select **Approve workflows to run** if prompted, and verify current dependency and CodeQL
+   results. Do not dispatch `Release` to test this: its manual trigger publishes npm.
 2. Follow the security operations runbook to import the disabled ruleset, verify the observed
    check names and results, then enable it. Export and date the effective rules afterwards.
 3. Verify the existing Socket installation and OSS entitlement, then calibrate its policy. Add
@@ -142,3 +142,4 @@ waiting time. These are planning estimates, not a commitment or a measured adopt
 - Initial PR commit `cd843284` passed GitHub Dependency security, Dependency licenses, CodeQL, documentation, MTA validation, and Node 22/24 jobs. Live SAP jobs skipped under the existing `chore:` policy; no SAP runtime behavior changed.
 - Post-review corrections are a separate commit. The PR checks show the authoritative result for its latest head.
 - The workflow summary now links directly to its downloadable evidence artifact; folder-relative JSON links remain in the downloaded report rather than pointing to missing files on the run page.
+- Release automation follow-up: retained the built-in token and documented native bot-workflow approval. The parsed Release workflow exactly matches `origin/main`; only explanatory comments differ. All 26 focused workflow/release tests, type checking and the strict documentation build passed. Release PR #751 confirms the `action_required` wait; execution after approval and ruleset activation remain pending.

@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const workflow = (name: string) => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
-const expression = (value: string) => `\${{ ${value} }}`;
 
 describe('enterprise security workflow boundaries', () => {
   it('selects only dependency security and high/critical CodeQL findings, disabled until rollout', () => {
@@ -57,29 +56,25 @@ describe('enterprise security workflow boundaries', () => {
     expect(license.with['allow-dependencies-licenses']).toBe('pkg:npm/node-forge@1.4.0');
   });
 
-  it('keeps the release App token out of checkout, PR code and npm publication', () => {
+  it('preserves built-in release authentication and the existing publication gate', () => {
     const data = workflow('release');
     expect(data.on.pull_request).toBeUndefined();
     expect(data.on.pull_request_target).toBeUndefined();
     const job = data.jobs['release-please'];
-    const token = job.steps.find((step: { id: string }) => step.id === 'release-token');
-    expect(token.uses).toMatch(/^actions\/create-github-app-token@[a-f0-9]{40}$/);
-    expect(token.if).toBe(expression("vars.RELEASE_APP_CLIENT_ID != ''"));
-    expect(token['continue-on-error']).toBeUndefined();
-    expect(token.with).toEqual({
-      'client-id': expression('vars.RELEASE_APP_CLIENT_ID'),
-      'private-key': expression('secrets.RELEASE_APP_PRIVATE_KEY'),
-      'permission-contents': 'write',
-      'permission-pull-requests': 'write',
-    });
+    expect(job.permissions).toEqual({ contents: 'write', 'pull-requests': 'write' });
+    expect(job.steps).toHaveLength(1);
+    expect(job.steps[0].uses).toMatch(/^googleapis\/release-please-action@[a-f0-9]{40}$/);
+    expect(job.steps[0].with?.token).toBeUndefined();
     expect(
       job.steps.some((step: { uses?: string; run?: string }) => step.uses?.startsWith('actions/checkout@') || step.run),
     ).toBe(false);
-    expect(job.steps.find((step: { id: string }) => step.id === 'release').with.token).toBe(
-      expression('steps.release-token.outputs.token || github.token'),
-    );
-    expect(JSON.stringify(data.jobs['publish-npm'])).not.toContain('RELEASE_APP');
     expect(data.jobs['publish-npm'].permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+    const publication = data.jobs['publish-npm'].steps as { run?: string }[];
+    const tests = publication.findIndex((step) => step.run?.startsWith('npm test'));
+    const publish = publication.findIndex((step) => step.run?.startsWith('npm publish'));
+    expect(tests).toBeGreaterThanOrEqual(0);
+    expect(publish).toBeGreaterThan(tests);
+    expect(publication[publish].run).toContain('--provenance');
   });
 
   it('keeps whole-tree evidence on a separate read-only maintenance workflow with retained failures', () => {

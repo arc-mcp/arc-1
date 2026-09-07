@@ -5,8 +5,8 @@ Customers should start with the [Security Assessment](../docs_page/security-asse
 
 ## 1. Merge the repository changes before activating requirements
 
-The PR supplies a `Dependency security` check, separate license reporting, optional release-App
-wiring, a dependency evidence command/workflow, and Socket configuration. The ruleset file is
+The PR supplies a `Dependency security` check, separate license reporting, a dependency evidence
+command/workflow, and Socket configuration. Release Please keeps its built-in token. The ruleset file is
 **disabled**. Committing these files does not activate GitHub rules or install an App.
 
 On the PR, verify Dependency security, Dependency licenses, CodeQL and the normal repository
@@ -14,35 +14,35 @@ checks. The selected new merge requirements are **Dependency security** and **Co
 results at high or higher**. Do not add the Test jobs, license job, evidence workflow, docs,
 coverage, build or SAP integration checks to this security ruleset.
 
-## 2. Configure the Release Please App
+## 2. Verify release PR checks with the existing token
 
-The default GitHub Actions token does not trigger ordinary workflows when it creates or updates
-a PR. The optional App token fixes that event path. Do this before enforcing required checks.
+Release Please keeps the built-in `GITHUB_TOKEN`; no dedicated App, personal token or additional
+secret is needed. Since 11 June 2026, GitHub allows bot-created PR workflows to run after approval
+by someone with repository write access. This covers `pull_request` events for `opened`,
+`synchronize` and `reopened`; it does not automatically enable workflows on bot-created tags.
 
-1. In the GitHub organization's Developer settings, create a private GitHub App for release
-   automation. Use the repository URL as its homepage. It does not need a webhook or user
-   authorization callback for installation-token use.
-2. Grant repository **Contents: read and write** and **Pull requests: read and write**.
-   Metadata read is implicit. Do not grant organization-wide administration or secrets access.
-3. Install it for **only `arc-mcp/arc-1`**. Generate its private key and store it securely.
-4. In repository Settings → Secrets and variables → Actions, add the private key as
-   `RELEASE_APP_PRIVATE_KEY`. Then set the variable `RELEASE_APP_CLIENT_ID` to the App's Client ID.
-5. On the next ordinary `main` push, inspect the Release workflow's token and Release Please
-   steps. The action limits the installation token to this repository and the two permissions,
-   and revokes it at job completion. A configured App failure stops the job; it is not ignored.
-6. Verify an App-generated release PR update triggers Dependency security and CodeQL for the
-   current PR revision. Also check a normal PR, a dependency PR and a fork PR when available.
+1. After merging these changes, inspect the next Release Please PR creation/update from an
+   ordinary `main` push. Review its current changes and workflow definitions.
+2. If GitHub shows **Approve workflows to run** in the PR merge box, approve those runs.
+   This approves workflow execution, not the PR or a release. Check again after bot updates.
+3. Verify **Dependency security** completes on the current PR revision and CodeQL results are
+   available for the PR and target revision. Also check a normal PR, a dependency PR and a fork
+   PR when available. Do not treat `action_required`, missing results or an older success as a pass.
+4. Keep the new ruleset disabled until these checks complete successfully. If the approval
+   control or a required result is unavailable, investigate that event/run before enforcement;
+   do not introduce an App, new token or blanket bypass as an automatic workaround.
+
+Read-only observation on 7 September 2026: release [PR #751](https://github.com/arc-mcp/arc-1/pull/751),
+head `621cc7d53e05c3f1512be633d2bd15e8cfcbb597`, has CodeQL success and `action_required`
+results for Dependency Review, Test and Validate Documentation. This confirms the approval wait
+exists in this repository; successful execution after approval is still to be verified.
 
 Do **not** manually dispatch `Release` as a test: its existing `workflow_dispatch` path publishes
 npm. Use an ordinary push and the resulting release PR. Preserve the existing npm release-time
 test job and OIDC publication even after PR checks become effective.
 
-If the App is not configured, the workflow retains the old token path so releases keep working.
-That path is not ready for mandatory PR checks. Store recovery access separately and review old
-tokens/private keys after migration; never paste them into an issue or the evidence report.
-
-Sources: [Release Please tokens](https://github.com/googleapis/release-please-action#other-actions-on-release-please-prs),
-[installation token action](https://github.com/actions/create-github-app-token).
+Sources: [GitHub's bot-PR approval announcement](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/),
+[current workflow triggering rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
 
 ## 3. Import, verify and enable the security ruleset
 
@@ -78,8 +78,8 @@ vulnerable artifact. Do not treat a YAML test alone as proof of server-side enfo
 
 **Rollback:** disable only `ARC-1 security checks` if a configuration failure blocks all work;
 record the incident and re-enable after verification. Keep existing protections and secret push
-protection. If reverting to the default release token, disable these new requirements first
-until release PR events are working again. Prefer fixing the missing check to a permanent bypass.
+protection and the existing release token. Restore working release-PR checks before enabling
+the new requirements again. Prefer fixing the missing check to a permanent bypass.
 
 See [GitHub's code-scanning rules](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/manage-your-configuration/set-merge-protection).
 
