@@ -101,7 +101,7 @@
     "btp:build-deploy-ui-ext": "npm run btp:build-ui-ext && npm run btp:deploy-ui-ext"
   },
   "dependencies": {
-    "@abaplint/core": "^2.120.37",
+    "@abaplint/core": "^2.120.42",
     "@arc-mcp/xsuaa-auth": "^1.0.2",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
@@ -114,13 +114,13 @@
     "diff": "^9.0.0",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.6.2",
+    "express-rate-limit": "^8.7.0",
     "fast-xml-parser": "^5.11.1",
     "helmet": "^8.3.0",
     "jose": "^6.2.10",
     "rate-limiter-flexible": "^11.2.0",
-    "undici": "^8.10.0",
-    "zod": "^4.3.6"
+    "undici": "^8.10.1",
+    "zod": "^4.5.4"
   },
   "overrides": {
     "@hono/node-server": "2.0.10",
@@ -132,19 +132,19 @@
     "*.{ts,js,json}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.11",
+    "@biomejs/biome": "^2.5.12",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.1",
     "@types/supertest": "^7.2.1",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",
     "supertest": "^7.2.2",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "~7.0.2",
-    "vitest": "^4.1.1",
+    "vitest": "^5.0.0",
     "yaml": "^2.9.0"
   }
 }

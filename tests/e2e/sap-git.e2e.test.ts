@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, type ToolResult } from './helpers.js';
 
-describe.sequential('E2E SAPGit tests', () => {
+describe('E2E SAPGit tests', () => {
   let client: Client;
   let sapGitAvailable: boolean | undefined;
   let gctsAvailable: boolean | undefined;
