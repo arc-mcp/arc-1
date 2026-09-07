@@ -2,6 +2,10 @@
 
 2026-09-06. Branch `codex/optional-repository-graph`, based on `38910bbf`.
 
+Follow-up: [2026-09-07 internal/Docker/BTP validation](repository-graph-internal-docker-btp-2026-09-07.md)
+adds a separate default-off MCP exposure switch and actual BTP free-plan tests. It supersedes this
+record's deferred CF smoke and generic internal-network assumptions; historical timings remain dated.
+
 ## Result and boundaries
 
 Optional native SAPGraph, no plugin installation: standard/hyperfocused MCP and CLI use a

@@ -467,7 +467,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
             : [],
         );
       let definitions = [...getConfiguredToolDefinitions(config), ...pluginDefs];
-      const graph = createRepositoryGraphRuntime(config);
+      const graph = config.graphTools ? createRepositoryGraphRuntime(config) : undefined;
       try {
         await graph?.probe();
         if (graph?.listed)

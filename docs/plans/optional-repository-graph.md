@@ -71,3 +71,20 @@ CF tasks inherit parent bindings: future API and collector need distinct app ide
 ## Execution record
 
 Implementation and final measurements are recorded in the accompanying results document.
+
+### 2026-09-07 follow-through
+
+Keep the native adapter but separate internal connection from client exposure. New opt-in
+`ARC1_GRAPH_TOOLS=false` by default means healthy connected backends remain hidden and cannot be
+called by MCP clients; explicit CLI diagnostics continue working. No database dependency or
+collector enters ARC. Test internal first, a fresh isolated Docker deployment second, then BTP.
+
+The separate backend now has private descriptor generation, an offline collector without SAP
+credentials, named CF bindings with verified TLS, allowlisted deployment artifacts and independent
+reader/writer/bootstrap identities. BTP PostgreSQL **free** was provisioned in the existing space.
+Do not modify the running ARC apps during the PoC. HANA parity remains separate.
+
+Plan correction from live testing: SAP BTP does not support generic CF container-to-container
+networking. A private route/network policy cannot be assumed. Use a key-authenticated HTTPS route
+for this PoC, explicitly acknowledging internet reachability; no unauthenticated metadata or
+client-visible MCP graph tools. See SAP's [supported-feature list](https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/f8a351c8d81544a2942c911dccaba3c7.html).

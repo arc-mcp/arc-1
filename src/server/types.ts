@@ -27,6 +27,8 @@ export type ConfigSource = 'default' | { env: string } | { flag: string } | { fi
 export interface ServerConfig {
   /** Optional external shared-metadata service; credentials remain outside this config. */
   graphMode?: 'auto' | 'off';
+  /** Separate opt-in for MCP exposure; internal CLI diagnostics do not require it. */
+  graphTools?: boolean;
   graphConnectionFile?: string;
   graphServiceBinding?: string;
   // --- SAP Connection ---

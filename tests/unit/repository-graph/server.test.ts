@@ -9,7 +9,7 @@ import { RepositoryGraphRuntime } from '../../../src/repository-graph/runtime.js
 import { logger } from '../../../src/server/logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from '../../../src/server/mcp-rate-limit.js';
 import { createServer } from '../../../src/server/server.js';
-import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
+import { DEFAULT_CONFIG as CORE_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { jsonResponse, KEY, response } from './helpers.js';
 
 function setup(systemKey = 'TEST-001') {
@@ -32,8 +32,36 @@ function handler(server: Server, method: string): Handler {
 }
 const auth = (scopes: string[], token = 'verified.jwt.token'): AuthInfo => ({ token, scopes, clientId: 'client' });
 const args = { action: 'search', query: 'Z' };
+const DEFAULT_CONFIG = { ...CORE_CONFIG, graphTools: true };
 
 describe('native graph MCP', () => {
+  it.each(['standard', 'hyperfocused'] as const)(
+    'configured healthy graph remains internal by default in %s',
+    async (toolMode) => {
+      const { graph, fetcher } = setup();
+      await graph.probe();
+      const subscribe = vi.spyOn(graph, 'subscribe');
+      const start = vi.spyOn(graph, 'start');
+      const server = createServer({ ...CORE_CONFIG, toolMode }, { repositoryGraph: graph });
+      try {
+        fetcher.mockClear();
+        expect(JSON.stringify(await handler(server, 'tools/list')({}, {}))).not.toMatch(/SAPGraph|"graph"/);
+        for (const params of [
+          { name: 'SAPGraph', arguments: args },
+          { name: 'SAP', arguments: { action: 'graph', params: args } },
+        ]) {
+          expect((await handler(server, 'tools/call')({ params }, {})).isError).toBe(true);
+        }
+        expect(fetcher).not.toHaveBeenCalled();
+        expect(subscribe).not.toHaveBeenCalled();
+        expect(start).not.toHaveBeenCalled();
+        expect((await graph.call({ action: 'status' })).isError).toBe(false);
+      } finally {
+        graph.stop();
+        await server.close();
+      }
+    },
+  );
   it.each(['standard', 'hyperfocused'] as const)(
     'real SDK %s: late ready notification, list and call despite blocked SAP preflight',
     async (toolMode) => {

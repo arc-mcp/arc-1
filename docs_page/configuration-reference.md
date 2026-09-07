@@ -363,7 +363,9 @@ The optional native graph is separate from extensions: `ARC1_GRAPH_CONNECTION_FI
 (`--graph-connection-file`) or explicitly selected `ARC1_GRAPH_SERVICE_BINDING`
 (`--graph-service-binding`) connects a compatible v2 metadata API. `ARC1_GRAPH=off`
 (`--graph off`) disables both; otherwise the default `auto` activates only with an explicit
-connection. Invalid graph settings fail only graph closed. See [Repository Graph](repository-graph.md)
+connection. `ARC1_GRAPH_TOOLS` (`--graph-tools`) separately controls MCP exposure and defaults to
+`false`: a connected backend stays internal until explicitly enabled. CLI diagnostics still work.
+Invalid graph settings fail only graph closed. See [Repository Graph](repository-graph.md)
 for audience restrictions, private file format, precedence, bounds and availability behavior.
 
 Load your own `Custom_*` tools (the [extension framework](extensions.md)). Plugins are **trusted

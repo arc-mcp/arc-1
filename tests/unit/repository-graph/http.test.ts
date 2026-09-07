@@ -13,7 +13,7 @@ import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { jsonResponse, KEY, response } from './helpers.js';
 
 describe('graph through HTTP transport authentication', () => {
-  it('real SDK HTTP authenticates each stateless request, reuses graph runtime and denies invalid tokens', async () => {
+  it.each([false, true])('real SDK HTTP authenticates and respects MCP exposure=%s', async (graphTools) => {
     const graphFetch = vi
       .fn<typeof fetch>()
       .mockImplementation(async (_url, init) => jsonResponse(response(JSON.parse(String(init?.body)).action)));
@@ -27,6 +27,7 @@ describe('graph through HTTP transport authentication', () => {
     const subscribe = vi.spyOn(graph, 'subscribe');
     const config = {
       ...DEFAULT_CONFIG,
+      graphTools,
       transport: 'http-streamable' as const,
       apiKeys: [{ key: 'mcp-viewer-credential', profile: 'viewer' }],
     };
@@ -57,13 +58,13 @@ describe('graph through HTTP transport authentication', () => {
         }),
       );
       for (let i = 0; i < 12; i++) {
-        expect((await client.listTools()).tools.some((t) => t.name === 'SAPGraph')).toBe(true);
+        expect((await client.listTools()).tools.some((t) => t.name === 'SAPGraph')).toBe(graphTools);
         expect(
-          (await client.callTool({ name: 'SAPGraph', arguments: { action: 'search', query: 'Z' } })).isError,
-        ).not.toBe(true);
+          (await client.callTool({ name: 'SAPGraph', arguments: { action: 'search', query: 'Z' } })).isError === true,
+        ).toBe(!graphTools);
       }
-      // One probe, twelve queries; no per-request probe loop or retained Server subscription.
-      expect(graphFetch).toHaveBeenCalledTimes(13);
+      // One internal probe; twelve queries only when exposed, no per-request loop/listener.
+      expect(graphFetch).toHaveBeenCalledTimes(graphTools ? 13 : 1);
       expect(subscribe).not.toHaveBeenCalled();
       expect(JSON.stringify(graphFetch.mock.calls)).not.toContain('mcp-viewer-credential');
     } finally {

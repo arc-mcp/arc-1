@@ -8,12 +8,13 @@ import { createRepositoryGraphRuntime } from '../dist/repository-graph/runtime.j
 import { createServer } from '../dist/server/server.js';
 import { DEFAULT_CONFIG } from '../dist/server/types.js';
 
-assert.ok(process.env.ARC1_GRAPH_CONNECTION_FILE, 'Explicit private connection file required');
+assert.ok(process.env.ARC1_GRAPH_CONNECTION_FILE || process.env.ARC1_GRAPH_SERVICE_BINDING, 'Explicit file or named CF binding required');
 let sapRequests = 0;
 const originalSapRequest = AdtHttpClient.prototype.request;
 assert.equal(typeof originalSapRequest, 'function', 'Update the SAP transport guard if its entry point changes');
 AdtHttpClient.prototype.request = async () => { sapRequests++; throw new Error('SAP request forbidden in graph smoke'); };
-const config = { ...DEFAULT_CONFIG, graphConnectionFile: process.env.ARC1_GRAPH_CONNECTION_FILE };
+const config = { ...DEFAULT_CONFIG, graphTools: true, graphConnectionFile: process.env.ARC1_GRAPH_CONNECTION_FILE,
+  graphServiceBinding: process.env.ARC1_GRAPH_SERVICE_BINDING };
 const graph = createRepositoryGraphRuntime(config);
 assert.ok(graph);
 const server = createServer(config, { repositoryGraph: graph,

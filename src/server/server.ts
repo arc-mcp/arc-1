@@ -1370,7 +1370,7 @@ export async function createAndStartServer(
       })()
     : Promise.resolve();
 
-  const repositoryGraph = createRepositoryGraphRuntime(config);
+  const repositoryGraph = config.graphTools ? createRepositoryGraphRuntime(config) : undefined;
   repositoryGraph?.start();
   const buildDefaultServer = () =>
     createServer(config, {

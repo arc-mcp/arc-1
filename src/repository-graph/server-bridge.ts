@@ -20,7 +20,7 @@ export function attachRepositoryGraph(
   apiKeyProfile: (token: unknown) => Promise<string | undefined>,
 ) {
   const graph =
-    config.graphMode === 'off' || config.multiTargetEndpoints
+    config.graphTools !== true || config.graphMode === 'off' || config.multiTargetEndpoints
       ? undefined
       : (options.repositoryGraph ?? createRepositoryGraphRuntime(config));
   graph?.start();

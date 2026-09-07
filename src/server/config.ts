@@ -151,6 +151,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   },
   { name: 'plugins', valueName: 'paths', description: 'Comma-separated extension paths' },
   { name: 'graph', valueName: 'mode', description: 'Optional repository graph: auto/off' },
+  { name: 'graph-tools', valueName: 'boolean', description: 'Expose repository graph to MCP clients (default false)' },
   { name: 'graph-connection-file', valueName: 'path', description: 'Private repository graph connection descriptor' },
   {
     name: 'graph-service-binding',
@@ -867,6 +868,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
 
   // ── Extensions (FEAT-61) ───────────────────────────────────────────
   config.graphMode = resolveStr('graph', 'ARC1_GRAPH', 'auto', 'graphMode') === 'auto' ? 'auto' : 'off';
+  config.graphTools = resolveBool('graph-tools', 'ARC1_GRAPH_TOOLS', false, 'graphTools');
   config.graphConnectionFile = resolveOptionalStr(
     'graph-connection-file',
     'ARC1_GRAPH_CONNECTION_FILE',

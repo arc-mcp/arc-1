@@ -17,6 +17,11 @@ ARC reader of this single-system instance. The declaration is a configuration tr
 not inferred from SAP roles or authenticated login. The API independently restricts its key to
 the same system/audience. Fail closed on unsupported protocol or mismatching response identity.
 
+2026-09-07 refinement: connection configuration enables internal/CLI diagnostics only.
+MCP listing and invocation additionally require `ARC1_GRAPH_TOOLS=true`; by default a configured
+backend adds no graph timers, probes or schema bytes to MCP. The independent backend remains
+outside core. On SAP BTP use authenticated HTTPS, not unsupported container-to-container routes.
+
 This narrow shared dataset is distinct from SAP-authorized per-user source/cache content.
 It never substitutes for SAPRead/SAPContext and never stores source in ARC. Existing HTTP auth,
 read scope, deny, rate limiting, strict-JWT prerequisite and audit apply. Audit labels graph

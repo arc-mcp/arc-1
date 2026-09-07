@@ -91,6 +91,9 @@ describe('graph connection', () => {
   it('resolves CLI configuration with explicit disable', () => {
     const { config } = resolveConfig(['--graph', 'off', '--graph-connection-file', '/private/file']);
     expect(config.graphMode).toBe('off');
+    expect(config.graphTools).toBe(false);
+    expect(resolveConfig(['--graph-tools', 'true']).config.graphTools).toBe(true);
+    expect(resolveConfig(['--graph-tools', 'false']).config.graphTools).toBe(false);
     expect(config.graphConnectionFile).toBe('/private/file');
   });
 });

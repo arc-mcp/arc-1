@@ -9,6 +9,8 @@ is a proof of concept, not part of the ARC npm/Docker distribution or a hosted s
 configures the ARC adapter; it does not install that backend. HANA parity and automated BTP
 deployment are not shipped. See the [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/optional-repository-graph.md)
 and [validation record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/repository-graph-validation.md).
+The separate [BTP PoC validation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/repository-graph-internal-docker-btp-2026-09-07.md)
+records tested free-plan deployment, network limitations and lifecycle constraints.
 
 ## Audience and safety
 
@@ -39,7 +41,9 @@ characters). Create an absolute-path connection file, also owner-readable (`0600
 }
 ```
 
-Set `ARC1_GRAPH_CONNECTION_FILE=/absolute/private/graph-connection.json`, then start ARC normally.
+Set `ARC1_GRAPH_CONNECTION_FILE=/absolute/private/graph-connection.json` for internal setup and CLI
+diagnostics. MCP clients still see no graph tool and cannot invoke it. Set `ARC1_GRAPH_TOOLS=true`
+only when ready to expose it; this separate opt-in defaults to false in both MCP modes.
 The descriptor's URL is an **origin**, without path/query/userinfo. HTTP is accepted for literal
 loopback hosts. HTTPS is required elsewhere unless the descriptor explicitly sets
 `"allowInsecureHttp": true` for an administrator-approved internal network. `SAP_INSECURE`
@@ -61,8 +65,11 @@ fields, except `apiKey` replaces `apiKeyFile`. Pass credentials to CF using a pr
 not shell history. ARC does not search arbitrary service bindings. A connection file takes
 precedence over a binding; `ARC1_GRAPH=off` overrides both.
 
-Same-space deployment is possible, but an internal route still needs an explicit CF network
-policy. The graph query app should have only a database reader identity. A separate collector
+Same-space deployment does **not** imply private connectivity. SAP BTP lists container-to-container
+networking as [unsupported](https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/f8a351c8d81544a2942c911dccaba3c7.html);
+the live PoC confirmed a network-policy denial. Use an authenticated HTTPS service route on BTP,
+understanding that it is internet-reachable. Other CF providers may support internal routes plus
+network policies. The graph query app should have only a database reader identity. A separate collector
 app/task gets writer and SAP Destination/Connectivity access: **tasks inherit the parent app's
 bindings**, so a task of the query app does not isolate these privileges. One future installer
 can configure independently built artifacts. See CF's
@@ -82,7 +89,7 @@ arc1-cli call SAPGraph --json '{"action":"impact","name":"ZCL_ORDER","type":"CLA
 arc1-cli call SAPGraph --json '{"action":"path","name":"ZCL_ORDER","type":"CLAS","targetName":"ZIF_ORDER","targetType":"INTF","depth":2}'
 ```
 
-MCP exposes the same flat `SAPGraph` arguments. Hyperfocused mode uses
+When `ARC1_GRAPH_TOOLS=true`, MCP exposes the same flat `SAPGraph` arguments. Hyperfocused mode uses
 `SAP(action="graph", params={"action":"impact","name":"ZCL_ORDER","type":"CLAS"})`.
 Actions: `status`, `search`, `neighbors`, `impact`, `path`, `package_coupling`. Search uses `query`;
 traversals require `name`/`type`; path additionally needs `targetName`/`targetType`.
@@ -106,7 +113,9 @@ systemKey/audience. No caller URL, SQL, Cypher, collection or administrative mut
 
 ## Availability, limits and disable
 
-Unconfigured: no graph probe, timer, network request or listed tool. A configured backend is
+Unconfigured: no graph probe, timer, network request or listed tool. Connected but internal-only:
+no MCP graph runtime/probe, tool/list notification, or accepted client call; CLI calls remain available.
+A configured and MCP-enabled backend is
 probed asynchronously with a two-second deadline. Initially unavailable/empty indexes stay
 hidden; retries back off from two seconds to sixty seconds. Healthy rechecks run every thirty
 seconds. First availability emits `tools/list_changed` on persistent stdio sessions. A short outage preserves the tool name,
