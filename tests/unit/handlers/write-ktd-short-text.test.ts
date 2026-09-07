@@ -178,3 +178,38 @@ describe('SAPWrite KTD short texts', () => {
     expect(calls.some((call) => call.url.includes('_action=LOCK'))).toBe(false);
   });
 });
+
+describe('SAPWrite SKTD dryRun', () => {
+  it('validates and reports which nodes would change without issuing a PUT', async () => {
+    mockFetch.mockReset();
+    const calls: Array<{ method: string; url: string }> = [];
+    const b64 = (text: string) => Buffer.from(text, 'utf-8').toString('base64');
+    const base = '/sap/bc/adt/bo/behaviordefinitions/zbdef/source/main';
+    const action = `${base}#type=BDEF/BAC;name=ZBDEF.SetPhoto`;
+    const envelope =
+      '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZBDEF">' +
+      `<sktd:element><sktd:id>ZBDEF</sktd:id><sktd:text>${b64('root v1')}</sktd:text></sktd:element>` +
+      `<sktd:element><sktd:id>${action}</sktd:id><sktd:text>${b64('photo v1')}</sktd:text></sktd:element>` +
+      '</sktd:docu>';
+    mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+      calls.push({ method: opts?.method ?? 'GET', url: String(url) });
+      return Promise.resolve(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
+    });
+
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: 'ZBDEF',
+      dryRun: true,
+      source: '## ZBDEF\n\nroot v1\n\n## ZBDEF.SetPhoto\n\nphoto v2',
+    });
+
+    const text = result.content[0]?.text ?? '';
+    expect(result.isError).toBeFalsy();
+    expect(text).toContain('nothing was written');
+    // Only the node whose text actually differs is reported; the untouched root is counted.
+    expect(text).toContain('Would change 1 node(s); 1 node(s) would keep their current text');
+    expect(text).toContain(action);
+    expect(calls.some((c) => c.method === 'PUT' || c.url.includes('_action=LOCK'))).toBe(false);
+  });
+});

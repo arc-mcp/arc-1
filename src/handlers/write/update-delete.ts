@@ -10,7 +10,7 @@ import {
   safeUpdateSource,
   unlockObject,
 } from '../../adt/crud.js';
-import { type KtdShortText, rewriteKtdDocument } from '../../adt/ddic-xml.js';
+import { type KtdShortText, rewriteKtdDocument, summarizeKtdChanges } from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import {
@@ -126,6 +126,17 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       hasSource ? source : undefined,
       args.shortTexts as KtdShortText[] | undefined,
     );
+    // A KTD update is a merge: only the addressed nodes change. dryRun runs the identical
+    // validation and reports the outcome without the PUT, so a 90-node edit can be checked
+    // before it touches SAP.
+    if (args.dryRun === true) {
+      const { changed, untouched } = summarizeKtdChanges(currentEnvelope, body);
+      return textResult(
+        `Dry run for ${type} ${name} — nothing was written.\n` +
+          `Would change ${changed.length} node(s); ${untouched} node(s) would keep their current text:\n` +
+          `${changed.map((id) => `  ${id}`).join('\n')}`,
+      );
+    }
     await safeUpdateObject(
       client.http,
       client.safety,
