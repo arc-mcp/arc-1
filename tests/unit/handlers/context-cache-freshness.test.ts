@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { Registry } from '@abaplint/core';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AdtClient, SourceReadOptions } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import type { Cache } from '../../../src/cache/cache.js';
@@ -59,6 +60,7 @@ describe.each(['memory', 'sqlite'] as const)('SAPContext freshness (%s)', (backe
     return new CachingLayer(store);
   };
   afterEach(() => {
+    vi.restoreAllMocks();
     for (const store of stores.splice(0)) store.close();
   });
 
@@ -93,13 +95,20 @@ describe.each(['memory', 'sqlite'] as const)('SAPContext freshness (%s)', (backe
   });
 
   it('retains conditional reads and zero-body 304 source reuse', async () => {
+    const parse = vi.spyOn(Registry.prototype, 'parse');
     const f = fixture(),
       cache = layer(),
       options = { depth: 2, maxDeps: 3 };
     const first = await run(f, cache, options);
+    expect(parse.mock.calls.length).toBeGreaterThan(0);
+    parse.mockClear();
     f.calls.length = 0;
     expect(await run(f, cache, options)).toBe(first);
     expect(f.calls).toEqual(Array.from({ length: 3 }, () => ({ conditional: true, bytes: 0 })));
+    expect(parse).not.toHaveBeenCalled();
+    f.sources.set('ZCL_A', source('ZCL_A', ['ZCL_C'], 'fresh_api'));
+    expect(await run(f, cache, options)).toContain('fresh_api');
+    expect(parse.mock.calls.length).toBeGreaterThan(0);
   });
 
   it.each([403, 404])('does not serve stale contracts after HTTP %i', async (status) => {
@@ -122,5 +131,17 @@ describe.each(['memory', 'sqlite'] as const)('SAPContext freshness (%s)', (backe
     f.denied.set('ZCL_A', 403);
     expect(await run(f, cache, options, true)).toContain('1 failed');
     expect(f.calls.at(-1)?.conditional).toBe(false);
+  });
+
+  it('does not reuse shared parse results under principal propagation', async () => {
+    const f = fixture(),
+      cache = layer(),
+      options = { depth: 2, maxDeps: 3 };
+    const first = await run(f, cache, options);
+    const parse = vi.spyOn(Registry.prototype, 'parse');
+    f.calls.length = 0;
+    expect(await run(f, cache, options, true)).toBe(first);
+    expect(parse.mock.calls.length).toBeGreaterThan(0);
+    expect(f.calls.every((call) => !call.conditional)).toBe(true);
   });
 });

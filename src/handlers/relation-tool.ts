@@ -3,7 +3,7 @@ import { isActionDenied } from '../server/deny-actions.js';
 import type { ServerConfig } from '../server/types.js';
 import type { ToolDefinition } from './tools.js';
 
-/** Pure opt-in projection. No discovery I/O or extra schema cost when disabled/unknown. */
+/** Pure opt-in projection. Unknown capability stays visible; invocation verifies it before use. */
 export function addLiveRelationsDefinition(
   tool: ToolDefinition,
   config: ServerConfig,
@@ -15,7 +15,7 @@ export function addLiveRelationsDefinition(
     config.targetId ||
     config.toolMode !== 'standard' ||
     isActionDenied('SAPNavigate', 'relations', config.denyActions) ||
-    !supportsRelations(discovery)
+    (discovery?.size && !supportsRelations(discovery))
   )
     return;
   const properties = tool.inputSchema.properties as Record<string, Record<string, unknown>>;

@@ -36,9 +36,12 @@ the existing service environment and recreate that service using your normal dep
 Do not publish another port or deploy another container/database. Normal `ARC1_CACHE` settings
 remain independent. See [Deployment](deployment.md) if ARC-1 is not installed yet.
 
-Restart ARC-1, then refresh the MCP client's tools. The action appears only after the ordinary
-background discovery confirms support; tools/list itself never waits on SAP. If discovery is
-still unknown, a deliberate `relations` call performs its own bounded discovery check.
+Restart ARC-1, then refresh the MCP client's tools. After opt-in, the action is visible while
+capability discovery is still unknown, so clients that only list tools once can use it. A known
+unsupported endpoint/MIME hides it. tools/list never waits on SAP; invocation always checks the
+exact capability before object access and performs bounded discovery when necessary. A shared-client
+`SAPManage(action="probe")` can refresh failed/stale discovery; per-user probes do not replace the
+shared capability cache.
 Successful fallback discovery is parsed once and retained in the existing in-memory,
 destination-scoped capability cache. Later calls reuse these hints, but still read root metadata
 and relationships live as the caller. Failed or unsupported fallback discovery is not retained.
@@ -72,6 +75,18 @@ app's memory/CPU and SAP requests; it does not guarantee that a particular deplo
 Stay within your current trial quota and do not provision storage for it.
 
 ## Calls and prompts
+
+### Authentication and redirects
+
+Bounded analysis deliberately refuses HTTP redirects (including CSRF setup) so redirects cannot
+escape the attempt budget. It does not perform interactive SAML browser login. Use your existing
+authenticated SAP session, OAuth/principal-propagation destination, or a direct ADT endpoint.
+If your on-premise administrator explicitly permits Basic authentication, `SAP_DISABLE_SAML=true`
+can suppress the SAML redirect for those requests. Do not set it for BTP ABAP/S/4 Public Cloud,
+disable TLS verification, or change the SAP identity to bypass a failure. A generic HTTP redirect
+follow is not evidence that an SSO login completed.
+
+### Examples
 
 Replace the example object with an existing object on your SAP system:
 
@@ -151,6 +166,10 @@ expansions. A session/CSRF retry counts as recovered only after a complete, vali
 successful control headers alone (or a denied request retried as 404) cannot clear that failure.
 Resource exhaustion after valid results may return explicitly partial evidence. Narrow
 the requested root/depth/package scope; do not keep retrying the identical broad request.
+If final response processing crosses the deadline, retained evidence is marked with `deadline`
+truncation rather than discarded. Explicit caller cancellation always remains an error.
+An unresolved native reference (`exists="false"`) remains a protocol error: v1 cannot distinguish
+deletion from restricted visibility from that flag alone and does not present it as proven absence.
 
 ## Validation status
 

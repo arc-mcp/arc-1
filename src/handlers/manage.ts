@@ -25,7 +25,12 @@ import { getTransportInfo } from '../adt/transport.js';
 import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
-import { getCachedFeatures, isPackagesEndpointAvailable, setCachedFeatures } from './feature-cache.js';
+import {
+  getCachedFeatures,
+  isPackagesEndpointAvailable,
+  setCachedDiscovery,
+  setCachedFeatures,
+} from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import {
@@ -537,6 +542,10 @@ export async function handleSAPManage(
           }
         }
         setCachedFeatures(probed);
+        if (probed.discoveryMap) {
+          setCachedDiscovery(probed.discoveryMap);
+          client.http.setDiscoveryMap(probed.discoveryMap);
+        }
       }
       return textResult(toolJson(probed));
     }

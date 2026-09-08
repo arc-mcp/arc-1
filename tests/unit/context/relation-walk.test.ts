@@ -26,6 +26,15 @@ function provider(
   };
 }
 describe('bounded request-local relation traversal', () => {
+  it('does not mutate or alias provider-owned edge arrays', async () => {
+    const network = normalizeRelationNetwork(relationXml(a, [c, b]), 'ENV', a);
+    Object.freeze(network.edges);
+    const original = network.edges.map((edge) => ({ ...edge }));
+    const p = { options: {}, lookup: vi.fn(async () => network) };
+    const result = await walkRelations(a, p, { ...options, depth: 1 });
+    result.edges[0]!.from = 'changed by caller';
+    expect(network.edges).toEqual(original);
+  });
   it('never hides observed authorization failure behind later body/retry exhaustion', async () => {
     const p = provider();
     p.options.attemptBudget = new RequestAttemptBudget(12);

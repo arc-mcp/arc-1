@@ -16,6 +16,7 @@ import {
   AdtSafetyError,
   classifySapDomainError,
 } from '../adt/errors.js';
+import { AdtAnalysisDeadlineError, AdtRequestBudgetError } from '../adt/request-attempt-budget.js';
 /**
  * Scope required for each tool.
  *
@@ -166,6 +167,10 @@ function buildBaseErrorMessage(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): string {
+  if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
+    return `${message} Narrow depth, maxResults or expandPackages. This is an analysis limit, not a connectivity failure.`;
+  }
   if (err instanceof AdtResponseLimitError) {
     const mebibytes = err.limitBytes / (1024 * 1024);
     const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;
@@ -181,6 +186,15 @@ function buildBaseErrorMessage(
     });
   }
   if (err instanceof AdtApiError) {
+    if (
+      tool === 'SAPNavigate' &&
+      args.action === 'relations' &&
+      err.statusCode >= 300 &&
+      err.statusCode < 400 &&
+      err.statusCode !== 304
+    ) {
+      return 'Bounded live relations do not follow HTTP redirects. Use an authenticated SAP session or a direct ADT destination; check SAML/SSO and reverse-proxy routing. Do not disable TLS verification.';
+    }
     if (isPossibleDataPreviewWafBlock(err, tool, args)) {
       return formatPossibleDataPreviewWafBlock(err, config.minimalErrors);
     }
@@ -548,6 +562,7 @@ function getBehaviorPoolSaveFailureHint(err: AdtApiError, args: Record<string, u
 }
 
 function classifyError(err: unknown): string {
+  if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return err.name;
   if (err instanceof AdtResponseLimitError) return 'AdtResponseLimitError';
   if (err instanceof AdtApiError) {
     const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path);

@@ -1,5 +1,8 @@
 # PR #769: external review verification
 
+The complete review was subsequently supplied. See [the complete-review dispositions](2026-09-08-pr769-complete-review.md)
+for all 15 findings and the additional notes. This document preserves the earlier partial-review history.
+
 Review baseline: `584a65ad`. Scope: the Claude review summary supplied by the maintainer.
 The summary references 15 findings but contains seven distinct actionable claims; the full
 15-item list was not present in the supplied text or PR review comments. This record evaluates

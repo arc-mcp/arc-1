@@ -1,12 +1,14 @@
 /** Experimental Relation Explorer adapter. No source reads, SQL fallback or shared results. */
 import { XMLValidator } from 'fast-xml-parser';
 import type { AdtClient } from './client.js';
+import { AdtResponseLimitError } from './errors.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType } from './safety.js';
 import { escapeXmlAttr, parseDiscoveryObject, parseXml } from './xml-parser.js';
 
 export const RELATIONS_PATH = '/sap/bc/adt/objectrelations/network';
+export const RELATION_XML_MAX_BYTES = 1024 * 1024;
 export const RELATIONS_MIME = 'application/vnd.sap.adt.objectrelations.request.v1+xml';
 export const RELATION_NAME = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_$]+$/i;
 export type RelationDirection = 'incoming' | 'outgoing';
@@ -78,11 +80,14 @@ function array(value: unknown): unknown[] {
 
 /** Bound parser work as well as wire bytes. Reject entities and unexpectedly deep XML. */
 export function parseRelationXml(xml: string): Record<string, unknown> {
-  if (
-    Buffer.byteLength(xml) > 1024 * 1024 ||
-    /<!DOCTYPE|<!ENTITY|<!--|<!\[CDATA\[|<\?/i.test(xml.replace(/^\s*<\?xml\s+[^<>]*\?>/i, ''))
-  ) {
-    throw new RelationProtocolError('oversized XML or unsupported XML declaration.');
+  const bytes = Buffer.byteLength(xml);
+  if (bytes > RELATION_XML_MAX_BYTES) {
+    throw new AdtResponseLimitError(RELATION_XML_MAX_BYTES, bytes, 'repository-relations');
+  }
+  if (/<!DOCTYPE|<!ENTITY|<!--|<!\[CDATA\[|<\?/i.test(xml.replace(/^\s*<\?xml\s+[^<>]*\?>/i, ''))) {
+    throw new RelationProtocolError(
+      'XML DTDs, entities, comments, CDATA and custom processing instructions are unsupported.',
+    );
   }
   let depth = 0,
     tags = 0;

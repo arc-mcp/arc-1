@@ -1200,7 +1200,7 @@ ENDCLASS.`;
       expect(text).toContain('0 deps resolved');
     });
 
-    it('does not serve cached dependency contracts under principal propagation', async () => {
+    it('ignores legacy aggregate records even when called under principal propagation', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
       layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [

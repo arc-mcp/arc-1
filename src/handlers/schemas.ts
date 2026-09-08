@@ -18,7 +18,7 @@ import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
-import { LiveRelationsInput } from './relation-input.js';
+import { LiveRelationsInput, relationNumber } from './relation-input.js';
 import {
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
@@ -796,12 +796,12 @@ export const SAPNavigateSchema = z
     type: z.string().optional(),
     name: z.string().optional(),
     objectType: z.string().optional(),
-    maxResults: z.coerce.number().optional(),
+    maxResults: relationNumber.optional(),
     line: z.coerce.number().optional(),
     column: z.coerce.number().optional(),
     source: z.string().optional(),
     direction: z.enum(['incoming', 'outgoing']).optional(),
-    depth: z.coerce.number().optional(),
+    depth: relationNumber.optional(),
     expandPackages: z.array(z.string()).optional(),
   })
   .strict()

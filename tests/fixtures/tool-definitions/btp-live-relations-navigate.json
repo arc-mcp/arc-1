@@ -1,0 +1,84 @@
+{
+  "name": "SAPNavigate",
+  "description": "Navigate code (BTP ABAP Environment): definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC). type+name auto-normalized. Scope = released SAP + custom Z/Y. For CDS (DDLS), prefer SAPContext(action=\"impact\") — the same where-used pre-classified into RAP buckets. Experimental relations: live active CLAS/INTF metadata network; requires type+name, no uri/source. Native coverage is unknown; not a complete call graph. No database or source collection.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "definition",
+          "references",
+          "completion",
+          "hierarchy",
+          "relations"
+        ],
+        "description": "Navigation action"
+      },
+      "uri": {
+        "type": "string",
+        "description": "Source URI of the object. Optional for references if type+name are provided."
+      },
+      "type": {
+        "type": "string",
+        "description": "Object type (PROG, CLAS, INTF, FUNC, etc.) — alternative to uri for references."
+      },
+      "name": {
+        "type": "string",
+        "description": "Object name — alternative to uri for references."
+      },
+      "objectType": {
+        "type": "string",
+        "description": "references: keep only results of this ADT type, slash format (CLAS/OC, PROG/P, FUGR/FF). A bare prefix (\"CLAS\") matches every subtype."
+      },
+      "maxResults": {
+        "type": "number",
+        "description": "references: max entries (default 100, max 1000). \"total\" counts every match of the filter. relations: node limit including root (default 50, integer 1–100); hard limits may stop earlier."
+      },
+      "line": {
+        "type": "number",
+        "description": "Line number (1-based)"
+      },
+      "column": {
+        "type": "number",
+        "description": "Column number (1-based)"
+      },
+      "source": {
+        "type": "string",
+        "description": "Current source code (for definition/completion)"
+      },
+      "direction": {
+        "type": "string",
+        "enum": [
+          "incoming",
+          "outgoing"
+        ],
+        "description": "relations only: objects using the root, or objects it uses (default outgoing)."
+      },
+      "depth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3,
+        "description": "relations only: native expansion steps (default 1), not proven source-call hops."
+      },
+      "expandPackages": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$"
+        },
+        "description": "relations only: exact packages to expand beyond root. Other packages remain visible boundary nodes; not an access-control filter."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true
+  }
+}

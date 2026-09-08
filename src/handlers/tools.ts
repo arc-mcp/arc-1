@@ -1036,9 +1036,10 @@ export function getToolDefinitions(
     },
   });
 
-  // SAPQuery — only registered when free SQL is allowed
-  addLiveRelationsDefinition(tools[tools.length - 1]!, config, options.discoveryMap ?? resolvedFeatures?.discoveryMap);
+  const navigation = tools.find((tool) => tool.name === 'SAPNavigate')!;
+  addLiveRelationsDefinition(navigation, config, options.discoveryMap ?? resolvedFeatures?.discoveryMap);
 
+  // SAPQuery — only registered when free SQL is allowed
   if (config.allowFreeSQL) {
     tools.push({
       name: 'SAPQuery',

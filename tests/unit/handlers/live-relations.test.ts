@@ -75,9 +75,16 @@ describe('opt-in live relations integration', () => {
       'properties.direction',
     );
   });
-  it('only adds opt-in fields when exact capability is known; denied action adds nothing', () => {
-    expect(navigation(getToolDefinitions(config))).toEqual(navigation(getToolDefinitions(DEFAULT_CONFIG)));
+  it('shows opt-in fields while capability is unknown; denied action adds nothing', () => {
     const enabled = getToolDefinitions(config, undefined, undefined, { discoveryMap: discovery });
+    expect(navigation(getToolDefinitions(config))).toEqual(navigation(enabled));
+    expect(
+      navigation(
+        getToolDefinitions(config, undefined, undefined, {
+          discoveryMap: new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]),
+        }),
+      ),
+    ).toEqual(navigation(getToolDefinitions(DEFAULT_CONFIG)));
     expect(navigation(enabled).inputSchema).toHaveProperty('properties.action.enum', [
       'definition',
       'references',

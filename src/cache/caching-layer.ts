@@ -2,14 +2,12 @@
  * Caching layer — orchestrates source + dependency caching.
  *
  * Sits between the intent handler / compressor and the ADT client.
- * Provides cache-aware source fetching with hash-based dependency
- * graph invalidation.
+ * Provides ETag-aware source fetching. SAPContext rebuilds aggregates on every call;
+ * context/parse-cache.ts memoizes only pure parses AFTER authorized source retrieval.
  *
  * Design:
  * - Source code is cached by (type, name, active/inactive version) with a SHA-256 hash and SAP ETag.
- * - Dependency graphs (contracts[]) are cached by source hash.
- *   When the source changes, the hash changes, and deps are re-resolved.
- *   When the source hasn't changed, ALL downstream dep fetches are skipped.
+ * - Legacy dependency-graph methods/storage remain for compatibility, not runtime context reads.
  * - Function group mappings are cached permanently (rarely change).
  * - Writes invalidate the source cache for the written object.
  *

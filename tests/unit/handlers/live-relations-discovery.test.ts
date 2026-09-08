@@ -38,7 +38,7 @@ describe('live relations cold discovery reuse', () => {
     const parse = vi.spyOn(XMLParser.prototype, 'parse');
     expect(
       getConfiguredToolDefinitions(config).find((tool) => tool.name === 'SAPNavigate')!.inputSchema,
-    ).not.toHaveProperty('properties.direction');
+    ).toHaveProperty('properties.direction');
     for (let call = 0; call < 2; call++) {
       expect((await handleToolCall(client, config, 'SAPNavigate', input, readAuth)).isError).toBeUndefined();
     }

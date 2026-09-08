@@ -1,7 +1,7 @@
 import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from '../adt/errors.js';
 import { type AdtRequestOptions, throwIfRequestCancelled } from '../adt/http-deadline.js';
 import type { RelationDirection, RelationEdge, RelationNetwork, RelationObject } from '../adt/repository-relations.js';
-import { RelationProtocolError } from '../adt/repository-relations.js';
+import { RELATION_XML_MAX_BYTES, RelationProtocolError } from '../adt/repository-relations.js';
 import { AdtRequestBudgetError } from '../adt/request-attempt-budget.js';
 
 export const RELATION_LIMITS = Object.freeze({
@@ -9,7 +9,7 @@ export const RELATION_LIMITS = Object.freeze({
   edges: 100,
   expansions: 8,
   requests: 12,
-  bytes: 1048576,
+  bytes: RELATION_XML_MAX_BYTES,
   deadlineMs: 15000,
   concurrent: 2,
 });
@@ -106,7 +106,7 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
     // URI tie-breaking is locale-independent, so bounded selections are reproducible.
     const rank = (edge: RelationEdge) =>
       root.package && found.get(adjacentUri(edge))?.package === root.package ? 0 : 1;
-    for (const edge of network.edges.sort(
+    for (const edge of [...network.edges].sort(
       (a, b) => rank(a) - rank(b) || (adjacentUri(a) < adjacentUri(b) ? -1 : adjacentUri(a) > adjacentUri(b) ? 1 : 0),
     )) {
       const adjacent = options.direction === 'outgoing' ? edge.to : edge.from;
@@ -131,7 +131,7 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
         nodes.set(adjacent, { ...target, level: object.level + 1 });
         queue.push(adjacent);
       }
-      edges.set(id, edge);
+      edges.set(id, { ...edge });
     }
   }
   return {

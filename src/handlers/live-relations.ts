@@ -1,8 +1,13 @@
 import type { AdtClient } from '../adt/client.js';
 import { DataResponseBudget } from '../adt/data-result-context.js';
+import { AdtNetworkError } from '../adt/errors.js';
 import { requestBudgetSignal, throwIfRequestCancelled } from '../adt/http-deadline.js';
 import { NativeRelationProvider } from '../adt/repository-relations.js';
-import { RequestAttemptBudget } from '../adt/request-attempt-budget.js';
+import {
+  AdtAnalysisDeadlineError,
+  AdtRequestBudgetError,
+  RequestAttemptBudget,
+} from '../adt/request-attempt-budget.js';
 import { Semaphore } from '../adt/semaphore.js';
 import { RELATION_LIMITS, walkRelations } from '../context/relation-walk.js';
 import { getCurrentContext } from '../server/context.js';
@@ -28,7 +33,14 @@ export async function handleLiveRelations(client: AdtClient, config: ServerConfi
     responseBudget: new DataResponseBudget(RELATION_LIMITS.bytes, 'repository-relations'),
     attemptBudget: new RequestAttemptBudget(RELATION_LIMITS.requests),
   };
-  return analyses.run(async () => {
+  try {
+    await analyses.acquire(requestBudgetSignal(options));
+  } catch (error) {
+    throwIfRequestCancelled({ signal: options.signal });
+    if (Date.now() >= options.deadline) throw new AdtAnalysisDeadlineError();
+    throw error;
+  }
+  try {
     const provider = new NativeRelationProvider(client, options);
     const known = getCachedDiscovery(config.destinationName);
     const discovered = await provider.discover(known.size ? known : undefined);
@@ -42,7 +54,13 @@ export async function handleLiveRelations(client: AdtClient, config: ServerConfi
       ...input,
       expandPackages: input.expandPackages?.map((pkg) => pkg.toUpperCase()),
     });
-    if (!result.truncated) throwIfRequestCancelled(options);
+    // Cancellation always wins, including partial results. Completed CPU-side normalization may
+    // cross the deadline after the last response: preserve evidence and mark the time boundary.
+    throwIfRequestCancelled({ signal: options.signal });
+    if (Date.now() >= options.deadline && !result.truncationReasons.includes('deadline')) {
+      result.truncated = true;
+      result.truncationReasons.push('deadline');
+    }
     const json = toolJson({
       ...result,
       observedAt: new Date(started).toISOString(),
@@ -58,5 +76,17 @@ export async function handleLiveRelations(client: AdtClient, config: ServerConfi
     if (Buffer.byteLength(json) > 512 * 1024)
       throw new Error('Live relationship output limit exceeded. Narrow maxResults.');
     return textResult(json);
-  }, requestBudgetSignal(options));
+  } catch (error) {
+    if (
+      error instanceof AdtNetworkError &&
+      !(error instanceof AdtRequestBudgetError) &&
+      Date.now() >= options.deadline &&
+      !options.signal?.aborted &&
+      !options.attemptBudget.authorizationFailureObserved
+    )
+      throw new AdtAnalysisDeadlineError();
+    throw error;
+  } finally {
+    analyses.release();
+  }
 }

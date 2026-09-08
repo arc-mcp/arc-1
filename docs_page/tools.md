@@ -210,7 +210,7 @@ ARC-1 caches every source read with the SAP-emitted `ETag`. On the next read, AR
 
 This means external writes (Eclipse activations, gCTS pulls, abapGit imports) are caught automatically — there's no staleness window. To force a fresh fetch and bypass the cache for one read, pass `force_refresh: true`.
 
-The full caching architecture (per-version cache keys, conditional GET, dependency-graph caching, inactive-list session cache, write invalidation) is documented in [Caching System](caching.md).
+The full caching architecture (per-version cache keys, conditional GET, pure parse memoization, inactive-list session cache, write invalidation) is documented in [Caching System](caching.md).
 
 ---
 
@@ -756,8 +756,9 @@ SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_ty
 Navigate code: find definitions, references (where-used), code completion, and class hierarchy.
 
 An optional [experimental `relations` action](live-relations.md) adds bounded live metadata
-networks for CLAS/INTF. It is absent by default and is listed only after admin opt-in and exact
-SAP discovery evidence. The existing actions below are unchanged.
+networks for CLAS/INTF. It is absent by default; after admin opt-in it is listed unless SAP discovery
+has established that the capability is absent. Invocation still requires exact discovery evidence.
+The existing actions below are unchanged.
 
 **Parameters:**
 
@@ -775,8 +776,9 @@ SAP discovery evidence. The existing actions below are unchanged.
 
 **Experimental relations parameters (opt-in):**
 
-Only present after `ARC1_LIVE_RELATIONS=true` and exact SAP capability discovery, in single-target
-standard mode. These rows add to or qualify the table above; existing actions keep their behavior.
+Only present after `ARC1_LIVE_RELATIONS=true`, in single-target standard mode, unless discovery
+establishes that the capability is absent. These rows add to or qualify the table above; existing
+actions keep their behavior. Strict-client relation-only placeholders on other actions are ignored.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -1168,7 +1170,9 @@ If the object has no KTD or the backend returns 404/410 for the KTD document, AR
 
 Dependency context is recomputed on each call; a root hash cannot validate changed dependencies.
 Normal ETag-validated source caching remains, so unchanged dependency bodies can still use `304`
-responses. The old aggregate `[cached]` shortcut is no longer used. See
+responses. Pure contract/dependency parsing is reused by content hash after source retrieval;
+principal-propagation dependency calls bypass that memoization. The old aggregate `[cached]`
+shortcut is no longer used. See
 [Caching System → Dependency context](caching.md#dependency-context).
 
 ### action="structure" — DDIC includes + append structures (TABL only)
@@ -1518,7 +1522,7 @@ classic FLP lifecycle operations, and set an object's API release contract.
 **Actions:**
 - `probe` — Re-probe the SAP system now (feature probes + auth checks + ADT discovery refresh). Detects optional features.
 - `features` — Get cached feature status from last probe (fast, no SAP round-trip).
-- `cache_stats` — Return request-driven cache statistics: cached sources, dependency graphs, released APIs, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
+- `cache_stats` — Return request-driven cache statistics: cached sources, legacy dependency-graph rows, released APIs, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
 - `create_package` — Create a package (`DEVC`) via `/sap/bc/adt/packages`.
 - `delete_package` — Delete a package via lock/delete/unlock.
 - `change_package` — Move an existing object into a different package (DEVC reassignment).
@@ -1582,7 +1586,7 @@ classic FLP lifecycle operations, and set an object's API release contract.
 |-------|-------------|
 | `enabled` | Whether caching is active (`false` if `ARC1_CACHE=none`) |
 | `sourceCount` | Cached source code entries (grows as objects are read) |
-| `contractCount` | Cached dependency graphs (grows as `SAPContext(deps)` is called) |
+| `contractCount` | Legacy dependency-graph rows; current `SAPContext(deps)` neither reads nor populates them. Does not count memory-only parse memoization. |
 | `apiCount` | Released API metadata entries populated by requests |
 | `inactiveListCache` | Aggregate user/session draft-list cache counts |
 

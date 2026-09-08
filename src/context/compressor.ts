@@ -19,6 +19,7 @@ import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsDependencies } from './cds-deps.js';
 import { extractContract } from './contract.js';
 import { extractDependencies } from './deps.js';
+import { contextParseCache } from './parse-cache.js';
 import type { CdsDependency, ContextResult, Contract, Dependency } from './types.js';
 
 const DEFAULT_MAX_DEPS = 20;
@@ -80,7 +81,9 @@ export async function compressContext(
   const allContracts: Contract[] = [];
   let totalFiltered = 0;
 
-  const deps = extractDependencies(source, objectName, true, abaplintVersion);
+  const deps =
+    contextParseCache(cachingLayer)?.dependencies(source, objectName, abaplintVersion) ??
+    extractDependencies(source, objectName, true, abaplintVersion);
   totalFiltered = deps.length; // extractDependencies already filters, but we track the count
 
   await resolveDepthLevel(client, deps, maxDeps, effectiveDepth, seen, allContracts, abaplintVersion, cachingLayer);
@@ -123,12 +126,10 @@ async function resolveDepthLevel(
     for (const contract of fetched) {
       if (contract.success && (contract.fullSource || contract.source)) {
         // Extract deps from the full source (not compressed contract) for accuracy
-        const subDeps = extractDependencies(
-          contract.fullSource || contract.source,
-          contract.name,
-          true,
-          abaplintVersion,
-        );
+        const subSource = contract.fullSource || contract.source;
+        const subDeps =
+          contextParseCache(cachingLayer)?.dependencies(subSource, contract.name, abaplintVersion) ??
+          extractDependencies(subSource, contract.name, true, abaplintVersion);
         const unseenSubDeps = subDeps.filter((d) => !seen.has(d.name.toUpperCase()));
         if (unseenSubDeps.length > 0) {
           await resolveDepthLevel(
@@ -174,7 +175,10 @@ async function fetchSingleContract(
   try {
     const objectType = inferObjectType(dep);
     const source = await fetchSource(client, dep.name, objectType, cachingLayer);
-    const contract = extractContract(source, dep.name, objectType, abaplintVersion);
+    // Retrieve under the caller's source/cache policy BEFORE consulting a content-addressed parse result.
+    const contract =
+      contextParseCache(cachingLayer)?.contract(source, dep.name, objectType, abaplintVersion) ??
+      extractContract(source, dep.name, objectType, abaplintVersion);
     // Store full source for recursive dependency extraction
     contract.fullSource = source;
     return contract;

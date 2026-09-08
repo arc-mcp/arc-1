@@ -7,7 +7,8 @@ repository-graph database experiment. No database, collection job, new service, 
 
 1. Fix SAPContext aggregate caching. A root-source hash cannot validate changed dependency
    contracts or different depth/maxDeps options. Recompute the aggregate, retaining normal
-   ETag-validated source caching and the existing principal-propagation cache bypass.
+   ETag-validated source caching and the existing principal-propagation cache bypass. Memoize
+   only pure contract/dependency parsing by content hash after the normal source/cache checks.
 2. Add experimental `SAPNavigate(action="relations")`, explicitly enabled by
    `ARC1_LIVE_RELATIONS=true`. Reuse SAP's native Relation Explorer metadata rather than downloading
    source or building an index. Existing tools and their default schemas stay unchanged.
@@ -27,8 +28,9 @@ fallback, full-system inventory, inactive code, exact call graphs, or a new plug
   metadata bodies, two concurrent analyses per process. Error bodies remain individually capped.
 - The control-response path must dispose of CSRF bodies without unbounded proxy buffering.
 - Count direct requests below Fetch's internal HTTP 421 replay, not just before calling Fetch.
-- Exact discovery collection and request MIME gate availability. tools/list never performs SAP
-  I/O. Unknown capability is hidden; an explicit invocation can perform bounded discovery.
+- Exact discovery collection and request MIME gate invocation. tools/list never performs SAP
+  I/O. After admin opt-in, unknown capability stays visible; known absence hides it. Invocation
+  can perform bounded discovery. Manual shared-client probing refreshes both feature/MIME stores.
 - Calls use the already selected SAP identity, normal read scope/safety/audit. No shared-result
   cache and no identity fallback. Disabled calls fail before SAP I/O.
 - Native ENV = Used Objects, WUL = Using Objects. Normalize edges consumer → dependency.

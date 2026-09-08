@@ -29,6 +29,8 @@ function surface(tools: ReturnType<typeof getToolDefinitions>): Set<string> {
 }
 
 const CONFIGS = [
+  ['onprem-live-relations', onprem({ ...FULL, liveRelations: true })],
+  ['btp-live-relations', btp({ ...FULL, liveRelations: true })],
   ['onprem', onprem(FULL)],
   ['btp', btp(FULL)],
   ['onprem-readonly', onprem()],

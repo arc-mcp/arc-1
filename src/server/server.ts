@@ -1329,7 +1329,7 @@ export async function createAndStartServer(
     logger.info('Object cache enabled', {
       mode: config.cacheMode,
       sources: stats.sourceCount,
-      depGraphs: stats.contractCount,
+      legacyDepGraphs: stats.contractCount,
     });
   }
 

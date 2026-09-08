@@ -9,6 +9,14 @@ export class AdtRequestBudgetError extends AdtNetworkError {
   }
 }
 
+/** Analysis admission/work allowance, not a failure to reach SAP. */
+export class AdtAnalysisDeadlineError extends AdtNetworkError {
+  constructor() {
+    super('The live analysis time limit was reached. Narrow the analysis or wait for other analyses to finish.');
+    this.name = 'AdtAnalysisDeadlineError';
+  }
+}
+
 /** Request-local allowance, charged immediately before each direct/proxy SAP send. */
 export class RequestAttemptBudget {
   used = 0;
