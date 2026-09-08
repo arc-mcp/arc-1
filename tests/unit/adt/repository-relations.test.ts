@@ -41,6 +41,20 @@ describe('native relation protocol', () => {
     const behavior = { ...ddl, type: 'BDEF/BDO', uri: '/sap/bc/adt/bo/behaviordefinitions/zsame' };
     expect(normalizeRelationNetwork(relationXml(root, [ddl, behavior]), 'ENV', root).objects).toHaveLength(3);
   });
+  it.each(['ENV', 'WUL'] as const)('accepts namespaced roots and references in %s', (context) => {
+    const namespacedRoot = relationObject('/ACME/CL_ROOT');
+    const namespacedChild = relationObject('/ACME/IF_CHILD', 'INTF/OI');
+    const boundary = {
+      ...namespacedChild,
+      type: 'DDLS/DF',
+      uri: '/sap/bc/adt/ddic/ddl/sources/%2Facme%2Fi_view',
+      name: '/ACME/I_VIEW',
+    };
+    const xml = relationXml(namespacedRoot, [namespacedChild, boundary], context).replaceAll('%2F', '%2f');
+    const result = normalizeRelationNetwork(xml, context, namespacedRoot);
+    expect(result.objects).toEqual([namespacedRoot, namespacedChild, boundary]);
+    expect(result.edges).toHaveLength(2);
+  });
   it.each([
     ['context fallback', valid.replace('ENV', 'OTHER')],
     ['missing root', relationXml(child, [])],
@@ -76,6 +90,13 @@ describe('native relation protocol', () => {
     '/sap/bc/adt/x?y',
     '/sap/bc/adt/x%23y',
     '/sap/bc/adt/x\\y',
+    '/sap/bc/adt/oo/classes/%252facme%252fcl_test',
+    '/sap/bc/adt/oo/classes/%2facme%2f..%2fsecret',
+    '/sap/bc/adt/oo/classes/%2facme%5ccl_test',
+    '/sap/bc/adt/oo/classes/%2facme%2fcl_test%3fx=y',
+    '/sap/bc/adt/oo/classes/%2facme%2fcl_test%00',
+    '/sap/bc/adt/oo/classes/%2facme%2fcl%20test',
+    '/sap/bc/adt/oo/classes//acme/cl_test',
   ])('rejects unsafe URI %s', (uri) => {
     expect(() => normalizeRelationNetwork(relationXml(root, [{ ...child, uri }]), 'ENV', root)).toThrow();
   });

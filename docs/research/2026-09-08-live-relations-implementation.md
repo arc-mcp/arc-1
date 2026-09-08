@@ -4,6 +4,11 @@ Date: 2026-09-08. Base: main `b70c3c457210e1e08ec819e46e0d8d3ffcee182a`.
 Feature: [implementation plan](../plans/live-relationships.md);
 operator contract: [experimental live relations](../../docs_page/live-relations.md).
 
+Follow-up: the [external review verification](2026-09-08-pr769-external-review.md) records later
+namespace/auth-recovery corrections, repaired live cache tests, both-mode schema parity, and the
+updated verification counts. The initial evidence below is historical, not an attestation of those
+later fixes.
+
 ## Selected implementation
 
 Ship an aggregate-context cache correction and an optional native relation action, not the

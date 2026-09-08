@@ -2,6 +2,7 @@
 import { XMLValidator } from 'fast-xml-parser';
 import type { AdtClient } from './client.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType } from './safety.js';
 import { escapeXmlAttr, parseDiscoveryDocument, parseXml } from './xml-parser.js';
 
@@ -51,22 +52,11 @@ export function relationObjectUri(type: string, name: string): string {
 /** SAP-returned URIs remain untrusted. They are evidence, never an unrestricted HTTP target. */
 function safeUri(value: unknown): string {
   const uri = text(value, 512);
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(uri);
-  } catch {
-    throw new RelationProtocolError('invalid response URI.');
-  }
-  if (
-    !uri.startsWith('/sap/bc/adt/') ||
-    /[\\?#\s%]/.test(decoded) ||
-    containsControl(decoded) ||
-    decoded.split('/').some((part) => part === '.' || part === '..') ||
-    decoded.includes('//')
-  ) {
+  const canonical = canonicalHostRelativeAdtPath(uri, '/sap/bc/adt/', { allowRawEncodedSlash: true });
+  if (!canonical || canonical.includes('?') || canonical.includes('//') || /\s/.test(decodeURIComponent(canonical))) {
     throw new RelationProtocolError('unsafe response URI.');
   }
-  return uri.replace(/%[a-f0-9]{2}/gi, (part) => part.toUpperCase());
+  return canonical.replace(/%[a-f0-9]{2}/gi, (part) => part.toUpperCase());
 }
 function containsControl(value: string): boolean {
   return Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
@@ -230,6 +220,10 @@ export class NativeRelationProvider {
     const body = `<or:request xmlns:or="http://www.sap.com/adt/objectrelations" xmlns:adtcore="http://www.sap.com/adt/core"><or:reference adtcore:uri="${escapeXmlAttr(uri)}"/><or:preferredContext>${context}</or:preferredContext></or:request>`;
     checkOperation(this.client.safety, OperationType.Intelligence, 'RepositoryRelations');
     const response = await this.client.http.post(RELATIONS_PATH, body, RELATIONS_MIME, { Accept: '*/*' }, this.options);
-    return normalizeRelationNetwork(response.body, context, object);
+    const network = normalizeRelationNetwork(response.body, context, object);
+    // Serial, request-local traversal: only a fully validated expansion proves that an
+    // earlier 401/session or 403/CSRF retry recovered. Headers/control requests are not proof.
+    if (this.options.attemptBudget) this.options.attemptBudget.authorizationFailureObserved = false;
+    return network;
   }
 }

@@ -67,7 +67,12 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
       throwIfRequestCancelled(provider.options);
       network = await provider.lookup(object, options.direction);
     } catch (error) {
-      if (error instanceof AdtApiError && error.statusCode === 404 && object.level > 0) {
+      if (
+        error instanceof AdtApiError &&
+        error.statusCode === 404 &&
+        object.level > 0 &&
+        !provider.options.attemptBudget?.authorizationFailureObserved
+      ) {
         boundaries.push({ uri, reason: 'missing' });
         continue;
       }

@@ -12,7 +12,7 @@ export class AdtRequestBudgetError extends AdtNetworkError {
 /** Request-local allowance, charged immediately before each direct/proxy SAP send. */
 export class RequestAttemptBudget {
   used = 0;
-  /** A later body/retry limit must not turn a failed auth response into partial success. */
+  /** Unresolved auth evidence; only a validated native expansion may clear it after retry recovery. */
   authorizationFailureObserved = false;
   constructor(readonly limit: number) {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError('Request limit must be a positive integer.');

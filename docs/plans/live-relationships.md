@@ -39,7 +39,9 @@ fallback, full-system inventory, inactive code, exact call graphs, or a new plug
 - Report evidence, observation time, unknown native coverage, limits, and separate scope
   boundaries from resource truncation. Native edges are not proven source-level calls/hops.
 - Empty results never prove unused code. 401/403 and malformed protocol are terminal errors;
-  resource exhaustion after verified results may return explicitly incomplete evidence.
+  resource exhaustion after verified results may return explicitly incomplete evidence. A recovered
+  401/session or 403/CSRF response clears failure evidence only after a validated native expansion;
+  a retry ending in child 404 must not clear an unresolved authorization failure.
 
 Final review found and reproduced an implicit HTTP 421 replay that undercounted direct sends.
 The corrective pass moved accounting into a request-local dispatcher wrapper, retained typed

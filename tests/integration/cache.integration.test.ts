@@ -6,7 +6,7 @@
  *
  * What is tested:
  * - Source cache miss/revalidation/invalidation (MemoryCache and SqliteCache)
- * - Dependency graph caching (second SAPContext call returns [cached])
+ * - Fresh dependency context on repeated calls, with ETag-revalidated source caching
  * - Cache stats reporting via SAPManage
  * - Live usages lookup without cache configuration
  * - SQLite cache persistence across instances
@@ -17,7 +17,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { CachingLayer } from '../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../src/cache/memory.js';
@@ -48,6 +48,7 @@ describe('Cache Integration Tests', () => {
   let client: AdtClient;
   let hasTestClass = false;
   let hasTestClassWithDeps = false;
+  afterEach(() => vi.restoreAllMocks());
 
   beforeAll(async () => {
     requireSapCredentials();
@@ -221,9 +222,9 @@ describe('Cache Integration Tests', () => {
     }, 15000);
   });
 
-  // ─── Dependency Graph Caching via handleToolCall ──────────────────
+  // ─── Fresh Dependency Context via handleToolCall ──────────────────
 
-  describe('dep graph caching (via SAPContext handler)', () => {
+  describe('fresh dependency context (via SAPContext handler)', () => {
     // Dep-graph tests use the BOBF demo class which only exists on S/4 systems.
     // The third test (SAPRead) uses TEST_CLASS instead; both gates keep the
     // suite honest on any system.
@@ -232,8 +233,10 @@ describe('Cache Integration Tests', () => {
       requireDepGraphFixture(ctx);
     });
 
-    it('first SAPContext deps call is not cached; second is cached', async () => {
+    it('rebuilds dependency context on both cold and warm calls without aggregate cache reads/writes', async () => {
       const cl = new CachingLayer(new MemoryCache());
+      const readGraph = vi.spyOn(cl, 'getCachedDepGraph');
+      const writeGraph = vi.spyOn(cl, 'putDepGraph');
 
       const r1 = await handleToolCall(
         client,
@@ -245,8 +248,9 @@ describe('Cache Integration Tests', () => {
         cl,
       );
       const out1 = r1.content[0]?.text ?? '';
+      expect(r1.isError).toBeUndefined();
       expect(out1).toContain('Dependency context for');
-      expect(out1).not.toContain('[cached]'); // first call: not from cache
+      expect(out1).not.toContain('[cached]');
 
       const r2 = await handleToolCall(
         client,
@@ -258,13 +262,19 @@ describe('Cache Integration Tests', () => {
         cl,
       );
       const out2 = r2.content[0]?.text ?? '';
-      expect(out2).toContain('[cached]'); // second call: from dep graph cache
+      expect(r2.isError).toBeUndefined();
+      expect(out2).toContain(`Dependency context for ${TEST_CLASS_WITH_DEPS}`);
+      expect(out2).not.toContain('[cached]');
+      expect(readGraph).not.toHaveBeenCalled();
+      expect(writeGraph).not.toHaveBeenCalled();
     }, 30000);
 
-    it('cached SAPContext response is much faster than first call', async () => {
+    it('revalidates dependency sources with SAP on a warm context call', async () => {
       const cl = new CachingLayer(new MemoryCache());
+      const sourceReads = vi.spyOn(cl, 'getSource');
+      const httpReads = vi.spyOn(client.http, 'get');
 
-      await handleToolCall(
+      const first = await handleToolCall(
         client,
         DEFAULT_CONFIG,
         'SAPContext',
@@ -273,9 +283,12 @@ describe('Cache Integration Tests', () => {
         undefined,
         cl,
       );
-
-      const t1 = Date.now();
-      await handleToolCall(
+      expect(first.isError).toBeUndefined();
+      const coldObjects = sourceReads.mock.calls.map(([type, name]) => `${type}:${name}`).sort();
+      expect(coldObjects.length).toBeGreaterThan(0);
+      sourceReads.mockClear();
+      httpReads.mockClear();
+      const second = await handleToolCall(
         client,
         DEFAULT_CONFIG,
         'SAPContext',
@@ -284,11 +297,18 @@ describe('Cache Integration Tests', () => {
         undefined,
         cl,
       );
-      const cachedMs = Date.now() - t1;
-
-      // Dependency graph hits avoid dependency traversal. Keep this broad because
-      // the live test host still pays MCP handler and process scheduling overhead.
-      expect(cachedMs).toBeLessThan(5000);
+      expect(second.isError).toBeUndefined();
+      expect(sourceReads.mock.calls.map(([type, name]) => `${type}:${name}`).sort()).toEqual(coldObjects);
+      expect(httpReads.mock.calls.some(([, headers]) => Boolean(headers?.['If-None-Match']))).toBe(true);
+      // Missing/inaccessible dependencies are represented separately by SAPContext; inspect
+      // fulfilled source reads without turning their expected sibling errors into test failures.
+      const responses = await Promise.allSettled(httpReads.mock.results.map((result) => result.value));
+      expect(
+        responses.some(
+          (response) =>
+            response.status === 'fulfilled' && response.value.statusCode === 304 && response.value.body === '',
+        ),
+      ).toBe(true);
     }, 30000);
 
     it('SAPRead for same object in same session returns revalidated source from cache', async () => {
@@ -404,21 +424,18 @@ describe('Cache Integration Tests', () => {
   // ─── Cache-Aware compressContext ─────────────────────────────────
 
   describe('compressContext with caching layer', () => {
-    it('dep graph is stored in cache after first compressContext', async (ctx) => {
+    it('stores revalidatable dependency sources but no aggregate graph after compressContext', async (ctx) => {
       requireDepGraphFixture(ctx);
       const cl = new CachingLayer(new MemoryCache());
 
       const { source } = await client.getClass(TEST_CLASS_WITH_DEPS);
       const { compressContext } = await import('../../src/context/compressor.js');
 
-      // First call — no cache
-      await compressContext(client, source, TEST_CLASS_WITH_DEPS, 'CLAS', 10, 1, undefined, cl);
-
-      // Dep graph should now be cached
-      const cached = cl.getCachedDepGraph(source);
-      expect(cached).not.toBeNull();
-      expect(cached?.objectName.toUpperCase()).toBe(TEST_CLASS_WITH_DEPS.toUpperCase());
-      expect(Array.isArray(cached?.contracts)).toBe(true);
+      const result = await compressContext(client, source, TEST_CLASS_WITH_DEPS, 'CLAS', 10, 1, undefined, cl);
+      expect(result.objectName).toBe(TEST_CLASS_WITH_DEPS);
+      expect(result.depsResolved).toBeGreaterThan(0);
+      expect(cl.stats().sourceCount).toBeGreaterThan(0);
+      expect(cl.getCachedDepGraph(source)).toBeNull();
     }, 30000);
   });
 });

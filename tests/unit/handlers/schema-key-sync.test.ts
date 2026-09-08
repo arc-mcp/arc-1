@@ -33,7 +33,7 @@ const TOOLS = [
   'SAPManage',
 ] as const;
 
-// `tool:field` pairs that are intentionally present in only one of the two schemas. Empty today.
+// Permanent schema differences only; the default-off relations projection is checked explicitly below.
 const INTENTIONAL_MISMATCHES = new Set<string>([]);
 
 // Unwrap Zod v4 wrappers (superRefine/ZodEffects/pipe/optional/default) down to the ZodObject.
@@ -48,9 +48,9 @@ function zodObjectKeys(schema: unknown): string[] {
   throw new Error('could not unwrap Zod schema to an object');
 }
 
-function jsonSchemaKeys(tool: string, btp: boolean): string[] | null {
+function jsonSchemaKeys(tool: string, btp: boolean, liveRelations: boolean): string[] | null {
   // features() has every backend feature available, so feature-gated tools (SAPGit) are registered.
-  const defs = getToolDefinitions({ ...fullConfig(btp), liveRelations: true }, true, features(), {
+  const defs = getToolDefinitions({ ...fullConfig(btp), liveRelations }, true, features(), {
     discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
   });
   const def = defs.find((d) => d.name === tool);
@@ -58,17 +58,25 @@ function jsonSchemaKeys(tool: string, btp: boolean): string[] | null {
   return Object.keys((def.inputSchema as any).properties ?? {});
 }
 
-describe('Zod ↔ JSON-Schema field-key parity', () => {
+describe.each([false, true])('Zod ↔ JSON-Schema field-key parity, liveRelations=%s', (liveRelations) => {
   for (const tool of TOOLS) {
     for (const btp of [false, true]) {
       it(`${tool} (${btp ? 'btp' : 'onprem'}) has matching property keys`, () => {
-        const jsonKeys = jsonSchemaKeys(tool, btp);
+        const jsonKeys = jsonSchemaKeys(tool, btp, liveRelations);
         // Under the all-gates-on full config every one of the 12 tools must be registered — a null
         // means the tool silently dropped out of getToolDefinitions (a gating regression), which
         // would otherwise make this parity check pass vacuously. Fail loudly instead.
         expect(jsonKeys, `${tool} (${btp ? 'btp' : 'onprem'}) is not registered under the full config`).not.toBeNull();
         const zodKeys = new Set(zodObjectKeys(getToolSchema(tool, btp)));
         const jsonSet = new Set(jsonKeys);
+        if (tool === 'SAPNavigate' && !liveRelations) {
+          // Runtime accepts deliberate opt-in invocations, but default tools/list must hide ONLY these fields.
+          for (const field of ['direction', 'depth', 'expandPackages']) {
+            expect(zodKeys.has(field)).toBe(true);
+            expect(jsonSet.has(field)).toBe(false);
+            zodKeys.delete(field);
+          }
+        }
 
         const onlyZod = [...zodKeys].filter((k) => !jsonSet.has(k) && !INTENTIONAL_MISMATCHES.has(`${tool}:${k}`));
         const onlyJson = [...jsonSet].filter((k) => !zodKeys.has(k) && !INTENTIONAL_MISMATCHES.has(`${tool}:${k}`));

@@ -125,6 +125,15 @@ no hidden where-used, SQL, source-parser or alternate-identity fallback.
 | Concurrent analyses | 2 per ARC-1 process; normal global SAP concurrency limit also applies |
 | Final serialized result | 512 KiB defense-in-depth cap |
 
+These are overlapping ceilings, not promised completion counts. With no discovery/session state,
+discovery GET + root metadata GET + CSRF HEAD + eight native POSTs uses 11 attempts; a CSRF GET
+fallback uses the twelfth. Retries or large responses can stop the analysis earlier. Reusing ordinary
+discovery/session state saves setup requests, never authorization checks or relationship results.
+
+`metrics.successfulMetadataBytes` includes any discovery and root metadata read inside this analysis,
+plus successful native response bodies. Failed response bodies have a separate per-response 1 MiB
+cap and still consume HTTP attempts/time; the metric is **not** a cumulative cap on all network traffic.
+
 CSRF control bodies are discarded after headers rather than buffered. These are not included in
 the successful-metadata byte metric. The deadline starts after normal dispatch/identity preparation;
 ordinary startup feature probes and Destination Service identity resolution are separate existing
@@ -134,7 +143,9 @@ The strict parser accepts the ordinary XML declaration, but rejects comments, CD
 processing instructions and DTD/entities. Unexpected protocol variants fail with an error.
 
 Authorization and malformed protocol responses are errors, including after earlier successful
-expansions. Resource exhaustion after valid results may return explicitly partial evidence. Narrow
+expansions. A session/CSRF retry counts as recovered only after a complete, valid native expansion;
+successful control headers alone (or a denied request retried as 404) cannot clear that failure.
+Resource exhaustion after valid results may return explicitly partial evidence. Narrow
 the requested root/depth/package scope; do not keep retrying the identical broad request.
 
 ## Validation status
