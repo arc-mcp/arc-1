@@ -39,6 +39,10 @@ remain independent. See [Deployment](deployment.md) if ARC-1 is not installed ye
 Restart ARC-1, then refresh the MCP client's tools. The action appears only after the ordinary
 background discovery confirms support; tools/list itself never waits on SAP. If discovery is
 still unknown, a deliberate `relations` call performs its own bounded discovery check.
+Successful fallback discovery is parsed once and retained in the existing in-memory,
+destination-scoped capability cache. Later calls reuse these hints, but still read root metadata
+and relationships live as the caller. Failed or unsupported fallback discovery is not retained.
+This cache is independent of `ARC1_CACHE`; it stores neither object results nor authorization grants.
 
 ## Enable on SAP BTP Cloud Foundry
 

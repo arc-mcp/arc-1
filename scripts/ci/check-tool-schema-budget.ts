@@ -23,6 +23,7 @@
  */
 
 import { pathToFileURL } from 'node:url';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../src/adt/repository-relations.js';
 import type { FeatureStatus, ResolvedFeatures } from '../../src/adt/types.js';
 import { getToolDefinitions, type ToolDefinition } from '../../src/handlers/tools.js';
 import type { TargetDescriptor } from '../../src/server/destination-registry.js';
@@ -96,6 +97,11 @@ const ALL_FEATURES_AVAILABLE: ResolvedFeatures = {
   ui5repo: availableFeature('ui5repo'),
   flp: availableFeature('flp'),
   textSearch: { available: true },
+};
+
+const LIVE_RELATIONS_FEATURES: ResolvedFeatures = {
+  ...ALL_FEATURES_AVAILABLE,
+  discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
 };
 
 const FULL_ACCESS_CONFIG: ServerConfig = {
@@ -228,6 +234,48 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       descriptionCount: 8,
       maxTotalWireBytes: 4_000,
       maxPerToolWireBytes: 4_000,
+    },
+  },
+  // Measure the opt-in branch as well as the unchanged default surfaces above.
+  // Relations adds 900 wire bytes / 225 estimated schema tokens / 3 descriptions.
+  // Dedicated token ratchets allow that known feature cost; ALL wire walls stay unchanged.
+  {
+    name: 'standard-default-live-relations',
+    config: { ...DEFAULT_CONFIG, liveRelations: true },
+    textSearchAvailable: true,
+    resolvedFeatures: LIVE_RELATIONS_FEATURES,
+    budget: {
+      schemaTokenEstimate: 11_800,
+      descriptionTokenEstimate: 8_800,
+      descriptionCount: 180,
+      maxTotalWireBytes: READ_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+    },
+  },
+  {
+    name: 'standard-full-git-live-relations',
+    config: { ...FULL_ACCESS_CONFIG, liveRelations: true },
+    textSearchAvailable: true,
+    resolvedFeatures: LIVE_RELATIONS_FEATURES,
+    budget: {
+      schemaTokenEstimate: 18_000,
+      descriptionTokenEstimate: 12_700,
+      descriptionCount: 270,
+      maxTotalWireBytes: WRITE_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+    },
+  },
+  {
+    name: 'btp-full-git-live-relations',
+    config: { ...FULL_ACCESS_CONFIG, systemType: 'btp', liveRelations: true },
+    textSearchAvailable: true,
+    resolvedFeatures: { ...LIVE_RELATIONS_FEATURES, systemType: 'btp' },
+    budget: {
+      schemaTokenEstimate: 17_150,
+      descriptionTokenEstimate: 12_150,
+      descriptionCount: 265,
+      maxTotalWireBytes: WRITE_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
   },
   ...([16, 17, 256] as const).map(

@@ -53,6 +53,49 @@ async function setup(proxy: boolean, listener: RequestListener) {
 }
 
 describe.each([false, true])('relation budgets over real HTTP, proxy=%s', (proxy) => {
+  it('reuses cold capability discovery but fetches fresh roots and networks on the next call', async () => {
+    resetCachedFeatures();
+    const paths: string[] = [];
+    let lookups = 0;
+    const { client, semaphore } = await setup(proxy, (req, res) => {
+      const path = new URL(req.url!, 'http://loopback.invalid').pathname;
+      paths.push(path);
+      if (path === '/sap/bc/adt/core/discovery') {
+        res.setHeader('x-csrf-token', 'TEST');
+        res.end();
+      } else {
+        res.end(
+          req.method === 'POST'
+            ? relationXml(root, ++lookups === 1 ? [] : [children[0]!])
+            : path === '/sap/bc/adt/discovery'
+              ? discoveryXml
+              : relationMetadata(root),
+        );
+      }
+    });
+    for (const call of [1, 2]) {
+      const response = await handleToolCall(client, { ...DEFAULT_CONFIG, liveRelations: true }, 'SAPNavigate', {
+        action: 'relations',
+        type: 'CLAS',
+        name: root.name,
+      });
+      expect(response.isError).toBeUndefined();
+      const result = JSON.parse(response.content[0]!.text);
+      expect(result.nodes).toHaveLength(call);
+      expect(result.metrics).toMatchObject({
+        httpAttempts: call === 1 ? 4 : 2,
+        successfulMetadataBytes:
+          Buffer.byteLength(relationMetadata(root)) +
+          Buffer.byteLength(relationXml(root, call === 1 ? [] : [children[0]!])) +
+          (call === 1 ? Buffer.byteLength(discoveryXml) : 0),
+      });
+    }
+    expect(paths.filter((path) => path === '/sap/bc/adt/discovery')).toHaveLength(1);
+    expect(paths.filter((path) => path === root.uri)).toHaveLength(2);
+    expect(paths.filter((path) => path === RELATIONS_PATH)).toHaveLength(2);
+    expect(semaphore.inflight).toBe(0);
+  });
+
   it.each([false, true])('completes eight cold expansions, CSRF GET fallback=%s', async (fallback) => {
     resetCachedFeatures();
     let sends = 0,

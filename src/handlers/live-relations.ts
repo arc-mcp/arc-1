@@ -7,7 +7,7 @@ import { Semaphore } from '../adt/semaphore.js';
 import { RELATION_LIMITS, walkRelations } from '../context/relation-walk.js';
 import { getCurrentContext } from '../server/context.js';
 import type { ServerConfig } from '../server/types.js';
-import { getCachedDiscovery } from './feature-cache.js';
+import { getCachedDiscovery, setCachedDiscovery } from './feature-cache.js';
 import { LiveRelationsInput } from './relation-input.js';
 import { errorResult, textResult, toolJson } from './shared.js';
 
@@ -30,8 +30,13 @@ export async function handleLiveRelations(client: AdtClient, config: ServerConfi
   };
   return analyses.run(async () => {
     const provider = new NativeRelationProvider(client, options);
-    const known = getCachedDiscovery();
-    await provider.discover(known.size ? known : undefined);
+    const known = getCachedDiscovery(config.destinationName);
+    const discovered = await provider.discover(known.size ? known : undefined);
+    // Capability hints only; roots and networks still use this caller's live SAP client.
+    // Do not overwrite a startup/parallel refresh that completed while discovery was in flight.
+    if (!known.size && !getCachedDiscovery(config.destinationName).size) {
+      setCachedDiscovery(new Map(discovered), config.destinationName);
+    }
     const root = await provider.validateRoot(input.type, input.name);
     const result = await walkRelations(root, provider, {
       ...input,

@@ -773,6 +773,25 @@ SAP discovery evidence. The existing actions below are unchanged.
 | `column` | number | No | Column number (1-based) |
 | `source` | string | No | Current source code |
 
+**Experimental relations parameters (opt-in):**
+
+Only present after `ARC1_LIVE_RELATIONS=true` and exact SAP capability discovery, in single-target
+standard mode. These rows add to or qualify the table above; existing actions keep their behavior.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | string | Yes | `definition`, `references`, `completion`, `hierarchy`, or `relations` (opt-in) |
+| `type` | string | For relations | `CLAS` or `INTF` root object type. |
+| `name` | string | For relations | Root object name, including namespaced names such as `/BOBF/CL_FRW_FACTORY`. |
+| `direction` | string | No | For `relations`: `outgoing` (default, dependencies) or `incoming` (usages). |
+| `depth` | integer | No | For `relations`: expansion depth, 1–3 (default 1). Native edges do not establish exact call distance. |
+| `maxResults` | integer | No | For `relations`: maximum returned nodes, including the root, 1–100 (default 50). |
+| `expandPackages` | string[] | No | For `relations`: up to 8 exact package names controlling deeper expansion. Boundary nodes remain visible; no wildcards. |
+
+For `relations`, use only `action`, `type`, `name` and its four optional parameters above. Other
+navigation parameters (`uri`, `objectType`, `line`, `column`, `source`) are rejected. See the
+[experimental guide](live-relations.md) for coverage limits and examples.
+
 **References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
 
 Returns a paged envelope — `{total, shown, truncated, hint?, references}` — because where-used is

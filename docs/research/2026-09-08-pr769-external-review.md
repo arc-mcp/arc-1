@@ -99,3 +99,68 @@ Cloud Connector role mappings. No new paid/trial service or cloud deployment is 
 fixes. Native relationship coverage is still unknown and cannot establish unused or safe-to-delete
 code. The successful-byte budget is not a wire-traffic/RSS measurement. The unprovided findings
 from the larger review cannot be claimed reviewed.
+
+## Follow-up review of `55a4e76c`
+
+The second supplied summary confirms the earlier fixes and retracts the eight-expansion budget
+headline. It adds four concrete gaps, all reproduced and addressed below. It still does not
+include its referenced ten-item list. PR review bodies and issue/inline comments were checked
+again; that list was not present there either. No unseen finding is claimed resolved.
+
+| Follow-up claim | Disposition and implementation |
+|---|---|
+| Cold discovery parses the XML twice | Confirmed. Extract `parseDiscoveryObject` from the existing mapper and pass the already bounded, validated XML parse to it. Ordinary `parseDiscoveryDocument(string)` retains its previous behavior. An actual `XMLParser.prototype.parse` spy proves a single parse, not just a single wrapper call. |
+| Successful fallback discovery is never reused | Confirmed. Publish only successful, supported discovery to the existing destination-scoped capability store. Use the same destination key as configured tools/list. Do not overwrite a nonempty startup/parallel refresh. Roots and networks remain fresh, per-caller reads. |
+| Docs parity omits the opt-in schema | Confirmed. Check both modes against the tools reference, with a separate experimental parameter table for opt-in additions/overrides. Negative tests remove each optional-only field/action and insert an optional field into the default table to prove the guard detects drift. |
+| Schema budgets omit the enabled branch | Confirmed. Add enabled read-only, full on-premise and full BTP scenarios with the exact discovery capability. Tests assert the action/fields are actually enabled and inflate an opt-in-only description to prove CI catches its growth. Existing default budgets and all wire ceilings remain unchanged. |
+
+### Boundaries and measured cost
+
+This reuses the existing in-memory capability cache, independent of `ARC1_CACHE`; no graph,
+object result, source, credentials or authorization decision is added to it. Invalid XML,
+unsupported MIME and HTTP discovery failures do not populate this fallback cache. A successful
+capability discovery does not grant object access: a second caller denied by SAP still receives
+an error without nodes. Named destinations remain isolated. No new dependency, endpoint, role,
+database, background job or BTP resource is introduced.
+
+Cold discovery still consumes the current analysis's request/byte/time budgets. Later calls save
+that discovery request; these fixes do not relax budgets or promise completion. Real loopback
+direct and Connectivity-style transports each verify four attempts on the first one-expansion
+call and two on the second: one saving is discovery reuse, the other is the already-existing
+CSRF session reuse. Both root and network are fetched again, changed network results are visible,
+and successful-byte accounting matches the received bodies.
+
+Measured compact `tools/list` payloads (not tokenizer measurements):
+
+| Configuration | Default bytes | Relations enabled bytes | Added estimated schema tokens |
+|---|---:|---:|---:|
+| Standard read-only | 45,830 | 46,730 | 225 |
+| Full on-premise | 70,765 | 71,665 | 225 |
+| Full BTP | 67,285 | 68,185 | 225 |
+
+The delta is **900 bytes** in all three cases, with three additional descriptions. Dedicated
+opt-in token ratchets account for that existing feature cost. The largest enabled on-premise
+surface has only **335 bytes** left under the unchanged 72,000-byte wire ceiling; future schema
+growth may require trimming descriptions, not silently raising that wall. These BTP numbers
+measure schema configuration, not a new deployed BTP verification.
+
+### Follow-up verification
+
+- Before the runtime fix, the new discovery-reuse tests reported **10 failures / 2 passes**.
+- Final focused suite: **482 passed / 14 files**, covering XML/discovery, both HTTP transports,
+  traversal, dispatch, destination cache, both parity guards, docs parity, budgets and snapshots.
+- Final complete unit suite: **5,998 passed / 201 files** (24 additional cases over `55a4e76c`).
+- Typecheck, lint, production build, policy validation, file/schema-size gates and strict MkDocs
+  build passed. Default tool-definition snapshots remain unchanged.
+- The isolated read-only ARC-1 HTTP instance passed **9 live cache E2E tests** again. No fixture
+  sync, SAP write, existing-instance restart or cloud provisioning was performed.
+- Live namespaced stdio smoke at **2026-09-08 13:42 UTC**, SAP_BASIS 758 / client 001:
+  `/BOBF/CL_FRW_FACTORY` returned 20 nodes / 40 edges, eight expansions, 11 attempts,
+  421,134 successful metadata bytes in 4.61 s; `/BOBF/IF_FRW_CONFIGURATION` returned 20 nodes /
+  19 edges, one expansion, two attempts, 54,364 bytes in 0.882 s. Both retained explicit
+  truncation and unknown coverage. Default-hidden, disabled-call rejection, enabled listing and
+  missing-root rejection also passed. These single runs are not latency or coverage guarantees.
+
+The final diff review checked cache miss/hit/failure paths, destination keys, concurrent refresh,
+unchanged parser behavior for ordinary discovery, and non-vacuous guard tests. This was a focused
+follow-up, not a repository-wide security scan or a review of the still-unprovided findings.

@@ -4,7 +4,7 @@ import type { AdtClient } from './client.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType } from './safety.js';
-import { escapeXmlAttr, parseDiscoveryDocument, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, parseDiscoveryObject, parseXml } from './xml-parser.js';
 
 export const RELATIONS_PATH = '/sap/bc/adt/objectrelations/network';
 export const RELATIONS_MIME = 'application/vnd.sap.adt.objectrelations.request.v1+xml';
@@ -170,7 +170,7 @@ export class NativeRelationProvider {
     readonly options: AdtRequestOptions,
   ) {}
 
-  async discover(known?: ReadonlyMap<string, string[]>): Promise<void> {
+  async discover(known?: ReadonlyMap<string, string[]>): Promise<ReadonlyMap<string, string[]>> {
     let map = known;
     if (!map) {
       checkOperation(this.client.safety, OperationType.Read, 'DiscoverRepositoryRelations');
@@ -181,10 +181,11 @@ export class NativeRelationProvider {
       );
       const parsed = parseRelationXml(result.body);
       if (!parsed.service) throw new RelationProtocolError('invalid discovery document.');
-      map = parseDiscoveryDocument(result.body);
+      map = parseDiscoveryObject(parsed);
     }
     if (!supportsRelations(map))
       throw new RelationProtocolError('Relation Explorer endpoint/MIME is not advertised by SAP.');
+    return map;
   }
 
   async validateRoot(type: string, name: string): Promise<RelationObject> {
