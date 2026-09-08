@@ -69,6 +69,9 @@ describe('SAPWrite KTD short texts', () => {
     expect(put?.body).toContain(`sktd:text="${b64('Payment value date')}"`);
     expect(put?.body).toContain(`<sktd:text>${b64('field body')}</sktd:text>`);
     expect(calls.some((call) => call.url.includes('_action=UNLOCK'))).toBe(true);
+    expect(result.content[0]?.text).toContain(
+      'Changed 1 node(s); 1 node(s) kept their current text:\n  PaymentValueDate',
+    );
   });
 
   it('validates the short-text limit after whitespace normalization through the real schema path', async () => {
@@ -221,6 +224,64 @@ describe('SAPWrite SKTD source routing at the handler boundary', () => {
   beforeEach(() => {
     vi.resetAllMocks();
   });
+
+  it.each(['create', 'update'])('reports actual changed nodes and prose headings after %s', async (action) => {
+    const calls = recordKtdCalls(envelope().replaceAll('PaymentValueDate', 'Description'));
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action,
+      type: 'SKTD',
+      name: ROOT_ID,
+      ...(action === 'create' ? { package: '$TMP', refObjectType: 'DDLS/DF' } : {}),
+      source: `## ${ROOT_ID}\n\nroot body\n\n## Description\n\nNew explanation.\n\n## Details\n\nMore prose.`,
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain('Changed 1 node(s); 1 node(s) kept their current text:\n  Description');
+    expect(result.content[0]?.text).toContain('Headings kept as prose inside their node (not node routes): Details');
+    expect(calls.find((call) => call.method === 'PUT')?.body).toContain(
+      b64('New explanation.\n\n## Details\n\nMore prose.'),
+    );
+  });
+
+  it('reports zero changed nodes for a successful no-op update', async () => {
+    recordKtdCalls(envelope('existing label'));
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'SKTD',
+      name: ROOT_ID,
+      shortTexts: [{ node: 'PaymentValueDate', text: 'existing label' }],
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain('Changed 0 node(s); 2 node(s) kept their current text.');
+  });
+
+  it.each([undefined, 'body'])(
+    'reads duplicate IDs with grep=%s while refusing writes before locking',
+    async (grep) => {
+      const calls = recordKtdCalls(envelope('field label').replace(FIELD_ID, ROOT_ID));
+      const read = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'SKTD',
+        name: ROOT_ID,
+        ...(grep ? { grep } : {}),
+      });
+      expect(read.isError).toBeUndefined();
+      expect(read.content[0]?.text).toContain('root body');
+      expect(read.content[0]?.text).toContain('field body');
+      for (const content of [
+        { source: `## ${ROOT_ID}\n\nreplacement` },
+        { shortTexts: [{ node: ROOT_ID, text: 'new' }] },
+      ]) {
+        const write = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'update',
+          type: 'SKTD',
+          name: ROOT_ID,
+          ...content,
+        });
+        expect(write.isError).toBe(true);
+        expect(write.content[0]?.text).toMatch(/duplicate.*id/i);
+      }
+      expect(calls.some((call) => call.method === 'PUT' || call.url.includes('_action=LOCK'))).toBe(false);
+    },
+  );
 
   it.each([`${FIELD_ID}x`, `${FIELD_ID.toUpperCase()}X`])(
     'aborts before the lock for an unknown route: %s',

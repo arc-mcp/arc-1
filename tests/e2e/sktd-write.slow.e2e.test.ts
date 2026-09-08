@@ -220,7 +220,9 @@ describe('E2E SKTD multi-node write lifecycle', () => {
         }),
       );
       expect(afterPreview.split(`\n\n${metaMarker}`)[0]).toBe(rootOnlyRead.split(`\n\n${metaMarker}`)[0]);
-      await write({ action: 'update', type: 'SKTD', name: rootName, source: rootAndCreate });
+      const applied = await write({ action: 'update', type: 'SKTD', name: rootName, source: rootAndCreate });
+      expect(applied).toContain('Changed 1 node(s)');
+      expect(applied).toContain(`\n  ${rootName}.create`);
       // A stored H2 equal to its own node id is indistinguishable from routing unless
       // the read/write representation escapes it. Write the escaped form, then prove
       // the exact live SAPRead result can be written back below.
@@ -257,7 +259,8 @@ describe('E2E SKTD multi-node write lifecycle', () => {
 
       // The exact SAPRead result includes the read-only empty-node index. The writer must strip
       // that context instead of folding it into the last node's Markdown body.
-      await write({ action: 'update', type: 'SKTD', name: rootName, source: inactiveRead });
+      const roundTrip = await write({ action: 'update', type: 'SKTD', name: rootName, source: inactiveRead });
+      expect(roundTrip).toContain('Changed 0 node(s)');
       await activate({ type: 'SKTD', name: rootName });
 
       const activeRead = expectToolSuccess(

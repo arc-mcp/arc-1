@@ -6,6 +6,7 @@ import {
   KTD_META_MARKER,
   rewriteKtdDocument,
   rewriteKtdText,
+  summarizeKtdChanges,
 } from '../../../src/adt/ddic-xml.js';
 
 const ROOT = 'ZBDEF';
@@ -65,6 +66,47 @@ describe('KTD routing identity', () => {
     const duplicate = envelope(node(ROOT, 'root'), node(ACTION, 'first'), node(ACTION, 'second'));
     expect(() => rewriteKtdText(duplicate, `## ${ACTION}\n\nnew`)).toThrow(/duplicate.*id/i);
     expect(() => rewriteKtdDocument(duplicate, undefined, [{ node: ACTION, text: 'new' }])).toThrow(/duplicate.*id/i);
+  });
+});
+
+describe('duplicate KTD IDs remain readable', () => {
+  const duplicate = envelope(node(ROOT, 'first body', 'first label'), node(ROOT, 'second body', 'second label'));
+
+  it.each([true, false])('renders both bodies with routeSafe=%s', (routeSafe) => {
+    expect(decodeKtdText(duplicate, { routeSafe })).toBe(`## ${ROOT}\n\nfirst body\n\n## ${ROOT}\n\nsecond body`);
+  });
+
+  it('explains the write restriction instead of advertising duplicate IDs as routes', () => {
+    const index = formatKtdNodeIndex(duplicate);
+    expect(index).toMatch(/duplicate node id/i);
+    expect(index).toContain(ROOT);
+    expect(index).not.toContain('accepted verbatim');
+    expect(index).not.toContain(`root: ${ROOT}`);
+  });
+
+  it('keeps both short texts visible without offering an ambiguous update', () => {
+    const labels = formatKtdShortTexts(duplicate);
+    expect(labels).toContain('first label');
+    expect(labels).toContain('second label');
+    expect(labels).toContain('duplicate node IDs prevent updates');
+    expect(labels).not.toContain('using the name shown');
+  });
+
+  it('still refuses an unaddressed rewrite when a duplicate sibling has no text', () => {
+    const duplicateEmpty = envelope(node(ROOT, 'only body'), node(ROOT, ''));
+    expect(decodeKtdText(duplicateEmpty)).toBe('only body');
+    expect(() => rewriteKtdText(duplicateEmpty, 'replacement')).toThrow(/duplicate.*id/i);
+  });
+});
+
+describe('legacy KTD body reporting', () => {
+  it('counts an envelope-level body as a changed target', () => {
+    const legacy = `<sktd:docu adtcore:name="${ROOT}"><sktd:text>${b64('old')}</sktd:text></sktd:docu>`;
+    expect(summarizeKtdChanges(legacy, rewriteKtdText(legacy, 'new'))).toEqual({
+      changed: ['(document body)'],
+      untouched: 0,
+    });
+    expect(summarizeKtdChanges(legacy, rewriteKtdText(legacy, 'old'))).toEqual({ changed: [], untouched: 1 });
   });
 });
 

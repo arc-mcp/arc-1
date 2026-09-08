@@ -71,7 +71,8 @@ Fix: exact full IDs select exact elements first. Case-insensitive IDs and node n
 only when unique. The resolver returns the selected element directly to both write paths;
 short texts no longer perform a second lookup. Read labels fall back to exact IDs, and writable
 empty siblings remain visible even when their IDs differ only by case. Truly duplicate exact
-IDs are refused because no reference can distinguish those elements.
+IDs are refused for writes because no reference can distinguish those elements. Reads remain
+available, as corrected in the Claude follow-up below.
 
 ### P2: some unmistakable unknown routes still become prose
 
@@ -101,7 +102,7 @@ the additional-dot gap concerns the PR's new qualifier detection.
   endpoints or XML elements are introduced. Dry runs finish before locking or writing.
 - SAPContext and grep continue to use unescaped stored Markdown without the node index.
 
-## Verification
+## Initial verification
 
 - Author baseline: 406 focused tests passed.
 - New regression file before the fix: 14 failed, 1 passed. All passed after the fix; a further
@@ -126,6 +127,58 @@ Local reproduction and verification artifacts: `/tmp/pr766-review/`. The lifecyc
 against the final implementation after the index help-text and root-selection review. SAP_BASIS
 8.16 and the author's reported repairs of existing customer documents were not independently
 rerun here.
+
+## Claude follow-up on `2da95694`
+
+Both findings in the supplied review were independently reproduced and accepted:
+
+- **F1 — duplicate-ID reads:** the previous refusal lived in the shared route builder, so it
+  affected SAPRead, grep, SAPContext, and short-text display. Route collection now records exact
+  duplicates without throwing. Both body and short-text writers explicitly refuse the envelope
+  before locking. Read surfaces retain every body and short text, and the metadata explains that
+  writes are unavailable instead of advertising ambiguous IDs as usable routes. No live duplicate
+  envelope was observed; the regression uses controlled XML matching the schema's repeated
+  elements/string IDs.
+- **F2 — successful-write feedback:** a newly authored heading matching a node name is a route,
+  including an ordinary word such as `Description`. Successful writes now report the nodes whose
+  bodies or short texts actually changed, the untouched count, and headings retained as prose.
+  This makes routing visible; it does not infer whether the caller intended a matching heading
+  as prose. The reversible read escape and explicit `dryRun` remain the pre-write mechanisms.
+
+Checking related paths found two reporting gaps worth fixing in the same change: post-create
+writes did not collect any prose feedback, and the legacy envelope-level text fallback could
+report zero changed nodes after changing its sole body. One formatter now serves create, update,
+and preview responses, and the legacy fallback counts its document body as one target. No-op
+updates report zero changes without a dangling list.
+
+The review's two informational notes need no behavior change. A dry run intentionally remains
+available under the read-only server ceiling (with write scope and the package gate still
+required): it returns before any mutation, matching the existing RAP preview precedent. A code
+comment now records that `displayName` is a presentation label; routing continues to use the wire
+ID's `;name=` component.
+
+No other actionable finding remained in the reviewed KTD read/write/create/reporting paths or
+in the PR's discussion at the time of this follow-up. This does not validate the author's
+customer-document repairs or add SAP_BASIS 8.16 coverage.
+
+Follow-up validation:
+
+- Twelve added regression cases cover duplicate-ID reads and write refusals, successful create/update
+  feedback, no-op updates, SAPContext, and the legacy envelope body. The first eleven failed against
+  the previous implementation; the SAPContext case was added after the fix.
+- Focused checks: 7 files / 502 tests passed. Final full unit suite: 195 files / 5,819 tests passed.
+  An earlier full run timed out in the unchanged HTTP multi-target routing test. Its first isolated
+  retry returned an unexpected 401 instead of 404; a second isolated run and the final complete
+  suite passed without code changes. The source of this intermittent HTTP-test failure remains
+  unconfirmed and is outside the KTD changes.
+- The additional deterministic battery again passed all 2,000 byte-identical round trips.
+- TypeScript source/scripts/tests, Biome, production build, strict MkDocs build, action policy,
+  file-size and tool-schema budgets, and whitespace checks passed.
+- Live A4H SAP_BASIS 7.58 client 001: the expanded KTD lifecycle passed in 42.5 seconds with no
+  skips, including successful-write target feedback and a zero-change round trip. Every disposable
+  object was deleted. The run used a fresh local MCP server with the final implementation.
+
+Local logs and reproduction artifacts: `/tmp/pr766-followup/`.
 
 ## Independent SAP contract references
 

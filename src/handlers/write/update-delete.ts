@@ -10,7 +10,12 @@ import {
   safeUpdateSource,
   unlockObject,
 } from '../../adt/crud.js';
-import { type KtdShortText, type KtdWriteReport, rewriteKtdDocument, summarizeKtdChanges } from '../../adt/ddic-xml.js';
+import {
+  formatKtdWriteReport,
+  type KtdShortText,
+  type KtdWriteReport,
+  rewriteKtdDocument,
+} from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import {
@@ -128,23 +133,13 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       args.shortTexts as KtdShortText[] | undefined,
       report,
     );
-    // A typo in a node name that carries no qualifier is indistinguishable from a prose heading,
-    // so the caller is told which headings stayed prose and can catch a misrouted section.
-    const proseNote =
-      report.proseHeadings.length > 0
-        ? `\nHeadings kept as prose inside their node (not node routes): ${report.proseHeadings.join(', ')}`
-        : '';
+    // Report both changed nodes and headings retained as prose so a new body exposes its routing.
+    const summary = formatKtdWriteReport(currentEnvelope, body, report, args.dryRun === true);
     // A KTD update is a merge: only the addressed nodes change. dryRun runs the identical
     // validation and reports the outcome without the PUT, so a 90-node edit can be checked
     // before it touches SAP.
     if (args.dryRun === true) {
-      const { changed, untouched } = summarizeKtdChanges(currentEnvelope, body);
-      const changedList = changed.length > 0 ? `:\n${changed.map((node) => `  ${node}`).join('\n')}` : '.';
-      return textResult(
-        `Dry run for ${type} ${name} — nothing was written.\n` +
-          `Would change ${changed.length} node(s); ${untouched} node(s) would keep their current text${changedList}` +
-          proseNote,
-      );
+      return textResult(`Dry run for ${type} ${name} — nothing was written.\n${summary}`);
     }
     await safeUpdateObject(
       client.http,
@@ -156,7 +151,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       getCachedFeatures()?.abapRelease,
     );
     invalidateWrittenObject(type, name);
-    return textResult(`Successfully updated ${type} ${name}.${proseNote}`);
+    return textResult(`Successfully updated ${type} ${name}.\n${summary}`);
   }
 
   if (isMetadataWriteType(type)) {
