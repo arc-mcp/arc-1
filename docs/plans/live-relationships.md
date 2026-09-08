@@ -1,6 +1,6 @@
 # Live repository relationships — implementation plan
 
-Status: implementation and functional verification complete; final diff review pending, 2026-09-08. Separate from the optional
+Status: implementation, corrective review and final functional verification complete, 2026-09-08. Separate from the optional
 repository-graph database experiment. No database, collection job, new service, or AI dependency.
 
 ## Decision and value
@@ -26,6 +26,7 @@ fallback, full-system inventory, inactive code, exact call graphs, or a new plug
   15-second deadline including admission/HTTP queueing, 1 MiB cumulative successful decoded
   metadata bodies, two concurrent analyses per process. Error bodies remain individually capped.
 - The control-response path must dispose of CSRF bodies without unbounded proxy buffering.
+- Count direct requests below Fetch's internal HTTP 421 replay, not just before calling Fetch.
 - Exact discovery collection and request MIME gate availability. tools/list never performs SAP
   I/O. Unknown capability is hidden; an explicit invocation can perform bounded discovery.
 - Calls use the already selected SAP identity, normal read scope/safety/audit. No shared-result
@@ -39,6 +40,12 @@ fallback, full-system inventory, inactive code, exact call graphs, or a new plug
   boundaries from resource truncation. Native edges are not proven source-level calls/hops.
 - Empty results never prove unused code. 401/403 and malformed protocol are terminal errors;
   resource exhaustion after verified results may return explicitly incomplete evidence.
+
+Final review found and reproduced an implicit HTTP 421 replay that undercounted direct sends.
+The corrective pass moved accounting into a request-local dispatcher wrapper, retained typed
+exhaustion, and tested both denied and successful replays. XML comments/CDATA/custom processing
+instructions are refused because they can mislead a regex nesting pre-check; the ordinary XML
+declaration remains supported.
 
 ## Prior evidence and plan review
 

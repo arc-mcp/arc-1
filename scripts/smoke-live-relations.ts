@@ -51,7 +51,8 @@ for (const enabled of [false, true]) {
     assert.equal(absent.isError, true);
     const finalList = await client.listTools();
     const finalNavigation = finalList.tools.find((tool) => tool.name === 'SAPNavigate');
-    report.push({ missingRootRejected: true, listedAfterSmoke: JSON.stringify(finalNavigation).includes('"relations"') });
+    assert.ok(JSON.stringify(finalNavigation).includes('"relations"'), 'Expected relation action after discovery.');
+    report.push({ missingRootRejected: true, listedAfterSmoke: true });
   } finally { await client.close(); await transport.close(); }
 }
 // Script output only, never imported by MCP runtime. Contains counts, not source or credentials.

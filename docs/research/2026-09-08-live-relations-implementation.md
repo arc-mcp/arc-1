@@ -25,6 +25,10 @@ by config, mode, read scope, deny actions and the selected SAP identity. No new 
   malformed XML, entities, excessive nesting/records and conflicting object identities.
 - Logical calls undercount SAP sends. Count at direct/proxy transport sends; CSRF/retries share
   the request-local allowance and automatic redirects are disabled for this scope.
+- Final independent review found another hidden send: Undici Fetch retries HTTP 421 internally.
+  A loopback reproduction against the shipping client measured GET: 1 charged / 2 sends, and POST:
+  2 charged / 3 sends. The corrective pass moved direct accounting below Fetch to its dispatcher;
+  exhausted replays are now refused before sending, while allowed replays are counted correctly.
 - Real proxy tests exposed asynchronous Undici teardown errors when discarding CSRF GET bodies.
   The control-response owner now observes the expected abort event and destroys its dedicated
   transport without buffering the body. Direct and proxy never-ending-body tests pass.
@@ -32,6 +36,8 @@ by config, mode, read scope, deny actions and the selected SAP identity. No new 
   Preserve request-local authorization-failure evidence across response/retry limits.
 - Restrict the XML tag scan to characters other than `<`/`>` so repeated opening delimiters
   cannot trigger quadratic scanning. The million-delimiter negative test completes and rejects.
+  Reject comments, CDATA and custom processing instructions so apparent closing tags inside them
+  cannot hide excessive actual nesting. All three spoofing cases reject; the XML declaration works.
 - Prioritize same-package neighbors within breadth-first traversal. In the trial this spent the
   fixed eight-expansion budget on more application relationships than URI-only ordering.
   This is a relevance heuristic; coverage still remains unknown.
@@ -40,15 +46,15 @@ by config, mode, read scope, deny actions and the selected SAP identity. No new 
 
 Separate built ARC-1 stdio MCP processes, read-only SAP_BASIS 758 / client 001. Existing Docker
 comparison instances were not restarted. TLS verification remained enabled; no source collection,
-SQL, SAP mutations, BTP provisioning or paid resources. Observation: 11:16 UTC.
+SQL, SAP mutations, BTP provisioning or paid resources. Final corrective smoke: 11:37 UTC.
 
 | Root / direction / depth | Nodes | Edges | Expansions | SAP sends | Successful metadata bytes | Analysis time |
 |---|---:|---:|---:|---:|---:|---:|
-| ZCL_SSI_FACTORY / outgoing / 1 | 6 | 5 | 1 | 4 | 312,729 | 1.65 s |
-| ZCL_SSI_ENGINE / incoming / 3 | 17 | 20 | 7 | 8 | 34,642 | 3.55 s |
-| ZCL_SSI_IMPORT_ACTION / outgoing / 3 | 50 | 71 | 8 | 9 | 74,188 | 3.53 s |
-| ZIF_SSI_IMPORTER / incoming / 1 | 11 | 10 | 1 | 2 | 10,629 | 0.42 s |
-| ZCL_SSI_IMPORT_ACTION / outgoing / 3, maxResults=5 | 5 | 7 | 4 | 5 | 32,650 | 1.45 s |
+| ZCL_SSI_FACTORY / outgoing / 1 | 6 | 5 | 1 | 4 | 312,729 | 1.43 s |
+| ZCL_SSI_ENGINE / incoming / 3 | 17 | 20 | 7 | 8 | 34,642 | 3.68 s |
+| ZCL_SSI_IMPORT_ACTION / outgoing / 3 | 50 | 71 | 8 | 9 | 74,188 | 3.50 s |
+| ZIF_SSI_IMPORTER / incoming / 1 | 11 | 10 | 1 | 2 | 10,629 | 0.66 s |
+| ZCL_SSI_IMPORT_ACTION / outgoing / 3, maxResults=5 | 5 | 7 | 4 | 5 | 32,650 | 1.46 s |
 
 The 50-node case reported `truncated=true`, reason `expansions`; the five-node case reported
 reason `nodes`. Other cases stayed within their requested scopes, not complete SAP-wide coverage.
@@ -60,18 +66,30 @@ The smoke also verified: disabled action absent from tools/list; guessed disable
 rejected; nonexistent root rejected; enabled action present after background discovery. The
 smoke asserts counts/limits and metadata semantics, not an LLM's ability to reason correctly.
 
+A separate live SAPContext check against the shipping handler used the same root and two dependency
+contracts across cold/warm/warm-repeat requests. Cold dependency bodies totaled 15,737 bytes; each
+warm request revalidated both dependencies with `304`, transferring zero source-body bytes. All
+three context outputs had the same SHA-256. No aggregate record was stored. This confirms source
+caching remains useful; it does not claim zero SAP requests on warm calls.
+
 ## Automated verification
 
-- Full unit suite: **5,885 tests / 199 files passed**.
-- Focused new relation protocol/traversal/dispatch/transport suite: **99 tests passed**.
+- Full unit suite after corrective review: **5,897 tests / 199 files passed**.
+- Focused relation protocol/traversal/dispatch/transport suite: **111 tests passed**.
 - Typecheck (runtime, scripts, tests), production build, lint, policy validation and strict MkDocs
   build passed. Existing Biome configuration-deprecation and MkDocs upstream notices are unrelated.
 - Nine existing tool-definition snapshots remain byte-identical; all-gates schema key/type parity
   includes the opt-in fields. Process-wide analysis admission and separate SAP semaphore tested.
 - Fault coverage includes cycles/diamonds, dense/high-fanout graphs, node/edge/expansion/send/byte
   limits, queued deadline, stalled body, cancellation, 401/403/missing roots and isolated clients.
+  Real-loopback dispatch tests also combine a successful expansion, 401/403 and an oversized error
+  body: both remain terminal tool errors, not partial graphs.
 
-Final security diff review and repository/PR handoff are tracked separately from these test results.
+Final review covered all 20 source-inventory files plus changed tests, scripts and documentation.
+The reproduced 421 issue was assessed as a bounded accounting defect, not an established exploitable
+vulnerability, and fixed regardless. The subsequent narrow corrective diff was reviewed and retested;
+the earlier immutable scan does not attest to later commits. No unresolved code issue was identified
+in this review. The deployment/release and measurement gaps below remain explicit.
 
 ## Repeat safely
 

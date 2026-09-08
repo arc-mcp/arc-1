@@ -28,7 +28,7 @@
  */
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
-import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
+import { Agent, Client, type Dispatcher } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
@@ -46,6 +46,7 @@ import {
   withoutResponseBudget,
 } from './http-deadline.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
+import { fetchWithAttemptBudget } from './request-attempt-budget.js';
 import type { Semaphore } from './semaphore.js';
 
 export type { AdtRequestOptions } from './http-deadline.js';
@@ -1324,16 +1325,19 @@ export class AdtHttpClient {
         (options?.fetchTimeoutMs === undefined
           ? undefined
           : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
-      options?.attemptBudget?.consume();
-      response = (await undiciFetch(url, {
-        method,
-        headers: outbound,
-        body,
-        signal: requestSignal(options),
-        // Automatic redirects would create uncounted sends outside the caller's allowance.
-        ...(options?.attemptBudget ? { redirect: 'manual' as const } : {}),
-        ...(dispatcher ? { dispatcher } : {}),
-      })) as Response;
+      response = (await fetchWithAttemptBudget(
+        url,
+        {
+          method,
+          headers: outbound,
+          body,
+          signal: requestSignal(options),
+          // Automatic redirects would create uncounted sends outside the caller's allowance.
+          ...(options?.attemptBudget ? { redirect: 'manual' as const } : {}),
+          ...(dispatcher ? { dispatcher } : {}),
+        },
+        options?.attemptBudget,
+      )) as Response;
     }
     return prepareBoundedResponse(response, url, options);
   }

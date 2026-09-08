@@ -88,7 +88,10 @@ function array(value: unknown): unknown[] {
 
 /** Bound parser work as well as wire bytes. Reject entities and unexpectedly deep XML. */
 export function parseRelationXml(xml: string): Record<string, unknown> {
-  if (Buffer.byteLength(xml) > 1024 * 1024 || /<!DOCTYPE|<!ENTITY/i.test(xml)) {
+  if (
+    Buffer.byteLength(xml) > 1024 * 1024 ||
+    /<!DOCTYPE|<!ENTITY|<!--|<!\[CDATA\[|<\?/i.test(xml.replace(/^\s*<\?xml\s+[^<>]*\?>/i, ''))
+  ) {
     throw new RelationProtocolError('oversized XML or unsupported XML declaration.');
   }
   let depth = 0,

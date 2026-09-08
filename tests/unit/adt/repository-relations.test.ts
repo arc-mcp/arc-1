@@ -17,6 +17,11 @@ const root = relationObject('ZCL_ROOT'),
   child = relationObject('ZCL_CHILD');
 const valid = relationXml(root, [child]);
 describe('native relation protocol', () => {
+  it('accepts the ordinary XML declaration', () => {
+    expect(
+      normalizeRelationNetwork(`<?xml version="1.0" encoding="UTF-8"?>${valid}`, 'ENV', root).objects,
+    ).toHaveLength(2);
+  });
   it.each(['ENV', 'WUL'] as const)('normalizes %s direction and deduplicates', (context) => {
     const result = normalizeRelationNetwork(relationXml(root, [child, child], context), context, root);
     expect(result.objects).toHaveLength(2);
@@ -49,6 +54,15 @@ describe('native relation protocol', () => {
     ['conflicting duplicate', relationXml(root, [{ ...root, name: 'ZOTHER' }])],
     ['malformed', valid.slice(0, -5)],
     ['DTD', `<!DOCTYPE root [<!ENTITY x "y">]>${valid}`],
+    [
+      'processing instruction structure spoof',
+      `<root><?fake ${'</x>'.repeat(100)}?>${'<x>'.repeat(100)}${'</x>'.repeat(100)}</root>`,
+    ],
+    ['comment structure spoof', `<root><!--${'</x>'.repeat(100)}-->${'<x>'.repeat(100)}${'</x>'.repeat(100)}</root>`],
+    [
+      'CDATA structure spoof',
+      `<root><![CDATA[${'</x>'.repeat(100)}]]>${'<x>'.repeat(100)}${'</x>'.repeat(100)}</root>`,
+    ],
     ['oversized name', valid.replace('ZCL_ROOT', 'A'.repeat(121))],
   ])('rejects %s', (_label, xml) =>
     expect(() => normalizeRelationNetwork(xml, 'ENV', root)).toThrow(RelationProtocolError),

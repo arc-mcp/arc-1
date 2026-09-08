@@ -1,3 +1,4 @@
+import { createServer } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
@@ -39,6 +40,33 @@ afterEach(() => {
 });
 
 describe('opt-in live relations integration', () => {
+  it.each([401, 403])('keeps HTTP %i terminal after successful expansion and oversized error body', async (status) => {
+    let networks = 0;
+    const server = createServer((req, res) => {
+      if (req.method === 'HEAD') {
+        res.setHeader('x-csrf-token', 'TEST');
+        res.end();
+      } else if (req.method === 'GET') res.end(relationMetadata(root));
+      else if (++networks === 1) res.end(relationXml(root, [child]));
+      else {
+        res.writeHead(status);
+        res.end('x'.repeat(2 * 1024 * 1024));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('Expected loopback listener');
+      const client = new AdtClient({ baseUrl: `http://127.0.0.1:${address.port}` });
+      const result = await handleToolCall(client, config, 'SAPNavigate', { ...input, depth: 2 }, readAuth);
+      expect(result.isError).toBe(true);
+      expect(networks).toBe(2);
+      expect(result.content[0]!.text).not.toContain('"nodes"');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
   it('has zero default schema change even when capability is available', () => {
     expect(getToolDefinitions(DEFAULT_CONFIG, undefined, undefined, { discoveryMap: discovery })).toEqual(
       getToolDefinitions(DEFAULT_CONFIG),

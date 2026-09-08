@@ -38,6 +38,30 @@ async function setup(proxy: boolean, listener: RequestListener) {
   };
 }
 describe.each([false, true])('request attempt budget, Connectivity proxy=%s', (proxy) => {
+  it.each(['GET', 'POST'] as const)('never hides an implicit 421 %s replay outside the allowance', async (method) => {
+    const sends: string[] = [];
+    const { client, semaphore } = await setup(proxy, (req, res) => {
+      sends.push(req.method!);
+      if (req.method === 'HEAD') {
+        res.setHeader('x-csrf-token', 'TEST');
+        res.end();
+      } else {
+        res.writeHead(421);
+        res.end('Misdirected');
+      }
+    });
+    const attemptBudget = new RequestAttemptBudget(method === 'GET' ? 1 : 2);
+    const options = { attemptBudget, deadline: Date.now() + 2000 };
+    const call =
+      method === 'GET'
+        ? client.get('/sap/bc/adt/test', undefined, options)
+        : client.post('/sap/bc/adt/test', '<read/>', 'text/xml', undefined, options);
+    if (proxy) await expect(call).rejects.toMatchObject({ statusCode: 421 });
+    else await expect(call).rejects.toBeInstanceOf(AdtRequestBudgetError);
+    expect(sends).toEqual(method === 'GET' ? ['GET'] : ['HEAD', 'POST']);
+    expect(attemptBudget.used).toBe(sends.length);
+    expect(semaphore.inflight).toBe(0);
+  });
   it.each([401, 403])('retains HTTP %i evidence when its body exceeds the byte cap', async (status) => {
     const { client } = await setup(proxy, (_req, res) => {
       res.writeHead(status);
@@ -161,3 +185,26 @@ describe.each([false, true])('request attempt budget, Connectivity proxy=%s', (p
     expect(semaphore.inflight).toBe(0);
   });
 });
+
+it.each(['GET', 'POST'] as const)(
+  'counts a successful implicit direct %s replay when allowance remains',
+  async (method) => {
+    let reads = 0,
+      sends = 0;
+    const { client } = await setup(false, (req, res) => {
+      sends++;
+      if (req.method === 'HEAD') res.setHeader('x-csrf-token', 'TEST');
+      else res.writeHead(++reads === 1 ? 421 : 200);
+      res.end('ok');
+    });
+    const attemptBudget = new RequestAttemptBudget(method === 'GET' ? 2 : 3);
+    const options = { attemptBudget, deadline: Date.now() + 2000 };
+    const result =
+      method === 'GET'
+        ? await client.get('/sap/bc/adt/test', undefined, options)
+        : await client.post('/sap/bc/adt/test', '<read/>', 'text/xml', undefined, options);
+    expect(result.body).toBe('ok');
+    expect(attemptBudget.used).toBe(sends);
+    expect(reads).toBe(2);
+  },
+);

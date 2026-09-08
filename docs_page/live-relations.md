@@ -130,6 +130,8 @@ the successful-metadata byte metric. The deadline starts after normal dispatch/i
 ordinary startup feature probes and Destination Service identity resolution are separate existing
 work. Bounds are deliberately not configurable in v1. They bound retained data/work, not exact RSS
 or total wire bytes. Compressed responses through Connectivity must honor `Accept-Encoding: identity`.
+The strict parser accepts the ordinary XML declaration, but rejects comments, CDATA, custom
+processing instructions and DTD/entities. Unexpected protocol variants fail with an error.
 
 Authorization and malformed protocol responses are errors, including after earlier successful
 expansions. Resource exhaustion after valid results may return explicitly partial evidence. Narrow
