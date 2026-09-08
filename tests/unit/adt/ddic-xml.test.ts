@@ -1169,16 +1169,19 @@ describe('ddic-xml builders', () => {
         );
       });
 
-      it('treats two ids that differ only by case as one node, never as an ambiguity or a second target', () => {
+      it('keeps distinct exact root IDs separate even when they differ only by case', () => {
         const envelope =
           '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZX">' +
           `<sktd:element><sktd:id>ZX</sktd:id><sktd:text>${b64('a')}</sktd:text></sktd:element>` +
           `<sktd:element><sktd:id>zx</sktd:id><sktd:text>${b64('b')}</sktd:text></sktd:element>` +
           '</sktd:docu>';
         const rewritten = rewriteKtdText(envelope, '## ZX\n\nnew');
-        // First spelling wins, exactly as the id map does; the case-variant element is left alone.
+        // Exact IDs retain their identity; a case-insensitive alias must not merge SAP elements.
         expect(rewritten).toContain(`<sktd:id>ZX</sktd:id><sktd:text>${b64('new')}</sktd:text>`);
         expect(rewritten).toContain(`<sktd:id>zx</sktd:id><sktd:text>${b64('b')}</sktd:text>`);
+        const second = rewriteKtdText(envelope, '## zx\n\nsecond');
+        expect(second).toContain(`<sktd:id>ZX</sktd:id><sktd:text>${b64('a')}</sktd:text>`);
+        expect(second).toContain(`<sktd:id>zx</sktd:id><sktd:text>${b64('second')}</sktd:text>`);
       });
 
       it('lists a root-entity node named like the object by its full id, and routes that id to the entity', () => {

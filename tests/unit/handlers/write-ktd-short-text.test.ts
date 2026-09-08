@@ -222,19 +222,22 @@ describe('SAPWrite SKTD source routing at the handler boundary', () => {
     vi.resetAllMocks();
   });
 
-  it('aborts before the lock when one heading is a node reference that matches nothing', async () => {
-    const calls = recordKtdCalls(envelope());
-    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-      action: 'update',
-      type: 'SKTD',
-      name: ROOT_ID,
-      source: `## ${ROOT_ID}\n\nroot v2\n\n## ${FIELD_ID}x\n\ntypo in a full id`,
-    });
+  it.each([`${FIELD_ID}x`, `${FIELD_ID.toUpperCase()}X`])(
+    'aborts before the lock for an unknown route: %s',
+    async (ref) => {
+      const calls = recordKtdCalls(envelope());
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'SKTD',
+        name: ROOT_ID,
+        source: `## ${ROOT_ID}\n\nroot v2\n\n## ${ref}\n\ntypo in a full id`,
+      });
 
-    expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/does not exist[\s\S]*Known node ids/);
-    expect(calls.some((call) => call.url.includes('_action=LOCK') || call.method === 'PUT')).toBe(false);
-  });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toMatch(/does not exist[\s\S]*Known node ids/);
+      expect(calls.some((call) => call.url.includes('_action=LOCK') || call.method === 'PUT')).toBe(false);
+    },
+  );
 
   it('writes a by-name section and reports a bare heading it had to keep as prose', async () => {
     // DDLS field names carry no qualifier, so a typo in one is indistinguishable from a prose heading;

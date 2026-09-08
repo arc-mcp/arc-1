@@ -638,9 +638,9 @@ export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolea
   // non-empty preamble that the inverse writer must refuse. A genuinely single-target
   // document keeps the compact, backwards-compatible bare body.
   const allElements = findKtdElements(envelopeXml);
-  const documentedId = elements[0]?.id.toUpperCase();
+  const documentedId = elements[0]?.id;
   const hasOtherWritableTarget = allElements.some(
-    (element) => element.id && element.id.toUpperCase() !== documentedId && canWriteKtdLongText(element.xml),
+    (element) => element.id && element.id !== documentedId && canWriteKtdLongText(element.xml),
   );
   if (elements.length === 1 && !hasOtherWritableTarget) {
     const routes = ktdRoutes(envelopeXml, allElements);
@@ -708,7 +708,8 @@ export function formatKtdNodeIndex(envelopeXml: string): string {
   const lines = [
     `Nodes: ${writable.length}${empty.length ? ` (${empty.length} with no text yet, listed under "empty")` : ''}. ` +
       'Address one with a "## <name>" section in SAPWrite "source", or as shortTexts[].node — every name below is ' +
-      'accepted verbatim. An update only touches the nodes it addresses; the rest keep their current text.',
+      'accepted verbatim. An update only touches the nodes it addresses; the rest keep their current text. ' +
+      'For a root-only H2 edit, keep the complete SAPRead context; when only the root has text, you can also omit its H2.',
   ];
   for (const root of roots) lines.push(`root: ${root}`);
   for (const [base, byType] of namesByBaseAndType) {
@@ -746,7 +747,7 @@ export function summarizeKtdChanges(before: string, after: string): { changed: s
 function addressableKtdRoute(routes: KtdRoutes, envelopeXml: string, element: KtdElement): string {
   const name = ktdNodeName(element.id);
   try {
-    return resolveKtdRoute(routes, envelopeXml, name) === element.id ? name : element.id;
+    return resolveKtdRoute(routes, envelopeXml, name) === element ? name : element.id;
   } catch {
     return element.id;
   }
@@ -964,15 +965,13 @@ function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]):
   // The same resolver the "## " section headings use, so one spelling addresses a node
   // everywhere: exact id, case variant, or the node name the SAPRead index prints.
   const routes = ktdRoutes(envelopeXml, elements);
-  const byId = new Map(elements.filter((element) => element.id).map((element) => [element.id.toUpperCase(), element]));
   const resolved = new Map<string, { element: KtdElement; text: string }>();
 
   for (const assignment of assignments) {
     const requestedId = assignment.node.trim();
-    const resolvedId = resolveKtdRoute(routes, envelopeXml, requestedId);
-    const element = resolvedId ? byId.get(resolvedId.toUpperCase()) : undefined;
+    const element = resolveKtdRoute(routes, envelopeXml, requestedId);
     if (!element) throw unknownKtdNodeError([requestedId], envelopeXml, elements);
-    const key = element.id.toUpperCase();
+    const key = element.id;
     if (resolved.has(key)) {
       throw new Error(`KTD node "${element.id}" appears twice in shortTexts — keep one entry per node.`);
     }
@@ -1020,8 +1019,12 @@ function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]):
  * document order, which is where an unaddressed body has always gone.
  */
 function rootKtdElement(envelopeXml: string, elements: KtdElement[]): KtdElement | undefined {
-  const name = envelopeKtdName(envelopeXml).toUpperCase();
-  return elements.find((element) => element.id.toUpperCase() === name) ?? elements[0];
+  const name = envelopeKtdName(envelopeXml);
+  return (
+    elements.find((element) => element.id === name) ??
+    elements.find((element) => element.id.toUpperCase() === name.toUpperCase()) ??
+    elements[0]
+  );
 }
 
 /** `<sktd:element>` blocks, paired or self-closing, in document order. */
@@ -1061,10 +1064,11 @@ function ktdNodeName(id: string): string {
 
 /** Everything a `## ` heading is resolved against. Built once per envelope. */
 interface KtdRoutes {
-  /** Upper-cased id → the element's own spelling. First spelling wins. */
-  byId: Map<string, string>;
-  /** Upper-cased node name → the single element carrying it, or '' when several share it. */
-  byName: Map<string, string>;
+  /** Exact wire id → element. Distinct SAP elements must never collapse into one target. */
+  byId: Map<string, KtdElement>;
+  /** Case-insensitive aliases are usable only when they identify exactly one element. */
+  byFoldedId: Map<string, KtdElement[]>;
+  byName: Map<string, KtdElement[]>;
   /** Upper-cased qualifiers of node names (`ZI_TravelTP` in `ZI_TravelTP.GetPhoto`). */
   qualifiers: Set<string>;
   /** Namespace of the documented object (`/RHP/`), '' for a customer-namespace-free object. */
@@ -1084,27 +1088,33 @@ function ktdNodeNameSpellings(id: string): string[] {
 }
 
 function ktdRoutes(envelopeXml: string, elements: KtdElement[]): KtdRoutes {
-  const byId = new Map<string, string>();
-  const byName = new Map<string, string>();
+  const byId = new Map<string, KtdElement>();
+  const byFoldedId = new Map<string, KtdElement[]>();
+  const byName = new Map<string, KtdElement[]>();
   const qualifiers = new Set<string>();
+  const register = (map: Map<string, KtdElement[]>, key: string, element: KtdElement) => {
+    const candidates = map.get(key) ?? [];
+    if (!candidates.includes(element)) candidates.push(element);
+    map.set(key, candidates);
+  };
   for (const element of elements) {
     if (!element.id) continue;
-    const idKey = element.id.toUpperCase();
-    // First spelling wins, and a later element whose id differs only by case IS that element:
-    // ABAP names are case-insensitive, so it must not register as a second node.
-    if (byId.has(idKey)) continue;
-    byId.set(idKey, element.id);
+    if (byId.has(element.id)) {
+      throw new Error(
+        `KTD envelope contains duplicate node id "${element.id}"; ARC-1 cannot address these elements separately.`,
+      );
+    }
+    byId.set(element.id, element);
+    register(byFoldedId, element.id.toUpperCase(), element);
     for (const spelling of ktdNodeNameSpellings(element.id)) {
       const nameKey = spelling.toUpperCase();
-      // A name that several nodes carry is recorded as ambiguous rather than resolved by
-      // document order — the resolver must never pick one of several silently.
-      byName.set(nameKey, byName.has(nameKey) && byName.get(nameKey) !== element.id ? '' : element.id);
+      register(byName, nameKey, element);
       const dot = spelling.lastIndexOf('.');
       if (dot > 0) qualifiers.add(spelling.slice(0, dot).toUpperCase());
     }
   }
   const objectName = envelopeKtdName(envelopeXml);
-  return { byId, byName, qualifiers, namespace: objectName.match(/^\/[^/]+\//)?.[0].toUpperCase() ?? '' };
+  return { byId, byFoldedId, byName, qualifiers, namespace: objectName.match(/^\/[^/]+\//)?.[0].toUpperCase() ?? '' };
 }
 
 /**
@@ -1115,22 +1125,18 @@ function ktdRoutes(envelopeXml: string, elements: KtdElement[]): KtdRoutes {
  * or the node NAME that SAPRead's index prints — the spelling a caller naturally copies back. A
  * name carried by several nodes throws instead of resolving, and `undefined` means "not a route".
  */
-function resolveKtdRoute(routes: KtdRoutes, envelopeXml: string, heading: string): string | undefined {
+function resolveKtdRoute(routes: KtdRoutes, envelopeXml: string, heading: string): KtdElement | undefined {
+  const exact = routes.byId.get(heading);
+  if (exact) return exact;
   const key = heading.toUpperCase();
-  const byId = routes.byId.get(key);
-  if (byId) return byId;
-  const byName = routes.byName.get(key);
-  if (byName) return byName;
-  if (byName === '') {
-    const candidates = [...routes.byId.values()].filter((id) =>
-      ktdNodeNameSpellings(id).some((spelling) => spelling.toUpperCase() === key),
-    );
+  const candidates = routes.byFoldedId.get(key) ?? routes.byName.get(key) ?? [];
+  if (candidates.length > 1) {
     throw new Error(
       `KTD node "${heading}" is ambiguous in "${envelopeKtdName(envelopeXml)}" — ${candidates.length} nodes carry ` +
-        `that name. Address one by its full id:\n${candidates.map((id) => `  ${id}`).join('\n')}`,
+        `that reference. Address one by its exact full id:\n${candidates.map((element) => `  ${element.id}`).join('\n')}`,
     );
   }
-  return undefined;
+  return candidates[0];
 }
 
 /**
@@ -1143,11 +1149,10 @@ function resolveKtdRoute(routes: KtdRoutes, envelopeXml: string, heading: string
  * backslash (`\## …`), the same escape the route-safe read uses.
  */
 function looksLikeKtdRoute(routes: KtdRoutes, heading: string): boolean {
-  if (heading.startsWith('/sap/bc/adt/') || heading.includes('#type=') || /\(empty\)$/i.test(heading)) return true;
   const key = heading.toUpperCase();
+  if (key.startsWith('/SAP/BC/ADT/') || key.includes('#TYPE=') || /\(empty\)$/i.test(heading)) return true;
   if (routes.namespace && key.startsWith(routes.namespace)) return true;
-  const dot = key.lastIndexOf('.');
-  return dot > 0 && routes.qualifiers.has(key.slice(0, dot));
+  return [...routes.qualifiers].some((qualifier) => key.startsWith(`${qualifier}.`));
 }
 
 /**
@@ -1206,7 +1211,7 @@ function splitKtdMarkdownByElementId(
     const id = line.match(KTD_HEADING_LINE)?.[1].trim();
     if (!id) return;
     const resolved = resolveKtdRoute(routes, envelopeXml, id);
-    if (resolved) headings.push({ line: index, id: resolved });
+    if (resolved) headings.push({ line: index, id: resolved.id });
     else if (routes.byId.size > 0 && looksLikeKtdRoute(routes, id)) unknown.push(id);
     // Nothing distinguishes a typo in a bare node name from a prose heading when the document's
     // names carry no qualifier (DDLS fields, for instance) — so the caller is told what stayed prose.
@@ -1247,7 +1252,7 @@ function splitKtdMarkdownByElementId(
  */
 function isKtdRouteHeadingId(id: string, routes: KtdRoutes): boolean {
   const key = id.toUpperCase();
-  return routes.byId.has(key) || routes.byName.has(key) || looksLikeKtdRoute(routes, id);
+  return routes.byFoldedId.has(key) || routes.byName.has(key) || looksLikeKtdRoute(routes, id);
 }
 
 /**
