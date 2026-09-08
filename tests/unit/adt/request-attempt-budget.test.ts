@@ -101,11 +101,12 @@ describe.each([false, true])('request attempt budget, Connectivity proxy=%s', (p
       receivedToken = '';
     const { client } = await setup(proxy, (req, res) => {
       methods.push(req.method!);
+      // Synthetic loopback cookies test header retention, not browser cookie-policy enforcement.
       if (req.method === 'HEAD') {
-        res.setHeader('set-cookie', 'SAP_SESSIONID=one; Path=/');
+        res.setHeader('set-cookie', 'SAP_SESSIONID=one; Path=/; Secure; HttpOnly');
         res.end();
       } else if (req.method === 'GET') {
-        res.writeHead(200, { 'x-csrf-token': 'TEST', 'set-cookie': 'SAP_EXTRA=two; Path=/' });
+        res.writeHead(200, { 'x-csrf-token': 'TEST', 'set-cookie': 'SAP_EXTRA=two; Path=/; Secure; HttpOnly' });
         res.write('x'.repeat(16384)); // Never ends: only headers are needed, so the client must cancel.
       } else {
         receivedCookie = req.headers.cookie ?? '';
@@ -125,8 +126,7 @@ describe.each([false, true])('request attempt budget, Connectivity proxy=%s', (p
       ).body,
     ).toBe('ok');
     expect(methods).toEqual(['HEAD', 'GET', 'POST']);
-    expect(receivedCookie).toContain('SAP_SESSIONID=one');
-    expect(receivedCookie).toContain('SAP_EXTRA=two');
+    expect(receivedCookie).toBe('SAP_SESSIONID=one; SAP_EXTRA=two');
     expect(receivedToken).toBe('TEST');
     expect(responseBudget.consumedBytes).toBe(2);
   });
