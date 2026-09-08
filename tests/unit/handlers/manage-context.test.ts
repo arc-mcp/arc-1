@@ -1102,6 +1102,38 @@ ENDCLASS.`;
       expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/zcl_doc'))).toBe(true);
     });
 
+    it('prepends every duplicate-ID KTD body without applying write restrictions or escapes', async () => {
+      const source = 'CLASS zcl_doc DEFINITION PUBLIC. ENDCLASS. CLASS zcl_doc IMPLEMENTATION. ENDCLASS.';
+      const bodies = ['First body\n\n## ZCL_DOC\n\nExample', 'Second body'];
+      const duplicate =
+        '<sktd:docu adtcore:name="ZCL_DOC">' +
+        bodies
+          .map(
+            (body) =>
+              `<sktd:element><sktd:id>ZCL_DOC</sktd:id><sktd:text>${Buffer.from(body).toString('base64')}</sktd:text></sktd:element>`,
+          )
+          .join('') +
+        '</sktd:docu>';
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) =>
+        Promise.resolve(
+          mockResponse(200, String(url).includes('/documentation/ktd/documents/') ? duplicate : source, {
+            'x-csrf-token': 'T',
+          }),
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        type: 'CLAS',
+        name: 'ZCL_DOC',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBeUndefined();
+      for (const body of bodies) expect(text).toContain(body);
+      expect(text).toContain('Dependency context');
+      expect(text).not.toContain('\\## ZCL_DOC');
+      expect(text).not.toContain('SAPWrite unavailable');
+    });
+
     it('continues dependency context when KTD is not found', async () => {
       const source = `CLASS zcl_no_doc DEFINITION PUBLIC.
   PUBLIC SECTION.
