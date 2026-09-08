@@ -180,6 +180,44 @@ Follow-up validation:
 
 Local logs and reproduction artifacts: `/tmp/pr766-followup/`.
 
+## Complexity review after `32e3068d`
+
+The useful simplifications are internal; removing routing checks or changing the Markdown
+format would undo the behavior verified in the earlier reviews.
+
+- Reuse the existing route map for section parsing and unknown-node errors. A body rewrite
+  previously built it twice, or three times on an unknown route. The object name now travels
+  with that map, avoiding repeated envelope parsing and XML arguments in display/error helpers.
+- Separate candidate lookup from write validation. Labels now inspect candidates directly
+  instead of throwing and catching an ambiguity error to choose a full-ID label. Both paths
+  still use the same exact-ID, case-insensitive-ID, then name precedence.
+- Consolidate decoded/raw node-name extraction and reuse the existing text-slot decoder in
+  both SAPRead branches. This removes duplicated Base64 decoding and redundant catches while
+  preserving the legacy body fallback and the existing element-boundary parser.
+- Shorten the AGENTS.md row to file routing, the inactive-draft gotcha, and contract references.
+  Trim stale comments about documented-node addresses and dry-run-only reporting.
+
+The source delta is 43 fewer lines, with no tool-schema, response-text, or accepted-input change.
+The three route indexes retain distinct purposes: exact IDs must win, case-insensitive IDs
+must remain ambiguous when appropriate, and names must not override IDs. The reversible escapes,
+duplicate-ID write guard, root-title refusal, dry run, and successful-write reports all protect
+tested behavior and remain. The create handler's catch boundary also remains: widening it merely
+to remove one local variable would weaken its distinction between a failed PUT and later work.
+
+Before editing, a deterministic matrix recorded 8,480 read, write, report, and error results
+from `32e3068d`. After simplification, all results are identical, including exact XML, error
+messages, labels, previews, and successful-write summaries. All 2,000 additional byte-identical
+round trips pass. Focused tests: 7 files / 418 tests passed, including the unchanged tool-definition
+snapshots. The final full suite passed all 195 files / 5,819 tests. An earlier run hit an HTTP
+parse error in the unchanged OIDC metadata test; that file passed all seven tests in isolation,
+then the complete suite passed without further runtime changes.
+
+Typecheck, Biome, policy validation, file/tool budgets, production build, strict MkDocs, and
+whitespace checks passed. The live A4H 7.58 lifecycle passed in 45.4 seconds with no skips against
+a fresh server running the simplified implementation; every disposable object was deleted.
+
+Local comparison script, baseline, and logs: `/tmp/pr766-simplify/`.
+
 ## Independent SAP contract references
 
 - [SAP: Editing Knowledge Transfer Documents](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/editing-knowledge-transfer-documents):

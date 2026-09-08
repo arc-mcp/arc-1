@@ -600,37 +600,15 @@ export function decodeKtdText(envelopeXml: string, options: { routeSafe?: boolea
   const elementPattern = /<sktd:element[^>]*>[\s\S]*?<sktd:id>([^<]*)<\/sktd:id>[\s\S]*?<\/sktd:element>/g;
   const elements: Array<{ id: string; text: string }> = [];
 
-  let match: RegExpExecArray | null;
-  while ((match = elementPattern.exec(envelopeXml)) !== null) {
-    const elementBlock = match[0];
-    const id = match[1].trim();
-    const textMatch = elementBlock.match(/<sktd:text[^>]*>([\s\S]*?)<\/sktd:text>/);
-    const base64 = textMatch?.[1]?.trim() ?? '';
-    let decoded = '';
-    if (base64) {
-      try {
-        decoded = Buffer.from(base64, 'base64').toString('utf-8');
-      } catch {
-        decoded = '';
-      }
-    }
-    if (decoded) {
-      elements.push({ id, text: decoded });
-    }
+  for (const match of envelopeXml.matchAll(elementPattern)) {
+    const text = decodeKtdElementText(match[0]);
+    if (text) elements.push({ id: match[1].trim(), text });
   }
 
   if (elements.length === 0) {
     // Fallback: try extracting a single <sktd:text> without element structure
-    const singleMatch = envelopeXml.match(/<sktd:text[^>]*>([\s\S]*?)<\/sktd:text>/);
-    if (!singleMatch) return '';
-    const base64 = singleMatch[1].trim();
-    if (!base64) return '';
-    try {
-      const decoded = Buffer.from(base64, 'base64').toString('utf-8');
-      return options.routeSafe === false ? decoded : escapeKtdBodyMetaMarkers(decoded);
-    } catch {
-      return '';
-    }
+    const text = decodeKtdElementText(envelopeXml) ?? '';
+    return options.routeSafe === false ? text : escapeKtdBodyMetaMarkers(text);
   }
 
   // A lone documented node still needs its routing heading when writable empty siblings
@@ -696,7 +674,7 @@ export function formatKtdNodeIndex(envelopeXml: string): string {
   const empty: string[] = [];
   for (const element of writable) {
     const id = element.id;
-    const label = addressableKtdRoute(routes, envelopeXml, element);
+    const label = addressableKtdRoute(routes, element);
     if (!elementBase64(element.xml)) empty.push(label);
     const typeAt = id.indexOf('#type=');
     const nameAt = typeAt < 0 ? -1 : id.indexOf(';name=', typeAt);
@@ -726,11 +704,7 @@ export function formatKtdNodeIndex(envelopeXml: string): string {
   return lines.join('\n');
 }
 
-/**
- * Which nodes a rewrite would actually change, by comparing the stored text and short text of
- * every element before and after. Drives the `dryRun` preview, so a caller can see what an
- * update addresses — and what it leaves alone — without writing.
- */
+/** Compare in-place rewrites and label changed nodes for create, update, and preview reports. */
 export function summarizeKtdChanges(before: string, after: string): { changed: string[]; untouched: number } {
   // Positional: a rewrite replaces element blocks in place and never adds or removes one, so
   // index i is the same node on both sides — even for elements sharing or lacking an id.
@@ -745,7 +719,7 @@ export function summarizeKtdChanges(before: string, after: string): { changed: s
   let untouched = 0;
   current.forEach((element, index) => {
     if (previous[index]?.xml === element.xml) untouched += 1;
-    else changed.push(element.id ? addressableKtdRoute(routes, after, element) : `(element ${index + 1})`);
+    else changed.push(element.id ? addressableKtdRoute(routes, element) : `(element ${index + 1})`);
   });
   return { changed, untouched };
 }
@@ -769,13 +743,10 @@ export function formatKtdWriteReport(before: string, after: string, report: KtdW
  * very element, otherwise the full id. Duplicate IDs are display-only; their read context warns
  * that writes are unavailable.
  */
-function addressableKtdRoute(routes: KtdRoutes, envelopeXml: string, element: KtdElement): string {
-  const name = ktdNodeName(element.id);
-  try {
-    return resolveKtdRoute(routes, envelopeXml, name) === element ? name : element.id;
-  } catch {
-    return element.id;
-  }
+function addressableKtdRoute(routes: KtdRoutes, element: KtdElement): string {
+  const name = ktdNodeNameSpellings(element.id)[0];
+  const candidates = ktdRouteCandidates(routes, name);
+  return candidates.length === 1 && candidates[0] === element ? name : element.id;
 }
 
 /** Exact transport line separating writable KTD Markdown from ARC-1 read-only context. */
@@ -855,7 +826,7 @@ export function rewriteKtdText(envelopeXml: string, markdown: string, report?: K
   const routeUnescapedMarkdown = unescapeKtdBodyRouteHeadings(markdown, routes);
   const hasBodyRouteEscape = routeUnescapedMarkdown !== markdown;
   const unescapedMarkdown = unescapeKtdBodyMetaMarkers(routeUnescapedMarkdown);
-  const perElement = splitKtdMarkdownByElementId(envelopeXml, markdown, elements, report);
+  const perElement = splitKtdMarkdownByElementId(markdown, routes, report);
   if (perElement) {
     // The root id is a bare ABAP object name, so a lone `## ZI_FOO` is also a very
     // natural document title. When the unaddressed fallback already resolves to that
@@ -976,7 +947,7 @@ export function formatKtdShortTexts(envelopeXml: string): string {
       const text = Buffer.from(encoded, 'base64').toString('utf-8').replace(/\s+/g, ' ').trim();
       if (!text) return undefined;
       const obligation = tag?.match(KTD_SHORT_TEXT_OBLIGATION)?.[1] || 'unspecified';
-      return `  ${addressableKtdRoute(routes, envelopeXml, element)} [${obligation}]: ${text}`;
+      return `  ${addressableKtdRoute(routes, element)} [${obligation}]: ${text}`;
     })
     .filter((line): line is string => Boolean(line));
   return lines.length === 0
@@ -1000,8 +971,8 @@ function rewriteKtdShortTexts(envelopeXml: string, assignments: KtdShortText[]):
 
   for (const assignment of assignments) {
     const requestedId = assignment.node.trim();
-    const element = resolveKtdRoute(routes, envelopeXml, requestedId);
-    if (!element) throw unknownKtdNodeError([requestedId], envelopeXml, elements);
+    const element = resolveKtdRoute(routes, requestedId);
+    if (!element) throw unknownKtdNodeError([requestedId], routes);
     const key = element.id;
     if (resolved.has(key)) {
       throw new Error(`KTD node "${element.id}" appears twice in shortTexts — keep one entry per node.`);
@@ -1079,23 +1050,9 @@ function envelopeKtdName(envelopeXml: string): string {
   return envelopeXml.match(/<sktd:docu\b[^>]*\badtcore:name="([^"]*)"/)?.[1] ?? 'this KTD';
 }
 
-/**
- * Node name of an element id: the `;name=` part of a fragment id, percent-decoded, or the whole
- * id for the root node (whose id is the object name).
- * SAP's optional displayName is a presentation label, not an address; never route by it.
- */
-function ktdNodeName(id: string): string {
-  const at = id.indexOf(';name=');
-  const raw = at < 0 ? id : id.slice(at + ';name='.length);
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
 /** Everything a `## ` heading is resolved against. Built once per envelope. */
 interface KtdRoutes {
+  objectName: string;
   /** Exact wire id → element. Distinct SAP elements must never collapse into one target. */
   byId: Map<string, KtdElement>;
   /** Reads retain every element; writes must refuse IDs that cannot distinguish them. */
@@ -1114,11 +1071,16 @@ interface KtdRoutes {
  * as SAP encodes it on the wire (`%25_OWN`, what every `## <full id>` heading carries). One entry
  * when they coincide. Both must be routes, or the spelling a caller copies from one surface is
  * prose on the other.
+ * SAP's optional displayName is a presentation label, not an address; never route by it.
  */
 function ktdNodeNameSpellings(id: string): string[] {
   const at = id.indexOf(';name=');
   const raw = at < 0 ? id : id.slice(at + ';name='.length);
-  return [...new Set([ktdNodeName(id), raw])];
+  try {
+    return [...new Set([decodeURIComponent(raw), raw])];
+  } catch {
+    return [raw];
+  }
 }
 
 function ktdRoutes(envelopeXml: string, elements: KtdElement[]): KtdRoutes {
@@ -1146,6 +1108,7 @@ function ktdRoutes(envelopeXml: string, elements: KtdElement[]): KtdRoutes {
   }
   const objectName = envelopeKtdName(envelopeXml);
   return {
+    objectName,
     byId,
     duplicateIds,
     byFoldedId,
@@ -1165,21 +1128,22 @@ function assertWritableKtdRoutes(routes: KtdRoutes): void {
 }
 
 /**
- * Resolve one `## ` heading to a node id.
- *
- * Accepts the exact id, a case variant of it (ABAP names are case-insensitive, and the root id is
- * upper-cased on the wire while the same object is spelled mixed-case elsewhere in the envelope),
- * or the node NAME that SAPRead's index prints — the spelling a caller naturally copies back. A
- * name carried by several nodes throws instead of resolving, and `undefined` means "not a route".
+ * Shared lookup precedence: exact ID, then case-insensitive ID, then indexed node name.
+ * Keep ambiguous candidates so writers can refuse them and readers can choose a full-ID label.
  */
-function resolveKtdRoute(routes: KtdRoutes, envelopeXml: string, heading: string): KtdElement | undefined {
+function ktdRouteCandidates(routes: KtdRoutes, heading: string): KtdElement[] {
   const exact = routes.duplicateIds.has(heading) ? undefined : routes.byId.get(heading);
-  if (exact) return exact;
+  if (exact) return [exact];
   const key = heading.toUpperCase();
-  const candidates = routes.byFoldedId.get(key) ?? routes.byName.get(key) ?? [];
+  return routes.byFoldedId.get(key) ?? routes.byName.get(key) ?? [];
+}
+
+/** Writes require one target; display labels can fall back to the full ID without throwing. */
+function resolveKtdRoute(routes: KtdRoutes, heading: string): KtdElement | undefined {
+  const candidates = ktdRouteCandidates(routes, heading);
   if (candidates.length > 1) {
     throw new Error(
-      `KTD node "${heading}" is ambiguous in "${envelopeKtdName(envelopeXml)}" — ${candidates.length} nodes carry ` +
+      `KTD node "${heading}" is ambiguous in "${routes.objectName}" — ${candidates.length} nodes carry ` +
         `that reference. Address one by its exact full id:\n${candidates.map((element) => `  ${element.id}`).join('\n')}`,
     );
   }
@@ -1207,15 +1171,12 @@ function looksLikeKtdRoute(routes: KtdRoutes, heading: string): boolean {
  * SAPRead index prints (a name, or the full id where only that resolves), so a typo can be matched
  * against the list by eye instead of against ~140-character URIs.
  */
-function unknownKtdNodeError(refs: string[], envelopeXml: string, elements: KtdElement[]): Error {
+function unknownKtdNodeError(refs: string[], routes: KtdRoutes): Error {
   const subject =
     refs.length === 1
       ? `KTD node "${refs[0]}" does not`
       : `KTD nodes ${refs.map((ref) => `"${ref}"`).join(', ')} do not`;
-  const routes = ktdRoutes(envelopeXml, elements);
-  const known = elements
-    .filter((element) => element.id)
-    .map((element) => `  ${addressableKtdRoute(routes, envelopeXml, element)}`);
+  const known = [...routes.byId.values()].map((element) => `  ${addressableKtdRoute(routes, element)}`);
   return new Error(
     `${subject} exist in this document. SAP creates one <sktd:element> per documentable element of ` +
       'the referenced object; ARC-1 will not invent one. A heading meant as prose can be kept as prose with a ' +
@@ -1244,12 +1205,10 @@ export interface KtdWriteReport {
  * created one); the caller then treats the whole body as that one node's text.
  */
 function splitKtdMarkdownByElementId(
-  envelopeXml: string,
   markdown: string,
-  elements: KtdElement[],
+  routes: KtdRoutes,
   report?: KtdWriteReport,
 ): Map<string, string> | undefined {
-  const routes = ktdRoutes(envelopeXml, elements);
   const lines = markdown.split(/\r?\n/);
   const headings: Array<{ line: number; id: string }> = [];
   const unknown: string[] = [];
@@ -1257,7 +1216,7 @@ function splitKtdMarkdownByElementId(
   lines.forEach((line, index) => {
     const id = line.match(KTD_HEADING_LINE)?.[1].trim();
     if (!id) return;
-    const resolved = resolveKtdRoute(routes, envelopeXml, id);
+    const resolved = resolveKtdRoute(routes, id);
     if (resolved) headings.push({ line: index, id: resolved.id });
     else if (routes.byId.size > 0 && looksLikeKtdRoute(routes, id)) unknown.push(id);
     // Nothing distinguishes a typo in a bare node name from a prose heading when the document's
@@ -1265,7 +1224,7 @@ function splitKtdMarkdownByElementId(
     else if (routes.byId.size > 0) report?.proseHeadings.push(id);
   });
 
-  if (unknown.length > 0) throw unknownKtdNodeError(unknown, envelopeXml, elements);
+  if (unknown.length > 0) throw unknownKtdNodeError(unknown, routes);
   if (headings.length === 0) return undefined;
 
   const preamble = lines.slice(0, headings[0].line).join('\n').trim();

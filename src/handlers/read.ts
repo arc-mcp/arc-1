@@ -571,10 +571,8 @@ export async function handleSAPRead(
         // be pasted into SAPWrite. Grep searches the stored Markdown without escapes.
         const markdown = decodeKtdText(source, { routeSafe: !args.grep });
         if (args.grep) return grepText(markdown);
-        // decodeKtdText renders a section only for nodes that hold text, so reading alone can
-        // never reveal the address of an empty node — nor of a documented one, whose heading is
-        // its id rather than the name a caller would type. The index lists every writable node
-        // compactly, so SAPWrite never needs a refusal error to learn what it may address.
+        // List copyable names for every writable node, including empty nodes omitted from Markdown.
+        // The labels use the same resolver as SAPWrite.
         const index = formatKtdNodeIndex(source);
         const readOnlyContext = [
           versionWarning,
