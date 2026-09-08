@@ -93,6 +93,7 @@ nav:
           - Log Analysis: log-analysis.md
           - Updating: updating.md
           - Caching: caching.md
+          - Live Relations (Experimental): live-relations.md
           - Rate Limiting: rate-limiting.md
   - Development:
       - Local Development: local-development.md

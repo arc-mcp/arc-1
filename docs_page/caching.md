@@ -70,12 +70,17 @@ Source-bearing `SAPRead` operations accept `version`:
 
 ## Dependency context
 
-`SAPContext(action="deps")` hashes the revalidated source and uses that hash as the dependency-cache key. An unchanged hash can safely reuse the compressed dependency graph.
+`SAPContext(action="deps")` rebuilds its dependency context on each call. An unchanged root
+does not prove that its dependencies or their public contracts stayed unchanged, and different
+`depth`/`maxDeps` options must not reuse an earlier aggregate.
 
-The two cache markers have different meanings:
+Normal dependency-source caching remains: conditional GETs reuse unchanged bodies after SAP
+returns `304`. Under principal propagation the existing dependency-payload cache bypass remains.
+Legacy stored aggregate records are ignored; no cache reset or database migration is required.
+`SAPRead` still uses `[cached:revalidated]` for a source body revalidated by SAP.
 
-- `[cached:revalidated]`: SAP returned `304`, so ARC-1 reused the source body.
-- `[cached]`: the source hash matched a cached dependency graph.
+[Experimental live relations](live-relations.md) are independent: they query metadata on demand,
+retain no shared relationship results, and require no cache or graph database.
 
 ## Live usage lookup
 

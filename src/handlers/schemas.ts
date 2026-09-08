@@ -18,6 +18,7 @@ import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
+import { LiveRelationsInput } from './relation-input.js';
 import {
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
@@ -790,7 +791,7 @@ export const SAPActivateSchema = z
 
 export const SAPNavigateSchema = z
   .object({
-    action: z.enum(['definition', 'references', 'completion', 'hierarchy']),
+    action: z.enum(['definition', 'references', 'completion', 'hierarchy', 'relations']),
     uri: z.string().optional(),
     type: z.string().optional(),
     name: z.string().optional(),
@@ -799,8 +800,24 @@ export const SAPNavigateSchema = z
     line: z.coerce.number().optional(),
     column: z.coerce.number().optional(),
     source: z.string().optional(),
+    direction: z.enum(['incoming', 'outgoing']).optional(),
+    depth: z.coerce.number().optional(),
+    expandPackages: z.array(z.string()).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.action === 'relations') {
+      const checked = LiveRelationsInput.safeParse(value);
+      if (!checked.success)
+        for (const issue of checked.error.issues)
+          ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+    } else {
+      for (const key of ['direction', 'depth', 'expandPackages'] as const) {
+        if (value[key] !== undefined)
+          ctx.addIssue({ code: 'custom', path: [key], message: 'Only supported for relations.' });
+      }
+    }
+  });
 
 // ─── SAPLint ────────────────────────────────────────────────────────
 

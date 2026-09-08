@@ -66,9 +66,11 @@ const BUDGETS = {
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
   'tests/integration/adt.integration.test.ts': 3100,
-  // Sits exactly on the default; +1 for copying the data-source blocklist through buildAdtConfig so
-  // every per-user client inherits the instance policy.
-  'src/server/server.ts': 1501,
+  // Typed attempt accounting and scoped response ownership must stay at the transport choke point.
+  // Relation parsing/traversal and response controls live outside this file; no feature algorithm here.
+  'src/adt/http.ts': 1510,
+  // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
+  'src/server/server.ts': 1504,
 };
 
 const DEFAULT_SRC = 1500;

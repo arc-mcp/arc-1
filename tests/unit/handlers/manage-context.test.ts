@@ -1159,7 +1159,7 @@ ENDCLASS.`;
       expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/'))).toBe(false);
     });
 
-    it('composes KTD with cached dependency context', async () => {
+    it('composes KTD with fresh context and ignores legacy aggregate records', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
       const markdown = '# Cached Root KTD\n\nUse this before editing.';
@@ -1195,8 +1195,9 @@ ENDCLASS.`;
       expect(result.isError).toBeUndefined();
       expect(text).toContain('Knowledge Transfer Document for ZCL_ROOT');
       expect(text).toContain(markdown);
-      expect(text).toContain('[cached]');
-      expect(text).toContain('ZIF_DEP');
+      expect(text).not.toContain('[cached]');
+      expect(text).not.toContain('ZIF_DEP');
+      expect(text).toContain('0 deps resolved');
     });
 
     it('does not serve cached dependency contracts under principal propagation', async () => {

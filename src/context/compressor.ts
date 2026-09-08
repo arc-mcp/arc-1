@@ -7,11 +7,10 @@
  * 3. Sort (custom objects first)
  * 4. Limit to maxDeps
  * 5. Fetch dependency sources (parallel, bounded to MAX_CONCURRENT)
- *    → With caching layer: check cache first, only fetch on miss
+ *    → With caching layer: revalidate each source with its ETag
  * 6. Extract contracts (public API only) (contract.ts)
  * 7. If depth > 1, recurse on each dependency's source
  * 8. Format output prologue
- * 9. Cache the resolved dep graph (keyed by source hash)
  */
 
 import type { Version } from '@abaplint/core';
@@ -64,7 +63,7 @@ function readResultSource(result: SourceReadResult | string): string {
  * @param maxDeps - Maximum number of dependencies to resolve (default 20)
  * @param depth - Dependency expansion depth 1-3 (default 1)
  * @param abaplintVersion - abaplint parser version (detected from SAP system, defaults to Cloud)
- * @param cachingLayer - Optional caching layer for source and contract caching
+ * @param cachingLayer - Optional ETag-validated source caching layer
  */
 export async function compressContext(
   client: AdtClient,
@@ -87,26 +86,6 @@ export async function compressContext(
   await resolveDepthLevel(client, deps, maxDeps, effectiveDepth, seen, allContracts, abaplintVersion, cachingLayer);
 
   const result = formatResult(objectName, objectType, deps.length, allContracts, totalFiltered);
-
-  // Cache the resolved dep graph keyed by source hash.
-  // Cache even when allContracts is empty — avoids re-resolving on every call
-  // for objects with no resolvable dependencies.
-  if (cachingLayer) {
-    cachingLayer.putDepGraph(
-      source,
-      objectName,
-      objectType,
-      allContracts.map((c) => ({
-        name: c.name,
-        type: c.type,
-        methodCount: c.methodCount,
-        source: c.source,
-        fullSource: c.fullSource,
-        success: c.success,
-        error: c.error,
-      })),
-    );
-  }
 
   return result;
 }

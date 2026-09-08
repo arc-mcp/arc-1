@@ -20,6 +20,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { features, fullConfig } from './handler-test-config.js';
@@ -87,7 +88,9 @@ function generatedProps(tool: string, btp: boolean): Record<string, unknown> {
 
 function handWrittenProps(tool: string, btp: boolean): Record<string, unknown> | null {
   // features() = all backends available, so feature-gated tools (SAPGit) are registered.
-  const def = getToolDefinitions(fullConfig(btp), true, features()).find((d) => d.name === tool);
+  const def = getToolDefinitions({ ...fullConfig(btp), liveRelations: true }, true, features(), {
+    discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+  }).find((d) => d.name === tool);
   return def ? (((def.inputSchema as JsonNode).properties as Record<string, unknown>) ?? {}) : null;
 }
 

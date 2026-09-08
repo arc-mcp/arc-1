@@ -755,6 +755,10 @@ SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_ty
 
 Navigate code: find definitions, references (where-used), code completion, and class hierarchy.
 
+An optional [experimental `relations` action](live-relations.md) adds bounded live metadata
+networks for CLAS/INTF. It is absent by default and is listed only after admin opt-in and exact
+SAP discovery evidence. The existing actions below are unchanged.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -1143,12 +1147,10 @@ ENDCLASS.
 
 If the object has no KTD or the backend returns 404/410 for the KTD document, ARC-1 silently omits the KTD section and still returns the dependency context. Other KTD read errors are surfaced normally.
 
-**Cache indicator:** When the dependency graph is served from the hash-keyed dep-graph cache (no further ADT calls beyond the source revalidation), the header changes to:
-```
-* === Dependency context for ZCL_ORDER (3 deps resolved) [cached] ===
-```
-
-The `[cached]` label here is for **dependency graph hits** (hash-keyed, naturally correct without server validation). It is distinct from `[cached:revalidated]` which appears on `SAPRead` source responses after SAP confirms freshness via `304 Not Modified`. See [Caching System → Source freshness](caching.md#source-freshness) for details.
+Dependency context is recomputed on each call; a root hash cannot validate changed dependencies.
+Normal ETag-validated source caching remains, so unchanged dependency bodies can still use `304`
+responses. The old aggregate `[cached]` shortcut is no longer used. See
+[Caching System → Dependency context](caching.md#dependency-context).
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 

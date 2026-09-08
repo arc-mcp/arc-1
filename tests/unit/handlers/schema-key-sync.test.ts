@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { features, fullConfig } from './handler-test-config.js';
@@ -49,7 +50,9 @@ function zodObjectKeys(schema: unknown): string[] {
 
 function jsonSchemaKeys(tool: string, btp: boolean): string[] | null {
   // features() has every backend feature available, so feature-gated tools (SAPGit) are registered.
-  const defs = getToolDefinitions(fullConfig(btp), true, features());
+  const defs = getToolDefinitions({ ...fullConfig(btp), liveRelations: true }, true, features(), {
+    discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+  });
   const def = defs.find((d) => d.name === tool);
   if (!def) return null;
   return Object.keys((def.inputSchema as any).properties ?? {});

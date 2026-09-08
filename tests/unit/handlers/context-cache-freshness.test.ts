@@ -1,0 +1,126 @@
+import { createHash } from 'node:crypto';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { AdtClient, SourceReadOptions } from '../../../src/adt/client.js';
+import { AdtApiError } from '../../../src/adt/errors.js';
+import type { Cache } from '../../../src/cache/cache.js';
+import { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
+import { SqliteCache } from '../../../src/cache/sqlite.js';
+import { handleSAPContext } from '../../../src/handlers/context.js';
+
+const source = (name: string, targets: string[] = [], method = 'go') =>
+  `CLASS ${name} DEFINITION PUBLIC. PUBLIC SECTION. CLASS-METHODS ${method}. ENDCLASS.
+CLASS ${name} IMPLEMENTATION. METHOD ${method}. ${targets.map((t) => `${t}=>go( ).`).join(' ')} ENDMETHOD. ENDCLASS.`;
+const root = source('ZCL_ROOT', ['ZCL_A', 'ZCL_B']);
+function fixture() {
+  const sources = new Map([
+    ['ZCL_A', source('ZCL_A', ['ZCL_C'])],
+    ['ZCL_B', source('ZCL_B')],
+    ['ZCL_C', source('ZCL_C')],
+  ]);
+  const calls: { conditional: boolean; bytes: number }[] = [];
+  const denied = new Map<string, number>();
+  const client = {
+    getClass: async (name: string, _include?: string, options: SourceReadOptions = {}) => {
+      name = name.toUpperCase();
+      const call = { conditional: !!options.ifNoneMatch, bytes: 0 };
+      calls.push(call);
+      if (denied.has(name)) throw new AdtApiError('Access failure', denied.get(name)!, '/synthetic');
+      const body = sources.get(name);
+      if (body === undefined) throw new AdtApiError('Missing dependency', 404, '/synthetic');
+      const etag = createHash('sha256').update(body).digest('hex');
+      if (options.ifNoneMatch === etag) return { source: '', etag, notModified: true };
+      call.bytes = Buffer.byteLength(body);
+      return { source: body, etag };
+    },
+  } as unknown as AdtClient;
+  return { sources, calls, denied, client };
+}
+const run = async (
+  f: ReturnType<typeof fixture>,
+  cache: CachingLayer,
+  options: { depth: number; maxDeps: number },
+  perUser = false,
+) =>
+  (
+    await handleSAPContext(
+      f.client,
+      { type: 'CLAS', name: 'ZCL_ROOT', source: root, includeKtd: false, ...options },
+      cache,
+      { isPerUserClient: perUser, userKey: perUser ? 'verified-user' : undefined },
+    )
+  ).content[0]!.text;
+
+describe.each(['memory', 'sqlite'] as const)('SAPContext freshness (%s)', (backend) => {
+  const stores: Cache[] = [];
+  const layer = () => {
+    const store = backend === 'memory' ? new MemoryCache() : new SqliteCache(':memory:');
+    stores.push(store);
+    return new CachingLayer(store);
+  };
+  afterEach(() => {
+    for (const store of stores.splice(0)) store.close();
+  });
+
+  it.each([
+    [
+      { depth: 1, maxDeps: 1 },
+      { depth: 2, maxDeps: 3 },
+    ],
+    [
+      { depth: 2, maxDeps: 3 },
+      { depth: 1, maxDeps: 1 },
+    ],
+  ])('does not reuse aggregate options %j → %j', async (first, next) => {
+    const f = fixture(),
+      cache = layer();
+    await run(f, cache, first);
+    expect(await run(f, cache, next)).toBe(await run(fixture(), layer(), next));
+    expect(cache.getCachedDepGraph(root)).toBeNull();
+  });
+
+  it('refreshes changed dependencies while the root and legacy aggregate stay unchanged', async () => {
+    const f = fixture(),
+      cache = layer();
+    await run(f, cache, { depth: 1, maxDeps: 1 });
+    cache.putDepGraph(root, 'ZCL_ROOT', 'CLAS', [
+      { name: 'ZCL_A', type: 'CLAS', methodCount: 1, source: 'STALE CONTRACT', success: true },
+    ]);
+    f.sources.set('ZCL_A', source('ZCL_A', [], 'fresh_api'));
+    const result = await run(f, cache, { depth: 1, maxDeps: 1 });
+    expect(result).toContain('fresh_api');
+    expect(result).not.toContain('STALE CONTRACT');
+  });
+
+  it('retains conditional reads and zero-body 304 source reuse', async () => {
+    const f = fixture(),
+      cache = layer(),
+      options = { depth: 2, maxDeps: 3 };
+    const first = await run(f, cache, options);
+    f.calls.length = 0;
+    expect(await run(f, cache, options)).toBe(first);
+    expect(f.calls).toEqual(Array.from({ length: 3 }, () => ({ conditional: true, bytes: 0 })));
+  });
+
+  it.each([403, 404])('does not serve stale contracts after HTTP %i', async (status) => {
+    const f = fixture(),
+      cache = layer(),
+      options = { depth: 1, maxDeps: 1 };
+    await run(f, cache, options);
+    f.denied.set('ZCL_A', status);
+    const result = await run(f, cache, options);
+    expect(result).toContain('1 failed');
+    expect(result).not.toContain('CLASS-METHODS');
+    if (status === 404) expect(cache.getCachedSource('CLAS', 'ZCL_A')).toBeNull();
+  });
+
+  it('preserves per-user dependency-source bypass', async () => {
+    const f = fixture(),
+      cache = layer(),
+      options = { depth: 1, maxDeps: 1 };
+    await run(f, cache, options);
+    f.denied.set('ZCL_A', 403);
+    expect(await run(f, cache, options, true)).toContain('1 failed');
+    expect(f.calls.at(-1)?.conditional).toBe(false);
+  });
+});

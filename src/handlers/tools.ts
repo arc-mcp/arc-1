@@ -24,6 +24,7 @@ import type { ServerConfig } from '../server/types.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
+import { addLiveRelationsDefinition } from './relation-tool.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
   isGitToolVisible,
@@ -53,6 +54,7 @@ export interface ToolDefinition {
 
 export interface ToolDefinitionOptions {
   nullableOptionals?: boolean;
+  discoveryMap?: ReadonlyMap<string, string[]>;
 }
 
 /**
@@ -1035,6 +1037,8 @@ export function getToolDefinitions(
   });
 
   // SAPQuery — only registered when free SQL is allowed
+  addLiveRelationsDefinition(tools[tools.length - 1]!, config, options.discoveryMap ?? resolvedFeatures?.discoveryMap);
+
   if (config.allowFreeSQL) {
     tools.push({
       name: 'SAPQuery',

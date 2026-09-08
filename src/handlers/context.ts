@@ -456,39 +456,9 @@ export async function handleSAPContext(
 
   const ktdMarkdown = shouldIncludeKtd ? await readKtdMarkdown(client, name, cachingLayer) : undefined;
 
-  // Check dep graph cache — if source hash matches, return cached contracts
+  // A root hash cannot validate changed dependency contracts or depth/maxDeps options.
+  // Rebuild the aggregate, retaining ETag-validated source reads (and PP isolation).
   const dependencyPayloadCache = contextCacheForDependencyPayloads(cachingLayer, cacheSecurity);
-  if (dependencyPayloadCache) {
-    const cachedGraph = dependencyPayloadCache.getCachedDepGraph(source);
-    if (cachedGraph) {
-      const successful = cachedGraph.contracts.filter((c) => c.success);
-      const failed = cachedGraph.contracts.filter((c) => !c.success);
-      const lines: string[] = [];
-      lines.push(
-        `* === Dependency context for ${name} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) [cached] ===`,
-      );
-      lines.push('');
-      for (const contract of successful) {
-        const typeLabel = contract.type.toLowerCase();
-        const methodLabel = contract.methodCount > 0 ? `, ${contract.methodCount} methods` : '';
-        lines.push(`* --- ${contract.name} (${typeLabel}${methodLabel}) ---`);
-        lines.push(contract.source.trim());
-        lines.push('');
-      }
-      if (failed.length > 0) {
-        lines.push('* --- Failed dependencies ---');
-        for (const f of failed) {
-          lines.push(`* ${f.name}: ${f.error}`);
-        }
-        lines.push('');
-      }
-      const totalLines = lines.length;
-      lines.push(
-        `* Stats: ${successful.length + failed.length} deps found, ${successful.length} resolved, ${failed.length} failed, ${totalLines} lines [from cache]`,
-      );
-      return textResult(prependKtd(lines.join('\n'), name, ktdMarkdown));
-    }
-  }
 
   // Use detected ABAP version from probe if available, otherwise Cloud (superset)
   const probedAbapRelease = getCachedFeatures()?.abapRelease;

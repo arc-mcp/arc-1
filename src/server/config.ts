@@ -144,6 +144,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   },
   { name: 'disable-saml', valueName: 'boolean', description: 'Disable SAP SAML redirects (true/false)' },
   { name: 'tool-mode', valueName: 'mode', description: 'Tool mode: standard or hyperfocused' },
+  { name: 'live-relations', valueName: 'boolean', description: 'Experimental live repository relations (true/false)' },
   {
     name: 'schema-nullable-optionals',
     valueName: 'mode',
@@ -887,6 +888,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.checkBeforeWrite = resolveBool('check-before-write', 'SAP_CHECK_BEFORE_WRITE', false, 'checkBeforeWrite');
 
   // ── Cache ──────────────────────────────────────────────────────────
+  config.liveRelations = resolveBool('live-relations', 'ARC1_LIVE_RELATIONS', false, 'liveRelations');
   const cacheMode = resolveStr('cache', 'ARC1_CACHE', 'auto', 'cacheMode');
   config.cacheMode = (
     ['memory', 'sqlite', 'none'].includes(cacheMode) ? cacheMode : 'auto'
@@ -1014,6 +1016,9 @@ export function parseArgs(args: string[]): ServerConfig {
  * Fails fast at startup for invalid or dangerous config combinations.
  */
 export function validateConfig(config: ServerConfig): void {
+  if (config.liveRelations && (config.multiTargetEndpoints || config.toolMode !== 'standard')) {
+    throw new Error('ARC1_LIVE_RELATIONS requires single-target standard tool mode.');
+  }
   // SAP client (MANDT) is a canonical 3-digit value (CHAR 3, range 000-999). SAP
   // does NOT zero-pad the sap-client URL parameter, so a 1-2 digit value like '10'
   // authenticates against a different (or non-existent) client and surfaces as a

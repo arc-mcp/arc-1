@@ -2,6 +2,32 @@ import type { Readable } from 'node:stream';
 import type { Client, Dispatcher } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import type { DataResponseBudget } from './data-result-context.js';
+import { AdtApiError } from './errors.js';
+import type { AdtRequestOptions } from './http-deadline.js';
+
+/** Optional scoped controls; existing unscoped reads retain their response behavior. */
+export async function prepareBoundedResponse(
+  response: Response,
+  url: string,
+  options?: AdtRequestOptions,
+): Promise<Response> {
+  if (options?.attemptBudget && !options.discardResponseBody && [401, 403].includes(response.status)) {
+    options.attemptBudget.authorizationFailureObserved = true;
+  }
+  if (options?.attemptBudget && response.status >= 300 && response.status < 400 && response.status !== 304) {
+    await response.body?.cancel();
+    throw new AdtApiError(
+      'Redirects are not allowed during bounded SAP analysis.',
+      response.status,
+      new URL(url).pathname,
+    );
+  }
+  if (options?.discardResponseBody) {
+    await response.body?.cancel();
+    return response;
+  }
+  return options?.responseBudget ? await capResponseBody(response, options.responseBudget) : response;
+}
 
 type ConnectivityProxyResponse = Pick<Dispatcher.ResponseData, 'statusCode' | 'headers' | 'body'>;
 
@@ -184,11 +210,25 @@ export async function connectivityProxyResponse(
   client: Client,
   signal: AbortSignal,
   bounded: boolean,
+  headersOnly = false,
 ): Promise<Response> {
   const headers = new Headers();
   for (const [key, value] of Object.entries(response.headers)) {
     if (value === undefined) continue;
     for (const item of Array.isArray(value) ? value : [String(value)]) headers.append(key, item);
+  }
+
+  if (headersOnly) {
+    // CSRF GET fallback can return a large discovery document. It is not result data;
+    // destroy its dedicated transport without ever buffering or decoding that body.
+    // No reader will be attached on this path. Observe Undici's asynchronous
+    // UND_ERR_ABORTED teardown event; it is expected when discarding the body.
+    response.body.on('error', () => {
+      /* Intentional control-body disposal. */
+    });
+    response.body.destroy();
+    await client.destroy();
+    return new Response(null, { status: response.statusCode, headers });
   }
 
   if (response.statusCode === 204 || response.statusCode === 205 || response.statusCode === 304) {

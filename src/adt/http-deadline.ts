@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { DataResponseBudget } from './data-result-context.js';
 import { AdtNetworkError } from './errors.js';
+import type { RequestAttemptBudget } from './request-attempt-budget.js';
 
 export interface RequestDeadlineOptions {
   signal?: AbortSignal;
@@ -16,13 +17,17 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
   probe?: boolean;
   /** Explicit post-content-decoding response allowance for a guarded data operation. */
   responseBudget?: DataResponseBudget;
+  /** Optional request-local SAP send allowance; CSRF and retries share the same counter. */
+  attemptBudget?: RequestAttemptBudget;
+  /** Internal control requests need headers only; do not buffer their bodies through Connectivity. */
+  discardResponseBody?: boolean;
 }
 
 /** Keep request cancellation/deadline controls while excluding result-data accounting from CSRF bootstrap. */
 export function withoutResponseBudget(options?: AdtRequestOptions): AdtRequestOptions | undefined {
-  if (!options?.responseBudget) return options;
+  if (!options) return options;
   const { responseBudget: _responseBudget, ...rest } = options;
-  return rest;
+  return options.attemptBudget ? { ...rest, discardResponseBody: true } : rest;
 }
 
 const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
