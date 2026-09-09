@@ -16,6 +16,18 @@ describe('Tool Definitions', () => {
     expect(names).toContain('SAPSearch');
   });
 
+  it.each(['onprem', 'btp'] as const)(
+    'puts metadata format and hierarchy prerequisites in %s tool descriptions',
+    (systemType) => {
+      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType });
+      expect(tools.find((tool) => tool.name === 'SAPRead')!.description).toContain('DDIC metadata: omit format');
+      expect(tools.find((tool) => tool.name === 'SAPNavigate')!.description).toContain(
+        'requires data/SQL opt-in + matching scope',
+      );
+      expect(tools.find((tool) => tool.name === 'SAPNavigate')!.description).toContain('class MAIN with SAPRead');
+    },
+  );
+
   it('exposes the SAPRead grep parameter on both on-prem and BTP tool schemas', () => {
     for (const config of [DEFAULT_CONFIG, { ...DEFAULT_CONFIG, systemType: 'btp' as const }]) {
       const sapRead = getToolDefinitions(config).find((t) => t.name === 'SAPRead');

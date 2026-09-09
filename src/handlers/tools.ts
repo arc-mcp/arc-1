@@ -95,14 +95,14 @@ function isBtpMode(config: ServerConfig): boolean {
 }
 
 const SAPREAD_DESC_ONPREM =
-  'Read SAP ABAP objects — source, method bodies, grep, drafts, history or metadata. For implementation behavior or a known reference, use targeted source first; dependency contracts alone do not explain implementation. ' +
+  'Read SAP ABAP source or metadata. For behavior or a known reference, use targeted source first, not dependency contracts. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
   'Types: PROG, CLAS, INTF, FUNC, FUGR (expand_includes=true for all include sources), INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (covers both transparent tables AND DDIC structures — no separate STRU type), TTYP, VIEW, DOMA, DTEL, TRAN, TABLE_CONTENTS (single-column filter), TABLE_QUERY (multi-column WHERE via the freestyle endpoint; gated by allowDataPreview; CDS views need SAP_BASIS 752+), DEVC, SOBJ (BOR — method param reads one method), SYSTEM, COMPONENTS, MSAG, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/VERSION_SOURCE are on-prem only. ' +
   'CLAS: to save tokens, prefer method="*" (all signatures), method="NAME" (one body, ~95% fewer tokens than the full class), or grep over reading the full source. Omit include for the full source, or include=definitions|implementations|macros|testclasses for a local section. Full per-type detail: docs_page SAPRead. ' +
   'Optional grep: case-insensitive regex returning only matching source lines (+context, line numbers); for CLAS, matches are annotated with the owning class/method. ' +
   'Optional version parameter (default "active"): "inactive" reads the user\'s draft, "auto" the developer view. Active reads note when an inactive draft exists.';
 
 const SAPREAD_DESC_BTP =
-  'Read SAP ABAP objects (BTP ABAP Environment) — source, method bodies, grep, drafts or metadata. For implementation behavior or a known reference, use targeted source first; dependency contracts alone do not explain implementation. ' +
+  'Read SAP ABAP source or metadata (BTP ABAP Environment). For behavior or a known reference, use targeted source first, not dependency contracts. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
   'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list). PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
   'CLAS: to save tokens, prefer method="*" (all signatures), method="NAME" (one body, ~95% fewer tokens than the full class), or grep over reading the full source. Omit include for the full source, or include=definitions|implementations|macros|testclasses for a local section. Full per-type detail: docs_page SAPRead. ' +
   'Optional grep: case-insensitive regex returning only matching source lines (+context, line numbers); for CLAS, matches are annotated with the owning class/method. ' +
@@ -491,7 +491,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured'],
             description:
-              'Ordinary reads: omit format or use "text", including DDIC metadata (TABL, TTYP, DTEL, DOMA) and INTF. "structured" is CLAS only and returns metadata + every include, so prefer method/grep for targeted reads. For action="diff", "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default is a patch.',
+              'Default "text", including TABL, TTYP, DTEL, DOMA and INTF metadata. Ordinary "structured": CLAS metadata + all includes; prefer method/grep for targeted reads. action="diff": "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default is a patch.',
           },
           version: {
             type: 'string',
@@ -1014,8 +1014,8 @@ export function getToolDefinitions(
   tools.push({
     name: 'SAPNavigate',
     description: btp
-      ? 'Navigate code (BTP ABAP Environment): definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC). type+name auto-normalized. Scope = released SAP + custom Z/Y. For CDS (DDLS), prefer SAPContext(action="impact") — the same where-used pre-classified into RAP buckets.'
-      : 'Navigate code: definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC, PROG/P); pass type+name instead of uri. hierarchy returns superclass + interfaces + direct subclasses. For CDS (DDLS), prefer SAPContext(action="impact") — the same where-used pre-classified into RAP buckets, answering "what breaks if I change this view".',
+      ? 'Navigate code (BTP ABAP Environment): definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC); type+name replaces uri. Scope = released SAP + custom Z/Y. hierarchy queries SEOMETAREL: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action="impact") classifies where-used into RAP buckets.'
+      : 'Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action="impact") classifies where-used into RAP buckets.',
     inputSchema: {
       type: 'object',
       properties: {

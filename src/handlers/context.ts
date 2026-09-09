@@ -141,11 +141,12 @@ export async function handleSAPContext(
       toolJson({
         name: name.toUpperCase(),
         resolvedObject,
-        // usageCount is the TOTAL, not the page size — a truncated page must not under-report
-        // the blast radius of a change.
+        // Count matching reference entries before paging, not distinct consumers.
         usageCount: lookup.total,
+        countMeaning: 'Reference entries, not distinct objects or runtime calls; not a complete inventory.',
         shown: lookup.results.length,
         truncated: lookup.truncated,
+        ...(lookup.warning ? { warning: lookup.warning } : {}),
         ...(lookup.truncated
           ? { hint: `Showing ${lookup.results.length} of ${lookup.total} usages. Raise maxResults (max 1000).` }
           : {}),

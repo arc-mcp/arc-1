@@ -80,8 +80,8 @@ describe('opt-in live relations integration', () => {
   it('shows opt-in fields while capability is unknown; denied action adds nothing', () => {
     const enabled = getToolDefinitions(config, undefined, undefined, { discoveryMap: discovery });
     expect(navigation(getToolDefinitions(config))).toEqual(navigation(enabled));
-    expect(navigation(enabled).description).toMatch(/^Experimental relations: start here/);
-    expect(navigation(enabled).description).toContain('tiny incoming samples prefer references');
+    expect(navigation(enabled).description).toMatch(/^Experimental relations: outgoing/);
+    expect(navigation(enabled).description).toContain('tiny samples, use references with objectType="CLAS/OC"');
     expect(
       navigation(
         getToolDefinitions(config, undefined, undefined, {
