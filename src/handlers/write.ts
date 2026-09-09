@@ -318,7 +318,7 @@ export async function handleSAPWrite(
     case 'batch_create':
       return writeActionBatchCreate(ctx);
 
-    // Class text symbols (Textelemente) — write a global class's text pool (type=CLAS, on-prem).
+    // Replace one CLAS/PROG/FUGR text-pool part (on-prem).
     case 'edit_text_symbols':
       return writeActionEditTextSymbols(ctx);
     default:
