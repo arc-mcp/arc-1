@@ -58,7 +58,7 @@ Zero edges are observations, never proof of absence or non-use.
 | INCL | `ZABAPGIT_FORMS`: 48 / 0 | `abapInclude`, PROG/I; add; do not misroute as executable program |
 | FUNC | `BAPI_USER_GETLIST`: 5 / 15 | `abapFunctionModule`, FUGR/FF; add; bounded group resolution and verified composite native names |
 | FUGR | `SU_USER`: 237 / 0 | `abapFunctionGroup`, FUGR/F; add; limited retained graph, no execution or expanded source download |
-| VIEW | `V_USR_NAME`: 2 / 1 | `mainObject`, VIEW/DV, uppercase VIT object name; add; distinct from CDS |
+| VIEW | `V_USR_NAME`: 2 / 1 | `mainObject`, VIEW/DV, uppercase VIT object name; add with independent exact-search existence check; distinct from CDS |
 | ENHO | `ZABAPGIT_REPOS`: 2 / 0 | `objectData`, ENHO/XHB; add only this BAdI implementation subtype |
 | SRVB | Two active bindings: 0 / 0 | Do not add from these empty ENV/WUL responses; existing binding metadata already exposes definition links |
 | DDLX | Two active annotations: 0 / 0 | Do not advertise ENV/WUL usefulness; investigate CDS context separately |
@@ -100,6 +100,10 @@ Two live namespaced function-module roots also validated the parent/name path fa
    `BAPI_USER_GETLIST` reaches a response where one URI is both ENHS/XSB and ENHS/XB. Those may
    represent different enhancement facets. No unverified alias folding: fail rather than merge
    the nodes or quietly claim successful coverage. A narrower depth-1 query can avoid that expansion.
+7. **Classic VIEW can invent an active root.** The VIT metadata endpoint and native network both
+   echoed a nonexistent view name as active. Require an independent bounded exact-name/type/path
+   search before accepting VIEW metadata. After this fix, all 17 deliberately nonexistent root
+   types were rejected before any native network POST. Search shares the same analysis budgets.
 
 ## Validation checkpoints
 

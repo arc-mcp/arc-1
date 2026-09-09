@@ -87,7 +87,7 @@ promise of completeness on this or another release.
 | `TTYP`, `DTEL`, `DOMA` | Row type → structure → data element → domain links | Built-in types are not repository nodes |
 | `PROG`, `INCL` | Program/include dependencies | Large programs can exceed the byte limit even at depth 1 |
 | `FUNC`, `FUGR` | Function/module-group dependencies and consumers | FUNC needs one bounded parent lookup; no function execution |
-| `VIEW` | Classic DDIC view/table relationships | Not CDS views, which use `DDLS` |
+| `VIEW` | Classic DDIC view/table relationships | Exact bounded search proves identity before VIT metadata; CDS uses `DDLS` |
 | `ENHO` | BAdI implementation class/spot links | Only live-verified `ENHO/XHB`, not every enhancement subtype |
 | `MSAG` | Objects using a message class | Not a per-message-number usage search |
 | `BDEF`, `SRVD` | Observed incoming implementation/binding links | On 758 outgoing can omit dependencies visible in source; use SAPRead for the RAP stack |
@@ -175,7 +175,7 @@ no hidden where-used, SQL, source-parser or alternate-identity fallback.
 
 These are overlapping ceilings, not promised completion counts. With no discovery/session state,
 discovery GET + root metadata GET + CSRF HEAD + eight native POSTs uses 11 attempts; a CSRF GET
-fallback uses the twelfth. `TABL` and `FUNC` roots need one additional identity-resolution request,
+fallback uses the twelfth. `TABL`, `FUNC` and `VIEW` roots need one additional identity-resolution request,
 so a cold session can stop before eight expansions. Retries or large responses can stop earlier. Reusing ordinary
 discovery/session state saves setup requests, never authorization checks or relationship results.
 

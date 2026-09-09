@@ -200,15 +200,16 @@ export class NativeRelationProvider {
     if (name.length > 120 || !RELATION_NAME.test(name)) throw new RelationProtocolError('invalid root name.');
     let spec = relationObjectSpec(type);
     if (!spec) throw new RelationProtocolError('unsupported root type.');
-    // TABL has two physical paths; FUNC requires its parent group. Resolve only these
-    // identities, with the SAME deadline/attempt/byte budgets as the rest of the analysis.
+    // TABL has two physical paths; FUNC requires its parent group; VIT VIEW metadata
+    // can echo nonexistent names as active. Resolve these identities independently,
+    // with the SAME deadline/attempt/byte budgets as the rest of the analysis.
     let uri: string;
-    if (type === 'TABL' || type === 'FUNC') {
+    if (['TABL', 'FUNC', 'VIEW'].includes(type)) {
       checkOperation(this.client.safety, OperationType.Read, 'ResolveRepositoryRelationRoot');
       const params = new URLSearchParams({
         operation: 'quickSearch',
         query: name,
-        objectType: type === 'FUNC' ? 'FUGR/FF' : 'TABL',
+        objectType: type === 'TABL' ? 'TABL' : spec[1],
         maxResults: '2',
       });
       const result = await this.client.http.get(
@@ -219,7 +220,9 @@ export class NativeRelationProvider {
       const references = parseRelationXml(result.body).objectReferences;
       const refs = references === '' ? [] : array(record(references).objectReference).map(record);
       if (refs.length !== 1 || text(refs[0]!['@_name'], 120).toUpperCase() !== name.toUpperCase()) {
-        throw new RelationProtocolError('root resolution is missing or ambiguous. Use an exact object name.');
+        throw new RelationProtocolError(
+          'root resolution is missing or ambiguous. Use SAPSearch to verify the exact name and type.',
+        );
       }
       const resolved = relationObjectSpec(text(refs[0]!['@_type'], 64));
       if (!resolved || resolved[0] !== type || resolved[1] !== refs[0]!['@_type'])
@@ -240,7 +243,12 @@ export class NativeRelationProvider {
       metadata['@_type'] !== expectedType ||
       metadata['@_version'] !== 'active'
     ) {
-      throw new RelationProtocolError('root metadata does not match the requested active object.');
+      const version = metadata['@_version'];
+      const state =
+        version === 'inactive' || version === 'new'
+          ? ` SAP returned ${version} metadata; no native lookup was performed.`
+          : '';
+      throw new RelationProtocolError(`root metadata does not match the requested active object.${state}`);
     }
     const pkg =
       metadata.packageRef === undefined
