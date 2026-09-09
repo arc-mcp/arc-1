@@ -18,6 +18,7 @@
  */
 
 import { KTD_SHORT_TEXT_MAX_LENGTH } from '../adt/ddic-xml.js';
+import { TEXT_ELEMENT_PARTS } from '../adt/text-elements.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
@@ -451,7 +452,7 @@ export function getToolDefinitions(
               'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
               'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path.' +
               // TEXT_ELEMENTS does not exist on BTP — keep the BTP surface byte-identical.
-              (btp ? '' : ' TEXT_ELEMENTS: include=symbols|selections|headings reads one textpool part; omit for all.'),
+              (btp ? '' : ' TEXT_ELEMENTS: symbols|selections|headings; omit for all supported parts.'),
           },
           group: {
             type: 'string',
@@ -524,7 +525,8 @@ export function getToolDefinitions(
           objectType: {
             type: 'string',
             description:
-              'For API_STATE and VERSIONS: SAP object type (CLAS, INTF, PROG, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, etc.). For API_STATE: auto-detected from name if omitted. For VERSIONS: required to pick the correct revisions endpoint (e.g., "FUNC" + group for function modules); inferred from CL_/IF_/CX_ name prefixes when possible, defaults to PROG.',
+              'For API_STATE and VERSIONS: SAP object type (CLAS, INTF, PROG, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, etc.). For API_STATE: auto-detected from name if omitted. For VERSIONS: required to pick the correct revisions endpoint (e.g., "FUNC" + group for function modules); inferred from CL_/IF_/CX_ name prefixes when possible, defaults to PROG.' +
+              (btp ? '' : ' TEXT_ELEMENTS: PROG (default), CLAS or FUGR.'),
           },
           versionUri: {
             type: 'string',
@@ -612,7 +614,7 @@ export function getToolDefinitions(
               'scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse\'s "Generate Behavior Implementation").' +
               (btp
                 ? ''
-                : ' edit_text_symbols: write a CLAS/PROG/FUGR textpool part (textPart=symbols|selections|headings).'),
+                : ' edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source="" clears it.'),
           },
           type: {
             type: 'string',
@@ -644,9 +646,9 @@ export function getToolDefinitions(
             : {
                 textPart: {
                   type: 'string',
-                  enum: ['symbols', 'selections', 'headings'],
+                  enum: TEXT_ELEMENT_PARTS,
                   description:
-                    'edit_text_symbols only: textpool part — symbols (default), selections (report selection texts) or headings. Classes have symbols only.',
+                    'edit_text_symbols: symbols (default), selections (selection-screen labels), headings. CLAS: symbols only.',
                 },
               }),
           method: {

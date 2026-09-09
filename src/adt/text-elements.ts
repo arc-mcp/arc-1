@@ -4,7 +4,8 @@
  * Three collections (`classes`, `programs`, `functiongroups`), each exposing three subobjects that
  * carry their own media type: `symbols` (the numbered `'Text'(001)` literals), `selections` (a
  * report's selection texts — the labels beside PARAMETERS/SELECT-OPTIONS) and `headings` (list
- * header and column headers). A class only has `symbols`; SAP answers 406 for its other two.
+ * header and column headers). ARC-1 exposes only `symbols` for classes: their selection texts
+ * are not writable and their headings are empty placeholders on the verified systems.
  *
  * Split out of client.ts, which keeps only the thin delegating methods.
  */
@@ -40,7 +41,21 @@ export const TEXT_ELEMENT_PARTS = Object.keys(TEXT_ELEMENT_CT) as TextElementPar
 export const TEXT_ELEMENT_OBJECT_TYPES = Object.keys(TEXT_ELEMENT_COLLECTIONS) as TextElementObjectType[];
 
 export function isTextElementObjectType(type: string): type is TextElementObjectType {
-  return type in TEXT_ELEMENT_COLLECTIONS;
+  return Object.hasOwn(TEXT_ELEMENT_COLLECTIONS, type);
+}
+
+/** Validate at the HTTP boundary too: JavaScript consumers do not have TypeScript's enums. */
+function assertPart(objectType: TextElementObjectType, part: TextElementPart): void {
+  if (!isTextElementObjectType(objectType) || !Object.hasOwn(TEXT_ELEMENT_CT, part)) {
+    throw new AdtApiError('Invalid text element object type or part.', 400, '/sap/bc/adt/textelements');
+  }
+  if (objectType === 'CLAS' && part !== 'symbols') {
+    throw new AdtApiError(
+      `A class has no ${part} — only symbols are supported.`,
+      400,
+      '/sap/bc/adt/textelements/classes',
+    );
+  }
 }
 
 /** ADT path of the textelements object — the lock target, not the class/program object itself. */
@@ -48,8 +63,8 @@ function textElementsObject(objectType: TextElementObjectType, name: string): st
   return `/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}/${encodeURIComponent(name)}`;
 }
 
-/** False only when discovery is loaded AND says the collection is missing (SAP_BASIS < 7.51, e.g.
- *  NW 7.50). A not-yet-populated map answers true, so 757/758/816 is never false-blocked and a real
+/** False only when discovery is loaded AND says the collection is missing (e.g. NW 7.50).
+ *  A not-yet-populated map answers true, so 757/758/816 is never false-blocked and a real
  *  404 surfaces from SAP instead. */
 function serviceAvailable(http: AdtHttpClient, objectType: TextElementObjectType): boolean {
   if (!http.hasDiscoveryData()) return true;
@@ -60,7 +75,7 @@ function serviceAvailable(http: AdtHttpClient, objectType: TextElementObjectType
 function assertService(http: AdtHttpClient, objectType: TextElementObjectType): void {
   if (!serviceAvailable(http, objectType)) {
     throw new AdtApiError(
-      `Text elements for ${objectType} require the ADT textelements service (SAP_BASIS ≥ 7.51; not available on this system).`,
+      `Text elements for ${objectType} require the ADT textelements service (not available on this system).`,
       404,
       `/sap/bc/adt/textelements/${TEXT_ELEMENT_COLLECTIONS[objectType]}`,
     );
@@ -77,6 +92,7 @@ export async function readTextElementPart(
   part: TextElementPart,
 ): Promise<string> {
   checkOperation(safety, OperationType.Read, 'GetTextElements');
+  assertPart(objectType, part);
   assertService(http, objectType);
   const resp = await http.get(`${textElementsObject(objectType, name)}/source/${part}`, {
     Accept: TEXT_ELEMENT_CT[part],
@@ -84,10 +100,8 @@ export async function readTextElementPart(
   return resp.body;
 }
 
-/** Read an object's text pool. Without `part`, every subobject that carries text is returned under a
- *  `=== part ===` marker; a subobject the object cannot have (SAP 406) is skipped rather than
- *  failing the read. Falls back to the legacy per-program sub-resource when the service is absent,
- *  so NW 7.50 keeps returning whatever it used to. */
+/** Read supported parts under `=== part ===` markers. Preserve raw bodies and propagate failures:
+ *  HTTP 406 can indicate a source parse/consistency error, not just an unsupported part. */
 export async function readTextElements(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -103,25 +117,14 @@ export async function readTextElements(
       '/sap/bc/adt/textelements',
     );
   }
-  if (!serviceAvailable(http, objectType)) {
-    if (objectType !== 'PROG') assertService(http, objectType);
-    const resp = await http.get(`/sap/bc/adt/programs/programs/${encodeURIComponent(name)}/textelements`);
-    return resp.body;
-  }
+  assertService(http, objectType);
   if (options?.part) return readTextElementPart(http, safety, objectType, name, options.part);
 
   const chunks: string[] = [];
-  for (const part of TEXT_ELEMENT_PARTS) {
-    let body: string;
-    try {
-      body = await readTextElementPart(http, safety, objectType, name, part);
-    } catch (err) {
-      // 406 = this object type has no such subobject (a class has no selections/headings). Not an
-      // error for a whole-pool read: report the parts that do exist.
-      if (err instanceof AdtApiError && err.statusCode === 406) continue;
-      throw err;
-    }
-    if (body.trim()) chunks.push(`=== ${part} ===\n${body.trim()}`);
+  const parts: readonly TextElementPart[] = objectType === 'CLAS' ? ['symbols'] : TEXT_ELEMENT_PARTS;
+  for (const part of parts) {
+    const body = await readTextElementPart(http, safety, objectType, name, part);
+    if (body.trim()) chunks.push(`=== ${part} ===\n${body}`);
   }
   return chunks.length > 0 ? chunks.join('\n\n') : `No text elements maintained for ${objectType} ${name}.`;
 }
@@ -139,6 +142,7 @@ export async function writeTextElementPart(
   transport?: string,
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'WriteTextElements');
+  assertPart(objectType, part);
   assertService(http, objectType);
   const obj = textElementsObject(objectType, name);
   await http.withStatefulSession(async (session) => {

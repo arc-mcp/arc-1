@@ -700,12 +700,15 @@ Moves a method's METHODS clause from its current visibility section to a target 
 
 Verified live on a4h (S/4HANA 2023, kernel 7.58) end-to-end. The underlying `/objectstructure` endpoint also works on NW 7.50 SP02 (reads verified); on that release methods are split across `CLAS/OO` (def) + `CLAS/OM` (impl) elements and merged by name in the parser. Writes on the un-patched NW 7.50 dev edition can trip [SAP Note 2727890](https://launchpad.support.sap.com/#/notes/2727890) "ADT: fix unstable adt lock handle" — a system-level bug affecting every ADT write, not specific to this feature; ARC-1 detects the 423 status and emits a hint.
 
+<a id="class-text-symbols"></a>
+
 ### Text elements
 
 Read and write an object's **text pool** via the ADT textelements service. Three subobjects, each
 with its own media type: `symbols` (the numbered `'Text'(001)` literals), `selections` (a report's
 selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`) and `headings` (list header and
-column headers). Classes have only `symbols`; `PROG` and `FUGR` have all three.
+column headers). ARC-1 supports `symbols` for classes and all three parts for `PROG` and `FUGR`.
+Selection texts require selection-screen fields in the program/function group source.
 
 ```
 SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols")      — class text symbols
@@ -723,20 +726,29 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   separated (a shared or missing `@MaxLength` is rejected with `406 "Text elements contain errors"`).
   `selections` — one `PARAM=text` line per selection-screen field. `headings` — `listHeader=` plus
   `columnHeader_N=` lines.
+- **Replacement, not merge:** each write replaces the complete selected part. Read it first and
+  retain any entries you want to keep. Other parts remain unchanged. An explicit `source=""`
+  clears the selected part; omitted/null source is rejected. Do not send the `=== part ===`
+  markers from a whole-pool read as source — read the individual part with `include=` instead.
 - **Immediately active** — no `SAPActivate` needed. Defining the referenced symbols is what clears
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw
   parameter names.
-- **On-prem only, discovery-gated.** The service is present on SAP_BASIS ≥ 7.51 (verified on 757,
-  758 and 816) and absent on NW 7.50 — ARC-1 returns a clean "textelements service not available"
-  error there, and `SAPRead(type="TEXT_ELEMENTS")` falls back to the legacy per-program resource.
-- **Wrong part for the type:** asking a class for `selections` or `headings` is refused up front;
-  SAP itself answers `406` for those, and a whole-pool read simply skips them.
+- **On-prem only, discovery-gated.** The service was verified on 757, 758 and 816 and is absent
+  on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
+  without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
+- **Reads:** `objectType` defaults to `PROG`; use `CLAS` or `FUGR` explicitly for those objects.
+  Whole-pool reads label the non-empty raw bodies of supported parts. SAP may return empty-value
+  heading placeholders. Individual reads preserve the raw body and use the requested part's media
+  type. A failed part fails the read; HTTP 406 can indicate a source parsing/consistency error.
+- **Class parts:** explicit class `selections`/`headings` requests are refused before HTTP;
+  whole-class reads fetch only `symbols`. SAP returns empty selection bodies and heading
+  placeholders on A4H/758, but rejects class selection writes.
 
-Verified live end-to-end on a4h (758) for class symbols: create a `$TMP` class referencing
-`'Hi'(001)` → `edit_text_symbols` → read back → `SAPActivate` clean. The program/function-group
-collections (`/sap/bc/adt/textelements/programs`, `.../functiongroups`) and their three media types
-were verified against a 757 S/4HANA system.
+Verified live end-to-end on A4H/758: class symbols, plus disposable `$TMP` program and function-group
+selection screens with symbols, selection texts and headings. Tests cover immediate read-back,
+replacement/clearing, unchanged sibling parts, rejected malformed bodies, subsequent successful
+writes and cleanup.
 
 ---
 

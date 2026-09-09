@@ -15,6 +15,7 @@
 
 import { z } from 'zod';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
+import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
@@ -64,9 +65,6 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 // Kept separate from SAPREAD_CLAS_INCLUDES so VERSIONS (which shares that list) stays strict.
 const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
-// TEXT_ELEMENTS reads accept one textpool subobject in `include`; omitted means the whole pool.
-const SAPREAD_TEXT_ELEMENT_INCLUDES = ['symbols', 'selections', 'headings'] as const;
-
 function validateSapReadInput(
   input: { type: string; name?: string; action?: string; include?: string; versionUri?: string; sqlFilter?: string },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },

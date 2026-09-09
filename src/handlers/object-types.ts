@@ -252,6 +252,11 @@ export function normalizeTypeArgsForValidation(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   const cleaned = stripLlmEmptyValues(args);
+  // A text-pool PUT replaces the selected part; an explicit empty string clears it.
+  // Preserve this only for that action. Null/omitted source remains a missing-source error.
+  if (toolName === 'SAPWrite' && cleaned.action === 'edit_text_symbols' && typeof args.source === 'string') {
+    cleaned.source = args.source;
+  }
   switch (toolName) {
     case 'SAPRead':
       return {

@@ -902,19 +902,19 @@ describe('AdtClient', () => {
       expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
     });
 
-    it('getTextElements labels every non-empty part and skips the ones SAP rejects with 406', async () => {
+    it('getTextElements labels every non-empty part and omits empty bodies', async () => {
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string) => {
         const u = String(url);
         if (u.includes('/source/symbols')) return Promise.resolve(mockResponse(200, ''));
         if (u.includes('/source/selections')) return Promise.resolve(mockResponse(200, 'P_LGNUM=Warehouse'));
-        return Promise.resolve(mockResponse(406, '<exc:exception><message>not acceptable</message></exc:exception>'));
+        return Promise.resolve(mockResponse(200, ''));
       });
       const client = createClient();
       const body = await client.getTextElements('ZHU_CREATE', { objectType: 'PROG' });
       expect(body).toContain('=== selections ===');
       expect(body).toContain('P_LGNUM=Warehouse');
-      // symbols came back empty and headings answered 406 — neither is an error, neither is listed.
+      // Symbols and headings came back empty, so neither is listed.
       expect(body).not.toContain('=== symbols ===');
       expect(body).not.toContain('=== headings ===');
     });
@@ -933,13 +933,14 @@ describe('AdtClient', () => {
       await expect(client.getTextElements('ZIF_FOO', { objectType: 'INTF' })).rejects.toThrow(/exist only for/i);
     });
 
-    it('getTextElements falls back to the legacy program resource when the service is absent (NW 7.50)', async () => {
+    it('getTextElements refuses an absent service without calling the broken legacy resource', async () => {
       const client = createClient();
       client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['text/plain']]]));
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, 'legacy-pool'));
-      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).resolves.toBe('legacy-pool');
-      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/sap/bc/adt/programs/programs/ZHU_CREATE/textelements');
+      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).rejects.toThrow(
+        /textelements service/i,
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('fails clean when discovery is loaded but the textelements service is absent (NW 7.50)', async () => {
