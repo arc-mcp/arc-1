@@ -4,7 +4,13 @@ import { AdtClient } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import { handleToolCall } from '../../../src/handlers/dispatch.js';
-import { getCachedDiscovery, resetCachedFeatures, setCachedDiscovery } from '../../../src/handlers/feature-cache.js';
+import {
+  getCachedDiscovery,
+  isTablesEndpointAvailable,
+  isTableTypesEndpointAvailable,
+  resetCachedFeatures,
+  setCachedDiscovery,
+} from '../../../src/handlers/feature-cache.js';
 import { getConfiguredToolDefinitions } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { relationMetadata, relationObject, relationXml } from '../../helpers/relation-fixtures.js';
@@ -57,14 +63,100 @@ describe('live relations cold discovery reuse', () => {
       denied = setup();
     expect((await handleToolCall(allowed.client, config, 'SAPNavigate', input, readAuth)).isError).toBeUndefined();
     denied.get.mockRejectedValue(new AdtApiError('Forbidden', 403, root.uri));
-    const result = await handleToolCall(denied.client, config, 'SAPNavigate', input, {
-      ...readAuth,
-      clientId: 'denied-user',
-    });
+    const result = await handleToolCall(
+      denied.client,
+      config,
+      'SAPNavigate',
+      input,
+      { ...readAuth, clientId: 'denied-user' },
+      undefined,
+      undefined,
+      true,
+    );
     expect(result.isError).toBe(true);
     expect(denied.get.mock.calls.map(([path]) => path)).toEqual([root.uri]);
     expect(denied.post).not.toHaveBeenCalled();
     expect(result.content[0]!.text).not.toContain('"nodes"');
+  });
+
+  it.each(['SYSTEM_A', undefined])(
+    'keeps cold per-user discovery request-local for destination %s',
+    async (destinationName) => {
+      const { client, get, post } = setup();
+      const perUserConfig = { ...config, destinationName };
+      const before = getConfiguredToolDefinitions(perUserConfig);
+      const shared = getCachedDiscovery(destinationName);
+      // No stable userKey is present: publication must depend on client identity mode, not a name.
+      for (let call = 0; call < 2; call++) {
+        const result = await handleToolCall(
+          client,
+          perUserConfig,
+          'SAPNavigate',
+          input,
+          readAuth,
+          undefined,
+          undefined,
+          true,
+        );
+        expect(result.isError).toBeUndefined();
+        expect(getCachedDiscovery(destinationName)).toBe(shared);
+        expect(shared.size).toBe(0);
+        expect(isTablesEndpointAvailable(destinationName)).toBeUndefined();
+        expect(isTableTypesEndpointAvailable(destinationName)).toBeUndefined();
+        expect(getConfiguredToolDefinitions(perUserConfig)).toEqual(before);
+      }
+      expect(get.mock.calls.map(([path]) => path)).toEqual([discoveryPath, root.uri, discoveryPath, root.uri]);
+      expect(post).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('does not substitute one per-user discovery response for another user’s unsupported response', async () => {
+    const first = setup(),
+      second = setup();
+    const auth = (sub: string) => ({ ...readAuth, extra: { sub, iss: 'https://issuer.invalid' } });
+    expect(
+      (await handleToolCall(first.client, config, 'SAPNavigate', input, auth('user-a'), undefined, undefined, true))
+        .isError,
+    ).toBeUndefined();
+    second.get.mockResolvedValueOnce(response('<service><workspace/></service>'));
+    const result = await handleToolCall(
+      second.client,
+      config,
+      'SAPNavigate',
+      input,
+      auth('user-b'),
+      undefined,
+      undefined,
+      true,
+    );
+    expect(result.isError).toBe(true);
+    expect(second.get.mock.calls.map(([path]) => path)).toEqual([discoveryPath]);
+    expect(second.post).not.toHaveBeenCalled();
+    expect(getCachedDiscovery(config.destinationName).size).toBe(0);
+  });
+
+  it('lets per-user calls reuse shared capability hints without publishing or skipping live reads', async () => {
+    const { client, get, post } = setup();
+    setCachedDiscovery(discovery, config.destinationName);
+    const result = await handleToolCall(client, config, 'SAPNavigate', input, readAuth, undefined, undefined, true);
+    expect(result.isError).toBeUndefined();
+    expect(get.mock.calls.map(([path]) => path)).toEqual([root.uri]);
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(getCachedDiscovery(config.destinationName)).toBe(discovery);
+  });
+
+  it('does not publish per-user discovery even when the subsequent root read is denied', async () => {
+    const { client, get, post } = setup();
+    get.mockImplementation(async (path) => {
+      if (path === discoveryPath) return response(discoveryXml);
+      throw new AdtApiError('Forbidden', 403, root.uri);
+    });
+    const result = await handleToolCall(client, config, 'SAPNavigate', input, readAuth, undefined, undefined, true);
+    expect(result.isError).toBe(true);
+    expect(get.mock.calls.map(([path]) => path)).toEqual([discoveryPath, root.uri]);
+    expect(post).not.toHaveBeenCalled();
+    expect(getCachedDiscovery(config.destinationName).size).toBe(0);
+    expect(isTablesEndpointAvailable(config.destinationName)).toBeUndefined();
   });
 
   it('does not reuse SYSTEM_A capability discovery for SYSTEM_B', async () => {
@@ -111,14 +203,17 @@ describe('live relations cold discovery reuse', () => {
     expect(getCachedDiscovery(config.destinationName)).toEqual(discovery);
   });
 
-  it('does not overwrite a discovery refresh completed while the fallback was in flight', async () => {
+  it.each([false, true])('does not overwrite an in-flight refresh (per-user=%s)', async (isPerUserClient) => {
     const { client, get } = setup();
     const newer = new Map([['/sap/bc/adt/oo/classes', ['application/example+xml']]]);
     get.mockImplementationOnce(async () => {
       setCachedDiscovery(newer, config.destinationName);
       return response(discoveryXml);
     });
-    expect((await handleToolCall(client, config, 'SAPNavigate', input, readAuth)).isError).toBeUndefined();
+    expect(
+      (await handleToolCall(client, config, 'SAPNavigate', input, readAuth, undefined, undefined, isPerUserClient))
+        .isError,
+    ).toBeUndefined();
     expect(getCachedDiscovery(config.destinationName)).toBe(newer);
   });
 

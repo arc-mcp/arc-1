@@ -2,12 +2,42 @@ import { Registry, Version } from '@abaplint/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
+import { DEFAULT_CONTRACT_VERSION, extractContract } from '../../../src/context/contract.js';
+import { DEFAULT_DEPENDENCY_VERSION, extractDependencies } from '../../../src/context/deps.js';
 import { ContextParseCache, contextParseCache } from '../../../src/context/parse-cache.js';
+import * as parserConfig from '../../../src/lint/abaplint-config-cache.js';
 
 const source =
   'CLASS zcl_a DEFINITION PUBLIC. PUBLIC SECTION. METHODS go. ENDCLASS. CLASS zcl_a IMPLEMENTATION. METHOD go. zcl_b=>run( ). ENDMETHOD. ENDCLASS.';
 afterEach(() => vi.restoreAllMocks());
 describe('content-addressed context parse cache', () => {
+  it('uses the extractor defaults for both memo keys and builds', () => {
+    const cache = new ContextParseCache();
+    const configure = vi.spyOn(parserConfig, 'getDefaultAbaplintConfig');
+    const contract = cache.contract(source, 'ZCL_A', 'CLAS');
+    const dependencies = cache.dependencies(source, 'ZCL_A');
+    expect(configure.mock.calls).toEqual([[DEFAULT_CONTRACT_VERSION], [DEFAULT_DEPENDENCY_VERSION]]);
+    expect(cache.contract(source, 'ZCL_A', 'CLAS', DEFAULT_CONTRACT_VERSION)).toEqual(contract);
+    expect(cache.dependencies(source, 'ZCL_A', DEFAULT_DEPENDENCY_VERSION)).toEqual(dependencies);
+    expect(cache.stats().entries).toBe(2);
+    expect(configure).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([undefined, Version.v758])(
+    'matches uncached extraction and effective configuration (version=%s)',
+    (version) => {
+      const configure = vi.spyOn(parserConfig, 'getDefaultAbaplintConfig');
+      const expectedContract = extractContract(source, 'ZCL_A', 'CLAS', version);
+      const expectedDependencies = extractDependencies(source, 'ZCL_A', true, version);
+      const uncachedVersions = [...configure.mock.calls];
+      configure.mockClear();
+      const cache = new ContextParseCache();
+      expect(cache.contract(source, 'ZCL_A', 'CLAS', version)).toEqual(expectedContract);
+      expect(cache.dependencies(source, 'ZCL_A', version)).toEqual(expectedDependencies);
+      expect(configure.mock.calls).toEqual(uncachedVersions);
+    },
+  );
+
   it('separates content, name, type and parser language version, returning independent objects', () => {
     const cache = new ContextParseCache(),
       parse = vi.spyOn(Registry.prototype, 'parse');

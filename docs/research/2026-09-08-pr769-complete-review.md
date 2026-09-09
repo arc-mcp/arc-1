@@ -5,6 +5,9 @@ own two passes used `584a65ad` and `55a4e76c`. All 15 numbered findings and nine
 below were checked against current code; the prior missing-list limitation no longer applies.
 Suggestions were treated as hypotheses, not instructions to weaken protocol/authentication gates.
 
+Follow-up: the [third-review disposition](2026-09-09-pr769-third-review.md) tightens fallback discovery
+publication to shared clients and removes cache-owned parser defaults.
+
 ## Numbered findings
 
 | # | Disposition | Evidence and action |

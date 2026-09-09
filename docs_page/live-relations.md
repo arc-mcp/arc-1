@@ -42,9 +42,11 @@ unsupported endpoint/MIME hides it. tools/list never waits on SAP; invocation al
 exact capability before object access and performs bounded discovery when necessary. A shared-client
 `SAPManage(action="probe")` can refresh failed/stale discovery; per-user probes do not replace the
 shared capability cache.
-Successful fallback discovery is parsed once and retained in the existing in-memory,
+Successful shared-client fallback discovery is parsed once and retained in the existing in-memory,
 destination-scoped capability cache. Later calls reuse these hints, but still read root metadata
-and relationships live as the caller. Failed or unsupported fallback discovery is not retained.
+and relationships live as the caller. Per-user fallback discovery stays request-local: it never
+changes another user's capability hints or tool surface. While shared discovery remains unknown,
+per-user calls repeat bounded discovery. Failed or unsupported fallback discovery is not retained.
 This cache is independent of `ARC1_CACHE`; it stores neither object results nor authorization grants.
 
 ## Enable on SAP BTP Cloud Foundry

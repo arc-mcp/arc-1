@@ -1,8 +1,8 @@
-import { Version } from '@abaplint/core';
+import type { Version } from '@abaplint/core';
 import { hashSource } from '../cache/cache.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
-import { extractContract } from './contract.js';
-import { extractDependencies } from './deps.js';
+import { DEFAULT_CONTRACT_VERSION, extractContract } from './contract.js';
+import { DEFAULT_DEPENDENCY_VERSION, extractDependencies } from './deps.js';
 import type { Contract, Dependency } from './types.js';
 
 /** Process-local pure parse memoization. Never contains ASTs, aggregates or fullSource. */
@@ -40,7 +40,12 @@ export class ContextParseCache {
     return value;
   }
 
-  contract(source: string, name: string, type: Contract['type'], version = Version.Cloud): Contract {
+  contract(
+    source: string,
+    name: string,
+    type: Contract['type'],
+    version: Version = DEFAULT_CONTRACT_VERSION,
+  ): Contract {
     const key = JSON.stringify(['contract', type, name, version, hashSource(source)]);
     return this.memo(
       key,
@@ -49,7 +54,7 @@ export class ContextParseCache {
     );
   }
 
-  dependencies(source: string, name: string, version = Version.Cloud): Dependency[] {
+  dependencies(source: string, name: string, version: Version = DEFAULT_DEPENDENCY_VERSION): Dependency[] {
     const key = JSON.stringify(['dependencies', name, version, hashSource(source)]);
     return this.memo(
       key,

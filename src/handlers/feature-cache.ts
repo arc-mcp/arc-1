@@ -8,7 +8,7 @@
  * Readers usually omit the key argument: it is resolved from the request
  * context (AsyncLocalStorage), which dispatch populates per tool call. Public
  * SID/client target IDs take precedence over legacy internal destination names.
- * Writers (startup/first-request probes and live-relations discovery fallback) pass
+ * Writers (startup/first-request probes and shared-client live-relations discovery fallback) pass
  * the destination explicitly when configured.
  */
 

@@ -12,6 +12,7 @@ import { Semaphore } from '../adt/semaphore.js';
 import { RELATION_LIMITS, walkRelations } from '../context/relation-walk.js';
 import { getCurrentContext } from '../server/context.js';
 import type { ServerConfig } from '../server/types.js';
+import type { CacheSecurityContext } from './cache-security.js';
 import { getCachedDiscovery, setCachedDiscovery } from './feature-cache.js';
 import { LiveRelationsInput } from './relation-input.js';
 import { errorResult, textResult, toolJson } from './shared.js';
@@ -19,7 +20,12 @@ import { errorResult, textResult, toolJson } from './shared.js';
 // Independent of the SAP HTTP semaphore: holding the same semaphore twice can deadlock.
 const analyses = new Semaphore(RELATION_LIMITS.concurrent);
 
-export async function handleLiveRelations(client: AdtClient, config: ServerConfig, args: Record<string, unknown>) {
+export async function handleLiveRelations(
+  client: AdtClient,
+  config: ServerConfig,
+  args: Record<string, unknown>,
+  cacheSecurity: CacheSecurityContext,
+) {
   if (!config.liveRelations || config.multiTargetEndpoints || config.targetId || config.toolMode !== 'standard') {
     return errorResult(
       'Experimental live relations are disabled or unavailable in this mode. Enable ARC1_LIVE_RELATIONS only for single-target standard tools.',
@@ -45,8 +51,9 @@ export async function handleLiveRelations(client: AdtClient, config: ServerConfi
     const known = getCachedDiscovery(config.destinationName);
     const discovered = await provider.discover(known.size ? known : undefined);
     // Capability hints only; roots and networks still use this caller's live SAP client.
+    // Per-user discovery must not shape another user's capability surface, even without a userKey.
     // Do not overwrite a startup/parallel refresh that completed while discovery was in flight.
-    if (!known.size && !getCachedDiscovery(config.destinationName).size) {
+    if (!cacheSecurity.isPerUserClient && !known.size && !getCachedDiscovery(config.destinationName).size) {
       setCachedDiscovery(new Map(discovered), config.destinationName);
     }
     const root = await provider.validateRoot(input.type, input.name);
