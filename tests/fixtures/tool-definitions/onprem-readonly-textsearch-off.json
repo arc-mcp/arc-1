@@ -89,7 +89,7 @@
         },
         "include": {
           "type": "string",
-          "description": "For CLAS: omit include for full MAIN; otherwise select definitions, implementations, macros, or testclasses. With method=, an explicit include (including main) selects the source before extraction. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
+          "description": "For CLAS: omit include for full MAIN; otherwise select definitions, implementations, macros, or testclasses. With method=, an explicit include (including main) selects the source before extraction. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path. TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols)."
         },
         "group": {
           "type": "string",
@@ -147,7 +147,7 @@
         },
         "objectType": {
           "type": "string",
-          "description": "For API_STATE and VERSIONS: SAP object type (CLAS, INTF, PROG, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, etc.). For API_STATE: auto-detected from name if omitted. For VERSIONS: required to pick the correct revisions endpoint (e.g., \"FUNC\" + group for function modules); inferred from CL_/IF_/CX_ name prefixes when possible, defaults to PROG."
+          "description": "For API_STATE and VERSIONS: SAP object type (CLAS, INTF, PROG, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, etc.). For API_STATE: auto-detected from name if omitted. For VERSIONS: required to pick the correct revisions endpoint (e.g., \"FUNC\" + group for function modules); inferred from CL_/IF_/CX_ name prefixes when possible, defaults to PROG. TEXT_ELEMENTS: PROG (default), CLAS or FUGR."
         },
         "versionUri": {
           "type": "string",

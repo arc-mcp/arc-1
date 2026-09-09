@@ -18,6 +18,7 @@
  */
 
 import { KTD_SHORT_TEXT_MAX_LENGTH } from '../adt/ddic-xml.js';
+import { TEXT_ELEMENT_PARTS } from '../adt/text-elements.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
@@ -451,7 +452,9 @@ export function getToolDefinitions(
             description:
               'For CLAS: omit include for full MAIN; otherwise select definitions, implementations, macros, or testclasses. With method=, an explicit include (including main) selects the source before extraction. ' +
               'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
-              'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path.',
+              'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path.' +
+              // TEXT_ELEMENTS does not exist on BTP — keep the BTP surface byte-identical.
+              (btp ? '' : ' TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols).'),
           },
           group: {
             type: 'string',
@@ -524,7 +527,8 @@ export function getToolDefinitions(
           objectType: {
             type: 'string',
             description:
-              'For API_STATE and VERSIONS: SAP object type (CLAS, INTF, PROG, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, etc.). For API_STATE: auto-detected from name if omitted. For VERSIONS: required to pick the correct revisions endpoint (e.g., "FUNC" + group for function modules); inferred from CL_/IF_/CX_ name prefixes when possible, defaults to PROG.',
+              'For API_STATE and VERSIONS: SAP object type (CLAS, INTF, PROG, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, etc.). For API_STATE: auto-detected from name if omitted. For VERSIONS: required to pick the correct revisions endpoint (e.g., "FUNC" + group for function modules); inferred from CL_/IF_/CX_ name prefixes when possible, defaults to PROG.' +
+              (btp ? '' : ' TEXT_ELEMENTS: PROG (default), CLAS or FUGR.'),
           },
           versionUri: {
             type: 'string',
@@ -612,7 +616,7 @@ export function getToolDefinitions(
               'scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse\'s "Generate Behavior Implementation").' +
               (btp
                 ? ''
-                : " edit_text_symbols: write a global class's text symbols (immediately active, no SAPActivate)."),
+                : ' edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source="" clears it.'),
           },
           type: {
             type: 'string',
@@ -630,8 +634,8 @@ export function getToolDefinitions(
           source: {
             type: 'string',
             description: btp
-              ? 'ABAP source. create/update: full body. DDLS: type=DDLS; Cloud permits eligible `extend view entity`, not legacy `extend view`. edit_method: body. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).'
-              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).',
+              ? 'ABAP source. create/update: full body. DDLS: type=DDLS; Cloud permits eligible `extend view entity`, not legacy `extend view`. edit_method: body. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.'
+              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.',
           },
           include: {
             type: 'string',
@@ -639,6 +643,16 @@ export function getToolDefinitions(
             description:
               'CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version="inactive" before activation).',
           },
+          ...(btp
+            ? {}
+            : {
+                textPart: {
+                  type: 'string',
+                  enum: TEXT_ELEMENT_PARTS,
+                  description:
+                    'edit_text_symbols: symbols (default), selections (selection-screen labels), headings. CLAS: symbols only.',
+                },
+              }),
           method: {
             type: 'string',
             description:
@@ -691,7 +705,7 @@ export function getToolDefinitions(
           dryRun: {
             type: 'boolean',
             description:
-              'For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change.',
+              'For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change. SKTD/KTD update: reports which nodes would change, writing nothing.',
           },
           description: {
             type: 'string',
@@ -852,7 +866,7 @@ export function getToolDefinitions(
           },
           shortTexts: {
             type: 'array',
-            description: `SKTD/KTD create/update: exact SAPRead node ID; text max ${KTD_SHORT_TEXT_MAX_LENGTH} UTF-16 units after whitespace normalization; empty clears; source optional.`,
+            description: `SKTD/KTD create/update: node = any name or id the SAPRead node index lists; text max ${KTD_SHORT_TEXT_MAX_LENGTH} UTF-16 units after whitespace normalization; empty clears; source optional.`,
             items: {
               type: 'object',
               properties: {
