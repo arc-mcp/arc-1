@@ -178,6 +178,12 @@ describe('qualified relation identities', () => {
     await expect(provider.validateRoot(type, 'Z*')).rejects.toThrow('invalid root name');
     expect(get).not.toHaveBeenCalled();
   });
+  it.each(['TABL', 'FUNC'])('%s explains a legitimate empty exact search as unresolved', async (type) => {
+    const { provider, get, post } = setup(observed.find(([root]) => root === type)!);
+    get.mockResolvedValue({ statusCode: 200, headers: {}, body: '<objectReferences/>' });
+    await expect(provider.validateRoot(type, 'ZABSENT')).rejects.toThrow('root resolution is missing or ambiguous');
+    expect(post).not.toHaveBeenCalled();
+  });
   it('normalizes only verified function/group/pool name forms', () => {
     for (const group of ['GROUP', '/ACME/GROUP']) {
       const uri = relationObjectUri('FUNC', 'ZFUNCTION', group);

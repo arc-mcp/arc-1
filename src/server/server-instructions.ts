@@ -11,6 +11,7 @@ const SERVER_INSTRUCTIONS = [
   'requests, or dumps/traces on this system.',
   '',
   'Choose evidence for the question; do not fetch every kind of context by default:',
+  '- Native relationship maps: SAPNavigate(action="relations") when listed; SAPContext deps is source-derived.',
   '- Understanding an object: SAPContext(action="deps") returns available KTD and compressed dependency contracts.',
   '- Use SAPRead afterwards for exact implementation, method bodies or known references.',
   'Source behavior is not a specification. Without documented requirements, intent is unverified.',

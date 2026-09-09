@@ -216,7 +216,8 @@ export class NativeRelationProvider {
         {},
         this.options,
       );
-      const refs = array(record(parseRelationXml(result.body).objectReferences).objectReference).map(record);
+      const references = parseRelationXml(result.body).objectReferences;
+      const refs = references === '' ? [] : array(record(references).objectReference).map(record);
       if (refs.length !== 1 || text(refs[0]!['@_name'], 120).toUpperCase() !== name.toUpperCase()) {
         throw new RelationProtocolError('root resolution is missing or ambiguous. Use an exact object name.');
       }

@@ -119,6 +119,7 @@ describe('MCP Server', () => {
     async (toolMode) => {
       const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
       expect(instructions).toContain('Understanding an object: SAPContext(action="deps") returns available KTD');
+      expect(instructions).toContain('Native relationship maps: SAPNavigate(action="relations") when listed');
       expect(instructions).toContain(
         'Use SAPRead afterwards for exact implementation, method bodies or known references',
       );

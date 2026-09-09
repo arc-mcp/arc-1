@@ -934,7 +934,7 @@
         },
         "type": {
           "type": "string",
-          "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS/INTF/DDLS/DCLS/BDEF/SRVD/TABL/TTYP/DTEL/DOMA/PROG/INCL/FUGR/FUNC/VIEW/ENHO/MSAG (ENHO: BAdI only)."
+          "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS/INTF/DDLS/DCLS/BDEF/SRVD/TABL/TTYP/DTEL/DOMA/PROG/INCL/FUGR/FUNC/VIEW/ENHO/MSAG (ENHO: BAdI only). TTYP=table type; MSAG=message class."
         },
         "name": {
           "type": "string",

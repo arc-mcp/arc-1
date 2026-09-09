@@ -80,6 +80,10 @@ describe('automatic live relations integration', () => {
     expect(navigation(enabled).description).toMatch(/^Experimental relations: dependency/);
     expect(navigation(enabled).description).toContain('objectType="CLAS/OC" only for class-only requests');
     expect(navigation(enabled).description).toContain('otherwise omit the filter');
+    expect(navigation(enabled).inputSchema).toHaveProperty(
+      'properties.type.description',
+      expect.stringContaining('TTYP=table type; MSAG=message class'),
+    );
     expect(
       navigation(
         getToolDefinitions(config, undefined, undefined, {
