@@ -26,10 +26,8 @@ export async function handleLiveRelations(
   args: Record<string, unknown>,
   cacheSecurity: CacheSecurityContext,
 ) {
-  if (!config.liveRelations || config.multiTargetEndpoints || config.targetId || config.toolMode !== 'standard') {
-    return errorResult(
-      'Experimental live relations are disabled or unavailable in this mode. Enable ARC1_LIVE_RELATIONS only for single-target standard tools.',
-    );
+  if (config.multiTargetEndpoints || config.targetId || config.toolMode !== 'standard') {
+    return errorResult('Experimental live relations are available only for single-target standard tools.');
   }
   const input = LiveRelationsInput.parse(args);
   const started = Date.now();

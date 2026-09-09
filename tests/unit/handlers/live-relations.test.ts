@@ -7,7 +7,7 @@ import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedDiscovery } from '../../../src/handlers/feature-cache.js';
 import { SAPNavigateSchema } from '../../../src/handlers/schemas.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
-import { parseArgs, validateConfig } from '../../../src/server/config.js';
+import { CLI_CONFIG_OPTION_SPECS, parseArgs } from '../../../src/server/config.js';
 import { filterToolsByAuthScope, getConfiguredToolDefinitions } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { relationMetadata, relationObject, relationXml } from '../../helpers/relation-fixtures.js';
@@ -16,7 +16,7 @@ const discovery = new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]);
 const root = relationObject('ZCL_ROOT'),
   child = relationObject('ZCL_CHILD');
 const input = { action: 'relations', type: 'CLAS', name: 'ZCL_ROOT' };
-const config = { ...DEFAULT_CONFIG, liveRelations: true };
+const config = { ...DEFAULT_CONFIG };
 const readAuth = { token: 'local-test', clientId: 'reader', scopes: ['read'] };
 const setup = () => {
   const client = new AdtClient({ baseUrl: 'http://not-contacted.invalid' });
@@ -39,7 +39,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe('opt-in live relations integration', () => {
+describe('automatic live relations integration', () => {
   it.each([401, 403])('keeps HTTP %i terminal after successful expansion and oversized error body', async (status) => {
     let networks = 0;
     const server = createServer((req, res) => {
@@ -67,20 +67,17 @@ describe('opt-in live relations integration', () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
-  it('has zero default schema change even when capability is available', () => {
+  it('automatically exposes the same action before and after supported discovery', () => {
     expect(getToolDefinitions(DEFAULT_CONFIG, undefined, undefined, { discoveryMap: discovery })).toEqual(
       getToolDefinitions(DEFAULT_CONFIG),
     );
-    expect(navigation(getConfiguredToolDefinitions(DEFAULT_CONFIG)).inputSchema).not.toHaveProperty(
-      'properties.direction',
-    );
-    expect(navigation(getToolDefinitions(DEFAULT_CONFIG)).description).not.toContain('package neighborhoods');
-    expect(JSON.stringify(navigation(getToolDefinitions(DEFAULT_CONFIG)))).not.toContain('DDIC nodes remain');
+    expect(navigation(getConfiguredToolDefinitions(DEFAULT_CONFIG)).inputSchema).toHaveProperty('properties.direction');
+    expect(navigation(getToolDefinitions(DEFAULT_CONFIG)).description).toContain('package neighborhoods');
   });
-  it('shows opt-in fields while capability is unknown; denied action adds nothing', () => {
+  it('shows fields while capability is unknown; unsupported and denied actions add nothing', () => {
     const enabled = getToolDefinitions(config, undefined, undefined, { discoveryMap: discovery });
     expect(navigation(getToolDefinitions(config))).toEqual(navigation(enabled));
-    expect(navigation(enabled).description).toMatch(/^Experimental relations: outgoing/);
+    expect(navigation(enabled).description).toMatch(/^Experimental relations: dependency/);
     expect(navigation(enabled).description).toContain('objectType="CLAS/OC" only for class-only requests');
     expect(navigation(enabled).description).toContain('otherwise omit the filter');
     expect(
@@ -89,7 +86,7 @@ describe('opt-in live relations integration', () => {
           discoveryMap: new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]),
         }),
       ),
-    ).toEqual(navigation(getToolDefinitions(DEFAULT_CONFIG)));
+    ).toEqual(navigation(getToolDefinitions({ ...DEFAULT_CONFIG, denyActions: ['SAPNavigate.relations'] })));
     expect(navigation(enabled).inputSchema).toHaveProperty('properties.action.enum', [
       'definition',
       'references',
@@ -108,12 +105,14 @@ describe('opt-in live relations integration', () => {
     expect(filterToolsByAuthScope(enabled, []).some((tool) => tool.name === 'SAPNavigate')).toBe(false);
   });
   it.each([
-    DEFAULT_CONFIG,
     { ...config, toolMode: 'hyperfocused' as const },
     { ...config, multiTargetEndpoints: true },
     { ...config, targetId: 'A4H/001' },
     { ...config, denyActions: ['SAPNavigate.relations'] },
-  ])('blocks disabled/unsupported/denied invocation before SAP', async (settings) => {
+  ])('blocks unsupported-mode/denied invocation before SAP', async (settings) => {
+    const listed = JSON.stringify(getConfiguredToolDefinitions(settings));
+    expect(listed).not.toContain('"relations"');
+    expect(listed).not.toContain('Experimental relations:');
     const { client, get, post } = setup();
     expect((await handleToolCall(client, settings, 'SAPNavigate', input, readAuth)).isError).toBe(true);
     expect(get).not.toHaveBeenCalled();
@@ -253,13 +252,11 @@ describe('relations input/config contract', () => {
       SAPNavigateSchema.safeParse({ action: 'references', type: 'CLAS', name: 'ZCL_ROOT', depth: 2 }).success,
     ).toBe(false);
   });
-  it('defaults off, accepts env/flag and rejects unsupported startup modes', () => {
+  it('has no dedicated configuration switch', () => {
     vi.stubEnv('ARC1_LIVE_RELATIONS', 'false');
-    expect(parseArgs([]).liveRelations).toBe(false);
+    expect(parseArgs([])).not.toHaveProperty('liveRelations');
     vi.stubEnv('ARC1_LIVE_RELATIONS', 'true');
-    expect(parseArgs([]).liveRelations).toBe(true);
-    expect(parseArgs(['--live-relations=false']).liveRelations).toBe(false);
-    expect(() => validateConfig({ ...config, toolMode: 'hyperfocused' })).toThrow('single-target standard');
-    expect(() => validateConfig({ ...config, multiTargetEndpoints: true })).toThrow('single-target standard');
+    expect(parseArgs([])).not.toHaveProperty('liveRelations');
+    expect(CLI_CONFIG_OPTION_SPECS.some((flag) => flag.name === 'live-relations')).toBe(false);
   });
 });

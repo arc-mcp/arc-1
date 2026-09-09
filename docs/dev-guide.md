@@ -47,7 +47,7 @@ The smoke command builds ARC-1 and starts isolated read-only stdio servers again
 Export `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD` and `TEST_SAP_CLIENT` using your normal
 local secret handling (do not put credentials in tracked files). It uses direct Basic authentication
 with normal TLS verification, not a BTP principal-propagation or Cloud Connector deployment test.
-Provide one to eight existing CLAS/INTF roots, for example:
+Provide one to eight existing qualified roots (see the type table below), for example:
 
 ```bash
 export TEST_RELATION_CASES='[{"action":"relations","type":"CLAS","name":"ZCL_ORDER","direction":"outgoing","depth":1,"maxResults":20}]'
@@ -55,7 +55,7 @@ npm run test:relations:smoke
 ```
 
 Replace the example with an existing object. This command does not create fixtures or write to SAP.
-It checks disabled/enabled tool visibility, bounded traversal and missing-root rejection, and reports
+It checks denied/available tool visibility, bounded traversal and missing-root rejection, and reports
 counts rather than source bodies. Both scripts are typechecked, linted and included in the file-size
 ratchet; live smoke is deliberately manual, not an automatic CI network dependency.
 Feature prerequisites and result limits: [Live relations](../docs_page/live-relations.md).

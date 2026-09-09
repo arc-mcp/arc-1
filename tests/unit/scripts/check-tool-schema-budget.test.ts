@@ -24,7 +24,7 @@ describe('check-tool-schema-budget', () => {
       for (const name of ['direction', 'depth', 'expandPackages']) {
         expect(navigation.inputSchema).toHaveProperty(`properties.${name}`);
       }
-      expect(measureToolDefinitions(enabled).schemaBytes).toBeGreaterThan(measureToolDefinitions(base).schemaBytes);
+      expect(measureToolDefinitions(enabled).schemaBytes).toBe(measureToolDefinitions(base).schemaBytes);
       expect(enabled.budget.maxTotalWireBytes).toBe(base.budget.maxTotalWireBytes);
       expect(enabled.budget.maxPerToolWireBytes).toBe(base.budget.maxPerToolWireBytes);
       expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 72_000);

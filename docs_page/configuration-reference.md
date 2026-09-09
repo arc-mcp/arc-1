@@ -300,7 +300,6 @@ ARC-1 caches SAP source/metadata with ETag revalidation on every hit. See [cachi
 |---|---|---|---|
 | `--cache` | `ARC1_CACHE` | `auto` | `auto` uses the in-process memory cache for every transport. `memory` = in-process only, lost on restart. `sqlite` = persistent across restarts, shared across processes that point at the same file, and explicit opt-in because it stores source bodies at rest. `none` = disable caching entirely (every read hits SAP). |
 | `--cache-file` | `ARC1_CACHE_FILE` | `.arc1-cache.db` | SQLite file path when `ARC1_CACHE=sqlite`. Created on first use. |
-| `--live-relations` | `ARC1_LIVE_RELATIONS` | `false` | Experimental `SAPNavigate(action="relations")`: bounded, metadata-only native SAP relationship traversal. Single-target/standard tool mode only; no database or shared result cache. Exact discovery gates listing. [Setup, limits, and examples](live-relations.md). |
 
 !!! warning "`ARC1_CACHE=sqlite` stores SAP source in cleartext at rest"
     The default `ARC1_CACHE=auto` mode does not create a SQLite cache file. If you explicitly set `ARC1_CACHE=sqlite`, the cache holds full ABAP source unencrypted at `.arc1-cache.db`. ARC-1 creates and repairs the cache DB and file audit sink (`ARC1_LOG_FILE`) with owner-only file permissions (`0600`), but this is not encryption. For IP-sensitive landscapes keep `ARC1_CACHE=auto`/`memory` or `none`, or place persistent files on an encrypted volume with restricted access.

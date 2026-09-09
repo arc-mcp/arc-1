@@ -1031,7 +1031,7 @@
   },
   {
     "name": "SAPNavigate",
-    "description": "Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets.",
+    "description": "Experimental relations: dependency maps or package neighborhoods, then selected reads. For consumer locations use references: objectType=\"CLAS/OC\" only for class-only requests; otherwise omit the filter. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1041,7 +1041,8 @@
             "definition",
             "references",
             "completion",
-            "hierarchy"
+            "hierarchy",
+            "relations"
           ],
           "description": "Navigation action"
         },
@@ -1051,7 +1052,7 @@
         },
         "type": {
           "type": "string",
-          "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter."
+          "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS/INTF/DDLS/DCLS/BDEF/SRVD/TABL/TTYP/DTEL/DOMA/PROG/INCL/FUGR/FUNC/VIEW/ENHO/MSAG (ENHO: BAdI only)."
         },
         "name": {
           "type": "string",
@@ -1063,7 +1064,7 @@
         },
         "maxResults": {
           "type": "number",
-          "description": "references: max entries (default 100, max 1000). \"total\" counts every match of the filter."
+          "description": "references: max entries (default 100, max 1000). \"total\" counts every match of the filter. relations: node cap including root, integer 1–100 (default 50); may stop earlier."
         },
         "line": {
           "type": "number",
@@ -1076,6 +1077,31 @@
         "source": {
           "type": "string",
           "description": "Current source code (for definition/completion)"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "incoming",
+            "outgoing"
+          ],
+          "description": "relations: incoming=users; outgoing=dependencies (default)."
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "relations: native steps (default 1), not source-call hops."
+        },
+        "expandPackages": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$"
+          },
+          "description": "relations: exact packages to expand beyond root; others stay visible. Not an authorization filter."
         }
       },
       "required": [

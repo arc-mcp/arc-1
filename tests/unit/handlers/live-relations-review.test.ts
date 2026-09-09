@@ -24,7 +24,7 @@ import { features } from './handler-test-config.js';
 const root = relationObject('ZCL_ROOT'),
   child = relationObject('ZCL_CHILD');
 const input = { action: 'relations', type: 'CLAS', name: root.name };
-const config = { ...DEFAULT_CONFIG, liveRelations: true };
+const config = { ...DEFAULT_CONFIG };
 const discovery = new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]);
 const response = (body: string) => ({ statusCode: 200, headers: {}, body });
 function setup() {

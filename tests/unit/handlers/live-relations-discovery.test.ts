@@ -20,7 +20,7 @@ const discoveryXml = `<service><workspace><collection href="${RELATIONS_PATH}"><
 const discovery = new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]);
 const root = relationObject('ZCL_ROOT');
 const input = { action: 'relations', type: 'CLAS', name: root.name };
-const config = { ...DEFAULT_CONFIG, liveRelations: true, destinationName: 'SYSTEM_A' };
+const config = { ...DEFAULT_CONFIG, destinationName: 'SYSTEM_A' };
 const readAuth = { token: 'local-test', clientId: 'reader', scopes: ['read'] };
 const response = (body: string) => ({ statusCode: 200, headers: {}, body });
 function setup() {

@@ -199,8 +199,6 @@ export interface ServerConfig {
   checkBeforeWrite: boolean;
 
   // --- Cache ---
-  /** Experimental native SAP relationship navigation. Single-target/standard tools only. */
-  liveRelations: boolean;
   /** Cache mode: 'auto' (memory cache), 'memory', 'sqlite', 'none' */
   cacheMode: 'auto' | 'memory' | 'sqlite' | 'none';
   /** Path to SQLite cache file (default: .arc1-cache.db in working directory) */
@@ -307,7 +305,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   allowPluginRawWrites: false,
   lintBeforeWrite: true,
   checkBeforeWrite: false,
-  liveRelations: false,
   cacheMode: 'auto',
   cacheFile: '.arc1-cache.db',
   maxConcurrent: 10,

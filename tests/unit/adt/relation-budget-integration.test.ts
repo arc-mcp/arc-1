@@ -74,7 +74,7 @@ describe.each([false, true])('relation budgets over real HTTP, proxy=%s', (proxy
       }
     });
     for (const call of [1, 2]) {
-      const response = await handleToolCall(client, { ...DEFAULT_CONFIG, liveRelations: true }, 'SAPNavigate', {
+      const response = await handleToolCall(client, { ...DEFAULT_CONFIG }, 'SAPNavigate', {
         action: 'relations',
         type: 'CLAS',
         name: root.name,
@@ -120,7 +120,7 @@ describe.each([false, true])('relation budgets over real HTTP, proxy=%s', (proxy
       bytes += Buffer.byteLength(body);
       res.end(body);
     });
-    const response = await handleToolCall(client, { ...DEFAULT_CONFIG, liveRelations: true }, 'SAPNavigate', {
+    const response = await handleToolCall(client, { ...DEFAULT_CONFIG }, 'SAPNavigate', {
       action: 'relations',
       type: 'CLAS',
       name: root.name,

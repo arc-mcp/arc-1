@@ -79,13 +79,13 @@ const ANY_NODE = '{}';
  * throwing on `.transform()` fields (e.g. SAPContext.siblingMaxCandidates) — those emit `any` and
  * are skipped below, since a transform has no JSON-Schema type to compare against.
  */
-function generatedProps(tool: string, btp: boolean, liveRelations: boolean): Record<string, unknown> {
+function generatedProps(tool: string, btp: boolean, relationsAllowed: boolean): Record<string, unknown> {
   const schema = getToolSchema(tool, btp, true);
   if (!schema) throw new Error(`getToolSchema returned undefined for ${tool} (${btp ? 'btp' : 'onprem'})`);
   const json = z.toJSONSchema(schema, { unrepresentable: 'any' }) as JsonNode;
   const props = (json.properties as Record<string, JsonNode>) ?? {};
-  if (tool === 'SAPNavigate' && !liveRelations) {
-    // Only the opt-in action/fields are intentionally absent from the default wire schema.
+  if (tool === 'SAPNavigate' && !relationsAllowed) {
+    // Only the conditional action/fields are intentionally absent from the denied wire schema.
     const actions = props.action!.enum as string[];
     expect(actions).toContain('relations');
     props.action = { ...props.action, enum: actions.filter((action) => action !== 'relations') };
@@ -94,21 +94,26 @@ function generatedProps(tool: string, btp: boolean, liveRelations: boolean): Rec
   return props;
 }
 
-function handWrittenProps(tool: string, btp: boolean, liveRelations: boolean): Record<string, unknown> | null {
+function handWrittenProps(tool: string, btp: boolean, relationsAllowed: boolean): Record<string, unknown> | null {
   // features() = all backends available, so feature-gated tools (SAPGit) are registered.
-  const def = getToolDefinitions({ ...fullConfig(btp), liveRelations }, true, features(), {
-    discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
-  }).find((d) => d.name === tool);
+  const def = getToolDefinitions(
+    { ...fullConfig(btp), denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'] },
+    true,
+    features(),
+    {
+      discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+    },
+  ).find((d) => d.name === tool);
   return def ? (((def.inputSchema as JsonNode).properties as Record<string, unknown>) ?? {}) : null;
 }
 
-describe.each([false, true])('Zod ↔ JSON-Schema per-property type parity, liveRelations=%s', (liveRelations) => {
+describe.each([false, true])('Zod ↔ JSON-Schema per-property type parity, relationsAllowed=%s', (relationsAllowed) => {
   for (const tool of TOOLS) {
     for (const btp of [false, true]) {
       it(`${tool} (${btp ? 'btp' : 'onprem'}) property types are reproducible from Zod`, () => {
-        const hand = handWrittenProps(tool, btp, liveRelations);
+        const hand = handWrittenProps(tool, btp, relationsAllowed);
         expect(hand, `${tool} (${btp ? 'btp' : 'onprem'}) not registered under the full config`).not.toBeNull();
-        const gen = generatedProps(tool, btp, liveRelations);
+        const gen = generatedProps(tool, btp, relationsAllowed);
 
         // Only docs/compare keys present on BOTH sides — the key SET is schema-key-sync.test.ts's job.
         // Skip keys zod can't represent (ANY_NODE, i.e. `.transform()` fields): nothing to compare.

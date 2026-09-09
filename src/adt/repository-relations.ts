@@ -4,13 +4,21 @@ import type { AdtClient } from './client.js';
 import { AdtResponseLimitError } from './errors.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
+import {
+  RELATION_NAME,
+  RelationProtocolError,
+  relationFunctionIdentity,
+  relationObjectSpec,
+  relationObjectUri,
+  relationReferenceName,
+} from './relation-objects.js';
 import { checkOperation, OperationType } from './safety.js';
 import { escapeXmlAttr, parseDiscoveryObject, parseXml } from './xml-parser.js';
 
 export const RELATIONS_PATH = '/sap/bc/adt/objectrelations/network';
 export const RELATION_XML_MAX_BYTES = 1024 * 1024;
 export const RELATIONS_MIME = 'application/vnd.sap.adt.objectrelations.request.v1+xml';
-export const RELATION_NAME = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_$]+$/i;
+export { RELATION_NAME, RelationProtocolError, relationObjectUri } from './relation-objects.js';
 export type RelationDirection = 'incoming' | 'outgoing';
 export interface RelationObject {
   uri: string;
@@ -33,32 +41,26 @@ export interface RelationNetwork {
   edges: RelationEdge[];
 }
 
-export class RelationProtocolError extends Error {
-  constructor(message: string) {
-    super(`Experimental live relations: ${message}`);
-    this.name = 'RelationProtocolError';
-  }
-}
-
 export function supportsRelations(map?: ReadonlyMap<string, string[]>): boolean {
   return map?.get(RELATIONS_PATH)?.includes(RELATIONS_MIME) === true;
-}
-
-export function relationObjectUri(type: string, name: string): string {
-  if (!['CLAS', 'INTF'].includes(type) || name.length > 120 || !RELATION_NAME.test(name)) {
-    throw new RelationProtocolError('root must be a valid CLAS/INTF name.');
-  }
-  return `/sap/bc/adt/oo/${type === 'CLAS' ? 'classes' : 'interfaces'}/${encodeURIComponent(name.toLowerCase())}`;
 }
 
 /** SAP-returned URIs remain untrusted. They are evidence, never an unrestricted HTTP target. */
 function safeUri(value: unknown): string {
   const uri = text(value, 512);
-  const canonical = canonicalHostRelativeAdtPath(uri, '/sap/bc/adt/', { allowRawEncodedSlash: true });
+  // STOB entities are location identities, not DDLS aliases or fetchable roots. Keep the
+  // exact fragment so two entities in a source never collapse. Only this observed shape
+  // is allowed; lookup still reconstructs fixed paths for qualified object types.
+  const anchor = /^(\/sap\/bc\/adt\/ddic\/ddl\/sources\/[^/?#]+\/source\/main)#name=([A-Za-z0-9_$%/]+)$/.exec(uri);
+  if (anchor && !RELATION_NAME.test(decodeURIComponent(anchor[2]!)))
+    throw new RelationProtocolError('invalid entity anchor.');
+  const canonical = canonicalHostRelativeAdtPath(anchor ? anchor[1]! : uri, '/sap/bc/adt/', {
+    allowRawEncodedSlash: true,
+  });
   if (!canonical || canonical.includes('?') || canonical.includes('//') || /\s/.test(decodeURIComponent(canonical))) {
     throw new RelationProtocolError('unsafe response URI.');
   }
-  return canonical.replace(/%[a-f0-9]{2}/gi, (part) => part.toUpperCase());
+  return `${canonical}${anchor ? `#name=${anchor[2]}` : ''}`.replace(/%[a-f0-9]{2}/gi, (part) => part.toUpperCase());
 }
 function containsControl(value: string): boolean {
   return Array.from(value).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
@@ -117,13 +119,14 @@ export function normalizeRelationNetwork(
   for (const value of refs) {
     const raw = record(value),
       uri = safeUri(raw['@_uri']);
+    const type = text(raw['@_type'], 64);
     if (raw['@_version'] !== 'active' || raw['@_exists'] !== 'true') {
       throw new RelationProtocolError('non-active or unresolved native reference.');
     }
     const object: RelationObject = {
       uri,
-      name: text(raw['@_name'], 120),
-      type: text(raw['@_type'], 64),
+      name: relationReferenceName(text(raw['@_name'], type === 'FUGR/FF' ? 160 : 120), type, uri),
+      type,
       package: text(raw['@_packageName'] ?? '', 120, true),
       version: 'active',
       existence: 'observed_reference',
@@ -194,12 +197,43 @@ export class NativeRelationProvider {
   }
 
   async validateRoot(type: string, name: string): Promise<RelationObject> {
-    const uri = relationObjectUri(type, name);
+    if (name.length > 120 || !RELATION_NAME.test(name)) throw new RelationProtocolError('invalid root name.');
+    let spec = relationObjectSpec(type);
+    if (!spec) throw new RelationProtocolError('unsupported root type.');
+    // TABL has two physical paths; FUNC requires its parent group. Resolve only these
+    // identities, with the SAME deadline/attempt/byte budgets as the rest of the analysis.
+    let uri: string;
+    if (type === 'TABL' || type === 'FUNC') {
+      checkOperation(this.client.safety, OperationType.Read, 'ResolveRepositoryRelationRoot');
+      const params = new URLSearchParams({
+        operation: 'quickSearch',
+        query: name,
+        objectType: type === 'FUNC' ? 'FUGR/FF' : 'TABL',
+        maxResults: '2',
+      });
+      const result = await this.client.http.get(
+        `/sap/bc/adt/repository/informationsystem/search?${params}`,
+        {},
+        this.options,
+      );
+      const refs = array(record(parseRelationXml(result.body).objectReferences).objectReference).map(record);
+      if (refs.length !== 1 || text(refs[0]!['@_name'], 120).toUpperCase() !== name.toUpperCase()) {
+        throw new RelationProtocolError('root resolution is missing or ambiguous. Use an exact object name.');
+      }
+      const resolved = relationObjectSpec(text(refs[0]!['@_type'], 64));
+      if (!resolved || resolved[0] !== type || resolved[1] !== refs[0]!['@_type'])
+        throw new RelationProtocolError('root resolution type mismatch.');
+      spec = resolved;
+      uri = safeUri(refs[0]!['@_uri']);
+      const group = type === 'FUNC' ? relationFunctionIdentity(uri).group : undefined;
+      if (uri !== relationObjectUri(spec[1], name, group))
+        throw new RelationProtocolError('root resolution URI mismatch.');
+    } else uri = relationObjectUri(type, name);
     checkOperation(this.client.safety, OperationType.Read, 'ValidateRepositoryRelationRoot');
     const response = await this.client.http.get(uri, { Accept: 'application/*' }, this.options);
     const parsed = parseRelationXml(response.body);
-    const metadata = record(parsed[type === 'CLAS' ? 'abapClass' : 'abapInterface']);
-    const expectedType = type === 'CLAS' ? 'CLAS/OC' : 'INTF/OI';
+    const metadata = record(parsed[spec[3]]);
+    const expectedType = spec[1];
     if (
       text(metadata['@_name'], 120).toUpperCase() !== name.toUpperCase() ||
       metadata['@_type'] !== expectedType ||
@@ -207,7 +241,22 @@ export class NativeRelationProvider {
     ) {
       throw new RelationProtocolError('root metadata does not match the requested active object.');
     }
-    const pkg = metadata.packageRef === undefined ? '' : record(metadata.packageRef)['@_name'];
+    const pkg =
+      metadata.packageRef === undefined
+        ? type === 'FUNC'
+          ? (record(metadata.containerRef)['@_packageName'] ?? '')
+          : ''
+        : record(metadata.packageRef)['@_name'];
+    if (type === 'FUNC') {
+      const group = relationFunctionIdentity(uri).group;
+      const parent = record(metadata.containerRef);
+      if (
+        parent['@_type'] !== 'FUGR/F' ||
+        parent['@_name'] !== group ||
+        safeUri(parent['@_uri']) !== relationObjectUri('FUGR', group)
+      )
+        throw new RelationProtocolError('function metadata parent mismatch.');
+    }
     return {
       uri,
       name: name.toUpperCase(),
@@ -220,7 +269,8 @@ export class NativeRelationProvider {
 
   async lookup(object: RelationObject, direction: RelationDirection): Promise<RelationNetwork> {
     // Rebuild at the sink; a returned URI can never select an arbitrary ADT operation.
-    const uri = relationObjectUri(object.type.split('/')[0]!, object.name);
+    const group = object.type === 'FUGR/FF' ? relationFunctionIdentity(safeUri(object.uri)).group : undefined;
+    const uri = relationObjectUri(object.type, object.name, group);
     if (uri !== object.uri) throw new RelationProtocolError('expansion identity/URI mismatch.');
     const context = direction === 'outgoing' ? 'ENV' : 'WUL';
     const body = `<or:request xmlns:or="http://www.sap.com/adt/objectrelations" xmlns:adtcore="http://www.sap.com/adt/core"><or:reference adtcore:uri="${escapeXmlAttr(uri)}"/><or:preferredContext>${context}</or:preferredContext></or:request>`;

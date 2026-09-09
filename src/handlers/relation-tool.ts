@@ -1,16 +1,16 @@
+import { RELATION_ROOT_TYPES } from '../adt/relation-objects.js';
 import { supportsRelations } from '../adt/repository-relations.js';
 import { isActionDenied } from '../server/deny-actions.js';
 import type { ServerConfig } from '../server/types.js';
 import type { ToolDefinition } from './tools.js';
 
-/** Pure opt-in projection. Unknown capability stays visible; invocation verifies it before use. */
+/** Capability projection. Unknown stays visible; invocation verifies support before object access. */
 export function addLiveRelationsDefinition(
   tool: ToolDefinition,
   config: ServerConfig,
   discovery?: ReadonlyMap<string, string[]>,
 ) {
   if (
-    !config.liveRelations ||
     config.multiTargetEndpoints ||
     config.targetId ||
     config.toolMode !== 'standard' ||
@@ -21,27 +21,26 @@ export function addLiveRelationsDefinition(
   const properties = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
   (properties.action!.enum as string[]).push('relations');
   tool.description =
-    'Experimental relations: outgoing CLAS/INTF dependency maps or package neighborhoods, then selected source reads. For incoming consumers use references: objectType="CLAS/OC" only for class-only requests; otherwise omit the filter. Live active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. ' +
+    'Experimental relations: dependency maps or package neighborhoods, then selected reads. For consumer locations use references: objectType="CLAS/OC" only for class-only requests; otherwise omit the filter. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. ' +
     tool.description;
-  properties.type!.description += ' relations: CLAS/INTF roots only; DDIC nodes remain unexpanded boundaries.';
+  properties.type!.description += ` relations: ${RELATION_ROOT_TYPES.join('/')} (ENHO: BAdI only).`;
   properties.direction = {
     type: 'string',
     enum: ['incoming', 'outgoing'],
-    description: 'relations only: incoming=users of root; outgoing=dependencies (default).',
+    description: 'relations: incoming=users; outgoing=dependencies (default).',
   };
   properties.depth = {
     type: 'integer',
     minimum: 1,
     maximum: 3,
-    description: 'relations only: native steps (default 1), not proven source-call hops.',
+    description: 'relations: native steps (default 1), not source-call hops.',
   };
   properties.expandPackages = {
     type: 'array',
     maxItems: 8,
     items: { type: 'string', minLength: 1, maxLength: 120, pattern: '^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$' },
-    description:
-      'relations only: exact packages to expand beyond root; others remain visible boundaries. Not an access-control filter.',
+    description: 'relations: exact packages to expand beyond root; others stay visible. Not an authorization filter.',
   };
   properties.maxResults!.description +=
-    ' relations: node limit including root (default 50, integer 1–100); hard limits may stop earlier.';
+    ' relations: node cap including root, integer 1–100 (default 50); may stop earlier.';
 }

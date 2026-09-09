@@ -74,7 +74,7 @@ describe('bounded request-local relation traversal', () => {
     expect(result.expanded).toEqual([a.uri]);
   });
   it('keeps type/package boundary nodes visible without expanding them', async () => {
-    const ddl = { ...c, type: 'DDLS/DF', uri: '/sap/bc/adt/ddic/ddl/sources/z_c' };
+    const ddl = { ...c, type: 'DDLX/EX', uri: '/sap/bc/adt/ddic/ddlx/sources/z_c' };
     const p = provider({ Z_A: [{ ...b, package: 'SAP' }, ddl] });
     const result = await walkRelations(a, p, { ...options, expandPackages: ['ZTEST'] });
     expect(result.nodes).toHaveLength(3);

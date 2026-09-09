@@ -50,8 +50,12 @@ describe('Tool Definitions', () => {
   it.each(['onprem', 'btp'] as const)(
     'preserves context-first understanding and targeted source guidance on %s',
     (systemType) => {
-      for (const liveRelations of [false, true]) {
-        const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType, liveRelations });
+      for (const relationsAllowed of [false, true]) {
+        const tools = getToolDefinitions({
+          ...DEFAULT_CONFIG,
+          systemType,
+          denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'],
+        });
         const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
         const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
         expect(read).toContain('spec work, reviews, or pre-change orientation, prefer SAPContext first');

@@ -1,14 +1,14 @@
 # Live relations (experimental)
 
 Ask SAP for a small, current repository relationship network without collecting source code
-or operating a graph database. This optional ARC-1 core feature adds
-`SAPNavigate(action="relations")`; it adds no top-level tool and is invisible by default.
+or operating a graph database. ARC-1 automatically offers `SAPNavigate(action="relations")`
+where available; it adds no top-level tool, database, collector or configuration switch.
 
 Use it to find objects using a class/interface, explore its dependencies, or follow several
 native relationship steps before deciding what code to inspect. For exact source locations use
 `SAPNavigate(action="references")`; for a CDS/RAP impact assessment use `SAPContext(action="impact")`.
 
-## Before enabling
+## Prerequisites
 
 - An already working **single-target** ARC-1 deployment with `ARC1_TOOL_MODE=standard`.
 - SAP must advertise `/sap/bc/adt/objectrelations/network` with
@@ -16,27 +16,21 @@ native relationship steps before deciding what code to inspect. For exact source
 - The caller needs ARC-1 `read` scope and SAP authorization for object metadata and Relation
   Explorer. The lookup is a read-only POST: the relevant SAP ADT resource authorization may need
   `ACTVT=01` and `02`. No new ARC-1 role, SQL permission, or write permission is required.
-- Cloud Connector must permit the existing discovery, OO metadata and objectrelations paths.
+- Cloud Connector must permit discovery, objectrelations and metadata paths for the requested types.
   Use the normal least-privilege resource allowlist; do not expose all SAP paths just for this feature.
 
 Single-target principal propagation keeps using the caller's selected SAP identity. Shared Basic
 authentication keeps its existing shared identity. Neither mode falls back to the other on failure.
-Multi-target and hyperfocused modes reject this opt-in in v1.
+Multi-target and hyperfocused modes do not offer this experimental action.
 
-## Enable locally or with Docker
+## Local and Docker setup
 
-Keep your working SAP connection and authentication configuration. Add:
-
-```dotenv
-ARC1_LIVE_RELATIONS=true
-```
-
-For local/stdio use the existing `.env` or process environment. For Docker, add the variable to
-the existing service environment and recreate that service using your normal deployment workflow.
+Keep your working SAP connection and authentication configuration. Use an ARC-1 build containing
+this feature and refresh the MCP client's tools after upgrading.
 Do not publish another port or deploy another container/database. Normal `ARC1_CACHE` settings
 remain independent. See [Deployment](deployment.md) if ARC-1 is not installed yet.
 
-Restart ARC-1, then refresh the MCP client's tools. After opt-in, the action is visible while
+The action is visible while
 capability discovery is still unknown, so clients that only list tools once can use it. A known
 unsupported endpoint/MIME hides it. tools/list never waits on SAP; invocation always checks the
 exact capability before object access and performs bounded discovery when necessary. A shared-client
@@ -49,27 +43,22 @@ changes another user's capability hints or tool surface. While shared discovery 
 per-user calls repeat bounded discovery. Failed or unsupported fallback discovery is not retained.
 This cache is independent of `ARC1_CACHE`; it stores neither object results nor authorization grants.
 
-## Enable on SAP BTP Cloud Foundry
+## SAP BTP Cloud Foundry setup
 
 Start with your working single-target deployment from the
 [BTP task map](btp-overview.md). This feature needs **no additional BTP service, HANA/PostgreSQL
 instance, service key, AI Core subscription, or separate route**.
 
-1. Use an ARC-1 artifact containing this feature. Add the property below to the **existing ARC-1
-   module's** `properties:` in your `.mtaext`; preserve its SAP destination/auth and all other settings.
-2. Deploy using the normal [BTP administration workflow](btp-administration.md). This is an
-   application-property change, not a service-provisioning procedure. If using direct `cf push`
-   instead, set the same app environment variable and restart that app.
-3. Reconnect the client and run a depth-1 lookup on a known class. If hidden/unsupported, inspect
+1. Upgrade the existing ARC-1 application using the normal
+   [BTP administration workflow](btp-administration.md). Preserve its destination and authentication settings.
+2. No relation-specific application property or service binding is required.
+3. Reconnect the client and run a depth-1 lookup on a known object. If hidden/unsupported, inspect
    ADT discovery, Cloud Connector resources and the user's SAP authorization before changing roles.
 
-```yaml
-properties:
-  ARC1_LIVE_RELATIONS: "true"
-```
-
-Local `.env` files are not deployed by MTA. To disable, set the property explicitly to `"false"`
-and redeploy/restart; deleting a line from an extension does not remove an inherited property.
+To disable this action, append `SAPNavigate.relations` to the existing `SAP_DENY_ACTIONS` list
+and redeploy/restart. This both hides the action and rejects invocation; preserve other denials.
+For early preview upgrades, remove `ARC1_LIVE_RELATIONS` / `--live-relations`: that switch no
+longer exists. An old environment value of `false` is not a denial; use `SAP_DENY_ACTIONS` instead.
 Do not change your existing XSUAA/PP/shared-identity topology for this feature.
 
 No extra BTP service charge is introduced by the feature itself. It still consumes the existing
@@ -80,9 +69,32 @@ Stay within your current trial quota and do not provision storage for it.
 
 ### Choose the evidence you need
 
-Use `relations` for a bounded class/interface dependency map or package neighborhood, then read
+Use `relations` for a bounded dependency map or package neighborhood, then read
 selected sources to explain important connections. Do not also fetch every dependency contract
-by default. DDIC nodes can appear in the map but are unexpanded boundaries, not supported roots.
+by default. Only the qualified types below are expanded; other returned nodes remain boundaries.
+
+### Qualified object types
+
+The same types can be roots and deeper nodes. All use live active metadata plus native ENV/WUL
+relationships, not source parsing. The evidence was collected on SAP_BASIS 758; it is not a
+promise of completeness on this or another release.
+
+| Type | Useful question | Important limit |
+|---|---|---|
+| `CLAS`, `INTF` | Dependencies and neighboring consumers | Not a method-call graph |
+| `DDLS`, `DCLS` | CDS/access-control dependencies | Generated `STOB` entities remain boundaries; no guessed DDLS alias |
+| `TABL` | Table/structure dependencies and usages | Exact bounded search resolves the real subtype; no table rows read |
+| `TTYP`, `DTEL`, `DOMA` | Row type → structure → data element → domain links | Built-in types are not repository nodes |
+| `PROG`, `INCL` | Program/include dependencies | Large programs can exceed the byte limit even at depth 1 |
+| `FUNC`, `FUGR` | Function/module-group dependencies and consumers | FUNC needs one bounded parent lookup; no function execution |
+| `VIEW` | Classic DDIC view/table relationships | Not CDS views, which use `DDLS` |
+| `ENHO` | BAdI implementation class/spot links | Only live-verified `ENHO/XHB`, not every enhancement subtype |
+| `MSAG` | Objects using a message class | Not a per-message-number usage search |
+| `BDEF`, `SRVD` | Observed incoming implementation/binding links | On 758 outgoing can omit dependencies visible in source; use SAPRead for the RAP stack |
+
+`DEVC`, `SRVB`, `DDLX` and other unqualified roots are not accepted. Use package listing,
+source/metadata reads, existing references or CDS/RAP impact tools instead. A native HTTP 200 or
+empty graph alone is not enough evidence to advertise a new type.
 
 For a class-only consumer list, including tiny samples, prefer
 `SAPNavigate(action="references", type="INTF", name="<interface>", objectType="CLAS/OC", maxResults=5)`.
@@ -121,7 +133,7 @@ Useful prompts:
 - “Explore ZIF_ORDER's dependency network, expanding only package ZORDER. Which objects should I inspect next?”
 - “Follow up to three native relationship steps from this class. Report any truncation, then verify the important links with source or where-used.”
 
-Input requires `type=CLAS|INTF` and `name`; `uri`, `source`, inactive versions and arbitrary endpoint
+Input requires a qualified `type` and `name`; `uri`, `source`, inactive versions and arbitrary endpoint
 paths are not accepted. `direction` defaults to `outgoing`; `incoming` finds users of the root.
 `expandPackages` accepts up to eight exact package names, no wildcards. It limits expansion beyond
 the root, **not visibility or authorization**: neighboring packages still appear as boundary nodes.
@@ -129,8 +141,8 @@ the root, **not visibility or authorization**: neighboring packages still appear
 ## Interpret the result honestly
 
 Edges point **consumer → dependency** in both directions. Nodes are identified by URI, so a CDS
-definition and a behavior definition with the same name stay distinct. Only class/interface nodes
-are expanded; other object types may be returned as boundary evidence.
+definition and a behavior definition with the same name stay distinct. Unqualified object types
+may be returned as boundary evidence but never become arbitrary HTTP targets.
 Traversal is breadth-first, prioritizing neighbors in the root's package at each expansion,
 then sorting by URI. This makes small-budget results useful and repeatable, not complete.
 
@@ -163,7 +175,8 @@ no hidden where-used, SQL, source-parser or alternate-identity fallback.
 
 These are overlapping ceilings, not promised completion counts. With no discovery/session state,
 discovery GET + root metadata GET + CSRF HEAD + eight native POSTs uses 11 attempts; a CSRF GET
-fallback uses the twelfth. Retries or large responses can stop the analysis earlier. Reusing ordinary
+fallback uses the twelfth. `TABL` and `FUNC` roots need one additional identity-resolution request,
+so a cold session can stop before eight expansions. Retries or large responses can stop earlier. Reusing ordinary
 discovery/session state saves setup requests, never authorization checks or relationship results.
 
 `metrics.successfulMetadataBytes` includes any discovery and root metadata read inside this analysis,

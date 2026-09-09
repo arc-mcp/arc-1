@@ -29,8 +29,8 @@ function surface(tools: ReturnType<typeof getToolDefinitions>): Set<string> {
 }
 
 const CONFIGS = [
-  ['onprem-live-relations', onprem({ ...FULL, liveRelations: true })],
-  ['btp-live-relations', btp({ ...FULL, liveRelations: true })],
+  ['onprem-relations-denied', onprem({ ...FULL, denyActions: ['SAPNavigate.relations'] })],
+  ['btp-relations-denied', btp({ ...FULL, denyActions: ['SAPNavigate.relations'] })],
   ['onprem', onprem(FULL)],
   ['btp', btp(FULL)],
   ['onprem-readonly', onprem()],

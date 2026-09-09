@@ -1,6 +1,6 @@
 {
   "name": "SAPNavigate",
-  "description": "Experimental relations: outgoing CLAS/INTF dependency maps or package neighborhoods, then selected source reads. For incoming consumers use references: objectType=\"CLAS/OC\" only for class-only requests; otherwise omit the filter. Live active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets.",
+  "description": "Experimental relations: dependency maps or package neighborhoods, then selected reads. For consumer locations use references: objectType=\"CLAS/OC\" only for class-only requests; otherwise omit the filter. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -21,7 +21,7 @@
       },
       "type": {
         "type": "string",
-        "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS/INTF roots only; DDIC nodes remain unexpanded boundaries."
+        "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS/INTF/DDLS/DCLS/BDEF/SRVD/TABL/TTYP/DTEL/DOMA/PROG/INCL/FUGR/FUNC/VIEW/ENHO/MSAG (ENHO: BAdI only)."
       },
       "name": {
         "type": "string",
@@ -33,7 +33,7 @@
       },
       "maxResults": {
         "type": "number",
-        "description": "references: max entries (default 100, max 1000). \"total\" counts every match of the filter. relations: node limit including root (default 50, integer 1–100); hard limits may stop earlier."
+        "description": "references: max entries (default 100, max 1000). \"total\" counts every match of the filter. relations: node cap including root, integer 1–100 (default 50); may stop earlier."
       },
       "line": {
         "type": "number",
@@ -53,13 +53,13 @@
           "incoming",
           "outgoing"
         ],
-        "description": "relations only: incoming=users of root; outgoing=dependencies (default)."
+        "description": "relations: incoming=users; outgoing=dependencies (default)."
       },
       "depth": {
         "type": "integer",
         "minimum": 1,
         "maximum": 3,
-        "description": "relations only: native steps (default 1), not proven source-call hops."
+        "description": "relations: native steps (default 1), not source-call hops."
       },
       "expandPackages": {
         "type": "array",
@@ -70,7 +70,7 @@
           "maxLength": 120,
           "pattern": "^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$"
         },
-        "description": "relations only: exact packages to expand beyond root; others remain visible boundaries. Not an access-control filter."
+        "description": "relations: exact packages to expand beyond root; others stay visible. Not an authorization filter."
       }
     },
     "required": [

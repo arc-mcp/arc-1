@@ -1,5 +1,6 @@
 import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from '../adt/errors.js';
 import { type AdtRequestOptions, throwIfRequestCancelled } from '../adt/http-deadline.js';
+import { RELATION_OBJECTS } from '../adt/relation-objects.js';
 import type { RelationDirection, RelationEdge, RelationNetwork, RelationObject } from '../adt/repository-relations.js';
 import { RELATION_XML_MAX_BYTES, RelationProtocolError } from '../adt/repository-relations.js';
 import { AdtRequestBudgetError } from '../adt/request-attempt-budget.js';
@@ -49,7 +50,7 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
       boundaries.push({ uri, reason: 'depth' });
       continue;
     }
-    if (!['CLAS/OC', 'INTF/OI'].includes(object.type)) {
+    if (!RELATION_OBJECTS.some(([, type]) => type === object.type)) {
       boundaries.push({ uri, reason: 'type' });
       continue;
     }
@@ -101,6 +102,12 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
     }
     expanded.add(uri);
     const found = new Map(network.objects.map((node) => [node.uri, node]));
+    // Some metadata envelopes (BDEF) omit packageRef. Fill only that unknown value
+    // from this caller's validated native response, before ranking or cycle checks.
+    if (object.level === 0 && !object.package) {
+      object.package = found.get(uri)?.package ?? '';
+      root = { ...root, package: object.package };
+    }
     const adjacentUri = (edge: RelationEdge) => (options.direction === 'outgoing' ? edge.to : edge.from);
     // Keep BFS, but spend small expansion budgets on the root's package first.
     // URI tie-breaking is locale-independent, so bounded selections are reproducible.
@@ -148,6 +155,9 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
     evidence: 'sap_relation_explorer',
     version: 'active',
     qualification:
-      'Native relationship expansion steps, not proven direct source calls or complete runtime impact. Empty results do not prove unused code. Use SAPRead/SAPNavigate.references for targeted verification.',
+      'Native relationship expansion steps, not proven direct source calls or complete runtime impact. Empty results do not prove unused code. Use SAPRead/SAPNavigate.references for targeted verification.' +
+      (['BDEF/BDO', 'SRVD/SRV'].includes(root.type)
+        ? ' RAP source dependencies/exposed entities may be missing from outgoing networks on older releases; inspect the root source.'
+        : ''),
   };
 }

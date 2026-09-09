@@ -39,7 +39,7 @@ for (const enabled of [false, true]) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [fileURLToPath(new URL('../dist/index.js', import.meta.url))],
-    env: { ...env, ARC1_LIVE_RELATIONS: String(enabled) },
+    env: { ...env, SAP_DENY_ACTIONS: enabled ? '' : 'SAPNavigate.relations' },
     stderr: 'pipe',
   });
   // Drain redacted server diagnostics without printing credentials or SAP payloads.
@@ -55,7 +55,7 @@ for (const enabled of [false, true]) {
     if (!enabled) {
       assert.ok(!JSON.stringify(navigation).includes('"relations"'));
       assert.equal((await client.callTool({ name: 'SAPNavigate', arguments: cases[0]! })).isError, true);
-      report.push({ enabled, defaultHidden: true, guessedCallDenied: true });
+      report.push({ enabled, deniedHidden: true, guessedCallDenied: true });
       continue;
     }
     for (const input of cases) {

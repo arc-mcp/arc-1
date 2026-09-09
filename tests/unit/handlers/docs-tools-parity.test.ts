@@ -61,10 +61,15 @@ function containsToken(text: string, token: string): boolean {
   return new RegExp(`(?:^|[^A-Za-z0-9_])${escapeRegExp(token)}(?:$|[^A-Za-z0-9_])`).test(text);
 }
 
-function documentationGaps(markdown: string, liveRelations: boolean): string[] {
-  const definitions = getToolDefinitions({ ...fullConfig(false), liveRelations }, true, features(), {
-    discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
-  });
+function documentationGaps(markdown: string, relationsAllowed: boolean): string[] {
+  const definitions = getToolDefinitions(
+    { ...fullConfig(false), denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'] },
+    true,
+    features(),
+    {
+      discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+    },
+  );
   const gaps: string[] = [];
 
   for (const definition of definitions) {
@@ -80,8 +85,8 @@ function documentationGaps(markdown: string, liveRelations: boolean): string[] {
       continue;
     }
 
-    if (definition.name === 'SAPNavigate' && liveRelations) {
-      const optionalRows = parameterRows(section, 'Experimental relations parameters (opt-in)');
+    if (definition.name === 'SAPNavigate' && relationsAllowed) {
+      const optionalRows = parameterRows(section, 'Experimental relations parameters (when available)');
       if (!optionalRows) gaps.push('SAPNavigate: missing experimental Parameters table');
       for (const [name, row] of optionalRows ?? []) rows.set(name, row);
     }
@@ -106,13 +111,13 @@ function documentationGaps(markdown: string, liveRelations: boolean): string[] {
 }
 
 describe('docs_page/tools.md public-schema parity', () => {
-  it.each([false, true])('documents every parameter and action with liveRelations=%s', (liveRelations) => {
-    const gaps = documentationGaps(TOOLS_DOC, liveRelations);
+  it.each([false, true])('documents every parameter and action with relationsAllowed=%s', (relationsAllowed) => {
+    const gaps = documentationGaps(TOOLS_DOC, relationsAllowed);
     expect(gaps, `docs_page/tools.md drifted from the full on-prem public schema:\n${gaps.join('\n')}`).toEqual([]);
   });
 
   it.each(['direction', 'depth', 'expandPackages'])(
-    'detects undocumented opt-in %s without changing default parity',
+    'detects undocumented conditional %s without changing default parity',
     (name) => {
       const changed = TOOLS_DOC.replace(new RegExp(`^\\| \x60${name}\x60[^\\n]*\\n`, 'm'), '');
       expect(documentationGaps(changed, true)).toContain(`SAPNavigate missing params: ${name}`);
@@ -121,11 +126,11 @@ describe('docs_page/tools.md public-schema parity', () => {
   );
 
   it('detects an undocumented relations action', () => {
-    const changed = TOOLS_DOC.replace('`relations` (opt-in)', '`omitted` (opt-in)');
+    const changed = TOOLS_DOC.replace('`relations` (when available)', '`omitted` (when available)');
     expect(documentationGaps(changed, true)).toContain('SAPNavigate missing actions: relations');
   });
 
-  it('rejects opt-in fields in the default table', () => {
+  it('rejects conditional fields in the default table', () => {
     const changed = TOOLS_DOC.replace(
       '| `uri` | string | No | Source URI',
       '| `depth` | integer | No | Optional depth |\n| `uri` | string | No | Source URI',

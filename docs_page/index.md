@@ -175,7 +175,7 @@ Choose evidence for the question: targeted `SAPRead` for exact behavior or a kno
 For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)`
 for available KTD and dependency contracts, then compare documented requirements with source.
 Without documented requirements, intent is unverified. Neither contracts nor metadata relationships prove runtime behavior.
-Experimental [live relations](live-relations.md) map class/interface neighborhoods when enabled;
+Experimental [live relations](live-relations.md) automatically offer bounded repository neighborhoods where available;
 no additional database is required.
 
 Full reference: **[tools.md](tools.md)**

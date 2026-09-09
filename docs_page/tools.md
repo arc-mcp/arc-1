@@ -802,8 +802,8 @@ SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_ty
 
 Navigate code: find definitions, references (where-used), code completion, and class hierarchy.
 
-An optional [experimental `relations` action](live-relations.md) adds bounded live metadata
-networks for CLAS/INTF. It is absent by default; after admin opt-in it is listed unless SAP discovery
+An [experimental `relations` action](live-relations.md) adds bounded live metadata
+networks for qualified ABAP object types. It is listed automatically unless denied or SAP discovery
 has established that the capability is absent. Invocation still requires exact discovery evidence.
 The existing actions below are unchanged.
 
@@ -821,16 +821,16 @@ The existing actions below are unchanged.
 | `column` | number | No | Column number (1-based) |
 | `source` | string | No | Current source code |
 
-**Experimental relations parameters (opt-in):**
+**Experimental relations parameters (when available):**
 
-Only present after `ARC1_LIVE_RELATIONS=true`, in single-target standard mode, unless discovery
+Present automatically in single-target standard mode, unless `SAP_DENY_ACTIONS` or discovery
 establishes that the capability is absent. These rows add to or qualify the table above; existing
 actions keep their behavior. Strict-client relation-only placeholders on other actions are ignored.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `definition`, `references`, `completion`, `hierarchy`, or `relations` (opt-in) |
-| `type` | string | For relations | `CLAS` or `INTF` root object type. |
+| `action` | string | Yes | `definition`, `references`, `completion`, `hierarchy`, or `relations` (when available) |
+| `type` | string | For relations | `CLAS`, `INTF`, `DDLS`, `DCLS`, `TABL`, `TTYP`, `DTEL`, `DOMA`, `PROG`, `INCL`, `FUNC`, `FUGR`, `VIEW`, `ENHO` (BAdI only), `MSAG`, `BDEF`, `SRVD`. See [type-specific limits](live-relations.md#qualified-object-types). |
 | `name` | string | For relations | Root object name, including namespaced names such as `/BOBF/CL_FRW_FACTORY`. |
 | `direction` | string | No | For `relations`: `outgoing` (default, dependencies) or `incoming` (usages). |
 | `depth` | integer | No | For `relations`: expansion depth, 1–3 (default 1). Native edges do not establish exact call distance. |

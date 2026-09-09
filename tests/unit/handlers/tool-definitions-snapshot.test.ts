@@ -77,10 +77,10 @@ const VARIANTS: Variant[] = [
 ];
 
 describe('tool-definitions snapshot (LLM-visible surface)', () => {
-  it.each([false, true])('freezes only the opt-in navigation delta, BTP=%s', async (isBtp) => {
+  it.each([false, true])('discovery changes only navigation, BTP=%s', async (isBtp) => {
     const config = isBtp ? btp(FULL) : onprem(FULL);
-    const original = getToolDefinitions(config, true, features());
-    const tools = getToolDefinitions({ ...config, liveRelations: true }, true, features(), {
+    const original = getToolDefinitions({ ...config, denyActions: ['SAPNavigate.relations'] }, true, features());
+    const tools = getToolDefinitions({ ...config }, true, features(), {
       discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
     });
     expect(tools.filter((tool) => tool.name !== 'SAPNavigate')).toEqual(

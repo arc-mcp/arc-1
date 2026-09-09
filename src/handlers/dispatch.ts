@@ -169,7 +169,7 @@ function buildBaseErrorMessage(
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
-    return `${message} Narrow depth, maxResults or expandPackages. This is an analysis limit, not a connectivity failure.`;
+    return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
   }
   if (err instanceof AdtResponseLimitError) {
     const mebibytes = err.limitBytes / (1024 * 1024);
