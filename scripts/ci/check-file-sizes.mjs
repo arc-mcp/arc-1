@@ -37,7 +37,8 @@ const BUDGETS = {
   // +3 for SAPTransport action="diff" (action list + offset/limit properties).
   // +30 for the inline shortTexts object schema and retained refObjectDescription guidance. Keeping
   // this public schema beside SAPWrite avoids a one-constant module whose only purpose was the ratchet.
-  'src/handlers/tools.ts': 1760,
+  // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
+  'src/handlers/tools.ts': 1790,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

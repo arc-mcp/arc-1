@@ -13,6 +13,8 @@ export interface AtcFinding {
   messageTitle: string;
   uri: string;
   line: number;
+  /** Enclosing worklist object, present only for batch execution. */
+  object?: AtcObjectIdentity;
   quickfixInfo?: string;
   hasQuickfix?: boolean;
 }
@@ -39,7 +41,15 @@ export interface AtcFindingStatistics {
 
 export type AtcCompletionEvidence = 'asyncRunCompleted' | 'legacyWorklistSettled';
 
+export interface AtcObjectIdentity {
+  type: string;
+  name: string;
+  uri: string;
+}
+
 export interface AtcRunResult {
+  /** Schema-scoped object evidence, included only for batch execution. */
+  processedObjects?: (AtcObjectIdentity & { findingCount: number })[];
   findings: AtcFinding[];
   worklistId: string;
   /** The variant actually bound at worklist creation; null only when none could be sent. */
@@ -197,16 +207,41 @@ export async function runAtcCheck(
   variant?: string,
   pollOptions: AtcPollOptions = {},
 ): Promise<AtcRunResult> {
+  const execution = await prepareAtcExecution(http, safety, variant, pollOptions);
+  return runAtcWorklist(http, safety, [objectUrl], execution, false);
+}
+
+/** One request budget and variant binding shared by the initial and verification worklists. */
+export async function prepareAtcExecution(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  variant: string | undefined,
+  pollOptions: AtcPollOptions,
+) {
   checkOperation(safety, OperationType.Read, 'RunATCCheck');
   const now = pollOptions.now ?? Date.now;
   const timeoutMs = pollOptions.timeoutMs ?? DEFAULT_ATC_TIMEOUT_MS;
-  const deadline = now() + timeoutMs;
   const requestOptions: AdtRequestOptions = {
-    deadline,
+    deadline: now() + timeoutMs,
     fetchTimeoutMs: timeoutMs,
     signal: pollOptions.signal,
   };
-  const { variant: effectiveVariant, variantSource } = await resolveCheckVariant(http, safety, variant, requestOptions);
+  const resolved = await resolveCheckVariant(http, safety, variant, requestOptions);
+  return { ...resolved, pollOptions, requestOptions };
+}
+
+/** Internal shared executor; callers select whether batch object evidence is retained. */
+export async function runAtcWorklist(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  objectUrls: readonly string[],
+  execution: Awaited<ReturnType<typeof prepareAtcExecution>>,
+  includeObjects: boolean,
+): Promise<AtcRunResult> {
+  checkOperation(safety, OperationType.Read, 'RunATCCheck');
+  const { variant: effectiveVariant, variantSource, pollOptions, requestOptions } = execution;
+  const now = pollOptions.now ?? Date.now;
+  const deadline = requestOptions.deadline!;
   const worklistPath = effectiveVariant
     ? `/sap/bc/adt/atc/worklists?checkVariant=${encodeURIComponent(effectiveVariant)}`
     : '/sap/bc/adt/atc/worklists';
@@ -222,7 +257,7 @@ export async function runAtcCheck(
   <objectSets xmlns:adtcore="http://www.sap.com/adt/core">
     <objectSet kind="inclusive">
       <adtcore:objectReferences>
-        <adtcore:objectReference adtcore:uri="${escapeXmlAttr(objectUrl)}"/>
+        ${objectUrls.map((url) => `<adtcore:objectReference adtcore:uri="${escapeXmlAttr(url)}"/>`).join('\n        ')}
       </adtcore:objectReferences>
     </objectSet>
   </objectSets>
@@ -258,6 +293,7 @@ export async function runAtcCheck(
   const runInfos = parseAtcRunInfos(runResp.body);
   const findingStatistics = parseAtcFindingStatistics(runInfos);
   const baseContext: AtcResultContext = {
+    includeObjects,
     worklistId,
     variant: effectiveVariant,
     variantSource,
@@ -454,6 +490,7 @@ async function fetchAtcWorklistSnapshot(
 }
 
 interface AtcResultContext {
+  includeObjects?: boolean;
   worklistId: string;
   variant?: string;
   variantSource: AtcVariantSource;
@@ -600,13 +637,30 @@ function parseAtcFinding(finding: Record<string, unknown>): AtcFinding {
   };
 }
 
-function parseAtcFindings(root: Record<string, unknown>, objectRows: Record<string, unknown>[]): AtcFinding[] {
+function atcObjectIdentity(object: Record<string, unknown>): AtcObjectIdentity {
+  return {
+    type: String(object['@_type']).trim(),
+    name: String(object['@_name']).trim(),
+    uri: String(object['@_uri']).trim(),
+  };
+}
+
+function parseAtcFindings(
+  root: Record<string, unknown>,
+  objectRows: Record<string, unknown>[],
+  includeObjects: boolean,
+): AtcFinding[] {
   const objectFindings = objectRows.flatMap((object) =>
-    nodeRecords(object.findings).flatMap((container) => nodeRecords(container.finding)),
+    nodeRecords(object.findings)
+      .flatMap((container) => nodeRecords(container.finding))
+      .map((finding) => ({
+        ...parseAtcFinding(finding),
+        ...(includeObjects && isValidProcessedObject(object) ? { object: atcObjectIdentity(object) } : {}),
+      })),
   );
   // Root-level findings are retained for older/minimal response shapes, but arbitrary nested
   // metadata is never searched as worklist evidence.
-  return [...objectFindings, ...nodeRecords(root.finding)].map(parseAtcFinding);
+  return [...objectFindings, ...nodeRecords(root.finding).map(parseAtcFinding)];
 }
 
 function parseAtcInfos(root: Record<string, unknown>): string[] {
@@ -637,7 +691,7 @@ function parseAtcRunResult(xml: string, context: AtcResultContext): AtcRunResult
   const rawObjectValue = objectContainerShapeIsValid ? objectContainers[0]!.object : undefined;
   const rawObjectRows = nodeValues(rawObjectValue);
   const objectRows = nodeRecords(rawObjectValue);
-  const findings = parseAtcFindings(root, objectRows);
+  const findings = parseAtcFindings(root, objectRows, context.includeObjects === true);
   const validObjectRows = objectRows.filter(isValidProcessedObject);
   const processedObjectCount = validObjectRows.length;
   const malformedObjectCount = rawObjectRows.length - validObjectRows.length;
@@ -671,9 +725,30 @@ function parseAtcRunResult(xml: string, context: AtcResultContext): AtcRunResult
   if (invalidPriorityCount > 0) {
     incompleteReasons.push(`${invalidPriorityCount} ATC finding(s) had a missing or malformed priority.`);
   }
+  const malformedBatchFindings =
+    context.includeObjects === true &&
+    objectRows.some((object) => {
+      if (object.findings === undefined || object.findings === '') return false;
+      const containers = nodeRecords(object.findings);
+      return (
+        containers.length !== 1 ||
+        nodeValues(object.findings).length !== 1 ||
+        nodeText(containers[0]) !== '' ||
+        nodeValues(containers[0]!.finding).length !== nodeRecords(containers[0]!.finding).length
+      );
+    });
+  if (malformedBatchFindings) incompleteReasons.push('SAP returned malformed ATC finding containers or rows.');
   const infos = parseAtcInfos(root);
 
   return {
+    ...(context.includeObjects
+      ? {
+          processedObjects: validObjectRows.map((object) => ({
+            ...atcObjectIdentity(object),
+            findingCount: nodeRecords(object.findings).flatMap((container) => nodeRecords(container.finding)).length,
+          })),
+        }
+      : {}),
     findings,
     worklistId: context.worklistId,
     variant: context.variant ?? null,
@@ -693,7 +768,8 @@ function parseAtcRunResult(xml: string, context: AtcResultContext): AtcRunResult
       objectContainerShapeIsValid &&
       processedObjectCount > 0 &&
       malformedObjectCount === 0 &&
-      invalidPriorityCount === 0,
+      invalidPriorityCount === 0 &&
+      !malformedBatchFindings,
     completionEvidence: context.completionEvidence,
     incompleteReasons,
     runStatusCode: context.runStatusCode,

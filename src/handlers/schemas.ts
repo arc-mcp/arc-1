@@ -14,6 +14,12 @@
  */
 
 import { z } from 'zod';
+import {
+  ATC_BATCH_MAX_OBJECTS,
+  ATC_BATCH_NAME_MAX_LENGTH,
+  ATC_BATCH_NAME_PATTERN,
+  ATC_BATCH_TYPES,
+} from '../adt/atc-batch.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
@@ -873,6 +879,18 @@ export const SAPDiagnoseSchema = z
     name: z.string().optional(),
     url: z.string().optional(),
     type: z.string().optional(),
+    objects: z
+      .array(
+        z
+          .object({
+            type: z.enum(ATC_BATCH_TYPES),
+            name: z.string().min(1).max(ATC_BATCH_NAME_MAX_LENGTH).regex(new RegExp(ATC_BATCH_NAME_PATTERN)),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(ATC_BATCH_MAX_OBJECTS)
+      .optional(),
     source: z.string().optional(),
     sourceUri: z.string().optional(),
     line: z.coerce.number().optional(),
@@ -911,6 +929,16 @@ export const SAPDiagnoseSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    if (
+      input.objects !== undefined &&
+      (input.action !== 'atc' || input.name !== undefined || input.type !== undefined || input.url !== undefined)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['objects'],
+        message: 'objects is only supported for atc and cannot be combined with name, type, or url.',
+      });
+    }
     if (input.action === 'unittest' && input.type !== undefined) {
       const type = input.type.toUpperCase().split('/')[0];
       if (!['CLAS', 'PROG', 'FUGR', 'DEVC'].includes(type ?? '')) {

@@ -3,6 +3,7 @@
  * state, ATC, unit tests, CDS test cases.
  */
 
+import { type AtcBatchObject, runAtcBatch } from '../adt/atc-batch.js';
 import type { AunitAlert, AunitProgramSource, AunitRunResult } from '../adt/aunit.js';
 import {
   AunitIncompleteError,
@@ -65,6 +66,7 @@ import type {
   TraceRequestCreateOptions,
   UnitTestResult,
 } from '../adt/types.js';
+import { getCurrentContext } from '../server/context.js';
 import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -868,6 +870,19 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       return textResult(toolJson(out));
     }
     case 'atc': {
+      if (args.objects !== undefined) {
+        const objects = (args.objects as { type: AtcBatchObject['type']; name: string }[]).map((object) => ({
+          ...object,
+          uri: objectUrlForType(object.type, object.name),
+        }));
+        const result = await runAtcBatch(client.http, client.safety, objects, args.variant as string | undefined, {
+          signal: getCurrentContext()?.signal,
+          ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+        });
+        return !result.complete && args.resultFormat !== 'structured'
+          ? errorResult(toolJson(result))
+          : textResult(toolJson(result));
+      }
       const objectUrl = objectUrlForType(type, name);
       const variant = args.variant as string | undefined;
       const result = await runAtcCheck(client.http, client.safety, objectUrl, variant, {

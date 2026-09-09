@@ -172,7 +172,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Post-trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
       schemaTokenEstimate: 11_800,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 175,
+      descriptionCount: 176,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -194,8 +194,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // action exists to prevent. Only the on-prem write scenario moved; BTP stayed under budget.
       // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
-      schemaTokenEstimate: 17_800,
-      descriptionTokenEstimate: 12_550,
+      // ATC objects[] adds ~150 estimated tokens; wire ceilings are unchanged.
+      schemaTokenEstimate: 17_950,
+      descriptionTokenEstimate: 12_600,
       descriptionCount: 270,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
@@ -210,8 +211,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Post-trim: full BTP write surface ~64.5 KB / ~16.1k schema tokens / 248 descriptions.
       // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
-      schemaTokenEstimate: 16_900,
-      descriptionTokenEstimate: 12_000,
+      // Same bounded ATC objects[] schema as on-prem.
+      schemaTokenEstimate: 17_050,
+      descriptionTokenEstimate: 12_050,
       descriptionCount: 265,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,

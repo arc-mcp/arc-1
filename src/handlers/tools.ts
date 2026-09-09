@@ -17,6 +17,12 @@
  * - On-premise: full tool set with all types and descriptions
  */
 
+import {
+  ATC_BATCH_MAX_OBJECTS,
+  ATC_BATCH_NAME_MAX_LENGTH,
+  ATC_BATCH_NAME_PATTERN,
+  ATC_BATCH_TYPES,
+} from '../adt/atc-batch.js';
 import { KTD_SHORT_TEXT_MAX_LENGTH } from '../adt/ddic-xml.js';
 import { TEXT_ELEMENT_PARTS } from '../adt/text-elements.js';
 import type { ResolvedFeatures } from '../adt/types.js';
@@ -1115,7 +1121,7 @@ export function getToolDefinitions(
         'Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n' +
         '- "syntax": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
-        '- "atc": run ATC checks (name+type; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
+        '- "atc": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
         '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
         '- "quickfix": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n' +
@@ -1172,6 +1178,27 @@ export function getToolDefinitions(
           type: {
             type: 'string',
             description: 'Object type; unittest accepts CLAS, PROG, FUGR, or DEVC.',
+          },
+          objects: {
+            type: 'array',
+            minItems: 1,
+            maxItems: ATC_BATCH_MAX_OBJECTS,
+            description:
+              'ATC only, instead of name/type/url. One batch + at most one verification. Returns coverage; unreported objects stay incomplete. No packages.',
+            items: {
+              type: 'object',
+              required: ['type', 'name'],
+              additionalProperties: false,
+              properties: {
+                type: { type: 'string', enum: [...ATC_BATCH_TYPES] },
+                name: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: ATC_BATCH_NAME_MAX_LENGTH,
+                  pattern: ATC_BATCH_NAME_PATTERN,
+                },
+              },
+            },
           },
           source: {
             type: 'string',
