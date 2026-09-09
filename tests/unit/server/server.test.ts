@@ -115,15 +115,16 @@ describe('MCP Server', () => {
   });
 
   it.each(['standard', 'hyperfocused'] as const)(
-    'scopes context-first guidance to intent-sensitive tasks in %s',
+    'preserves context-first understanding and targeted method reads in %s',
     async (toolMode) => {
       const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
-      expect(instructions).toContain('Business purpose, reviews or test design: SAPContext first, then SAPRead');
+      expect(instructions).toContain('Understanding an object: SAPContext(action="deps") returns available KTD');
       expect(instructions).toContain(
-        'Separate requirements from behavior; specification tests should fail for mismatches',
+        'Use SAPRead afterwards for exact implementation, method bodies or known references',
       );
+      expect(instructions).toContain('One method: SAPRead(type="CLAS", method="name")');
+      expect(instructions).toContain('Source behavior is not a specification');
       expect(instructions).toContain('Without documented requirements, intent is unverified');
-      expect(instructions).toContain('Exact behavior or a known reference: targeted SAPRead');
     },
   );
 

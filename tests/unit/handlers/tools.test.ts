@@ -47,19 +47,22 @@ describe('Tool Definitions', () => {
     expect(props.include.description).toContain('Explicit include wins');
   });
 
-  it.each(['onprem', 'btp'] as const)('separates requirements from implementation guidance on %s', (systemType) => {
-    for (const liveRelations of [false, true]) {
-      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType, liveRelations });
-      const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
-      const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
-      expect(read).toContain('Exact behavior: targeted source');
-      expect(read).toContain('Business purpose, reviews or test design: SAPContext then source');
-      expect(context).toContain('Compare requirements with actual behavior');
-      expect(context).toContain('Base specification tests on requirements, so bugs fail them');
-      expect(context).toContain('If requirements are unavailable, intent is unverified; do not infer it from code');
-      expect(context).toContain('not SAP-native relationships or a complete inventory');
-    }
-  });
+  it.each(['onprem', 'btp'] as const)(
+    'preserves context-first understanding and targeted source guidance on %s',
+    (systemType) => {
+      for (const liveRelations of [false, true]) {
+        const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType, liveRelations });
+        const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
+        const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
+        expect(read).toContain('spec work, reviews, or pre-change orientation, prefer SAPContext first');
+        expect(read).toContain('method="NAME" (one body)');
+        expect(context).toContain('Primary tool for understanding ABAP/CDS objects');
+        expect(context).toContain('KTD when available');
+        expect(context).toContain('"What does <object> do?" / "Explain" / "deps before editing"');
+        expect(context).toContain('not SAP-native relationships or a complete inventory');
+      }
+    },
+  );
 
   it('registers all implemented tools', () => {
     const tools = getToolDefinitions({
@@ -648,9 +651,8 @@ describe('Tool Definitions', () => {
 
       expect(sapContext.description).toContain('source (not SAP-native relationships or a complete inventory)');
       expect(sapContext.description).toMatch(/KTD/i);
-      expect(sapContext.description).toContain('context then SAPRead');
-      expect(sapRead.description).toContain('Exact behavior: targeted source');
-      expect(sapRead.description).not.toContain('prefer SAPContext first');
+      expect(sapContext.description).toContain('Use SAPRead after SAPContext for exact source');
+      expect(sapRead.description).toContain('prefer SAPContext first');
     });
 
     it('SAPContext action description steers LLMs away from SAPQuery-against-DDDDLSRC', () => {
