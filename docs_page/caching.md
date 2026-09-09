@@ -76,7 +76,9 @@ does not prove that its dependencies or their public contracts stayed unchanged,
 
 Normal dependency-source caching remains: conditional GETs reuse unchanged bodies after SAP
 returns `304`. Under principal propagation the existing dependency-payload cache bypass remains.
-Legacy stored aggregate records are ignored; no cache reset or database migration is required.
+The retired aggregate read/write APIs and in-memory graph store have been removed. Existing SQLite
+aggregate rows/schema remain untouched for compatibility and cache statistics; they never enter
+context results. No cache reset or database migration is required.
 `SAPRead` still uses `[cached:revalidated]` for a source body revalidated by SAP.
 
 Unchanged ABAP source does not need repeated CPU-heavy parsing. ARC-1 memoizes public contract

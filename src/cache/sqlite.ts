@@ -13,7 +13,6 @@ import Database from 'better-sqlite3';
 import type {
   Cache,
   CacheApi,
-  CachedDepGraph,
   CachedSource,
   CacheListSourcesQuery,
   CacheListSourcesResult,
@@ -72,6 +71,8 @@ export class SqliteCache implements Cache {
         cached_at TEXT NOT NULL
       );
 
+      -- Inert legacy storage: retain rows/schema for cache stats, explicit clear and rollback.
+      -- No runtime aggregate read/write API remains.
       CREATE TABLE IF NOT EXISTS dep_graphs (
         source_hash TEXT PRIMARY KEY,
         object_name TEXT NOT NULL,
@@ -213,29 +214,6 @@ export class SqliteCache implements Cache {
     }
     const key = sourceKey(objectType, objectName, version);
     this.db.prepare('DELETE FROM sources WHERE cache_key = ?').run(key);
-  }
-
-  // ─── Dependency Graph Cache ───────────────────────────────────────
-
-  putDepGraph(graph: CachedDepGraph): void {
-    const stmt = this.db.prepare(
-      'INSERT OR REPLACE INTO dep_graphs (source_hash, object_name, object_type, contracts, cached_at) VALUES (?, ?, ?, ?, ?)',
-    );
-    stmt.run(graph.sourceHash, graph.objectName, graph.objectType, JSON.stringify(graph.contracts), graph.cachedAt);
-  }
-
-  getDepGraph(sourceHash: string): CachedDepGraph | null {
-    const row = this.db.prepare('SELECT * FROM dep_graphs WHERE source_hash = ?').get(sourceHash) as
-      | Record<string, unknown>
-      | undefined;
-    if (!row) return null;
-    return {
-      sourceHash: String(row.source_hash),
-      objectName: String(row.object_name),
-      objectType: String(row.object_type),
-      contracts: JSON.parse(String(row.contracts)),
-      cachedAt: String(row.cached_at),
-    };
   }
 
   // ─── Function Group Resolution ────────────────────────────────────

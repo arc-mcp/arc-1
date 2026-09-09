@@ -109,7 +109,7 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
     for (const edge of [...network.edges].sort(
       (a, b) => rank(a) - rank(b) || (adjacentUri(a) < adjacentUri(b) ? -1 : adjacentUri(a) > adjacentUri(b) ? 1 : 0),
     )) {
-      const adjacent = options.direction === 'outgoing' ? edge.to : edge.from;
+      const adjacent = adjacentUri(edge);
       const target = found.get(adjacent);
       if (!target || (options.direction === 'outgoing' ? edge.from : edge.to) !== uri) {
         throw new RelationProtocolError('non-adjacent traversal result.');

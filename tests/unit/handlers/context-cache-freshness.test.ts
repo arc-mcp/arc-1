@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { Registry } from '@abaplint/core';
+import type Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AdtClient, SourceReadOptions } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
-import type { Cache } from '../../../src/cache/cache.js';
+import { type Cache, hashSource } from '../../../src/cache/cache.js';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { SqliteCache } from '../../../src/cache/sqlite.js';
@@ -78,20 +79,29 @@ describe.each(['memory', 'sqlite'] as const)('SAPContext freshness (%s)', (backe
       cache = layer();
     await run(f, cache, first);
     expect(await run(f, cache, next)).toBe(await run(fixture(), layer(), next));
-    expect(cache.getCachedDepGraph(root)).toBeNull();
+    expect(cache.stats().contractCount).toBe(0);
   });
 
   it('refreshes changed dependencies while the root and legacy aggregate stay unchanged', async () => {
     const f = fixture(),
       cache = layer();
     await run(f, cache, { depth: 1, maxDeps: 1 });
-    cache.putDepGraph(root, 'ZCL_ROOT', 'CLAS', [
-      { name: 'ZCL_A', type: 'CLAS', methodCount: 1, source: 'STALE CONTRACT', success: true },
-    ]);
+    if (backend === 'sqlite') {
+      // Existing SQLite files may retain old aggregates. No production API can read or update them.
+      const db = (cache.cache as unknown as { db: Database.Database }).db;
+      db.prepare('INSERT INTO dep_graphs VALUES (?, ?, ?, ?, ?)').run(
+        hashSource(root),
+        'ZCL_ROOT',
+        'CLAS',
+        JSON.stringify([{ name: 'ZCL_A', type: 'CLAS', methodCount: 1, source: 'STALE CONTRACT', success: true }]),
+        '2026-01-01',
+      );
+    }
     f.sources.set('ZCL_A', source('ZCL_A', [], 'fresh_api'));
     const result = await run(f, cache, { depth: 1, maxDeps: 1 });
     expect(result).toContain('fresh_api');
     expect(result).not.toContain('STALE CONTRACT');
+    expect(cache.stats().contractCount).toBe(backend === 'sqlite' ? 1 : 0);
   });
 
   it('retains conditional reads and zero-body 304 source reuse', async () => {

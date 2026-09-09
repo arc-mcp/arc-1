@@ -235,8 +235,8 @@ describe('Cache Integration Tests', () => {
 
     it('rebuilds dependency context on both cold and warm calls without aggregate cache reads/writes', async () => {
       const cl = new CachingLayer(new MemoryCache());
-      const readGraph = vi.spyOn(cl, 'getCachedDepGraph');
-      const writeGraph = vi.spyOn(cl, 'putDepGraph');
+      expect(cl).not.toHaveProperty('getCachedDepGraph');
+      expect(cl).not.toHaveProperty('putDepGraph');
 
       const r1 = await handleToolCall(
         client,
@@ -265,8 +265,7 @@ describe('Cache Integration Tests', () => {
       expect(r2.isError).toBeUndefined();
       expect(out2).toContain(`Dependency context for ${TEST_CLASS_WITH_DEPS}`);
       expect(out2).not.toContain('[cached]');
-      expect(readGraph).not.toHaveBeenCalled();
-      expect(writeGraph).not.toHaveBeenCalled();
+      expect(cl.stats().contractCount).toBe(0);
     }, 30000);
 
     it('revalidates dependency sources with SAP on a warm context call', async () => {
@@ -435,7 +434,7 @@ describe('Cache Integration Tests', () => {
       expect(result.objectName).toBe(TEST_CLASS_WITH_DEPS);
       expect(result.depsResolved).toBeGreaterThan(0);
       expect(cl.stats().sourceCount).toBeGreaterThan(0);
-      expect(cl.getCachedDepGraph(source)).toBeNull();
+      expect(cl.stats().contractCount).toBe(0);
     }, 30000);
   });
 });

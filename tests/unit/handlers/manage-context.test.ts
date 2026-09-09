@@ -1159,19 +1159,10 @@ ENDCLASS.`;
       expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/'))).toBe(false);
     });
 
-    it('composes KTD with fresh context and ignores legacy aggregate records', async () => {
+    it('composes KTD with freshly resolved context', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
       const markdown = '# Cached Root KTD\n\nUse this before editing.';
-      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
-        {
-          name: 'ZIF_DEP',
-          type: 'INTF',
-          methodCount: 1,
-          source: 'INTERFACE zif_dep PUBLIC.\n  METHODS run.\nENDINTERFACE.',
-          success: true,
-        },
-      ]);
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL) => {
         const urlStr = String(url);
@@ -1200,12 +1191,11 @@ ENDCLASS.`;
       expect(text).toContain('0 deps resolved');
     });
 
-    it('ignores legacy aggregate records even when called under principal propagation', async () => {
+    it('returns empty dependency context under principal propagation without an aggregate API', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
-      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
-        { name: 'ZCL_SECRET', type: 'CLAS', methodCount: 0, source: 'SECRET SOURCE', success: true },
-      ]);
+      expect(layer).not.toHaveProperty('getCachedDepGraph');
+      expect(layer).not.toHaveProperty('putDepGraph');
       const auth: AuthInfo = {
         token: 'jwt',
         clientId: 'oidc-client',
@@ -1226,7 +1216,6 @@ ENDCLASS.`;
       );
 
       expect(result.isError).toBeUndefined();
-      expect(result.content[0]?.text).not.toContain('SECRET SOURCE');
       expect(result.content[0]?.text).not.toContain('[cached]');
       expect(result.content[0]?.text).toContain('0 deps resolved');
     });

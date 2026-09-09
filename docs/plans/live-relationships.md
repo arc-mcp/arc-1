@@ -3,6 +3,9 @@
 Status: implementation, corrective review and final functional verification complete, 2026-09-08. Separate from the optional
 repository-graph database experiment. No database, collection job, new service, or AI dependency.
 
+The [core simplicity review](../research/2026-09-09-pr769-core-simplicity.md) records the subsequent
+dead-code removal, compatibility boundary and full verification.
+
 ## Decision and value
 
 1. Fix SAPContext aggregate caching. A root-source hash cannot validate changed dependency

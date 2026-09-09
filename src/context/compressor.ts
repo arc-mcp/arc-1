@@ -79,18 +79,14 @@ export async function compressContext(
   const effectiveDepth = Math.min(Math.max(depth, 1), MAX_DEPTH);
   const seen = new Set<string>([objectName.toUpperCase()]);
   const allContracts: Contract[] = [];
-  let totalFiltered = 0;
 
   const deps =
     contextParseCache(cachingLayer)?.dependencies(source, objectName, abaplintVersion) ??
     extractDependencies(source, objectName, true, abaplintVersion);
-  totalFiltered = deps.length; // extractDependencies already filters, but we track the count
 
   await resolveDepthLevel(client, deps, maxDeps, effectiveDepth, seen, allContracts, abaplintVersion, cachingLayer);
 
-  const result = formatResult(objectName, objectType, deps.length, allContracts, totalFiltered);
-
-  return result;
+  return formatResult(objectName, objectType, deps.length, allContracts, deps.length);
 }
 
 /**
