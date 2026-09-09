@@ -17,6 +17,8 @@ native relationship steps before deciding what code to inspect. For exact source
   Explorer. The lookup is a read-only POST: the relevant SAP ADT resource authorization may need
   `ACTVT=01` and `02`. No new ARC-1 role, SQL permission, or write permission is required.
 - Cloud Connector must permit discovery, objectrelations and metadata paths for the requested types.
+  `TABL`, `FUNC` and VIT types also need the read-only
+  `/sap/bc/adt/repository/informationsystem/search` resource for exact identity resolution.
   Use the normal least-privilege resource allowlist; do not expose all SAP paths just for this feature.
 
 Single-target principal propagation keeps using the caller's selected SAP identity. Shared Basic
@@ -78,6 +80,7 @@ by default. Only the qualified types below are expanded; other returned nodes re
 The same types can be roots and deeper nodes. All use live active metadata plus native ENV/WUL
 relationships, not source parsing. The evidence was collected on SAP_BASIS 758; it is not a
 promise of completeness on this or another release.
+Graph support does not add corresponding SAPRead operations or change their existing permissions.
 
 | Type | Useful question | Important limit |
 |---|---|---|
@@ -137,6 +140,13 @@ Useful prompts:
 - “Find the objects using ZCL_ORDER. Separate observed relationships from unknown coverage.”
 - “Explore ZIF_ORDER's dependency network, expanding only package ZORDER. Which objects should I inspect next?”
 - “Follow up to three native relationship steps from this class. Report any truncation, then verify the important links with source or where-used.”
+
+For clients that confuse context tools or argument names, be explicit: “Use
+SAPNavigate with action=relations, type=TTYP, name=/BOBF/T_FRW_CHANGE, direction=outgoing,
+depth=2 and maxResults=20. Summarize the returned metadata and its limits.” `type` is the root
+type; `objectType` is a filter for `references`, not an alternative relations argument.
+Model answers still need review: tool correctness does not guarantee correct tool selection,
+interpretation, or adherence to a metadata-only request.
 
 Input requires a qualified `type` and `name`; `uri`, `source`, inactive versions and arbitrary endpoint
 paths are not accepted. `direction` defaults to `outgoing`; `incoming` finds users of the root.

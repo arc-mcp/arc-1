@@ -40,6 +40,15 @@ server-driven read families individually; do not infer support from their source
 
 ## Research record
 
-Results and per-type dispositions will be recorded in
+Results and per-type dispositions are recorded in
 `docs/research/2026-09-10-live-relations-types.md`. Existing model-quality concerns remain open
 until re-evaluated; removal of an exposure flag does not itself resolve them.
+
+## Completed review
+
+Steps 1–6 are implemented and locally verified: 26 qualified root types; a final 108-call live
+matrix with 100 graphs/eight expected refusals; all 26 absent roots rejected; real HTTP/stdin MCP
+checks; actual GPT/Qwen/Gemma comparisons with failures retained; 6,396 unit tests and full local
+gates. New types reuse one registry/adapter rather than adding handlers or infrastructure.
+The model tests do not establish universal non-regression. Keep experimental labeling and the
+documented limitations. The final publication step is a normal PR update, never an automatic merge.

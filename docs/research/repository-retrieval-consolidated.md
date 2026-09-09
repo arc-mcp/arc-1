@@ -7,7 +7,7 @@ The owner chose automatic capability-based exposure instead of a dedicated rollo
 and block `SAPNavigate.relations`; read scope, SAP identity/authorization, request bounds,
 single-target standard mode and the experimental label remain. No database or BTP service is added.
 
-The implementation is being qualified for CLAS/INTF plus DDLS, DCLS, TABL (tables/structures),
+The implementation has qualified CLAS/INTF plus DDLS, DCLS, TABL (tables/structures),
 TTYP, DTEL, DOMA, PROG, INCL, FUNC, FUGR, VIEW, ENHO/XHB, MSAG, BDEF, SRVD, TRAN, SOBJ, SHLP,
 SKTD, ENHS/XSB, ENQU, TYPE, EVTB and DSFD (26 root types). Native relation support
 is narrower than the SAP UI's complete set of contexts. In particular, outgoing RAP links can be
@@ -16,8 +16,11 @@ missing on 758, inactive/new roots must fail, and conflicting same-URI identitie
 The [current per-type research and validation record](2026-09-10-live-relations-types.md) and
 [operator page](../../docs_page/live-relations.md) supersede the flag and class/interface-only
 recommendations below. The [execution plan](../plans/2026-09-10-live-relations-types.md) covers
-actual model comparisons and final verification. Model qualification is still in progress at
-this checkpoint; the earlier ordinary-workflow concerns are not silently marked resolved.
+actual model comparisons and final verification. Live type qualification is separate from model
+reliability: GPT, Qwen and Gemma were tested, and weaker-model routing/interpretation errors remain.
+The earlier ordinary-workflow concerns are not silently marked resolved. The final live matrix
+returned 100 bounded graphs and eight expected refusals in 108 calls; all 26 absent roots were
+rejected. No new infrastructure or source collection was introduced.
 
 ## Consolidated baseline and evidence archive — through 2026-09-09
 
