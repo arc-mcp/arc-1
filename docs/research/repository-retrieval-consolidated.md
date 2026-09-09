@@ -8,7 +8,8 @@ and block `SAPNavigate.relations`; read scope, SAP identity/authorization, reque
 single-target standard mode and the experimental label remain. No database or BTP service is added.
 
 The implementation is being qualified for CLAS/INTF plus DDLS, DCLS, TABL (tables/structures),
-TTYP, DTEL, DOMA, PROG, INCL, FUNC, FUGR, VIEW, ENHO/XHB, MSAG, BDEF and SRVD. Native relation support
+TTYP, DTEL, DOMA, PROG, INCL, FUNC, FUGR, VIEW, ENHO/XHB, MSAG, BDEF, SRVD, TRAN, SOBJ, SHLP,
+SKTD, ENHS/XSB, ENQU, TYPE, EVTB and DSFD (26 root types). Native relation support
 is narrower than the SAP UI's complete set of contexts. In particular, outgoing RAP links can be
 missing on 758, inactive/new roots must fail, and conflicting same-URI identities remain errors.
 

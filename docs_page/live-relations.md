@@ -89,10 +89,15 @@ promise of completeness on this or another release.
 | `FUNC`, `FUGR` | Function/module-group dependencies and consumers | FUNC needs one bounded parent lookup; no function execution |
 | `VIEW` | Classic DDIC view/table relationships | Exact bounded search proves identity before VIT metadata; CDS uses `DDLS` |
 | `ENHO` | BAdI implementation class/spot links | Only live-verified `ENHO/XHB`, not every enhancement subtype |
+| `ENHS` | Enhancement-spot interface links | Only `ENHS/XSB`; conflicting native facets fail rather than being merged |
 | `MSAG` | Objects using a message class | Not a per-message-number usage search |
 | `BDEF`, `SRVD` | Observed incoming implementation/binding links | On 758 outgoing can omit dependencies visible in source; use SAPRead for the RAP stack |
+| `TRAN`, `SOBJ`, `SHLP` | Transaction/program, maintenance-object and search-help dependencies | Exact search independently validates VIT identities; no transaction execution or data access |
+| `ENQU`, `TYPE` | Lock-object tables and type-group dependencies | Metadata only; no locks acquired |
+| `SKTD` | Links from documentation objects to documented objects | Does not read the document or establish its business rules |
+| `EVTB`, `DSFD` | Event-binding and scalar-function-definition relationships | Not event traffic or executed function calls; unqualified related types remain boundaries |
 
-`DEVC`, `SRVB`, `DDLX` and other unqualified roots are not accepted. Use package listing,
+`DEVC`, `SRVB`, `DDLX`, `AUTH`, `DTDC`, `UIAD` and other unqualified roots are not accepted. Use package listing,
 source/metadata reads, existing references or CDS/RAP impact tools instead. A native HTTP 200 or
 empty graph alone is not enough evidence to advertise a new type.
 
@@ -175,7 +180,7 @@ no hidden where-used, SQL, source-parser or alternate-identity fallback.
 
 These are overlapping ceilings, not promised completion counts. With no discovery/session state,
 discovery GET + root metadata GET + CSRF HEAD + eight native POSTs uses 11 attempts; a CSRF GET
-fallback uses the twelfth. `TABL`, `FUNC` and `VIEW` roots need one additional identity-resolution request,
+fallback uses the twelfth. `TABL`, `FUNC` and VIT roots (`VIEW`, `TRAN`, `SOBJ`, `SHLP`) need an additional identity-resolution request,
 so a cold session can stop before eight expansions. Retries or large responses can stop earlier. Reusing ordinary
 discovery/session state saves setup requests, never authorization checks or relationship results.
 

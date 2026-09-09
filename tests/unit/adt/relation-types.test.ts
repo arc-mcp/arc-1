@@ -33,12 +33,23 @@ const observed = [
   ['VIEW', 'VIEW/DV', 'vit/wb/object_type/viewdv/object_name', 'mainObject'],
   ['ENHO', 'ENHO/XHB', 'enhancements/enhoxhb', 'objectData'],
   ['MSAG', 'MSAG/N', 'messageclass', 'messageClass'],
+  ['TRAN', 'TRAN/T', 'vit/wb/object_type/trant/object_name', 'mainObject'],
+  ['SOBJ', 'SOBJ/MO', 'vit/wb/object_type/sobjmo/object_name', 'mainObject'],
+  ['SHLP', 'SHLP/DH', 'vit/wb/object_type/shlpdh/object_name', 'mainObject'],
+  ['SKTD', 'SKTD/TYP', 'documentation/ktd/documents', 'docu'],
+  ['ENHS', 'ENHS/XSB', 'enhancements/enhsxsb', 'objectData'],
+  ['ENQU', 'ENQU/DL', 'ddic/lockobjects/sources', 'lockobject'],
+  ['TYPE', 'TYPE/DG', 'ddic/typegroups', 'abapTypeGroup'],
+  ['EVTB', 'EVTB/EVB', 'businessservices/evtbevb', 'blueSource'],
+  ['DSFD', 'DSFD/SCF', 'ddic/dsfd/sources', 'blueSource'],
 ];
 
 function setup(row: string[], name = '/ACME/ROOT') {
   const [type, native, path, tag] = row;
   const group = '/ACME/GROUP';
-  const segment = encodeURIComponent(type === 'VIEW' ? name.toUpperCase() : name.toLowerCase());
+  const segment = encodeURIComponent(
+    ['VIEW', 'TRAN', 'SOBJ', 'SHLP'].includes(type!) ? name.toUpperCase() : name.toLowerCase(),
+  );
   const uri = `/sap/bc/adt/${path}/${type === 'FUNC' ? `${encodeURIComponent(group.toLowerCase())}/fmodules/` : ''}${segment}`;
   const object = { ...relationObject('ZROOT'), name, type: native!, uri };
   const pkg =
@@ -66,14 +77,14 @@ describe('qualified relation identities', () => {
     expect(RELATION_ROOT_TYPES).toEqual([...new Set(observed.map(([type]) => type))]);
     for (const type of RELATION_ROOT_TYPES)
       expect(LiveRelationsInput.safeParse({ action: 'relations', type, name: 'ZROOT' }).success).toBe(true);
-    for (const type of ['DEVC', 'DDLX', 'SRVB', 'STOB', 'ENHS'])
+    for (const type of ['DEVC', 'DDLX', 'SRVB', 'STOB', 'AUTH', 'UIAD', 'DTDC'])
       expect(LiveRelationsInput.safeParse({ action: 'relations', type, name: 'ZROOT' }).success).toBe(false);
   });
   it.each(observed)('%s %s validates namespaced metadata, with no unbounded side requests', async (...row) => {
     const { provider, object, get, post } = setup(row);
     const root = await provider.validateRoot(row[0]!, object.name);
     expect(root).toEqual({ ...object, existence: 'metadata_validated' });
-    expect(get).toHaveBeenCalledTimes(['TABL', 'FUNC', 'VIEW'].includes(row[0]!) ? 2 : 1);
+    expect(get).toHaveBeenCalledTimes(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'].includes(row[0]!) ? 2 : 1);
     for (const call of get.mock.calls) expect(call[2]).toBe(provider.options);
     await provider.lookup(root, 'outgoing');
     expect(post.mock.calls[0]![4]).toBe(provider.options);
@@ -126,7 +137,7 @@ describe('qualified relation identities', () => {
         expect(result.nodes).toHaveLength(2);
         expect(result.edges).toHaveLength(2);
         expect(result.expanded).toEqual([object.uri, child.uri]);
-        expect(get).toHaveBeenCalledTimes(['TABL', 'FUNC', 'VIEW'].includes(row[0]!) ? 2 : 1);
+        expect(get).toHaveBeenCalledTimes(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'].includes(row[0]!) ? 2 : 1);
         expect(result.coverage).toBe('unknown');
       }
     },
@@ -152,40 +163,49 @@ describe('qualified relation identities', () => {
     expect(root.package).toBe('');
     expect(result.qualification).toContain('RAP source dependencies');
   });
-  it.each(['TABL', 'FUNC', 'VIEW'])('%s refuses ambiguous, unsafe or wrong-type resolution', async (type) => {
-    const row = observed.find(([root]) => root === type)!;
-    const mutations = [
-      (s: string) =>
-        s.replace(
-          '</objectReferences>',
-          `${s.slice(s.indexOf('<objectReference '), s.indexOf('</objectReferences>'))}</objectReferences>`,
-        ),
-      (s: string) => s.replace('/ACME/ROOT', 'OTHER'),
-      (s: string) => s.replace(`type="${row[1]}"`, 'type="CLAS/OC"'),
-      (s: string) => s.replace(/uri="[^"]+"/, 'uri="/sap/bc/adt/discovery"'),
-      () => '<objectReferences/>',
-    ];
-    for (const change of mutations) {
-      const { provider, resolution, get, post } = setup(row);
-      get.mockResolvedValue({ statusCode: 200, headers: {}, body: change(resolution) });
-      await expect(provider.validateRoot(type, '/ACME/ROOT')).rejects.toThrow();
+  it.each(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'])(
+    '%s refuses ambiguous, unsafe or wrong-type resolution',
+    async (type) => {
+      const row = observed.find(([root]) => root === type)!;
+      const mutations = [
+        (s: string) =>
+          s.replace(
+            '</objectReferences>',
+            `${s.slice(s.indexOf('<objectReference '), s.indexOf('</objectReferences>'))}</objectReferences>`,
+          ),
+        (s: string) => s.replace('/ACME/ROOT', 'OTHER'),
+        (s: string) => s.replace(`type="${row[1]}"`, 'type="CLAS/OC"'),
+        (s: string) => s.replace(/uri="[^"]+"/, 'uri="/sap/bc/adt/discovery"'),
+        () => '<objectReferences/>',
+      ];
+      for (const change of mutations) {
+        const { provider, resolution, get, post } = setup(row);
+        get.mockResolvedValue({ statusCode: 200, headers: {}, body: change(resolution) });
+        await expect(provider.validateRoot(type, '/ACME/ROOT')).rejects.toThrow();
+        expect(get).toHaveBeenCalledTimes(1);
+        expect(post).not.toHaveBeenCalled();
+      }
+    },
+  );
+  it.each(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'])(
+    '%s rejects invalid names before even resolving',
+    async (type) => {
+      const { provider, get } = setup(observed.find(([root]) => root === type)!);
+      await expect(provider.validateRoot(type, 'Z*')).rejects.toThrow('invalid root name');
+      expect(get).not.toHaveBeenCalled();
+    },
+  );
+  it.each(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'])(
+    '%s explains a legitimate empty exact search as unresolved',
+    async (type) => {
+      const { provider, get, post } = setup(observed.find(([root]) => root === type)!);
+      get.mockResolvedValue({ statusCode: 200, headers: {}, body: '<objectReferences/>' });
+      await expect(provider.validateRoot(type, 'ZABSENT')).rejects.toThrow('root resolution is missing or ambiguous');
+      // In particular, never accept VIT's synthetic "active" metadata for an absent VIEW.
       expect(get).toHaveBeenCalledTimes(1);
       expect(post).not.toHaveBeenCalled();
-    }
-  });
-  it.each(['TABL', 'FUNC', 'VIEW'])('%s rejects invalid names before even resolving', async (type) => {
-    const { provider, get } = setup(observed.find(([root]) => root === type)!);
-    await expect(provider.validateRoot(type, 'Z*')).rejects.toThrow('invalid root name');
-    expect(get).not.toHaveBeenCalled();
-  });
-  it.each(['TABL', 'FUNC', 'VIEW'])('%s explains a legitimate empty exact search as unresolved', async (type) => {
-    const { provider, get, post } = setup(observed.find(([root]) => root === type)!);
-    get.mockResolvedValue({ statusCode: 200, headers: {}, body: '<objectReferences/>' });
-    await expect(provider.validateRoot(type, 'ZABSENT')).rejects.toThrow('root resolution is missing or ambiguous');
-    // In particular, never accept VIT's synthetic "active" metadata for an absent VIEW.
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(post).not.toHaveBeenCalled();
-  });
+    },
+  );
   it('normalizes only verified function/group/pool name forms', () => {
     for (const group of ['GROUP', '/ACME/GROUP']) {
       const uri = relationObjectUri('FUNC', 'ZFUNCTION', group);

@@ -11,6 +11,8 @@ Research the previously identified families individually: DDLS, DCLS, BDEF, SRVD
 (table and structure), TTYP, DTEL, DOMA, PROG, INCL, FUNC, FUGR and DEVC. Related metadata families
 returned by these tests may be assessed where useful. A documented UI capability is not a
 verified REST contract; each supported root needs identity validation and both-direction tests.
+The inventory pass also covers TRAN, SOBJ, SHLP, SKTD, ENHS, ENQU, TYPE, AUTH, BSP and all nine
+server-driven read families individually; do not infer support from their source-read availability.
 
 ## Sequence
 

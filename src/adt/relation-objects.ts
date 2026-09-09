@@ -18,6 +18,15 @@ export const RELATION_OBJECTS = [
   ['VIEW', 'VIEW/DV', 'vit/wb/object_type/viewdv/object_name', 'mainObject'],
   ['ENHO', 'ENHO/XHB', 'enhancements/enhoxhb', 'objectData'],
   ['MSAG', 'MSAG/N', 'messageclass', 'messageClass'],
+  ['TRAN', 'TRAN/T', 'vit/wb/object_type/trant/object_name', 'mainObject'],
+  ['SOBJ', 'SOBJ/MO', 'vit/wb/object_type/sobjmo/object_name', 'mainObject'],
+  ['SHLP', 'SHLP/DH', 'vit/wb/object_type/shlpdh/object_name', 'mainObject'],
+  ['SKTD', 'SKTD/TYP', 'documentation/ktd/documents', 'docu'],
+  ['ENHS', 'ENHS/XSB', 'enhancements/enhsxsb', 'objectData'],
+  ['ENQU', 'ENQU/DL', 'ddic/lockobjects/sources', 'lockobject'],
+  ['TYPE', 'TYPE/DG', 'ddic/typegroups', 'abapTypeGroup'],
+  ['EVTB', 'EVTB/EVB', 'businessservices/evtbevb', 'blueSource'],
+  ['DSFD', 'DSFD/SCF', 'ddic/dsfd/sources', 'blueSource'],
 ] as const;
 export const RELATION_ROOT_TYPES = [...new Set(RELATION_OBJECTS.map(([type]) => type))];
 export const RELATION_NAME = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_$]+$/i;
@@ -42,7 +51,7 @@ function validName(name: string): string {
 export function relationObjectUri(type: string, name: string, group?: string): string {
   const spec = relationObjectSpec(type);
   if (!spec) throw new RelationProtocolError('unsupported relation object type.');
-  const encoded = encodeURIComponent(validName(name)[spec[0] === 'VIEW' ? 'toUpperCase' : 'toLowerCase']());
+  const encoded = encodeURIComponent(validName(name)[spec[3] === 'mainObject' ? 'toUpperCase' : 'toLowerCase']());
   const base = `/sap/bc/adt/${spec[2]}`;
   if (spec[0] === 'FUNC') {
     if (!group) throw new RelationProtocolError('function module requires a resolved function group.');

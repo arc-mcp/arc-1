@@ -21,9 +21,9 @@ export function addLiveRelationsDefinition(
   const properties = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
   (properties.action!.enum as string[]).push('relations');
   tool.description =
-    'Experimental relations: dependency maps or package neighborhoods, then selected reads. For consumer locations use references: objectType="CLAS/OC" only for class-only requests; otherwise omit the filter. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. ' +
+    'Experimental relations: dependency maps or package neighborhoods, then selected reads. For consumer locations use references: objectType="CLAS/OC" for class-only requests; otherwise omit. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. ' +
     tool.description;
-  properties.type!.description += ` relations: ${RELATION_ROOT_TYPES.join('/')} (ENHO: BAdI only). TTYP=table type; MSAG=message class.`;
+  properties.type!.description += ` relations: ${RELATION_ROOT_TYPES.join('/')} (ENHO/XHB, ENHS/XSB only). TTYP=table type; MSAG=message class.`;
   properties.direction = {
     type: 'string',
     enum: ['incoming', 'outgoing'],
@@ -39,8 +39,7 @@ export function addLiveRelationsDefinition(
     type: 'array',
     maxItems: 8,
     items: { type: 'string', minLength: 1, maxLength: 120, pattern: '^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$' },
-    description: 'relations: exact packages to expand beyond root; others stay visible. Not an authorization filter.',
+    description: 'relations: expand exact packages beyond root; others visible. Not authorization.',
   };
-  properties.maxResults!.description +=
-    ' relations: node cap including root, integer 1–100 (default 50); may stop earlier.';
+  properties.maxResults!.description += ' relations: node cap incl. root, 1–100 (default 50); may stop earlier.';
 }

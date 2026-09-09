@@ -64,10 +64,35 @@ Zero edges are observations, never proof of absence or non-use.
 | DDLX | Two active annotations: 0 / 0 | Do not advertise ENV/WUL usefulness; investigate CDS context separately |
 | MSAG | `/BOBF/COM_GEN_MODEL`: 0 / 12; `/BOBF/COM_GEN_FRAME`: 0 / 10 | `messageClass`, MSAG/N; add after representative namespace samples; the initial Z objects were insufficient evidence |
 | DEVC | `ZSSI_SAMPLES`: context empty, no root | Unsupported native root; package listing/search remains the correct entry point |
+| TRAN | `ZABAPGIT`, `ZTOAD`: 1 / 0 each | TRAN/T, uppercase VIT mainObject; add with independent exact search; links to program, does not execute it |
+| SOBJ | `/BA1/B121`, `/BA1/B122`: 1 / 0 each | SOBJ/MO, VIT mainObject; add with exact search; maintenance-object/program metadata, not table contents |
+| SHLP | `ZSHLP01`: 2 / 0 | SHLP/DH, VIT mainObject; add with exact search; table and data-element dependencies |
+| SKTD | `ZARC1SKTDMO1FSEY21IL3`: 1 / 0 | SKTD/TYP, docu; add; link to documented DDLS, not its business rule; inactive sibling correctly rejected |
+| ENHS | `/AIF/ALERT`: 2 / 0 | ENHS/XSB, objectData; add this enhancement-spot subtype only; interface links; conflicting facets still fail |
+| ENQU | `/AIF/EFGOBJ`: 1 / 0 | ENQU/DL, lockobject; add; table link, no lock acquisition |
+| TYPE | `A4API`: 18 raw / 0 | TYPE/DG, abapTypeGroup; add; repeated native links deduplicate to three retained edges |
+| EVTB | `BUSINESSUSER_CREATED`, `BUSINESSUSER_DELETED`: 3 / 1 each | EVTB/EVB, blueSource; add; BDEF/entity/object-type and incoming documentation links; no event traffic claim |
+| DSFD | `CALENDAR_OPERATION`, `CALENDAR_SHIFT`: 0 / 2 each | DSFD/SCF, blueSource; add; implementation/documentation users, DSFI stays a boundary |
+| AUTH | `/AIF/BG_P`, `/AIF/BG_SP`: 2 / 0 each | Useful links, but auth metadata has no active-version proof; defer rather than weaken the root contract |
+| BSP | Search type rejected with HTTP 400 | No qualified ADT root; existing BSP/OData repository tools remain separate |
+| DESD | Search type rejected with HTTP 400 | Not qualified on 758; no assumption from a newer release's AFF support |
+| CSNM | Search type rejected with HTTP 400 | Not qualified on 758 |
+| EVTO | Search type rejected with HTTP 400 | Not qualified on 758 |
+| COTA | Search type rejected with HTTP 400 | Not qualified on 758 |
+| DTSC | No matches for Z* or unfiltered search | No representative evidence; defer |
+| DTDC | Two active definitions: 0 / 0 each | Identity possible but no useful links demonstrated; defer |
+| UIAD | Two namespaced VIT descriptors: 0 / 0 each | Identity possible but no useful links demonstrated; defer |
 
 Other unrelated repository types are not advertised. Discovery of a global endpoint does not
 grant universal per-type support. Namespaced synthetic unit coverage is not live namespace
 coverage for every family; actual `/BOBF/` DDIC objects are tested, with further samples recorded below.
+
+This covers the concrete repository families in ARC-1's current read registry plus closely related
+DDIC/enhancement families. Pseudo-read types such as SYSTEM, COMPONENTS, TABLE_CONTENTS, TABLE_QUERY,
+TEXT_ELEMENTS, VARIANTS, API_STATE, INACTIVE_OBJECTS and VERSIONS are queries or subresources, not
+separate repository graph roots. KTD/MESSAGES are existing aliases; FEATURE_TOGGLE/FTG2 is not a
+qualified TADIR identity. None warrants a fabricated graph type. No claim is made about every
+possible SAP TADIR type outside this inventory.
 
 ## Findings that changed the implementation
 

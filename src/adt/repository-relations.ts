@@ -200,11 +200,11 @@ export class NativeRelationProvider {
     if (name.length > 120 || !RELATION_NAME.test(name)) throw new RelationProtocolError('invalid root name.');
     let spec = relationObjectSpec(type);
     if (!spec) throw new RelationProtocolError('unsupported root type.');
-    // TABL has two physical paths; FUNC requires its parent group; VIT VIEW metadata
+    // TABL has two physical paths; FUNC requires its parent group; VIT metadata
     // can echo nonexistent names as active. Resolve these identities independently,
     // with the SAME deadline/attempt/byte budgets as the rest of the analysis.
     let uri: string;
-    if (['TABL', 'FUNC', 'VIEW'].includes(type)) {
+    if (type === 'TABL' || type === 'FUNC' || spec[3] === 'mainObject') {
       checkOperation(this.client.safety, OperationType.Read, 'ResolveRepositoryRelationRoot');
       const params = new URLSearchParams({
         operation: 'quickSearch',
