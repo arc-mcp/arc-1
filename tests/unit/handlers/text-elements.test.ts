@@ -47,15 +47,77 @@ describe('text elements routing and safety', () => {
     expect(String(calls()[0]?.[0])).toContain('/textelements/classes/%2FARC%2FCL_TEST/source/symbols');
   });
 
-  it.each(['selections', 'headings'])('rejects a class %s read before HTTP', async (include) => {
+  it.each(['selections', 'headings'])('returns the raw SAP response for an explicit class %s read', async (include) => {
+    const body =
+      include === 'selections'
+        ? ''
+        : 'listHeader=\r\n\r\ncolumnHeader_1=\r\ncolumnHeader_2=\r\ncolumnHeader_3=\r\ncolumnHeader_4=';
+    mockFetch.mockResolvedValue(mockResponse(200, body));
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
       type: 'TEXT_ELEMENTS',
       objectType: 'CLAS',
       name: 'ZCL_TEST',
       include,
     });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toBe(body);
+    expect(calls()).toHaveLength(1);
+    expect(String(calls()[0]?.[0])).toContain(`/textelements/classes/ZCL_TEST/source/${include}`);
+    expect(calls()[0]?.[1]?.headers).toMatchObject({ Accept: `application/vnd.sap.adt.textelements.${include}.v1` });
+  });
+
+  it.each(['selections', 'headings'] as const)(
+    'refuses class %s writes at both boundaries before HTTP',
+    async (textPart) => {
+      const client = createClient();
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+        textPart,
+        source: '',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Only symbols can be written for CLAS');
+      await expect(client.writeTextElementPart('CLAS', 'ZCL_TEST', textPart, '')).rejects.toThrow(
+        /Only symbols can be written for CLAS/,
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('adds an editing hint to multipart output without changing individual part reads', async () => {
+    const body = '@MaxLength:20\r\n001=Label  \r\n';
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        mockResponse(
+          200,
+          String(url).includes('/source/symbols')
+            ? body
+            : String(url).includes('/source/selections')
+              ? 'P_TEST=Label'
+              : '',
+        ),
+      ),
+    );
+    const client = createClient();
+    const whole = await client.getTextElements('ZTEST');
+    expect(whole).toContain(`=== symbols ===\n${body}`);
+    expect(whole).toContain('=== selections ===\nP_TEST=Label');
+    expect(whole).toContain('SAPRead include=<part>, then SAPWrite textPart=<part>');
+    expect(whole).toContain('without the === part === markers');
+    expect(await client.getTextElementPart('PROG', 'ZTEST', 'symbols')).toBe(body);
+  });
+
+  it('rejects uppercase textPart rather than advertising ineffective case normalization', async () => {
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'edit_text_symbols',
+      type: 'PROG',
+      name: 'ZTEST',
+      textPart: 'SYMBOLS',
+      source: '',
+    });
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('A class has no');
     expect(mockFetch).not.toHaveBeenCalled();
   });
 

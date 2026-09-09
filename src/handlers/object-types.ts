@@ -252,11 +252,6 @@ export function normalizeTypeArgsForValidation(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   const cleaned = stripLlmEmptyValues(args);
-  // A text-pool PUT replaces the selected part; an explicit empty string clears it.
-  // Preserve this only for that action. Null/omitted source remains a missing-source error.
-  if (toolName === 'SAPWrite' && cleaned.action === 'edit_text_symbols' && typeof args.source === 'string') {
-    cleaned.source = args.source;
-  }
   switch (toolName) {
     case 'SAPRead':
       return {
@@ -266,6 +261,10 @@ export function normalizeTypeArgsForValidation(
           cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
       };
     case 'SAPWrite': {
+      const action = String(cleaned.action ?? '');
+      // A text-pool PUT replaces the selected part; an explicit empty string clears it.
+      // Null/omitted source remains a missing-source error; other actions keep normal stripping.
+      if (action === 'edit_text_symbols' && typeof args.source === 'string') cleaned.source = args.source;
       // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
       const normType = cleaned.type === undefined ? undefined : normalizeWriteObjectType(String(cleaned.type ?? ''));
       // Drop an inapplicable `include`: it is only meaningful for a CLAS local-include
@@ -274,7 +273,6 @@ export function normalizeTypeArgsForValidation(
       // which validateSapWriteInput would otherwise hard-reject even though the requested
       // intent is valid. A garbage include VALUE on a real CLAS include path is still
       // rejected by the z.enum check downstream (issue #360).
-      const action = String(cleaned.action ?? '');
       const includeApplies =
         normType === 'CLAS' && (action === 'update' || action === 'edit_method' || action === 'edit_class_definition');
       if (!includeApplies) delete cleaned.include;

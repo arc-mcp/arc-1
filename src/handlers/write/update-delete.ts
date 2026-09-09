@@ -372,15 +372,13 @@ export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<
       `action edit_text_symbols requires type=${TEXT_ELEMENT_OBJECT_TYPES.join('/')} — got "${type}".`,
     );
   }
-  const requestedPart = (args.textPart as string | undefined)?.toLowerCase() ?? 'symbols';
+  const requestedPart = (args.textPart as string | undefined) ?? 'symbols';
   if (!TEXT_ELEMENT_PARTS.includes(requestedPart as TextElementPart)) {
     return errorResult(`Invalid textPart "${requestedPart}" — valid values: ${TEXT_ELEMENT_PARTS.join(', ')}.`);
   }
   const part = requestedPart as TextElementPart;
   if (type === 'CLAS' && part !== 'symbols') {
-    return errorResult(
-      `A class has no ${part} — only symbols. Selection texts and list headings belong to a PROG or FUGR.`,
-    );
+    return errorResult(`Only symbols can be written for CLAS; ${part} is read-only in ARC-1.`);
   }
   if (!hasSource) {
     return errorResult(`source is required for edit_text_symbols — the ${part} body, e.g. ${TEXT_PART_EXAMPLE[part]}.`);

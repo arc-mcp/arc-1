@@ -711,7 +711,7 @@ Verified live on a4h (S/4HANA 2023, kernel 7.58) end-to-end. The underlying `/ob
 Read and write an object's **text pool** via the ADT textelements service. Three subobjects, each
 with its own media type: `symbols` (the numbered `'Text'(001)` literals), `selections` (a report's
 selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`) and `headings` (list header and
-column headers). ARC-1 supports `symbols` for classes and all three parts for `PROG` and `FUGR`.
+column headers). Writes support `symbols` for classes and all three parts for `PROG` and `FUGR`.
 Selection texts require selection-screen fields in the program/function group source.
 
 ```
@@ -738,16 +738,18 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw
   parameter names.
-- **On-prem only, discovery-gated.** The service was verified on 757, 758 and 816 and is absent
+- **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent
   on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
 - **Reads:** `objectType` defaults to `PROG`; use `CLAS` or `FUGR` explicitly for those objects.
   Whole-pool reads label the non-empty raw bodies of supported parts. SAP may return empty-value
   heading placeholders. Individual reads preserve the raw body and use the requested part's media
-  type. A failed part fails the read; HTTP 406 can indicate a source parsing/consistency error.
-- **Class parts:** explicit class `selections`/`headings` requests are refused before HTTP;
-  whole-class reads fetch only `symbols`. SAP returns empty selection bodies and heading
-  placeholders on A4H/758, but rejects class selection writes.
+  type. Multipart output adds a reminder to read/write parts individually and omit the markers
+  from write source. A failed part fails the read; HTTP 406 can indicate a source parsing/consistency error.
+- **Class parts:** whole-class reads fetch only `symbols`. Explicit `include=selections` or
+  `include=headings` reads return SAP's raw response (empty selection bodies and heading
+  placeholders on the verified systems). Class writes remain restricted to `symbols`; attempts
+  to write `selections` or `headings` are refused before HTTP.
 
 Verified live end-to-end on A4H/758: class symbols, plus disposable `$TMP` program and function-group
 selection screens with symbols, selection texts and headings. Tests cover immediate read-back,

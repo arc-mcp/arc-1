@@ -452,7 +452,7 @@ export function getToolDefinitions(
               'For DDLS: use include="elements" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. ' +
               'For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path.' +
               // TEXT_ELEMENTS does not exist on BTP — keep the BTP surface byte-identical.
-              (btp ? '' : ' TEXT_ELEMENTS: symbols|selections|headings; omit for all supported parts.'),
+              (btp ? '' : ' TEXT_ELEMENTS: symbols|selections|headings; omit for pool (CLAS: symbols).'),
           },
           group: {
             type: 'string',

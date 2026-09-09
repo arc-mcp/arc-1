@@ -2274,7 +2274,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
         source: 'P_X=Label\n',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? '').toContain('A class has no selections');
+      expect(result.content[0]?.text ?? '').toContain('Only symbols can be written for CLAS');
     });
 
     it('rejects edit_text_symbols without source', async () => {

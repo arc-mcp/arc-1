@@ -4,8 +4,8 @@
  * Three collections (`classes`, `programs`, `functiongroups`), each exposing three subobjects that
  * carry their own media type: `symbols` (the numbered `'Text'(001)` literals), `selections` (a
  * report's selection texts — the labels beside PARAMETERS/SELECT-OPTIONS) and `headings` (list
- * header and column headers). ARC-1 exposes only `symbols` for classes: their selection texts
- * are not writable and their headings are empty placeholders on the verified systems.
+ * header and column headers). Class writes support only `symbols`. Explicit class reads return
+ * SAP's raw response, including empty selections and heading placeholders on verified systems.
  *
  * Split out of client.ts, which keeps only the thin delegating methods.
  */
@@ -48,13 +48,6 @@ export function isTextElementObjectType(type: string): type is TextElementObject
 function assertPart(objectType: TextElementObjectType, part: TextElementPart): void {
   if (!isTextElementObjectType(objectType) || !Object.hasOwn(TEXT_ELEMENT_CT, part)) {
     throw new AdtApiError('Invalid text element object type or part.', 400, '/sap/bc/adt/textelements');
-  }
-  if (objectType === 'CLAS' && part !== 'symbols') {
-    throw new AdtApiError(
-      `A class has no ${part} — only symbols are supported.`,
-      400,
-      '/sap/bc/adt/textelements/classes',
-    );
   }
 }
 
@@ -126,6 +119,11 @@ export async function readTextElements(
     const body = await readTextElementPart(http, safety, objectType, name, part);
     if (body.trim()) chunks.push(`=== ${part} ===\n${body}`);
   }
+  if (chunks.length > 1) {
+    chunks.push(
+      'Edit parts individually: SAPRead include=<part>, then SAPWrite textPart=<part>. Send only the raw part body in source, without the === part === markers.',
+    );
+  }
   return chunks.length > 0 ? chunks.join('\n\n') : `No text elements maintained for ${objectType} ${name}.`;
 }
 
@@ -143,6 +141,13 @@ export async function writeTextElementPart(
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'WriteTextElements');
   assertPart(objectType, part);
+  if (objectType === 'CLAS' && part !== 'symbols') {
+    throw new AdtApiError(
+      `Only symbols can be written for CLAS; ${part} is read-only in ARC-1.`,
+      400,
+      '/sap/bc/adt/textelements/classes',
+    );
+  }
   assertService(http, objectType);
   const obj = textElementsObject(objectType, name);
   await http.withStatefulSession(async (session) => {

@@ -92,7 +92,7 @@ TEST_SAP_URL=https://a4h.marianzeis.de TEST_SAP_CLIENT=001 TEST_SAP_INSECURE=fal
 Credentials are loaded by the normal test helper; do not put credentials into commands or evidence.
 The integration tests skip before creation if discovery does not advertise the service.
 
-## Final review and results
+## Initial final review and results (`a4374257`)
 
 The final branch includes current `main` (`31800373`) through a normal merge. Its KTD changes
 merged without conflicts. The combined descriptions initially exceeded the schema ratchet;
@@ -133,3 +133,31 @@ The new writes were tested live on A4H/758. The PR author's 757 checks were read
 new cross-release write evidence from this run. Transport-number forwarding is unit-tested;
 these live objects use `$TMP`, so no transportable write or transport release was performed.
 The BTP tool snapshots must remain byte-identical, and no new BTP support is claimed.
+
+## Follow-up: Claude review, 2026-09-09
+
+The supplied external review approves the PR and proposes six non-blocking refinements. Its
+claims are review input, not evidence of tests run in this workspace. The following decisions
+were checked against the implementation and the earlier live findings:
+
+| Finding | Decision |
+|---|---|
+| 1. Description trimming | Retain deliberately. Purpose and type enumeration already exist in `SAPWRITE_LEAD` and the `type` schema. Repeating them would exceed the combined budget; no capability information was removed. |
+| 2. Empty-source repair location | Move into `case 'SAPWrite'` alongside the existing action-specific normalization. The previous `toolName === 'SAPWrite'` guard already prevented effects on other tools; this is a behavior-preserving organization change. |
+| 3. Class read refusal | Apply. Explicit class `selections`/`headings` reads now return the raw SAP response. Default class whole-pool reads remain symbols-only. Write guards remain at both handler and client boundaries, with accurate wording that these class parts cannot be written through ARC-1. This supersedes the earlier review's explicit-read refusal. |
+| 4. Multipart editing guidance | Add one trailer to results containing multiple non-empty parts: read/write individual parts and omit the markers from source. Individual part bodies stay byte-identical; single-part/empty output stays unchanged. |
+| 5. Release evidence | Scope user documentation to verified 758/816 and the tested 750 absence. Keep the contributor's 757 read evidence explicitly attributed in this dossier; it is not a new local verification. |
+| 6. Redundant checks / lowercasing | Retain the cheap in-memory safety/discovery checks protecting separately callable methods. Remove the ineffective write-handler lowercasing; the public `textPart` enum still requires lowercase, with a rejection test. |
+
+Live confirmation in this workspace on A4H/758: `CL_GUI_ALV_GRID` selections returned HTTP 200
+with an empty body; headings returned HTTP 200 with an 81-character placeholder body. Each
+`SAPRead` result matched its direct SAP response exactly. A disposable class lifecycle also
+checks these readable parts and the unchanged client-side write refusal.
+
+Follow-up verification: **5,855 unit tests passed** across 196 files, including 28 dedicated
+text-elements tests. The three selected live lifecycle tests passed (seven unrelated CRUD tests
+excluded by the filter). The rebuilt stdio MCP smoke passed, including the now-readable class
+headings, the unchanged write refusal, and verified deletion of its temporary class. Typecheck,
+lint, build, policy validation, size/schema checks, strict documentation build and diff whitespace
+checks passed. The BTP fixtures remain unchanged. No additional blocking finding remains from
+the supplied review; the cross-release/transportable-write limits above still apply.
