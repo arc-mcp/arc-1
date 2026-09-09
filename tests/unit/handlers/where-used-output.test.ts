@@ -28,6 +28,26 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+it.each([undefined, '', '   ', 'CLAS/OC', ' CLAS/OC '])(
+  'only suggests adding an object-type filter when none was applied (%j)',
+  async (objectType) => {
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+      action: 'references',
+      type: 'CLAS',
+      name: 'ZCL_ROOT',
+      objectType,
+      maxResults: 1,
+    });
+    const output = JSON.parse(result.content[0]!.text!);
+    expect(output).toMatchObject({ total: 2, shown: 1, truncated: true });
+    expect(output.references).toHaveLength(1);
+    expect(output.references[0]).toMatchObject({ name: 'ZCL_CONSUMER', type: 'CLAS/OC' });
+    expect(output.hint).toContain('max 1000');
+    expect(output.hint.includes('Object-type filter already applied')).toBe(!!objectType?.trim());
+    expect(output.hint.includes('Narrow with objectType')).toBe(!objectType?.trim());
+  },
+);
+
 describe.each(callers)('%s %s output', (tool, action, countKey, resultsKey) => {
   it.each(['policy', 'transport'])(
     'preserves optional enrichment %s warnings without losing native entries',

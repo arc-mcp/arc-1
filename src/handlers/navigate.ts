@@ -67,8 +67,11 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
           ...(truncated
             ? {
                 hint:
-                  `Showing ${results.length} of ${total} references. Narrow with objectType ` +
-                  `(e.g. "CLAS/OC") or raise maxResults (max 1000).`,
+                  `Showing ${results.length} of ${total} references. ` +
+                  (objectType?.trim()
+                    ? 'Object-type filter already applied. Raise '
+                    : 'Narrow with objectType (e.g. "CLAS/OC") or raise ') +
+                  'maxResults (max 1000) only if more entries are needed.',
               }
             : {}),
           references: results,

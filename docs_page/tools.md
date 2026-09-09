@@ -120,6 +120,13 @@ Use `SAPRead` for implementation behavior, an exact reference, one method body, 
 | `VARIANTS` | Program variants |
 | `INACTIVE_OBJECTS` | List all objects pending activation for the calling user (no `name` needed). Returns rich metadata: `name`, `type`, `uri`, `description?`, `user`, `deleted`, `transport`, `parentTransport`. |
 
+For a global class declaration (`INTERFACES`, `INHERITING FROM`) or its implementation,
+read MAIN: omit `include` or use `include="main"`. `definitions` and `implementations`
+contain **local helper classes**, not the global declaration and implementation split apart.
+An empty local include does not mean the global class has no declarations. For a targeted
+check use, for example, `SAPRead(type="CLAS", name="ZCL_ORDER", grep="INTERFACES|INHERITING")`.
+This checks source declarations; it does not enumerate subclasses or prove runtime calls.
+
 **Structured format (CLAS only):**
 
 When `format="structured"` is used with CLAS type, the response is a JSON object with:

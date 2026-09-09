@@ -38,6 +38,15 @@ describe('Tool Definitions', () => {
     }
   });
 
+  it.each(['onprem', 'btp'] as const)('distinguishes global MAIN from local class includes on %s', (systemType) => {
+    const read = getToolDefinitions({ ...DEFAULT_CONFIG, systemType }).find((tool) => tool.name === 'SAPRead')!;
+    expect(read.description).toContain('Global class declaration + implementation: MAIN');
+    expect(read.description).toContain('local helper-class includes, not the global declaration');
+    const props = (read.inputSchema as Record<string, any>).properties;
+    expect(props.include.description).toContain('omit include or use main');
+    expect(props.include.description).toContain('Explicit include wins');
+  });
+
   it('registers all implemented tools', () => {
     const tools = getToolDefinitions({
       ...DEFAULT_CONFIG,

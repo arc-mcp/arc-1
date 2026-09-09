@@ -918,6 +918,24 @@ describe('SAPRead handler', () => {
       expect(result.isError).toBeUndefined();
     });
 
+    it.each(['CLASS lcl_helper DEFINITION.\nENDCLASS.', ''])(
+      'keeps an explicit local definitions include separate from MAIN (%j)',
+      async (localSource) => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, localSource, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_FOO',
+          include: 'definitions',
+        });
+        expect(result.isError).toBeUndefined();
+        if (localSource) expect(result.content[0]?.text).toContain(localSource);
+        const urls = mockFetch.mock.calls.map(([url]) => String(url));
+        expect(urls.some((url) => url.includes('/includes/definitions'))).toBe(true);
+        expect(urls.some((url) => url.includes('/source/main'))).toBe(false);
+      },
+    );
+
     it('lists BSP apps when no name provided', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(

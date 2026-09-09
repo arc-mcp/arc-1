@@ -22,6 +22,15 @@ Offline mocked data-access failures are included in regression tests.
 6. Run the full unit suite, typecheck, lint, policy, build, file/schema budgets and docs build.
    Keep only defensible improvements and record residual failures in the research report.
 
+## Final follow-up acceptance
+
+- Clarify global MAIN versus local helper-class includes without changing source routing.
+- Make truncated-reference hints acknowledge an already-applied object-type filter.
+- Repeat the original ten model comparisons against pinned main, add executed follow-up
+  reads, and check two installed Ollama models. Record task failures, not just completion.
+- Recheck live read-only behavior, cold/warm controls, all local gates and the complete
+  unpushed diff. Push the existing PR only after review; do not merge.
+
 ## Deliberately excluded
 
 No model-specific routing, automatic type guessing, silent format coercion, graph ranking,
