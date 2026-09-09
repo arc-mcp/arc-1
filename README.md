@@ -60,7 +60,7 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **12 intent-based tools** instead of 200+ individual tools — keeps tool selection simple, with the schema payload guarded by CI budgets and a hyperfocused 1-tool mode for tight context windows
 - **Method-level read/edit** — read or update a single class method, not the whole source (up to 20x fewer tokens)
-- **Context-first understanding** — `SAPContext(action="deps")` is the first call for "what does this object do?": it returns the object's Knowledge Transfer Document (`SKTD`/`KTD`) when available plus public API contracts of dependencies in one call (7-30x compression)
+- **Focused source and dependency context** — use targeted `SAPRead` for implementation behavior; `SAPContext(action="deps", type=..., name=...)` adds the object's Knowledge Transfer Document (`SKTD`/`KTD`) when available plus bounded, source-derived dependency contracts
 
 ### Built-in Object Caching
 
@@ -97,7 +97,7 @@ The 12 tools are designed from real LLM interaction feedback:
 | **SAPQuery** | Execute ABAP SQL with table-not-found suggestions and automatic chunking for simple long literal `IN (...)` lists |
 | **SAPTransport** | CTS transport management (list/get/create/release/delete/reassign/release-recursive), transport layer/target lookup, package transport requirement checks, and reverse lookup history (`action="history"`) |
 | **SAPGit** | Git-based ABAP workflows across gCTS and abapGit (list/clone/pull/push/commit/branch/unlink) with backend auto-selection and safety gating (`--allow-git-writes`) |
-| **SAPContext** | Context-first object understanding (`action="deps"`): prepends the object's KTD when available and returns compressed dependency contracts. Also supports reverse dependency lookup (`action="usages"`) and CDS upstream/downstream impact analysis (`action="impact"` for DDLS) |
+| **SAPContext** | Dependency APIs (`action="deps"`): optional KTD plus bounded source-derived contracts, not a complete relationship inventory. Also supports live where-used (`action="usages"`), CDS impact (`action="impact"`), and TABL includes/appends (`action="structure"`) |
 | **SAPLint** | Local ABAP lint (system/release-aware presets, auto-fix, pre-write validation) + ADT PrettyPrint (server-side formatting) |
 | **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, CDS test-case suggestions, active/inactive object-state comparison, generic ADT quickfix proposals/application deltas, gateway/system message diagnostics, short dumps, profiler traces, and the on-prem authorization trace (`SUAUTHVALTRC`, data-preview gated) |
 | **SAPManage** | Feature probing, cache statistics, package lifecycle/change-package operations, and FLP catalog/group/tile helpers |

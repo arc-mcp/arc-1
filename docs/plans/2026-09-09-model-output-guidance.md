@@ -2,6 +2,8 @@
 
 ## Objective
 
+Status: implemented and evaluated. See the [results and residual limitations](../research/2026-09-09-model-output-evaluation.md).
+
 Improve the answers that models produce with ARC-1 without adding a deployment, model dependency,
 database, new tool, or broader SAP permission. Live relations remains experimental and default-off.
 The change is built on PR #769; comparison main is `c55adcb8`, and the original branch is `360b63e3`.

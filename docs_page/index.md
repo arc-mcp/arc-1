@@ -171,7 +171,11 @@ All MCP clients that support stdio work out of the box — just point them at `n
 
 ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot Studio.
 
-For object understanding, start with `SAPContext(action="deps")` instead of raw `SAPRead`: ARC-1 prepends the object's Knowledge Transfer Document (`SKTD`, also accepted as `KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that when you need exact source, a method body, grep output, drafts, revisions, or metadata.
+Choose evidence for the question: targeted `SAPRead` for implementation behavior or a known reference;
+`SAPContext(action="deps", type=..., name=...)` for dependency API contracts and the object's KTD
+when available. Neither contracts nor a metadata relationship prove runtime behavior. Experimental
+[live relations](live-relations.md) can map class/interface neighborhoods when explicitly enabled;
+there is no mandatory context-first read or additional database requirement.
 
 Full reference: **[tools.md](tools.md)**
 
