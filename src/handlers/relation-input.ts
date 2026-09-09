@@ -12,7 +12,12 @@ export const LiveRelationsInput = z
     action: z.literal('relations'),
     type: z.preprocess(
       (value) => (typeof value === 'string' ? (relationObjectSpec(value)?.[0] ?? value) : value),
-      z.enum(RELATION_ROOT_TYPES),
+      z.enum(RELATION_ROOT_TYPES, {
+        error: (issue) =>
+          issue.input === undefined
+            ? 'relations requires type (the root object type). Retry with type and name; objectType is only a references result filter, not the relations root type.'
+            : undefined,
+      }),
     ),
     name: z.string().min(1).max(120).regex(RELATION_NAME),
     direction: z.enum(['incoming', 'outgoing']).default('outgoing'),

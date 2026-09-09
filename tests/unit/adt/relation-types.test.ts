@@ -72,6 +72,18 @@ function setup(row: string[], name = '/ACME/ROOT') {
 }
 
 describe('qualified relation identities', () => {
+  it('explains a missing root type without guessing from the references filter', () => {
+    const result = LiveRelationsInput.safeParse({ action: 'relations', name: 'ZROOT', objectType: 'CLAS' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: ['type'], message: expect.stringContaining('Retry with type and name') }),
+          expect.objectContaining({ code: 'unrecognized_keys', keys: ['objectType'] }),
+        ]),
+      );
+    }
+  });
   it('has evidence for every advertised type and no unqualified roots', () => {
     expect(RELATION_OBJECTS).toEqual(observed);
     expect(RELATION_ROOT_TYPES).toEqual([...new Set(observed.map(([type]) => type))]);
