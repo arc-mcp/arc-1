@@ -836,10 +836,13 @@ navigation parameters (`uri`, `objectType`, `line`, `column`, `source`) are reje
 
 **References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
 
-Returns a paged envelope — `{total, shown, truncated, hint?, references}` — because where-used is
+Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, warning?, references}` — because where-used is
 unbounded: `CL_ABAP_TYPEDESCR` has 6,644 references (~968K tokens, several times a context window).
-**`total` is the number of matches, not the page length**, so a capped page still reports the real
-blast radius.
+**`total` counts matching reference entries before paging, not distinct consumer objects or runtime
+calls.** The `countMeaning` field states this explicitly. Tree/container rows and multiple references
+to one object can appear; even an untruncated or empty page is not proof of system-wide completeness.
+If optional interface-implementer enrichment fails, native results are retained with a `warning`.
+An absent warning does not prove that enrichment ran or that the result is complete.
 
 Paging and `objectType` filtering are both client-side, and deliberately so: SAP's
 `usageReferences` endpoint declares only `{?uri}` and ignores every limit or filter we can send
@@ -847,6 +850,11 @@ Paging and `objectType` filtering are both client-side, and deliberately so: SAP
 crosses the wire — this bounds what reaches the model, not what SAP computes.
 
 **Hierarchy action:** Returns the class inheritance chain via `SEOMETAREL`: superclass (or null), implemented interfaces, and direct subclasses. Requires `name` parameter (class name). It needs either table preview (`SAP_ALLOW_DATA_PREVIEW=true` + `data` scope) or freestyle SQL (`SAP_ALLOW_FREE_SQL=true` + `sql` scope). ARC-1 uses SQL when available and falls back to named table preview.
+
+Without changing permissions, inspect the global class declaration using
+`SAPRead(type="CLAS", name="ZCL_ORDER", grep="INTERFACES|INHERITING")`. Omit `include` to read MAIN:
+`include="definitions"` is for local helper classes, not the global declaration. This fallback does
+not enumerate subclasses or prove a complete inheritance/implementation list.
 
 **Examples:**
 ```
@@ -1340,7 +1348,8 @@ SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
     "name": "ZIF_ORDER",
     "uri": "/sap/bc/adt/oo/interfaces/zif_order"
   },
-  "usageCount": 3,
+  "usageCount": 2,
+  "countMeaning": "Reference entries, not distinct objects or runtime calls; not a complete inventory.",
   "shown": 2,
   "truncated": false,
   "usages": [
@@ -1353,11 +1362,14 @@ SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
 ```
 
 `usages` is paged (`maxResults`, default 100, max 1000) because a where-used lookup on a common
-object is unbounded — `CL_ABAP_TYPEDESCR` returns 6,644 references. **`usageCount` is the total
-match count, not the page length** (`shown` is the page): a capped page must never under-report the
-blast radius of a change. `SAPNavigate(action="references")` returns the same paged envelope under
-`references`, and `SAPContext(action="impact")` caps each downstream bucket while `summary` keeps
-the complete counts.
+object is unbounded — `CL_ABAP_TYPEDESCR` returns 6,644 references. **`usageCount` counts reference
+entries before paging, not distinct objects or runtime calls** (`shown` is the page length).
+`countMeaning` explains the count; an optional `warning` reports failed interface-implementer
+enrichment without discarding native results. No warning is not proof of complete coverage.
+For class-only results use `SAPNavigate(action="references", objectType="CLAS/OC", type=..., name=...)`;
+`SAPContext.usages` has no result-type filter. Navigation uses `total` and `references` instead of
+`usageCount` and `usages`. `SAPContext(action="impact")` caps each downstream bucket while `summary`
+keeps the unsliced bucket counts, not a guarantee of every system dependency.
 
 If exact name resolution finds multiple object types, ARC-1 returns a bounded candidate list and asks for `type` instead of guessing.
 

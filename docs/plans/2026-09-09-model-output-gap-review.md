@@ -1,10 +1,14 @@
 # Model-output gap review
 
+Status: implemented and verified. Findings and retained limitations are in the
+[gap-review report](../research/2026-09-09-model-output-gap-review.md).
+
 ## Scope and acceptance
 
 Follow-up to the [first model evaluation](../research/2026-09-09-model-output-evaluation.md).
 Keep retrieval, safety gates, dependencies and input schemas unchanged. Improve only observed
-misleading output or guidance. No SAP writes, SQL/table-data tests, deployment or merge.
+misleading output or guidance. No live SAP writes, SQL/table-data tests, deployment or merge.
+Offline mocked data-access failures are included in regression tests.
 
 1. Preserve optional interface-enrichment warnings in both where-used response envelopes.
    A rejected enrichment must not remove native evidence or expose raw diagnostics.
