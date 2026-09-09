@@ -60,7 +60,7 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **12 intent-based tools** instead of 200+ individual tools — keeps tool selection simple, with the schema payload guarded by CI budgets and a hyperfocused 1-tool mode for tight context windows
 - **Method-level read/edit** — read or update a single class method, not the whole source (up to 20x fewer tokens)
-- **Focused source and dependency context** — use targeted `SAPRead` for exact implementation behavior. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available Knowledge Transfer Documents (`SKTD`/`KTD`) and dependency contracts, then compare requirements with source. Missing documentation leaves intent unverified.
+- **Focused source and dependency context** — use targeted `SAPRead` for exact implementation behavior. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available Knowledge Transfer Documents (`SKTD`/`KTD`) and dependency contracts, then compare requirements with source. Without documented requirements, intent is unverified.
 
 ### Built-in Object Caching
 

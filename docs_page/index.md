@@ -174,7 +174,7 @@ ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot
 Choose evidence for the question: targeted `SAPRead` for exact behavior or a known reference.
 For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)`
 for available KTD and dependency contracts, then compare documented requirements with source.
-Missing KTD leaves intent unverified. Neither contracts nor metadata relationships prove runtime behavior.
+Without documented requirements, intent is unverified. Neither contracts nor metadata relationships prove runtime behavior.
 Experimental [live relations](live-relations.md) map class/interface neighborhoods when enabled;
 no additional database is required.
 

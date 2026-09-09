@@ -54,8 +54,9 @@ describe('Tool Definitions', () => {
       const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
       expect(read).toContain('Exact behavior: targeted source');
       expect(read).toContain('Business purpose, reviews or test design: SAPContext then source');
-      expect(context).toContain('Compare documented requirements with actual behavior; report mismatches');
-      expect(context).toContain('Missing KTD means intent is unverified, not inferred from code');
+      expect(context).toContain('Compare requirements with actual behavior');
+      expect(context).toContain('Base specification tests on requirements, so bugs fail them');
+      expect(context).toContain('If requirements are unavailable, intent is unverified; do not infer it from code');
       expect(context).toContain('not SAP-native relationships or a complete inventory');
     }
   });

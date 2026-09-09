@@ -119,8 +119,10 @@ describe('MCP Server', () => {
     async (toolMode) => {
       const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
       expect(instructions).toContain('Business purpose, reviews or test design: SAPContext first, then SAPRead');
-      expect(instructions).toContain('Separate documented requirements from actual behavior; report mismatches');
-      expect(instructions).toContain('Missing KTD: intent unverified');
+      expect(instructions).toContain(
+        'Separate requirements from behavior; specification tests should fail for mismatches',
+      );
+      expect(instructions).toContain('Without documented requirements, intent is unverified');
       expect(instructions).toContain('Exact behavior or a known reference: targeted SAPRead');
     },
   );

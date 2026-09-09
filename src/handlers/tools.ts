@@ -111,7 +111,7 @@ const SAPREAD_DESC_BTP =
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_DESC_ONPREM =
-  'For business purpose, reviews or test design, start with context then SAPRead. Compare documented requirements with actual behavior; report mismatches. Missing KTD means intent is unverified, not inferred from code.\n\n' +
+  'For business purpose, reviews or test design: context then SAPRead. Compare requirements with actual behavior. Base specification tests on requirements, so bugs fail them. If requirements are unavailable, intent is unverified; do not infer it from code.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
@@ -123,7 +123,7 @@ const SAPCONTEXT_DESC_ONPREM =
   'Non-CDS reverse-lookup: SAPNavigate(references); CDS: impact. Full detail: docs_page SAPContext.';
 
 const SAPCONTEXT_DESC_BTP =
-  'For business purpose, reviews or test design, start with context then SAPRead. Compare documented requirements with actual behavior; report mismatches. Missing KTD means intent is unverified, not inferred from code.\n\n' +
+  'For business purpose, reviews or test design: context then SAPRead. Compare requirements with actual behavior. Base specification tests on requirements, so bugs fail them. If requirements are unavailable, intent is unverified; do not infer it from code.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +

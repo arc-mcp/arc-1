@@ -39,7 +39,7 @@ boundary, and target-selection behavior.
 
 Read any SAP ABAP object.
 
-Use `SAPRead` for exact implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available KTD and dependency contracts, then verify source. Compare documented requirements with actual behavior and report mismatches; do not treat existing code as the specification. Missing KTD leaves intent unverified.
+Use `SAPRead` for exact implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available KTD and dependency contracts, then verify source. Compare documented requirements with actual behavior and report mismatches; do not treat existing code as the specification. If KTD is missing, requirements supplied by the user or other documentation still count; without requirements, intent is unverified.
 
 **Parameters:**
 
@@ -1145,7 +1145,7 @@ SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add ord
 
 Get dependency API contracts, CDS impact, DDIC structure, or live where-used evidence.
 
-`action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed, source-derived dependency contracts. For business purpose, reviews or test design, start here, then verify implementation with `SAPRead`. Separate documented requirements from observed behavior: a boundary test should expose a mismatch, not preserve it as intended behavior. Missing KTD leaves intent unverified. For exact behavior or a known reference, targeted `SAPRead` alone may suffice; contracts are not implementation.
+`action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed, source-derived dependency contracts. For business purpose, reviews or test design, start here, then verify implementation with `SAPRead`. Base specification-test expectations on requirements: a boundary test should fail on a mismatch, not preserve a bug as intended behavior. Requirements may also come from the user or other documentation; without them, intent is unverified. For exact behavior or a known reference, targeted `SAPRead` alone may suffice; contracts are not implementation.
 
 SAPContext has four modes controlled by the `action` parameter:
 
