@@ -352,7 +352,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
 /** Write one subobject of an object's textpool via the ADT textelements service (CLAS, PROG, FUGR).
  *  `textPart` selects it: symbols (`@MaxLength:NN` then `NNN=text`), selections (a report's
  *  selection texts, `P_PARAM=Label` per line), headings (`listHeader=`, `columnHeader_N=`).
- *  A class only has symbols — SAP answers 406 for the other two. Immediately active, no SAPActivate.
+ *  ARC-1 supports only symbols for classes. Immediately active, no SAPActivate.
  *  The client method locks the textelements object, PUTs, and unlocks; the package gate here checks
  *  the owning object's real package (ctx.objectUrl). Not an ABAP-source write → no lint. */
 export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<ToolResult> {

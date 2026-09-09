@@ -92,7 +92,39 @@ TEST_SAP_URL=https://a4h.marianzeis.de TEST_SAP_CLIENT=001 TEST_SAP_INSECURE=fal
 Credentials are loaded by the normal test helper; do not put credentials into commands or evidence.
 The integration tests skip before creation if discovery does not advertise the service.
 
-Full repository gates and final review results are recorded below after the final implementation.
+## Final review and results
+
+The final branch includes current `main` (`31800373`) through a normal merge. Its KTD changes
+merged without conflicts. The combined descriptions initially exceeded the schema ratchet;
+removing repeated on-prem type lists and shortening duplicated text-element guidance restored
+the existing budgets. No budget was raised. BTP snapshots are byte-identical to current `main`.
+
+| Gate | Final result |
+|---|---|
+| `npm test` | **5,851 passed**, 196 test files; no failures |
+| Dedicated text-elements unit suite | **24 passed**, including denial and non-class failure cleanup |
+| `npm run typecheck` | Passed for source, scripts and tests |
+| `npm run lint` | Passed |
+| `npm run build` | Passed |
+| `npm run validate:policy` | Passed |
+| `npm run check:sizes` | Passed; full-git schema 17,779 estimated tokens, descriptions 12,542 |
+| `npm run docs:build` | Passed (`mkdocs build --strict`) |
+| Selected live lifecycle tests | **3 passed**: PROG, FUGR and existing CLAS compatibility test |
+| Final compiled stdio MCP smoke | Passed: advertised schema, class write, old/new read APIs, whole-pool output, clear, refusal and verified deletion |
+| `git diff --check` | Passed |
+
+Seven unrelated CRUD tests were excluded by the live command's `-t` filter; the three selected
+tests all executed. The compiled smoke connected the SDK client to `dist/index.js`, created a
+unique `$TMP` class, then verified deletion. It exercised actual MCP JSON-RPC rather than only
+calling the handler in-process. Local scripts and credential-bearing configuration are not committed.
+
+Final review traced normalization → schema → handler → owning-object package lookup → typed
+text-elements endpoint → stateful lock/PUT/unlock. The deny-action and write ceilings remain
+effective, caller-supplied packages cannot substitute for the real package, and no text-pool
+content is cached by these read routes. All parts use their own media type for both PUT headers;
+caller transport overrides the lock transport, and failed PUTs release the lock. The original
+class wrapper methods and `SAPRead(type=CLAS, include=text_symbols)` remain available. No remaining
+blocking defect was found within this scope; the limits below remain explicit.
 
 ## Verification limits
 

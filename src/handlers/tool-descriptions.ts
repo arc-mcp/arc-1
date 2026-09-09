@@ -15,7 +15,8 @@ const SAPWRITE_LEAD =
   'checking or formatting source without saving it is SAPLint or SAPDiagnose. ';
 
 const SAPWRITE_BODY_ONPREM =
-  'Create or update ABAP source code and DDIC metadata. Handles lock/modify/unlock automatically. Supports PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, TTYP (rowType + optional rowTypeKind), DOMA, DTEL, MSAG. ' +
+  // The purpose and supported types already live in SAPWRITE_LEAD and the type property.
+  'Handles lock/modify/unlock automatically. TTYP needs rowType + optional rowTypeKind. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). For delete, only type and name are required (plus optional transport). ' +
   'Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. ' +
   'TABL create: "TABL"/"TABL/DT" → transparent table (16-char name); "TABL/DS" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. ' +
@@ -28,7 +29,7 @@ const SAPWRITE_BODY_ONPREM =
   'edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: create+activate multiple objects in dependency order via the "objects" array (RAP stacks TABL→DDLS→DCLS→BDEF→SRVD). scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +
   'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. ' +
-  'edit_text_symbols (CLAS/PROG/FUGR): write one textpool part via "textPart" — symbols (default; "@MaxLength:NN\\n{NNN}={text}\\n"), selections (a report\'s selection texts, "P_PARAM=Label" per line) or headings. Classes have symbols only; immediately active, no SAPActivate. Needs the ADT textelements service (absent on NW 7.50). ' +
+  'edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one "@MaxLength:NN\\nNNN=text" per symbol, blank-line separated), selections ("PARAM=Label") or headings. CLAS: symbols only. Immediately active; needs ADT textelements. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
 const SAPWRITE_BODY_BTP =
