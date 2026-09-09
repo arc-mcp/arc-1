@@ -1037,7 +1037,7 @@ export function getToolDefinitions(
         objectType: {
           type: 'string',
           description:
-            'references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. A bare prefix ("CLAS") matches every subtype.',
+            'references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. Omit for all consumer types. A bare prefix ("CLAS") matches every subtype.',
         },
         maxResults: {
           type: 'number',

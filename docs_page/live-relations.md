@@ -84,9 +84,11 @@ Use `relations` for a bounded class/interface dependency map or package neighbor
 selected sources to explain important connections. Do not also fetch every dependency contract
 by default. DDIC nodes can appear in the map but are unexpanded boundaries, not supported roots.
 
-For a class-only consumer list, or a tiny incoming sample, prefer
+For a class-only consumer list, including tiny samples, prefer
 `SAPNavigate(action="references", type="INTF", name="<interface>", objectType="CLAS/OC", maxResults=5)`.
-Here `type` identifies the root; `objectType` filters the results. For a known pair or behavior,
+Here `type` identifies the root; `objectType` filters the results. Omit `objectType`
+when all consumer types matter (for example, an unused-code investigation).
+For a known pair or behavior,
 targeted `SAPRead(grep=...)` or `SAPRead(method=...)` may answer the question in one call.
 Where-used rows are not unique consumers or runtime call counts. Neither a small sample nor
 source-derived `SAPContext` contracts prove complete system coverage or safe deletion.

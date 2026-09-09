@@ -70,6 +70,13 @@ describe('Tool Definitions', () => {
     expect(names).toContain('SAPManage');
   });
 
+  it.each(['onprem', 'btp'] as const)('keeps general consumer lookup unfiltered in %s guidance', (systemType) => {
+    const nav = getToolDefinitions({ ...DEFAULT_CONFIG, systemType }).find((tool) => tool.name === 'SAPNavigate')!;
+    const props = (nav.inputSchema as Record<string, any>).properties;
+    expect(props.objectType.description).toContain('Omit for all consumer types');
+    expect(nav.inputSchema.required).not.toContain('objectType');
+  });
+
   it('hides write tools in read-only mode but keeps SAPManage read actions', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: false });
     const names = tools.map((t) => t.name);

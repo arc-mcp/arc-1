@@ -1,6 +1,6 @@
 {
   "name": "SAPNavigate",
-  "description": "Experimental relations: outgoing CLAS/INTF dependency maps or package neighborhoods, then selected source reads. For incoming class consumers, especially tiny samples, use references with objectType=\"CLAS/OC\", not relations. Live active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. Navigate code (BTP ABAP Environment): definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC); type+name replaces uri. Scope = released SAP + custom Z/Y. hierarchy queries SEOMETAREL: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets.",
+  "description": "Experimental relations: outgoing CLAS/INTF dependency maps or package neighborhoods, then selected source reads. For incoming consumers use references: objectType=\"CLAS/OC\" only for class-only requests; otherwise omit the filter. Live active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. Navigate code (BTP ABAP Environment): definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC); type+name replaces uri. Scope = released SAP + custom Z/Y. hierarchy queries SEOMETAREL: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -29,7 +29,7 @@
       },
       "objectType": {
         "type": "string",
-        "description": "references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. A bare prefix (\"CLAS\") matches every subtype."
+        "description": "references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. Omit for all consumer types. A bare prefix (\"CLAS\") matches every subtype."
       },
       "maxResults": {
         "type": "number",

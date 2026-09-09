@@ -81,7 +81,8 @@ describe('opt-in live relations integration', () => {
     const enabled = getToolDefinitions(config, undefined, undefined, { discoveryMap: discovery });
     expect(navigation(getToolDefinitions(config))).toEqual(navigation(enabled));
     expect(navigation(enabled).description).toMatch(/^Experimental relations: outgoing/);
-    expect(navigation(enabled).description).toContain('tiny samples, use references with objectType="CLAS/OC"');
+    expect(navigation(enabled).description).toContain('objectType="CLAS/OC" only for class-only requests');
+    expect(navigation(enabled).description).toContain('otherwise omit the filter');
     expect(
       navigation(
         getToolDefinitions(config, undefined, undefined, {
