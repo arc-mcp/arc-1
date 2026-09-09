@@ -1801,16 +1801,21 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).toContain('REPORT');
     });
 
-    it('returns error when format="structured" used with non-CLAS type', async () => {
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'PROG',
-        name: 'ZTEST',
-        format: 'structured',
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('structured');
-      expect(result.content[0]?.text).toContain('CLAS');
-    });
+    it.each(['PROG', 'TABL', 'TTYP', 'DTEL', 'DOMA', 'INTF'])(
+      'offers a retry without fetching %s for unsupported structured format',
+      async (type) => {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type,
+          name: 'ZTEST',
+          format: 'structured',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('structured');
+        expect(result.content[0]?.text).toContain('CLAS');
+        expect(result.content[0]?.text).toContain('Retry this read with format="text" or omit format');
+        expect(mockFetch).not.toHaveBeenCalled();
+      },
+    );
 
     it('reads class with format="structured" and method param — format takes precedence', async () => {
       const classMetadataXml = `<?xml version="1.0" encoding="utf-8"?>

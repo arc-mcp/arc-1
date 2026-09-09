@@ -1,6 +1,6 @@
 {
   "name": "SAPNavigate",
-  "description": "Navigate code (BTP ABAP Environment): definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC). type+name auto-normalized. Scope = released SAP + custom Z/Y. For CDS (DDLS), prefer SAPContext(action=\"impact\") — the same where-used pre-classified into RAP buckets. Experimental relations: live active CLAS/INTF metadata; type+name required, no uri/source. Coverage unknown; not a complete call graph.",
+  "description": "Experimental relations: start here for CLAS/INTF dependency maps or package neighborhoods, then read selected sources. For class-only consumers or tiny incoming samples prefer references with objectType=\"CLAS/OC\". Live active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. Navigate code (BTP ABAP Environment): definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC). type+name auto-normalized. Scope = released SAP + custom Z/Y. For CDS (DDLS), prefer SAPContext(action=\"impact\") — the same where-used pre-classified into RAP buckets.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -21,7 +21,7 @@
       },
       "type": {
         "type": "string",
-        "description": "Object type (PROG, CLAS, INTF, FUNC, etc.) — alternative to uri for references."
+        "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS/INTF roots only; DDIC nodes remain unexpanded boundaries."
       },
       "name": {
         "type": "string",
@@ -29,7 +29,7 @@
       },
       "objectType": {
         "type": "string",
-        "description": "references: keep only results of this ADT type, slash format (CLAS/OC, PROG/P, FUGR/FF). A bare prefix (\"CLAS\") matches every subtype."
+        "description": "references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. A bare prefix (\"CLAS\") matches every subtype."
       },
       "maxResults": {
         "type": "number",

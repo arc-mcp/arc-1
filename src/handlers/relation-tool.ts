@@ -20,8 +20,10 @@ export function addLiveRelationsDefinition(
     return;
   const properties = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
   (properties.action!.enum as string[]).push('relations');
-  tool.description +=
-    ' Experimental relations: live active CLAS/INTF metadata; type+name required, no uri/source. Coverage unknown; not a complete call graph.';
+  tool.description =
+    'Experimental relations: start here for CLAS/INTF dependency maps or package neighborhoods, then read selected sources. For class-only consumers or tiny incoming samples prefer references with objectType="CLAS/OC". Live active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. ' +
+    tool.description;
+  properties.type!.description += ' relations: CLAS/INTF roots only; DDIC nodes remain unexpanded boundaries.';
   properties.direction = {
     type: 'string',
     enum: ['incoming', 'outgoing'],

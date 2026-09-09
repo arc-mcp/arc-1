@@ -30,7 +30,7 @@ describe('check-tool-schema-budget', () => {
       expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 72_000);
       expect(enabled.budget.maxPerToolWireBytes).toBe(23_000);
       expect(navigation.description).toContain('Coverage unknown');
-      expect(navigation.description).toContain('not a complete call graph');
+      expect(navigation.description).toContain('not source-call/runtime proof');
       expect(navigation.description).toContain('no uri/source');
 
       // A regression confined to an opt-in description must trip CI too.

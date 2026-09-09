@@ -287,7 +287,9 @@ export async function handleSAPRead(
 
   // Structured format is only supported for CLAS type
   if (args.format === 'structured' && type !== 'CLAS') {
-    return errorResult('The "structured" format is only supported for CLAS type. Other types return text format.');
+    return errorResult(
+      'For ordinary reads, format="structured" is CLAS only. Retry this read with format="text" or omit format; DDIC metadata is returned by its normal reader.',
+    );
   }
 
   switch (type) {

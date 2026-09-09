@@ -968,7 +968,9 @@ describe('SAPManage / SAPContext handlers', () => {
         name: 'ZCL_TEST',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('type');
+      expect(result.content[0]?.text).toContain('requires type and name, even with supplied source');
+      expect(result.content[0]?.text).toContain('use SAPSearch if unknown');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('returns error when name is missing', async () => {

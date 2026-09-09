@@ -39,7 +39,7 @@ boundary, and target-selection behavior.
 
 Read any SAP ABAP object.
 
-Use `SAPRead` when you need exact raw source, one method body, grep output, inactive drafts, revision history, or metadata. For object understanding questions such as "what does this class do?" or pre-change/spec/review orientation, start with `SAPContext(action="deps")`; it includes the object's KTD when available and avoids reading full source before the model knows what matters.
+Use `SAPRead` for implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. Add `SAPContext(action="deps", type=..., name=...)` when you need dependency API contracts or the object's KTD. Contracts alone do not explain what an implementation does; there is no mandatory context-first round trip.
 
 **Parameters:**
 
@@ -1128,22 +1128,24 @@ SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add ord
 
 ## SAPContext
 
-Get context-first understanding for an ABAP object, or look up reverse dependencies (who uses a given object).
+Get dependency API contracts, CDS impact, DDIC structure, or live where-used evidence.
 
-Use this before `SAPRead` when the user asks what an existing class, interface, program, function module, or CDS view does, or before drafting a spec/change/review. `action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that only when you need exact source, method-level detail, grep output, drafts, revisions, or metadata.
+`action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed, source-derived dependency contracts. For behavior or a known reference, start with targeted `SAPRead`. Use dependency contracts when their APIs matter to the question; do not fetch every kind of context by default.
 
-SAPContext has three modes controlled by the `action` parameter:
+SAPContext has four modes controlled by the `action` parameter:
 
 **Quick decision rule:**
+
 - *"What breaks if I change `<CDS view>`?"* / *"Who consumes `I_*`?"* / *"Impact of `<DDLS>`"* → **`action="impact"`**
-- *"What does `<object>` do?"* / *"Explain `<object>`"* / spec, review, or dependency context before editing → **`action="deps"`** (default)
+- *"Which dependency APIs do I need for this change?"* → **`action="deps"`** (default)
 - *"Who calls `<object>`?"* → **`action="usages"`** (live SAP where-used)
+- *"Which includes/appends extend this table?"* → **`action="structure"`**
 
 > **Do not** hand-roll CDS impact analysis by querying `DDDDLSRC`, `ACMDCLSRC`, `DDLXSRC_SRC`, or `SRVDSRC_SRC` via `SAPQuery`. Those text-scans produce substring-match noise and package group nodes. `action="impact"` uses SAP's where-used index and returns deduplicated, RAP-classified results.
 
 ### action="deps" (default) — Dependency context
 
-Returns the target object's KTD first when available, followed by only the public API contracts (method signatures, interface definitions, type declarations) of all objects that the target depends on — NOT the full source code. Typical compression: 7-30x fewer tokens.
+Returns the target object's KTD first when available, followed by public API contracts (method signatures, interface definitions, type declarations) for a bounded selection of source-derived dependencies. It is not a complete SAP-native relationship inventory or proof of runtime calls. Token savings depend on the source and selected contracts.
 
 **What gets extracted per dependency:**
 - **Classes:** `CLASS DEFINITION` with `PUBLIC SECTION` only. `PROTECTED`, `PRIVATE` sections and `CLASS IMPLEMENTATION` are stripped.
@@ -1159,8 +1161,8 @@ Returns the target object's KTD first when available, followed by only the publi
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | No | `"deps"` (default), `"usages"`, `"impact"`, or `"structure"` |
-| `type` | string | Yes (for deps/structure), optional for impact/usages | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
-| `name` | string | Yes | Object name (e.g., `ZCL_ORDER`) |
+| `type` | string | Yes for deps/structure, even with source; optional for impact/usages | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
+| `name` | string | Yes, even with source | Object name (e.g., `ZCL_ORDER`) |
 | `source` | string | No | Provide source directly instead of fetching from SAP |
 | `includeKtd` | boolean | No | Only for `action="deps"`. Defaults to `true`; prepends the object's KTD (`SKTD`/`KTD`) when one exists. Set `false` to skip the KTD lookup. Ignored when `source` is supplied. |
 | `group` | string | No | Required for `FUNC` type. The function group name. |
@@ -1189,6 +1191,7 @@ SAPContext(action="structure", type="TABL", name="BAPIRET2")
 Business intent and object notes from the KTD.
 
 * === Dependency context for ZCL_ORDER (3 deps resolved) ===
+* Source-derived dependency contracts, not a SAP-native relationship inventory or runtime evidence.
 
 * --- ZIF_ORDER (intf, 4 methods) ---
 INTERFACE zif_order PUBLIC.
@@ -1203,8 +1206,15 @@ CLASS zcl_item DEFINITION PUBLIC.
     ...
 ENDCLASS.
 
-* Stats: 5 deps found, 3 resolved, 0 failed, 25 lines
+* Coverage is not complete: source-derived, filtered and depth/count-limited; deeper unexpanded work is not counted.
+* Stats: 5 root candidates after filtering; 2 root candidates not fetched; across explored levels: 3 resolved, 0 failed.
 ```
+
+Root candidates and recursive attempts have different scopes: do not subtract the all-level
+resolved/failed totals from the root total. "Not fetched" counts unattempted root names only;
+deeper unexpanded work is unknown. A failed dependency read does not establish that the name is
+absent as another SAP object type. Resolve its type with `SAPSearch` before retrying a different
+reader. For ordinary DDIC reads, omit `format` or use `"text"`; `"structured"` is CLAS-only.
 
 If the object has no KTD or the backend returns 404/410 for the KTD document, ARC-1 silently omits the KTD section and still returns the dependency context. Other KTD read errors are surfaced normally.
 

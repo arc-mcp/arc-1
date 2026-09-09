@@ -599,15 +599,16 @@ describe('Tool Definitions', () => {
       expect(sapContext.description).toMatch(/who consumes/i);
     });
 
-    it('SAPContext description steers object-understanding questions away from raw SAPRead', () => {
+    it('distinguishes source behavior from dependency contracts without a mandatory context-first read', () => {
       const tools = getToolDefinitions(DEFAULT_CONFIG);
       const sapContext = tools.find((t) => t.name === 'SAPContext')!;
       const sapRead = tools.find((t) => t.name === 'SAPRead')!;
 
-      expect(sapContext.description).toMatch(/what does <object> do/i);
+      expect(sapContext.description).toContain('source (not SAP-native relationships or a complete inventory)');
       expect(sapContext.description).toMatch(/KTD/i);
-      expect(sapContext.description).toMatch(/Use SAPRead after SAPContext/i);
-      expect(sapRead.description).toMatch(/prefer SAPContext first/i);
+      expect(sapContext.description).toContain('use targeted SAPRead');
+      expect(sapRead.description).toContain('use targeted source first');
+      expect(sapRead.description).not.toContain('prefer SAPContext first');
     });
 
     it('SAPContext action description steers LLMs away from SAPQuery-against-DDDDLSRC', () => {

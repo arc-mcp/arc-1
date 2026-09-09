@@ -86,7 +86,7 @@ export async function compressContext(
 
   await resolveDepthLevel(client, deps, maxDeps, effectiveDepth, seen, allContracts, abaplintVersion, cachingLayer);
 
-  return formatResult(objectName, objectType, deps.length, allContracts, deps.length);
+  return formatResult(objectName, objectType, deps, allContracts);
 }
 
 /**
@@ -285,9 +285,8 @@ async function fetchSource(
 function formatResult(
   objectName: string,
   objectType: string,
-  depsFound: number,
+  rootDependencies: Dependency[],
   contracts: Contract[],
-  _totalFiltered: number,
 ): ContextResult {
   const successful = contracts.filter((c) => c.success);
   const failed = contracts.filter((c) => !c.success);
@@ -296,7 +295,7 @@ function formatResult(
   lines.push(
     `* === Dependency context for ${objectName} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) ===`,
   );
-  lines.push('');
+  lines.push('* Source-derived dependency contracts, not a SAP-native relationship inventory or runtime evidence.', '');
 
   for (const contract of successful) {
     const typeLabel = contract.type.toLowerCase();
@@ -307,28 +306,39 @@ function formatResult(
   }
 
   if (failed.length > 0) {
-    lines.push('* --- Failed dependencies ---');
+    lines.push('* --- Failed dependencies (attempted source reads; not proof of absence as another SAP type) ---');
     for (const f of failed) {
       lines.push(`* ${f.name}: ${f.error}`);
     }
     lines.push('');
   }
 
-  const totalLines = lines.length;
-  lines.push(
-    `* Stats: ${depsFound} deps found, ${successful.length} resolved, ${failed.length} failed, ${totalLines} lines`,
-  );
-
   return {
     objectName,
     objectType,
-    depsFound,
-    depsResolved: successful.length,
-    depsFiltered: depsFound - contracts.length,
-    depsFailed: failed.length,
-    totalLines,
-    output: lines.join('\n'),
+    ...appendContextStats(lines, rootDependencies, contracts),
   };
+}
+
+/** Root candidates and recursive attempts have different scopes; never subtract their totals. */
+function appendContextStats(
+  lines: string[],
+  rootDependencies: readonly { name: string }[],
+  attempts: readonly { name: string; success: boolean }[],
+) {
+  const attemptedNames = new Set(attempts.map((entry) => entry.name.toUpperCase()));
+  const depsFound = rootDependencies.length;
+  const depsFiltered = rootDependencies.filter((entry) => !attemptedNames.has(entry.name.toUpperCase())).length;
+  const depsResolved = attempts.filter((entry) => entry.success).length;
+  const depsFailed = attempts.length - depsResolved;
+  lines.push(
+    '* Coverage is not complete: source-derived, filtered and depth/count-limited; deeper unexpanded work is not counted.',
+  );
+  lines.push(
+    `* Stats: ${depsFound} root candidates after filtering; ${depsFiltered} root candidates not fetched; across explored levels: ${depsResolved} resolved, ${depsFailed} failed.`,
+  );
+  const output = lines.join('\n');
+  return { depsFound, depsFiltered, depsResolved, depsFailed, totalLines: output.split('\n').length, output };
 }
 
 // ─── CDS Context Compression ───────────────────────────────────────
@@ -373,7 +383,7 @@ export async function compressCdsContext(
 
   await resolveCdsDepthLevel(client, deps, maxDeps, effectiveDepth, seen, allResolved, cachingLayer);
 
-  return formatCdsResult(objectName, deps.length, allResolved);
+  return formatCdsResult(objectName, deps, allResolved);
 }
 
 /**
@@ -465,7 +475,11 @@ async function fetchCdsDependency(
 /**
  * Format CDS context result with prologue.
  */
-function formatCdsResult(objectName: string, depsFound: number, resolved: CdsResolvedDep[]): ContextResult {
+function formatCdsResult(
+  objectName: string,
+  rootDependencies: CdsDependency[],
+  resolved: CdsResolvedDep[],
+): ContextResult {
   const successful = resolved.filter((r) => r.success);
   const failed = resolved.filter((r) => !r.success);
 
@@ -473,7 +487,7 @@ function formatCdsResult(objectName: string, depsFound: number, resolved: CdsRes
   lines.push(
     `* === CDS dependency context for ${objectName} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) ===`,
   );
-  lines.push('');
+  lines.push('* Source-derived CDS dependencies, not a SAP-native relationship inventory or runtime evidence.', '');
 
   for (const r of successful) {
     lines.push(`* --- ${r.name} (${r.resolvedType}, ${r.kind}) ---`);
@@ -482,26 +496,16 @@ function formatCdsResult(objectName: string, depsFound: number, resolved: CdsRes
   }
 
   if (failed.length > 0) {
-    lines.push('* --- Failed dependencies ---');
+    lines.push('* --- Failed dependencies (attempted source reads; not proof of absence as another SAP type) ---');
     for (const f of failed) {
       lines.push(`* ${f.name}: ${f.error}`);
     }
     lines.push('');
   }
 
-  const totalLines = lines.length;
-  lines.push(
-    `* Stats: ${depsFound} deps found, ${successful.length} resolved, ${failed.length} failed, ${totalLines} lines`,
-  );
-
   return {
     objectName,
     objectType: 'DDLS',
-    depsFound,
-    depsResolved: successful.length,
-    depsFiltered: depsFound - resolved.length,
-    depsFailed: failed.length,
-    totalLines,
-    output: lines.join('\n'),
+    ...appendContextStats(lines, rootDependencies, resolved),
   };
 }

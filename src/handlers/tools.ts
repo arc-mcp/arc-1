@@ -95,14 +95,14 @@ function isBtpMode(config: ServerConfig): boolean {
 }
 
 const SAPREAD_DESC_ONPREM =
-  'Read SAP ABAP objects — exact raw source, a method body, grep output, inactive drafts, revision history, or metadata. For "what does this object do?", explanations, spec work, reviews, or pre-change orientation, prefer SAPContext first (intent-level context before raw source). ' +
+  'Read SAP ABAP objects — source, method bodies, grep, drafts, history or metadata. For implementation behavior or a known reference, use targeted source first; dependency contracts alone do not explain implementation. ' +
   'Types: PROG, CLAS, INTF, FUNC, FUGR (expand_includes=true for all include sources), INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (covers both transparent tables AND DDIC structures — no separate STRU type), TTYP, VIEW, DOMA, DTEL, TRAN, TABLE_CONTENTS (single-column filter), TABLE_QUERY (multi-column WHERE via the freestyle endpoint; gated by allowDataPreview; CDS views need SAP_BASIS 752+), DEVC, SOBJ (BOR — method param reads one method), SYSTEM, COMPONENTS, MSAG, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/VERSION_SOURCE are on-prem only. ' +
   'CLAS: to save tokens, prefer method="*" (all signatures), method="NAME" (one body, ~95% fewer tokens than the full class), or grep over reading the full source. Omit include for the full source, or include=definitions|implementations|macros|testclasses for a local section. Full per-type detail: docs_page SAPRead. ' +
   'Optional grep: case-insensitive regex returning only matching source lines (+context, line numbers); for CLAS, matches are annotated with the owning class/method. ' +
   'Optional version parameter (default "active"): "inactive" reads the user\'s draft, "auto" the developer view. Active reads note when an inactive draft exists.';
 
 const SAPREAD_DESC_BTP =
-  'Read SAP ABAP objects (BTP ABAP Environment) — exact raw source, a method body, grep output, inactive drafts, or metadata. For "what does this object do?", explanations, spec work, reviews, or pre-change orientation, prefer SAPContext first (intent-level context before raw source). ' +
+  'Read SAP ABAP objects (BTP ABAP Environment) — source, method bodies, grep, drafts or metadata. For implementation behavior or a known reference, use targeted source first; dependency contracts alone do not explain implementation. ' +
   'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list). PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
   'CLAS: to save tokens, prefer method="*" (all signatures), method="NAME" (one body, ~95% fewer tokens than the full class), or grep over reading the full source. Omit include for the full source, or include=definitions|implementations|macros|testclasses for a local section. Full per-type detail: docs_page SAPRead. ' +
   'Optional grep: case-insensitive regex returning only matching source lines (+context, line numbers); for CLAS, matches are annotated with the owning class/method. ' +
@@ -111,26 +111,26 @@ const SAPREAD_DESC_BTP =
 // ─── SAPContext Types ───────────────────────────────────────────────
 
 const SAPCONTEXT_DESC_ONPREM =
-  'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes — use instead of SAPRead when the user asks what an object does. Returns intent first (the object KTD when available) then compressed dependency contracts. Use SAPRead after SAPContext for exact source/method bodies/grep/drafts.\n\n' +
+  'Inspect dependency API contracts, live where-used and CDS/DDIC structure before changes. For implementation behavior or an exact reference, use targeted SAPRead; contracts are not the target implementation.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
-  '- "What does <object> do?" / "Explain" / "deps before editing" → action="deps" (default).\n' +
+  '- "Dependency contracts / KTD" → action="deps" (default); type+name required. No package expansion filter.\n' +
   '- "Find all callers of <object>" → action="usages" (live SAP where-used lookup).\n\n' +
   'impact (CDS blast-radius): upstream AST deps + downstream where-used, classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints. Use this instead of text-scanning DDDDLSRC/ACMDCLSRC with SAPQuery (it filters the noise). Optional includeIndirect, siblingCheck, siblingMaxCandidates.\n' +
-  'deps (default): target KTD + the public API contracts of its dependencies (not full source) — one compact response vs N SAPRead calls (7-30x fewer tokens); SAP standard objects filtered out. For CDS, includes dependency DDL/field catalogs for cl_cds_test_environment.\n' +
+  'deps: target KTD when available + selected dependency contracts, derived from source (not SAP-native relationships or a complete inventory). Counts distinguish root candidates from recursive attempts. Standard helper names are filtered. For CDS, includes dependency DDL/field catalogs for cl_cds_test_environment.\n' +
   'structure (TABL only): the DDIC include/append tree.\n\n' +
   'Use SAPContext BEFORE editing existing objects. For non-CDS reverse-lookup use SAPNavigate(references); for CDS prefer impact. Full detail: docs_page SAPContext.';
 
 const SAPCONTEXT_DESC_BTP =
-  'Primary tool for understanding ABAP/CDS objects before specs, reviews, explanations, or changes (BTP ABAP Environment) — use instead of SAPRead when the user asks what an object does. Returns intent first (object KTD when available) then compressed dependency contracts.\n\n' +
+  'Inspect dependency API contracts, live where-used and CDS/DDIC structure before changes (BTP ABAP Environment). For implementation behavior or an exact reference, use targeted SAPRead; contracts are not the target implementation.\n\n' +
   "Decision rule — pick the action from the user's question:\n" +
   '- "What breaks if I change <CDS>?" / "Who consumes <I_*>?" / "Blast radius" → action="impact" (DDLS only).\n' +
   '- "Which includes/appends extend <TABL>?" → action="structure", type="TABL".\n' +
-  '- "What does <object> do?" / "Explain" / "deps before editing" → action="deps" (default).\n\n' +
+  '- "Dependency contracts / KTD" → action="deps" (default); type+name required. No package expansion filter.\n\n' +
   '- "Find all callers of <object>" → action="usages" (live SAP where-used lookup).\n\n' +
   'impact (CDS blast-radius): upstream AST deps + downstream where-used classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other) + sibling-consistency hints; filters the noise that text-scanning with SAPQuery produces. Optional includeIndirect, siblingCheck, siblingMaxCandidates.\n' +
-  'deps (default): target KTD + the public API contracts of its dependencies (not full source). On BTP, released SAP objects (CL_ABAP_*/IF_ABAP_*) and custom Z/Y are included.\n' +
+  'deps: target KTD when available + selected dependency contracts, derived from source (not SAP-native relationships or a complete inventory). Counts distinguish root candidates from recursive attempts. On BTP, CL_ABAP_*/IF_ABAP_* and custom Z/Y are included.\n' +
   'structure (TABL only): the DDIC include/append tree.\n\n' +
   'Use SAPContext BEFORE editing existing objects; SAPRead afterwards for exact source. Full detail: docs_page SAPContext.';
 
@@ -491,7 +491,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured'],
             description:
-              'Output format. For action="diff", "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default remains the human-readable patch. For ordinary reads, "text" (default) is raw source; "structured" (CLAS only) returns JSON metadata + EVERY class include — a superset of "text", so it always costs MORE (measured +10% to +1685%). Use only to split test from production code; otherwise method="*" / method="name" / grep=.',
+              'Ordinary reads: omit format or use "text", including DDIC metadata (TABL, TTYP, DTEL, DOMA) and INTF. "structured" is CLAS only and returns metadata + every include, so prefer method/grep for targeted reads. For action="diff", "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default is a patch.',
           },
           version: {
             type: 'string',
@@ -1030,13 +1030,14 @@ export function getToolDefinitions(
         },
         type: {
           type: 'string',
-          description: 'Object type (PROG, CLAS, INTF, FUNC, etc.) — alternative to uri for references.',
+          description:
+            'Root object type, paired with name instead of uri (e.g. type="INTF"). Not the result-type filter.',
         },
         name: { type: 'string', description: 'Object name — alternative to uri for references.' },
         objectType: {
           type: 'string',
           description:
-            'references: keep only results of this ADT type, slash format (CLAS/OC, PROG/P, FUGR/FF). A bare prefix ("CLAS") matches every subtype.',
+            'references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. A bare prefix ("CLAS") matches every subtype.',
         },
         maxResults: {
           type: 'number',
@@ -1359,7 +1360,7 @@ export function getToolDefinitions(
           description:
             'Action:\n' +
             '"impact" = CDS blast-radius analysis (DDLS only). USE THIS for any question like "what breaks if I change <view>", "who consumes <I_*>", "impact analysis on <CDS>", "downstream of <view>". Returns upstream AST dependencies + downstream where-used classified into RAP buckets (projectionViews, bdefs, serviceDefinitions, serviceBindings, accessControls, metadataExtensions, abapConsumers, documentation, tables, other), plus additive sibling-consistency diagnostics (consistencyHints + siblingExtensionAnalysis) when related DDLS siblings show asymmetric DDLX coverage. ALWAYS prefer over SAPQuery against DDDDLSRC/ACMDCLSRC/DDLXSRC_SRC/SRVDSRC_SRC (those text-scans produce noise this classifier filters out). Non-DDLS input returns a guardrail error.\n' +
-            '"deps" (default, can be omitted) = object understanding / forward dependency context — "what does <object> do?" or "what does <object> depend on?". Returns the object KTD when available plus public API contracts of dependencies.\n' +
+            '"deps" (default) = source-derived dependency contracts plus KTD when available. Requires type+name, even with source. Not a complete inventory; read source for behavior.\n' +
             '"usages" = live SAP where-used lookup. Provide "type" when known; without it, the name must resolve uniquely. Prefer "impact" for CDS.\n' +
             '"structure" = TABL includes/appends.',
         },
@@ -1367,7 +1368,7 @@ export function getToolDefinitions(
           type: 'string',
           enum: btp ? SAPCONTEXT_TYPES_BTP : SAPCONTEXT_TYPES_ONPREM,
           description:
-            'Object type. Optional for action="impact" (defaults to DDLS) or action="usages"; required otherwise.',
+            'Root type. deps requires type+name, even with source. Optional for action="impact" (defaults to DDLS) or usages (unique name lookup); structure requires TABL.',
         },
         name: {
           type: 'string',

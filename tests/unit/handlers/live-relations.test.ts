@@ -74,10 +74,14 @@ describe('opt-in live relations integration', () => {
     expect(navigation(getConfiguredToolDefinitions(DEFAULT_CONFIG)).inputSchema).not.toHaveProperty(
       'properties.direction',
     );
+    expect(navigation(getToolDefinitions(DEFAULT_CONFIG)).description).not.toContain('package neighborhoods');
+    expect(JSON.stringify(navigation(getToolDefinitions(DEFAULT_CONFIG)))).not.toContain('DDIC nodes remain');
   });
   it('shows opt-in fields while capability is unknown; denied action adds nothing', () => {
     const enabled = getToolDefinitions(config, undefined, undefined, { discoveryMap: discovery });
     expect(navigation(getToolDefinitions(config))).toEqual(navigation(enabled));
+    expect(navigation(enabled).description).toMatch(/^Experimental relations: start here/);
+    expect(navigation(enabled).description).toContain('tiny incoming samples prefer references');
     expect(
       navigation(
         getToolDefinitions(config, undefined, undefined, {

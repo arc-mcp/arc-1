@@ -78,6 +78,19 @@ Stay within your current trial quota and do not provision storage for it.
 
 ## Calls and prompts
 
+### Choose the evidence you need
+
+Use `relations` for a bounded class/interface dependency map or package neighborhood, then read
+selected sources to explain important connections. Do not also fetch every dependency contract
+by default. DDIC nodes can appear in the map but are unexpanded boundaries, not supported roots.
+
+For a class-only consumer list, or a tiny incoming sample, prefer
+`SAPNavigate(action="references", type="INTF", name="<interface>", objectType="CLAS/OC", maxResults=5)`.
+Here `type` identifies the root; `objectType` filters the results. For a known pair or behavior,
+targeted `SAPRead(grep=...)` or `SAPRead(method=...)` may answer the question in one call.
+Where-used rows are not unique consumers or runtime call counts. Neither a small sample nor
+source-derived `SAPContext` contracts prove complete system coverage or safe deletion.
+
 ### Authentication and redirects
 
 Bounded analysis deliberately refuses HTTP redirects (including CSRF setup) so redirects cannot

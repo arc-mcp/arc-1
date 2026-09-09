@@ -157,7 +157,9 @@ export async function handleSAPContext(
   }
 
   if (!type || !name) {
-    return errorResult('Both "type" and "name" are required for SAPContext.');
+    return errorResult(
+      'SAPContext requires type and name, even with supplied source. Retry with the root object type; use SAPSearch if unknown.',
+    );
   }
 
   // Helper: get source with cache support
