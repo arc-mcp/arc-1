@@ -1,6 +1,6 @@
 {
   "name": "SAPNavigate",
-  "description": "Navigate code (BTP ABAP Environment): definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC). type+name auto-normalized. Scope = released SAP + custom Z/Y. For CDS (DDLS), prefer SAPContext(action=\"impact\") — the same where-used pre-classified into RAP buckets. Experimental relations: live active CLAS/INTF metadata network; requires type+name, no uri/source. Native coverage is unknown; not a complete call graph. No database or source collection.",
+  "description": "Navigate code (BTP ABAP Environment): definitions, references (where-used), completion, class hierarchy. references uses the scope-based Where-Used API (line numbers, snippets, package); optional objectType filters by ADT slash type (e.g. CLAS/OC). type+name auto-normalized. Scope = released SAP + custom Z/Y. For CDS (DDLS), prefer SAPContext(action=\"impact\") — the same where-used pre-classified into RAP buckets. Experimental relations: live active CLAS/INTF metadata; type+name required, no uri/source. Coverage unknown; not a complete call graph.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -53,13 +53,13 @@
           "incoming",
           "outgoing"
         ],
-        "description": "relations only: objects using the root, or objects it uses (default outgoing)."
+        "description": "relations only: incoming=users of root; outgoing=dependencies (default)."
       },
       "depth": {
         "type": "integer",
         "minimum": 1,
         "maximum": 3,
-        "description": "relations only: native expansion steps (default 1), not proven source-call hops."
+        "description": "relations only: native steps (default 1), not proven source-call hops."
       },
       "expandPackages": {
         "type": "array",
@@ -70,7 +70,7 @@
           "maxLength": 120,
           "pattern": "^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$"
         },
-        "description": "relations only: exact packages to expand beyond root. Other packages remain visible boundary nodes; not an access-control filter."
+        "description": "relations only: exact packages to expand beyond root; others remain visible boundaries. Not an access-control filter."
       }
     },
     "required": [

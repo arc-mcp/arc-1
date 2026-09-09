@@ -237,7 +237,8 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     },
   },
   // Measure the opt-in branch as well as the unchanged default surfaces above.
-  // Relations adds 900 wire bytes / 225 estimated schema tokens / 3 descriptions.
+  // Relations adds 820 wire bytes / 205 estimated schema tokens / 3 descriptions.
+  // Trimmed 80 bytes after combining with #768; preserve the 72 KB wall and 18k token ratchet.
   // Dedicated token ratchets allow that known feature cost; ALL wire walls stay unchanged.
   {
     name: 'standard-default-live-relations',

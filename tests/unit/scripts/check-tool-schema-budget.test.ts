@@ -27,6 +27,11 @@ describe('check-tool-schema-budget', () => {
       expect(measureToolDefinitions(enabled).schemaBytes).toBeGreaterThan(measureToolDefinitions(base).schemaBytes);
       expect(enabled.budget.maxTotalWireBytes).toBe(base.budget.maxTotalWireBytes);
       expect(enabled.budget.maxPerToolWireBytes).toBe(base.budget.maxPerToolWireBytes);
+      expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 72_000);
+      expect(enabled.budget.maxPerToolWireBytes).toBe(23_000);
+      expect(navigation.description).toContain('Coverage unknown');
+      expect(navigation.description).toContain('not a complete call graph');
+      expect(navigation.description).toContain('no uri/source');
 
       // A regression confined to an opt-in description must trip CI too.
       const inflated = structuredClone(definitions);

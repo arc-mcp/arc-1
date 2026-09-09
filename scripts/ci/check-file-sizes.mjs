@@ -37,7 +37,9 @@ const BUDGETS = {
   // +3 for SAPTransport action="diff" (action list + offset/limit properties).
   // +30 for the inline shortTexts object schema and retained refObjectDescription guidance. Keeping
   // this public schema beside SAPWrite avoids a one-constant module whose only purpose was the ratchet.
-  'src/handlers/tools.ts': 1760,
+  // +5 for the optional relations projection hook; its implementation stays in relation-tool.ts.
+  // Combined with #768: 1762 lines, retaining 3 lines of headroom. Wire ceilings stay unchanged.
+  'src/handlers/tools.ts': 1765,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -91,7 +93,10 @@ function countLines(path) {
 // NUL-delimited so paths with spaces/non-ASCII are never quoted-and-mangled (git's default
 // core.quotePath would wrap "tests/.../zäh.ts" in quotes, and a naive .endsWith('.ts') would
 // then silently skip it — voiding the ratchet for that file).
-const files = execSync('git ls-files -z src tests bin', { encoding: 'utf8' })
+// Include the maintained relation-validation entry points, not unrelated research scripts.
+const files = execSync('git ls-files -z src tests bin scripts/smoke-live-relations.ts scripts/bench-context-parsing.ts', {
+  encoding: 'utf8',
+})
   .split('\0')
   .filter((f) => f.endsWith('.ts') || f.endsWith('.mjs'));
 

@@ -124,3 +124,35 @@ the benchmark asserts identical output before comparing median CPU times:
 
 This measures parsing CPU, not SAP/network latency or process RSS. It supports retaining this
 small memo, not reintroducing cached whole-context payloads.
+
+## Follow-up: final review against newer main
+
+Claude's two merge-only ratchet failures were reproduced after combining `a77bc664` with main
+`c55adcb8` (#766 and #768), without textual conflicts. The preceding green CI run used an earlier
+merge ref; it could not establish compatibility with #768's later text-pool schema growth.
+
+| Gate | Combined tree before correction | Correction |
+|---|---|---|
+| `tools.ts` line ratchet | 1,762 / 1,760 | Budget 1,765: five-line opt-in integration hook, with a justification comment. Feature implementation stays outside this schema file. |
+| Full-write opt-in wire / estimated tokens | 72,017 / 72,000 bytes; 18,005 / 18,000 tokens | Trim 80 bytes of opt-in wording: 71,937 bytes / 17,985 tokens. **Neither ceiling increased.** |
+
+The shortened descriptions retain active CLAS/INTF metadata, required identity, no URI/source input,
+unknown/incomplete coverage, expansion-step semantics and package-filter non-authorization guidance.
+No database/source-collection setup guidance was removed from the operator documentation. Only the
+two opt-in snapshots were regenerated and reviewed; default fixtures remain identical to main.
+Tests now explicitly pin the existing wire ceilings alongside their opt-in/base parity checks.
+The current opt-in delta is **820 bytes / approximately 205 tokens**, replacing the earlier
+900-byte measurement above.
+
+Also addressed the maintenance gap: `npm run test:relations:smoke` and
+`npm run bench:context-parsing` are documented in the developer guide, covered by manifest tests,
+and their scripts are now included in Biome and the file-size ratchet. Script changes themselves
+are formatter-only. No dependency or runtime configuration change was needed.
+
+Local combined-tree verification: **6,121 unit tests / 205 files** passed, along with typecheck,
+lint, policy and size/schema validation, package executable smoke and strict documentation build.
+Both documented npm commands ran successfully. Read-only live smoke again passed default-off,
+enabled, missing-root and both namespaced `/BOBF/` cases (20 nodes / 40 edges in 11 sends; 20 nodes /
+19 edges in 2 sends). The benchmark again verified output equality. These are direct trial checks,
+not a claim of live BTP principal-propagation or cross-release coverage. The previously documented
+protocol/storage limitations remain unchanged.

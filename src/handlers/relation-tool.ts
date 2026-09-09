@@ -21,24 +21,24 @@ export function addLiveRelationsDefinition(
   const properties = tool.inputSchema.properties as Record<string, Record<string, unknown>>;
   (properties.action!.enum as string[]).push('relations');
   tool.description +=
-    ' Experimental relations: live active CLAS/INTF metadata network; requires type+name, no uri/source. Native coverage is unknown; not a complete call graph. No database or source collection.';
+    ' Experimental relations: live active CLAS/INTF metadata; type+name required, no uri/source. Coverage unknown; not a complete call graph.';
   properties.direction = {
     type: 'string',
     enum: ['incoming', 'outgoing'],
-    description: 'relations only: objects using the root, or objects it uses (default outgoing).',
+    description: 'relations only: incoming=users of root; outgoing=dependencies (default).',
   };
   properties.depth = {
     type: 'integer',
     minimum: 1,
     maximum: 3,
-    description: 'relations only: native expansion steps (default 1), not proven source-call hops.',
+    description: 'relations only: native steps (default 1), not proven source-call hops.',
   };
   properties.expandPackages = {
     type: 'array',
     maxItems: 8,
     items: { type: 'string', minLength: 1, maxLength: 120, pattern: '^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$' },
     description:
-      'relations only: exact packages to expand beyond root. Other packages remain visible boundary nodes; not an access-control filter.',
+      'relations only: exact packages to expand beyond root; others remain visible boundaries. Not an access-control filter.',
   };
   properties.maxResults!.description +=
     ' relations: node limit including root (default 50, integer 1–100); hard limits may stop earlier.';
