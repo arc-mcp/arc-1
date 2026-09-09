@@ -39,7 +39,7 @@ boundary, and target-selection behavior.
 
 Read any SAP ABAP object.
 
-Use `SAPRead` for implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. Add `SAPContext(action="deps", type=..., name=...)` when you need dependency API contracts or the object's KTD. Contracts alone do not explain what an implementation does; there is no mandatory context-first round trip.
+Use `SAPRead` for exact implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available KTD and dependency contracts, then verify source. Compare documented requirements with actual behavior and report mismatches; do not treat existing code as the specification. Missing KTD leaves intent unverified.
 
 **Parameters:**
 
@@ -1145,7 +1145,7 @@ SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add ord
 
 Get dependency API contracts, CDS impact, DDIC structure, or live where-used evidence.
 
-`action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed, source-derived dependency contracts. For behavior or a known reference, start with targeted `SAPRead`. Use dependency contracts when their APIs matter to the question; do not fetch every kind of context by default.
+`action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed, source-derived dependency contracts. For business purpose, reviews or test design, start here, then verify implementation with `SAPRead`. Separate documented requirements from observed behavior: a boundary test should expose a mismatch, not preserve it as intended behavior. Missing KTD leaves intent unverified. For exact behavior or a known reference, targeted `SAPRead` alone may suffice; contracts are not implementation.
 
 SAPContext has four modes controlled by the `action` parameter:
 

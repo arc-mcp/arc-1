@@ -171,11 +171,12 @@ All MCP clients that support stdio work out of the box — just point them at `n
 
 ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot Studio.
 
-Choose evidence for the question: targeted `SAPRead` for implementation behavior or a known reference;
-`SAPContext(action="deps", type=..., name=...)` for dependency API contracts and the object's KTD
-when available. Neither contracts nor a metadata relationship prove runtime behavior. Experimental
-[live relations](live-relations.md) can map class/interface neighborhoods when explicitly enabled;
-there is no mandatory context-first read or additional database requirement.
+Choose evidence for the question: targeted `SAPRead` for exact behavior or a known reference.
+For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)`
+for available KTD and dependency contracts, then compare documented requirements with source.
+Missing KTD leaves intent unverified. Neither contracts nor metadata relationships prove runtime behavior.
+Experimental [live relations](live-relations.md) map class/interface neighborhoods when enabled;
+no additional database is required.
 
 Full reference: **[tools.md](tools.md)**
 
@@ -231,7 +232,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [tools.md](tools.md) | Complete tool reference (12 intent-based tools) |
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
-| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
+| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency parsing reuse, and live reverse-dependency lookup |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |

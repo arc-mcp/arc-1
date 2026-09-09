@@ -47,6 +47,19 @@ describe('Tool Definitions', () => {
     expect(props.include.description).toContain('Explicit include wins');
   });
 
+  it.each(['onprem', 'btp'] as const)('separates requirements from implementation guidance on %s', (systemType) => {
+    for (const liveRelations of [false, true]) {
+      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType, liveRelations });
+      const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
+      const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
+      expect(read).toContain('Exact behavior: targeted source');
+      expect(read).toContain('Business purpose, reviews or test design: SAPContext then source');
+      expect(context).toContain('Compare documented requirements with actual behavior; report mismatches');
+      expect(context).toContain('Missing KTD means intent is unverified, not inferred from code');
+      expect(context).toContain('not SAP-native relationships or a complete inventory');
+    }
+  });
+
   it('registers all implemented tools', () => {
     const tools = getToolDefinitions({
       ...DEFAULT_CONFIG,
@@ -627,15 +640,15 @@ describe('Tool Definitions', () => {
       expect(sapContext.description).toMatch(/who consumes/i);
     });
 
-    it('distinguishes source behavior from dependency contracts without a mandatory context-first read', () => {
+    it('distinguishes exact behavior from requirements-sensitive context reads', () => {
       const tools = getToolDefinitions(DEFAULT_CONFIG);
       const sapContext = tools.find((t) => t.name === 'SAPContext')!;
       const sapRead = tools.find((t) => t.name === 'SAPRead')!;
 
       expect(sapContext.description).toContain('source (not SAP-native relationships or a complete inventory)');
       expect(sapContext.description).toMatch(/KTD/i);
-      expect(sapContext.description).toContain('use targeted SAPRead');
-      expect(sapRead.description).toContain('use targeted source first');
+      expect(sapContext.description).toContain('context then SAPRead');
+      expect(sapRead.description).toContain('Exact behavior: targeted source');
       expect(sapRead.description).not.toContain('prefer SAPContext first');
     });
 

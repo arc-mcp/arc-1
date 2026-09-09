@@ -60,13 +60,13 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **12 intent-based tools** instead of 200+ individual tools — keeps tool selection simple, with the schema payload guarded by CI budgets and a hyperfocused 1-tool mode for tight context windows
 - **Method-level read/edit** — read or update a single class method, not the whole source (up to 20x fewer tokens)
-- **Focused source and dependency context** — use targeted `SAPRead` for implementation behavior; `SAPContext(action="deps", type=..., name=...)` adds the object's Knowledge Transfer Document (`SKTD`/`KTD`) when available plus bounded, source-derived dependency contracts
+- **Focused source and dependency context** — use targeted `SAPRead` for exact implementation behavior. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available Knowledge Transfer Documents (`SKTD`/`KTD`) and dependency contracts, then compare requirements with source. Missing documentation leaves intent unverified.
 
 ### Built-in Object Caching
 
 - **Server-validated source caching** — every SAP object read is cached in memory (stdio) or SQLite (http-streamable). Repeated reads use `If-None-Match`/ETag conditional GET, so unchanged objects return from cache after SAP confirms `304 Not Modified`.
-- **Dependency graph caching** — `SAPContext` dep resolution keyed by source hash; unchanged objects skip all ADT calls on subsequent runs.
-- **KTD-aware context** — Knowledge Transfer Documents are cached as source entries and composed into `SAPContext(action="deps")` separately from the dependency graph, so cached dependency context can still include revalidated documentation.
+- **Dependency parsing reuse** — unchanged, authorized source can reuse parsed dependencies and contracts in memory. Aggregate dependency graphs are not cached; SAP authorization and source validation still apply.
+- **KTD-aware context** — Knowledge Transfer Documents use the source cache and are revalidated when composed into `SAPContext(action="deps")`.
 - **Live where-used** — `SAPContext(action="usages")` and CDS impact analysis query SAP's current repository index with the caller's identity; no startup repository scan is required.
 - **Active/inactive source views** — `SAPRead` accepts `version="active" | "inactive" | "auto"` and warns when the active source has an unactivated draft.
 - **Write invalidation** — when `SAPWrite` or `SAPActivate` mutates an object, both active and inactive source cache entries are dropped; next read revalidates or fetches fresh source.

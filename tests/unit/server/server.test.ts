@@ -114,6 +114,17 @@ describe('MCP Server', () => {
     expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
   });
 
+  it.each(['standard', 'hyperfocused'] as const)(
+    'scopes context-first guidance to intent-sensitive tasks in %s',
+    async (toolMode) => {
+      const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
+      expect(instructions).toContain('Business purpose, reviews or test design: SAPContext first, then SAPRead');
+      expect(instructions).toContain('Separate documented requirements from actual behavior; report mismatches');
+      expect(instructions).toContain('Missing KTD: intent unverified');
+      expect(instructions).toContain('Exact behavior or a known reference: targeted SAPRead');
+    },
+  );
+
   it('keeps the maximum system label below the client instruction ceiling', async () => {
     const instructions = (
       await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })
