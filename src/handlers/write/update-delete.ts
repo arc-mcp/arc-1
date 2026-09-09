@@ -16,7 +16,12 @@ import {
   safeUpdateSource,
   unlockObject,
 } from '../../adt/crud.js';
-import { type KtdShortText, rewriteKtdDocument } from '../../adt/ddic-xml.js';
+import {
+  formatKtdWriteReport,
+  type KtdShortText,
+  type KtdWriteReport,
+  rewriteKtdDocument,
+} from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import {
@@ -127,11 +132,21 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // 2026-09-02). SAPRead defaults to "active", so its node list can lag this one;
     // every refusal raised below lists the ids of the envelope it actually merged.
     const { source: currentEnvelope } = await client.getKtd(name);
+    const report: KtdWriteReport = { proseHeadings: [] };
     const body = rewriteKtdDocument(
       currentEnvelope,
       hasSource ? source : undefined,
       args.shortTexts as KtdShortText[] | undefined,
+      report,
     );
+    // Report both changed nodes and headings retained as prose so a new body exposes its routing.
+    const summary = formatKtdWriteReport(currentEnvelope, body, report, args.dryRun === true);
+    // A KTD update is a merge: only the addressed nodes change. dryRun runs the identical
+    // validation and reports the outcome without the PUT, so a 90-node edit can be checked
+    // before it touches SAP.
+    if (args.dryRun === true) {
+      return textResult(`Dry run for ${type} ${name} — nothing was written.\n${summary}`);
+    }
     await safeUpdateObject(
       client.http,
       client.safety,
@@ -142,7 +157,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       getCachedFeatures()?.abapRelease,
     );
     invalidateWrittenObject(type, name);
-    return textResult(`Successfully updated ${type} ${name}.`);
+    return textResult(`Successfully updated ${type} ${name}.\n${summary}`);
   }
 
   if (isMetadataWriteType(type)) {

@@ -6,7 +6,7 @@
 import { resolveBspNameAndPath } from '../adt/bsp-path.js';
 import type { AdtClient, SourceReadResult, TextElementPart } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
-import { decodeKtdText, formatKtdShortTexts, formatKtdUndocumentedIndex, KTD_META_MARKER } from '../adt/ddic-xml.js';
+import { decodeKtdText, formatKtdNodeIndex, formatKtdShortTexts, KTD_META_MARKER } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
@@ -571,10 +571,9 @@ export async function handleSAPRead(
         // be pasted into SAPWrite. Grep searches the stored Markdown without escapes.
         const markdown = decodeKtdText(source, { routeSafe: !args.grep });
         if (args.grep) return grepText(markdown);
-        // decodeKtdText hides nodes SAP pre-created without text. List their ids compactly
-        // so an undocumented node can be addressed in SAPWrite without first provoking the
-        // write's refusal error to learn them.
-        const index = formatKtdUndocumentedIndex(source);
+        // List copyable names for every writable node, including empty nodes omitted from Markdown.
+        // The labels use the same resolver as SAPWrite.
+        const index = formatKtdNodeIndex(source);
         const readOnlyContext = [
           versionWarning,
           cacheHit && revalidated ? '[cached:revalidated]' : undefined,

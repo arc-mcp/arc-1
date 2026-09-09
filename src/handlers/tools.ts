@@ -632,8 +632,8 @@ export function getToolDefinitions(
           source: {
             type: 'string',
             description: btp
-              ? 'ABAP source. create/update: full body. DDLS: type=DDLS; Cloud permits eligible `extend view entity`, not legacy `extend view`. edit_method: body. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).'
-              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`).',
+              ? 'ABAP source. create/update: full body. DDLS: type=DDLS; Cloud permits eligible `extend view entity`, not legacy `extend view`. edit_method: body. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.'
+              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.',
           },
           include: {
             type: 'string',
@@ -703,7 +703,7 @@ export function getToolDefinitions(
           dryRun: {
             type: 'boolean',
             description:
-              'For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change.',
+              'For generate_behavior_implementation: when true, runs discovery + cross-validation + scaffold planning and returns the report without writing or activating. Use this to preview what would change. SKTD/KTD update: reports which nodes would change, writing nothing.',
           },
           description: {
             type: 'string',
@@ -864,7 +864,7 @@ export function getToolDefinitions(
           },
           shortTexts: {
             type: 'array',
-            description: `SKTD/KTD create/update: exact SAPRead node ID; text max ${KTD_SHORT_TEXT_MAX_LENGTH} UTF-16 units after whitespace normalization; empty clears; source optional.`,
+            description: `SKTD/KTD create/update: node = any name or id the SAPRead node index lists; text max ${KTD_SHORT_TEXT_MAX_LENGTH} UTF-16 units after whitespace normalization; empty clears; source optional.`,
             items: {
               type: 'object',
               properties: {

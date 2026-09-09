@@ -10,7 +10,13 @@ import {
   unlockObject,
   updateObject,
 } from '../../adt/crud.js';
-import { type KtdShortText, normalizeAdtLanguage, rewriteKtdDocument } from '../../adt/ddic-xml.js';
+import {
+  formatKtdWriteReport,
+  type KtdShortText,
+  type KtdWriteReport,
+  normalizeAdtLanguage,
+  rewriteKtdDocument,
+} from '../../adt/ddic-xml.js';
 import { activate, activateBatch } from '../../adt/devtools.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
@@ -604,9 +610,12 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     // The POST already succeeded, so every later failure is reported as partial success.
     const shortTexts = args.shortTexts as KtdShortText[] | undefined;
     if (hasSource || shortTexts?.length) {
+      let summary: string;
       try {
         const { source: currentEnvelope } = await client.getKtd(name);
-        const body = rewriteKtdDocument(currentEnvelope, hasSource ? source : undefined, shortTexts);
+        const report: KtdWriteReport = { proseHeadings: [] };
+        const body = rewriteKtdDocument(currentEnvelope, hasSource ? source : undefined, shortTexts, report);
+        summary = formatKtdWriteReport(currentEnvelope, body, report);
         await safeUpdateObject(
           client.http,
           client.safety,
@@ -633,7 +642,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       invalidateWrittenObject(type, name);
       const writtenPart = shortTexts?.length ? 'its documentation' : 'Markdown content';
       return textResult(
-        `Created SKTD ${name} in package ${pkg} and wrote ${writtenPart}.\nNext step: SAPActivate(type="SKTD", name="${name}").\n${ktdResult}`,
+        `Created SKTD ${name} in package ${pkg} and wrote ${writtenPart}.\n${summary}\nNext step: SAPActivate(type="SKTD", name="${name}").\n${ktdResult}`,
       );
     }
     invalidateWrittenObject();

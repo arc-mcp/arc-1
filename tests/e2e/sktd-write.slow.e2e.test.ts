@@ -7,7 +7,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireOrSkip } from '../helpers/skip-policy.js';
-import { callTool, connectClient, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
+import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 import { bestEffortDelete, loadRapAvailability, uniqueName } from './rap-write-helpers.js';
 
 describe('E2E SKTD multi-node write lifecycle', () => {
@@ -25,7 +25,7 @@ describe('E2E SKTD multi-node write lifecycle', () => {
     });
   });
 
-  it('accumulates exact-ID node writes, accepts an inactive read-back, activates, and cleans up', async (ctx) => {
+  it('previews and accumulates name/ID node writes, round-trips inactive reads, activates, and cleans up', async (ctx) => {
     requireOrSkip(ctx, rapAvailable, 'RAP/CDS not available on test system');
 
     const tableName = uniqueName('ZAKT').slice(0, 16);
@@ -98,10 +98,13 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       const singleNodeRead = expectToolSuccess(
         await callTool(client, 'SAPRead', { type: 'SKTD', name: rootName, version: 'active' }),
       );
-      expect(singleNodeRead).toBe(
+      // Every read carries the node index behind the marker; the writable half must be exact.
+      const [singleNodeWritable, singleNodeContext] = singleNodeRead.split(`\n\n${metaMarker}\n`);
+      expect(singleNodeWritable).toBe(
         `## ${rootName}\n\n\\## ${rootName}\n\nSingle-node view documentation.\n\n\\${metaMarker}\n\nAfter the marker.`,
       );
-      expect(singleNodeRead.split(/\r?\n/)).not.toContain(metaMarker);
+      expect(singleNodeWritable.split(/\r?\n/)).not.toContain(metaMarker);
+      expect(singleNodeContext).toContain('Nodes: 1');
       await write({ action: 'update', type: 'SKTD', name: rootName, source: singleNodeRead });
       await write({
         action: 'update',
@@ -179,10 +182,47 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       expect(rootOnlyRead).toContain(`${rootName}.create`);
       const rootAndCreate = rootOnlyRead.replace(
         metaMarker,
-        `## ${createId}\n\nCreate documentation.\n\n${metaMarker}`,
+        `## ${rootName}.create\n\nCreate documentation.\n\n${metaMarker}`,
       );
       expect(rootAndCreate).not.toBe(rootOnlyRead);
-      await write({ action: 'update', type: 'SKTD', name: rootName, source: rootAndCreate });
+      const preview = await write({
+        action: 'update',
+        type: 'SKTD',
+        name: rootName,
+        source: rootAndCreate,
+        dryRun: true,
+      });
+      expect(preview).toContain('Would change 1 node(s)');
+      expect(preview).toContain(`${rootName}.create`);
+      expectToolError(
+        await callTool(client, 'SAPWrite', {
+          action: 'update',
+          type: 'SKTD',
+          name: rootName,
+          source: rootAndCreate.replace(`${rootName}.create`, `${rootName}.create.extra`),
+        }),
+        'does not exist',
+      );
+      expectToolError(
+        await callTool(client, 'SAPWrite', {
+          action: 'update',
+          type: 'SKTD',
+          name: rootName,
+          source: `## ${createId.toUpperCase()}X\n\nMust not be written.`,
+        }),
+        'does not exist',
+      );
+      const afterPreview = expectToolSuccess(
+        await callTool(client, 'SAPRead', {
+          type: 'SKTD',
+          name: rootName,
+          version: 'inactive',
+        }),
+      );
+      expect(afterPreview.split(`\n\n${metaMarker}`)[0]).toBe(rootOnlyRead.split(`\n\n${metaMarker}`)[0]);
+      const applied = await write({ action: 'update', type: 'SKTD', name: rootName, source: rootAndCreate });
+      expect(applied).toContain('Changed 1 node(s)');
+      expect(applied).toContain(`\n  ${rootName}.create`);
       // A stored H2 equal to its own node id is indistinguishable from routing unless
       // the read/write representation escapes it. Write the escaped form, then prove
       // the exact live SAPRead result can be written back below.
@@ -195,12 +235,12 @@ describe('E2E SKTD multi-node write lifecycle', () => {
         action: 'update',
         type: 'SKTD',
         name: rootName,
-        source: `## ${updateId}\n\nUpdate documentation.`,
+        source: `## ${rootName.toLowerCase()}.UPDATE\n\nUpdate documentation.`,
         // Deliberately later-node first: XML splices must follow envelope offsets,
         // not the caller's array order, when Base64 lengths change.
         shortTexts: [
-          { node: updateId, text: 'Update a KTD root' },
-          { node: createId, text: 'Create a KTD root' },
+          { node: `${rootName}.update`, text: 'Update a KTD root' },
+          { node: `${rootName.toLowerCase()}.CREATE`, text: 'Create a KTD root' },
         ],
       });
 
@@ -211,15 +251,16 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       expect(inactiveRead).toContain(`\\## ${rootName}`);
       expect(inactiveRead).toContain(`## ${createId}`);
       expect(inactiveRead).toContain('Create documentation.');
-      expect(inactiveRead).toContain(`${createId} [optional]: Create a KTD root`);
+      expect(inactiveRead).toContain(`${rootName}.create [optional]: Create a KTD root`);
       expect(inactiveRead).toContain(`## ${updateId}`);
       expect(inactiveRead).toContain('Update documentation.');
-      expect(inactiveRead).toContain(`${updateId} [optional]: Update a KTD root`);
+      expect(inactiveRead).toContain(`${rootName}.update [optional]: Update a KTD root`);
       expect(inactiveRead).toContain('<!-- arc1:ktd-meta');
 
       // The exact SAPRead result includes the read-only empty-node index. The writer must strip
       // that context instead of folding it into the last node's Markdown body.
-      await write({ action: 'update', type: 'SKTD', name: rootName, source: inactiveRead });
+      const roundTrip = await write({ action: 'update', type: 'SKTD', name: rootName, source: inactiveRead });
+      expect(roundTrip).toContain('Changed 0 node(s)');
       await activate({ type: 'SKTD', name: rootName });
 
       const activeRead = expectToolSuccess(
@@ -228,8 +269,8 @@ describe('E2E SKTD multi-node write lifecycle', () => {
       expect(activeRead).toContain('Root documentation.');
       expect(activeRead).toContain('Create documentation.');
       expect(activeRead).toContain('Update documentation.');
-      expect(activeRead).toContain(`${createId} [optional]: Create a KTD root`);
-      expect(activeRead).toContain(`${updateId} [optional]: Update a KTD root`);
+      expect(activeRead).toContain(`${rootName}.create [optional]: Create a KTD root`);
+      expect(activeRead).toContain(`${rootName}.update [optional]: Update a KTD root`);
 
       await write({
         action: 'update',
