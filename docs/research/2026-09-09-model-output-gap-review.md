@@ -2,10 +2,11 @@
 
 ## Outcome
 
-Keep the minimal patch at `cdb74195`. It fixes lost incompleteness warnings and improves evidence
+The initial pass at `cdb74195` fixes lost incompleteness warnings and improves evidence
 labels without changing retrieval, input shapes, permissions, dependencies or caches. Four net
 source lines across five existing files; eleven additional unit cases. Graphs remain experimental
-and default-off. No push or merge was performed.
+and default-off. No push or merge was performed at that stage. The final follow-up below records
+the additional changes and verification prepared for PR #769.
 
 This follows the [initial evaluation](2026-09-09-model-output-evaluation.md) and
 [gap-review plan](../plans/2026-09-09-model-output-gap-review.md). The earlier report remains a
@@ -103,3 +104,79 @@ model tokens, backend traffic or cost. Pair timing is observational, not a laten
 No ranking service, model router, database, new tool, automatic type guessing or broader permission
 was justified. The deterministic warning/count fixes are worth keeping; the remaining reasoning and
 sample-selection limitations are documented rather than hidden behind additional production machinery.
+
+## Final follow-up: implementation and release verification
+
+Runtime `00b7709d` clarifies that a global class declaration and implementation live in MAIN;
+`definitions`/`implementations` are local helper-class includes. It also makes truncated-reference
+hints acknowledge an existing object-type filter. Explicit include routing, empty local includes,
+reference arrays, counts and filtering are unchanged. Nine regression cases cover the guidance,
+empty/local source routing, and absent/blank/padded filters.
+
+The larger model pass exposed an unnecessary class-only filter on a general unused-code question.
+Runtime `1a526344` adds explicit guidance to omit `objectType` for all consumer types, with two more
+unit cases and retests of general usage, tiny samples and class-only declaration verification.
+This is wording, not forced model routing or an additional SAP lookup. Both runtime commits together
+add three net production lines across three existing files. No dependencies or safety gates changed.
+
+### Actual model evidence
+
+There were **44 new model sessions**: 36 at `00b7709d`, then eight focused retests at `1a526344`.
+All compare against main `c55adcb8`, with identical paired prompts, independent caches and the
+same read-only SAP_BASIS 758 trial. The earlier eight-call/400-word harness and evidence policy
+remain in effect. The two new tasks inspect a global declaration and actually verify a class
+candidate's declaration; expected answers were not supplied. These are exploratory single samples,
+not an independent statistical quality benchmark.
+
+| Comparison | Calls main → candidate | Tool errors main → candidate | Observed result |
+|---|---:|---:|---|
+| Original ten GPT tasks, `00b7709d` | 42 → 36 | 6 → 2 | Both completed 10/10; unsupported structured reads 4 → 0 |
+| Two GPT declaration follow-ups, `00b7709d` | 4 → 4 | 0 → 0 | Correct source evidence; candidate's complete MAIN verification increased output bytes |
+| Three GPT retests, `1a526344` | 7 → 7 | 0 → 0 | General usage unfiltered; class-only verification reaches MAIN in two calls versus three on main |
+| Qwen 3.6, thinking off, two follow-ups | 7 → 3 | 1 → 0 | Fewer failed/wrong-section reads, but runtime overclaims remain |
+| Qwen 3.6, thinking on, two follow-ups | 8 → 3 | 1 → 0 | Thinking did not reliably improve accuracy; invalid hierarchy advice and type-count mistakes remain |
+| Qwen 3.5, two follow-ups | 2 → 2 | 0 → 0 | One of two sessions per build invented observations without calling a tool: failures, not successes |
+| Qwen 3.6, final general-usage retest | 2 → 2 | 0 → 0 | Unfiltered, but its answer still overstates empty-result evidence and recommends an unscoped search |
+
+GPT used GPT-5.6 Sol/medium; Ollama used the already-installed `qwen3.6:35b-mlx` and `qwen3.5:27b`.
+Ollama temperature/seed/context were 0/42/32768; thinking-off output cap 1800, thinking-on 6000.
+Digests: Qwen 3.6 `1b50c6fdc2d4f75f94e6c19b49b20051bc6a7e73620d1ccdfc6687ec042ce754`;
+Qwen 3.5 `7653528ba5cba4dd8e19da24aaddc7f4d0b5ecd93571c0825dfd4137958ec06e`.
+No model downloads or global client-setting changes. Raw traces and unedited answers stay private.
+
+The two errors shared by the original GPT pair sets were the intentional missing-object 404 and
+an unsupported global source search. Completion is not correctness: some local-model answers violate
+the four-call follow-up bound or misinterpret static evidence. Generic tiny samples still sometimes
+select a low-salience graph; the final GPT retest did so and candidly reported no class candidates.
+Explicit class-only requests worked better. Known-link answers were correct on both builds, but
+candidate sometimes used an extra grep. There is no universal token, latency or correctness win.
+For example, original-ten tool-result bytes were 161,068 → 157,580, while the two declaration
+follow-ups grew from 3,015 → 20,155. These are tool-result bytes, not billable tokens or SAP traffic.
+
+### Larger live checks and final review
+
+- **118 read-only MCP checks**: 45 paired cases (90 calls) over namespaced classes, MAIN/local
+  includes, DDIC metadata, three reference roots, five filters and two page limits; eight graph
+  boundary traversals; twenty source/context/cache/permission controls. All passed.
+- Main/candidate returned source/metadata and reference data are identical; only the intentional count label
+  and paging guidance differ. Graphs remain absent on main. Blocked hierarchy still does not fetch
+  data. Candidate narrow→warm-wide equals cold-wide; main still replays the narrow aggregate.
+- Largest retained graph: **100 nodes / 100 edges / 8 expansions / 10 SAP sends** with explicit
+  node, edge and expansion truncation. Successful metadata was **176,993 bytes**, not total traffic
+  or peak RSS. All eight graph runs respected their bounds and reported unknown coverage, including
+  untruncated runs. No source collection, SQL/data queries, SAP writes or BTP provisioning.
+- **6,152 unit tests / 207 files** pass after the last fix. Typecheck, lint, policy validation,
+  build, strict docs and file/schema budgets pass. The earlier 6,150-test full pass also passed.
+  Default schema is 45,596 bytes; full opt-in is 71,859, below 72,000. No budget was raised.
+- Nine tool snapshots differ only in descriptions from the original PR head `360b63e3`; existing
+  input shapes, hyperfocused behavior and default-off containment remain intact. Forty-five offline
+  ABAP/CDS differentials preserve reads and contract/error evidence; the synthetic parser benchmark
+  also passes equality checks. Its timings under concurrent model work are not a latency claim.
+- Final review covered the unpushed production diff, cache/source authorization boundaries,
+  transport accounting, traversal caps, description-only snapshots and operator documentation.
+  No additional confirmed core defect remains. Known-credential and private-artifact permission
+  checks pass. Existing Biome/docs informational notices are unchanged.
+
+Retain experimental/default-off status. Live BTP principal propagation/Cloud Connector, additional
+SAP releases, SAML-only login and native unresolved-reference semantics remain explicit validation
+limits. These tests do not establish production-wide correctness. Update PR #769; do not merge.

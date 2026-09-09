@@ -24,8 +24,12 @@ Offline mocked data-access failures are included in regression tests.
 
 ## Final follow-up acceptance
 
+Completed through runtime `1a526344`: 44 model sessions, 118 read-only live checks, 45 offline
+differentials and the full 6,152-test suite. The report separates initial and final runtime samples.
+
 - Clarify global MAIN versus local helper-class includes without changing source routing.
 - Make truncated-reference hints acknowledge an already-applied object-type filter.
+- Keep all-consumer investigations unfiltered unless the user asks for a particular consumer type.
 - Repeat the original ten model comparisons against pinned main, add executed follow-up
   reads, and check two installed Ollama models. Record task failures, not just completion.
 - Recheck live read-only behavior, cold/warm controls, all local gates and the complete
