@@ -75,7 +75,7 @@ A second probe deliberately submitted **8/18/30/50**, not the defaults, to disti
 
 Direct PUT of `false` was also read back successfully on 758 and 816.
 
-This refines the existing comment in `dtelNeedsPostCreateUpdate`: POST ignores labels and custom lengths, but it does **not** ignore every additional property. The history flag was already honored by POST. A fix must trigger the follow-up PUT for a **length-only** create, including in a batch; adding the fields only to the initial POST cannot work.
+POST ignores labels and custom lengths, but it does **not** ignore every additional property: the history flag was already honored by POST. The PR review then found that POST also stores **no short description**, although its response echoes one, so a create that skipped the follow-up PUT silently lost its description on all three releases. ARC-1 therefore sends the follow-up PUT for every DTEL create, single or batch; adding fields only to the initial POST cannot work.
 
 ### Length boundaries: save success is insufficient
 
@@ -165,7 +165,7 @@ Use integer length validation and `looseOptionalBoolean` for the history flag. P
 Implemented semantics:
 
 - **Create, input omitted:** retain the current defaults: nonempty label text length, empty-label maxima, history suppression false.
-- **Create, explicit length supplied:** emit it and trigger follow-up PUT even when no label or other existing follow-up field was supplied. Both single and batch creation must share this logic. A history-only create already persists via POST on these releases; routing it through the same PUT is an implementation choice, not an SAP requirement demonstrated here.
+- **Create, explicit length supplied:** emit it; the follow-up PUT that every DTEL create now sends applies it, for single and batch creation alike. POST alone keeps the history flag but loses the description, so even a history-only create needs the PUT.
 - **Update, input omitted:** preserve the stored flag and reservations where labels are unchanged. When a label changes without an explicit reservation, derive the reservation from the new label, capped at its canonical maximum.
 - **Update, input supplied:** override the stored value, including explicit false and zero. SAP
   accepts some label/reservation mismatches on save and rejects them during activation, so activation
@@ -225,11 +225,17 @@ kept the compact form and did not raise the budgets.
 The implementation fixes #771 across schemas, serialization, read-back, partial-update merge
 semantics, single create, and batch create.
 
+The PR review follow-up also fixed two pre-existing DTEL data-loss bugs, verified live on 750, 758
+and 816:
+
+- Every create now sends the follow-up PUT. POST alone stored no short description, so label-less,
+  history-only and batch creates lost it.
+- A partial update keeps the stored SET/GET parameter, change-document flag, bidi flags, and search-help
+  parameter while the search help is unchanged. Before, a description-only update dropped them; 758
+  and 750 then activated the incomplete search-help binding, while 816 cancelled activation.
+
 Not included: SAP GUI runtime testing, live BTP validation, every SAP release/SP, exhaustive
-Unicode/translation tests, the pre-existing create-without-PUT description-loss issue, or a
-resolution of the separate 750 session-sensitive default-read issue. Other omitted DTEL fields
-(`searchHelpParameter`, `setGetParameter`, `changeDocument`, bidi flags) deserve a separate
-preservation audit; this change does not claim to fix them.
+Unicode/translation tests, or a resolution of the separate 750 session-sensitive default-read issue.
 
 ## Proposed GitHub resolution note
 

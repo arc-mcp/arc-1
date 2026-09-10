@@ -125,29 +125,6 @@ export function createContentTypeForType(type: string, cloud = false, fugrInclud
   return needsVendorContentType(type) ? vendorContentTypeForType(type) : 'application/*';
 }
 
-/**
- * Check if a DTEL create has properties that SAP ignores on POST but accepts on PUT.
- * SAP's DTEL POST only stores the shell (name, description, package, typeKind, typeName, dataType, length).
- * Labels, searchHelp, setGetParameter, etc. require a follow-up PUT to take effect.
- */
-export function dtelNeedsPostCreateUpdate(props: Record<string, unknown>): boolean {
-  return Boolean(
-    props.shortLabel ||
-      props.shortLength !== undefined ||
-      props.mediumLabel ||
-      props.mediumLength !== undefined ||
-      props.longLabel ||
-      props.longLength !== undefined ||
-      props.headingLabel ||
-      props.headingLength !== undefined ||
-      props.searchHelp ||
-      props.searchHelpParameter ||
-      props.setGetParameter ||
-      props.defaultComponentName ||
-      props.changeDocument,
-  );
-}
-
 export function vendorContentTypeForType(type: string): string {
   switch (type) {
     case 'DOMA':
@@ -288,6 +265,7 @@ export async function mergeMetadataWriteProperties(
     const mediumLabel = provided.mediumLabel ?? existing.mediumLabel;
     const longLabel = provided.longLabel ?? existing.longLabel;
     const headingLabel = provided.headingLabel ?? existing.headingLabel;
+    const searchHelp = provided.searchHelp ?? existing.searchHelp;
     return {
       _description: existing.description,
       _package: existing.package,
@@ -306,12 +284,20 @@ export async function mergeMetadataWriteProperties(
       headingLabel,
       headingLength:
         provided.headingLength ?? (headingLabel === existing.headingLabel ? existing.headingLength : undefined),
-      searchHelp: provided.searchHelp ?? existing.searchHelp,
-      searchHelpParameter: provided.searchHelpParameter,
-      setGetParameter: provided.setGetParameter,
+      searchHelp,
+      // A search-help parameter belongs to its search help: keep it only while that is unchanged.
+      searchHelpParameter:
+        provided.searchHelpParameter ??
+        (String(searchHelp).toUpperCase() === existing.searchHelp.toUpperCase()
+          ? existing.searchHelpParameter
+          : undefined),
+      setGetParameter: provided.setGetParameter ?? existing.setGetParameter,
       defaultComponentName: provided.defaultComponentName ?? existing.defaultComponentName,
       deactivateInputHistory: provided.deactivateInputHistory ?? existing.deactivateInputHistory,
-      changeDocument: provided.changeDocument,
+      changeDocument: provided.changeDocument ?? existing.changeDocument,
+      // No public inputs: carry SAP's stored bidi flags through the full-XML replace.
+      leftToRightDirection: existing.leftToRightDirection,
+      deactivateBIDIFiltering: existing.deactivateBIDIFiltering,
     };
   }
   if (type === 'SRVB') {
@@ -665,6 +651,8 @@ function buildCreateXmlBody(
         defaultComponentName: properties?.defaultComponentName ? String(properties.defaultComponentName) : undefined,
         deactivateInputHistory: toBoolean(properties?.deactivateInputHistory),
         changeDocument: toBoolean(properties?.changeDocument),
+        leftToRightDirection: toBoolean(properties?.leftToRightDirection),
+        deactivateBIDIFiltering: toBoolean(properties?.deactivateBIDIFiltering),
         language: masterLanguage,
         responsible: responsibleUser,
       };

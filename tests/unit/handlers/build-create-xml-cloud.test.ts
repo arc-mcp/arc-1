@@ -13,7 +13,6 @@ import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/fe
 import {
   buildCreateXml,
   createContentTypeForType,
-  dtelNeedsPostCreateUpdate,
   mergeMetadataWriteProperties,
   resolveWriteSystemType,
 } from '../../../src/handlers/write-helpers.js';
@@ -284,16 +283,62 @@ describe('mergeMetadataWriteProperties — DTEL metadata preservation (#771)', (
   });
 });
 
-describe('dtelNeedsPostCreateUpdate — explicit lengths (#771)', () => {
-  it.each(['shortLength', 'mediumLength', 'longLength', 'headingLength'])(
-    'requires the follow-up PUT when %s is the only metadata field',
-    (field) => {
-      expect(dtelNeedsPostCreateUpdate({ [field]: 0 })).toBe(true);
-    },
-  );
+describe('mergeMetadataWriteProperties — remaining DTEL fields survive a partial update', () => {
+  const existing = {
+    name: 'ZDTEL',
+    description: 'Existing',
+    package: 'ZPKG',
+    dataType: 'CHAR',
+    length: '000004',
+    decimals: '000000',
+    typeKind: 'domain',
+    typeName: 'BUKRS',
+    shortLabel: 'CoCd',
+    shortLength: '06',
+    mediumLabel: '',
+    mediumLength: '20',
+    longLabel: '',
+    longLength: '40',
+    headingLabel: '',
+    headingLength: '55',
+    searchHelp: 'C_T001',
+    searchHelpParameter: 'BUKRS',
+    setGetParameter: 'BUK',
+    defaultComponentName: 'COMP_CODE',
+    deactivateInputHistory: false,
+    changeDocument: true,
+    leftToRightDirection: true,
+    deactivateBIDIFiltering: true,
+  };
+  const stubClient = { getDataElement: async () => existing } as unknown as AdtClient;
 
-  it('does not add a redundant PUT for a history-only create', () => {
-    expect(dtelNeedsPostCreateUpdate({ deactivateInputHistory: true })).toBe(false);
+  it('keeps the search-help parameter, SET/GET parameter, change document and bidi flags', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {});
+    const xml = buildCreateXml('DTEL', 'ZDTEL', 'ZPKG', 'Existing', merged);
+    expect(xml).toContain('<dtel:searchHelpParameter>BUKRS</dtel:searchHelpParameter>');
+    expect(xml).toContain('<dtel:setGetParameter>BUK</dtel:setGetParameter>');
+    expect(xml).toContain('<dtel:changeDocument>true</dtel:changeDocument>');
+    expect(xml).toContain('<dtel:leftToRightDirection>true</dtel:leftToRightDirection>');
+    expect(xml).toContain('<dtel:deactivateBIDIFiltering>true</dtel:deactivateBIDIFiltering>');
+  });
+
+  it('prefers explicit values, including false', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {
+      setGetParameter: 'ZPA',
+      changeDocument: false,
+    });
+    expect(merged).toMatchObject({ setGetParameter: 'ZPA', changeDocument: false });
+  });
+
+  it('drops the stored search-help parameter when the search help changes', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', { searchHelp: 'ZSH_OTHER' });
+    expect(merged.searchHelp).toBe('ZSH_OTHER');
+    expect(merged.searchHelpParameter).toBeUndefined();
+  });
+
+  it('keeps the parameter when the same search help is re-sent in lower case', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', { searchHelp: 'c_t001' });
+    expect(merged.searchHelpParameter).toBe('BUKRS');
   });
 });
 

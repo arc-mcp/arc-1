@@ -701,6 +701,7 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
   // Find the dataElement node — after NS strip: dtel:dataElement → dataElement
   const dtelNodes = findDeepNodes(parsed, 'dataElement');
   const dtel = dtelNodes[0] ?? {};
+  const flag = (value: unknown) => String(value ?? '').toLowerCase() === 'true';
 
   return {
     name: String(wbobj['@_name'] ?? ''),
@@ -719,8 +720,13 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
     headingLabel: String(dtel.headingFieldLabel ?? ''),
     headingLength: String(dtel.headingFieldLength ?? ''),
     searchHelp: String(dtel.searchHelp ?? ''),
+    searchHelpParameter: String(dtel.searchHelpParameter ?? ''),
+    setGetParameter: String(dtel.setGetParameter ?? ''),
     defaultComponentName: String(dtel.defaultComponentName ?? ''),
-    deactivateInputHistory: String(dtel.deactivateInputHistory ?? 'false').toLowerCase() === 'true',
+    deactivateInputHistory: flag(dtel.deactivateInputHistory),
+    changeDocument: flag(dtel.changeDocument),
+    leftToRightDirection: flag(dtel.leftToRightDirection),
+    deactivateBIDIFiltering: flag(dtel.deactivateBIDIFiltering),
     package: String(pkgRef['@_name'] ?? ''),
   };
 }

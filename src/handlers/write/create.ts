@@ -54,7 +54,6 @@ import {
   buildCreateXml,
   createContentTypeForType,
   DOMA_WRITE_UNAVAILABLE_HINT,
-  dtelNeedsPostCreateUpdate,
   getMetadataWriteProperties,
   isMetadataWriteType,
   mergePreWriteWarnings,
@@ -718,11 +717,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   }
 
   if (isMetadataWriteType(type)) {
-    // SAP's DTEL POST ignores labels, custom lengths, searchHelp, etc. — they require a follow-up
-    // PUT. POST retains deactivateInputHistory, so the flag itself does not trigger this PUT.
+    // SAP's DTEL POST stores only a shell without the description, labels or custom lengths, so
+    // every DTEL create needs this follow-up PUT.
     // Use withStatefulSession directly (not safeUpdateObject) to keep the lock cycle
     // on the main client's session, avoiding lock contention with subsequent operations.
-    if (type === 'DTEL' && dtelNeedsPostCreateUpdate(metadataProperties)) {
+    if (type === 'DTEL') {
       const ct = vendorContentTypeForType(type);
       await client.http.withStatefulSession(async (session) => {
         const lock = await lockObject(
@@ -1179,9 +1178,8 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         );
       }
 
-      // Step 1b: DTEL POST ignores labels/custom lengths — follow up with PUT on main session.
-      // POST retains deactivateInputHistory, so the flag itself does not trigger this PUT.
-      if (objType === 'DTEL' && dtelNeedsPostCreateUpdate(objMetadataProps)) {
+      // Step 1b: DTEL POST drops the description, labels and custom lengths — always PUT on main session.
+      if (objType === 'DTEL') {
         await client.http.withStatefulSession(async (session) => {
           const lock = await lockObject(session, client.safety, objUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
           const lockTransport = objTransport ?? (lock.corrNr || undefined);

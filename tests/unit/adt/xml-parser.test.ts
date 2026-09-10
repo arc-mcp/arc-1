@@ -865,8 +865,13 @@ describe('XML Parser', () => {
       expect(dtel.headingLabel).toBe('CoCd');
       expect(dtel.headingLength).toBe('04');
       expect(dtel.searchHelp).toBe('C_T001');
+      expect(dtel.searchHelpParameter).toBe('BUKRS');
+      expect(dtel.setGetParameter).toBe('BUK');
       expect(dtel.defaultComponentName).toBe('COMP_CODE');
       expect(dtel.deactivateInputHistory).toBe(false);
+      expect(dtel.changeDocument).toBe(true);
+      expect(dtel.leftToRightDirection).toBe(false);
+      expect(dtel.deactivateBIDIFiltering).toBe(false);
       expect(dtel.package).toBe('BF');
     });
 

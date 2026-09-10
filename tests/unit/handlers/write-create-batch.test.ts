@@ -1653,6 +1653,41 @@ lv = CONV string( 1 ).`,
   });
 
   describe('SAPWrite batch_create', () => {
+    it('PUTs a label-less DTEL after its POST so SAP keeps the description', async () => {
+      const putBodies: string[] = [];
+      mockFetch.mockImplementation((url: string | URL, options?: RequestInit) => {
+        if (new URL(String(url)).searchParams.get('_action') === 'LOCK') {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (options?.method === 'PUT') putBodies.push(String(options.body));
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [
+          {
+            type: 'DTEL',
+            name: 'ZSTATUS',
+            description: 'No labels',
+            typeKind: 'predefinedAbapType',
+            dataType: 'CHAR',
+            length: 10,
+          },
+        ],
+      });
+
+      expect(result.isError).toBeUndefined();
+      // SAP's DTEL POST drops the description; only the follow-up PUT stores it.
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('adtcore:description="No labels"');
+    });
+
     it('routes FUNC entries through their parent group and preserves processing metadata', async () => {
       const functionModuleMetadata = new Map<string, string>();
       mockFetch.mockImplementation((url: string | URL, options?: RequestInit) => {

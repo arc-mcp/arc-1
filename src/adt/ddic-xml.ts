@@ -57,6 +57,9 @@ export interface DataElementCreateParams {
   /** Negative ADT flag: true disables SAP GUI input history for fields using this data element. */
   deactivateInputHistory?: boolean;
   changeDocument?: boolean;
+  /** No public input; carried from SAP's stored metadata on update. */
+  leftToRightDirection?: boolean;
+  deactivateBIDIFiltering?: boolean;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
   /** ADT "person responsible" (logon user). Omitted when it cannot be an on-prem user name (#636). */
@@ -514,8 +517,8 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
     <dtel:defaultComponentName>${escapeXmlAttr(params.defaultComponentName ?? '')}</dtel:defaultComponentName>
     <dtel:deactivateInputHistory>${boolToXml(params.deactivateInputHistory)}</dtel:deactivateInputHistory>
     <dtel:changeDocument>${boolToXml(params.changeDocument)}</dtel:changeDocument>
-    <dtel:leftToRightDirection>false</dtel:leftToRightDirection>
-    <dtel:deactivateBIDIFiltering>false</dtel:deactivateBIDIFiltering>
+    <dtel:leftToRightDirection>${boolToXml(params.leftToRightDirection)}</dtel:leftToRightDirection>
+    <dtel:deactivateBIDIFiltering>${boolToXml(params.deactivateBIDIFiltering)}</dtel:deactivateBIDIFiltering>
   </dtel:dataElement>
 </blue:wbobj>`;
 }

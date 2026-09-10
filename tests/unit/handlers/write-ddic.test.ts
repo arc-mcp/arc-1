@@ -141,11 +141,18 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(putCall?.body).toContain('<dtel:shortFieldLength>00</dtel:shortFieldLength>');
     });
 
-    it('creates DTEL without labels skips follow-up PUT', async () => {
+    it('creates DTEL without labels still PUTs so SAP keeps the description', async () => {
       mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
-        calls.push({ method: opts?.method ?? 'GET', url: String(url) });
+      const putBodies: string[] = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        if (String(url).includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH0</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (opts?.method === 'PUT') putBodies.push(String(opts.body));
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
@@ -154,13 +161,16 @@ describe('SAPWrite handler — DDIC writes', () => {
         type: 'DTEL',
         name: 'ZTEXT_NOLABEL',
         package: '$TMP',
+        description: 'No labels',
         typeKind: 'predefinedAbapType',
         dataType: 'CHAR',
         length: 10,
       });
 
       expect(result.isError).toBeUndefined();
-      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      // SAP's DTEL POST drops the description; only the follow-up PUT stores it.
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('adtcore:description="No labels"');
     });
 
     it('create TTYP returns an error if the post-create lock fails, not a Created message', async () => {
@@ -977,7 +987,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(putCall?.contentType).toContain('application/vnd.sap.adt.dataelements.v2+xml');
     });
 
-    it('preserves DTEL label lengths and input-history state on a description-only update', async () => {
+    it('preserves stored DTEL metadata on a description-only update', async () => {
       const metadata = `<?xml version="1.0" encoding="utf-8"?>
 <blue:wbobj adtcore:name="ZSTATUS" adtcore:description="Existing" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core">
   <adtcore:packageRef adtcore:name="$TMP"/>
@@ -988,7 +998,8 @@ describe('SAPWrite handler — DDIC writes', () => {
     <dtel:mediumFieldLabel>Medium</dtel:mediumFieldLabel><dtel:mediumFieldLength>20</dtel:mediumFieldLength>
     <dtel:longFieldLabel>Long</dtel:longFieldLabel><dtel:longFieldLength>40</dtel:longFieldLength>
     <dtel:headingFieldLabel>Heading</dtel:headingFieldLabel><dtel:headingFieldLength>55</dtel:headingFieldLength>
-    <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>
+    <dtel:searchHelp>C_T001</dtel:searchHelp><dtel:searchHelpParameter>BUKRS</dtel:searchHelpParameter><dtel:setGetParameter>BUK</dtel:setGetParameter>
+    <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory><dtel:changeDocument>true</dtel:changeDocument><dtel:leftToRightDirection>true</dtel:leftToRightDirection><dtel:deactivateBIDIFiltering>true</dtel:deactivateBIDIFiltering>
   </dtel:dataElement>
 </blue:wbobj>`;
       const lockBody =
@@ -1020,6 +1031,9 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(putBodies[0]).toContain('<dtel:longFieldLength>40</dtel:longFieldLength>');
       expect(putBodies[0]).toContain('<dtel:headingFieldLength>55</dtel:headingFieldLength>');
       expect(putBodies[0]).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
+      expect(putBodies[0]).toMatch(
+        /searchHelpParameter>BUKRS<.*setGetParameter>BUK<.*changeDocument>true<.*leftToRightDirection>true<.*deactivateBIDIFiltering>true</s,
+      );
     });
 
     it('batch_create supports DOMA + DTEL with label update PUT', async () => {
@@ -1072,24 +1086,6 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(putCalls[0].url).toContain('/sap/bc/adt/ddic/dataelements/ZSTATUS');
       expect(putCalls[0].body).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
       expect(putCalls[0].body).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
-    });
-
-    it('batch_create DTEL without labels skips follow-up PUT', async () => {
-      mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
-        calls.push({ method: opts?.method ?? 'GET', url: String(url) });
-        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
-      });
-
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'batch_create',
-        package: '$TMP',
-        objects: [{ type: 'DTEL', name: 'ZSTATUS', typeKind: 'predefinedAbapType', dataType: 'CHAR', length: 10 }],
-      });
-
-      expect(result.isError).toBeUndefined();
-      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
     });
 
     it('creates SRVB with service binding XML and publish hint', async () => {
