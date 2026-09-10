@@ -5,6 +5,23 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.3.0](https://github.com/arc-mcp/arc-1/compare/v1.2.0...v1.3.0) (2026-09-10)
+
+
+### Features
+
+* add bounded live repository relations and refresh dependency context ([#769](https://github.com/arc-mcp/arc-1/issues/769)) ([81baa51](https://github.com/arc-mcp/arc-1/commit/81baa517533d150ec22eca745e83f1a9d1efd68b))
+* batch ATC checks with explicit object coverage ([#772](https://github.com/arc-mcp/arc-1/issues/772)) ([0440bea](https://github.com/arc-mcp/arc-1/commit/0440bea4bf04abf4fb6a99092bd84b0413d3d8d3))
+* support per-node KTD short texts ([#750](https://github.com/arc-mcp/arc-1/issues/750)) ([5c36f2a](https://github.com/arc-mcp/arc-1/commit/5c36f2a734870081780a5d4be734f605b1036318))
+* **textelements:** write program and function-group text pools ([#768](https://github.com/arc-mcp/arc-1/issues/768)) ([c55adcb](https://github.com/arc-mcp/arc-1/commit/c55adcb8ca9481421d8f7598e7233e22280d59a3))
+
+
+### Bug Fixes
+
+* **ktd:** address KTD nodes by the name SAPRead prints, abort on unknown routes, add dryRun ([#766](https://github.com/arc-mcp/arc-1/issues/766)) ([3180037](https://github.com/arc-mcp/arc-1/commit/3180037312b6e7072e72be8562dea9dc2fde0ebc))
+* preserve DTEL metadata across writes and reads ([#774](https://github.com/arc-mcp/arc-1/issues/774)) ([ecb7c5e](https://github.com/arc-mcp/arc-1/commit/ecb7c5e7f99342f887a0d5113376c02514de7120))
+* safely update multi-node Knowledge Transfer Documents ([#749](https://github.com/arc-mcp/arc-1/issues/749)) ([347d83f](https://github.com/arc-mcp/arc-1/commit/347d83f37dc8eec1bb14938ddaa1d9f3849e5cfd))
+
 ## [1.2.0](https://github.com/arc-mcp/arc-1/compare/v1.1.2...v1.2.0) (2026-09-03)
 
 
