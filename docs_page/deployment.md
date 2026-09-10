@@ -33,7 +33,7 @@ For single-developer setups on your own laptop, use [local-development.md](local
 | Answer | Path |
 |---|---|
 | Docker on any VM / container host | [Docker deployment](#docker-on-any-vm) |
-| BTP Cloud Foundry, one on-prem SAP target | [BTP CF with PP](#btp-cloud-foundry-with-principal-propagation) |
+| BTP Cloud Foundry, one on-prem SAP target | BTP Cloud Foundry deployment — [single-PP](btp-cloud-foundry-deployment.md#single-target-read-only-pp-profile) or [single-Basic](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile) |
 | BTP Cloud Foundry, many on-prem SAP system/clients | [Multi-System Setup](multi-target-setup.md) |
 | BTP Cloud Foundry, BTP ABAP backend | [BTP CF + BTP ABAP](#btp-cloud-foundry-btp-abap-environment) |
 | BTP Cloud Foundry, S/4HANA Public Cloud backend | [S/4HANA Public Cloud (PP via SAMLAssertion)](s4hana-public-cloud.md) |
@@ -100,6 +100,10 @@ For this shared-user mode, ARC-1 runs a startup auth preflight (`/sap/bc/adt/cor
 The recommended deployment path for per-user SAP identity with on-premise SAP. XSUAA identifies the
 MCP user; Destination and Connectivity services plus Cloud Connector propagate that identity;
 SAP certificate mapping and authorization decide the final access.
+
+For one target with an accepted shared SAP identity, use the
+[single-Basic profile](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile).
+XSUAA remains the MCP authentication layer in that topology too.
 
 If you have not chosen between single-target, multi-target, BTP ABAP, or S/4HANA Public Cloud yet,
 start with the [SAP BTP documentation map](btp-overview.md).

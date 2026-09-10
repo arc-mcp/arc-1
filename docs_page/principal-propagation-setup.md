@@ -137,19 +137,16 @@ back to the startup user. See [BTP Destination Reference](btp-destination-setup.
    accept an IP SAN when the internal host is an IP literal. Do not solve a name mismatch by disabling
    backend certificate checks.
 
-### Required Cloud Connector Resource Paths
+<a id="required-cloud-connector-resource-paths"></a>
 
-If you use restrictive Cloud Connector resource whitelisting, expose at least these paths:
+### Cloud Connector Resource Paths
 
-| URL Path | Access Policy | Purpose |
-|----------|---------------|---------|
-| `/sap/bc/adt` | Path and all sub-paths | ADT API used by ARC-1 core read/write operations |
-| `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` | Path and all sub-paths | FLP launchpad management via `SAPManage` FLP actions |
-| `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` | Path and all sub-paths | UI5 ABAP Repository OData (BSP deploy metadata) |
-
-Use `/sap/bc/adt` with **Path and all sub-paths** for multi-target v1. Add the optional OData paths
-only when those features are enabled. Avoid exposing `/` unless another documented integration needs
-it.
+For the initial ADT-only profiles, expose `/sap/bc/adt` with **Path and all sub-paths**. These
+profiles disable the gCTS, FLP and UI5 Repository probes. The
+[Cloud Connector URL path reference](btp-destination-setup.md#cloud-connector-url-path-reference)
+owns the optional paths, feature settings and probe behavior. Use it when enabling additional
+capabilities within the selected topology's supported tool surface. Avoid exposing `/` unless
+another documented integration needs it.
 
 ## Step 3: Configure SAP System
 

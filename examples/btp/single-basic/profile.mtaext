@@ -1,14 +1,15 @@
-# Fictional, conservative profile. Read README.md before copying to mta-overrides.mtaext.
+# Fictional, conservative ADT-only profile. Read README.md before copying to mta-overrides.mtaext.
 _schema-version: "3.1"
-ID: arc1-single-pp-example
+ID: arc1-single-basic-example
 extends: arc1-mcp
 modules:
   - name: arc1-mcp-server
     properties:
-      SAP_BTP_DESTINATION: "ARC1_QAS_001_STARTUP"
-      SAP_BTP_PP_DESTINATION: "ARC1_QAS_001_PP"
-      SAP_PP_ENABLED: "true"
-      SAP_PP_STRICT: "true"
+      SAP_BTP_DESTINATION: "ARC1_QAS_001_BASIC"
+      # The base MTA enables PP. A shared-identity single target must disable
+      # both flags explicitly rather than relying on an omitted property.
+      SAP_PP_ENABLED: "false"
+      SAP_PP_STRICT: "false"
       SAP_PP_ALLOW_SHARED_COOKIES: "false"
       ARC1_MULTI_TARGET_ENDPOINTS: "false"
       ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "false"
@@ -25,5 +26,5 @@ modules:
       SAP_FEATURE_GCTS: "off"
       SAP_FEATURE_UI5REPO: "off"
       SAP_FEATURE_FLP: "off"
-      # These profiles do not opt users into analysis/test workloads in SAP.
+      # This profile does not opt users into analysis/test workloads in SAP.
       SAP_DENY_ACTIONS: "SAPDiagnose.atc,SAPDiagnose.unittest"
