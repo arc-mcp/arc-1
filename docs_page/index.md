@@ -4,6 +4,12 @@
 
 ARC-1 is a TypeScript MCP server (distributed as an npm package and Docker image) that implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and translates AI tool calls into [SAP ABAP Development Tools (ADT)](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/about-abap-development-tools) REST API requests. It works with Claude, GitHub Copilot, VS Code, and any MCP-compatible client.
 
+!!! info "Evaluating ARC-1 for enterprise use?"
+
+    Review [Security & Trust](security.md) for controls, data flows, and assessment questions.
+    [Dependency & Release Security](dependency-security.md) explains dependency checks, SBOM
+    coverage, artifact verification, and current gaps.
+
 !!! tip "Stay current with ARC-1"
 
     Get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. [Join ARC-1 Updates →](newsletter.md)
@@ -228,6 +234,9 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
 | [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
+| [security.md](security.md) | Enterprise security overview, evidence, and assessment questions |
+| [security-assessment.md](security-assessment.md) | Plain-language answers and a copyable approval record |
+| [dependency-security.md](dependency-security.md) | Dependency controls, release evidence, SBOM scope, and verification |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |

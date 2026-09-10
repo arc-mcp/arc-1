@@ -96,8 +96,12 @@ node_modules/
 # Test result artifacts (root only, not test fixtures)
 /test-results/
 
+# Generated dependency/build evidence; retain with the customer's build record.
+/reports/security/
+
 # MTA build artifacts
 mta_archives/
+/Makefile_*.mta
 
 # MTA extension descriptors with per-landscape values (destinations, safety
 # flags, etc.). Deployers copy `mta-overrides.mtaext.example` to

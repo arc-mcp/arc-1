@@ -1,0 +1,225 @@
+# Security operations for the ARC-1 maintainer
+
+This is the maintainer runbook for the [implementation plan](plans/2026-09-07-enterprise-security-implementation.md).
+Customers should start with the [Security Assessment](../docs_page/security-assessment.md).
+
+## 1. Merge the repository changes before activating requirements
+
+The PR supplies a `Dependency security` check, separate license reporting, a dependency evidence
+command/workflow, and Socket configuration. Release Please keeps its built-in token. The ruleset file is
+**disabled**. Committing these files does not activate GitHub rules or install an App.
+
+On the PR, verify Dependency security, Dependency licenses, CodeQL and the normal repository
+checks. The selected new merge requirements are **Dependency security** and **CodeQL security
+results at high or higher**. Do not add the Test jobs, license job, evidence workflow, docs,
+coverage, build or SAP integration checks to this security ruleset.
+
+`Dependency licenses` remains a **non-required** check by design. A denied license makes that
+job fail and appears in the PR checks and Actions job summary. Before merging a dependency PR,
+open that summary and resolve the finding or record why the dependency is acceptable. PR comments
+are disabled to keep the workflow read-only, including for forks; this does not hide the job result.
+See [the action's results and inputs](https://github.com/actions/dependency-review-action#viewing-the-results).
+
+## 2. Verify release PR checks with the existing token
+
+Release Please keeps the built-in `GITHUB_TOKEN`; no dedicated App, personal token or additional
+secret is needed. Since 11 June 2026, GitHub allows bot-created PR workflows to run after approval
+by someone with repository write access. This covers `pull_request` events for `opened`,
+`synchronize` and `reopened`; it does not automatically enable workflows on bot-created tags.
+
+1. After merging these changes, inspect the next Release Please PR creation/update from an
+   ordinary `main` push. Review its current changes and workflow definitions.
+2. If GitHub shows **Approve workflows to run** in the PR merge box, approve those runs.
+   This approves workflow execution, not the PR or a release. Check again after bot updates.
+3. Verify **Dependency security** completes on the current PR revision and the applicable CodeQL
+   analysis completes. Check a code-changing PR, a documentation-only PR, a human dependency-only
+   PR, a Dependabot PR and a fork PR when available. Account for the documented CodeQL exception
+   in step 3 below. Do not treat `action_required` or an older success as a pass.
+4. Keep the new ruleset disabled until these checks complete successfully. If the approval
+   control or a required result is unavailable, investigate that event/run before enforcement;
+   do not introduce an App, new token or blanket bypass as an automatic workaround.
+
+Read-only observation on 7 September 2026: release [PR #751](https://github.com/arc-mcp/arc-1/pull/751),
+head `621cc7d53e05c3f1512be633d2bd15e8cfcbb597`, has CodeQL success and `action_required`
+results for Dependency Review, Test and Validate Documentation. This confirms the approval wait
+exists in this repository; successful execution after approval is still to be verified.
+
+Do **not** manually dispatch `Release` as a test: its existing `workflow_dispatch` path publishes
+npm. Use an ordinary push and the resulting release PR. Preserve the existing npm release-time
+test job and OIDC publication even after PR checks become effective.
+
+Sources: [GitHub's bot-PR approval announcement](https://github.blog/changelog/2026-06-11-bot-created-pull-requests-can-run-workflows-if-approved/),
+[current workflow triggering rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+
+## 3. Import, verify and enable the security ruleset
+
+1. Open repository Settings → Rules → Rulesets. Import
+   [`.github/security-ruleset.json`](../.github/security-ruleset.json). It targets the default branch
+   and starts **Disabled**. If the named ruleset already exists, update it rather than creating
+   a duplicate. Preserve the separate existing PR/deletion/non-fast-forward rules.
+2. Verify the required check is **Dependency security**, supplied by **GitHub Actions**.
+   The template pins GitHub Actions integration ID `15368`, observed in this repository.
+   Recheck that provider when using this template on a different GitHub host.
+3. Verify the CodeQL security threshold is **High or higher**, and ordinary **Alerts** is **None**.
+   Default setup is already configured for this repository; do not add a duplicate advanced-setup
+   workflow or require the generic `CodeQL` status check in place of the alert-severity rule.
+4. Inspect the PR types listed in section 2, including release and dependency-only changes.
+   Check the effective merge rule as well as the status-check conclusion. Keep enforcement
+   disabled if an applicable required result is missing, waiting forever, or failing because of setup.
+5. Enable the ruleset. It requires an up-to-date branch for the selected status check and has
+   no bypass actors. Verify the effective rules and the PR merge panel; do not merge a failing
+   probe. Record evidence of a harmless check failure being refused before calling it enforced.
+
+**CodeQL exception:** GitHub documents that code-scanning merge protection does **not** apply to
+Dependabot PRs analyzed by default setup. It is also separate from required status checks. On
+7 September 2026, [Dependabot PR #763](https://github.com/arc-mcp/arc-1/pull/763) had a `neutral`
+CodeQL check reporting missing configurations; that alone does not prove this ruleset would block
+the PR. The exception also means CodeQL enforcement must not be claimed for those PRs:
+`Dependency security` provides their required vulnerability review. Do not interpret arbitrary
+neutral or missing results on other PRs as a successful analysis. Verify their actual merge-panel
+behavior before enabling the ruleset, which remains disabled in this template.
+
+Source: [GitHub's merge-protection exceptions](https://docs.github.com/en/code-security/concepts/code-scanning/merge-protection#exceptions-and-limitations).
+
+Read-only verification from a repository clone:
+
+```bash
+gh api repos/arc-mcp/arc-1/rules/branches/main
+gh pr checks PR_NUMBER --repo arc-mcp/arc-1
+gh api repos/arc-mcp/arc-1/commits/PR_HEAD_SHA/check-runs \
+  --jq '.check_runs[] | {name, conclusion, source: .app.slug, app_id: .app.id}'
+```
+
+Replace the uppercase placeholders with the PR being checked. Retain dated output privately
+with the rollout record. For a controlled failure demonstration, use a temporary test repository
+or a harmless policy fixture; never install real malware, expose credentials or publish a
+vulnerable artifact. Do not treat a YAML test alone as proof of server-side enforcement.
+
+**Rollback:** disable only `ARC-1 security checks` if a configuration failure blocks all work;
+record the incident and re-enable after verification. Keep existing protections and secret push
+protection and the existing release token. Restore working release-PR checks before enabling
+the new requirements again. Prefer fixing the missing check to a permanent bypass.
+
+See [GitHub's code-scanning rules](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/manage-your-configuration/set-merge-protection).
+
+## 4. Verify Socket access and calibrate its policy
+
+On 7 September 2026, [PR #765](https://github.com/arc-mcp/arc-1/pull/765) received a successful
+Socket Project Report from App `socket-security` (ID `156372`). Its Pull Request Alerts check
+reported success with **no net dependency changes**, so alert analysis was skipped. This confirms
+the integration responds, but does not demonstrate enforcement on a dependency change.
+
+The same day's authenticated dashboard check confirmed **Business** as the current plan and
+13 scanned repositories. ARC-1 showed 453 dependency entries, including root development
+dependencies and the AppRouter graph; `xsuaa-auth` showed 359 entries. Those dashboard counts
+use Socket's inventory model and should not be equated with the separate npm SBOM component counts.
+
+1. Keep the existing Business entitlement and GitHub App installation. Approval and installation
+   are complete; no new application, paid upgrade or additional API token is needed for the GitHub
+   integration. Recheck [Plans](https://socket.dev/dashboard/org/arc-mcp/settings/plans) if access changes.
+2. Keep ARC-1 and the separate `xsuaa-auth` repository covered. The auth package remains part of
+   the product's dependency boundary. Confirm new product repositories are included when added.
+3. Keep both root and `btp/approuter` manifests/lockfiles visible. `socket.yml` keeps all PRs
+   eligible and adds no manifest exclusions. It does not install the App or set its policy.
+4. In [Security Policy](https://socket.dev/dashboard/org/arc-mcp/settings/alerts/security-policy),
+   retain the existing **Standard** baseline shown by this account. Known malware is already
+   **Block**; AI-detected potential malware, typosquatting and obfuscation are **Warn**. Install
+   scripts and network access currently inherit **Ignore**: start with **Warn** for these signals
+   in the intended repository scope and review the resulting noise. Changing the organization
+   default affects its other repositories too. Preset names vary between Socket UI versions;
+   verify the effective actions instead of resetting a working baseline to match a documentation
+   label. Legitimate dependencies can use these capabilities, so they are not automatic malware verdicts.
+5. Inspect repository overrides and resolved alerts: they can override dashboard policy. Review
+   actual dependency PRs for a week or several updates. Record false positives and the reasons
+   for any narrowly scoped resolution.
+6. Once calibrated, recheck the observed `Socket Security: Pull Request Alerts` name and App identity. Add that check to
+   the security ruleset with the correct provider. Verify it reports on normal, dependency and
+   release PRs before requiring it. Do not invent a check name from this guide.
+
+Current [ARC-1 alerts](https://socket.dev/dashboard/org/arc-mcp/alerts?current_repo_full_name=arc-1)
+observed on 7 September 2026:
+
+| Finding | Scope | Initial disposition |
+|---|---|---|
+| `validator@13.15.26`: one high obfuscation flag on `lib/isMimeType.js` | AppRouter production dependency through `@sap/approuter@23.0.0` | Review first because it is shipped when the AppRouter is deployed. Socket's detailed notes describe benign validation code, in tension with the headline. A false positive is plausible; verify the file before resolving the exact alert. |
+| `@noble/hashes@1.8.0`: two high obfuscation flags on `esm/blake3.js` and `src/sha3.ts` | Root development dependency | Socket's detailed notes describe conventional hash implementations. Review the exact files and record any resolution; keep obfuscation detection enabled. |
+| `@vitest/istanbul-lib-report@1.0.1` and `@vitest/istanbul-lib-coverage@1.0.1`: two medium low-adoption flags | Root development dependencies | Package-popularity signals, not vulnerability findings. Monitor and retain their dependency provenance. |
+
+The dedicated ARC-1 **Vulnerabilities** view showed no active CVE alerts at this check. The five
+behavior/popularity alerts above are still active. This inspection did not resolve alerts, change Socket policy,
+or activate GitHub requirements. Other organization repositories have separate findings; use
+the repository selector to avoid attributing the organization-wide totals to ARC-1.
+
+Socket's PR integration analyzes dependencies; it does not enforce what a customer's independent
+BTP build installs. Customers retain their own build controls. Details:
+[Socket policies](https://docs.socket.dev/docs/policies), [repository configuration](https://docs.socket.dev/docs/socket-yml).
+
+## 5. Generate and retain dependency evidence
+
+From a reviewed source checkout with Node and npm available:
+
+```bash
+npm run security:evidence
+```
+
+Open the printed `summary.md` path. It contains the results, JSON links and a human staging
+worksheet. The output directory is new for each run, under gitignored `reports/security/`.
+This command requires no `npm ci`, SAP credentials or running BTP application. npm audits send
+dependency information to the configured registry; private registries must support the audit API.
+
+For a clean source checkout and an already-built archive, after following the canonical
+[BTP build runbook](../docs_page/btp-cloud-foundry-deployment.md):
+
+```bash
+npm run security:evidence -- --require-clean --mtar mta_archives/arc1-mcp_1.2.0.mtar
+```
+
+Use the actual MTAR filename/version. `--out NEW_DIRECTORY` selects a different output location;
+an existing directory or an explicitly empty path is refused. Output may be inside the checkout:
+only the report files created by that run are excluded from its final Git cleanliness check.
+Unrelated tracked or untracked changes still make `--require-clean` fail. MBT's generated
+`Makefile_*.mta` files at the repository root are ignored like `mta_archives/`.
+`--fail-on-high` returns exit 1 for high/critical findings.
+Exit 2 means unavailable, invalid or inconsistent evidence. Without that option, completed
+collection returns 0 even with findings: **read the summary before approving a deployment**.
+
+The collector validates the CycloneDX 1.5 format emitted by the pinned npm version and identifies
+each root package by package URL and version. npm itself checks the locked graph, including active
+overrides, during SBOM generation; the manifest/lockfile declaration check alone does not do that.
+
+The separate **Dependency evidence** workflow runs Monday/Wednesday/Friday and on manual
+dispatch, pins npm 11.11.1, and retains artifacts for 30 days. Its red result is a maintenance
+signal, not a required PR check. Download evidence before artifact retention expires if needed
+for an assessment. Run it again for the customer's exact approved commit; scheduled `main`
+evidence does not automatically cover an older release or a modified clone.
+
+Generated component inventories and raw audit reports can contain package names and registry
+URLs. Review customer-generated evidence before sharing externally. The collector does not
+collect environment variables, service keys, CF logs or staging credentials. Complete the
+staging worksheet with the platform owner; a checksum alone does not establish the MTAR's source.
+
+## 6. Weekly triage and exceptions
+
+Review Dependabot, CodeQL, Socket and the scheduled evidence/container results.
+Prioritize applicable high/critical findings and new malicious-package alerts. Do not wait for
+a release if customers need a mitigation or advisory. Use the response targets in
+[SECURITY.md](../SECURITY.md); no new contractual response SLA is introduced here.
+
+Copy this into a private issue or customer maintenance record as appropriate:
+
+```text
+Finding/advisory and affected package/version:
+Affects: build / ARC-1 runtime / AppRouter / other
+Affected source/release/deployment:
+Applicability evidence:
+Decision: update / mitigate / accept temporarily / not affected
+Fix or mitigation and validation:
+Owner:
+Review/expiry date:
+Related customer notification or advisory:
+Evidence links:
+```
+
+An exception should identify an exact finding/version and a review date. Keep raw scan results;
+do not silently suppress them or claim a scanner failure is a clean result. Reassess on package,
+deployment or advisory changes. Keep customer-specific details out of public PRs.

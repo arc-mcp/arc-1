@@ -2,6 +2,10 @@
 
 A consolidated security reference for ARC-1 operators. This guide covers hardening, authentication, authorization, and incident response. It references detailed setup guides where appropriate rather than duplicating their content.
 
+For procurement and security assessment, start with **[Security & Trust](security.md)**.
+Dependency checks, SBOM coverage, release verification, and current enforcement gaps are covered
+in **[Dependency & Release Security](dependency-security.md)**.
+
 ---
 
 ## 1. Security Architecture Overview
@@ -52,10 +56,10 @@ When using an external identity provider (Entra ID, Okta, Keycloak, etc.), confi
 Verification checklist:
 
 - [ ] `SAP_OIDC_ISSUER` matches the `iss` claim in your tokens exactly (trailing slashes matter).
-- [ ] `SAP_OIDC_AUDIENCE` matches the `aud` claim in your tokens (decode a token at jwt.ms to verify).
+- [ ] `SAP_OIDC_AUDIENCE` matches the `aud` claim in your tokens (inspect locally; do not paste production bearer tokens into public token decoders).
 - [ ] The OIDC provider includes ARC-1 scopes (`read`, `write`, `data`, `sql`, `transports`, `git`, `admin`) in the `scope` or `scp` claim. Tokens without scope claims default to read-only access.
 - [ ] The JWKS endpoint at `{issuer}/.well-known/openid-configuration` is reachable from the ARC-1 server.
-- [ ] TLS certificates on the issuer URL are valid (no self-signed certs without `--insecure`).
+- [ ] TLS certificates on the issuer URL validate against the deployment's trusted certificate authorities. Configure the approved trust chain instead of bypassing verification.
 
 ARC-1 validates tokens per the OAuth 2.0 Protected Resource model (RFC 9700): signature verification via JWKS, issuer match, audience match, and expiration check.
 
@@ -449,105 +453,12 @@ This is the most critical on-premise PP compromise scenario -- a compromised Clo
 
 ## 13. Dependency & Supply-Chain Security
 
-ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Docker image](https://github.com/arc-mcp/arc-1/pkgs/container/arc-1) consumed by enterprise customers running on regulated landscapes (banks, government, defense, pharma). Customers will run their own image scanners (Aqua, Prisma Cloud, Microsoft Defender) against the published image and reject vulnerable artifacts. ARC-1 layers its own supply-chain controls on top of GitHub-native primitives so issues are caught upstream of those scanners.
+Dependency and release evidence now has a dedicated, prominent page:
+**[Dependency & Release Security](dependency-security.md)**.
 
-### What runs in CI
+It covers the CI checks and their enforcement, production npm SBOM scope, Docker/BTP/MCPB
+differences, reproducible deployment, operator verification, and remaining improvements.
+This section remains here so existing links continue to work.
 
-| Control | Workflow | Severity gate |
-|---|---|---|
-| Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
-| `npm audit` PR gates | `.github/workflows/test.yml` (root + `btp/approuter`) | fail on `high` / `critical` |
-| GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
-| CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
-| Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
-| Trivy container scan — scheduled | `.github/workflows/security-scan.yml` | **gating amd64 + arm64 maintenance signal** on `HIGH` / `CRITICAL`; SARIF uploaded |
-| Trivy container scan — release | `.github/workflows/release.yml` | scan and SARIF upload are non-gating; neither can strand the Docker artifact |
-| Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
-| Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
-| npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
-| npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
-| `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
-
-Docker BuildKit does not automatically invalidate a cached `RUN apk upgrade` when Alpine's
-package repository changes. ARC-1 therefore names the final Dockerfile stage `runtime` and every
-CI image build uses `no-cache-filters: runtime` plus `pull: true`. The comparatively expensive
-native-module builder stage stays cached, while the runtime package upgrade is re-executed and can
-pick up newly published OS security fixes.
-
-### GitHub-native security features (verified enabled)
-
-These toggles live on the repo's Settings → Code security page and are checked here so a cold reader can confirm what's on without leaving the docs. Last verified: **2026-05-08**.
-
-| Feature | API verification | Status |
-|---|---|---|
-| Dependabot alerts | `gh api repos/arc-mcp/arc-1/vulnerability-alerts -i \| head -1` → `HTTP/2.0 204` | ✅ enabled |
-| Dependabot security updates | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.dependabot_security_updates.status'` → `"enabled"` | ✅ enabled |
-| Dependabot version updates | reads `.github/dependabot.yml` (in repo root) — toggled on at the same time as security updates; verify activity in [Insights → Dependency graph → Dependabot](https://github.com/arc-mcp/arc-1/network/updates) | ✅ enabled |
-| Dependabot grouped security updates | toggled on in Settings → Code security; no public REST field — verify by inspecting any auto-opened security PR (groups multiple advisories per ecosystem into one PR) | ✅ enabled |
-| Dependabot malware alerts | toggled on in Settings → Code security; no public REST field — verify only via the Security tab when an alert fires | ✅ enabled |
-| Secret scanning | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.secret_scanning.status'` → `"enabled"` | ✅ enabled |
-| Push protection | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.secret_scanning_push_protection.status'` → `"enabled"` | ✅ enabled |
-| Private vulnerability reporting | `gh api repos/arc-mcp/arc-1/private-vulnerability-reporting --jq .enabled` → `true` | ✅ enabled |
-
-Optional toggles **not** enabled (deliberate — listed here so the absence is documented, not silent):
-
-- `secret_scanning_non_provider_patterns` — custom regex patterns. Off by default; only worth turning on if we need to scan for project-specific secret formats (we don't).
-- `secret_scanning_validity_checks` — asks the upstream provider whether a leaked token is still valid. Off because the noise/value tradeoff doesn't justify it for a project our size; revisit if the validity API stabilizes and a customer asks.
-
-User-account-level recommendation (cannot be enforced via repo settings): the project maintainer should also enable push protection at [user level](https://github.com/settings/security_analysis), which catches secrets pushed to *any* repo the maintainer commits to (including private forks of `arc-1`).
-
-### Verifying the chain as an operator
-
-```bash
-# 1. npm package — verify the published tarball was built from this repo
-npm install arc-1
-npm audit signatures arc-1
-# Expected: "audited <N> packages — verified <N> packages with Sigstore"
-
-# 2. npm package — download and inspect the production dependency SBOM
-VERSION=<version>
-gh release download "v${VERSION}" \
-  --repo arc-mcp/arc-1 \
-  --pattern "arc-1-${VERSION}-sbom.cdx.json"
-jq -e --arg version "$VERSION" '
-  .bomFormat == "CycloneDX" and
-  .metadata.component.name == "arc-1" and
-  .metadata.component.version == $version and
-  .metadata.component.type == "application"
-' "arc-1-${VERSION}-sbom.cdx.json"
-# Expected: true
-
-# 3. npm package — confirm no known vulnerabilities at install time
-npm audit --audit-level=high
-# Expected: "found 0 vulnerabilities"
-
-# 4. Docker image — scan locally with the same scanner CI uses
-trivy image ghcr.io/arc-mcp/arc-1:<version> \
-  --severity HIGH,CRITICAL \
-  --exit-code 1
-# Expected: exit 0, "No vulnerabilities found"
-
-# 5. View the full advisory history for the project
-open https://github.com/arc-mcp/arc-1/security/advisories
-```
-
-The release SBOM describes the production npm graph resolved from the root `package-lock.json`.
-It does not inventory Alpine packages in the Docker image, the assembled MCPB contents, or
-dynamically loaded extensions. Those artifacts need their own build-output SBOMs; do not use the
-npm SBOM as evidence for their full contents.
-
-SBOM publication is deliberately **non-gating**. A generation, validation, or GitHub upload error
-remains visible in the `publish-npm-sbom` job, but `continue-on-error: true` prevents it from failing
-or blocking the npm, Docker, MCPB, or MCP Registry release. Maintainers can regenerate and attach a
-missing asset later.
-
-### Reporting a vulnerability
-
-See [`SECURITY.md`](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Preferred channel is GitHub [Private Vulnerability Reporting](https://github.com/arc-mcp/arc-1/security/advisories/new); fallback is email. Do **not** open a public issue or post on the SAP Community before the maintainers acknowledge the report — that bypasses coordinated disclosure and can put deployed instances at risk.
-
-### Roadmap
-
-This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
-
-- **Tier 2 (Attestation)** — the production npm CycloneDX release asset is complete. Image/MCPB SBOM coverage, Cosign keyless image signing, and OpenSSF Scorecard remain in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
-- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/2026-05-08-dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier3-defense.md).
+For private vulnerability reports and response targets, see
+[SECURITY.md](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md).

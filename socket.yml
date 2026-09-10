@@ -1,0 +1,6 @@
+# Requires the Socket GitHub App. Dashboard policy and activation steps:
+# docs/security-operations.md. No exclusions: include root and AppRouter graphs.
+version: 2
+# Keep all PRs eligible so a future required Socket check has no path-filter gap.
+triggerPaths:
+  - "*"

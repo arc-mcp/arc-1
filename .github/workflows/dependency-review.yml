@@ -1,40 +1,49 @@
-# PR-time dependency review — fails the PR check when a contributor
-# adds a dependency with a known HIGH/CRITICAL advisory or an
-# incompatible license. Complements Dependabot (post-fact patches) by
-# catching introductions before merge. Documented in
-# docs/plans/2026-05-08-dependency-security-tier1-foundation.md (SEC-11).
-
 name: Dependency Review
 
 on:
   pull_request:
     branches: [main]
 
+# Inspect the dependency graph without installing PR dependencies or writing
+# comments. The read-only token also works on fork PRs.
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   dependency-review:
+    name: Dependency security
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check introduced vulnerabilities
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
-          comment-summary-in-pr: on-failure
-          # Block copyleft licenses that would contaminate the MIT-
-          # licensed npm package. The action requires choosing EITHER
-          # allow-licenses OR deny-licenses — not both — so we deny the
-          # known-incompatible set rather than maintaining a positive
-          # allowlist that breaks every time a new MIT-compatible
-          # license appears in the ecosystem.
-          deny-licenses: >-
-            GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0
-          # @sap/approuter 22.x depends on node-forge, whose SPDX expression is
-          # BSD-3-Clause OR GPL-2.0-only. ARC-1 uses it under the BSD-3-Clause
-          # option; keep the exception version-pinned so future changes are
-          # reviewed again.
+          fail-on-scopes: runtime, development, unknown
+          vulnerability-check: true
+          license-check: false
+          comment-summary-in-pr: never
+          retry-on-snapshot-warnings: true
+          retry-on-snapshot-warnings-timeout: 120
+
+  dependency-licenses:
+    name: Dependency licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check existing license policy (not a required security check)
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          vulnerability-check: false
+          license-check: true
+          comment-summary-in-pr: never
+          # Preserve existing policy separately from vulnerability gating.
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0
+          # This version is used under its BSD-3-Clause dual-license option.
           allow-dependencies-licenses: pkg:npm/node-forge@1.4.0
