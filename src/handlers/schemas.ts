@@ -14,6 +14,12 @@
  */
 
 import { z } from 'zod';
+import {
+  ATC_BATCH_MAX_OBJECTS,
+  ATC_BATCH_NAME_MAX_LENGTH,
+  ATC_BATCH_NAME_PATTERN,
+  ATC_BATCH_TYPES,
+} from '../adt/atc-batch.js';
 import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
@@ -21,6 +27,7 @@ import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import {
+  ATC_BATCH_TYPES_BTP,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
@@ -871,6 +878,20 @@ const QuickfixAffectedObjectSchema = z.object({
   content: z.string().optional(),
 });
 
+const atcBatchObjectsSchema = (types: readonly string[]) =>
+  z
+    .array(
+      z
+        .object({
+          type: z.enum(types),
+          name: z.string().min(1).max(ATC_BATCH_NAME_MAX_LENGTH).regex(new RegExp(ATC_BATCH_NAME_PATTERN)),
+        })
+        .strict(),
+    )
+    .min(1)
+    .max(ATC_BATCH_MAX_OBJECTS)
+    .optional();
+
 export const SAPDiagnoseSchema = z
   .object({
     action: z.enum([
@@ -899,6 +920,7 @@ export const SAPDiagnoseSchema = z
     name: z.string().optional(),
     url: z.string().optional(),
     type: z.string().optional(),
+    objects: atcBatchObjectsSchema(ATC_BATCH_TYPES),
     source: z.string().optional(),
     sourceUri: z.string().optional(),
     line: z.coerce.number().optional(),
@@ -937,6 +959,16 @@ export const SAPDiagnoseSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    if (
+      input.objects !== undefined &&
+      (input.action !== 'atc' || input.name !== undefined || input.type !== undefined || input.url !== undefined)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['objects'],
+        message: 'objects is only supported for atc and cannot be combined with name, type, or url.',
+      });
+    }
     if (input.action === 'unittest' && input.type !== undefined) {
       const type = input.type.toUpperCase().split('/')[0];
       if (!['CLAS', 'PROG', 'FUGR', 'DEVC'].includes(type ?? '')) {
@@ -993,6 +1025,8 @@ export const SAPDiagnoseSchema = z
       });
     }
   });
+
+const SAPDiagnoseSchemaBtp = SAPDiagnoseSchema.safeExtend({ objects: atcBatchObjectsSchema(ATC_BATCH_TYPES_BTP) });
 
 // ─── SAPTransport ───────────────────────────────────────────────────
 
@@ -1234,7 +1268,7 @@ export function getToolSchema(toolName: string, isBtp: boolean, textSearchAvaila
     case 'SAPLint':
       return SAPLintSchema;
     case 'SAPDiagnose':
-      return SAPDiagnoseSchema;
+      return isBtp ? SAPDiagnoseSchemaBtp : SAPDiagnoseSchema;
     case 'SAPTransport':
       return SAPTransportSchema;
     case 'SAPGit':

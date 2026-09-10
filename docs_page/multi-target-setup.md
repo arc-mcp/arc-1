@@ -389,6 +389,10 @@ authorization, the process-wide concurrency cap, and per-user rate limits still 
 out of a customer deployment, set
 `SAP_DENY_ACTIONS=SAPDiagnose.atc,SAPDiagnose.unittest`.
 
+ATC also accepts `objects` batches of up to 20 entries on one selected target, under that
+call's SAP identity and deadline. At most one additional worklist verifies omitted objects.
+The same rules apply to shared Basic targets; individual entries cannot select another target.
+
 The following remain structurally unavailable on multi-target routes even if an admin token or a
 side-by-side single-target `/mcp` can write: `SAPWrite`, `SAPActivate`, `SAPGit`, `SAPManage`, every
 mutating `SAPTransport` action, and SAP-backed `SAPLint` formatter/settings actions. Direct calls to
