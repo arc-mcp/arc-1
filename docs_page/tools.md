@@ -65,7 +65,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
 | `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`. IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `objectType` | string | No | For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
-| `version` | string | No | Object version: `active` (default), `inactive`, or `auto`. Applies to source-bearing types (PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, FUGR, SRVB, SKTD/KTD, TABL, VIEW) and DTEL metadata. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
+| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`. For DTEL metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
@@ -90,7 +90,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `TTYP` | DDIC table type (on-prem only). Returns `{name, description, rowType, rowTypeKind, accessType, keyKind}`. Written via `SAPWrite(type="TTYP")` — the create POSTs a CHAR shell and a follow-up PUT sets the real row type. |
 | `VIEW` | DDIC view |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
-| `DTEL` | Data element metadata (structured JSON: type, labels and their reserved lengths, search help and its parameter, SET/GET parameter, change-document and bidi flags, and `deactivateInputHistory`; `version` selects active or inactive metadata) |
+| `DTEL` | Data element metadata (structured JSON: type, labels and their reserved lengths, search help and its parameter, SET/GET parameter, change-document and bidi flags, and `deactivateInputHistory`). Omitted `version` and `auto` return SAP's developer view so pending drafts remain visible; explicit `active` or `inactive` is passed to SAP. |
 | `AUTH` | Authorization field metadata (structured JSON: role name, check table, domain, conversion exit, org-level info) |
 | `FEATURE_TOGGLE` | Feature toggle states (structured JSON: toggle state per system from SAP switch framework). Renamed from `FTG2` in audit Plan B (docs/research/abap-types/types/ftg2.md) — `FTG2` still accepted as deprecated alias for one minor release with stderr warning. |
 | `ENHO` | Enhancement implementation metadata (structured JSON: BAdI technology, referenced object, implementation classes) |
@@ -200,6 +200,10 @@ Source-bearing types accept a `version` parameter to choose between the activate
 | `auto` | Resolves client-side via the cached inactive-objects list: returns the draft if one exists, otherwise active. No warning is prefixed (the caller explicitly opted into "show me my view"). |
 
 The default preserves all existing caller behaviour; `version` is an opt-in extension.
+
+DTEL metadata uses SAP's version-less developer view when `version` is omitted or set to `auto`, so a
+plain read after `SAPWrite` returns the pending draft. Pass `active` to request the last activated metadata or
+`inactive` to request the draft explicitly; SAP can return active metadata when no draft exists.
 
 ```
 SAPRead(type="CLAS", name="ZCL_ORDER")                          — active source (default)

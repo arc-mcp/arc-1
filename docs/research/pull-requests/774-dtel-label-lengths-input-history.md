@@ -2,10 +2,11 @@
 
 **PR:** https://github.com/arc-mcp/arc-1/pull/774 (`codex/issue-771-dtel-metadata`)
 
-**Reviewed:** 2026-09-10 — round 1 on `d613b32f`, re-review on `1f5fb2a6`, follow-up commits `22e99e81`, `f7b86918`, `ac7792e7`
+**Reviewed:** 2026-09-10 — round 1 on `d613b32f`, re-review on `1f5fb2a6`, follow-up commits
+`22e99e81`, `f7b86918`, `ac7792e7`, and Claude round 3 on `e163cadd`
 
-**Verdict:** round 1 REQUEST CHANGES → re-review **APPROVE with the follow-up commits**. The PR head alone would fail
-`check:sizes` once combined with current `main`.
+**Verdict:** round 1 REQUEST CHANGES → round 3 REQUEST CHANGES → **APPROVE after the final follow-up**.
+Every blocking finding is fixed and the final local gate matrix is green.
 **Linked issue:** [#771](https://github.com/arc-mcp/arc-1/issues/771) (dossier: `docs/research/issues/771-dtel-label-lengths-input-history.md`)
 
 ## Summary
@@ -19,6 +20,9 @@
   follow-up PUT loses its description, and a partial DTEL update wipes the search-help parameter,
   SET/GET parameter, change-document flag and bidi flags. Both are described below and fixed in commit
   `f7b86918`, with before/after live evidence.
+- **Round-3 read-after-write regression, fixed.** A plain DTEL read had begun forcing `version=active`,
+  silently hiding a pending draft. Omitted and `auto` reads now use SAP's developer view; explicitly
+  requested `active` and `inactive` values pass through to SAP.
 
 ## Round-1 findings — status
 
@@ -35,7 +39,7 @@
 | P3 remaining DTEL fields not preserved | Left out of scope → **fixed in `f7b86918`** |
 | N1 length properties have no descriptions | Unchanged; BTP budget is at its ratchet |
 | N2 `z.coerce.number()` quirks | Unchanged (repo convention) |
-| N3 `fix:` vs `feat:` title | Open — maintainer call at squash |
+| N3 `fix:` vs `feat:` title | Kept `fix:` because the PR primarily prevents metadata loss and stale read-after-write results |
 
 ## New in the re-review: tool-schema budget conflict with #769
 
@@ -53,8 +57,8 @@ and leaves the property undescribed, like the four length properties. Final esti
 
 | Scenario | Tokens (budget) | Descriptions (budget) |
 |---|---|---|
-| standard-full-git | ~18,129 (18,500) | 271 (272) |
-| btp-full-git | ~17,268 (17,350) | 265 (265) |
+| standard-full-git | ~18,160 (18,500) | 271 (272) |
+| btp-full-git | ~17,301 (17,350) | 265 (265) |
 
 `22e99e81` is the merge of `main` (#769, #773) into the branch; it needed no conflict resolution.
 
@@ -103,14 +107,35 @@ releases.
 Tests: parser fixture assertions, merge unit tests (preserve, explicit `false`, changed search help,
 lower-case re-send), and a handler-level description-only update asserting the PUT body.
 
+## Round 3 — plain DTEL reads hid pending drafts
+
+**Behavior.** After an activated DTEL was updated, `SAPRead type=DTEL` without a `version` returned the
+old active metadata and no draft warning. Before `93435cbf`, the same read used SAP's version-less
+developer view and returned the pending draft. Claude reproduced this on SAP_BASIS 750, 758 and 816;
+`version=auto` returned the draft on all three, and never-activated DTELs still read successfully.
+
+**Root cause.** The handler deliberately defaulted reads to `active`, and the Zod schemas also materialized
+that default. The schema transformation erased whether the caller had actually supplied `version`, so a
+handler-only omission check still sent `?version=active`.
+
+**Fix.** The on-prem and BTP schemas now preserve an omitted `version`. The handler still defaults source
+reads to active, but sends no DTEL version for an omitted or `auto` read. Explicit `active` and `inactive`
+values continue to pass through to SAP. Tool descriptions, generated snapshots and the
+public tool guide document the per-type behavior.
+
+**Regression coverage.** Handler tests cover omitted, `auto`, explicit `active` and explicit `inactive`
+DTEL reads. Schema tests prove omission survives both runtime schemas; schema-key sync, Zod/JSON-schema
+parity, generated snapshots and budget tests cover the public surface. The final full suite passed 6,579
+tests across 213 files.
+
 ## Verification
 
-### Gates on `ac7792e7`
+### Final gates
 
 | Step | Result |
 |---|---|
 | `npm run build`, `typecheck`, `lint` | pass |
-| `npm test` | 213 files, **6,577 passed** |
+| `npm test` | 213 files, **6,579 passed** |
 | `npm run check:sizes` | pass (file ratchet + tool-schema budgets above) |
 | `npm run docs:build`, `git diff --check` | pass |
 
@@ -158,26 +183,11 @@ in the diff or this dossier.
 ## Paste-able review
 
 ```markdown
-Re-review of #774 at 1f5fb2a6, plus three follow-up commits on the branch.
+Final re-review of #774: **approve**.
 
-**Round-1 findings:** all addressed in 93435cbf, and verified live on SAP_BASIS 750, 758 and 816.
-- Unchanged labels keep their reservations.
-- `SAPRead type=DTEL` honors `version`: `version=active` returns the active object while a draft exists.
-- Partial metadata updates fail closed.
-- The raw evidence is gone and the dossier wording is corrected.
-- The compact MINIMAL PAYLOAD guide is disclosed.
+Claude's round-3 blocker is fixed. A plain `SAPRead type=DTEL` no longer forces `version=active` and hides a pending draft. Omitted and `auto` reads use SAP's version-less developer view; explicit `active` and `inactive` pass through to SAP. The runtime schema had also been materializing the active default, so the fix preserves omission in both on-prem and BTP schemas while the handler continues to default source reads to active.
 
-**New blocker, fixed in ac7792e7:** #769 landed on main after this branch's last merge. The combination fails `check:sizes`: btp-full-git has 266 property descriptions against a ratchet of 265, because of the new `deactivateInputHistory` description. Its polarity note now lives in the SAPWrite description, so no ratchet was raised. 22e99e81 merges main.
+The earlier fixes remain intact: label reservations and input-history settings survive unrelated updates; every DTEL create persists its description through the follow-up PUT; partial updates preserve search-help, SET/GET, change-document and bidi fields; metadata reads fail closed; and the branch is merged with current main without raising schema ratchets.
 
-**Two older DTEL data-loss bugs, fixed in f7b86918.** Both exist on main; reproduced and verified fixed on 750/758/816.
-
-1. **Description lost on create.** SAP's DTEL POST stores no short description; it only echoes it back. ARC-1 sent the follow-up PUT only when labels, lengths or search-help fields were present. So label-less, history-only and label-less batch creates stored an empty description. Every DTEL create now sends the PUT.
-2. **Partial update wiped stored fields.** Updates rebuild the full XML, but the parser and merge ignored `searchHelpParameter`, `setGetParameter`, `changeDocument` and both bidi flags. A description-only update of a data element with search help `C_T001`/`BUKRS`, SET/GET `BUK` and change documents dropped all of them:
-   - 758 activated it "despite inconsistent references";
-   - 750 activated it with a warning;
-   - 816 cancelled activation.
-
-   The parser now reads these fields and the merge keeps them; the search-help parameter is kept only while its search help is unchanged.
-
-Gates on ac7792e7: build, typecheck, lint, 6,577 tests, check:sizes and docs build all pass. Nit: `feat:` would match the five new inputs better than `fix:`.
+Final local validation: build, typecheck, lint, docs build, file and tool-schema budgets, focused schema/handler tests, and the full 213-file suite with 6,579 passing tests. Standard full Git is approximately 18,160/18,500 tokens and BTP full Git is approximately 17,301/17,350. Claude's live reproduction on SAP_BASIS 750, 758 and 816 established that version-less and `auto` reads return the pending draft.
 ```

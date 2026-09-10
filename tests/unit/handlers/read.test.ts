@@ -1326,7 +1326,11 @@ describe('SAPRead handler', () => {
       expect(parsed.searchHelp).toBe('C_T001');
     });
 
-    it("uses SAP's developer view for a DTEL version='auto' read", async () => {
+    it.each([
+      ['omitted', undefined, ''],
+      ['auto', 'auto', ''],
+      ['explicit active', 'active', '?version=active'],
+    ])('routes a %s DTEL version correctly', async (_case, version, expectedQuery) => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(
         mockResponse(
@@ -1335,14 +1339,17 @@ describe('SAPRead handler', () => {
         ),
       );
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+      const args: Record<string, unknown> = {
         type: 'DTEL',
         name: 'ZDTEL',
-        version: 'auto',
-      });
+      };
+      if (version !== undefined) args.version = version;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', args);
 
       expect(result.isError).toBeUndefined();
-      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).not.toContain('version=');
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain(`/sap/bc/adt/ddic/dataelements/ZDTEL${expectedQuery}`);
+      expect(url.includes('version=')).toBe(expectedQuery.length > 0);
     });
 
     it('reads an authorization field (AUTH)', async () => {

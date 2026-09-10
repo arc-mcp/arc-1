@@ -26,10 +26,14 @@ import {
 import { getMetadataWriteProperties } from '../../../src/handlers/write-helpers.js';
 
 describe('SAPReadSchema', () => {
-  it('accepts valid on-prem input', () => {
+  it('accepts valid on-prem input without materializing the handler-owned version default', () => {
     const result = SAPReadSchema.safeParse({ type: 'PROG', name: 'ZTEST' });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.version).toBe('active');
+    if (result.success) expect(result.data.version).toBeUndefined();
+
+    const btpResult = SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_TEST' });
+    expect(btpResult.success).toBe(true);
+    if (btpResult.success) expect(btpResult.data.version).toBeUndefined();
   });
 
   it('accepts diff display labels', () => {

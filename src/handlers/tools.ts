@@ -107,14 +107,14 @@ const SAPREAD_DESC_ONPREM =
   'Types: PROG, CLAS, INTF, FUNC, FUGR (expand_includes=true for all include sources), INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (covers both transparent tables AND DDIC structures — no separate STRU type), TTYP, VIEW, DOMA, DTEL, TRAN, TABLE_CONTENTS (single-column filter), TABLE_QUERY (multi-column WHERE via the freestyle endpoint; gated by allowDataPreview; CDS views need SAP_BASIS 752+), DEVC, SOBJ (BOR — method param reads one method), SYSTEM, COMPONENTS, MSAG, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/VERSION_SOURCE are on-prem only. ' +
   'CLAS: prefer method="*" (signatures), method="NAME" (one body), or grep. Global class declaration + implementation: MAIN (omit include). definitions/implementations are local helper-class includes, not the global declaration. Full per-type detail: docs_page SAPRead. ' +
   'Optional grep: case-insensitive regex returning only matching source lines (+context, line numbers); for CLAS, matches are annotated with the owning class/method. ' +
-  'Optional version parameter (default "active"): "inactive" reads the user\'s draft, "auto" the developer view. Active reads note when an inactive draft exists.';
+  'Optional version parameter: source types default active; "inactive" requests the draft (SAP may return active if none); "auto" uses the developer view. DTEL omitted/auto uses its developer view; explicit values pass through. Active source reads note when a draft exists.';
 
 const SAPREAD_DESC_BTP =
   'Read SAP ABAP source or metadata (BTP ABAP Environment). For "what does this object do?", explanations, spec work, reviews, or pre-change orientation, prefer SAPContext first (intent-level context before raw source). DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
   'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list). PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
   'CLAS: prefer method="*" (signatures), method="NAME" (one body), or grep. Global class declaration + implementation: MAIN (omit include). definitions/implementations are local helper-class includes, not the global declaration. Full per-type detail: docs_page SAPRead. ' +
   'Optional grep: case-insensitive regex returning only matching source lines (+context, line numbers); for CLAS, matches are annotated with the owning class/method. ' +
-  'Optional version parameter (default "active"): "inactive" reads the user\'s draft, "auto" the developer view.';
+  'Optional version parameter: source types default active; "inactive" requests the draft (SAP may return active if none); "auto" uses the developer view. DTEL omitted/auto uses its developer view; explicit values pass through.';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
 
@@ -505,7 +505,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['active', 'inactive', 'auto'],
             description:
-              'Version to read. "active" (default) returns the last activated version. "inactive" returns the user\'s unactivated draft or active if no draft exists. "auto" returns the draft if one exists, else active.',
+              'Version to read. Source: "active" (default); "inactive" requests the draft (SAP may return active if none); "auto" uses the developer view. DTEL: omitted/"auto" uses its developer view; explicit values pass through.',
           },
           includeSignature: {
             type: 'boolean',

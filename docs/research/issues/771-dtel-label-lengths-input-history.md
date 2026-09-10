@@ -208,11 +208,12 @@ the former bug and were converted into maintained regression tests for the fixed
 invoked `handleToolCall` and production ADT helpers directly; they did not use a deployed MCP server
 or GUI.
 
-**Fix validation:** the focused adjacent suite passed **1,312 tests** across 13 files. The complete
-repository suite passed **5,871 tests in 196 files**. `npm run typecheck`, `npm run lint`,
+**Fix validation:** the focused adjacent suite passed **1,312 tests** across 13 files. After merging current
+`main` and applying all review follow-ups, the complete repository suite passed **6,579 tests in 213 files**.
+`npm run typecheck`, `npm run lint`,
 `npm run build`, `npm run docs:build`, `npm run check:sizes`, and `git diff --check` also passed.
 The final schema budgets remain within their enforced ceilings: standard full Git is approximately
-17,778/17,800 tokens and BTP full Git is approximately 16,892/16,900 tokens.
+18,160/18,500 tokens and BTP full Git is approximately 17,301/17,350 tokens.
 
 The five added schema fields left little room under those token ratchets. The older, duplicated
 field-by-field `MINIMAL PAYLOAD` paragraph was therefore compacted while retaining its required-field,
@@ -233,9 +234,12 @@ and 816:
 - A partial update keeps the stored SET/GET parameter, change-document flag, bidi flags, and search-help
   parameter while the search help is unchanged. Before, a description-only update dropped them; 758
   and 750 then activated the incomplete search-help binding, while 816 cancelled activation.
+- A plain DTEL read and `version=auto` use SAP's version-less developer view, so read-after-write returns
+  a pending draft. Explicit `active` and `inactive` values pass through to SAP; source reads still default
+  to active.
 
 Not included: SAP GUI runtime testing, live BTP validation, every SAP release/SP, exhaustive
-Unicode/translation tests, or a resolution of the separate 750 session-sensitive default-read issue.
+Unicode/translation tests, or broader metadata-type preservation audits outside DTEL.
 
 ## Proposed GitHub resolution note
 
@@ -250,10 +254,12 @@ The optional fields are supported for single and batch creation, update, and rea
 
 Existing defaults remain for creation, and stored values survive unrelated updates. Changing a label without supplying its reservation derives a new length from that label.
 
-The focused fix suite passed 1,312 tests and the full suite passed 5,871 tests. A final review fixed
+The focused fix suite passed 1,312 tests and the final full suite passed 6,579 tests. Reviews fixed
 unchanged-label re-sends, made `SAPRead` honor active/inactive DTEL versions, and made partial metadata
 updates fail closed when the current metadata cannot be read. Live fix verification passed on 758
 and 816 through the public handlers. On 750, the public write path, explicit-version `SAPRead`, and
 v2→v1 fallback passed; production update helpers verified preservation around a separate
-session-sensitive default-read issue.
+session-sensitive read issue. A final read-after-write correction keeps an omitted DTEL version observable
+through validation and routes it, like `auto`, to SAP's developer view; Claude reproduced that contract on
+750, 758 and 816.
 ```
