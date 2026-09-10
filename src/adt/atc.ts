@@ -110,7 +110,7 @@ const ATC_RUN_STATUS_MEDIA_TYPE = 'application/vnd.sap.atc.run.v1+xml';
  * attribute is excluded from the comparison.
  * See docs/research/2026-08-20-atc-completeness-polling.md.
  */
-const ATC_SETTLE_QUIET_MS = 10_000;
+export const ATC_SETTLE_QUIET_MS = 10_000;
 
 /** Compare the complete wire response except SAP's per-GET root worklist timestamp. */
 function atcWorklistSettleObservation(xml: string): string {

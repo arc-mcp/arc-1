@@ -112,3 +112,13 @@ the original 20-class check still covers all objects with the same 150 findings.
 No live domain/data-element processed record was observed under the tested
 variants. The [DDIC verification note](../research/2026-09-10-issue-770-ddic-verification.md)
 records before/after evidence and this remaining validation limit.
+
+Claude review follow-up: [assessment of all 15 findings](../research/2026-09-10-pr772-claude-review.md).
+The completed fixes make totals selection-scoped, normalize known URI/type
+equivalents, reject contradictory evidence before verification, handle empty
+placeholders and Unicode names safely, enforce BTP availability, reserve the
+legacy minimum settlement time, and distinguish cancellation from recoverable
+verification failures. Counts from an incomplete run remain unknown. Multi-target
+batch support is now explicitly recorded and tested. The flat output retains
+type/name ownership and worklist provenance with a smaller payload. All 5,966
+unit tests and the full local gates pass; live regressions preserve the 150 findings.

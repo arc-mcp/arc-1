@@ -408,7 +408,6 @@
                 "enum": [
                   "CLAS",
                   "INTF",
-                  "PROG",
                   "FUGR",
                   "DDLS",
                   "DCLS",

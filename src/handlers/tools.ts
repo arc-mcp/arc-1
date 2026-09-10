@@ -33,6 +33,7 @@ import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
+  ATC_BATCH_TYPES_BTP,
   isGitToolVisible,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
@@ -1190,7 +1191,7 @@ export function getToolDefinitions(
               required: ['type', 'name'],
               additionalProperties: false,
               properties: {
-                type: { type: 'string', enum: [...ATC_BATCH_TYPES] },
+                type: { type: 'string', enum: btp ? ATC_BATCH_TYPES_BTP : [...ATC_BATCH_TYPES] },
                 name: {
                   type: 'string',
                   minLength: 1,

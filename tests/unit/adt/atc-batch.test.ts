@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { runAtcCheck } from '../../../src/adt/atc.js';
 import { type AtcBatchObject, runAtcBatch } from '../../../src/adt/atc-batch.js';
-import { AdtApiError } from '../../../src/adt/errors.js';
+import { AdtApiError, AdtNetworkError, AdtResponseLimitError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import type { AdtRequestOptions } from '../../../src/adt/http-deadline.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
+import { requestContext } from '../../../src/server/context.js';
+import { logger } from '../../../src/server/logger.js';
 
 const a: AtcBatchObject = { type: 'CLAS', name: 'ZCL_A', uri: '/sap/bc/adt/oo/classes/ZCL_A' };
 const b: AtcBatchObject = { type: 'CLAS', name: 'ZCL_B', uri: '/sap/bc/adt/oo/classes/ZCL_B' };
@@ -25,6 +27,7 @@ function fixture(
     failSecond?: boolean;
     afterRead?: () => void;
     rootFinding?: string;
+    secondError?: () => Error;
   } = {},
 ) {
   let run = 0;
@@ -56,6 +59,7 @@ function fixture(
       async (path: string, body: string, _type: string, _headers: unknown, requestOptions?: AdtRequestOptions) => {
         calls.push({ method: 'POST', path, body, options: requestOptions });
         if (path.includes('/worklists')) {
+          if (options.secondError && run === 1) throw options.secondError();
           if (options.failSecond && run === 1) throw new AdtApiError('Sensitive backend details', 403, path);
           return { body: `WL${++run}` };
         }
@@ -85,6 +89,129 @@ function fixture(
 }
 
 describe('native ATC batches', () => {
+  it('counts only the objects selected for each run, including overlapping verification responses', async () => {
+    const { http, poll } = fixture([row(a, finding), row(a, finding) + row(b)]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [a, b], undefined, poll);
+    expect(result).toMatchObject({ complete: true, findingCount: 1, reportedObjectCount: 2 });
+    expect(result.coverage.reduce((sum, object) => sum + object.findingCount!, 0)).toBe(result.findingCount);
+    expect(result.runs[1]).toMatchObject({ findingCount: 1, excludedFindingCount: 1 });
+    expect(result.findings[0]!.object).toEqual({ type: 'CLAS', name: 'ZCL_A' });
+  });
+
+  it('excludes findings for an unrelated object from the explicit selection totals', async () => {
+    const { http, poll } = fixture([row(a, finding) + row(b, finding.repeat(5))]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [a], undefined, poll);
+    expect(result).toMatchObject({ complete: true, findingCount: 1, reportedObjectCount: 1 });
+    expect(result.runs[0]).toMatchObject({ findingCount: 6, excludedFindingCount: 5 });
+  });
+
+  it('does not retry contradictory URI evidence or duplicate its findings', async () => {
+    const bad = row(a, finding).replace('/R3TR/CLAS/ZCL_A', '/R3TR/CLAS/ZCL_OTHER');
+    const { http, poll } = fixture([bad, bad]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [a], undefined, poll);
+    expect(result).toMatchObject({ complete: false, verificationAttempted: false, findingCount: 1 });
+    expect(result.coverage[0]).toMatchObject({ status: 'notReported', findingCount: null });
+  });
+
+  it('recognizes the exact source/main subresource of the selected source object', async () => {
+    const object: AtcBatchObject = { type: 'DDLS', name: 'ZI_ORDER', uri: '/sap/bc/adt/ddic/ddl/sources/ZI_ORDER' };
+    const xml = row(object, finding).replace(
+      '/atc/objects/R3TR/DDLS/ZI_ORDER',
+      '/ddic/ddl/sources/zi_order/source/main',
+    );
+    const { http, poll } = fixture([xml]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [object], undefined, poll);
+    expect(result).toMatchObject({ complete: true, findingCount: 1, verificationAttempted: false });
+  });
+
+  it.each([
+    ['TABL', 'TABL/DT', 'tables'],
+    ['TABL', 'TABL/DS', 'structures'],
+    ['DTEL', 'DTEL/DE', 'dataelements'],
+    ['DOMA', 'DOMA/DD', 'domains'],
+  ])('recognizes %s metadata echo %s without a lookup', async (type, reportedType, collection) => {
+    const object = { type, name: 'ZDICT', uri: `/sap/bc/adt/atc/objects/R3TR/${type}/ZDICT` } as AtcBatchObject;
+    const xml = row(object)
+      .replace(`type="${type}"`, `type="${reportedType}"`)
+      .replace(object.uri, `/sap/bc/adt/ddic/${collection}/zdict`);
+    const { http, poll } = fixture([xml]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [object], undefined, poll);
+    expect(result).toMatchObject({ complete: true, verificationAttempted: false, findingCount: 0 });
+  });
+
+  it('does not collapse a function module into its same-named function group', async () => {
+    const group: AtcBatchObject = { type: 'FUGR', name: 'ZFG', uri: '/sap/bc/adt/functions/groups/ZFG' };
+    const groupRow = row(group).replace('type="FUGR"', 'type="FUGR/F"');
+    const moduleRow =
+      '<object type="FUGR/FF" name="ZFG" uri="/sap/bc/adt/functions/groups/zfg/fmodules/zfg"><findings>' +
+      finding +
+      '</findings></object>';
+    const { http, poll } = fixture([groupRow + moduleRow]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [group], undefined, poll);
+    expect(result).toMatchObject({ complete: true, findingCount: 0, reportedObjectCount: 1 });
+    expect(result.runs[0]).toMatchObject({ excludedFindingCount: 1 });
+  });
+
+  it('skips a legacy verification when less than the minimum settlement time remains', async () => {
+    const { http, poll, calls } = fixture([row(a), row(b)], { legacy: true });
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [a, b], undefined, { ...poll, timeoutMs: 18_000 });
+    expect(result).toMatchObject({ complete: false, verificationAttempted: false });
+    expect(result.coverage[0]?.findingCount).toBe(0);
+    expect(result.incompleteReasons.join(' ')).toContain('settlement');
+    expect(calls.filter((call) => call.path.includes('/runs?'))).toHaveLength(1);
+  });
+
+  it('propagates cancellation during verification worklist creation', async () => {
+    const controller = new AbortController();
+    const error = new AdtNetworkError('Aborted', new DOMException('Aborted', 'AbortError'));
+    const { http, poll } = fixture([row(a)], {
+      secondError: () => {
+        controller.abort();
+        return error;
+      },
+    });
+    await expect(
+      runAtcBatch(http, defaultSafetyConfig(), [a, b], undefined, { ...poll, signal: controller.signal }),
+    ).rejects.toBe(error);
+  });
+
+  it.each([
+    new TypeError('Unexpected code defect'),
+    new AdtSafetyError('Denied'),
+    new AdtResponseLimitError(100, 101, 'test'),
+  ])('propagates non-recoverable verification errors: %s', async (error) => {
+    const { http, poll } = fixture([row(a)], { secondError: () => error });
+    await expect(runAtcBatch(http, defaultSafetyConfig(), [a, b], undefined, poll)).rejects.toBe(error);
+  });
+
+  it('logs a safe verification failure and preserves initial findings', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const { http, poll } = fixture([row(a, finding)], { failSecond: true });
+      const result = await requestContext.run({ requestId: 'ATC-REVIEW' }, () =>
+        runAtcBatch(http, defaultSafetyConfig(), [a, b], undefined, poll),
+      );
+      expect(result).toMatchObject({ complete: false, findingCount: 1 });
+      expect(warn).toHaveBeenCalledWith(
+        'ATC verification failed; initial findings retained.',
+        expect.objectContaining({
+          errorClass: 'AdtApiError',
+          statusCode: 403,
+          worklistId: 'WL1',
+          requestId: 'ATC-REVIEW',
+        }),
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('Sensitive backend details');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('classifies invalid direct arguments locally, without a fabricated SAP status', async () => {
+    const { http, poll } = fixture([]);
+    await expect(runAtcBatch(http, defaultSafetyConfig(), [], undefined, poll)).rejects.not.toBeInstanceOf(AdtApiError);
+  });
+
   it('deduplicates selections, preserves enclosing object identity and requires clean-object records', async () => {
     const { http, calls, poll } = fixture([row(a, finding) + row(b)]);
     const result = await runAtcBatch(http, defaultSafetyConfig(), [a, b, a], undefined, poll);
@@ -193,6 +320,32 @@ describe('native ATC batches', () => {
     expect(result.complete).toBe(true);
     expect(result.findings[0]?.object?.name).toBe('/ARC/CL_A');
     expect(calls.find((call) => call.path.includes('/runs?'))?.body).toContain('%2FARC%2FCL_A');
+  });
+
+  it.each(['%2fARC%2fCL_A', '/ARC/CL_A'])('recognizes namespace echo spelling %s', async (nameInUri) => {
+    const object = { ...a, name: '/ARC/CL_A', uri: '/sap/bc/adt/oo/classes/%2FARC%2FCL_A' };
+    const { http, poll } = fixture([row(object, finding).replace('%2FARC%2FCL_A', nameInUri)]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [object], undefined, poll);
+    expect(result).toMatchObject({ complete: true, findingCount: 1, verificationAttempted: false });
+  });
+
+  it.each(['/R3TR/PROG/ZCL_A', '/R3TR/CLAS/ZCL_A?version=inactive', '/R3TR/CLAS/ZCL_A/extra', '/R3TR/CLAS/../ZCL_A'])(
+    'does not expand URI matching to another object/subresource: %s',
+    async (suffix) => {
+      const xml = row(a, finding).replace('/R3TR/CLAS/ZCL_A', suffix);
+      const { http, poll } = fixture([xml]);
+      const result = await runAtcBatch(http, defaultSafetyConfig(), [a], undefined, poll);
+      expect(result).toMatchObject({ complete: false, verificationAttempted: false });
+      expect(result.coverage[0]?.findingCount).toBeNull();
+    },
+  );
+
+  it('retains observed findings but does not certify counts from a malformed worklist', async () => {
+    const { http, poll } = fixture([row(a, finding) + row(b, '<finding messageTitle="Missing priority"/>')]);
+    const result = await runAtcBatch(http, defaultSafetyConfig(), [a, b], undefined, poll);
+    expect(result).toMatchObject({ complete: false, findingCount: 2, verificationAttempted: false });
+    expect(result.coverage.map((object) => object.findingCount)).toEqual([null, null]);
+    expect(result.findings[0]).toMatchObject({ priority: 2, object: { type: 'CLAS', name: 'ZCL_A' } });
   });
 
   it.each([

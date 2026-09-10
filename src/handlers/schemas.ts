@@ -26,6 +26,7 @@ import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import {
+  ATC_BATCH_TYPES_BTP,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
@@ -851,6 +852,20 @@ const QuickfixAffectedObjectSchema = z.object({
   content: z.string().optional(),
 });
 
+const atcBatchObjectsSchema = (types: readonly string[]) =>
+  z
+    .array(
+      z
+        .object({
+          type: z.enum(types),
+          name: z.string().min(1).max(ATC_BATCH_NAME_MAX_LENGTH).regex(new RegExp(ATC_BATCH_NAME_PATTERN)),
+        })
+        .strict(),
+    )
+    .min(1)
+    .max(ATC_BATCH_MAX_OBJECTS)
+    .optional();
+
 export const SAPDiagnoseSchema = z
   .object({
     action: z.enum([
@@ -879,18 +894,7 @@ export const SAPDiagnoseSchema = z
     name: z.string().optional(),
     url: z.string().optional(),
     type: z.string().optional(),
-    objects: z
-      .array(
-        z
-          .object({
-            type: z.enum(ATC_BATCH_TYPES),
-            name: z.string().min(1).max(ATC_BATCH_NAME_MAX_LENGTH).regex(new RegExp(ATC_BATCH_NAME_PATTERN)),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(ATC_BATCH_MAX_OBJECTS)
-      .optional(),
+    objects: atcBatchObjectsSchema(ATC_BATCH_TYPES),
     source: z.string().optional(),
     sourceUri: z.string().optional(),
     line: z.coerce.number().optional(),
@@ -995,6 +999,8 @@ export const SAPDiagnoseSchema = z
       });
     }
   });
+
+const SAPDiagnoseSchemaBtp = SAPDiagnoseSchema.safeExtend({ objects: atcBatchObjectsSchema(ATC_BATCH_TYPES_BTP) });
 
 // ─── SAPTransport ───────────────────────────────────────────────────
 
@@ -1236,7 +1242,7 @@ export function getToolSchema(toolName: string, isBtp: boolean, textSearchAvaila
     case 'SAPLint':
       return SAPLintSchema;
     case 'SAPDiagnose':
-      return SAPDiagnoseSchema;
+      return isBtp ? SAPDiagnoseSchemaBtp : SAPDiagnoseSchema;
     case 'SAPTransport':
       return SAPTransportSchema;
     case 'SAPGit':

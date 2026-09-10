@@ -1,12 +1,16 @@
 /** Native ATC batches with explicit requested-object coverage and one bounded verification run. */
+import { normalizeObjectType, objectUrlForType } from '../handlers/object-types.js';
+import { getCurrentContext } from '../server/context.js';
+import { logger } from '../server/logger.js';
 import {
+  ATC_SETTLE_QUIET_MS,
   type AtcObjectIdentity,
   type AtcPollOptions,
   type AtcRunResult,
   prepareAtcExecution,
   runAtcWorklist,
 } from './atc.js';
-import { AdtApiError } from './errors.js';
+import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
 import type { SafetyConfig } from './safety.js';
@@ -38,6 +42,7 @@ export const ATC_BATCH_TYPES = [
 export const ATC_BATCH_MAX_OBJECTS = 20;
 export const ATC_BATCH_NAME_PATTERN = '^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_]+$';
 export const ATC_BATCH_NAME_MAX_LENGTH = 40;
+const ATC_BATCH_NAME_REGEX = new RegExp(ATC_BATCH_NAME_PATTERN);
 
 export interface AtcBatchObject extends AtcObjectIdentity {
   type: (typeof ATC_BATCH_TYPES)[number];
@@ -51,15 +56,28 @@ interface AtcObjectCoverage extends AtcObjectIdentity {
 }
 
 function objectKey(object: AtcObjectIdentity): string {
-  return `${object.type.toUpperCase().split('/')[0]}:${object.name.toUpperCase()}`;
+  // Explicit aliases distinguish FUGR/F (group) from FUGR/FF (function module).
+  return `${normalizeObjectType(object.type)}:${object.name.replace(/[a-z]/g, (char) => char.toUpperCase())}`;
 }
 
 function sameObject(requested: AtcBatchObject, reported: AtcObjectIdentity): boolean {
   if (objectKey(requested) !== objectKey(reported)) return false;
-  // SAP 750/758/816 return ATC object URIs, not the original OO/DDIC object-root URI.
-  const atcUri = `/sap/bc/adt/atc/objects/R3TR/${requested.type}/${encodeURIComponent(requested.name)}`;
-  const uri = reported.uri.toLowerCase();
-  return uri === requested.uri.toLowerCase() || uri === atcUri.toLowerCase();
+  const root = objectUrlForType(requested.type, requested.name);
+  const candidates = [
+    requested.uri,
+    root,
+    `/sap/bc/adt/atc/objects/R3TR/${requested.type}/${encodeURIComponent(requested.name)}`,
+  ];
+  if (requested.type === 'TABL') candidates.push(objectUrlForType('TABL/DS', requested.name));
+  else if (!atcDdicObjectUrl(requested.type, requested.name) && requested.type !== 'SRVB')
+    candidates.push(`${root}/source/main`);
+  // ABAP names and percent-hex case are equivalent; SAP emits %2f. Accept only
+  // exact known object roots/source-main, including the literal namespace form.
+  return candidates.some((candidate) =>
+    [candidate, candidate.replace(encodeURIComponent(requested.name), requested.name)].some(
+      (uri) => uri.toLowerCase() === reported.uri.toLowerCase(),
+    ),
+  );
 }
 
 function reconcile(objects: readonly AtcBatchObject[], runs: readonly AtcRunResult[]): AtcObjectCoverage[] {
@@ -78,7 +96,7 @@ function reconcile(objects: readonly AtcBatchObject[], runs: readonly AtcRunResu
   });
 }
 
-function reviewBatchEvidence(run: AtcRunResult): AtcRunResult {
+function reviewBatchEvidence(run: AtcRunResult, selection: readonly AtcBatchObject[]) {
   const keys = (run.processedObjects ?? []).map(objectKey);
   if (new Set(keys).size !== keys.length) {
     run.complete = false;
@@ -88,7 +106,21 @@ function reviewBatchEvidence(run: AtcRunResult): AtcRunResult {
     run.complete = false;
     run.incompleteReasons.push('Some ATC findings have no valid enclosing object identity.');
   }
-  return run;
+  if (
+    (run.processedObjects ?? []).some((row) =>
+      selection.some((object) => objectKey(object) === objectKey(row) && !sameObject(object, row)),
+    )
+  ) {
+    run.complete = false;
+    run.incompleteReasons.push('SAP returned an object URI inconsistent with the requested identity.');
+  }
+  // A verification worklist may repeat an already checked object. Count only
+  // this run's explicit selection; keep run totals and the excluded count as evidence.
+  const selectedKeys = new Set(selection.map(objectKey));
+  const selectedFindings = run.findings.filter(
+    (finding) => !finding.object || selectedKeys.has(objectKey(finding.object)),
+  );
+  return { ...run, selectedFindings, excludedFindingCount: run.findings.length - selectedFindings.length };
 }
 
 export async function runAtcBatch(
@@ -106,12 +138,12 @@ export async function runAtcBatch(
       (object) =>
         !ATC_BATCH_TYPES.includes(object.type) ||
         object.name.length > ATC_BATCH_NAME_MAX_LENGTH ||
-        !new RegExp(ATC_BATCH_NAME_PATTERN).test(object.name) ||
+        !ATC_BATCH_NAME_REGEX.test(object.name) ||
         !canonicalHostRelativeAdtPath(object.uri, '/sap/bc/adt/', { allowRawEncodedSlash: true }) ||
         object.uri.includes('?'),
     )
   )
-    throw new AdtApiError('Invalid ATC batch selection.', 400, '/sap/bc/adt/atc/runs');
+    throw new Error('Invalid ATC batch selection.');
   const selected = [...new Map(objects.map((object) => [objectKey(object), object])).values()];
   const execution = await prepareAtcExecution(http, safety, variant, pollOptions);
   const runs = [
@@ -123,6 +155,7 @@ export async function runAtcBatch(
         execution,
         true,
       ),
+      selected,
     ),
   ];
   let coverage = reconcile(selected, runs);
@@ -134,6 +167,13 @@ export async function runAtcBatch(
       incompleteReasons.push('Verification was skipped because the effective check variant could not be confirmed.');
     } else if (pollOptions.signal?.aborted || (pollOptions.now ?? Date.now)() >= execution.requestOptions.deadline!) {
       incompleteReasons.push('Verification was skipped because the request was cancelled or its deadline expired.');
+    } else if (
+      runs[0]!.completionEvidence === 'legacyWorklistSettled' &&
+      execution.requestOptions.deadline! - (pollOptions.now ?? Date.now)() <= ATC_SETTLE_QUIET_MS
+    ) {
+      incompleteReasons.push(
+        'Verification was skipped because the remaining deadline cannot cover legacy worklist settlement.',
+      );
     } else {
       verificationAttempted = true;
       try {
@@ -146,10 +186,22 @@ export async function runAtcBatch(
               execution,
               true,
             ),
+            missing,
           ),
         );
-      } catch {
-        // Do not throw away already collected findings or expose raw SAP/network error details.
+      } catch (error) {
+        if (
+          pollOptions.signal?.aborted ||
+          (error instanceof AdtNetworkError && error.cause?.name === 'AbortError') ||
+          !(error instanceof AdtApiError || error instanceof AdtNetworkError)
+        )
+          throw error;
+        logger.warn('ATC verification failed; initial findings retained.', {
+          requestId: getCurrentContext()?.requestId,
+          worklistId: runs[0]!.worklistId,
+          errorClass: error.name,
+          ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
+        });
         incompleteReasons.push('ATC verification could not be completed; initial findings are retained.');
       }
       coverage = reconcile(selected, runs);
@@ -161,9 +213,15 @@ export async function runAtcBatch(
   if (unreportedCount > 0)
     incompleteReasons.push(`SAP did not report ${unreportedCount} requested object(s); their findings are unknown.`);
   if (coverage.some((object) => object.status === 'reported' && object.findingCount === null)) {
-    incompleteReasons.push('Some requested objects have incomplete or duplicate worklist evidence.');
+    incompleteReasons.push('Finding counts remain unknown for objects from an incomplete run.');
   }
-  const findings = runs.flatMap((run) => run.findings.map((finding) => ({ ...finding, worklistId: run.worklistId })));
+  const findings = runs.flatMap((run) =>
+    run.selectedFindings.map(({ object, ...finding }) => ({
+      ...finding,
+      ...(object ? { object: { type: normalizeObjectType(object.type), name: object.name } } : {}),
+      worklistId: run.worklistId,
+    })),
+  );
   return {
     complete: incompleteReasons.length === 0 && runs.every((run) => run.complete),
     variant: execution.variant ?? null,
@@ -177,6 +235,8 @@ export async function runAtcBatch(
     verificationAttempted,
     incompleteReasons,
     // Keep separate provenance and statistics; never pretend two worklists were one run.
-    runs: runs.map(({ findings: _findings, processedObjects: _objects, ...metadata }) => metadata),
+    runs: runs.map(
+      ({ findings: _findings, processedObjects: _objects, selectedFindings: _selected, ...metadata }) => metadata,
+    ),
   };
 }

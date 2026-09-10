@@ -2,6 +2,8 @@
 
 DDIC follow-up: [TABL, DTEL and DOMA verification](2026-09-10-issue-770-ddic-verification.md) extends the original type contract described below.
 
+Review follow-up: [assessment and fixes for Claude's 15 findings](2026-09-10-pr772-claude-review.md).
+
 ## Decision
 
 Use native ADT object references for a bounded explicit selection, retain the

@@ -6,7 +6,7 @@ import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { normalizeTypeArgsForValidation } = await import('../../../src/handlers/object-types.js');
-const { SAPDiagnoseSchema } = await import('../../../src/handlers/schemas.js');
+const { getToolSchema, SAPDiagnoseSchema } = await import('../../../src/handlers/schemas.js');
 const { getToolDefinitions } = await import('../../../src/handlers/tools.js');
 
 const { requestContext } = await import('../../../src/server/context.js');
@@ -127,6 +127,44 @@ describe('SAPDiagnose ATC batch contract', () => {
       objects: Array(20).fill({ type: 'CLAS/OC', name: '/ARC/CL_A' }),
     });
     expect(SAPDiagnoseSchema.safeParse(input).success).toBe(true);
+  });
+
+  it.each(['syntax', 'unittest', 'atc', 'object_state', 'dumps'])(
+    'ignores an empty array placeholder on %s',
+    (action) => {
+      const input = normalizeTypeArgsForValidation('SAPDiagnose', { action, type: 'CLAS', name: 'ZCL_A', objects: [] });
+      expect(input.objects).toBeUndefined();
+      expect(SAPDiagnoseSchema.safeParse(input).success).toBe(true);
+    },
+  );
+
+  it.each(['zcl_maße', 'zcl_ﬁle', 'zcl_ı'])(
+    'rejects Unicode names before they can fold to another object: %s',
+    async (name) => {
+      const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPDiagnose', {
+        action: 'atc',
+        objects: [{ type: 'CLAS', name }],
+      });
+      expect(result.isError).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it('omits and rejects PROG in BTP batch schemas while retaining DDIC types', async () => {
+    const config = { ...DEFAULT_CONFIG, systemType: 'btp' as const };
+    const tool = getToolDefinitions(config).find((item) => item.name === 'SAPDiagnose')!;
+    const property = (tool.inputSchema.properties as Record<string, any>).objects;
+    expect(property.items.properties.type.enum).not.toContain('PROG');
+    expect(property.items.properties.type.enum).toEqual(expect.arrayContaining(['TABL', 'DTEL', 'DOMA']));
+    const schema = getToolSchema('SAPDiagnose', true)!;
+    expect(schema.safeParse({ action: 'atc', objects: [{ type: 'PROG', name: 'ZREPORT' }] }).success).toBe(false);
+    expect(schema.safeParse({ action: 'atc', objects: [{ type: 'DOMA', name: 'ZDOMAIN' }] }).success).toBe(true);
+    const result = await handleToolCall(client(), config, 'SAPDiagnose', {
+      action: 'atc',
+      objects: [{ type: 'PROG', name: 'ZREPORT' }],
+    });
+    expect(result.isError).toBe(true);
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('advertises strict item properties and the same array limits to clients', () => {
