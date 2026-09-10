@@ -70,6 +70,93 @@ The two behavior-preserving refactors were committed separately after full local
 - `c975a340`: 6,399 unit tests; typecheck, lint, policy validation, build and size/schema gates pass.
 - `0b88db28`: 6,402 unit tests; the same gates pass. Tool fixtures remained byte-identical in both.
 
-Functional follow-up, live rerun and final verification are recorded below after execution.
-Tool snapshots intentionally change only SAPNavigate in this follow-up; general SAPRead and
-SAPContext definitions and initialize instructions are not retuned here.
+### Functional follow-up
+
+`10551314` and final error-only follow-up `905b6200`: **6,424 unit tests / 209 files pass**, plus
+typecheck, lint, 126-entry policy validation, build, strict docs, whitespace and file/schema gates.
+The existing Biome configuration deprecation notice is informational. No budget was raised:
+the largest standard surface is **71,993 bytes / 17,999 estimated tokens** (seven bytes below the
+wire wall). The extra evidence is test/documentation-only; the 26 JSON fixtures total 57,017 bytes.
+
+Nine intentional snapshot changes are confined to SAPNavigate's description and type-description
+strings. General SAPRead/SAPContext definitions and initialize instructions were not retuned in
+this follow-up. The final SOBJ error clarification changes no tool-list bytes.
+
+### Read-only live SAP rerun
+
+At the functional follow-up on A4H/001, SAP_BASIS 758:
+
+- **104 calls: 96 bounded graphs and eight expected refusals**. The retained-root matrix is
+  identical to the pre-review run after omitting observation timestamps and elapsed/byte/attempt
+  metrics. This is exact structured-output comparison, not just equal counts.
+- Refusals: inactive DCLS (two directions), new TABL (two), inactive SKTD (two), oversized PROG
+  outgoing response, and conflicting native identities in the FUNC incoming expansion.
+- **All 25 absent roots rejected before native network POST**. SOBJ rejection-before-any-SAP-I/O
+  and returned-maintenance-boundary behavior are separately covered by dispatch/walker tests.
+- Maximum observed successful-metadata bytes: **162,086**; at most ten HTTP attempts and eight
+  expansions. These are observed request metrics, not peak RSS, total traffic or storage estimates.
+- No SAP writes, execution, data-content reads, SQL execution or BTP provisioning.
+
+Private evidence identifiers: `type-qualification/2026-09-10T06-13-14.055Z` (matrix),
+`2026-09-10T06-15-15.902Z` (absent roots), compared with `2026-09-09T23-21-53.136Z`.
+The last error-only follow-up leaves retained-root behavior unchanged; the full matrix was not
+silently relabeled as a fresh rerun of that final error string.
+
+### Actual model comparisons
+
+Pinned before: `13bd3fb5` (source/tool surface identical to reviewed `3ef8c316`). After:
+`10551314`. Six identical read-only live prompts (CLAS, TTYP, namespaced FUNC, removed SOBJ,
+ENQU, TYPE) were run with GPT-5.6 Sol medium and Ollama Qwen3.6 35B, with shipped tools and
+initialize instructions, no injected routing hints. The harness allowed four read-only tools,
+requested at most six calls and enforced an eight-call hard ceiling. All 24 sessions completed;
+completion is **not** an answer-quality pass.
+
+| Case | Observed before/after result |
+|---|---|
+| GPT retained roots | Native routing remained correct for all five retained roots. TTYP reported the actual expansion cap; FUNC kept the function/group distinction; ENQU did not claim held locks. CLAS still used two calls, other retained roots one. |
+| Qwen CLAS | Both versions chose source-derived SAPContext rather than the requested native map. Both overstated metadata-only provenance; the after answer added unsupported behavioral interpretations. Not cleared. |
+| Qwen TTYP / FUNC | Native routing succeeded, but both versions misstated some counts/limits. The after TTYP answer called expansion exhaustion a 20-node cap despite 13 returned nodes. FUNC also incorrectly said the node cap was reached. Not a non-regression pass. |
+| Qwen ENQU | Correct table link and separation from runtime locks in both answers. |
+| Qwen TYPE | Before chose FUGR and failed; after chose TYPE and obtained the real graph. Its explanation of self-reference remained speculative. One observed routing improvement, not a reliability guarantee. |
+| Removed SOBJ | Before obtained the maintenance graph; after correctly could not. GPT tried BOR first (SQL was blocked by the existing ceiling), then refused after five calls. Qwen retried without type and conflated BOR/maintenance terminology. This motivated the final error-only clarification below. |
+
+Three additional ordinary-workflow GPT pairs used the same deterministic SAP fixtures and actual
+shipped schemas/instructions: business explanation, inactive draft review and precise definition.
+Five of six sessions completed; the **before** draft review exhausted the call guard. Both completed
+business/definition pairs retained the central findings. The after draft answer correctly rejected
+the removed negative-amount check and did not claim syntax execution. This small, noisy sample does
+not clear previously documented broader/weak-model regressions. Fixture outputs were frozen; this
+control is not a live replay of the compressor's changed disclaimer.
+
+Private run IDs: GPT `2026-09-10T06-14-49.774Z`, Qwen `2026-09-10T06-14-50.908Z`, ordinary
+GPT `2026-09-10T06-15-37.901Z`. Answers were reviewed against actual tool payloads, not just whether
+the model returned text. No transcript/source dump is committed.
+
+### Error-guidance follow-up
+
+The SOBJ regression now explains that native SOBJ/MO is a maintenance object, while SAPRead SOBJ
+is a different BOR identity; it explicitly warns against substituting BOR or dropping the root
+type. Both SOBJ spellings are tested. This is error-path guidance only, without a global type alias
+or additional normal schema text. The updated SOBJ evidence page also removes obsolete `intent.ts`
+references and the disproven inference that native SOBJ metadata did not exist.
+
+Final SOBJ repeats at `905b6200` completed with both models and the pinned before build (four
+sessions). GPT's final answer distinguished BOR from maintenance and avoided claiming a program
+connection. Qwen recognized unsupported relations but **still tried a BOR read despite the warning**
+and blurred its meaning. Both after runs used two calls; both BOR attempts were stopped by the
+existing SQL ceiling. Thus the error is clearer, but instruction-following is not fixed and must
+not become an authorization mechanism. No additional permissions were enabled to make the test pass.
+Private repeat IDs: GPT `2026-09-10T06-21-27.810Z`, Qwen `2026-09-10T06-21-29.008Z`.
+
+## Final review disposition
+
+The actionable code/evidence/doc findings are addressed. Retained guards have concrete regression
+coverage and documented reasons; the default-on decision is the owner's, not a new assumption.
+Current main `c55adcb8` is included without a new merge. Dependency/configuration files are unchanged
+by this review, and changed-file known-credential checks pass. The new evidence documents and
+fixtures contain no credentials or source bodies. Temporary comparison servers are stopped after use.
+
+Local verification is green; fresh GitHub status belongs to the pushed PR head and must not be
+inferred from the previous head's successful checks. **Do not merge automatically.** Functional
+correctness of these fixes does not resolve the earlier ordinary/weak-model acceptance concerns,
+live BTP PP/Cloud Connector qualification, or cross-release coverage limits.
