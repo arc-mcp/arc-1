@@ -1,0 +1,505 @@
+{
+  "cloudConnectorProof": {
+    "status": "passed",
+    "destination": "ARC1_MULTI_A4H_2023_001_BASIC",
+    "transport": "cloud-connector",
+    "directDnsUnavailable": true,
+    "sapSystemId": "A4H",
+    "sapClient": "001",
+    "anonymousStatus": 401,
+    "sourceReadStatus": 200,
+    "sourceBytes": 7444,
+    "wrongLocationStatus": 503,
+    "invalidProxyTokenStatus": 407,
+    "metrics": {
+      "sapRequestAttempts": 3,
+      "proxyTokenRequests": 1
+    },
+    "checkedAt": "2026-09-07T12:04:46.658Z"
+  },
+  "bulkScaleAndRefresh": {
+    "state": "SUCCEEDED",
+    "events": [
+      {
+        "event": "hana-scale-started",
+        "config": {
+          "systemKey": "SCALE-HANA-20260907-A",
+          "nodes": 100000,
+          "fanout": 10,
+          "stride": 7919
+        },
+        "baseline": {
+          "diskStatus": "available",
+          "diskBytes": 9355264,
+          "columnMemoryBytes": 7281888,
+          "tables": [
+            {
+              "name": "COLLECTOR_LOCK",
+              "diskBytes": 16384,
+              "columnMemoryBytes": null
+            },
+            {
+              "name": "COLLECTION_JOBS",
+              "diskBytes": 585728,
+              "columnMemoryBytes": 142920
+            },
+            {
+              "name": "EDGE_OBSERVATIONS",
+              "diskBytes": 1531904,
+              "columnMemoryBytes": 1062769
+            },
+            {
+              "name": "GENERATIONS",
+              "diskBytes": 163840,
+              "columnMemoryBytes": 219196
+            },
+            {
+              "name": "NODES",
+              "diskBytes": 7012352,
+              "columnMemoryBytes": 5796943
+            },
+            {
+              "name": "SCHEMA_MIGRATIONS",
+              "diskBytes": 45056,
+              "columnMemoryBytes": 60060
+            }
+          ]
+        },
+        "at": "2026-09-07T12:18:06.096Z"
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 10000,
+        "elapsedMs": 1958.4761080000003
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 20000,
+        "elapsedMs": 3080.675337
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 30000,
+        "elapsedMs": 4165.226269
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 40000,
+        "elapsedMs": 5501.108794
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 50000,
+        "elapsedMs": 6744.593985
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 60000,
+        "elapsedMs": 8008.3473779999995
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 70000,
+        "elapsedMs": 9335.114554
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 80000,
+        "elapsedMs": 10769.720959999999
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 90000,
+        "elapsedMs": 12079.435959999999
+      },
+      {
+        "event": "hana-scale-progress",
+        "nodesProcessed": 100000,
+        "elapsedMs": 13316.712148999999
+      },
+      {
+        "event": "hana-scale-seeded",
+        "config": {
+          "systemKey": "SCALE-HANA-20260907-A",
+          "nodes": 100000,
+          "fanout": 10,
+          "stride": 7919
+        },
+        "stats": {
+          "nodes": 100000,
+          "systems": 1,
+          "unresolved": 0,
+          "observations": 1000000
+        },
+        "seedMs": 13326.091745,
+        "baseline": {
+          "diskStatus": "available",
+          "diskBytes": 9355264,
+          "columnMemoryBytes": 7281888,
+          "tables": [
+            {
+              "name": "COLLECTOR_LOCK",
+              "diskBytes": 16384,
+              "columnMemoryBytes": null
+            },
+            {
+              "name": "COLLECTION_JOBS",
+              "diskBytes": 585728,
+              "columnMemoryBytes": 142920
+            },
+            {
+              "name": "EDGE_OBSERVATIONS",
+              "diskBytes": 1531904,
+              "columnMemoryBytes": 1062769
+            },
+            {
+              "name": "GENERATIONS",
+              "diskBytes": 163840,
+              "columnMemoryBytes": 219196
+            },
+            {
+              "name": "NODES",
+              "diskBytes": 7012352,
+              "columnMemoryBytes": 5796943
+            },
+            {
+              "name": "SCHEMA_MIGRATIONS",
+              "diskBytes": 45056,
+              "columnMemoryBytes": 60060
+            }
+          ]
+        },
+        "immediate": {
+          "diskStatus": "available",
+          "diskBytes": 96559104,
+          "columnMemoryBytes": 240228318,
+          "tables": [
+            {
+              "name": "COLLECTOR_LOCK",
+              "diskBytes": 16384,
+              "columnMemoryBytes": null
+            },
+            {
+              "name": "COLLECTION_JOBS",
+              "diskBytes": 585728,
+              "columnMemoryBytes": 142920
+            },
+            {
+              "name": "EDGE_OBSERVATIONS",
+              "diskBytes": 80519168,
+              "columnMemoryBytes": 222031057
+            },
+            {
+              "name": "GENERATIONS",
+              "diskBytes": 163840,
+              "columnMemoryBytes": 219196
+            },
+            {
+              "name": "NODES",
+              "diskBytes": 15228928,
+              "columnMemoryBytes": 17775085
+            },
+            {
+              "name": "SCHEMA_MIGRATIONS",
+              "diskBytes": 45056,
+              "columnMemoryBytes": 60060
+            }
+          ]
+        }
+      },
+      {
+        "event": "hana-scale-complete",
+        "config": {
+          "systemKey": "SCALE-HANA-20260907-A",
+          "nodes": 100000,
+          "fanout": 10,
+          "stride": 7919
+        },
+        "stats": {
+          "nodes": 100000,
+          "systems": 1,
+          "unresolved": 0,
+          "observations": 1000000
+        },
+        "seedMs": 13326.091745,
+        "benchmark": [
+          {
+            "concurrency": 1,
+            "hops": 1,
+            "p50Ms": 89.73950399999922,
+            "p95Ms": 439.8911399999997,
+            "repetitions": 12,
+            "returnedNodes": 21,
+            "returnedEdges": 20,
+            "truncated": false
+          },
+          {
+            "concurrency": 1,
+            "hops": 3,
+            "p50Ms": 105.25809200000003,
+            "p95Ms": 291.9891499999976,
+            "repetitions": 12,
+            "returnedNodes": 41,
+            "returnedEdges": 237,
+            "truncated": true
+          },
+          {
+            "concurrency": 3,
+            "hops": 1,
+            "p50Ms": 85.98883599999681,
+            "p95Ms": 197.59936400000151,
+            "repetitions": 12,
+            "returnedNodes": 21,
+            "returnedEdges": 20,
+            "truncated": false
+          },
+          {
+            "concurrency": 3,
+            "hops": 3,
+            "p50Ms": 109.87935300000026,
+            "p95Ms": 146.18937500000175,
+            "repetitions": 12,
+            "returnedNodes": 41,
+            "returnedEdges": 237,
+            "truncated": true
+          }
+        ],
+        "baseline": {
+          "diskStatus": "available",
+          "diskBytes": 9355264,
+          "columnMemoryBytes": 7281888,
+          "tables": [
+            {
+              "name": "COLLECTOR_LOCK",
+              "diskBytes": 16384,
+              "columnMemoryBytes": null
+            },
+            {
+              "name": "COLLECTION_JOBS",
+              "diskBytes": 585728,
+              "columnMemoryBytes": 142920
+            },
+            {
+              "name": "EDGE_OBSERVATIONS",
+              "diskBytes": 1531904,
+              "columnMemoryBytes": 1062769
+            },
+            {
+              "name": "GENERATIONS",
+              "diskBytes": 163840,
+              "columnMemoryBytes": 219196
+            },
+            {
+              "name": "NODES",
+              "diskBytes": 7012352,
+              "columnMemoryBytes": 5796943
+            },
+            {
+              "name": "SCHEMA_MIGRATIONS",
+              "diskBytes": 45056,
+              "columnMemoryBytes": 60060
+            }
+          ]
+        },
+        "storage": {
+          "diskStatus": "available",
+          "diskBytes": 96559104,
+          "columnMemoryBytes": 240228318,
+          "tables": [
+            {
+              "name": "COLLECTOR_LOCK",
+              "diskBytes": 16384,
+              "columnMemoryBytes": null
+            },
+            {
+              "name": "COLLECTION_JOBS",
+              "diskBytes": 585728,
+              "columnMemoryBytes": 142920
+            },
+            {
+              "name": "EDGE_OBSERVATIONS",
+              "diskBytes": 80519168,
+              "columnMemoryBytes": 222031057
+            },
+            {
+              "name": "GENERATIONS",
+              "diskBytes": 163840,
+              "columnMemoryBytes": 219196
+            },
+            {
+              "name": "NODES",
+              "diskBytes": 15228928,
+              "columnMemoryBytes": 17775085
+            },
+            {
+              "name": "SCHEMA_MIGRATIONS",
+              "diskBytes": 45056,
+              "columnMemoryBytes": 60060
+            }
+          ]
+        },
+        "at": "2026-09-07T12:18:24.615Z",
+        "warning": "Synthetic SQL seed, not live ingestion or a general HANA compression ratio. Recheck persistence after settling."
+      },
+      {
+        "status": "ok",
+        "discoveredObjects": 125,
+        "downloadedBytes": 921278,
+        "durationMs": 59860.680491,
+        "failedSources": 3,
+        "observations": 715,
+        "requests": 152,
+        "sapRequestAttempts": 152,
+        "proxyTokenRequests": 1,
+        "saturatedSearches": 0,
+        "successfulSources": 122,
+        "systemKey": "A4H-2023-001",
+        "failedReads": 0,
+        "failedParses": 1,
+        "partialParses": 2,
+        "dynamicTargets": 0,
+        "collectionStatus": "partial"
+      },
+      {
+        "status": "ok",
+        "discoveredObjects": 125,
+        "downloadedBytes": 921278,
+        "durationMs": 66309.274756,
+        "failedSources": 3,
+        "observations": 715,
+        "requests": 152,
+        "sapRequestAttempts": 152,
+        "proxyTokenRequests": 1,
+        "saturatedSearches": 0,
+        "successfulSources": 122,
+        "systemKey": "A4H-2023-001",
+        "failedReads": 0,
+        "failedParses": 1,
+        "partialParses": 2,
+        "dynamicTargets": 0,
+        "collectionStatus": "partial"
+      }
+    ],
+    "taskGuid": "23b5fc1d-b4cc-4ab6-a3e4-493954bf010c"
+  },
+  "laterStorage": {
+    "task": {
+      "guid": "ba08ea8b-4a2a-4f72-adea-af62c015b2b1",
+      "state": "SUCCEEDED"
+    },
+    "events": [
+      {
+        "event": "settled-storage",
+        "at": "2026-09-07T12:21:10.888Z",
+        "pg": {
+          "tables": [
+            {
+              "name": "collection_jobs",
+              "tableBytes": 335872,
+              "indexBytes": 16384,
+              "totalBytes": 352256
+            },
+            {
+              "name": "edge_observations",
+              "tableBytes": 2711552,
+              "indexBytes": 7397376,
+              "totalBytes": 10108928
+            },
+            {
+              "name": "generations",
+              "tableBytes": 65536,
+              "indexBytes": 16384,
+              "totalBytes": 81920
+            },
+            {
+              "name": "nodes",
+              "tableBytes": 1572864,
+              "indexBytes": 2686976,
+              "totalBytes": 4259840
+            },
+            {
+              "name": "schema_migrations",
+              "tableBytes": 8192,
+              "indexBytes": 16384,
+              "totalBytes": 24576
+            },
+            {
+              "name": "systems",
+              "tableBytes": 180224,
+              "indexBytes": 32768,
+              "totalBytes": 212992
+            }
+          ],
+          "totalBytes": 15040512,
+          "databaseBytes": 24370199,
+          "walPosition": "1/24278850"
+        },
+        "hana": {
+          "diskStatus": "available",
+          "diskBytes": 65429504,
+          "columnMemoryBytes": 60486426,
+          "tables": [
+            {
+              "name": "COLLECTOR_LOCK",
+              "diskBytes": 16384,
+              "columnMemoryBytes": null
+            },
+            {
+              "name": "COLLECTION_JOBS",
+              "diskBytes": 651264,
+              "columnMemoryBytes": 83618
+            },
+            {
+              "name": "EDGE_OBSERVATIONS",
+              "diskBytes": 58486784,
+              "columnMemoryBytes": 55311691
+            },
+            {
+              "name": "GENERATIONS",
+              "diskBytes": 200704,
+              "columnMemoryBytes": 185438
+            },
+            {
+              "name": "NODES",
+              "diskBytes": 6029312,
+              "columnMemoryBytes": 4845619
+            },
+            {
+              "name": "SCHEMA_MIGRATIONS",
+              "diskBytes": 45056,
+              "columnMemoryBytes": 60060
+            }
+          ]
+        },
+        "walRetained": {
+          "status": "unavailable",
+          "bytes": null
+        },
+        "stats": {
+          "pgLive": {
+            "nodes": 1799,
+            "observations": 2496,
+            "systems": 1,
+            "unresolved": 1655
+          },
+          "hanaLive": {
+            "nodes": 282,
+            "systems": 1,
+            "unresolved": 141,
+            "observations": 715
+          },
+          "hanaScale": {
+            "nodes": 100000,
+            "systems": 1,
+            "unresolved": 0,
+            "observations": 1000000
+          }
+        }
+      }
+    ]
+  },
+  "notes": [
+    "Refresh events are PostgreSQL first, HANA second. Their pre-existing normal indexes contain different historical scopes; use the clean SOAK key for database content parity.",
+    "HANA persistence can lag and reclaim rolled-back versions. Compare immediate and later whole-schema totals, not a claimed universal compression ratio."
+  ]
+}

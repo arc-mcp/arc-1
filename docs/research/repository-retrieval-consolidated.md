@@ -2,6 +2,15 @@
 
 ## Current direction — 2026-09-10
 
+PR [#769](https://github.com/arc-mcp/arc-1/pull/769) is now merged into main as `81baa517`
+(2026-09-10, 09:43 UTC). The recommendation is to close the separate persistent-graph PR
+[#756](https://github.com/arc-mcp/arc-1/pull/756) unmerged and retain its research in the
+[PR #756 archive and continuation decision](archive/pr-756/README.md). That archive preserves
+17 published documents, two recovered local research notes and an uncommitted documentation
+follow-up, with provenance. Its proposed ADR, feature settings and setup instructions are
+historical, not installed capabilities or current policy. Cloud/Docker retirement is separate
+from closing the PR; the archive records the verified local state and cloud inventory limitation.
+
 The owner chose automatic capability-based exposure instead of a dedicated rollout variable.
 `ARC1_LIVE_RELATIONS` and `--live-relations` are removed. Existing `SAP_DENY_ACTIONS` can hide
 and block `SAPNavigate.relations`; read scope, SAP identity/authorization, request bounds,
@@ -356,13 +365,16 @@ dated measurements. Old “next steps,” “not yet tested” and “complete�
   [gap results](2026-09-09-model-output-gap-review.md), and the final PR review linked above.
   Raw SAP/model traces stay private; completion counts are not semantic pass counts.
 - Persistent graph archive at its own revision:
+  [local archive, provenance and continuation decision](archive/pr-756/README.md), plus the
+  original immutable sources:
   [specification](https://github.com/arc-mcp/arc-1/blob/69d7d596f2bee8740d9629e017b58d6deecb192d/docs_page/repository-graph-specification.md),
   [delivery plan](https://github.com/arc-mcp/arc-1/blob/69d7d596f2bee8740d9629e017b58d6deecb192d/docs/plans/repository-graph-delivery.md),
   [CC collection and storage evidence](https://github.com/arc-mcp/arc-1/blob/69d7d596f2bee8740d9629e017b58d6deecb192d/docs/research/2026-09-07-graph-cloud-connector-sizing.md),
   [graph/live comparison](https://github.com/arc-mcp/arc-1/blob/69d7d596f2bee8740d9629e017b58d6deecb192d/docs/research/2026-09-07-graph-ab-comparison.md),
   [guided pilot](https://github.com/arc-mcp/arc-1/blob/69d7d596f2bee8740d9629e017b58d6deecb192d/docs/research/2026-09-07-graph-guided-pilot.md).
-  The additional `docs/research/2026-09-08-live-relationship-options-and-smoke.md` spike is a
-  local-only record in the graph worktree, not a file published at that revision.
+  The September 8 [options/smoke note](archive/pr-756/docs/research/2026-09-08-live-relationship-options-and-smoke.md)
+  and [integration spike/plan](archive/pr-756/docs/plans/live-relationships-integration.md) were
+  recovered from the graph worktree. They are preserved here, but were not published at that revision.
 - Original local-only `arc-repository-index` archive: `docs/scaling-and-vectors.md`,
   `docs/metadata-graph-research-2026-09-06.md`, `docs/local-postgres-graph-test-plan.md`,
   `docs/repository-graph-continuation-plan-2026-09-06.md`,

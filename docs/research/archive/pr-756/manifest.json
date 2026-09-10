@@ -1,0 +1,188 @@
+{
+  "archivedOn": "2026-09-10",
+  "publishedRevision": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+  "policy": "Markdown adds an archival notice and resolves relative links; original historical prose is retained. JSON and the local delivery diff are byte-identical. Local notes are separately attributed.",
+  "files": [
+    {
+      "path": "docs/adr/0008-optional-shared-repository-graph.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "aa4f2a16bcee8be955c68a37a3cd8272ea66d22167924d0428656fb887d3025a",
+      "archivedSha256": "659a13d068a33496d9c3b291bcf7a393ec77d90c1d982242c156340d37be9219",
+      "sourceBytes": 3519,
+      "archivedBytes": 3854
+    },
+    {
+      "path": "docs/plans/optional-repository-graph.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "367289825989367c981a9deda8eaeaf9e36e914378d52c3ef5d35ed02d4ae5c6",
+      "archivedSha256": "dd2832c91f3a1cf695235da74a6cc26d320ed7f6d1d52ca67f510ebabcb6a2ac",
+      "sourceBytes": 7017,
+      "archivedBytes": 7342
+    },
+    {
+      "path": "docs/plans/repository-graph-cloud-connector-and-sizing.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "a011de410c3950f6f6d02584602953c6d65501b8572fed9d7b3a7c7bd2fdad9a",
+      "archivedSha256": "78b73871048a8785ff198cb8664e9f48fe6ce046387cc456591729758e69d080",
+      "sourceBytes": 8459,
+      "archivedBytes": 8802
+    },
+    {
+      "path": "docs/plans/repository-graph-delivery.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "71e02d5f4d56f9e71fbb647431951459e352b18d18d9e9e08753b51ec1922649",
+      "archivedSha256": "c183512cebc9a1fea99a0909c373158afc64772aefab6e4dc5a1c76a9c730cb0",
+      "sourceBytes": 15708,
+      "archivedBytes": 16033
+    },
+    {
+      "path": "docs/research/2026-09-07-graph-ab-comparison.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "e96c6979cd3b264137b2784c0c93d594a9344390defc940145b2cf1858039e08",
+      "archivedSha256": "28723d10ad6c3f238c23811c20aa3cfed468ddcc540d2cd8c1d991f9922e510f",
+      "sourceBytes": 8086,
+      "archivedBytes": 8419
+    },
+    {
+      "path": "docs/research/2026-09-07-graph-cc-soak-evidence.json",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "a9ce32c630500299fe4eeddb13bacc1904c1e745720829714643bf49fefc0507",
+      "archivedSha256": "a9ce32c630500299fe4eeddb13bacc1904c1e745720829714643bf49fefc0507",
+      "sourceBytes": 172266,
+      "archivedBytes": 172266
+    },
+    {
+      "path": "docs/research/2026-09-07-graph-cloud-connector-sizing.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "e9a6aef5147967c15c153d9792ff2d96e570a3893c699cc90d14113bfa5a0e2c",
+      "archivedSha256": "3f4a143f498717d4889ebc4f98c54de701d3544007abbe059ca415e935435939",
+      "sourceBytes": 9616,
+      "archivedBytes": 9958
+    },
+    {
+      "path": "docs/research/2026-09-07-graph-guided-pilot.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "7229be36c6261c11b956280fc54338e02cc6f36eff7655cbb0ef8f57f58fdd4a",
+      "archivedSha256": "f31772db68edfdca05e5704404e13bfbd993a75a533c901dd3e5c9e4039ffb1f",
+      "sourceBytes": 14301,
+      "archivedBytes": 14633
+    },
+    {
+      "path": "docs/research/2026-09-07-graph-scale-evidence.json",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "b5da5d010cf05f11ac5f88dae294c1a293d9753321a6ae4774818a1c8de9f400",
+      "archivedSha256": "b5da5d010cf05f11ac5f88dae294c1a293d9753321a6ae4774818a1c8de9f400",
+      "sourceBytes": 14063,
+      "archivedBytes": 14063
+    },
+    {
+      "path": "docs/research/repository-graph-internal-docker-btp-2026-09-07.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "153f3aa8540973c4ea2e160ccce5778b6fa476a665a45eb1b8e54b4d635592e0",
+      "archivedSha256": "5522153d8fe0ffdedab31d38d50c3111b22e78081084047eca9f5802ca1fa0d0",
+      "sourceBytes": 8177,
+      "archivedBytes": 8527
+    },
+    {
+      "path": "docs/research/repository-graph-spec-review-2026-09-07.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "610be34ee9a12544dbff0971c58558b17b579fc8d72b7c76dacc36ca49962f09",
+      "archivedSha256": "21d8e3e0dda0a017f312180d63f687dfbc11b0299401854e82a9548ef46cafe1",
+      "sourceBytes": 7612,
+      "archivedBytes": 7954
+    },
+    {
+      "path": "docs/research/repository-graph-validation.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "40fdb05f5f96e14a229dbe93b6d4fdf719bc180d68d11c75483de1efb88fe38f",
+      "archivedSha256": "690b24b8fe96c696b64affe3c6bfbff46d2c4c3c5b66daede8e22d6806d80aad",
+      "sourceBytes": 7268,
+      "archivedBytes": 7598
+    },
+    {
+      "path": "docs_page/repository-graph-backend.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "58663da195500f047036d6a8667ee2e18941ab86aff71250373013726b812453",
+      "archivedSha256": "8da6bb37adbfeb91481b454ce2b5facbd8f65ca44c6e4928300bd0c6777ab608",
+      "sourceBytes": 24201,
+      "archivedBytes": 24521
+    },
+    {
+      "path": "docs_page/repository-graph-comparison.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "39bd9016991c85c5a7ae3d7e614a26d0acf32b17ae368dc3e0cd021f18a15d30",
+      "archivedSha256": "90622d643272ac8c704d60ed8094f0031ef0562a67ad447e0d5d6c7c0af1b84a",
+      "sourceBytes": 11684,
+      "archivedBytes": 12007
+    },
+    {
+      "path": "docs_page/repository-graph-sizing.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "58d770a46014f924f26fc050d63a4c18afd58497433ada98dd76fcf1d0c9d3bf",
+      "archivedSha256": "d45df4657368e141ec048f072c2431033182c8ba3ade8cab47cdecea7d5c46cc",
+      "sourceBytes": 13079,
+      "archivedBytes": 13398
+    },
+    {
+      "path": "docs_page/repository-graph-specification.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "595c39272887c6a03517657285e376880750e0d3deb9faa6f0c31be02ddb3dfd",
+      "archivedSha256": "00d39dd0e30a85ac3b45f1c8a48030779cee27877dd90c76da7c12368836a78f",
+      "sourceBytes": 45783,
+      "archivedBytes": 46376
+    },
+    {
+      "path": "docs_page/repository-graph.md",
+      "origin": "published",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "feef88e1f41dd98ca7043961e285bbb95599ea5e389515a6521444c5025b3d9b",
+      "archivedSha256": "dab2b9a42a08a8d70c90fe2c0c5f0ac5be39c4885bc86263f3b1a3ba778ab286",
+      "sourceBytes": 16107,
+      "archivedBytes": 16686
+    },
+    {
+      "path": "docs/research/2026-09-08-live-relationship-options-and-smoke.md",
+      "origin": "local-uncommitted",
+      "sourceCommit": null,
+      "sourceSha256": "a540c9000df699ba6685673cc0cab5b1be20239c734a9bddf9d3f8c6b24dd762",
+      "archivedSha256": "fac58fcd08d22703efc92ec7c4d222da33660bfb9463f07aebe70407b4adafc2",
+      "sourceBytes": 20459,
+      "archivedBytes": 21028
+    },
+    {
+      "path": "docs/plans/live-relationships-integration.md",
+      "origin": "local-uncommitted",
+      "sourceCommit": null,
+      "sourceSha256": "d8d1fa71792f9cbe60deef028e118ca7d66ed56f8a6deb400c3ec4be2b4e2dd3",
+      "archivedSha256": "f885c3061b1d997cb8823a1a8929845af5570dd883f1fb8e981d15eb67a74ee8",
+      "sourceBytes": 21877,
+      "archivedBytes": 22154
+    },
+    {
+      "path": "local-delivery-followup.patch",
+      "origin": "local-uncommitted-diff",
+      "sourceCommit": "69d7d596f2bee8740d9629e017b58d6deecb192d",
+      "sourceSha256": "1d6542eae9ab381a545cd57110b59fc59bcf41a967581f432245b8fb618cb5c1",
+      "archivedSha256": "1d6542eae9ab381a545cd57110b59fc59bcf41a967581f432245b8fb618cb5c1",
+      "sourceBytes": 2282,
+      "archivedBytes": 2282,
+      "diffFormat": "git diff --unified=0"
+    }
+  ]
+}

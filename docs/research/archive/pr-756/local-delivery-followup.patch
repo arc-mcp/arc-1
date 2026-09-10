@@ -1,0 +1,31 @@
+diff --git a/docs/plans/repository-graph-delivery.md b/docs/plans/repository-graph-delivery.md
+index be7cd077..ccd4408d 100644
+--- a/docs/plans/repository-graph-delivery.md
++++ b/docs/plans/repository-graph-delivery.md
+@@ -49,0 +50,26 @@ reported rather than resolved with paid capacity or broader authorization.
++### Live-first research follow-up (2026-09-08)
++
++The [live relationship research and smoke report](../research/2026-09-08-live-relationship-options-and-smoke.md)
++recommends improving native live ARC navigation before expanding the persistent graph. A4H's
++Relation Explorer endpoint returned incoming/outgoing metadata without source downloads and
++recovered the missing RAP implementation edge, but missed a source-confirmed INSTANCE OF edge.
++Existing live where-used traversal also found 17 objects in seven lookups. These are external
++prototypes, not installed ARC features or proof of complete impact analysis.
++
++- [x] Investigate native metadata, bounded live traversal, lightweight source extraction and cache
++  correctness; record negative controls, risk/complexity/value and implementation recommendation.
++- [ ] Repair SAPContext option-sensitive aggregate-cache behavior/freshness and total-work budgets;
++  preserve normal source caching and the existing per-user dependency-payload cache bypass.
++- [ ] Implement an experimental, default-hidden native relation action inside an existing intent
++  tool, only after root/context validation, request bounds and provenance tests are in place.
++- [ ] Qualify the native endpoint over Cloud Connector/PP and other SAP releases, then repeat
++  matched live/graph answer-quality tests before further database/collector scope expansion.
++
++The research did not implement those unchecked items, modify running deployments, or supersede
++the historical backend delivery evidence below. Keep the existing graph experimental.
++
++The [follow-up integration plan](live-relationships-integration.md) now grounds those steps in
++28 cache/loopback controls plus live native, ETag and discovery-reuse spikes. It recommends
++retiring only aggregate context-answer reuse, a default-hidden native SAPNavigate action and
++request-local traversal with a physical-send budget. PP/CC and release qualification remain gates.
++
