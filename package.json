@@ -60,6 +60,8 @@
     "test:integration:crud": "vitest run --config vitest.integration.config.ts tests/integration/crud.lifecycle.integration.test.ts",
     "test:authz:http": "node scripts/check-authz-http-profiles.mjs",
     "test:npx-smoke": "npm run build && node scripts/ci/assert-npx-bin-smoke.mjs",
+    "test:relations:smoke": "npm run build && tsx scripts/smoke-live-relations.ts",
+    "bench:context-parsing": "tsx scripts/bench-context-parsing.ts",
     "test:integration:skip-summary": "vitest run --config vitest.integration.config.ts --reporter=verbose 2>&1 | node scripts/ci/summarize-skips.mjs",
     "test:coverage": "vitest run --coverage",
     "test:coverage-report": "node scripts/ci/coverage-summary.mjs",

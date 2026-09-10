@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/functions/groups/su_user",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "b692a6f68381918f98e21ff1959298195452247a6e9102a3ba005ecc8aa77679",
+    "networkSha256": "398d0cb27a37b386a0549c7866f88031af8fc2f102b556edfd0b4a7065c8cd1b",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 238,
+    "observedEdges": 237
+  },
+  "type": "FUGR",
+  "native": "FUGR/F",
+  "name": "SU_USER",
+  "uri": "/sap/bc/adt/functions/groups/su_user",
+  "metadataRootQName": "group:abapFunctionGroup",
+  "context": "ENV",
+  "metadataXml": "<group:abapFunctionGroup adtcore:name=\"SU_USER\" adtcore:type=\"FUGR/F\" adtcore:version=\"active\" xmlns:group=\"http://www.sap.com/adt/functions/groups\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/susr\" adtcore:type=\"DEVC/K\" adtcore:name=\"SUSR\"/>\n</group:abapFunctionGroup>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/typegroups/ustyp\" adtcore:type=\"TYPE/DG\" adtcore:name=\"USTYP\" adtcore:packageName=\"SUSR\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/functions/groups/su_user\" adtcore:type=\"FUGR/F\" adtcore:name=\"SU_USER\" adtcore:packageName=\"SUSR\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/functions/groups/su_user</oro:object1><oro:object2>/sap/bc/adt/ddic/typegroups/ustyp</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

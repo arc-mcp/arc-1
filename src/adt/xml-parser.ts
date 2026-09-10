@@ -550,7 +550,15 @@ export function parseDiscoveryDocument(xml: string): Map<string, string[]> {
   if (!xml?.trim()) return new Map();
 
   try {
-    const parsed = parseXml(xml);
+    return parseDiscoveryObject(parseXml(xml));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Map an already-parsed discovery document without parsing its XML a second time. */
+export function parseDiscoveryObject(parsed: Record<string, unknown>): Map<string, string[]> {
+  try {
     const service = (parsed.service ?? {}) as Record<string, unknown>;
     const workspaces = Array.isArray(service.workspace)
       ? service.workspace

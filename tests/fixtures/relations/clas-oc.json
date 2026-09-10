@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/oo/classes/zcl_ssi_factory",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "b799e405f8ccea120d06a156a31273ca30aed2f3a0561da90392ccf760393f0d",
+    "networkSha256": "eaa516311d85604b6b5c9c3f948003096e2f97796ed0bf107806b1e993e7d408",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 6,
+    "observedEdges": 5
+  },
+  "type": "CLAS",
+  "native": "CLAS/OC",
+  "name": "ZCL_SSI_FACTORY",
+  "uri": "/sap/bc/adt/oo/classes/zcl_ssi_factory",
+  "metadataRootQName": "class:abapClass",
+  "context": "ENV",
+  "metadataXml": "<class:abapClass adtcore:name=\"ZCL_SSI_FACTORY\" adtcore:type=\"CLAS/OC\" adtcore:version=\"active\" xmlns:class=\"http://www.sap.com/adt/oo/classes\" xmlns:abapoo=\"http://www.sap.com/adt/oo\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/zssi_importer\" adtcore:type=\"DEVC/K\" adtcore:name=\"ZSSI_IMPORTER\"/>\n</class:abapClass>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/oo/classes/cx_sy_create_object_error\" adtcore:type=\"CLAS/OC\" adtcore:name=\"CX_SY_CREATE_OBJECT_ERROR\" adtcore:packageName=\"S_ABAP_EXCEPTIONS\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/oo/classes/zcl_ssi_factory\" adtcore:type=\"CLAS/OC\" adtcore:name=\"ZCL_SSI_FACTORY\" adtcore:packageName=\"ZSSI_IMPORTER\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/oo/classes/zcl_ssi_factory</oro:object1><oro:object2>/sap/bc/adt/oo/classes/cx_sy_create_object_error</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

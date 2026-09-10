@@ -232,7 +232,8 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | XML response parser / safety check | `src/adt/xml-parser.ts` / `src/adt/safety.ts` |
 | PrettyPrint / lint rules / pre-write hints | `src/handlers/lint.ts` + `src/adt/devtools.ts` / `src/lint/{lint,config-builder}.ts` + presets/ / `src/lint/pre-write-hints.ts` |
 | abaplint beyond its grammar ceiling (8xx) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`), `src/lint/config-builder.ts` — parser errors demoted to warnings when release > 758 |
-| Dependency / CDS-dep / contract / compressor | `src/context/{deps,cds-deps,contract,compressor}.ts` |
+| Dependency / CDS-dep / contract / compressor | `src/context/{deps,cds-deps,contract,compressor,parse-cache}.ts` — parse memoization only AFTER authorized source retrieval; PP bypass stays mandatory |
+| Experimental live relations | `src/handlers/{live-relations,relation-input,relation-tool}.ts`, `src/adt/{repository-relations,relation-objects}.ts`, `src/context/relation-walk.ts` — automatic capability/deny-action projection, no result cache; docs_page/live-relations.md |
 | Experimental data-source blocklist | `src/adt/{data-source-name,sql-source-analyzer,data-source-policy,internal-data-operations}.ts` + `client.ts` — one canonicalizer for every policy input; blank=off but a stray comma fails startup (details: dev-guide) |
 | Runtime + source-state diagnostics | `src/adt/diagnostics.ts`, `src/handlers/diagnose.ts`, `{schemas,tools}.ts` |
 | Authorization trace (`SAPDiagnose authorization_trace`) | `src/adt/authorization-trace.ts` (`getAuthorizationTrace`/`decodeAuthTraceRows`), `diagnostics.ts` re-export, `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts` — data scope + `SAP_ALLOW_DATA_PREVIEW`; on-prem `SUAUTHVALTRC` via `runTableQuery`, TOBJ decode, client-side sort; not SU53/STAUTHTRACE (details: `docs/research/2026-07-09-su53-authorization-analysis-adt-surface.md`) |

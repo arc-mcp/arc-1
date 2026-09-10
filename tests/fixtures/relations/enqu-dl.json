@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T23:02:36.586Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/ddic/lockobjects/sources/%2faif%2fefgobj",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "58a3ce6ebbf1dd656b1780a05e7c429253a51366b6b63537ed29c4763a70de75",
+    "networkSha256": "215a9b6012d5f06a58d98a9d5198a48abee7ca100e15a7095bfaeb14ace67f79",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 2,
+    "observedEdges": 1
+  },
+  "type": "ENQU",
+  "native": "ENQU/DL",
+  "name": "/AIF/EFGOBJ",
+  "uri": "/sap/bc/adt/ddic/lockobjects/sources/%2faif%2fefgobj",
+  "metadataRootQName": "enqu:lockobject",
+  "context": "ENV",
+  "metadataXml": "<enqu:lockobject adtcore:name=\"/AIF/EFGOBJ\" adtcore:type=\"ENQU/DL\" adtcore:version=\"active\" xmlns:enqu=\"http://www.sap.com/adt/ddic/enqu\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%2faif%2frfc\" adtcore:type=\"DEVC/K\" adtcore:name=\"/AIF/RFC\"/>\n</enqu:lockobject>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/tables/%2faif%2ft_funcgenlk\" adtcore:type=\"TABL/DT\" adtcore:name=\"/AIF/T_FUNCGENLK\" adtcore:packageName=\"/AIF/RFC\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/lockobjects/sources/%2faif%2fefgobj\" adtcore:type=\"ENQU/DL\" adtcore:name=\"/AIF/EFGOBJ\" adtcore:packageName=\"/AIF/RFC\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/ddic/lockobjects/sources/%2faif%2fefgobj</oro:object1><oro:object2>/sap/bc/adt/ddic/tables/%2faif%2ft_funcgenlk</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

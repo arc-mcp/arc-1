@@ -968,7 +968,9 @@ describe('SAPManage / SAPContext handlers', () => {
         name: 'ZCL_TEST',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('type');
+      expect(result.content[0]?.text).toContain('requires type and name, even with supplied source');
+      expect(result.content[0]?.text).toContain('use SAPSearch if unknown');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('returns error when name is missing', async () => {
@@ -1191,19 +1193,10 @@ ENDCLASS.`;
       expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/'))).toBe(false);
     });
 
-    it('composes KTD with cached dependency context', async () => {
+    it('composes KTD with freshly resolved context', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
       const markdown = '# Cached Root KTD\n\nUse this before editing.';
-      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
-        {
-          name: 'ZIF_DEP',
-          type: 'INTF',
-          methodCount: 1,
-          source: 'INTERFACE zif_dep PUBLIC.\n  METHODS run.\nENDINTERFACE.',
-          success: true,
-        },
-      ]);
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL) => {
         const urlStr = String(url);
@@ -1227,16 +1220,16 @@ ENDCLASS.`;
       expect(result.isError).toBeUndefined();
       expect(text).toContain('Knowledge Transfer Document for ZCL_ROOT');
       expect(text).toContain(markdown);
-      expect(text).toContain('[cached]');
-      expect(text).toContain('ZIF_DEP');
+      expect(text).not.toContain('[cached]');
+      expect(text).not.toContain('ZIF_DEP');
+      expect(text).toContain('0 deps resolved');
     });
 
-    it('does not serve cached dependency contracts under principal propagation', async () => {
+    it('returns empty dependency context under principal propagation without an aggregate API', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
-      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
-        { name: 'ZCL_SECRET', type: 'CLAS', methodCount: 0, source: 'SECRET SOURCE', success: true },
-      ]);
+      expect(layer).not.toHaveProperty('getCachedDepGraph');
+      expect(layer).not.toHaveProperty('putDepGraph');
       const auth: AuthInfo = {
         token: 'jwt',
         clientId: 'oidc-client',
@@ -1257,7 +1250,6 @@ ENDCLASS.`;
       );
 
       expect(result.isError).toBeUndefined();
-      expect(result.content[0]?.text).not.toContain('SECRET SOURCE');
       expect(result.content[0]?.text).not.toContain('[cached]');
       expect(result.content[0]?.text).toContain('0 deps resolved');
     });

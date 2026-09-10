@@ -61,11 +61,11 @@ export const INTERNAL_DATA_OPERATIONS: Record<InternalDataOperationId, InternalD
     criticality: 'core',
     guidance:
       'Class hierarchy is derived from SEOMETAREL and has no alternative source in ARC-1. ' +
-      'Use SAPRead(type="CLAS", include="definitions") to inspect the declared superclass and interfaces instead.',
+      'Use SAPRead(type="CLAS", grep="INTERFACES|INHERITING") on the class MAIN source for declarations, not a complete subclass list.',
   },
   interface_implementers: {
     sources: ['SEOMETAREL'],
-    consumer: 'SAPWhereUsed interface-implementer augmentation',
+    consumer: 'SAPNavigate.references / SAPContext.usages interface-implementer augmentation',
     criticality: 'optional',
     guidance:
       'The native SAP where-used result is returned, but the list of classes implementing this interface may be incomplete.',

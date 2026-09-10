@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/programs/includes/zabapgit_forms",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "f8f3f04c54ce07505a590744d244442fab67077438d9e9dae858f9b7b4dbf2f7",
+    "networkSha256": "c3aa4fb7707e41f015c7eda8d6bd34b326f0f12a5baeeb52b55d0309be4e20da",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 49,
+    "observedEdges": 48
+  },
+  "type": "INCL",
+  "native": "PROG/I",
+  "name": "ZABAPGIT_FORMS",
+  "uri": "/sap/bc/adt/programs/includes/zabapgit_forms",
+  "metadataRootQName": "include:abapInclude",
+  "context": "ENV",
+  "metadataXml": "<include:abapInclude adtcore:name=\"ZABAPGIT_FORMS\" adtcore:type=\"PROG/I\" adtcore:version=\"active\" xmlns:include=\"http://www.sap.com/adt/programs/includes\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24abapgit\" adtcore:type=\"DEVC/K\" adtcore:name=\"$ABAPGIT\"/>\n</include:abapInclude>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/oo/classes/cl_http_utility\" adtcore:type=\"CLAS/OC\" adtcore:name=\"CL_HTTP_UTILITY\" adtcore:packageName=\"SIHTTP\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/programs/includes/zabapgit_forms\" adtcore:type=\"PROG/I\" adtcore:name=\"                                        ZABAPGIT_FORMS\" adtcore:packageName=\"$ABAPGIT\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/programs/includes/zabapgit_forms</oro:object1><oro:object2>/sap/bc/adt/oo/classes/cl_http_utility</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

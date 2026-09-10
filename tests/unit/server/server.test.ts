@@ -114,6 +114,30 @@ describe('MCP Server', () => {
     expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
   });
 
+  it.each(['standard', 'hyperfocused'] as const)(
+    'preserves evidence-led reviews and targeted method reads in %s',
+    async (toolMode) => {
+      const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
+      expect(instructions).toContain('Understanding an object: SAPContext(action="deps") returns available KTD');
+      expect(instructions).toContain('Native relationship maps: SAPNavigate(action="relations") when listed');
+      expect(instructions).toContain(
+        'Use SAPRead afterwards for exact implementation, method bodies or known references',
+      );
+      expect(instructions).toContain('One method: SAPRead(type="CLAS", method="name")');
+      expect(instructions).toContain('Source behavior is not a specification');
+      expect(instructions).toContain(
+        'For draft reviews/test design, first SAPContext(action="deps") for available KTD (type+name), unless requirements are supplied',
+      );
+      expect(instructions).toContain(
+        'Test expectations follow those requirements; show current behavior separately, even when it is a defect',
+      );
+      expect(instructions).toContain('If a targeted requirements lookup yields no evidence or lead');
+      expect(instructions).toContain('finish with observed source behavior and unverified intent/compliance');
+      expect(instructions).toContain('Do not broaden the policy search');
+      expect(instructions).toContain('Unavailable or failed syntax/ATC/test checks are not passes');
+    },
+  );
+
   it('keeps the maximum system label below the client instruction ceiling', async () => {
     const instructions = (
       await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })

@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import type { ServerConfig } from '../../../src/server/types.js';
@@ -76,6 +77,20 @@ const VARIANTS: Variant[] = [
 ];
 
 describe('tool-definitions snapshot (LLM-visible surface)', () => {
+  it.each([false, true])('discovery changes only navigation, BTP=%s', async (isBtp) => {
+    const config = isBtp ? btp(FULL) : onprem(FULL);
+    const original = getToolDefinitions({ ...config, denyActions: ['SAPNavigate.relations'] }, true, features());
+    const tools = getToolDefinitions({ ...config }, true, features(), {
+      discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+    });
+    expect(tools.filter((tool) => tool.name !== 'SAPNavigate')).toEqual(
+      original.filter((tool) => tool.name !== 'SAPNavigate'),
+    );
+    const navigation = tools.find((tool) => tool.name === 'SAPNavigate');
+    await expect(JSON.stringify(navigation, null, 2)).toMatchFileSnapshot(
+      `../../fixtures/tool-definitions/${isBtp ? 'btp' : 'onprem'}-live-relations-navigate.json`,
+    );
+  });
   for (const v of VARIANTS) {
     it(`is stable: ${v.name}`, async () => {
       const tools = getToolDefinitions(v.config, v.textSearchAvailable, v.resolvedFeatures);

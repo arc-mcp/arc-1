@@ -8,13 +8,19 @@ import {
   resolveContentType,
 } from '../../../src/adt/discovery.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
-import { parseDiscoveryDocument } from '../../../src/adt/xml-parser.js';
+import { parseDiscoveryDocument, parseDiscoveryObject, parseXml } from '../../../src/adt/xml-parser.js';
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
 
 describe('ADT Discovery', () => {
   describe('parseDiscoveryDocument', () => {
+    it('maps pre-parsed XML identically, preserving duplicate and MIME normalization behavior', () => {
+      const xml = loadFixture('discovery.xml');
+      expect(parseDiscoveryObject(parseXml(xml))).toEqual(parseDiscoveryDocument(xml));
+      expect(parseDiscoveryObject({})).toEqual(new Map());
+      expect(parseDiscoveryObject({ service: { workspace: [null] } })).toEqual(new Map());
+    });
     it('parses fixture into expected map size', () => {
       const xml = loadFixture('discovery.xml');
       const map = parseDiscoveryDocument(xml);
