@@ -27,6 +27,7 @@
  * same literal set, in table order.
  */
 
+import { ATC_BATCH_TYPES } from '../adt/atc-batch.js';
 import { SDO_TYPES } from '../adt/server-driven.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import type { ServerConfig } from '../server/types.js';
@@ -115,6 +116,12 @@ const sapReadTypes = deriveTypeArrays(SAPREAD_TYPE_TABLE);
 export const SAPREAD_TYPES_ONPREM = sapReadTypes.onprem;
 /** SAPRead types available on BTP ABAP Environment (the `btp: true` rows). */
 export const SAPREAD_TYPES_BTP = sapReadTypes.btp;
+
+// ATC selects repository objects from the same BTP availability matrix as reads.
+// Derive the subset instead of maintaining a second PROG/INCL exclusion list.
+export const ATC_BATCH_TYPES_BTP = ATC_BATCH_TYPES.filter((type) =>
+  SAPREAD_TYPES_BTP.some((candidate) => candidate === type),
+);
 
 // ─── SAPWrite ───────────────────────────────────────────────────────
 

@@ -27,22 +27,34 @@ describe('check-tool-schema-budget', () => {
       expect(measureToolDefinitions(enabled).schemaBytes).toBe(measureToolDefinitions(base).schemaBytes);
       expect(enabled.budget.maxTotalWireBytes).toBe(base.budget.maxTotalWireBytes);
       expect(enabled.budget.maxPerToolWireBytes).toBe(base.budget.maxPerToolWireBytes);
-      expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 72_000);
+      expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 74_000);
       expect(enabled.budget.maxPerToolWireBytes).toBe(23_000);
+      const diagnose = definitions.find((tool) => tool.name === 'SAPDiagnose')!;
+      expect(diagnose.inputSchema).toHaveProperty('properties.objects.maxItems', 20);
       expect(navigation.description).toContain('Coverage unknown');
       expect(navigation.description).toContain('not source-call/runtime proof');
       expect(navigation.description).toContain('no uri/source');
 
-      // A regression confined to an opt-in description must trip CI too.
+      // Exceed actual headroom so the guard remains tested after deliberate budget changes.
       const inflated = structuredClone(definitions);
       const schema = inflated.find((tool) => tool.name === 'SAPNavigate')!.inputSchema as {
         properties: { direction: { description: string } };
       };
-      schema.properties.direction.description += 'x'.repeat(1000);
+      const ceiling = Math.max(enabled.budget.schemaTokenEstimate * 4, enabled.budget.maxTotalWireBytes!);
+      schema.properties.direction.description += 'x'.repeat(ceiling - measureToolDefinitions(enabled).schemaBytes + 1);
       const { offenders } = checkToolSchemaBudgets([{ ...enabled, definitions: inflated }]);
       expect(offenders).toEqual(expect.arrayContaining([expect.objectContaining({ metric: 'schemaTokenEstimate' })]));
+      expect(offenders).toEqual(expect.arrayContaining([expect.objectContaining({ metric: 'maxTotalWireBytes' })]));
     },
   );
+
+  it('keeps read-only, aggregate and hyperfocused wire ceilings unchanged', () => {
+    for (const scenario of TOOL_SCHEMA_SCENARIOS) {
+      if (scenario.name.includes('full-git')) continue;
+      expect(scenario.budget.maxTotalWireBytes).toBe(scenario.name === 'hyperfocused-default' ? 4_000 : 50_000);
+      expect(scenario.budget.maxPerToolWireBytes).toBe(scenario.name === 'hyperfocused-default' ? 4_000 : 23_000);
+    }
+  });
 
   it('estimates tokens with the CI byte/4 heuristic', () => {
     expect(estimateTokens(0)).toBe(0);

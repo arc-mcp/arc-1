@@ -330,9 +330,35 @@ export function normalizeTypeArgsForValidation(
         type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPDiagnose':
+      // Strict-schema clients may supply an empty placeholder on single-object
+      // or unrelated actions. An actual empty ATC batch remains a validation error.
+      if (
+        Array.isArray(cleaned.objects) &&
+        cleaned.objects.length === 0 &&
+        (cleaned.action !== 'atc' ||
+          cleaned.name !== undefined ||
+          cleaned.type !== undefined ||
+          cleaned.url !== undefined)
+      ) {
+        delete cleaned.objects;
+      }
       return {
         ...cleaned,
         type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
+        objects: Array.isArray(cleaned.objects)
+          ? cleaned.objects.map((obj) => {
+              if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return obj;
+              const item = obj as Record<string, unknown>;
+              return {
+                ...item,
+                type: typeof item.type === 'string' ? normalizeObjectType(item.type.trim()) : item.type,
+                name:
+                  typeof item.name === 'string'
+                    ? item.name.trim().replace(/[a-z]/g, (char) => char.toUpperCase())
+                    : item.name,
+              };
+            })
+          : cleaned.objects,
       };
     case 'SAPContext':
       return {
