@@ -115,7 +115,7 @@ describe('MCP Server', () => {
   });
 
   it.each(['standard', 'hyperfocused'] as const)(
-    'preserves context-first understanding and targeted method reads in %s',
+    'preserves evidence-led reviews and targeted method reads in %s',
     async (toolMode) => {
       const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
       expect(instructions).toContain('Understanding an object: SAPContext(action="deps") returns available KTD');
@@ -125,7 +125,15 @@ describe('MCP Server', () => {
       );
       expect(instructions).toContain('One method: SAPRead(type="CLAS", method="name")');
       expect(instructions).toContain('Source behavior is not a specification');
-      expect(instructions).toContain('Without documented requirements, intent is unverified');
+      expect(instructions).toContain(
+        'For draft reviews and test design, check user requirements or available KTD before extra diagnostics',
+      );
+      expect(instructions).toContain(
+        'Test expectations follow those requirements; show current behavior separately, even when it is a defect',
+      );
+      expect(instructions).toContain('If requirements remain unavailable after a targeted lookup');
+      expect(instructions).toContain('report intent/compliance as unverified rather than exhaust calls');
+      expect(instructions).toContain('Unavailable or failed syntax/ATC/test checks are not passes');
     },
   );
 
