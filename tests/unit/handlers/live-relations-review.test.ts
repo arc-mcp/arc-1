@@ -71,6 +71,7 @@ describe('full external-review regressions', () => {
       truncationReasons: ['deadline'],
       expanded: [root.uri],
       pending: [],
+      summary: expect.stringContaining('Resource truncation: deadline.'),
     });
   });
 

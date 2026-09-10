@@ -60,6 +60,14 @@ export async function handleLiveRelations(
     const truncationReasons = new Set(result.truncationReasons);
     if (Date.now() >= options.deadline) truncationReasons.add('deadline');
     const json = toolJson({
+      summary:
+        `Returned ${result.nodes.length} nodes (including root) and ${result.edges.length} edges; ` +
+        `expanded ${result.expanded.length} nodes; ${result.pending.length} nodes still queued. ` +
+        `Resource truncation: ${[...truncationReasons].join(', ') || 'none'}. Scope boundary counts: ` +
+        ['depth', 'type', 'package', 'missing']
+          .map((reason) => `${reason}=${result.scopeBoundaries.filter((item) => item.reason === reason).length}`)
+          .join(', ') +
+        '. Configured limits are ceilings, not observed counts. System-wide coverage is unknown.',
       ...result,
       truncated: truncationReasons.size > 0,
       truncationReasons: [...truncationReasons],

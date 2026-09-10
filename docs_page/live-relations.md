@@ -166,6 +166,9 @@ Traversal is breadth-first, prioritizing neighbors in the root's package at each
 then sorting by URI. This makes small-budget results useful and repeatable, not complete.
 
 - `coverage="unknown"` is always present: native Relation Explorer is not a complete call graph.
+- `summary` counts returned nodes/edges, expanded/queued nodes and scope boundaries, and names
+  the actual resource truncation reasons. Values in `limits` are ceilings, not evidence that
+  those limits were reached (eight expansions is not eight packages, nor a 20-node result).
 - `scopeBoundaries` explains nodes not expanded due to requested depth, type, package or disappearance.
 - `truncated`/`truncationReasons` reports resource limits; `pending` lists retained unexpanded work.
   Dropped nodes/edges cannot be enumerated after a size cap, so this is not a resumable cursor.
