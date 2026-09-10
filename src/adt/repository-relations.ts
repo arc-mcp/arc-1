@@ -196,7 +196,7 @@ export class NativeRelationProvider {
     return map;
   }
 
-  async validateRoot(type: string, name: string): Promise<RelationObject> {
+  private async resolveRootUri(type: string, name: string) {
     if (name.length > 120 || !RELATION_NAME.test(name)) throw new RelationProtocolError('invalid root name.');
     let spec = relationObjectSpec(type);
     if (!spec) throw new RelationProtocolError('unsupported root type.');
@@ -204,12 +204,12 @@ export class NativeRelationProvider {
     // can echo nonexistent names as active. Resolve these identities independently,
     // with the SAME deadline/attempt/byte budgets as the rest of the analysis.
     let uri: string;
-    if (type === 'TABL' || type === 'FUNC' || spec[3] === 'mainObject') {
+    if (spec.resolve === 'quickSearch') {
       checkOperation(this.client.safety, OperationType.Read, 'ResolveRepositoryRelationRoot');
       const params = new URLSearchParams({
         operation: 'quickSearch',
         query: name,
-        objectType: type === 'TABL' ? 'TABL' : spec[1],
+        objectType: type === 'TABL' ? 'TABL' : spec.native,
         maxResults: '2',
       });
       const result = await this.client.http.get(
@@ -225,19 +225,24 @@ export class NativeRelationProvider {
         );
       }
       const resolved = relationObjectSpec(text(refs[0]!['@_type'], 64));
-      if (!resolved || resolved[0] !== type || resolved[1] !== refs[0]!['@_type'])
+      if (!resolved || resolved.type !== type || resolved.native !== refs[0]!['@_type'])
         throw new RelationProtocolError('root resolution type mismatch.');
       spec = resolved;
       uri = safeUri(refs[0]!['@_uri']);
       const group = type === 'FUNC' ? relationFunctionIdentity(uri).group : undefined;
-      if (uri !== relationObjectUri(spec[1], name, group))
+      if (uri !== relationObjectUri(spec.native, name, group))
         throw new RelationProtocolError('root resolution URI mismatch.');
     } else uri = relationObjectUri(type, name);
+    return { spec, uri };
+  }
+
+  async validateRoot(type: string, name: string): Promise<RelationObject> {
+    const { spec, uri } = await this.resolveRootUri(type, name);
     checkOperation(this.client.safety, OperationType.Read, 'ValidateRepositoryRelationRoot');
     const response = await this.client.http.get(uri, { Accept: 'application/*' }, this.options);
     const parsed = parseRelationXml(response.body);
-    const metadata = record(parsed[spec[3]]);
-    const expectedType = spec[1];
+    const metadata = record(parsed[spec.metadataRoot]);
+    const expectedType = spec.native;
     if (
       text(metadata['@_name'], 120).toUpperCase() !== name.toUpperCase() ||
       metadata['@_type'] !== expectedType ||

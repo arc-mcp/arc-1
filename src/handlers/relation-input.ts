@@ -11,7 +11,7 @@ export const LiveRelationsInput = z
   .object({
     action: z.literal('relations'),
     type: z.preprocess(
-      (value) => (typeof value === 'string' ? (relationObjectSpec(value)?.[0] ?? value) : value),
+      (value) => (typeof value === 'string' ? (relationObjectSpec(value)?.type ?? value) : value),
       z.enum(RELATION_ROOT_TYPES, {
         error: (issue) =>
           issue.input === undefined

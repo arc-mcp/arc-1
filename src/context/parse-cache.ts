@@ -80,3 +80,22 @@ export function contextParseCache(owner?: CachingLayer): ContextParseCache | und
   }
   return cache;
 }
+
+/** Call only after source retrieval under the caller's cache/identity policy. */
+export function parseDependencies(source: string, name: string, version?: Version, owner?: CachingLayer) {
+  return (
+    contextParseCache(owner)?.dependencies(source, name, version) ?? extractDependencies(source, name, true, version)
+  );
+}
+
+export function parseContract(
+  source: string,
+  name: string,
+  type: Contract['type'],
+  version?: Version,
+  owner?: CachingLayer,
+) {
+  return (
+    contextParseCache(owner)?.contract(source, name, type, version) ?? extractContract(source, name, type, version)
+  );
+}

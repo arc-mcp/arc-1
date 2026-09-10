@@ -37,6 +37,7 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
     options.maxResults > RELATION_LIMITS.nodes
   )
     throw new RangeError('Invalid relationship bounds.');
+  let rootPackage = root.package;
   const nodes = new Map([[root.uri, { ...root, level: 0 }]]);
   const edges = new Map<string, RelationEdge>(),
     expanded = new Set<string>();
@@ -50,7 +51,7 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
       boundaries.push({ uri, reason: 'depth' });
       continue;
     }
-    if (!RELATION_OBJECTS.some(([, type]) => type === object.type)) {
+    if (!RELATION_OBJECTS.some(({ native }) => native === object.type)) {
       boundaries.push({ uri, reason: 'type' });
       continue;
     }
@@ -106,13 +107,12 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
     // from this caller's validated native response, before ranking or cycle checks.
     if (object.level === 0 && !object.package) {
       object.package = found.get(uri)?.package ?? '';
-      root = { ...root, package: object.package };
+      rootPackage = object.package;
     }
     const adjacentUri = (edge: RelationEdge) => (options.direction === 'outgoing' ? edge.to : edge.from);
     // Keep BFS, but spend small expansion budgets on the root's package first.
     // URI tie-breaking is locale-independent, so bounded selections are reproducible.
-    const rank = (edge: RelationEdge) =>
-      root.package && found.get(adjacentUri(edge))?.package === root.package ? 0 : 1;
+    const rank = (edge: RelationEdge) => (rootPackage && found.get(adjacentUri(edge))?.package === rootPackage ? 0 : 1);
     for (const edge of [...network.edges].sort(
       (a, b) => rank(a) - rank(b) || (adjacentUri(a) < adjacentUri(b) ? -1 : adjacentUri(a) > adjacentUri(b) ? 1 : 0),
     )) {

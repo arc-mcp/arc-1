@@ -15,41 +15,221 @@ import { relationObject, relationXml } from '../../helpers/relation-fixtures.js'
 
 // Independent transcription of the observed 7.58 metadata envelopes and URI families.
 const observed = [
-  ['CLAS', 'CLAS/OC', 'oo/classes', 'abapClass'],
-  ['INTF', 'INTF/OI', 'oo/interfaces', 'abapInterface'],
-  ['DDLS', 'DDLS/DF', 'ddic/ddl/sources', 'ddlSource'],
-  ['DCLS', 'DCLS/DL', 'acm/dcl/sources', 'dclSource'],
-  ['BDEF', 'BDEF/BDO', 'bo/behaviordefinitions', 'blueSource'],
-  ['SRVD', 'SRVD/SRV', 'ddic/srvd/sources', 'srvdSource'],
-  ['TABL', 'TABL/DT', 'ddic/tables', 'blueSource'],
-  ['TABL', 'TABL/DS', 'ddic/structures', 'blueSource'],
-  ['TTYP', 'TTYP/DA', 'ddic/tabletypes', 'tableType'],
-  ['DTEL', 'DTEL/DE', 'ddic/dataelements', 'wbobj'],
-  ['DOMA', 'DOMA/DD', 'ddic/domains', 'domain'],
-  ['PROG', 'PROG/P', 'programs/programs', 'abapProgram'],
-  ['INCL', 'PROG/I', 'programs/includes', 'abapInclude'],
-  ['FUGR', 'FUGR/F', 'functions/groups', 'abapFunctionGroup'],
-  ['FUNC', 'FUGR/FF', 'functions/groups', 'abapFunctionModule'],
-  ['VIEW', 'VIEW/DV', 'vit/wb/object_type/viewdv/object_name', 'mainObject'],
-  ['ENHO', 'ENHO/XHB', 'enhancements/enhoxhb', 'objectData'],
-  ['MSAG', 'MSAG/N', 'messageclass', 'messageClass'],
-  ['TRAN', 'TRAN/T', 'vit/wb/object_type/trant/object_name', 'mainObject'],
-  ['SOBJ', 'SOBJ/MO', 'vit/wb/object_type/sobjmo/object_name', 'mainObject'],
-  ['SHLP', 'SHLP/DH', 'vit/wb/object_type/shlpdh/object_name', 'mainObject'],
-  ['SKTD', 'SKTD/TYP', 'documentation/ktd/documents', 'docu'],
-  ['ENHS', 'ENHS/XSB', 'enhancements/enhsxsb', 'objectData'],
-  ['ENQU', 'ENQU/DL', 'ddic/lockobjects/sources', 'lockobject'],
-  ['TYPE', 'TYPE/DG', 'ddic/typegroups', 'abapTypeGroup'],
-  ['EVTB', 'EVTB/EVB', 'businessservices/evtbevb', 'blueSource'],
-  ['DSFD', 'DSFD/SCF', 'ddic/dsfd/sources', 'blueSource'],
-];
+  {
+    type: 'CLAS',
+    native: 'CLAS/OC',
+    path: 'oo/classes',
+    metadataRoot: 'abapClass',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'INTF',
+    native: 'INTF/OI',
+    path: 'oo/interfaces',
+    metadataRoot: 'abapInterface',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'DDLS',
+    native: 'DDLS/DF',
+    path: 'ddic/ddl/sources',
+    metadataRoot: 'ddlSource',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'DCLS',
+    native: 'DCLS/DL',
+    path: 'acm/dcl/sources',
+    metadataRoot: 'dclSource',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'BDEF',
+    native: 'BDEF/BDO',
+    path: 'bo/behaviordefinitions',
+    metadataRoot: 'blueSource',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'SRVD',
+    native: 'SRVD/SRV',
+    path: 'ddic/srvd/sources',
+    metadataRoot: 'srvdSource',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'TABL',
+    native: 'TABL/DT',
+    path: 'ddic/tables',
+    metadataRoot: 'blueSource',
+    resolve: 'quickSearch',
+    nameCase: 'lower',
+  },
+  {
+    type: 'TABL',
+    native: 'TABL/DS',
+    path: 'ddic/structures',
+    metadataRoot: 'blueSource',
+    resolve: 'quickSearch',
+    nameCase: 'lower',
+  },
+  {
+    type: 'TTYP',
+    native: 'TTYP/DA',
+    path: 'ddic/tabletypes',
+    metadataRoot: 'tableType',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'DTEL',
+    native: 'DTEL/DE',
+    path: 'ddic/dataelements',
+    metadataRoot: 'wbobj',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  { type: 'DOMA', native: 'DOMA/DD', path: 'ddic/domains', metadataRoot: 'domain', resolve: 'path', nameCase: 'lower' },
+  {
+    type: 'PROG',
+    native: 'PROG/P',
+    path: 'programs/programs',
+    metadataRoot: 'abapProgram',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'INCL',
+    native: 'PROG/I',
+    path: 'programs/includes',
+    metadataRoot: 'abapInclude',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'FUGR',
+    native: 'FUGR/F',
+    path: 'functions/groups',
+    metadataRoot: 'abapFunctionGroup',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'FUNC',
+    native: 'FUGR/FF',
+    path: 'functions/groups',
+    metadataRoot: 'abapFunctionModule',
+    resolve: 'quickSearch',
+    nameCase: 'lower',
+  },
+  {
+    type: 'VIEW',
+    native: 'VIEW/DV',
+    path: 'vit/wb/object_type/viewdv/object_name',
+    metadataRoot: 'mainObject',
+    resolve: 'quickSearch',
+    nameCase: 'upper',
+  },
+  {
+    type: 'ENHO',
+    native: 'ENHO/XHB',
+    path: 'enhancements/enhoxhb',
+    metadataRoot: 'objectData',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'MSAG',
+    native: 'MSAG/N',
+    path: 'messageclass',
+    metadataRoot: 'messageClass',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'TRAN',
+    native: 'TRAN/T',
+    path: 'vit/wb/object_type/trant/object_name',
+    metadataRoot: 'mainObject',
+    resolve: 'quickSearch',
+    nameCase: 'upper',
+  },
+  {
+    type: 'SOBJ',
+    native: 'SOBJ/MO',
+    path: 'vit/wb/object_type/sobjmo/object_name',
+    metadataRoot: 'mainObject',
+    resolve: 'quickSearch',
+    nameCase: 'upper',
+  },
+  {
+    type: 'SHLP',
+    native: 'SHLP/DH',
+    path: 'vit/wb/object_type/shlpdh/object_name',
+    metadataRoot: 'mainObject',
+    resolve: 'quickSearch',
+    nameCase: 'upper',
+  },
+  {
+    type: 'SKTD',
+    native: 'SKTD/TYP',
+    path: 'documentation/ktd/documents',
+    metadataRoot: 'docu',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'ENHS',
+    native: 'ENHS/XSB',
+    path: 'enhancements/enhsxsb',
+    metadataRoot: 'objectData',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'ENQU',
+    native: 'ENQU/DL',
+    path: 'ddic/lockobjects/sources',
+    metadataRoot: 'lockobject',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'TYPE',
+    native: 'TYPE/DG',
+    path: 'ddic/typegroups',
+    metadataRoot: 'abapTypeGroup',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'EVTB',
+    native: 'EVTB/EVB',
+    path: 'businessservices/evtbevb',
+    metadataRoot: 'blueSource',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+  {
+    type: 'DSFD',
+    native: 'DSFD/SCF',
+    path: 'ddic/dsfd/sources',
+    metadataRoot: 'blueSource',
+    resolve: 'path',
+    nameCase: 'lower',
+  },
+] as const;
 
-function setup(row: string[], name = '/ACME/ROOT') {
-  const [type, native, path, tag] = row;
+function setup(row: (typeof observed)[number], name = '/ACME/ROOT') {
+  const { type, native, path, metadataRoot: tag } = row;
   const group = '/ACME/GROUP';
-  const segment = encodeURIComponent(
-    ['VIEW', 'TRAN', 'SOBJ', 'SHLP'].includes(type!) ? name.toUpperCase() : name.toLowerCase(),
-  );
+  const segment = encodeURIComponent(row.nameCase === 'upper' ? name.toUpperCase() : name.toLowerCase());
   const uri = `/sap/bc/adt/${path}/${type === 'FUNC' ? `${encodeURIComponent(group.toLowerCase())}/fmodules/` : ''}${segment}`;
   const object = { ...relationObject('ZROOT'), name, type: native!, uri };
   const pkg =
@@ -86,53 +266,53 @@ describe('qualified relation identities', () => {
   });
   it('has evidence for every advertised type and no unqualified roots', () => {
     expect(RELATION_OBJECTS).toEqual(observed);
-    expect(RELATION_ROOT_TYPES).toEqual([...new Set(observed.map(([type]) => type))]);
+    expect(RELATION_ROOT_TYPES).toEqual([...new Set(observed.map(({ type }) => type))]);
     for (const type of RELATION_ROOT_TYPES)
       expect(LiveRelationsInput.safeParse({ action: 'relations', type, name: 'ZROOT' }).success).toBe(true);
     for (const type of ['DEVC', 'DDLX', 'SRVB', 'STOB', 'AUTH', 'UIAD', 'DTDC'])
       expect(LiveRelationsInput.safeParse({ action: 'relations', type, name: 'ZROOT' }).success).toBe(false);
   });
-  it.each(observed)('%s %s validates namespaced metadata, with no unbounded side requests', async (...row) => {
+  it.each(observed)('$type $native validates namespaced metadata, with no unbounded side requests', async (row) => {
     const { provider, object, get, post } = setup(row);
-    const root = await provider.validateRoot(row[0]!, object.name);
+    const root = await provider.validateRoot(row.type, object.name);
     expect(root).toEqual({ ...object, existence: 'metadata_validated' });
-    expect(get).toHaveBeenCalledTimes(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'].includes(row[0]!) ? 2 : 1);
+    expect(get).toHaveBeenCalledTimes(row.resolve === 'quickSearch' ? 2 : 1);
     for (const call of get.mock.calls) expect(call[2]).toBe(provider.options);
     await provider.lookup(root, 'outgoing');
     expect(post.mock.calls[0]![4]).toBe(provider.options);
     expect(post.mock.calls[0]![1]).toContain(object.uri);
   });
   for (const invalid of ['wrong-name', 'wrong-type', 'inactive', 'new', 'wrong-envelope']) {
-    it.each(observed)(`%s %s rejects ${invalid} metadata before network POST`, async (...row) => {
+    it.each(observed)(`$type $native rejects ${invalid} metadata before network POST`, async (row) => {
       const { provider, metadata, resolution, get, post } = setup(row);
       const bad =
         invalid === 'wrong-name'
           ? metadata.replace('name="/ACME/ROOT"', 'name="OTHER"')
           : invalid === 'wrong-type'
-            ? metadata.replace(`type="${row[1]}"`, 'type="UNKNOWN/X"')
+            ? metadata.replace(`type="${row.native}"`, 'type="UNKNOWN/X"')
             : invalid === 'wrong-envelope'
-              ? metadata.replaceAll(row[3]!, 'unrelatedEnvelope')
+              ? metadata.replaceAll(row.metadataRoot, 'unrelatedEnvelope')
               : metadata.replace('version="active"', `version="${invalid}"`);
       get.mockImplementation(async (url) => ({
         statusCode: 200,
         headers: {},
         body: url.includes('informationsystem') ? resolution : bad,
       }));
-      await expect(provider.validateRoot(row[0]!, '/ACME/ROOT')).rejects.toThrow();
+      await expect(provider.validateRoot(row.type, '/ACME/ROOT')).rejects.toThrow();
       expect(post).not.toHaveBeenCalled();
     });
   }
-  it.each(observed)('%s %s keeps absent/denied roots terminal', async (...row) => {
+  it.each(observed)('$type $native keeps absent/denied roots terminal', async (row) => {
     for (const status of [401, 403, 404]) {
       const { provider, get, post } = setup(row);
       get.mockRejectedValue(new AdtApiError('No metadata', status, '/sap/bc/adt/'));
-      await expect(provider.validateRoot(row[0]!, 'ZROOT')).rejects.toMatchObject({ statusCode: status });
+      await expect(provider.validateRoot(row.type, 'ZROOT')).rejects.toMatchObject({ statusCode: status });
       expect(post).not.toHaveBeenCalled();
     }
   });
   it.each(observed)(
-    '%s %s expands mixed-type cycles in both directions without extra metadata reads',
-    async (...row) => {
+    '$type $native expands mixed-type cycles in both directions without extra metadata reads',
+    async (row) => {
       for (const direction of ['incoming', 'outgoing'] as const) {
         const { provider, object, get, post } = setup(row);
         const child = relationObject('ZCHILD');
@@ -144,25 +324,25 @@ describe('qualified relation identities', () => {
             ? relationXml(object, [child], context)
             : relationXml(child, [object], context),
         }));
-        const root = await provider.validateRoot(row[0]!, object.name);
+        const root = await provider.validateRoot(row.type, object.name);
         const result = await walkRelations(root, provider, { direction, depth: 3, maxResults: 20 });
         expect(result.nodes).toHaveLength(2);
         expect(result.edges).toHaveLength(2);
         expect(result.expanded).toEqual([object.uri, child.uri]);
-        expect(get).toHaveBeenCalledTimes(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'].includes(row[0]!) ? 2 : 1);
+        expect(get).toHaveBeenCalledTimes(row.resolve === 'quickSearch' ? 2 : 1);
         expect(result.coverage).toBe('unknown');
       }
     },
   );
   it('accepts only qualified native aliases without changing other tools normalization', () => {
-    for (const [type, native] of observed)
+    for (const { type, native } of observed)
       expect(LiveRelationsInput.parse({ action: 'relations', type: native, name: 'ZROOT' }).type).toBe(type);
     expect(LiveRelationsInput.safeParse({ action: 'relations', type: 'ENHO/UNVERIFIED', name: 'ZROOT' }).success).toBe(
       false,
     );
   });
   it('fills an omitted root package once and keeps cycles consistent', async () => {
-    const { provider, object, metadata, get, post } = setup(observed.find(([type]) => type === 'BDEF')!);
+    const { provider, object, metadata, get, post } = setup(observed.find(({ type }) => type === 'BDEF')!);
     get.mockResolvedValue({ statusCode: 200, headers: {}, body: metadata.replace('<packageRef name="ZTEST"/>', '') });
     const child = relationObject('ZCHILD');
     post
@@ -175,10 +355,10 @@ describe('qualified relation identities', () => {
     expect(root.package).toBe('');
     expect(result.qualification).toContain('RAP source dependencies');
   });
-  it.each(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'])(
-    '%s refuses ambiguous, unsafe or wrong-type resolution',
-    async (type) => {
-      const row = observed.find(([root]) => root === type)!;
+  it.each(observed.filter(({ resolve }) => resolve === 'quickSearch'))(
+    '$type refuses ambiguous, unsafe or wrong-type resolution',
+    async (row) => {
+      const { type } = row;
       const mutations = [
         (s: string) =>
           s.replace(
@@ -186,7 +366,7 @@ describe('qualified relation identities', () => {
             `${s.slice(s.indexOf('<objectReference '), s.indexOf('</objectReferences>'))}</objectReferences>`,
           ),
         (s: string) => s.replace('/ACME/ROOT', 'OTHER'),
-        (s: string) => s.replace(`type="${row[1]}"`, 'type="CLAS/OC"'),
+        (s: string) => s.replace(`type="${row.native}"`, 'type="CLAS/OC"'),
         (s: string) => s.replace(/uri="[^"]+"/, 'uri="/sap/bc/adt/discovery"'),
         () => '<objectReferences/>',
       ];
@@ -199,18 +379,20 @@ describe('qualified relation identities', () => {
       }
     },
   );
-  it.each(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'])(
-    '%s rejects invalid names before even resolving',
-    async (type) => {
-      const { provider, get } = setup(observed.find(([root]) => root === type)!);
+  it.each(observed.filter(({ resolve }) => resolve === 'quickSearch'))(
+    '$type rejects invalid names before even resolving',
+    async (row) => {
+      const { type } = row;
+      const { provider, get } = setup(row);
       await expect(provider.validateRoot(type, 'Z*')).rejects.toThrow('invalid root name');
       expect(get).not.toHaveBeenCalled();
     },
   );
-  it.each(['TABL', 'FUNC', 'VIEW', 'TRAN', 'SOBJ', 'SHLP'])(
-    '%s explains a legitimate empty exact search as unresolved',
-    async (type) => {
-      const { provider, get, post } = setup(observed.find(([root]) => root === type)!);
+  it.each(observed.filter(({ resolve }) => resolve === 'quickSearch'))(
+    '$type explains a legitimate empty exact search as unresolved',
+    async (row) => {
+      const { type } = row;
+      const { provider, get, post } = setup(row);
       get.mockResolvedValue({ statusCode: 200, headers: {}, body: '<objectReferences/>' });
       await expect(provider.validateRoot(type, 'ZABSENT')).rejects.toThrow('root resolution is missing or ambiguous');
       // In particular, never accept VIT's synthetic "active" metadata for an absent VIEW.
