@@ -1,9 +1,9 @@
 # DTEL Label Lengths and Input History Implementation Plan
 
-**Status:** active
+**Status:** completed
 **Created:** 2026-09-10
 **Issue:** #771
-**Research:** [DTEL label lengths and input-history root cause](../research/issues/771-dtel-label-lengths-input-history.md)
+**Research:** [DTEL label lengths and input-history root cause](../../research/issues/771-dtel-label-lengths-input-history.md)
 
 ## Goal
 
@@ -137,9 +137,9 @@ Implementation decisions reviewed before coding:
       material finding remains.
 - [x] Confirm the diff contains no credentials, temporary logs, generated build output, or unrelated
       changes.
-- [ ] Mark every completed task, move this plan to `docs/plans/completed/`, and repair its relative
+- [x] Mark every completed task, move this plan to `docs/plans/completed/`, and repair its relative
       research link.
-- [ ] Commit with a conventional `fix:` subject, push the `codex/issue-771-dtel-metadata` branch, and
+- [x] Commit with a conventional `fix:` subject, push the `codex/issue-771-dtel-metadata` branch, and
       create a PR that links issue #771 and reports offline and live validation.
 
 ## Validation Commands

@@ -4,6 +4,8 @@
 
 **Issue:** [#771](https://github.com/arc-mcp/arc-1/issues/771), opened by `xXFracXx` on 2026-09-09, labeled enhancement. The reporter did not specify an ARC-1 version, SAP release, object, or request body. No comments or linked fix PRs were present when checked.
 
+**Pull request:** [#774](https://github.com/arc-mcp/arc-1/pull/774)
+
 **Reviewed base revision:** `c55adcb8ca9481421d8f7598e7233e22280d59a3` (package version 1.2.0). Local HEAD matched GitHub `main` when the defect was reproduced. The implementation and its verification evidence are recorded below.
 
 ## Findings
