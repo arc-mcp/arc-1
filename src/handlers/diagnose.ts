@@ -3,7 +3,7 @@
  * state, ATC, unit tests, CDS test cases.
  */
 
-import { type AtcBatchObject, runAtcBatch } from '../adt/atc-batch.js';
+import { type AtcBatchObject, atcDdicObjectUrl, runAtcBatch } from '../adt/atc-batch.js';
 import type { AunitAlert, AunitProgramSource, AunitRunResult } from '../adt/aunit.js';
 import {
   AunitIncompleteError,
@@ -873,7 +873,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       if (args.objects !== undefined) {
         const objects = (args.objects as { type: AtcBatchObject['type']; name: string }[]).map((object) => ({
           ...object,
-          uri: objectUrlForType(object.type, object.name),
+          uri: atcDdicObjectUrl(object.type, object.name) ?? objectUrlForType(object.type, object.name),
         }));
         const result = await runAtcBatch(client.http, client.safety, objects, args.variant as string | undefined, {
           signal: getCurrentContext()?.signal,

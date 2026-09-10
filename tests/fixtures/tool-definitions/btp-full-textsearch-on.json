@@ -1117,7 +1117,10 @@
                   "BDEF",
                   "DDLX",
                   "SRVD",
-                  "SRVB"
+                  "SRVB",
+                  "TABL",
+                  "DTEL",
+                  "DOMA"
                 ]
               },
               "name": {

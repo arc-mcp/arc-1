@@ -84,3 +84,31 @@ unchanged. Public input schema snapshots were reviewed and documentation parity
 passes. Small, documented line/token ratchet increases accommodate the actual
 new schema; hard wire-byte ceilings remain unchanged. See the linked verification
 note for live outcomes, full checks and remaining evidence limits.
+
+## DDIC follow-up review (2026-09-10)
+
+The requester asks for TABL, DTEL and DOMA in the [PR comment](https://github.com/arc-mcp/arc-1/pull/772#issuecomment-5613046844).
+Baseline: all 5,912 existing unit tests pass. Before implementation, native probes
+compared discovered metadata/editor URIs with ATC R3TR references on 750/758/816;
+ATC references select both a table and a structure without subtype resolution.
+The /ddic/tables route is absent on 750 and a blind editor URL can fail the run.
+Some active DDIC objects remain unreported under the tested variants with either
+URI form, so coverage must continue to say unknown rather than synthesize zero.
+
+Reviewed scope: add exactly TABL, DTEL and DOMA; reuse existing slash-alias
+normalization (TABL/DT and TABL/DS collapse to TABL); submit these types with
+`/sap/bc/adt/atc/objects/R3TR/<type>/<encoded-name>`. Keep the existing routes for
+other types and all single-object calls. No new resolver, metadata probes, cache,
+retry mechanism or timeout is necessary. Add failing-before/passing-after public
+handler tests plus live production-dispatch comparisons, missing/duplicate/mixed
+DDIC selections, namespaced encoding and the full regression gates. Update the
+same PR after review.
+
+Follow-up completed: 22 DDIC regression cases were added and the obsolete
+TABL/DS rejection removed. All 5,933 tests pass, along with typecheck, build,
+Biome, policy and size/schema gates. Live production dispatch confirms clean
+table/structure records and explicit unknown coverage for omitted DDIC objects;
+the original 20-class check still covers all objects with the same 150 findings.
+No live domain/data-element processed record was observed under the tested
+variants. The [DDIC verification note](../research/2026-09-10-issue-770-ddic-verification.md)
+records before/after evidence and this remaining validation limit.

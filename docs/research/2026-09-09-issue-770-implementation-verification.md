@@ -1,5 +1,7 @@
 # Issue #770: implementation research and verification
 
+DDIC follow-up: [TABL, DTEL and DOMA verification](2026-09-10-issue-770-ddic-verification.md) extends the original type contract described below.
+
 ## Decision
 
 Use native ADT object references for a bounded explicit selection, retain the
