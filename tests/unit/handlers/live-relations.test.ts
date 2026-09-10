@@ -252,9 +252,6 @@ describe('relations input/config contract', () => {
         expandPackages: ['$TMP'],
       }).success,
     ).toBe(true);
-    expect(
-      SAPNavigateSchema.safeParse({ action: 'references', type: 'CLAS', name: 'ZCL_ROOT', depth: 2 }).success,
-    ).toBe(false);
   });
   it('has no dedicated configuration switch', () => {
     vi.stubEnv('ARC1_LIVE_RELATIONS', 'false');

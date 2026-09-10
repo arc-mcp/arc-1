@@ -1,13 +1,8 @@
 import type { AdtClient } from '../adt/client.js';
 import { DataResponseBudget } from '../adt/data-result-context.js';
-import { AdtNetworkError } from '../adt/errors.js';
 import { requestBudgetSignal, throwIfRequestCancelled } from '../adt/http-deadline.js';
 import { NativeRelationProvider } from '../adt/repository-relations.js';
-import {
-  AdtAnalysisDeadlineError,
-  AdtRequestBudgetError,
-  RequestAttemptBudget,
-} from '../adt/request-attempt-budget.js';
+import { AdtAnalysisDeadlineError, isDeadlineFailure, RequestAttemptBudget } from '../adt/request-attempt-budget.js';
 import { Semaphore } from '../adt/semaphore.js';
 import { RELATION_LIMITS, walkRelations } from '../context/relation-walk.js';
 import { getCurrentContext } from '../server/context.js';
@@ -62,12 +57,12 @@ export async function handleLiveRelations(
     // Cancellation always wins, including partial results. Completed CPU-side normalization may
     // cross the deadline after the last response: preserve evidence and mark the time boundary.
     throwIfRequestCancelled({ signal: options.signal });
-    if (Date.now() >= options.deadline && !result.truncationReasons.includes('deadline')) {
-      result.truncated = true;
-      result.truncationReasons.push('deadline');
-    }
+    const truncationReasons = new Set(result.truncationReasons);
+    if (Date.now() >= options.deadline) truncationReasons.add('deadline');
     const json = toolJson({
       ...result,
+      truncated: truncationReasons.size > 0,
+      truncationReasons: [...truncationReasons],
       observedAt: new Date(started).toISOString(),
       experimental: true,
       limits: { ...RELATION_LIMITS, nodes: input.maxResults, depth: input.depth },
@@ -82,14 +77,7 @@ export async function handleLiveRelations(
       throw new Error('Live relationship output limit exceeded. Narrow maxResults.');
     return textResult(json);
   } catch (error) {
-    if (
-      error instanceof AdtNetworkError &&
-      !(error instanceof AdtRequestBudgetError) &&
-      Date.now() >= options.deadline &&
-      !options.signal?.aborted &&
-      !options.attemptBudget.authorizationFailureObserved
-    )
-      throw new AdtAnalysisDeadlineError();
+    if (isDeadlineFailure(error, options)) throw new AdtAnalysisDeadlineError();
     throw error;
   } finally {
     analyses.release();

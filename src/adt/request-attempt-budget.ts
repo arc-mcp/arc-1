@@ -1,5 +1,6 @@
 import { fetch, getGlobalDispatcher, type RequestInit } from 'undici';
 import { AdtNetworkError } from './errors.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 
 /** Typed, non-retryable exhaustion; never carries SAP response data. */
 export class AdtRequestBudgetError extends AdtNetworkError {
@@ -15,6 +16,18 @@ export class AdtAnalysisDeadlineError extends AdtNetworkError {
     super('The live analysis time limit was reached. Narrow the analysis or wait for other analyses to finish.');
     this.name = 'AdtAnalysisDeadlineError';
   }
+}
+
+/** A time boundary may yield partial evidence; cancellation, auth and send exhaustion may not masquerade as it. */
+export function isDeadlineFailure(error: unknown, options: AdtRequestOptions): boolean {
+  return (
+    error instanceof AdtNetworkError &&
+    !(error instanceof AdtRequestBudgetError) &&
+    options.deadline !== undefined &&
+    Date.now() >= options.deadline &&
+    !options.signal?.aborted &&
+    !options.attemptBudget?.authorizationFailureObserved
+  );
 }
 
 /** Request-local allowance, charged immediately before each direct/proxy SAP send. */

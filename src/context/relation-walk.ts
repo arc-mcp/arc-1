@@ -1,9 +1,9 @@
-import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from '../adt/errors.js';
+import { AdtApiError, AdtResponseLimitError } from '../adt/errors.js';
 import { type AdtRequestOptions, throwIfRequestCancelled } from '../adt/http-deadline.js';
 import { RELATION_OBJECTS } from '../adt/relation-objects.js';
 import type { RelationDirection, RelationEdge, RelationNetwork, RelationObject } from '../adt/repository-relations.js';
 import { RELATION_XML_MAX_BYTES, RelationProtocolError } from '../adt/repository-relations.js';
-import { AdtRequestBudgetError } from '../adt/request-attempt-budget.js';
+import { AdtRequestBudgetError, isDeadlineFailure } from '../adt/request-attempt-budget.js';
 
 export const RELATION_LIMITS = Object.freeze({
   nodes: 100,
@@ -83,13 +83,7 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
       let reason: string | undefined;
       if (error instanceof AdtRequestBudgetError) reason = 'requests';
       else if (error instanceof AdtResponseLimitError) reason = 'bytes';
-      else if (
-        error instanceof AdtNetworkError &&
-        provider.options.deadline !== undefined &&
-        Date.now() >= provider.options.deadline &&
-        !provider.options.signal?.aborted
-      )
-        reason = 'deadline';
+      else if (isDeadlineFailure(error, provider.options)) reason = 'deadline';
       if (
         !reason ||
         !expanded.size ||
@@ -149,7 +143,6 @@ export async function walkRelations(root: RelationObject, provider: RelationProv
     expanded: [...expanded],
     pending: queue,
     scopeBoundaries: boundaries,
-    truncated: truncation.size > 0,
     truncationReasons: [...truncation],
     coverage: 'unknown',
     evidence: 'sap_relation_explorer',

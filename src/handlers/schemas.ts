@@ -824,11 +824,6 @@ export const SAPNavigateSchema = z
       if (!checked.success)
         for (const issue of checked.error.issues)
           ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
-    } else {
-      for (const key of ['direction', 'depth', 'expandPackages'] as const) {
-        if (value[key] !== undefined)
-          ctx.addIssue({ code: 'custom', path: [key], message: 'Only supported for relations.' });
-      }
     }
   });
 

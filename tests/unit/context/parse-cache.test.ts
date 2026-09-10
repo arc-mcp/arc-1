@@ -4,13 +4,29 @@ import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONTRACT_VERSION, extractContract } from '../../../src/context/contract.js';
 import { DEFAULT_DEPENDENCY_VERSION, extractDependencies } from '../../../src/context/deps.js';
-import { ContextParseCache, contextParseCache } from '../../../src/context/parse-cache.js';
+import {
+  ContextParseCache,
+  contextParseCache,
+  parseContract,
+  parseDependencies,
+} from '../../../src/context/parse-cache.js';
 import * as parserConfig from '../../../src/lint/abaplint-config-cache.js';
 
 const source =
   'CLASS zcl_a DEFINITION PUBLIC. PUBLIC SECTION. METHODS go. ENDCLASS. CLASS zcl_a IMPLEMENTATION. METHOD go. zcl_b=>run( ). ENDMETHOD. ENDCLASS.';
 afterEach(() => vi.restoreAllMocks());
 describe('content-addressed context parse cache', () => {
+  it.each([undefined, Version.v758])('keeps optional-owner parsing identical (version=%s)', (version) => {
+    const owner = new CachingLayer(new MemoryCache());
+    const contract = parseContract(source, 'ZCL_A', 'CLAS', version);
+    const deps = parseDependencies(source, 'ZCL_A', version);
+    for (let call = 0; call < 2; call++) {
+      expect(parseContract(source, 'ZCL_A', 'CLAS', version, owner)).toEqual(contract);
+      expect(parseDependencies(source, 'ZCL_A', version, owner)).toEqual(deps);
+    }
+    expect(contextParseCache(owner)!.stats().entries).toBe(2);
+    expect(contextParseCache()).toBeUndefined();
+  });
   it('uses the extractor defaults for both memo keys and builds', () => {
     const cache = new ContextParseCache();
     const configure = vi.spyOn(parserConfig, 'getDefaultAbaplintConfig');

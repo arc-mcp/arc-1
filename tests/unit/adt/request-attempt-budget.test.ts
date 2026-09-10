@@ -1,11 +1,30 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { DataResponseBudget } from '../../../src/adt/data-result-context.js';
+import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
-import { AdtRequestBudgetError, RequestAttemptBudget } from '../../../src/adt/request-attempt-budget.js';
+import {
+  AdtRequestBudgetError,
+  isDeadlineFailure,
+  RequestAttemptBudget,
+} from '../../../src/adt/request-attempt-budget.js';
 import { Semaphore } from '../../../src/adt/semaphore.js';
 
 const servers: Server[] = [];
+describe('analysis deadline classification', () => {
+  it('classifies only elapsed network failures with no cancellation or unresolved authorization', () => {
+    const error = new AdtNetworkError('deadline');
+    const options = { deadline: Date.now() - 1, attemptBudget: new RequestAttemptBudget(12) };
+    expect(isDeadlineFailure(error, options)).toBe(true);
+    expect(isDeadlineFailure(error, {})).toBe(false);
+    expect(isDeadlineFailure(error, { deadline: Date.now() + 10000 })).toBe(false);
+    expect(isDeadlineFailure(error, { ...options, signal: AbortSignal.abort() })).toBe(false);
+    expect(isDeadlineFailure(new AdtRequestBudgetError(12), options)).toBe(false);
+    expect(isDeadlineFailure(new AdtApiError('Denied', 403, '/test'), options)).toBe(false);
+    options.attemptBudget.authorizationFailureObserved = true;
+    expect(isDeadlineFailure(error, options)).toBe(false);
+  });
+});
 afterEach(async () => {
   for (const server of servers.splice(0)) {
     server.closeAllConnections();

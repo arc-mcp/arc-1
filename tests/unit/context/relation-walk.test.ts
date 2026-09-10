@@ -59,14 +59,14 @@ describe('bounded request-local relation traversal', () => {
       expect(first.edges).toHaveLength(5);
       expect(first.expanded).toHaveLength(4);
       expect(first.coverage).toBe('unknown');
-      expect(first.truncated).toBe(false);
+      expect(first.truncationReasons).toEqual([]);
       expect(await walkRelations(a, p, { ...options, direction })).toEqual(first);
       expect(p.lookup).toHaveBeenCalledTimes(8);
     },
   );
   it('reports depth as a scope boundary, not resource truncation', async () => {
     const result = await walkRelations(a, provider(), { ...options, depth: 1 });
-    expect(result.truncated).toBe(false);
+    expect(result.truncationReasons).toEqual([]);
     expect(result.scopeBoundaries).toEqual([
       { uri: b.uri, reason: 'depth' },
       { uri: c.uri, reason: 'depth' },
