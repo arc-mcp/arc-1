@@ -1,0 +1,42 @@
+[
+  {
+    "suffix": "",
+    "success": true
+  },
+  {
+    "suffix": "?version=active",
+    "success": true
+  },
+  {
+    "suffix": "?version=inactive",
+    "success": true
+  },
+  {
+    "update": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully updated DTEL Z771_750_MTV53QVUA."
+        }
+      ]
+    }
+  },
+  {
+    "delete": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Deleted DTEL Z771_750_MTV53QVUA."
+        }
+      ]
+    }
+  },
+  {
+    "cleanup": "active",
+    "status": 404
+  },
+  {
+    "cleanup": "inactive",
+    "status": 404
+  }
+]

@@ -13,6 +13,7 @@ import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/fe
 import {
   buildCreateXml,
   createContentTypeForType,
+  dtelNeedsPostCreateUpdate,
   mergeMetadataWriteProperties,
   resolveWriteSystemType,
 } from '../../../src/handlers/write-helpers.js';
@@ -196,6 +197,76 @@ describe('mergeMetadataWriteProperties — DOMA outputLength follows a length ch
       outputLength: 15,
     });
     expect(merged.outputLength).toBe(15);
+  });
+});
+
+describe('mergeMetadataWriteProperties — DTEL metadata preservation (#771)', () => {
+  const existing = {
+    name: 'ZDTEL',
+    description: 'Existing',
+    package: 'ZPKG',
+    dataType: 'CHAR',
+    length: '000010',
+    decimals: '000000',
+    typeKind: 'predefinedAbapType',
+    typeName: '',
+    shortLabel: 'Short',
+    shortLength: '10',
+    mediumLabel: 'Medium',
+    mediumLength: '20',
+    longLabel: 'Long',
+    longLength: '40',
+    headingLabel: 'Heading',
+    headingLength: '55',
+    searchHelp: '',
+    defaultComponentName: 'VALUE',
+    deactivateInputHistory: true,
+  };
+  const stubClient = { getDataElement: async () => existing } as unknown as AdtClient;
+
+  it('preserves stored lengths and input-history state on a description-only update', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {});
+    expect(merged).toMatchObject({
+      shortLength: '10',
+      mediumLength: '20',
+      longLength: '40',
+      headingLength: '55',
+      deactivateInputHistory: true,
+    });
+  });
+
+  it('uses explicit values including zero', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {
+      shortLength: 0,
+      deactivateInputHistory: false,
+    });
+    expect(merged.shortLength).toBe(0);
+    expect(merged.deactivateInputHistory).toBe(false);
+    expect(buildCreateXml('DTEL', 'ZDTEL', 'ZPKG', 'Existing', merged)).toContain(
+      '<dtel:deactivateInputHistory>false</dtel:deactivateInputHistory>',
+    );
+  });
+
+  it('lets the builder derive a new length when a label changes without an explicit length', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', { shortLabel: 'New' });
+    expect(merged.shortLabel).toBe('New');
+    expect(merged.shortLength).toBeUndefined();
+    expect(buildCreateXml('DTEL', 'ZDTEL', 'ZPKG', 'Existing', merged)).toContain(
+      '<dtel:shortFieldLength>03</dtel:shortFieldLength>',
+    );
+  });
+});
+
+describe('dtelNeedsPostCreateUpdate — explicit lengths (#771)', () => {
+  it.each(['shortLength', 'mediumLength', 'longLength', 'headingLength'])(
+    'requires the follow-up PUT when %s is the only metadata field',
+    (field) => {
+      expect(dtelNeedsPostCreateUpdate({ [field]: 0 })).toBe(true);
+    },
+  );
+
+  it('does not add a redundant PUT for a history-only create', () => {
+    expect(dtelNeedsPostCreateUpdate({ deactivateInputHistory: true })).toBe(false);
   });
 });
 

@@ -1,0 +1,225 @@
+[
+  {
+    "label": "system",
+    "baseUrl": "https://npl.marianzeis.de",
+    "client": "001",
+    "components": [
+      {
+        "name": "SAP_BASIS",
+        "release": "750",
+        "spName": "SAPK-75002INSAPBASIS",
+        "spLevel": "0002",
+        "description": "SAP Basis Component"
+      }
+    ]
+  },
+  {
+    "label": "standard-MANDT",
+    "lengths": [
+      "10",
+      "15",
+      "20",
+      "03"
+    ],
+    "labels": [
+      "Mandant",
+      "Mandant",
+      "Mandant",
+      "Mdt"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "rejected-explicit-create",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "create",
+      "type": "DTEL",
+      "name": "Z771_750_MTV58HAKA",
+      "package": "$TMP",
+      "typeKind": "predefinedAbapType",
+      "dataType": "CHAR",
+      "length": 60,
+      "shortLabel": "ABCDEF",
+      "mediumLabel": "ABCDEFGHIJKL",
+      "longLabel": "ABCDEFGHIJKLMNOPQRSTU",
+      "headingLabel": "ABCDEF",
+      "shortLength": 10,
+      "mediumLength": 20,
+      "longLength": 40,
+      "headingLength": 55,
+      "deactivateInputHistory": true
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Invalid arguments for SAPWrite:\n  - Unknown parameter(s): shortLength, mediumLength, longLength, headingLength, deactivateInputHistory\n\nHint: Fix the fields listed above, then retry — do NOT resend the same arguments unchanged.\nTip: omit optional fields you do not need (do not send empty strings or null for them)."
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "label": "arc-create-labels",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "create",
+      "type": "DTEL",
+      "name": "Z771_750_MTV58HAKA",
+      "package": "$TMP",
+      "description": "Issue 771 disposable probe",
+      "typeKind": "predefinedAbapType",
+      "dataType": "CHAR",
+      "length": 60,
+      "shortLabel": "ABCDEF",
+      "mediumLabel": "ABCDEFGHIJKL",
+      "longLabel": "ABCDEFGHIJKLMNOPQRSTU",
+      "headingLabel": "ABCDEF"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Created DTEL Z771_750_MTV58HAKA in package $TMP.\n<?xml version=\"1.0\" encoding=\"utf-8\"?><blue:wbobj adtcore:responsible=\"DEVELOPER\" adtcore:masterLanguage=\"EN\" adtcore:masterSystem=\"NPL\" adtcore:name=\"Z771_750_MTV58HAKA\" adtcore:type=\"DTEL/DE\" adtcore:changedAt=\"2026-09-10T04:25:44Z\" adtcore:version=\"inactive\" adtcore:createdAt=\"2026-09-10T04:25:44Z\" adtcore:changedBy=\"DEVELOPER\" adtcore:createdBy=\"DEVELOPER\" adtcore:description=\"Issue 771 disposable probe\" adtcore:language=\"EN\" xmlns:blue=\"http://www.sap.com/wbobj/dictionary/dtel\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><atom:link href=\"/sap/bc/adt/vit/wb/object_type/dtelde/object_name/Z771_750_MTV58HAKA\" rel=\"self\" type=\"application/vnd.sap.sapgui\" title=\"Representation in SAP Gui\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/><atom:link href=\"/sap/bc/adt/vit/docu/object_type/de/object_name/z771_750_mtv58haka?masterLanguage=E&amp;mode=edit\" rel=\"http://www.sap.com/adt/relations/documentation\" type=\"application/vnd.sap.sapgui\" title=\"Documentation\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/><atom:link href=\"/sap/bc/adt/classifications?uri=%2fsap%2fbc%2fadt%2fvit%2fwb%2fobject_type%2fdtelde%2fobject_name%2fZ771_750_MTV58HAKA\" rel=\"http://www.sap.com/adt/categories/classifications\" type=\"application/vnd.sap.adt.classifications+xml\" title=\"Classifications\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/vit/wb/object_type/devck/object_name/%24TMP\" adtcore:type=\"DEVC/K\" adtcore:name=\"$TMP\"/><dtel:dataElement xmlns:dtel=\"http://www.sap.com/adt/dictionary/dataelements\"><dtel:typeKind>predefinedAbapType</dtel:typeKind><dtel:typeName/><dtel:dataType>CHAR</dtel:dataType><dtel:dataTypeLength>000060</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals><dtel:shortFieldLabel>ABCDEF</dtel:shortFieldLabel><dtel:shortFieldLength>06</dtel:shortFieldLength><dtel:shortFieldMaxLength>10</dtel:shortFieldMaxLength><dtel:mediumFieldLabel>ABCDEFGHIJKL</dtel:mediumFieldLabel><dtel:mediumFieldLength>12</dtel:mediumFieldLength><dtel:mediumFieldMaxLength>20</dtel:mediumFieldMaxLength><dtel:longFieldLabel>ABCDEFGHIJKLMNOPQRSTU</dtel:longFieldLabel><dtel:longFieldLength>21</dtel:longFieldLength><dtel:longFieldMaxLength>40</dtel:longFieldMaxLength><dtel:headingFieldLabel>ABCDEF</dtel:headingFieldLabel><dtel:headingFieldLength>06</dtel:headingFieldLength><dtel:headingFieldMaxLength>55</dtel:headingFieldMaxLength><dtel:searchHelp/><dtel:searchHelpParameter/><dtel:setGetParameter/><dtel:defaultComponentName/><dtel:deactivateInputHistory>false</dtel:deactivateInputHistory><dtel:changeDocument>false</dtel:changeDocument><dtel:leftToRightDirection>false</dtel:leftToRightDirection><dtel:deactivateBIDIFiltering>false</dtel:deactivateBIDIFiltering></dtel:dataElement></blue:wbobj>"
+        }
+      ]
+    }
+  },
+  {
+    "label": "arc-created",
+    "lengths": [
+      "06",
+      "12",
+      "21",
+      "06"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "arc-created-activate",
+    "directActivationFor750": true,
+    "result": {
+      "success": true,
+      "messages": [],
+      "details": []
+    }
+  },
+  {
+    "label": "arc-created-active",
+    "lengths": [
+      "06",
+      "12",
+      "21",
+      "06"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "rejected-explicit-update",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "update",
+      "type": "DTEL",
+      "name": "Z771_750_MTV58HAKA",
+      "shortLength": 10,
+      "mediumLength": 20,
+      "longLength": 40,
+      "headingLength": 55,
+      "deactivateInputHistory": true
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Invalid arguments for SAPWrite:\n  - Unknown parameter(s): shortLength, mediumLength, longLength, headingLength, deactivateInputHistory\n\nHint: Fix the fields listed above, then retry — do NOT resend the same arguments unchanged.\nTip: omit optional fields you do not need (do not send empty strings or null for them)."
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "label": "direct-put",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "direct-put-activate",
+    "directActivationFor750": true,
+    "result": {
+      "success": true,
+      "messages": [],
+      "details": []
+    }
+  },
+  {
+    "label": "direct-put-active",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "arc-read-after-direct-put",
+    "tool": "SAPRead",
+    "args": {
+      "type": "DTEL",
+      "name": "Z771_750_MTV58HAKA"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "ADT API error: status 404 at /sap/bc/adt/ddic/dataelements/Z771_750_MTV58HAKA: Error while importing object Z771_750_MTV58HAKA from the database\n\nHint: Object \"Z771_750_MTV58HAKA\" (type DTEL) was not found. Use SAPSearch with query \"Z771_750_MTV58HAKA\" to verify the name exists and check the correct type."
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "label": "cleanup-delete",
+    "directDeleteFor750": true,
+    "name": "Z771_750_MTV58HAKA"
+  },
+  {
+    "label": "cleanup-confirmed-404",
+    "name": "Z771_750_MTV58HAKA"
+  }
+]

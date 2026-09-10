@@ -1,0 +1,53 @@
+[
+  {
+    "key": "contract-post",
+    "version": "inactive",
+    "values": {
+      "shortFieldLength": "10",
+      "mediumFieldLength": "20",
+      "longFieldLength": "40",
+      "headingFieldLength": "55",
+      "deactivateInputHistory": "true"
+    }
+  },
+  {
+    "key": "contract-put",
+    "version": "inactive",
+    "values": {
+      "shortFieldLength": "08",
+      "mediumFieldLength": "18",
+      "longFieldLength": "30",
+      "headingFieldLength": "50",
+      "deactivateInputHistory": "true"
+    }
+  },
+  {
+    "key": "contract-activate",
+    "result": {
+      "success": true,
+      "messages": [],
+      "details": []
+    }
+  },
+  {
+    "key": "contract-active",
+    "version": "active",
+    "values": {
+      "shortFieldLength": "08",
+      "mediumFieldLength": "18",
+      "longFieldLength": "30",
+      "headingFieldLength": "50",
+      "deactivateInputHistory": "true"
+    }
+  },
+  {
+    "key": "cleanup-confirmed-404",
+    "name": "Z771_816_MTV56BLSD",
+    "version": "active"
+  },
+  {
+    "key": "cleanup-confirmed-404",
+    "name": "Z771_816_MTV56BLSD",
+    "version": "inactive"
+  }
+]

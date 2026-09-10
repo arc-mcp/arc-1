@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
@@ -491,6 +492,11 @@ const fmParameterSchema = z.object({
   optional: looseOptionalBoolean,
 });
 
+const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
+const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();
+const dtelLongLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.long).optional();
+const dtelHeadingLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.heading).optional();
+
 const batchObjectSchemaOnprem = z
   .object({
     type: z.enum(SAPWRITE_TYPES_ONPREM),
@@ -515,13 +521,18 @@ const batchObjectSchemaOnprem = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
@@ -560,13 +571,18 @@ const batchObjectSchemaBtp = z.object({
   typeName: z.string().optional(),
   domainName: z.string().optional(),
   shortLabel: z.string().optional(),
+  shortLength: dtelShortLengthSchema,
   mediumLabel: z.string().optional(),
+  mediumLength: dtelMediumLengthSchema,
   longLabel: z.string().optional(),
+  longLength: dtelLongLengthSchema,
   headingLabel: z.string().optional(),
+  headingLength: dtelHeadingLengthSchema,
   searchHelp: z.string().optional(),
   searchHelpParameter: z.string().optional(),
   setGetParameter: z.string().optional(),
   defaultComponentName: z.string().optional(),
+  deactivateInputHistory: looseOptionalBoolean,
   changeDocument: looseOptionalBoolean,
   messages: z.array(messageClassMessageSchema).optional(),
   serviceDefinition: z.string().optional(),
@@ -641,13 +657,18 @@ export const SAPWriteSchema = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
@@ -738,13 +759,18 @@ export const SAPWriteSchemaBtp = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),

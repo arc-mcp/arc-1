@@ -87,6 +87,11 @@ describe('SAPWrite handler — DDIC writes', () => {
         dataType: 'CHAR',
         length: 20,
         shortLabel: 'Text',
+        shortLength: 10,
+        mediumLength: 20,
+        longLength: 40,
+        headingLength: 55,
+        deactivateInputHistory: true,
       });
 
       expect(result.isError).toBeUndefined();
@@ -96,6 +101,44 @@ describe('SAPWrite handler — DDIC writes', () => {
       const putCall = calls.find((c) => c.method === 'PUT');
       expect(putCall?.url).toContain('/sap/bc/adt/ddic/dataelements/ZTEXT20');
       expect(putCall?.contentType).toContain('application/vnd.sap.adt.dataelements.v2+xml');
+      expect(createCall?.body).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
+      expect(putCall?.body).toContain('<dtel:mediumFieldLength>20</dtel:mediumFieldLength>');
+      expect(putCall?.body).toContain('<dtel:longFieldLength>40</dtel:longFieldLength>');
+      expect(putCall?.body).toContain('<dtel:headingFieldLength>55</dtel:headingFieldLength>');
+      expect(putCall?.body).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
+    });
+
+    it('creates DTEL with an explicit zero length using the follow-up PUT', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr, body: typeof opts?.body === 'string' ? opts.body : undefined });
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH0</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name: 'ZZERO',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 1,
+        shortLength: 0,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((call) => call.method === 'PUT');
+      expect(putCall?.body).toContain('<dtel:shortFieldLength>00</dtel:shortFieldLength>');
     });
 
     it('creates DTEL without labels skips follow-up PUT', async () => {
@@ -934,10 +977,55 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(putCall?.contentType).toContain('application/vnd.sap.adt.dataelements.v2+xml');
     });
 
+    it('preserves DTEL label lengths and input-history state on a description-only update', async () => {
+      const metadata = `<?xml version="1.0" encoding="utf-8"?>
+<blue:wbobj adtcore:name="ZSTATUS" adtcore:description="Existing" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:packageRef adtcore:name="$TMP"/>
+  <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
+    <dtel:typeKind>predefinedAbapType</dtel:typeKind><dtel:typeName></dtel:typeName>
+    <dtel:dataType>CHAR</dtel:dataType><dtel:dataTypeLength>000010</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals>
+    <dtel:shortFieldLabel>Short</dtel:shortFieldLabel><dtel:shortFieldLength>10</dtel:shortFieldLength>
+    <dtel:mediumFieldLabel>Medium</dtel:mediumFieldLabel><dtel:mediumFieldLength>20</dtel:mediumFieldLength>
+    <dtel:longFieldLabel>Long</dtel:longFieldLabel><dtel:longFieldLength>40</dtel:longFieldLength>
+    <dtel:headingFieldLabel>Heading</dtel:headingFieldLabel><dtel:headingFieldLength>55</dtel:headingFieldLength>
+    <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>
+  </dtel:dataElement>
+</blue:wbobj>`;
+      const lockBody =
+        '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+      mockFetch.mockReset();
+      const putBodies: string[] = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        if (method === 'GET') return Promise.resolve(mockResponse(200, metadata, { 'x-csrf-token': 'T' }));
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'PUT' && typeof opts?.body === 'string') putBodies.push(opts.body);
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'DTEL',
+        name: 'ZSTATUS',
+        description: 'Changed description',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('adtcore:description="Changed description"');
+      expect(putBodies[0]).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:mediumFieldLength>20</dtel:mediumFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:longFieldLength>40</dtel:longFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:headingFieldLength>55</dtel:headingFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
+    });
+
     it('batch_create supports DOMA + DTEL with label update PUT', async () => {
       mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
         const urlStr = String(url);
         // Lock needs a valid lock handle response
         if (urlStr.includes('_action=LOCK')) {
@@ -948,7 +1036,11 @@ describe('SAPWrite handler — DDIC writes', () => {
             }),
           );
         }
-        calls.push({ method: opts?.method ?? 'GET', url: urlStr });
+        calls.push({
+          method: opts?.method ?? 'GET',
+          url: urlStr,
+          body: typeof opts?.body === 'string' ? opts.body : undefined,
+        });
         return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
       });
 
@@ -957,7 +1049,18 @@ describe('SAPWrite handler — DDIC writes', () => {
         package: '$TMP',
         objects: [
           { type: 'DOMA', name: 'ZSTATUS_D', dataType: 'CHAR', length: 1, fixedValues: [{ low: 'A' }] },
-          { type: 'DTEL', name: 'ZSTATUS', typeKind: 'domain', typeName: 'ZSTATUS_D', shortLabel: 'Status' },
+          {
+            type: 'DTEL',
+            name: 'ZSTATUS',
+            typeKind: 'domain',
+            typeName: 'ZSTATUS_D',
+            shortLabel: 'Status',
+            shortLength: 10,
+            mediumLength: 20,
+            longLength: 40,
+            headingLength: 55,
+            deactivateInputHistory: true,
+          },
         ],
       });
 
@@ -967,6 +1070,8 @@ describe('SAPWrite handler — DDIC writes', () => {
       const putCalls = calls.filter((c) => c.method === 'PUT');
       expect(putCalls.length).toBe(1);
       expect(putCalls[0].url).toContain('/sap/bc/adt/ddic/dataelements/ZSTATUS');
+      expect(putCalls[0].body).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
+      expect(putCalls[0].body).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
     });
 
     it('batch_create DTEL without labels skips follow-up PUT', async () => {

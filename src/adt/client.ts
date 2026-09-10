@@ -915,7 +915,7 @@ export class AdtClient {
     return parseTableType(resp.body);
   }
 
-  /** Get data element metadata (domain, labels, search help) */
+  /** Get data element metadata (domain, labels/reserved lengths, search help, input-history flag) */
   async getDataElement(name: string): Promise<DataElementInfo> {
     checkOperation(this.safety, OperationType.Read, 'GetDataElement');
     const resp = await this.http.get(`/sap/bc/adt/ddic/dataelements/${encodeURIComponent(name)}`);

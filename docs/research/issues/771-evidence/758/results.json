@@ -1,0 +1,557 @@
+[
+  {
+    "label": "system",
+    "baseUrl": "https://a4h.marianzeis.de",
+    "client": "001",
+    "components": [
+      {
+        "name": "SAP_BASIS",
+        "release": "758",
+        "spName": "SAPK-75802INSAPBASIS",
+        "spLevel": "0002",
+        "description": "SAP Basis Component"
+      }
+    ]
+  },
+  {
+    "label": "standard-MANDT",
+    "lengths": [
+      "10",
+      "15",
+      "20",
+      "03"
+    ],
+    "labels": [
+      "Mandant",
+      "Mandant",
+      "Mandant",
+      "Mdt"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "rejected-explicit-create",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "create",
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A",
+      "package": "$TMP",
+      "typeKind": "predefinedAbapType",
+      "dataType": "CHAR",
+      "length": 60,
+      "shortLabel": "ABCDEF",
+      "mediumLabel": "ABCDEFGHIJKL",
+      "longLabel": "ABCDEFGHIJKLMNOPQRSTU",
+      "headingLabel": "ABCDEF",
+      "shortLength": 10,
+      "mediumLength": 20,
+      "longLength": 40,
+      "headingLength": 55,
+      "deactivateInputHistory": true
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Invalid arguments for SAPWrite:\n  - Unknown parameter(s): shortLength, mediumLength, longLength, headingLength, deactivateInputHistory\n\nHint: Fix the fields listed above, then retry — do NOT resend the same arguments unchanged.\nTip: omit optional fields you do not need (do not send empty strings or null for them)."
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "label": "arc-create-labels",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "create",
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A",
+      "package": "$TMP",
+      "description": "Issue 771 disposable probe",
+      "typeKind": "predefinedAbapType",
+      "dataType": "CHAR",
+      "length": 60,
+      "shortLabel": "ABCDEF",
+      "mediumLabel": "ABCDEFGHIJKL",
+      "longLabel": "ABCDEFGHIJKLMNOPQRSTU",
+      "headingLabel": "ABCDEF"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Created DTEL Z771_758_MTV4ZBV3A in package $TMP.\n<?xml version=\"1.0\" encoding=\"utf-8\"?><blue:wbobj adtcore:responsible=\"MARIAN\" adtcore:masterLanguage=\"EN\" adtcore:masterSystem=\"H00\" adtcore:abapLanguageVersion=\"standard\" adtcore:name=\"Z771_758_MTV4ZBV3A\" adtcore:type=\"DTEL/DE\" adtcore:changedAt=\"2026-09-10T06:18:37Z\" adtcore:version=\"inactive\" adtcore:createdAt=\"2026-09-10T06:18:37Z\" adtcore:changedBy=\"MARIAN\" adtcore:createdBy=\"MARIAN\" adtcore:description=\"Issue 771 disposable probe\" adtcore:language=\"EN\" xmlns:blue=\"http://www.sap.com/wbobj/dictionary/dtel\" xmlns:adtcore=\"http://www.sap.com/adt/core\"><atom:link href=\"versions\" rel=\"http://www.sap.com/adt/relations/versions\" title=\"Historic versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/><atom:link href=\"/sap/bc/adt/repository/informationsystem/abaplanguageversions?uri=%2Fsap%2Fbc%2Fadt%2Fddic%2Fdataelements%2Fz771_758_mtv4zbv3a\" rel=\"http://www.sap.com/adt/relations/informationsystem/abaplanguageversions\" type=\"application/vnd.sap.adt.nameditems.v1+xml\" title=\"Allowed ABAP language versions\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/><atom:link href=\"/sap/bc/adt/vit/wb/object_type/dtelde/object_name/Z771_758_MTV4ZBV3A\" rel=\"self\" type=\"application/vnd.sap.sapgui\" title=\"Representation in SAP Gui\" xmlns:atom=\"http://www.w3.org/2005/Atom\"/><atom:link xmlns:atom=\"http://www.w3.org/2005/Atom\"/><adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24tmp\" adtcore:type=\"DEVC/K\" adtcore:name=\"$TMP\" adtcore:description=\"Temporary Objects (never transported!)\"/><dtel:dataElement xmlns:dtel=\"http://www.sap.com/adt/dictionary/dataelements\"><dtel:typeKind>predefinedAbapType</dtel:typeKind><dtel:typeName/><dtel:dataType>CHAR</dtel:dataType><dtel:dataTypeLength>000060</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals><dtel:shortFieldLabel>ABCDEF</dtel:shortFieldLabel><dtel:shortFieldLength>06</dtel:shortFieldLength><dtel:shortFieldMaxLength>10</dtel:shortFieldMaxLength><dtel:mediumFieldLabel>ABCDEFGHIJKL</dtel:mediumFieldLabel><dtel:mediumFieldLength>12</dtel:mediumFieldLength><dtel:mediumFieldMaxLength>20</dtel:mediumFieldMaxLength><dtel:longFieldLabel>ABCDEFGHIJKLMNOPQRSTU</dtel:longFieldLabel><dtel:longFieldLength>21</dtel:longFieldLength><dtel:longFieldMaxLength>40</dtel:longFieldMaxLength><dtel:headingFieldLabel>ABCDEF</dtel:headingFieldLabel><dtel:headingFieldLength>06</dtel:headingFieldLength><dtel:headingFieldMaxLength>55</dtel:headingFieldMaxLength><dtel:searchHelp/><dtel:searchHelpParameter/><dtel:setGetParameter/><dtel:defaultComponentName/><dtel:deactivateInputHistory>false</dtel:deactivateInputHistory><dtel:changeDocument>false</dtel:changeDocument><dtel:leftToRightDirection>false</dtel:leftToRightDirection><dtel:deactivateBIDIFiltering>false</dtel:deactivateBIDIFiltering></dtel:dataElement></blue:wbobj>"
+        }
+      ]
+    }
+  },
+  {
+    "label": "arc-created",
+    "lengths": [
+      "06",
+      "12",
+      "21",
+      "06"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "arc-created-activate",
+    "tool": "SAPActivate",
+    "args": {
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully activated DTEL Z771_758_MTV4ZBV3A."
+        }
+      ]
+    }
+  },
+  {
+    "label": "arc-created-active",
+    "lengths": [
+      "06",
+      "12",
+      "21",
+      "06"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "rejected-explicit-update",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "update",
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A",
+      "shortLength": 10,
+      "mediumLength": 20,
+      "longLength": 40,
+      "headingLength": 55,
+      "deactivateInputHistory": true
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Invalid arguments for SAPWrite:\n  - Unknown parameter(s): shortLength, mediumLength, longLength, headingLength, deactivateInputHistory\n\nHint: Fix the fields listed above, then retry — do NOT resend the same arguments unchanged.\nTip: omit optional fields you do not need (do not send empty strings or null for them)."
+        }
+      ],
+      "isError": true
+    }
+  },
+  {
+    "label": "direct-put",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "direct-put-activate",
+    "tool": "SAPActivate",
+    "args": {
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully activated DTEL Z771_758_MTV4ZBV3A."
+        }
+      ]
+    }
+  },
+  {
+    "label": "direct-put-active",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "arc-read-after-direct-put",
+    "tool": "SAPRead",
+    "args": {
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"name\":\"Z771_758_MTV4ZBV3A\",\"description\":\"Issue 771 disposable probe\",\"typeKind\":\"predefinedAbapType\",\"typeName\":\"\",\"dataType\":\"CHAR\",\"length\":\"000060\",\"decimals\":\"000000\",\"shortLabel\":\"ABCDEF\",\"mediumLabel\":\"ABCDEFGHIJKL\",\"longLabel\":\"ABCDEFGHIJKLMNOPQRSTU\",\"headingLabel\":\"ABCDEF\",\"searchHelp\":\"\",\"defaultComponentName\":\"\",\"package\":\"$TMP\"}"
+        }
+      ]
+    }
+  },
+  {
+    "label": "arc-description-only-update",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "update",
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A",
+      "description": "Issue 771 description only"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully updated DTEL Z771_758_MTV4ZBV3A."
+        }
+      ]
+    }
+  },
+  {
+    "label": "arc-description-only",
+    "lengths": [
+      "06",
+      "12",
+      "21",
+      "06"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "description-only-activate",
+    "tool": "SAPActivate",
+    "args": {
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully activated DTEL Z771_758_MTV4ZBV3A."
+        }
+      ]
+    }
+  },
+  {
+    "label": "arc-description-only-active",
+    "lengths": [
+      "06",
+      "12",
+      "21",
+      "06"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "direct-post",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "direct-post-followup-put",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "post-followup-activate",
+    "tool": "SAPActivate",
+    "args": {
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3B"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully activated DTEL Z771_758_MTV4ZBV3B."
+        }
+      ]
+    }
+  },
+  {
+    "label": "direct-post-followup-active",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "direct-explicit-false",
+    "lengths": [
+      "10",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "arc-batch-explicit-fields",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "batch_create",
+      "package": "$TMP",
+      "objects": [
+        {
+          "type": "DTEL",
+          "name": "Z771_758_MTV4ZBV3C",
+          "description": "Issue 771 batch probe",
+          "typeKind": "predefinedAbapType",
+          "dataType": "CHAR",
+          "length": 60,
+          "shortLabel": "ABCDEF",
+          "mediumLabel": "ABCDEFGHIJKL",
+          "longLabel": "ABCDEFGHIJKLMNOPQRSTU",
+          "headingLabel": "ABCDEF",
+          "shortLength": 10,
+          "mediumLength": 20,
+          "longLength": 40,
+          "headingLength": 55,
+          "deactivateInputHistory": true
+        }
+      ]
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Batch created 1 objects in package $TMP: Z771_758_MTV4ZBV3C (DTEL) ✓ [$TMP]"
+        }
+      ]
+    }
+  },
+  {
+    "label": "arc-batch",
+    "lengths": [
+      "06",
+      "12",
+      "21",
+      "06"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "false",
+    "changeDocument": "false"
+  },
+  {
+    "label": "edge-short-0",
+    "lengths": [
+      "00",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "edge-short-5",
+    "lengths": [
+      "05",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "edge-short-11",
+    "lengths": [
+      "11",
+      "20",
+      "40",
+      "55"
+    ],
+    "labels": [
+      "ABCDEF",
+      "ABCDEFGHIJKL",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "ABCDEF"
+    ],
+    "deactivateInputHistory": "true",
+    "changeDocument": "false"
+  },
+  {
+    "label": "edge-short--1",
+    "statusCode": 400,
+    "message": "ADT API error: status 400 at /sap/bc/adt/ddic/dataelements/Z771_758_MTV4ZBV3A?lockHandle=[REDACTED]: An error occurred when deserializing in the simple transformation program SBD_DATAELEMENT"
+  },
+  {
+    "label": "edge-short-6.5",
+    "statusCode": 400,
+    "message": "ADT API error: status 400 at /sap/bc/adt/ddic/dataelements/Z771_758_MTV4ZBV3A?lockHandle=[REDACTED]: An error occurred when deserializing in the simple transformation program SBD_DATAELEMENT"
+  },
+  {
+    "label": "cleanup-delete",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "delete",
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3A"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Deleted DTEL Z771_758_MTV4ZBV3A."
+        }
+      ]
+    }
+  },
+  {
+    "label": "cleanup-confirmed-404",
+    "name": "Z771_758_MTV4ZBV3A"
+  },
+  {
+    "label": "cleanup-delete",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "delete",
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3B"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Deleted DTEL Z771_758_MTV4ZBV3B."
+        }
+      ]
+    }
+  },
+  {
+    "label": "cleanup-confirmed-404",
+    "name": "Z771_758_MTV4ZBV3B"
+  },
+  {
+    "label": "cleanup-delete",
+    "tool": "SAPWrite",
+    "args": {
+      "action": "delete",
+      "type": "DTEL",
+      "name": "Z771_758_MTV4ZBV3C"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Deleted DTEL Z771_758_MTV4ZBV3C."
+        }
+      ]
+    }
+  },
+  {
+    "label": "cleanup-confirmed-404",
+    "name": "Z771_758_MTV4ZBV3C"
+  }
+]

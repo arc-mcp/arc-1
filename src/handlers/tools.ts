@@ -22,6 +22,7 @@ import { TEXT_ELEMENT_PARTS } from '../adt/text-elements.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
+import * as DtelFields from './data-element-fields.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
@@ -767,6 +768,7 @@ export function getToolDefinitions(
           mediumLabel: { type: 'string', description: 'DTEL: medium field label' },
           longLabel: { type: 'string', description: 'DTEL: long field label' },
           headingLabel: { type: 'string', description: 'DTEL: heading field label' },
+          ...DtelFields.DATA_ELEMENT_TOOL_PROPERTIES,
           searchHelp: { type: 'string', description: 'DTEL: search help name' },
           searchHelpParameter: { type: 'string', description: 'DTEL: search help parameter' },
           setGetParameter: { type: 'string', description: 'DTEL: SET/GET parameter ID' },
@@ -923,6 +925,7 @@ export function getToolDefinitions(
                 mediumLabel: { type: 'string' },
                 longLabel: { type: 'string' },
                 headingLabel: { type: 'string' },
+                ...DtelFields.DATA_ELEMENT_BATCH_TOOL_PROPERTIES,
                 searchHelp: { type: 'string' },
                 searchHelpParameter: { type: 'string' },
                 setGetParameter: { type: 'string' },

@@ -48,12 +48,8 @@ const SAPWRITE_BODY_BTP =
 // callers tend to fill the rest with empty/null/placeholder values. Runtime normalization is the
 // backstop.
 const SAPWRITE_MINIMAL_PAYLOAD_GUIDE =
-  'MINIMAL PAYLOAD — send ONLY the fields your action+type needs; do NOT add unrelated optional fields. ' +
-  'Sending empty strings, null, or placeholder values for fields that do not apply to your object type ' +
-  '(e.g. typeKind/odataVersion/length/signExists on a CDS or class write) just adds noise — omit them entirely. ' +
-  'Typical field sets: a source object (CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, TABL — plus PROG, INCL, FUNC on-prem) needs only {action, type, name, source}; ' +
-  "delete needs only {action, type, name}; DOMA/DTEL/MSAG/SRVB need {action, type, name} plus that type's own DDIC fields; FUNC also needs group. " +
-  'Do NOT send `include` unless type=CLAS, and do NOT send DDIC/metadata fields (dataType, length, decimals, signExists, lowercase, typeKind, domainName, odataVersion, category, version, labels, …) on a source-object or delete call. ';
+  'MINIMAL PAYLOAD: send only required fields; omit unrelated empty, null, or placeholder values. ' +
+  'Do NOT send `include` unless type=CLAS. Delete needs only {action, type, name} (plus optional transport). ';
 
 // Purpose first, per-type reference, then payload hygiene last: the guide is call-time guidance and
 // does not belong where a model is deciding which tool to pick.

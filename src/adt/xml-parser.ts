@@ -703,11 +703,16 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
     length: String(dtel.dataTypeLength ?? ''),
     decimals: String(dtel.dataTypeDecimals ?? ''),
     shortLabel: String(dtel.shortFieldLabel ?? ''),
+    shortLength: String(dtel.shortFieldLength ?? ''),
     mediumLabel: String(dtel.mediumFieldLabel ?? ''),
+    mediumLength: String(dtel.mediumFieldLength ?? ''),
     longLabel: String(dtel.longFieldLabel ?? ''),
+    longLength: String(dtel.longFieldLength ?? ''),
     headingLabel: String(dtel.headingFieldLabel ?? ''),
+    headingLength: String(dtel.headingFieldLength ?? ''),
     searchHelp: String(dtel.searchHelp ?? ''),
     defaultComponentName: String(dtel.defaultComponentName ?? ''),
+    deactivateInputHistory: String(dtel.deactivateInputHistory ?? 'false').toLowerCase() === 'true',
     package: String(pkgRef['@_name'] ?? ''),
   };
 }

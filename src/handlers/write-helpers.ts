@@ -133,9 +133,13 @@ export function createContentTypeForType(type: string, cloud = false, fugrInclud
 export function dtelNeedsPostCreateUpdate(props: Record<string, unknown>): boolean {
   return Boolean(
     props.shortLabel ||
+      props.shortLength !== undefined ||
       props.mediumLabel ||
+      props.mediumLength !== undefined ||
       props.longLabel ||
+      props.longLength !== undefined ||
       props.headingLabel ||
+      props.headingLength !== undefined ||
       props.searchHelp ||
       props.searchHelpParameter ||
       props.setGetParameter ||
@@ -200,13 +204,18 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     rowTypeKind: input.rowTypeKind,
     domainName: input.domainName,
     shortLabel: input.shortLabel,
+    shortLength: input.shortLength,
     mediumLabel: input.mediumLabel,
+    mediumLength: input.mediumLength,
     longLabel: input.longLabel,
+    longLength: input.longLength,
     headingLabel: input.headingLabel,
+    headingLength: input.headingLength,
     searchHelp: input.searchHelp,
     searchHelpParameter: input.searchHelpParameter,
     setGetParameter: input.setGetParameter,
     defaultComponentName: input.defaultComponentName,
+    deactivateInputHistory: input.deactivateInputHistory,
     changeDocument: input.changeDocument,
     messages: input.messages,
     serviceDefinition: input.serviceDefinition,
@@ -286,13 +295,19 @@ export async function mergeMetadataWriteProperties(
         typeName: provided.typeName ?? existing.typeName,
         domainName: provided.domainName ?? existing.typeName, // DTEL stores domain in typeName
         shortLabel: provided.shortLabel ?? existing.shortLabel,
+        shortLength: provided.shortLength ?? (provided.shortLabel !== undefined ? undefined : existing.shortLength),
         mediumLabel: provided.mediumLabel ?? existing.mediumLabel,
+        mediumLength: provided.mediumLength ?? (provided.mediumLabel !== undefined ? undefined : existing.mediumLength),
         longLabel: provided.longLabel ?? existing.longLabel,
+        longLength: provided.longLength ?? (provided.longLabel !== undefined ? undefined : existing.longLength),
         headingLabel: provided.headingLabel ?? existing.headingLabel,
+        headingLength:
+          provided.headingLength ?? (provided.headingLabel !== undefined ? undefined : existing.headingLength),
         searchHelp: provided.searchHelp ?? existing.searchHelp,
         searchHelpParameter: provided.searchHelpParameter,
         setGetParameter: provided.setGetParameter,
         defaultComponentName: provided.defaultComponentName ?? existing.defaultComponentName,
+        deactivateInputHistory: provided.deactivateInputHistory ?? existing.deactivateInputHistory,
         changeDocument: provided.changeDocument,
       };
     }
@@ -637,13 +652,18 @@ function buildCreateXmlBody(
         length: properties?.length as string | number | undefined,
         decimals: properties?.decimals as string | number | undefined,
         shortLabel: properties?.shortLabel ? String(properties.shortLabel) : undefined,
+        shortLength: properties?.shortLength as string | number | undefined,
         mediumLabel: properties?.mediumLabel ? String(properties.mediumLabel) : undefined,
+        mediumLength: properties?.mediumLength as string | number | undefined,
         longLabel: properties?.longLabel ? String(properties.longLabel) : undefined,
+        longLength: properties?.longLength as string | number | undefined,
         headingLabel: properties?.headingLabel ? String(properties.headingLabel) : undefined,
+        headingLength: properties?.headingLength as string | number | undefined,
         searchHelp: properties?.searchHelp ? String(properties.searchHelp) : undefined,
         searchHelpParameter: properties?.searchHelpParameter ? String(properties.searchHelpParameter) : undefined,
         setGetParameter: properties?.setGetParameter ? String(properties.setGetParameter) : undefined,
         defaultComponentName: properties?.defaultComponentName ? String(properties.defaultComponentName) : undefined,
+        deactivateInputHistory: toBoolean(properties?.deactivateInputHistory),
         changeDocument: toBoolean(properties?.changeDocument),
         language: masterLanguage,
         responsible: responsibleUser,
