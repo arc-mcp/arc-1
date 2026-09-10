@@ -126,13 +126,14 @@ describe('MCP Server', () => {
       expect(instructions).toContain('One method: SAPRead(type="CLAS", method="name")');
       expect(instructions).toContain('Source behavior is not a specification');
       expect(instructions).toContain(
-        'For draft reviews and test design, check user requirements or available KTD before extra diagnostics',
+        'For draft reviews/test design, first SAPContext(action="deps") for available KTD (type+name), unless requirements are supplied',
       );
       expect(instructions).toContain(
         'Test expectations follow those requirements; show current behavior separately, even when it is a defect',
       );
-      expect(instructions).toContain('If requirements remain unavailable after a targeted lookup');
-      expect(instructions).toContain('report intent/compliance as unverified rather than exhaust calls');
+      expect(instructions).toContain('If a targeted requirements lookup yields no evidence or lead');
+      expect(instructions).toContain('finish with observed source behavior and unverified intent/compliance');
+      expect(instructions).toContain('Do not broaden the policy search');
       expect(instructions).toContain('Unavailable or failed syntax/ATC/test checks are not passes');
     },
   );
