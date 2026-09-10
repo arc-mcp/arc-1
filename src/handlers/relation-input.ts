@@ -16,7 +16,9 @@ export const LiveRelationsInput = z
         error: (issue) =>
           issue.input === undefined
             ? 'relations requires type (the root object type). Retry with type and name; objectType is only a references result filter, not the relations root type.'
-            : undefined,
+            : issue.input === 'SOBJ' || issue.input === 'SOBJ/MO'
+              ? 'relations does not support SOBJ roots: native SOBJ/MO means a maintenance object, whereas SAPRead SOBJ means a different BOR object. Do not substitute a BOR read or omit type to retry this maintenance-object map.'
+              : undefined,
       }),
     ),
     name: z.string().min(1).max(120).regex(RELATION_NAME),

@@ -45,6 +45,8 @@ describe('automatic live relations integration', () => {
     const query = vi.spyOn(client, 'runQuery');
     const result = await handleToolCall(client, config, 'SAPNavigate', { ...input, type, name: '/BA1/B121' }, readAuth);
     expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('native SOBJ/MO means a maintenance object');
+    expect(result.content[0]!.text).toContain('SAPRead SOBJ means a different BOR object');
     expect(get).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
     expect(query).not.toHaveBeenCalled();
