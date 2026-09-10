@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "arc-1",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "SAP ABAP development with the ARC-1 MCP server and portable skills for RAP, CDS, testing, migration, clean core, and UI5. Read-only by default.",
   "author": {
     "name": "Marian Zeis",
