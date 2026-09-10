@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/ddic/ddl/sources/zdemo_c_salesorder_tp_d",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "3ab0539a307134929f1b6be329874d7710b52842dd81c1f5bd149926a6e2ce83",
+    "networkSha256": "cd1be308e59b215136003b6a4d5a8fcc29f44312dfb30de3adb6f2390a4b38ef",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 3,
+    "observedEdges": 2
+  },
+  "type": "DDLS",
+  "native": "DDLS/DF",
+  "name": "ZDEMO_C_SALESORDER_TP_D",
+  "uri": "/sap/bc/adt/ddic/ddl/sources/zdemo_c_salesorder_tp_d",
+  "metadataRootQName": "ddl:ddlSource",
+  "context": "ENV",
+  "metadataXml": "<ddl:ddlSource adtcore:name=\"ZDEMO_C_SALESORDER_TP_D\" adtcore:type=\"DDLS/DF\" adtcore:version=\"active\" xmlns:ddl=\"http://www.sap.com/adt/ddic/ddlsources\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24demo_soi_draft\" adtcore:type=\"DEVC/K\" adtcore:name=\"$DEMO_SOI_DRAFT\" adtcore:packageName=\"$DEMO_SOI_DRAFT\"/>\n</ddl:ddlSource>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/ddl/sources/sepm_i_businesspartner\" adtcore:type=\"DDLS/DF\" adtcore:name=\"SEPM_I_BUSINESSPARTNER\" adtcore:packageName=\"S_EPM_CDS_REF\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/ddl/sources/zdemo_c_salesorder_tp_d\" adtcore:type=\"DDLS/DF\" adtcore:name=\"ZDEMO_C_SALESORDER_TP_D\" adtcore:packageName=\"$DEMO_SOI_DRAFT\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/ddic/ddl/sources/zdemo_c_salesorder_tp_d</oro:object1><oro:object2>/sap/bc/adt/ddic/ddl/sources/sepm_i_businesspartner</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

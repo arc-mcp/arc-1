@@ -32,6 +32,34 @@ Lives in [docs_page/configuration-reference.md](../docs_page/configuration-refer
 CLI flags, clamps, layer interactions — the user-facing reference is the single verbose source;
 duplicating it here proved to drift). The compact per-variable table stays in AGENTS.md.
 
+## Live relations verification
+
+From a repository checkout after `npm ci`:
+
+```bash
+npm run bench:context-parsing
+```
+
+The benchmark is synthetic CPU-only work: no SAP connection or credentials. It checks output
+equality before comparing uncached/warm parsing time; it does not measure SAP latency or process RSS.
+
+The smoke command builds ARC-1 and starts isolated read-only stdio servers against a real SAP system.
+Export `TEST_SAP_URL`, `TEST_SAP_USER`, `TEST_SAP_PASSWORD` and `TEST_SAP_CLIENT` using your normal
+local secret handling (do not put credentials in tracked files). It uses direct Basic authentication
+with normal TLS verification, not a BTP principal-propagation or Cloud Connector deployment test.
+Provide one to eight existing qualified roots (see the type table below), for example:
+
+```bash
+export TEST_RELATION_CASES='[{"action":"relations","type":"CLAS","name":"ZCL_ORDER","direction":"outgoing","depth":1,"maxResults":20}]'
+npm run test:relations:smoke
+```
+
+Replace the example with an existing object. This command does not create fixtures or write to SAP.
+It checks denied/available tool visibility, bounded traversal and missing-root rejection, and reports
+counts rather than source bodies. Both scripts are typechecked, linted and included in the file-size
+ratchet; live smoke is deliberately manual, not an automatic CI network dependency.
+Feature prerequisites and result limits: [Live relations](../docs_page/live-relations.md).
+
 ## Experimental multi-target v1 — developer map
 
 Terminology: **ARC-1 multi-target** means multiple SAP system/client targets. `mta.yaml` and an MTAR

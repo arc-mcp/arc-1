@@ -28,11 +28,11 @@
  */
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
-import { Agent, Client, type Dispatcher, fetch as undiciFetch } from 'undici';
+import { Agent, Client, type Dispatcher } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
-import { capResponseBody, connectivityProxyResponse } from './bounded-response.js';
+import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
 import { AdtApiError, AdtNetworkError, AdtResponseLimitError } from './errors.js';
@@ -46,6 +46,7 @@ import {
   withoutResponseBudget,
 } from './http-deadline.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
+import { fetchWithAttemptBudget } from './request-attempt-budget.js';
 import type { Semaphore } from './semaphore.js';
 
 export type { AdtRequestOptions } from './http-deadline.js';
@@ -1324,15 +1325,21 @@ export class AdtHttpClient {
         (options?.fetchTimeoutMs === undefined
           ? undefined
           : (this.longOperationDispatcher ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 })));
-      response = (await undiciFetch(url, {
-        method,
-        headers: outbound,
-        body,
-        signal: requestSignal(options),
-        ...(dispatcher ? { dispatcher } : {}),
-      })) as Response;
+      response = (await fetchWithAttemptBudget(
+        url,
+        {
+          method,
+          headers: outbound,
+          body,
+          signal: requestSignal(options),
+          // Automatic redirects would create uncounted sends outside the caller's allowance.
+          ...(options?.attemptBudget ? { redirect: 'manual' as const } : {}),
+          ...(dispatcher ? { dispatcher } : {}),
+        },
+        options?.attemptBudget,
+      )) as Response;
     }
-    return options?.responseBudget ? await capResponseBody(response, options.responseBudget) : response;
+    return prepareBoundedResponse(response, url, options);
   }
 
   /**
@@ -1398,6 +1405,7 @@ export class AdtHttpClient {
     let responseOwnsClient = false;
     try {
       const signal = requestSignal(options);
+      options?.attemptBudget?.consume();
       const resp = await client.request({
         method: method as Dispatcher.HttpMethod,
         // Full URL as path — standard HTTP proxy protocol
@@ -1408,8 +1416,15 @@ export class AdtHttpClient {
       });
 
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
-      responseOwnsClient = options?.responseBudget !== undefined && !isNullBodyStatus;
-      return await connectivityProxyResponse(resp, client, signal, options?.responseBudget !== undefined);
+      responseOwnsClient =
+        !!options?.discardResponseBody || (options?.responseBudget !== undefined && !isNullBodyStatus);
+      return await connectivityProxyResponse(
+        resp,
+        client,
+        signal,
+        options?.responseBudget !== undefined,
+        options?.discardResponseBody,
+      );
     } finally {
       if (!responseOwnsClient) await client.close();
     }

@@ -124,6 +124,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPNavigate: { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.definition': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.references': { scope: 'read', opType: OperationType.Intelligence },
+  'SAPNavigate.relations': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.completion': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.hierarchy': { scope: 'read', opType: OperationType.Intelligence },
 

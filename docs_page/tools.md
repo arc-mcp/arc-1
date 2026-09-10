@@ -39,7 +39,7 @@ boundary, and target-selection behavior.
 
 Read any SAP ABAP object.
 
-Use `SAPRead` when you need exact raw source, one method body, grep output, inactive drafts, revision history, or metadata. For object understanding questions such as "what does this class do?" or pre-change/spec/review orientation, start with `SAPContext(action="deps")`; it includes the object's KTD when available and avoids reading full source before the model knows what matters.
+Use `SAPRead` for exact implementation behavior, an exact reference, one method body, grep output, inactive drafts, revision history, or metadata. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available KTD and dependency contracts, then verify source. Compare documented requirements with actual behavior and report mismatches; do not treat existing code as the specification. If KTD is missing, requirements supplied by the user or other documentation still count; without requirements, intent is unverified.
 
 **Parameters:**
 
@@ -119,6 +119,13 @@ Use `SAPRead` when you need exact raw source, one method body, grep output, inac
 | `TEXT_ELEMENTS` | Program text elements |
 | `VARIANTS` | Program variants |
 | `INACTIVE_OBJECTS` | List all objects pending activation for the calling user (no `name` needed). Returns rich metadata: `name`, `type`, `uri`, `description?`, `user`, `deleted`, `transport`, `parentTransport`. |
+
+For a global class declaration (`INTERFACES`, `INHERITING FROM`) or its implementation,
+read MAIN: omit `include` or use `include="main"`. `definitions` and `implementations`
+contain **local helper classes**, not the global declaration and implementation split apart.
+An empty local include does not mean the global class has no declarations. For a targeted
+check use, for example, `SAPRead(type="CLAS", name="ZCL_ORDER", grep="INTERFACES|INHERITING")`.
+This checks source declarations; it does not enumerate subclasses or prove runtime calls.
 
 **Structured format (CLAS only):**
 
@@ -210,7 +217,7 @@ ARC-1 caches every source read with the SAP-emitted `ETag`. On the next read, AR
 
 This means external writes (Eclipse activations, gCTS pulls, abapGit imports) are caught automatically — there's no staleness window. To force a fresh fetch and bypass the cache for one read, pass `force_refresh: true`.
 
-The full caching architecture (per-version cache keys, conditional GET, dependency-graph caching, inactive-list session cache, write invalidation) is documented in [Caching System](caching.md).
+The full caching architecture (per-version cache keys, conditional GET, pure parse memoization, inactive-list session cache, write invalidation) is documented in [Caching System](caching.md).
 
 ---
 
@@ -803,6 +810,11 @@ SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_ty
 
 Navigate code: find definitions, references (where-used), code completion, and class hierarchy.
 
+An [experimental `relations` action](live-relations.md) adds bounded live metadata
+networks for qualified ABAP object types. It is listed automatically unless denied or SAP discovery
+has established that the capability is absent. Invocation still requires exact discovery evidence.
+The existing actions below are unchanged.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -817,12 +829,35 @@ Navigate code: find definitions, references (where-used), code completion, and c
 | `column` | number | No | Column number (1-based) |
 | `source` | string | No | Current source code |
 
+**Experimental relations parameters (when available):**
+
+Present automatically in single-target standard mode, unless `SAP_DENY_ACTIONS` or discovery
+establishes that the capability is absent. These rows add to or qualify the table above; existing
+actions keep their behavior. Strict-client relation-only placeholders on other actions are ignored.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | string | Yes | `definition`, `references`, `completion`, `hierarchy`, or `relations` (when available) |
+| `type` | string | For relations | `CLAS`, `INTF`, `DDLS`, `DCLS`, `TABL`, `TTYP`, `DTEL`, `DOMA`, `PROG`, `INCL`, `FUNC`, `FUGR`, `VIEW`, `ENHO`, `ENHS`, `MSAG`, `BDEF`, `SRVD`, `TRAN`, `SHLP`, `SKTD`, `ENQU`, `TYPE`, `EVTB`, `DSFD`. Only BAdI implementation/spot subtypes are qualified for ENHO/ENHS. See [type-specific limits](live-relations.md#qualified-object-types). |
+| `name` | string | For relations | Root object name, including namespaced names such as `/BOBF/CL_FRW_FACTORY`. |
+| `direction` | string | No | For `relations`: `outgoing` (default, dependencies) or `incoming` (usages). |
+| `depth` | integer | No | For `relations`: expansion depth, 1–3 (default 1). Native edges do not establish exact call distance. |
+| `maxResults` | integer | No | For `relations`: maximum returned nodes, including the root, 1–100 (default 50). |
+| `expandPackages` | string[] | No | For `relations`: up to 8 exact package names controlling deeper expansion. Boundary nodes remain visible; no wildcards. |
+
+For `relations`, use only `action`, `type`, `name` and its four optional parameters above. Other
+navigation parameters (`uri`, `objectType`, `line`, `column`, `source`) are rejected. See the
+[experimental guide](live-relations.md) for coverage limits and examples.
+
 **References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
 
-Returns a paged envelope — `{total, shown, truncated, hint?, references}` — because where-used is
+Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, warning?, references}` — because where-used is
 unbounded: `CL_ABAP_TYPEDESCR` has 6,644 references (~968K tokens, several times a context window).
-**`total` is the number of matches, not the page length**, so a capped page still reports the real
-blast radius.
+**`total` counts matching reference entries before paging, not distinct consumer objects or runtime
+calls.** The `countMeaning` field states this explicitly. Tree/container rows and multiple references
+to one object can appear; even an untruncated or empty page is not proof of system-wide completeness.
+If optional interface-implementer enrichment fails, native results are retained with a `warning`.
+An absent warning does not prove that enrichment ran or that the result is complete.
 
 Paging and `objectType` filtering are both client-side, and deliberately so: SAP's
 `usageReferences` endpoint declares only `{?uri}` and ignores every limit or filter we can send
@@ -830,6 +865,11 @@ Paging and `objectType` filtering are both client-side, and deliberately so: SAP
 crosses the wire — this bounds what reaches the model, not what SAP computes.
 
 **Hierarchy action:** Returns the class inheritance chain via `SEOMETAREL`: superclass (or null), implemented interfaces, and direct subclasses. Requires `name` parameter (class name). It needs either table preview (`SAP_ALLOW_DATA_PREVIEW=true` + `data` scope) or freestyle SQL (`SAP_ALLOW_FREE_SQL=true` + `sql` scope). ARC-1 uses SQL when available and falls back to named table preview.
+
+Without changing permissions, inspect the global class declaration using
+`SAPRead(type="CLAS", name="ZCL_ORDER", grep="INTERFACES|INHERITING")`. Omit `include` to read MAIN:
+`include="definitions"` is for local helper classes, not the global declaration. This fallback does
+not enumerate subclasses or prove a complete inheritance/implementation list.
 
 **Examples:**
 ```
@@ -1111,22 +1151,24 @@ SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add ord
 
 ## SAPContext
 
-Get context-first understanding for an ABAP object, or look up reverse dependencies (who uses a given object).
+Get dependency API contracts, CDS impact, DDIC structure, or live where-used evidence.
 
-Use this before `SAPRead` when the user asks what an existing class, interface, program, function module, or CDS view does, or before drafting a spec/change/review. `action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that only when you need exact source, method-level detail, grep output, drafts, revisions, or metadata.
+`action="deps"` prepends the object's Knowledge Transfer Document (`SKTD`/`KTD`) when one exists, then returns compressed, source-derived dependency contracts. For business purpose, reviews or test design, start here, then verify implementation with `SAPRead`. Base specification-test expectations on requirements: a boundary test should fail on a mismatch, not preserve a bug as intended behavior. Requirements may also come from the user or other documentation; without them, intent is unverified. For exact behavior or a known reference, targeted `SAPRead` alone may suffice; contracts are not implementation.
 
-SAPContext has three modes controlled by the `action` parameter:
+SAPContext has four modes controlled by the `action` parameter:
 
 **Quick decision rule:**
+
 - *"What breaks if I change `<CDS view>`?"* / *"Who consumes `I_*`?"* / *"Impact of `<DDLS>`"* → **`action="impact"`**
-- *"What does `<object>` do?"* / *"Explain `<object>`"* / spec, review, or dependency context before editing → **`action="deps"`** (default)
+- *"Which dependency APIs do I need for this change?"* → **`action="deps"`** (default)
 - *"Who calls `<object>`?"* → **`action="usages"`** (live SAP where-used)
+- *"Which includes/appends extend this table?"* → **`action="structure"`**
 
 > **Do not** hand-roll CDS impact analysis by querying `DDDDLSRC`, `ACMDCLSRC`, `DDLXSRC_SRC`, or `SRVDSRC_SRC` via `SAPQuery`. Those text-scans produce substring-match noise and package group nodes. `action="impact"` uses SAP's where-used index and returns deduplicated, RAP-classified results.
 
 ### action="deps" (default) — Dependency context
 
-Returns the target object's KTD first when available, followed by only the public API contracts (method signatures, interface definitions, type declarations) of all objects that the target depends on — NOT the full source code. Typical compression: 7-30x fewer tokens.
+Returns the target object's KTD first when available, followed by public API contracts (method signatures, interface definitions, type declarations) for a bounded selection of source-derived dependencies. It is not a complete SAP-native relationship inventory or proof of runtime calls. Token savings depend on the source and selected contracts.
 
 **What gets extracted per dependency:**
 - **Classes:** `CLASS DEFINITION` with `PUBLIC SECTION` only. `PROTECTED`, `PRIVATE` sections and `CLASS IMPLEMENTATION` are stripped.
@@ -1142,8 +1184,8 @@ Returns the target object's KTD first when available, followed by only the publi
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | No | `"deps"` (default), `"usages"`, `"impact"`, or `"structure"` |
-| `type` | string | Yes (for deps/structure), optional for impact/usages | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
-| `name` | string | Yes | Object name (e.g., `ZCL_ORDER`) |
+| `type` | string | Yes for deps/structure, even with source; optional for impact/usages | Object type: `CLAS`, `INTF`, `PROG`, `FUNC`, `DDLS`, `TABL` |
+| `name` | string | Yes, even with source | Object name (e.g., `ZCL_ORDER`) |
 | `source` | string | No | Provide source directly instead of fetching from SAP |
 | `includeKtd` | boolean | No | Only for `action="deps"`. Defaults to `true`; prepends the object's KTD (`SKTD`/`KTD`) when one exists. Set `false` to skip the KTD lookup. Ignored when `source` is supplied. |
 | `group` | string | No | Required for `FUNC` type. The function group name. |
@@ -1172,6 +1214,7 @@ SAPContext(action="structure", type="TABL", name="BAPIRET2")
 Business intent and object notes from the KTD.
 
 * === Dependency context for ZCL_ORDER (3 deps resolved) ===
+* Source-derived dependency contracts; not complete dependency coverage or runtime evidence.
 
 * --- ZIF_ORDER (intf, 4 methods) ---
 INTERFACE zif_order PUBLIC.
@@ -1186,17 +1229,24 @@ CLASS zcl_item DEFINITION PUBLIC.
     ...
 ENDCLASS.
 
-* Stats: 5 deps found, 3 resolved, 0 failed, 25 lines
+* Coverage is not complete: source-derived, filtered and depth/count-limited; deeper unexpanded work is not counted.
+* Stats: 5 root candidates after filtering; 2 root candidates not fetched; across explored levels: 3 resolved, 0 failed.
 ```
+
+Root candidates and recursive attempts have different scopes: do not subtract the all-level
+resolved/failed totals from the root total. "Not fetched" counts unattempted root names only;
+deeper unexpanded work is unknown. A failed dependency read does not establish that the name is
+absent as another SAP object type. Resolve its type with `SAPSearch` before retrying a different
+reader. For ordinary DDIC reads, omit `format` or use `"text"`; `"structured"` is CLAS-only.
 
 If the object has no KTD or the backend returns 404/410 for the KTD document, ARC-1 silently omits the KTD section and still returns the dependency context. Other KTD read errors are surfaced normally.
 
-**Cache indicator:** When the dependency graph is served from the hash-keyed dep-graph cache (no further ADT calls beyond the source revalidation), the header changes to:
-```
-* === Dependency context for ZCL_ORDER (3 deps resolved) [cached] ===
-```
-
-The `[cached]` label here is for **dependency graph hits** (hash-keyed, naturally correct without server validation). It is distinct from `[cached:revalidated]` which appears on `SAPRead` source responses after SAP confirms freshness via `304 Not Modified`. See [Caching System → Source freshness](caching.md#source-freshness) for details.
+Dependency context is recomputed on each call; a root hash cannot validate changed dependencies.
+Normal ETag-validated source caching remains, so unchanged dependency bodies can still use `304`
+responses. Pure contract/dependency parsing is reused by content hash after source retrieval;
+principal-propagation dependency calls bypass that memoization. The old aggregate `[cached]`
+shortcut is no longer used. See
+[Caching System → Dependency context](caching.md#dependency-context).
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 
@@ -1313,7 +1363,8 @@ SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
     "name": "ZIF_ORDER",
     "uri": "/sap/bc/adt/oo/interfaces/zif_order"
   },
-  "usageCount": 3,
+  "usageCount": 2,
+  "countMeaning": "Reference entries, not distinct objects or runtime calls; not a complete inventory.",
   "shown": 2,
   "truncated": false,
   "usages": [
@@ -1326,11 +1377,14 @@ SAPContext(action="usages", type="INTF", name="ZIF_ORDER")
 ```
 
 `usages` is paged (`maxResults`, default 100, max 1000) because a where-used lookup on a common
-object is unbounded — `CL_ABAP_TYPEDESCR` returns 6,644 references. **`usageCount` is the total
-match count, not the page length** (`shown` is the page): a capped page must never under-report the
-blast radius of a change. `SAPNavigate(action="references")` returns the same paged envelope under
-`references`, and `SAPContext(action="impact")` caps each downstream bucket while `summary` keeps
-the complete counts.
+object is unbounded — `CL_ABAP_TYPEDESCR` returns 6,644 references. **`usageCount` counts reference
+entries before paging, not distinct objects or runtime calls** (`shown` is the page length).
+`countMeaning` explains the count; an optional `warning` reports failed interface-implementer
+enrichment without discarding native results. No warning is not proof of complete coverage.
+For class-only results use `SAPNavigate(action="references", objectType="CLAS/OC", type=..., name=...)`;
+`SAPContext.usages` has no result-type filter. Navigation uses `total` and `references` instead of
+`usageCount` and `usages`. `SAPContext(action="impact")` caps each downstream bucket while `summary`
+keeps the unsliced bucket counts, not a guarantee of every system dependency.
 
 If exact name resolution finds multiple object types, ARC-1 returns a bounded candidate list and asks for `type` instead of guessing.
 
@@ -1553,7 +1607,7 @@ classic FLP lifecycle operations, and set an object's API release contract.
 **Actions:**
 - `probe` — Re-probe the SAP system now (feature probes + auth checks + ADT discovery refresh). Detects optional features.
 - `features` — Get cached feature status from last probe (fast, no SAP round-trip).
-- `cache_stats` — Return request-driven cache statistics: cached sources, dependency graphs, released APIs, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
+- `cache_stats` — Return request-driven cache statistics: cached sources, legacy dependency-graph rows, released APIs, and the per-username inactive-list session cache (`inactiveListCache.userCount`, `inactiveListCache.totalEntries`).
 - `create_package` — Create a package (`DEVC`) via `/sap/bc/adt/packages`.
 - `delete_package` — Delete a package via lock/delete/unlock.
 - `change_package` — Move an existing object into a different package (DEVC reassignment).
@@ -1617,7 +1671,7 @@ classic FLP lifecycle operations, and set an object's API release contract.
 |-------|-------------|
 | `enabled` | Whether caching is active (`false` if `ARC1_CACHE=none`) |
 | `sourceCount` | Cached source code entries (grows as objects are read) |
-| `contractCount` | Cached dependency graphs (grows as `SAPContext(deps)` is called) |
+| `contractCount` | Legacy dependency-graph rows; current `SAPContext(deps)` neither reads nor populates them. Does not count memory-only parse memoization. |
 | `apiCount` | Released API metadata entries populated by requests |
 | `inactiveListCache` | Aggregate user/session draft-list cache counts |
 

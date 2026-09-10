@@ -1825,6 +1825,10 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.text).toContain('data access permissions');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_FREE_SQL=true');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_DATA_PREVIEW=true');
+      expect(result.content[0]?.text).toContain('Without changing permissions');
+      expect(result.content[0]?.text).toContain('class MAIN source');
+      expect(result.content[0]?.text).not.toContain('include="definitions"');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

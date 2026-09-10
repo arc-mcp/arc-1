@@ -23,6 +23,7 @@
  */
 
 import { pathToFileURL } from 'node:url';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../src/adt/repository-relations.js';
 import type { FeatureStatus, ResolvedFeatures } from '../../src/adt/types.js';
 import { getToolDefinitions, type ToolDefinition } from '../../src/handlers/tools.js';
 import type { TargetDescriptor } from '../../src/server/destination-registry.js';
@@ -98,6 +99,11 @@ const ALL_FEATURES_AVAILABLE: ResolvedFeatures = {
   textSearch: { available: true },
 };
 
+const LIVE_RELATIONS_FEATURES: ResolvedFeatures = {
+  ...ALL_FEATURES_AVAILABLE,
+  discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+};
+
 const FULL_ACCESS_CONFIG: ServerConfig = {
   ...DEFAULT_CONFIG,
   allowWrites: true,
@@ -116,8 +122,10 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 // LLM genuinely needs — the refuse-diff rule, which actions are destructive — the description wins
 // and the wall moves. Raised 68,000 → 72,000 (per-tool 21,000 → 23,000) for exactly that reason, so
 // every SAPWrite action carries a line. Raising is a maintainer decision, never a silent fix for a
-// failing build.
-const WRITE_WIRE_WALL = 72_000;
+// failing build. Maintainer-approved 72,000 → 74,000 for combined #769 relations + #772 ATC
+// batches: 72,561 measured bytes, preserving evaluated guidance with 1,439 bytes of headroom.
+// Read-only, multi-target and per-tool ceilings are unchanged.
+const WRITE_WIRE_WALL = 74_000;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 23_000;
 
@@ -147,7 +155,7 @@ function syntheticTarget(index: number): TargetDescriptor {
 
 function aggregateDefinitions(targetCount: number, config: ServerConfig = DEFAULT_CONFIG): ToolDefinition[] {
   const targets = Array.from({ length: targetCount }, (_, index) => syntheticTarget(index));
-  const tools = multiTargetToolDefinitions(getToolDefinitions(config), config).map((tool) =>
+  const tools = multiTargetToolDefinitions(getToolDefinitions({ ...config, multiTargetEndpoints: true }), config).map((tool) =>
     injectTargetSchema(tool, targets),
   );
   if (targetCount > 1) tools.push(sapTargetsDefinition());
@@ -170,9 +178,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
       // Post-trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
-      schemaTokenEstimate: 11_800,
+      // Relations + ATC batches measure 11,849 tokens; the 50 KB wire ceiling is unchanged.
+      schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 176,
+      descriptionCount: 180,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -194,10 +203,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // action exists to prevent. Only the on-prem write scenario moved; BTP stayed under budget.
       // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
-      // ATC objects[] adds ~150 estimated tokens; wire ceilings are unchanged.
-      schemaTokenEstimate: 17_950,
-      descriptionTokenEstimate: 12_600,
-      descriptionCount: 270,
+      // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
+      schemaTokenEstimate: 18_500,
+      descriptionTokenEstimate: 12_800,
+      descriptionCount: 272,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -211,9 +220,9 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Post-trim: full BTP write surface ~64.5 KB / ~16.1k schema tokens / 248 descriptions.
       // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
-      // Same bounded ATC objects[] schema as on-prem.
-      schemaTokenEstimate: 17_050,
-      descriptionTokenEstimate: 12_050,
+      // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
+      schemaTokenEstimate: 17_350,
+      descriptionTokenEstimate: 12_200,
       descriptionCount: 265,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
@@ -230,6 +239,47 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       descriptionCount: 8,
       maxTotalWireBytes: 4_000,
       maxPerToolWireBytes: 4_000,
+    },
+  },
+  // Exercise both unknown and explicitly supported discovery. Automatic availability
+  // uses the same reviewed combined-feature budgets in either discovery state.
+  {
+    name: 'standard-default-live-relations',
+    config: { ...DEFAULT_CONFIG },
+    textSearchAvailable: true,
+    resolvedFeatures: LIVE_RELATIONS_FEATURES,
+    budget: {
+      schemaTokenEstimate: 12_000,
+      descriptionTokenEstimate: 8_800,
+      descriptionCount: 180,
+      maxTotalWireBytes: READ_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+    },
+  },
+  {
+    name: 'standard-full-git-live-relations',
+    config: { ...FULL_ACCESS_CONFIG },
+    textSearchAvailable: true,
+    resolvedFeatures: LIVE_RELATIONS_FEATURES,
+    budget: {
+      schemaTokenEstimate: 18_500,
+      descriptionTokenEstimate: 12_800,
+      descriptionCount: 272,
+      maxTotalWireBytes: WRITE_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+    },
+  },
+  {
+    name: 'btp-full-git-live-relations',
+    config: { ...FULL_ACCESS_CONFIG, systemType: 'btp' },
+    textSearchAvailable: true,
+    resolvedFeatures: { ...LIVE_RELATIONS_FEATURES, systemType: 'btp' },
+    budget: {
+      schemaTokenEstimate: 17_350,
+      descriptionTokenEstimate: 12_200,
+      descriptionCount: 265,
+      maxTotalWireBytes: WRITE_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
   },
   ...([16, 17, 256] as const).map(

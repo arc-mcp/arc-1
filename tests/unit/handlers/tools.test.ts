@@ -16,6 +16,18 @@ describe('Tool Definitions', () => {
     expect(names).toContain('SAPSearch');
   });
 
+  it.each(['onprem', 'btp'] as const)(
+    'puts metadata format and hierarchy prerequisites in %s tool descriptions',
+    (systemType) => {
+      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType });
+      expect(tools.find((tool) => tool.name === 'SAPRead')!.description).toContain('DDIC metadata: omit format');
+      expect(tools.find((tool) => tool.name === 'SAPNavigate')!.description).toContain(
+        'requires data/SQL opt-in + matching scope',
+      );
+      expect(tools.find((tool) => tool.name === 'SAPNavigate')!.description).toContain('class MAIN with SAPRead');
+    },
+  );
+
   it('exposes the SAPRead grep parameter on both on-prem and BTP tool schemas', () => {
     for (const config of [DEFAULT_CONFIG, { ...DEFAULT_CONFIG, systemType: 'btp' as const }]) {
       const sapRead = getToolDefinitions(config).find((t) => t.name === 'SAPRead');
@@ -25,6 +37,36 @@ describe('Tool Definitions', () => {
       expect(props.grep.maxLength).toBe(MAX_GREP_PATTERN_LENGTH);
     }
   });
+
+  it.each(['onprem', 'btp'] as const)('distinguishes global MAIN from local class includes on %s', (systemType) => {
+    const read = getToolDefinitions({ ...DEFAULT_CONFIG, systemType }).find((tool) => tool.name === 'SAPRead')!;
+    expect(read.description).toContain('Global class declaration + implementation: MAIN');
+    expect(read.description).toContain('local helper-class includes, not the global declaration');
+    const props = (read.inputSchema as Record<string, any>).properties;
+    expect(props.include.description).toContain('omit include or use main');
+    expect(props.include.description).toContain('Explicit include wins');
+  });
+
+  it.each(['onprem', 'btp'] as const)(
+    'preserves context-first understanding and targeted source guidance on %s',
+    (systemType) => {
+      for (const relationsAllowed of [false, true]) {
+        const tools = getToolDefinitions({
+          ...DEFAULT_CONFIG,
+          systemType,
+          denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'],
+        });
+        const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
+        const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
+        expect(read).toContain('spec work, reviews, or pre-change orientation, prefer SAPContext first');
+        expect(read).toContain('method="NAME" (one body)');
+        expect(context).toContain('Primary tool for understanding ABAP/CDS objects');
+        expect(context).toContain('KTD when available');
+        expect(context).toContain('"What does <object> do?" / "Explain" / "deps before editing"');
+        expect(context).toContain('not SAP-native relationships or a complete inventory');
+      }
+    },
+  );
 
   it('registers all implemented tools', () => {
     const tools = getToolDefinitions({
@@ -47,6 +89,13 @@ describe('Tool Definitions', () => {
     // SAPContext and SAPManage are now implemented
     expect(names).toContain('SAPContext');
     expect(names).toContain('SAPManage');
+  });
+
+  it.each(['onprem', 'btp'] as const)('keeps general consumer lookup unfiltered in %s guidance', (systemType) => {
+    const nav = getToolDefinitions({ ...DEFAULT_CONFIG, systemType }).find((tool) => tool.name === 'SAPNavigate')!;
+    const props = (nav.inputSchema as Record<string, any>).properties;
+    expect(props.objectType.description).toContain('Omit for all consumer types');
+    expect(nav.inputSchema.required).not.toContain('objectType');
   });
 
   it('hides write tools in read-only mode but keeps SAPManage read actions', () => {
@@ -599,15 +648,15 @@ describe('Tool Definitions', () => {
       expect(sapContext.description).toMatch(/who consumes/i);
     });
 
-    it('SAPContext description steers object-understanding questions away from raw SAPRead', () => {
+    it('distinguishes exact behavior from requirements-sensitive context reads', () => {
       const tools = getToolDefinitions(DEFAULT_CONFIG);
       const sapContext = tools.find((t) => t.name === 'SAPContext')!;
       const sapRead = tools.find((t) => t.name === 'SAPRead')!;
 
-      expect(sapContext.description).toMatch(/what does <object> do/i);
+      expect(sapContext.description).toContain('source (not SAP-native relationships or a complete inventory)');
       expect(sapContext.description).toMatch(/KTD/i);
-      expect(sapContext.description).toMatch(/Use SAPRead after SAPContext/i);
-      expect(sapRead.description).toMatch(/prefer SAPContext first/i);
+      expect(sapContext.description).toContain('Use SAPRead after SAPContext for exact source');
+      expect(sapRead.description).toContain('prefer SAPContext first');
     });
 
     it('SAPContext action description steers LLMs away from SAPQuery-against-DDDDLSRC', () => {

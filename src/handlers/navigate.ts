@@ -60,13 +60,18 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
       return textResult(
         toolJson({
           total,
+          countMeaning: 'Reference entries, not distinct objects or runtime calls; not a complete inventory.',
           shown: results.length,
           truncated,
+          ...(lookup.warning ? { warning: lookup.warning } : {}),
           ...(truncated
             ? {
                 hint:
-                  `Showing ${results.length} of ${total} references. Narrow with objectType ` +
-                  `(e.g. "CLAS/OC") or raise maxResults (max 1000).`,
+                  `Showing ${results.length} of ${total} references. ` +
+                  (objectType?.trim()
+                    ? 'Object-type filter already applied. Raise '
+                    : 'Narrow with objectType (e.g. "CLAS/OC") or raise ') +
+                  'maxResults (max 1000) only if more entries are needed.',
               }
             : {}),
           references: results,
@@ -97,7 +102,8 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
         return errorResult(
           'Class hierarchy requires data access permissions. ' +
             'Enable free SQL (SAP_ALLOW_FREE_SQL=true / --allow-free-sql=true) or table preview ' +
-            '(SAP_ALLOW_DATA_PREVIEW=true / --allow-data-preview=true), and grant the matching sql/data scope in HTTP auth mode.',
+            '(SAP_ALLOW_DATA_PREVIEW=true / --allow-data-preview=true), and grant the matching sql/data scope in HTTP auth mode. ' +
+            'Without changing permissions, use SAPRead on the class MAIN source with grep="INTERFACES|INHERITING" for declarations; this does not enumerate subclasses.',
         );
       }
 

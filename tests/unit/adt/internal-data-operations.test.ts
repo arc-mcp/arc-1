@@ -76,6 +76,14 @@ describe('internal data-operation registry', () => {
     expect(warning).toContain('may be incomplete');
   });
 
+  it('uses MAIN rather than local definitions for the hierarchy fallback', () => {
+    const message = internalOperationDenial('class_hierarchy', 'DATA_SOURCE_BLOCKED');
+    expect(message).toContain('grep="INTERFACES|INHERITING"');
+    expect(message).toContain('MAIN');
+    expect(message).toContain('not a complete subclass list');
+    expect(message).not.toContain('include="definitions"');
+  });
+
   it('explains why the authorization trace denies rather than partially answering', () => {
     const message = internalOperationDenial('authorization_trace', 'DATA_SOURCE_BLOCKED: ...');
     expect(message).toContain('SUAUTHVALTRC');

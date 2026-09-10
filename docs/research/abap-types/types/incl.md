@@ -51,3 +51,22 @@ Live evidence: `GET /repository/informationsystem/search?objectType=INCL/I` → 
 - Document in the tool description for `SAPRead`/`SAPWrite` that `INCL` is shorthand for `PROG/I`.
 - **Breaking change**: none.
 - **Test gap to close**: assert `normalizeObjectType('PROG/I') === 'INCL'` and that `objectBasePath('INCL') === '/sap/bc/adt/programs/includes/'`.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### PROG/I
+
+- Observed object: `ZABAPGIT_FORMS`; GET `/sap/bc/adt/programs/includes/zabapgit_forms`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `include:abapInclude`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/prog-i.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<include:abapInclude adtcore:name="ZABAPGIT_FORMS" adtcore:type="PROG/I" adtcore:version="active" xmlns:include="http://www.sap.com/adt/programs/includes" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%24abapgit" adtcore:type="DEVC/K" adtcore:name="$ABAPGIT"/>
+</include:abapInclude>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

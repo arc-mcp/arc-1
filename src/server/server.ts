@@ -147,7 +147,10 @@ export function getConfiguredToolDefinitions(
   resolvedFeatures?: Parameters<typeof getToolDefinitions>[2],
   client?: Implementation,
 ): ToolDefinition[] {
-  return getToolDefinitions(config, textSearchAvailable, resolvedFeatures, getToolDefinitionOptions(config, client));
+  return getToolDefinitions(config, textSearchAvailable, resolvedFeatures, {
+    ...getToolDefinitionOptions(config, client),
+    discoveryMap: getCachedDiscovery(config.targetId ?? config.destinationName),
+  });
 }
 
 export { logAuthSummary } from './auth-summary.js';
@@ -1326,7 +1329,7 @@ export async function createAndStartServer(
     logger.info('Object cache enabled', {
       mode: config.cacheMode,
       sources: stats.sourceCount,
-      depGraphs: stats.contractCount,
+      legacyDepGraphs: stats.contractCount,
     });
   }
 

@@ -316,6 +316,13 @@ export function normalizeTypeArgsForValidation(
           cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
       };
     case 'SAPNavigate':
+      // Strict-schema clients fill in optional fields for unrelated actions (#360).
+      // Relations-only controls must not break ordinary navigation or reach its handler.
+      if (cleaned.action !== 'relations') {
+        delete cleaned.direction;
+        delete cleaned.depth;
+        delete cleaned.expandPackages;
+      }
       // Only normalize `type` (for URL building). `objectType` is passed to SAP's
       // where-used scope API in slash format (e.g., CLAS/OC) — normalizing it would break the filter.
       return {

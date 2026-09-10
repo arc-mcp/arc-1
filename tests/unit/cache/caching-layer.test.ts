@@ -250,50 +250,9 @@ describe('CachingLayer', () => {
     });
   });
 
-  // ─── Dependency Graph Caching ────────────────────────────────────────
-
-  describe('dep graph caching', () => {
-    it('getCachedDepGraph returns null on miss', () => {
-      expect(layer.getCachedDepGraph('some source')).toBeNull();
-    });
-
-    it('getCachedDepGraph returns graph on hit', () => {
-      const source = 'CLASS zcl_foo. ENDCLASS.';
-      const contracts = [{ name: 'IF_BAR', type: 'INTF', methodCount: 2, source: 'compressed', success: true }];
-      layer.putDepGraph(source, 'ZCL_FOO', 'CLAS', contracts);
-
-      const result = layer.getCachedDepGraph(source);
-      expect(result).not.toBeNull();
-      expect(result?.objectName).toBe('ZCL_FOO');
-      expect(result?.objectType).toBe('CLAS');
-      expect(result?.contracts).toHaveLength(1);
-      expect(result?.contracts[0]?.name).toBe('IF_BAR');
-    });
-
-    it('putDepGraph + getCachedDepGraph round-trip preserves contracts', () => {
-      const source = 'INTERFACE if_x. ENDINTERFACE.';
-      const contracts = [
-        { name: 'CL_A', type: 'CLAS', methodCount: 5, source: 'contract_a', success: true },
-        { name: 'CL_B', type: 'CLAS', methodCount: 0, source: '', success: false, error: 'not found' },
-      ];
-      layer.putDepGraph(source, 'IF_X', 'INTF', contracts);
-
-      const graph = layer.getCachedDepGraph(source);
-      expect(graph).not.toBeNull();
-      expect(graph?.contracts).toHaveLength(2);
-      expect(graph?.contracts[0]?.success).toBe(true);
-      expect(graph?.contracts[1]?.success).toBe(false);
-      expect(graph?.contracts[1]?.error).toBe('not found');
-    });
-
-    it('returns null when source changes (hash mismatch)', () => {
-      const sourceV1 = 'version 1';
-      const sourceV2 = 'version 2';
-      layer.putDepGraph(sourceV1, 'ZCL_X', 'CLAS', []);
-
-      expect(layer.getCachedDepGraph(sourceV1)).not.toBeNull();
-      expect(layer.getCachedDepGraph(sourceV2)).toBeNull();
-    });
+  it('has no aggregate dependency cache API', () => {
+    expect(layer).not.toHaveProperty('getCachedDepGraph');
+    expect(layer).not.toHaveProperty('putDepGraph');
   });
 
   // ─── Function Group Resolution ───────────────────────────────────────
@@ -382,12 +341,9 @@ describe('CachingLayer', () => {
         vi.fn().mockResolvedValue({ source: 'report', notModified: false, statusCode: 200 }),
       );
 
-      // Add a dep graph
-      layer.putDepGraph('source', 'ZCL_A', 'CLAS', []);
-
       const stats = layer.stats();
       expect(stats.sourceCount).toBe(2);
-      expect(stats.contractCount).toBe(1);
+      expect(stats.contractCount).toBe(0);
     });
   });
 

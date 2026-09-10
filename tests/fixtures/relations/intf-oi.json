@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/oo/interfaces/zif_ssi_importer",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "86c5f7837038ea242a055cb70062f5ab0c9e48cefbbe0cd537ee7ec87b295739",
+    "networkSha256": "9140ed288f30fb00ca6fe353f07414a236bb48faa2769053307f254ffa9d5a6c",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 2,
+    "observedEdges": 1
+  },
+  "type": "INTF",
+  "native": "INTF/OI",
+  "name": "ZIF_SSI_IMPORTER",
+  "uri": "/sap/bc/adt/oo/interfaces/zif_ssi_importer",
+  "metadataRootQName": "intf:abapInterface",
+  "context": "ENV",
+  "metadataXml": "<intf:abapInterface adtcore:name=\"ZIF_SSI_IMPORTER\" adtcore:type=\"INTF/OI\" adtcore:version=\"active\" xmlns:intf=\"http://www.sap.com/adt/oo/interfaces\" xmlns:abapoo=\"http://www.sap.com/adt/oo\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/zssi_importer\" adtcore:type=\"DEVC/K\" adtcore:name=\"ZSSI_IMPORTER\"/>\n</intf:abapInterface>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/oo/interfaces/zif_ssi_types\" adtcore:type=\"INTF/OI\" adtcore:name=\"ZIF_SSI_TYPES\" adtcore:packageName=\"ZSSI_IMPORTER\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/oo/interfaces/zif_ssi_importer\" adtcore:type=\"INTF/OI\" adtcore:name=\"ZIF_SSI_IMPORTER\" adtcore:packageName=\"ZSSI_IMPORTER\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/oo/interfaces/zif_ssi_importer</oro:object1><oro:object2>/sap/bc/adt/oo/interfaces/zif_ssi_types</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

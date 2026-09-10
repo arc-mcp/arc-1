@@ -49,6 +49,13 @@
     }
   ],
   "files": {
-    "includes": ["src/**", "tests/**", "bin/**", "!tests/fixtures/tool-definitions"]
+    "includes": [
+      "src/**",
+      "tests/**",
+      "bin/**",
+      "scripts/smoke-live-relations.ts",
+      "scripts/bench-context-parsing.ts",
+      "!tests/fixtures/tool-definitions"
+    ]
   }
 }

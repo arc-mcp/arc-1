@@ -8,7 +8,8 @@
  * Readers usually omit the key argument: it is resolved from the request
  * context (AsyncLocalStorage), which dispatch populates per tool call. Public
  * SID/client target IDs take precedence over legacy internal destination names.
- * Writers (the startup/first-request probe) pass the destination explicitly.
+ * Writers (startup/first-request probes and shared-client live-relations discovery fallback) pass
+ * the destination explicitly when configured.
  */
 
 import type { ResolvedFeatures } from '../adt/types.js';
@@ -50,12 +51,12 @@ export function getCachedFeatures(destination?: string): ResolvedFeatures | unde
   return storeFor(destination).features;
 }
 
-/** Set startup-cached ADT discovery MIME map. */
+/** Set validated ADT discovery capability hints (never object data or authorization results). */
 export function setCachedDiscovery(map: Map<string, string[]>, destination?: string): void {
   storeFor(destination).discovery = map;
 }
 
-/** Get startup-cached ADT discovery MIME map. */
+/** Get cached ADT discovery capability hints. */
 export function getCachedDiscovery(destination?: string): Map<string, string[]> {
   return storeFor(destination).discovery;
 }
