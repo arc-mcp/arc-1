@@ -122,3 +122,8 @@ verification failures. Counts from an incomplete run remain unknown. Multi-targe
 batch support is now explicitly recorded and tested. The flat output retains
 type/name ownership and worklist provenance with a smaller payload. All 5,966
 unit tests and the full local gates pass; live regressions preserve the 150 findings.
+
+The [second review plan](2026-09-10-atc-batch-rereview.md) adds conservative handling
+for unassigned child records and TABL source-resource equivalence; its
+[verification and decisions](../research/2026-09-10-pr772-rereview.md) supersede the
+first follow-up's unconditional exclusion of unrequested enclosing types.

@@ -2,9 +2,13 @@
 
 Reviewed against `0448646e`, including the complete review supplied by the user,
 the existing plan, source, tests and earlier live captures. Reproductions ran
-before implementation. The first 23 new cases failed against the old code; its
-56 existing cases in those two files passed. Additional boundary tests were added
+before implementation. The initial test-development run recorded 23 failures and 56 passes across
+the two files. This records that run, not a replay of the later committed test
+assertions against the old source. Additional boundary tests were added
 during review. This follow-up adds 33 tests in total.
+
+The [second review follow-up](2026-09-10-pr772-rereview.md) corrects the exclusion
+of possible child-object findings and adds TABL source-resource equivalence.
 
 ## Decisions
 

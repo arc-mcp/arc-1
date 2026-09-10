@@ -68,8 +68,10 @@ function sameObject(requested: AtcBatchObject, reported: AtcObjectIdentity): boo
     root,
     `/sap/bc/adt/atc/objects/R3TR/${requested.type}/${encodeURIComponent(requested.name)}`,
   ];
-  if (requested.type === 'TABL') candidates.push(objectUrlForType('TABL/DS', requested.name));
-  else if (!atcDdicObjectUrl(requested.type, requested.name) && requested.type !== 'SRVB')
+  if (requested.type === 'TABL') {
+    const structure = objectUrlForType('TABL/DS', requested.name);
+    candidates.push(structure, `${root}/source/main`, `${structure}/source/main`);
+  } else if (!atcDdicObjectUrl(requested.type, requested.name) && requested.type !== 'SRVB')
     candidates.push(`${root}/source/main`);
   // ABAP names and percent-hex case are equivalent; SAP emits %2f. Accept only
   // exact known object roots/source-main, including the literal namespace form.
@@ -114,11 +116,25 @@ function reviewBatchEvidence(run: AtcRunResult, selection: readonly AtcBatchObje
     run.complete = false;
     run.incompleteReasons.push('SAP returned an object URI inconsistent with the requested identity.');
   }
-  // A verification worklist may repeat an already checked object. Count only
-  // this run's explicit selection; keep run totals and the excluded count as evidence.
+  // FUNC/INCL and other non-root records may belong to a requested container.
+  // Without parent evidence, preserve them and refuse a verified clean count.
+  const unassignedKeys = new Set(
+    (run.processedObjects ?? [])
+      .filter((object) => !ATC_BATCH_TYPES.some((type) => type === normalizeObjectType(object.type)))
+      .map(objectKey),
+  );
+  if (unassignedKeys.size > 0) {
+    run.complete = false;
+    run.incompleteReasons.push(
+      'SAP reported unassigned sub-object or unsupported object records; their findings are retained.',
+    );
+  }
+  // Exclude other supported roots, including previously checked roots repeated
+  // in verification. Unassigned records cannot safely be classified as unrelated.
   const selectedKeys = new Set(selection.map(objectKey));
   const selectedFindings = run.findings.filter(
-    (finding) => !finding.object || selectedKeys.has(objectKey(finding.object)),
+    (finding) =>
+      !finding.object || selectedKeys.has(objectKey(finding.object)) || unassignedKeys.has(objectKey(finding.object)),
   );
   return { ...run, selectedFindings, excludedFindingCount: run.findings.length - selectedFindings.length };
 }

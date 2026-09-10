@@ -77,6 +77,7 @@ describe('SAPDiagnose ATC batch contract', () => {
     { objects: [] },
     { objects: Array(21).fill(objects[0]) },
     { objects: [{ type: 'DEVC', name: '$TMP' }] },
+    { objects: [{ type: 'DEVC', name: 'Z_PACKAGE' }] },
     { objects: [{ type: 'UNKNOWN', name: 'Z_A' }] },
     { objects: [{ type: 'FUNC', name: 'Z_A' }] },
     { objects: [{ type: 'CLAS', name: '../Z_A' }] },
