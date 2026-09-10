@@ -719,7 +719,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
 
   if (isMetadataWriteType(type)) {
     // SAP's DTEL POST ignores labels, custom lengths, searchHelp, etc. — they require a follow-up
-    // PUT. It does retain deactivateInputHistory, so that flag alone does not need another write.
+    // PUT. POST retains deactivateInputHistory, so the flag itself does not trigger this PUT.
     // Use withStatefulSession directly (not safeUpdateObject) to keep the lock cycle
     // on the main client's session, avoiding lock contention with subsequent operations.
     if (type === 'DTEL' && dtelNeedsPostCreateUpdate(metadataProperties)) {
@@ -1180,7 +1180,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       }
 
       // Step 1b: DTEL POST ignores labels/custom lengths — follow up with PUT on main session.
-      // A history-only create does not need this because POST retains deactivateInputHistory.
+      // POST retains deactivateInputHistory, so the flag itself does not trigger this PUT.
       if (objType === 'DTEL' && dtelNeedsPostCreateUpdate(objMetadataProps)) {
         await client.http.withStatefulSession(async (session) => {
           const lock = await lockObject(session, client.safety, objUrl, 'MODIFY', getCachedFeatures()?.abapRelease);

@@ -1296,12 +1296,35 @@ describe('SAPRead handler', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'DTEL',
         name: 'BUKRS',
+        version: 'inactive',
       });
       expect(result.isError).toBeUndefined();
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/ddic/dataelements/BUKRS?version=inactive',
+      );
       const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.name).toBe('BUKRS');
       expect(parsed.typeName).toBe('BUKRS');
       expect(parsed.searchHelp).toBe('C_T001');
+    });
+
+    it("uses SAP's developer view for a DTEL version='auto' read", async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0"?><blue:wbobj adtcore:name="ZDTEL" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:dataType>CHAR</dtel:dataType></dtel:dataElement></blue:wbobj>`,
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'DTEL',
+        name: 'ZDTEL',
+        version: 'auto',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).not.toContain('version=');
     });
 
     it('reads an authorization field (AUTH)', async () => {

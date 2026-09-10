@@ -496,7 +496,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['active', 'inactive', 'auto'],
             description:
-              'Source version to read. "active" (default) returns the last activated version. "inactive" returns the user\'s unactivated draft or active if no draft exists. "auto" returns the draft if one exists, else active.',
+              'Version to read. "active" (default) returns the last activated version. "inactive" returns the user\'s unactivated draft or active if no draft exists. "auto" returns the draft if one exists, else active.',
           },
           includeSignature: {
             type: 'boolean',

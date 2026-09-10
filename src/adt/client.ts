@@ -916,9 +916,10 @@ export class AdtClient {
   }
 
   /** Get data element metadata (domain, labels/reserved lengths, search help, input-history flag) */
-  async getDataElement(name: string): Promise<DataElementInfo> {
+  async getDataElement(name: string, version?: 'active' | 'inactive'): Promise<DataElementInfo> {
     checkOperation(this.safety, OperationType.Read, 'GetDataElement');
-    const resp = await this.http.get(`/sap/bc/adt/ddic/dataelements/${encodeURIComponent(name)}`);
+    const versionQuery = version ? `?version=${version}` : '';
+    const resp = await this.http.get(`/sap/bc/adt/ddic/dataelements/${encodeURIComponent(name)}${versionQuery}`);
     return parseDataElementMetadata(resp.body);
   }
 

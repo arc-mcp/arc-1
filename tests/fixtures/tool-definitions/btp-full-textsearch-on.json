@@ -105,7 +105,7 @@
             "inactive",
             "auto"
           ],
-          "description": "Source version to read. \"active\" (default) returns the last activated version. \"inactive\" returns the user's unactivated draft or active if no draft exists. \"auto\" returns the draft if one exists, else active."
+          "description": "Version to read. \"active\" (default) returns the last activated version. \"inactive\" returns the user's unactivated draft or active if no draft exists. \"auto\" returns the draft if one exists, else active."
         },
         "includeSignature": {
           "type": "boolean",

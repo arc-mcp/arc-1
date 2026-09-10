@@ -256,76 +256,76 @@ export async function mergeMetadataWriteProperties(
   name: string,
   provided: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  try {
-    if (type === 'MSAG') {
-      const existing = await client.getMessageClassInfo(name);
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        messages: provided.messages ?? existing.messages,
-      };
-    }
-    if (type === 'DOMA') {
-      const existing = await client.getDomain(name);
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        dataType: provided.dataType ?? existing.dataType,
-        length: provided.length ?? existing.length,
-        decimals: provided.decimals ?? existing.decimals,
-        // When length changes but outputLength isn't given, follow the new length (mirrors the create
-        // default of `outputLength ?? length`) — otherwise SAP warns "Output length < calculated length".
-        outputLength: provided.outputLength ?? provided.length ?? existing.outputLength,
-        conversionExit: provided.conversionExit ?? existing.conversionExit,
-        signExists: provided.signExists ?? existing.signExists,
-        lowercase: provided.lowercase ?? existing.lowercase,
-        fixedValues: provided.fixedValues ?? existing.fixedValues,
-        valueTable: provided.valueTable ?? existing.valueTable,
-      };
-    }
-    if (type === 'DTEL') {
-      const existing = await client.getDataElement(name);
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        dataType: provided.dataType ?? existing.dataType,
-        length: provided.length ?? existing.length,
-        decimals: provided.decimals ?? existing.decimals,
-        typeKind: provided.typeKind ?? existing.typeKind,
-        typeName: provided.typeName ?? existing.typeName,
-        domainName: provided.domainName ?? existing.typeName, // DTEL stores domain in typeName
-        shortLabel: provided.shortLabel ?? existing.shortLabel,
-        shortLength: provided.shortLength ?? (provided.shortLabel !== undefined ? undefined : existing.shortLength),
-        mediumLabel: provided.mediumLabel ?? existing.mediumLabel,
-        mediumLength: provided.mediumLength ?? (provided.mediumLabel !== undefined ? undefined : existing.mediumLength),
-        longLabel: provided.longLabel ?? existing.longLabel,
-        longLength: provided.longLength ?? (provided.longLabel !== undefined ? undefined : existing.longLength),
-        headingLabel: provided.headingLabel ?? existing.headingLabel,
-        headingLength:
-          provided.headingLength ?? (provided.headingLabel !== undefined ? undefined : existing.headingLength),
-        searchHelp: provided.searchHelp ?? existing.searchHelp,
-        searchHelpParameter: provided.searchHelpParameter,
-        setGetParameter: provided.setGetParameter,
-        defaultComponentName: provided.defaultComponentName ?? existing.defaultComponentName,
-        deactivateInputHistory: provided.deactivateInputHistory ?? existing.deactivateInputHistory,
-        changeDocument: provided.changeDocument,
-      };
-    }
-    if (type === 'SRVB') {
-      const { source: existingRaw } = await client.getSrvb(name);
-      const existing = JSON.parse(existingRaw) as Record<string, unknown>;
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        serviceDefinition: provided.serviceDefinition ?? existing.serviceDefinition,
-        bindingType: provided.bindingType ?? existing.bindingType,
-        category: provided.category ?? normalizeSrvbCategory(existing.bindingCategory),
-        version: provided.version ?? existing.serviceVersion,
-        odataVersion: provided.odataVersion ?? existing.odataVersion,
-      };
-    }
-  } catch {
-    // If we can't read existing metadata (e.g., object is new/inactive), fall through
+  if (type === 'MSAG') {
+    const existing = await client.getMessageClassInfo(name);
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      messages: provided.messages ?? existing.messages,
+    };
+  }
+  if (type === 'DOMA') {
+    const existing = await client.getDomain(name);
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      dataType: provided.dataType ?? existing.dataType,
+      length: provided.length ?? existing.length,
+      decimals: provided.decimals ?? existing.decimals,
+      // When length changes but outputLength isn't given, follow the new length (mirrors the create
+      // default of `outputLength ?? length`) — otherwise SAP warns "Output length < calculated length".
+      outputLength: provided.outputLength ?? provided.length ?? existing.outputLength,
+      conversionExit: provided.conversionExit ?? existing.conversionExit,
+      signExists: provided.signExists ?? existing.signExists,
+      lowercase: provided.lowercase ?? existing.lowercase,
+      fixedValues: provided.fixedValues ?? existing.fixedValues,
+      valueTable: provided.valueTable ?? existing.valueTable,
+    };
+  }
+  if (type === 'DTEL') {
+    const existing = await client.getDataElement(name);
+    const shortLabel = provided.shortLabel ?? existing.shortLabel;
+    const mediumLabel = provided.mediumLabel ?? existing.mediumLabel;
+    const longLabel = provided.longLabel ?? existing.longLabel;
+    const headingLabel = provided.headingLabel ?? existing.headingLabel;
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      dataType: provided.dataType ?? existing.dataType,
+      length: provided.length ?? existing.length,
+      decimals: provided.decimals ?? existing.decimals,
+      typeKind: provided.typeKind ?? existing.typeKind,
+      typeName: provided.typeName ?? existing.typeName,
+      domainName: provided.domainName ?? existing.typeName, // DTEL stores domain in typeName
+      shortLabel,
+      shortLength: provided.shortLength ?? (shortLabel === existing.shortLabel ? existing.shortLength : undefined),
+      mediumLabel,
+      mediumLength: provided.mediumLength ?? (mediumLabel === existing.mediumLabel ? existing.mediumLength : undefined),
+      longLabel,
+      longLength: provided.longLength ?? (longLabel === existing.longLabel ? existing.longLength : undefined),
+      headingLabel,
+      headingLength:
+        provided.headingLength ?? (headingLabel === existing.headingLabel ? existing.headingLength : undefined),
+      searchHelp: provided.searchHelp ?? existing.searchHelp,
+      searchHelpParameter: provided.searchHelpParameter,
+      setGetParameter: provided.setGetParameter,
+      defaultComponentName: provided.defaultComponentName ?? existing.defaultComponentName,
+      deactivateInputHistory: provided.deactivateInputHistory ?? existing.deactivateInputHistory,
+      changeDocument: provided.changeDocument,
+    };
+  }
+  if (type === 'SRVB') {
+    const { source: existingRaw } = await client.getSrvb(name);
+    const existing = JSON.parse(existingRaw) as Record<string, unknown>;
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      serviceDefinition: provided.serviceDefinition ?? existing.serviceDefinition,
+      bindingType: provided.bindingType ?? existing.bindingType,
+      category: provided.category ?? normalizeSrvbCategory(existing.bindingCategory),
+      version: provided.version ?? existing.serviceVersion,
+      odataVersion: provided.odataVersion ?? existing.odataVersion,
+    };
   }
   return provided;
 }

@@ -26,6 +26,11 @@ The fix carries `shortLength`, `mediumLength`, `longLength`, `headingLength`, an
 read model, and parser. It applies explicit lengths with the existing post-create PUT and preserves
 the five stored values during unrelated updates. Explicit `0` and `false` use presence/nullish checks.
 
+The review pass also closes three preservation gaps: re-sending an unchanged label keeps its stored
+reservation, `SAPRead type=DTEL` now sends the requested active/inactive version to ADT, and a failed
+pre-update metadata read aborts instead of rebuilding the object from caller-supplied fields and
+defaults.
+
 The four lengths accept integers in ARC-1's canonical ranges 0–10, 0–20, 0–40, and 0–55. Omitted
 create values retain the earlier derived defaults. On update, an omitted value is preserved unless
 its matching label changes; a new label without a length derives a new reservation from that label.
@@ -34,16 +39,13 @@ its matching label changes; a new label without a length derives a new reservati
 Live fix verification used two disposable data elements per release and covered explicit
 10/20/40/55 values with history disabled, inactive and active read-back, description-only update,
 reactivation, a valid blank-label zero value, rejection of short length 11, and cleanup. The final
-evidence is in [750](771-evidence/750/fix-results.json),
-[758](771-evidence/758/fix-results.json), and [816](771-evidence/816/fix-results.json); the reusable
-runner is [verify-fix.mts](771-evidence/verify-fix.mts).
+review reran the public handlers on 758 and 816 with unchanged labels and confirmed that all four
+reservations survived the update and activation.
 
 On 758 and 816 every operation ran through the public `SAPWrite`, `SAPRead`, and `SAPActivate`
-handlers. On 750, the public write path exercised the production v2→v1 POST/PUT fallback, while
-explicit-version ADT reads, the production parser, activation helper, and the production
-merge/builder/update path were used around the separately documented default-read anomaly. The 750
-evidence therefore verifies the changed code and legacy MIME fallback, but it is not an
-uninterrupted public `SAPRead` flow.
+handlers. On 750, the public write and explicit-version `SAPRead` paths passed and exercised the
+production v2→v1 POST/PUT fallback. Activation and the description-only update used the production
+helpers around the separately documented default-read anomaly.
 
 ## Live validation
 
@@ -55,13 +57,11 @@ Tests used disposable `Z771_*` data elements in `$TMP`, client 001, language EN,
 | A4H / S/4HANA 2023 | 758 / 0002 | 6/12/21/6, false | 10/20/40/55, true retained; also 8/18/30/50 | 6/12/21/6, false retained through activation |
 | A4H / ABAP Platform 2025 | 816 / 0001 | 6/12/21/6, false | 10/20/40/55, true retained; also 8/18/30/50 | 6/12/21/6, false retained through activation |
 
-Evidence is response content, including explicit `version=active` reads after activation, rather than HTTP success alone:
-
-- [758 results](771-evidence/758/results.json), [816 results](771-evidence/816/results.json), [750 results](771-evidence/750/results.json).
-- [758 active before ARC-1 update](771-evidence/758/direct-put-active.xml) and [active after description-only update](771-evidence/758/arc-description-only-active.xml).
-- [816 active before](771-evidence/816/direct-put-active.xml) and [active after](771-evidence/816/arc-description-only-active.xml).
-- [750 fresh-session update](771-evidence/750/recovery-results.json) and [resulting XML](771-evidence/750/recovery-description-update.xml).
-- [Cleanup verification](771-evidence/cleanup-verification.json): all 12 generated test objects absent in both active and inactive versions, using fresh read-only sessions.
+Validation compared parsed response content from explicit `version=active` and `version=inactive`
+reads rather than relying on HTTP status. The raw one-off logs and runners were deliberately not
+retained in the repository: the stable contract, observed values, commands, and regression coverage
+are recorded here, while executable assertions live in the maintained unit suites. All disposable
+objects were confirmed absent in both versions after cleanup.
 
 ### POST and PUT have different contracts
 
@@ -73,7 +73,7 @@ A second probe deliberately submitted **8/18/30/50**, not the defaults, to disti
 | Lock + PUT object | 8/18/30/50 | **8/18/30/50** | Supplied text retained | true |
 | Activate + GET active | — | **8/18/30/50** | Supplied text retained | true |
 
-See [750 contract results](771-evidence/750/contract-results.json), [758 contract results](771-evidence/758/contract-results.json), and [816 contract results](771-evidence/816/contract-results.json). Key before/after XML captures are linked above. Direct PUT of `false` was also read back successfully on 758 and 816.
+Direct PUT of `false` was also read back successfully on 758 and 816.
 
 This refines the existing comment in `dtelNeedsPostCreateUpdate`: POST ignores labels and custom lengths, but it does **not** ignore every additional property. The history flag was already honored by POST. A fix must trigger the follow-up PUT for a **length-only** create, including in a batch; adding the fields only to the initial POST cannot work.
 
@@ -91,13 +91,17 @@ Additional tests on 758 used a six-character short label:
 | -1 / 6.5 | HTTP 400 | Not attempted | Deserialization failed in `SBD_DATAELEMENT` |
 | 0, with empty short label | Accepted | Success | 0 |
 
-See the [activation outcomes](771-evidence/758/contract-results.json). The other three label limits were not exhaustively boundary-tested. Do not describe 10/20/40/55 as universally enforced backend hard limits: 758 stores 11 for the short label with a warning. Zero is valid for an empty label.
+The other three label limits were not exhaustively boundary-tested. Do not describe 10/20/40/55 as universally enforced backend hard limits: 758 stores 11 for the short label with a warning. Zero is valid for an empty label.
 
 ### NW 7.50 qualification
 
 The long product-path probe encountered a separate session-sensitive read problem: default `GET /ddic/dataelements/{name}` returned 404 even after successful activation while explicit active/inactive reads worked. A fresh client read the same object successfully, and its description-only update reproduced the metadata reset. Moving the preexistence check to another client did not eliminate the behavior. Its exact mechanism is **not established**; this is not proof that default GET always selects a missing active version.
 
-The first two attempts and recovery are preserved in `750/initial-results.json`, `750/second-results.json`, and `750/recovery-results.json`. The final product probe still stops at this read. Independent contract tests completed successfully on 750, including custom-length PUT, activation, and explicit active read-back. Cleanup of earlier attempts was completed and independently verified. Do not claim a fully successful uninterrupted 750 `SAPRead`/update/batch sequence from this run.
+The final product probe still stopped at the default read. Independent contract tests completed
+successfully on 750, including custom-length PUT, activation, and explicit active read-back. After
+the review fix, public `SAPRead` also completed for explicit active and inactive versions. Cleanup of
+earlier attempts was completed and independently verified. Do not claim a fully successful
+uninterrupted 750 update/batch sequence from this run.
 
 The 750 v2→v1 Content-Type fallback was exercised. Preserve it. No SAP correction, server restart, or lock enhancement was introduced during this investigation.
 
@@ -163,7 +167,9 @@ Implemented semantics:
 - **Create, input omitted:** retain the current defaults: nonempty label text length, empty-label maxima, history suppression false.
 - **Create, explicit length supplied:** emit it and trigger follow-up PUT even when no label or other existing follow-up field was supplied. Both single and batch creation must share this logic. A history-only create already persists via POST on these releases; routing it through the same PUT is an implementation choice, not an SAP requirement demonstrated here.
 - **Update, input omitted:** preserve the stored flag and reservations where labels are unchanged. When a label changes without an explicit reservation, derive the reservation from the new label, capped at its canonical maximum.
-- **Update, input supplied:** override the stored value, including explicit false and zero. Validate any supplied reservation against the effective label after merging. Validation cannot establish that all existing translations fit; retain SAP's activation diagnostics.
+- **Update, input supplied:** override the stored value, including explicit false and zero. SAP
+  accepts some label/reservation mismatches on save and rejects them during activation, so activation
+  remains the authoritative consistency check, including for translations ARC-1 cannot inspect.
 
 The issue's request to “keep today's behaviour when absent” distinguishes creation defaults from update preservation. Existing values are preserved for unchanged labels so partial updates no longer lose metadata.
 
@@ -196,30 +202,23 @@ npx vitest run tests/unit/adt/ddic-xml.test.ts tests/unit/adt/xml-parser.test.ts
   --reporter=default
 ```
 
-**Issue-specific characterization:** [offline.mts](771-evidence/offline.mts), **13 characterization groups passed** against the reviewed base revision across on-prem and BTP schemas, mapping, builder, parser, and merge. [Results](771-evidence/offline-results.json). These intentionally describe the former bug and are expected to fail against the fixed branch.
+**Issue-specific characterization:** **13 characterization groups passed** against the reviewed base
+revision across on-prem and BTP schemas, mapping, builder, parser, and merge. These checks described
+the former bug and were converted into maintained regression tests for the fixed branch. Live probes
+invoked `handleToolCall` and production ADT helpers directly; they did not use a deployed MCP server
+or GUI.
 
-```sh
-# Run from reviewed base c55adcb8, not from the fixed branch:
-node --import tsx docs/research/issues/771-evidence/offline.mts
-
-# This local file supplies credentials in memory; it is not copied into the dossier.
-ARC1_RESEARCH_ENV=/path/to/.env.infrastructure \
-  node --import tsx docs/research/issues/771-evidence/live.mts 758
-ARC1_RESEARCH_ENV=/path/to/.env.infrastructure \
-  node --import tsx docs/research/issues/771-evidence/contract.mts 758
-# Also executed with 816 and 750; see the explicit 750 qualification above.
-```
-
-The characterization scripts invoke `handleToolCall` and existing ADT helpers directly against the
-reviewed base source. The fix runner invokes the changed handlers and production ADT helpers. Neither
-uses a deployed MCP server or GUI. Raw evidence excludes secrets and authentication headers;
-diagnostic lock handles are redacted.
-
-**Fix validation:** the focused adjacent suite passed **1,159 tests** across 12 files. The complete
-repository suite passed **5,868 tests in 196 files**. `npm run typecheck`, `npm run lint`,
+**Fix validation:** the focused adjacent suite passed **1,312 tests** across 13 files. The complete
+repository suite passed **5,871 tests in 196 files**. `npm run typecheck`, `npm run lint`,
 `npm run build`, `npm run docs:build`, `npm run check:sizes`, and `git diff --check` also passed.
 The final schema budgets remain within their enforced ceilings: standard full Git is approximately
-17,780/17,800 tokens and BTP full Git is approximately 16,893/16,900 tokens.
+17,778/17,800 tokens and BTP full Git is approximately 16,892/16,900 tokens.
+
+The five added schema fields left little room under those token ratchets. The older, duplicated
+field-by-field `MINIMAL PAYLOAD` paragraph was therefore compacted while retaining its required-field,
+empty/null/placeholder, `include`, and delete guidance; the complete per-type field reference remains
+in `docs_page/tools.md`. Restoring the old paragraph exceeded both full-tool ratchets, so the review
+kept the compact form and did not raise the budgets.
 
 ## Scope and residual qualification
 
@@ -227,9 +226,10 @@ The implementation fixes #771 across schemas, serialization, read-back, partial-
 semantics, single create, and batch create.
 
 Not included: SAP GUI runtime testing, live BTP validation, every SAP release/SP, exhaustive
-Unicode/translation tests, or a resolution of the separate 750 session-sensitive default-read
-issue. Other omitted DTEL fields (`searchHelpParameter`, `setGetParameter`, `changeDocument`, bidi
-flags) deserve a separate preservation audit; this change does not claim to fix them.
+Unicode/translation tests, the pre-existing create-without-PUT description-loss issue, or a
+resolution of the separate 750 session-sensitive default-read issue. Other omitted DTEL fields
+(`searchHelpParameter`, `setGetParameter`, `changeDocument`, bidi flags) deserve a separate
+preservation audit; this change does not claim to fix them.
 
 ## Proposed GitHub resolution note
 
@@ -244,5 +244,10 @@ The optional fields are supported for single and batch creation, update, and rea
 
 Existing defaults remain for creation, and stored values survive unrelated updates. Changing a label without supplying its reservation derives a new length from that label.
 
-The focused fix suite passed 1,159 tests and the full suite passed 5,868 tests. Live fix verification passed on 758 and 816 through the public handlers. On 750, the public write path and v2→v1 fallback passed; explicit-version reads and production parser/update helpers verified preservation around a separate session-sensitive default-read issue.
+The focused fix suite passed 1,312 tests and the full suite passed 5,871 tests. A final review fixed
+unchanged-label re-sends, made `SAPRead` honor active/inactive DTEL versions, and made partial metadata
+updates fail closed when the current metadata cannot be read. Live fix verification passed on 758
+and 816 through the public handlers. On 750, the public write path, explicit-version `SAPRead`, and
+v2→v1 fallback passed; production update helpers verified preservation around a separate
+session-sensitive default-read issue.
 ```

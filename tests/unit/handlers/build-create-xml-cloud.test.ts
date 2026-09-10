@@ -255,6 +255,33 @@ describe('mergeMetadataWriteProperties — DTEL metadata preservation (#771)', (
       '<dtel:shortFieldLength>03</dtel:shortFieldLength>',
     );
   });
+
+  it('preserves stored lengths when unchanged labels are re-sent', async () => {
+    const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {
+      shortLabel: 'Short',
+      mediumLabel: 'Medium',
+      longLabel: 'Long',
+      headingLabel: 'Heading',
+    });
+    expect(merged).toMatchObject({
+      shortLength: '10',
+      mediumLength: '20',
+      longLength: '40',
+      headingLength: '55',
+    });
+  });
+
+  it('aborts when existing metadata cannot be read', async () => {
+    const unreadableClient = {
+      getDataElement: async () => {
+        throw new Error('metadata read failed');
+      },
+    } as unknown as AdtClient;
+
+    await expect(mergeMetadataWriteProperties(unreadableClient, 'DTEL', 'ZDTEL', {})).rejects.toThrow(
+      'metadata read failed',
+    );
+  });
 });
 
 describe('dtelNeedsPostCreateUpdate — explicit lengths (#771)', () => {

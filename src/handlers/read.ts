@@ -619,7 +619,10 @@ export async function handleSAPRead(
       return textResult(toolJson(domain));
     }
     case 'DTEL': {
-      const dtel = await client.getDataElement(name);
+      // DTEL metadata GET without a version is SAP's developer view, matching `auto`.
+      // Explicit/default active and explicit inactive must be sent so SAP does not silently
+      // return a pending draft for an active read.
+      const dtel = await client.getDataElement(name, requestedVersion === 'auto' ? undefined : effectiveVersion);
       return textResult(toolJson(dtel));
     }
     case 'TTYP': {

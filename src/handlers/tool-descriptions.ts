@@ -46,7 +46,8 @@ const SAPWRITE_BODY_BTP =
 // Appended to both SAPWrite descriptions (see the composition at the bottom). The schema lists every
 // optional field for every object type/action, but each call uses only a small subset — GPT/OpenAI
 // callers tend to fill the rest with empty/null/placeholder values. Runtime normalization is the
-// backstop.
+// backstop. Keep this guide compact: restoring the older field-by-field version exceeds the
+// enforced standard and BTP full-tool token ratchets. Detailed field guidance lives in docs_page/.
 const SAPWRITE_MINIMAL_PAYLOAD_GUIDE =
   'MINIMAL PAYLOAD: send only required fields; omit unrelated empty, null, or placeholder values. ' +
   'Do NOT send `include` unless type=CLAS. Delete needs only {action, type, name} (plus optional transport). ';

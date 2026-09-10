@@ -55,7 +55,8 @@ Implementation decisions reviewed before coding:
 - [x] Serialize explicit lengths without truthiness checks; derive existing defaults only when a
       length is absent.
 - [x] Add the fields to `DataElementInfo` and parse them from active and inactive DTEL metadata.
-- [x] Assert the expanded `getDataElement` result at the ADT client boundary.
+- [x] Assert the expanded `getDataElement` result at the ADT client boundary and forward the
+      requested active/inactive version from `SAPRead`.
 - [x] Keep the existing v2/v1 media types and `safeUpdateObject` fallback path unchanged.
 - [x] Run the focused XML builder/parser tests and typecheck the touched interfaces.
 
@@ -84,6 +85,8 @@ Implementation decisions reviewed before coding:
       zero.
 - [x] Merge omitted update fields according to the reviewed semantics, preserving stored lengths and
       both boolean values without truthiness bugs.
+- [x] Preserve reservations when callers re-send unchanged labels and abort partial metadata updates
+      when the existing full XML state cannot be read.
 - [x] Add single, batch, and partial-update handler tests that assert the final XML sent to SAP.
 - [x] Run focused handler/schema tests, typecheck, and lint.
 
@@ -109,7 +112,6 @@ Implementation decisions reviewed before coding:
 
 **Files:**
 
-- `docs/research/issues/771-evidence/`
 - `docs/research/issues/771-dtel-label-lengths-input-history.md`
 
 - [x] Run the focused DTEL/schema/handler suite and all adjacent regression tests identified by the
@@ -122,7 +124,8 @@ Implementation decisions reviewed before coding:
 - [x] Verify an explicit zero boundary and one rejected invalid request without leaving an SAP
       object behind.
 - [x] Delete every disposable object and verify both active and inactive reads return 404.
-- [x] Scrub and parse-check the captured evidence before adding it to the change.
+- [x] Scrub and parse-check the captured evidence, summarize durable results in the dossier, and keep
+      one-off logs/runners out of the repository.
 
 ### Task 5: Complete the review loop and prepare the pull request
 
@@ -135,6 +138,8 @@ Implementation decisions reviewed before coding:
       schema parity, test quality, documentation accuracy, and repository conventions.
 - [x] Resolve every actionable finding, rerun the affected checks, and repeat review until no
       material finding remains.
+- [x] Reproduce the external Claude review findings, apply the preservation/version/fail-closed
+      corrections, document the schema-budget decision, and rerun offline and live validation.
 - [x] Confirm the diff contains no credentials, temporary logs, generated build output, or unrelated
       changes.
 - [x] Mark every completed task, move this plan to `docs/plans/completed/`, and repair its relative
@@ -150,6 +155,7 @@ npx vitest run \
   tests/unit/adt/xml-parser.test.ts \
   tests/unit/adt/client.test.ts \
   tests/unit/adt/crud.test.ts \
+  tests/unit/handlers/read.test.ts \
   tests/unit/handlers/schemas.test.ts \
   tests/unit/handlers/schema-key-sync.test.ts \
   tests/unit/handlers/zod-jsonschema-parity.test.ts \
@@ -170,7 +176,7 @@ npm test
    and BTP schemas.
 2. Explicit boundary values serialize exactly, invalid values fail validation, and no value is
    silently clamped or lost through normalization.
-3. `SAPRead type=DTEL` returns all five stored values.
+3. `SAPRead type=DTEL` returns all five stored values from the requested active or inactive version.
 4. Explicit lengths survive create and activation on SAP_BASIS 750, 758, and 816, with the 750
    default-read qualification recorded in the research dossier.
 5. A description-only update preserves existing lengths and `deactivateInputHistory=true`.

@@ -1080,7 +1080,10 @@ describe('AdtClient', () => {
         ),
       );
       const client = createClient();
-      const dtel = await client.getDataElement('BUKRS');
+      const dtel = await client.getDataElement('BUKRS', 'inactive');
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/ddic/dataelements/BUKRS?version=inactive',
+      );
       expect(dtel.name).toBe('BUKRS');
       expect(dtel.typeName).toBe('BUKRS');
       expect(dtel.searchHelp).toBe('C_T001');
