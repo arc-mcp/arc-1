@@ -830,7 +830,7 @@ actions keep their behavior. Strict-client relation-only placeholders on other a
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `definition`, `references`, `completion`, `hierarchy`, or `relations` (when available) |
-| `type` | string | For relations | `CLAS`, `INTF`, `DDLS`, `DCLS`, `TABL`, `TTYP`, `DTEL`, `DOMA`, `PROG`, `INCL`, `FUNC`, `FUGR`, `VIEW`, `ENHO` (BAdI only), `MSAG`, `BDEF`, `SRVD`. See [type-specific limits](live-relations.md#qualified-object-types). |
+| `type` | string | For relations | `CLAS`, `INTF`, `DDLS`, `DCLS`, `TABL`, `TTYP`, `DTEL`, `DOMA`, `PROG`, `INCL`, `FUNC`, `FUGR`, `VIEW`, `ENHO`, `ENHS`, `MSAG`, `BDEF`, `SRVD`, `TRAN`, `SHLP`, `SKTD`, `ENQU`, `TYPE`, `EVTB`, `DSFD`. Only BAdI implementation/spot subtypes are qualified for ENHO/ENHS. See [type-specific limits](live-relations.md#qualified-object-types). |
 | `name` | string | For relations | Root object name, including namespaced names such as `/BOBF/CL_FRW_FACTORY`. |
 | `direction` | string | No | For `relations`: `outgoing` (default, dependencies) or `incoming` (usages). |
 | `depth` | integer | No | For `relations`: expansion depth, 1–3 (default 1). Native edges do not establish exact call distance. |
@@ -1206,7 +1206,7 @@ SAPContext(action="structure", type="TABL", name="BAPIRET2")
 Business intent and object notes from the KTD.
 
 * === Dependency context for ZCL_ORDER (3 deps resolved) ===
-* Source-derived dependency contracts, not a SAP-native relationship inventory or runtime evidence.
+* Source-derived dependency contracts; not complete dependency coverage or runtime evidence.
 
 * --- ZIF_ORDER (intf, 4 methods) ---
 INTERFACE zif_order PUBLIC.

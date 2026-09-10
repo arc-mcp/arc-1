@@ -253,7 +253,7 @@
   },
   {
     "name": "SAPNavigate",
-    "description": "Experimental relations: dependency maps or package neighborhoods, then selected reads. For consumer locations use references: objectType=\"CLAS/OC\" for class-only requests; otherwise omit. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source. Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets.",
+    "description": "Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets. Experimental relations: dependency maps or package neighborhoods, then selected reads. Consumer locations: references; objectType=\"CLAS/OC\" for class-only; otherwise omit. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -274,7 +274,7 @@
         },
         "type": {
           "type": "string",
-          "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS/INTF/DDLS/DCLS/BDEF/SRVD/TABL/TTYP/DTEL/DOMA/PROG/INCL/FUGR/FUNC/VIEW/ENHO/MSAG/TRAN/SOBJ/SHLP/SKTD/ENHS/ENQU/TYPE/EVTB/DSFD (ENHO/XHB, ENHS/XSB only). TTYP=table type; MSAG=message class."
+          "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS, INTF, DDLS, DCLS, BDEF, SRVD, TABL, TTYP, DTEL, DOMA, PROG, INCL, FUGR, FUNC, VIEW, ENHO, MSAG, TRAN, SHLP, SKTD, ENHS, ENQU, TYPE, EVTB, DSFD. ENHO/XHB, ENHS/XSB only; TTYP=table type; MSAG=message class."
         },
         "name": {
           "type": "string",

@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { RELATION_ROOT_TYPES } from '../../../src/adt/relation-objects.js';
 import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { features, fullConfig } from './handler-test-config.js';
@@ -89,6 +90,9 @@ function documentationGaps(markdown: string, relationsAllowed: boolean): string[
       const optionalRows = parameterRows(section, 'Experimental relations parameters (when available)');
       if (!optionalRows) gaps.push('SAPNavigate: missing experimental Parameters table');
       for (const [name, row] of optionalRows ?? []) rows.set(name, row);
+      const types = [...(optionalRows?.get('type') ?? '').matchAll(/`([A-Z]+)`/g)].map((match) => match[1]);
+      if (types.sort().join() !== [...RELATION_ROOT_TYPES].sort().join())
+        gaps.push('SAPNavigate: qualified relation types differ');
     }
 
     const properties = (definition.inputSchema as Record<string, any>).properties as Record<string, any>;
@@ -128,6 +132,13 @@ describe('docs_page/tools.md public-schema parity', () => {
   it('detects an undocumented relations action', () => {
     const changed = TOOLS_DOC.replace('`relations` (when available)', '`omitted` (when available)');
     expect(documentationGaps(changed, true)).toContain('SAPNavigate missing actions: relations');
+  });
+
+  it.each(['missing', 'stale'])('detects %s relation types in prose', (mode) => {
+    const changed = TOOLS_DOC.replace('`EVTB`, `DSFD`.', mode === 'missing' ? '`EVTB`.' : '`EVTB`, `DSFD`, `SOBJ`.');
+    expect(changed).not.toBe(TOOLS_DOC);
+    expect(documentationGaps(changed, true)).toContain('SAPNavigate: qualified relation types differ');
+    expect(documentationGaps(changed, false)).toEqual([]);
   });
 
   it('rejects conditional fields in the default table', () => {

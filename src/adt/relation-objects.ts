@@ -146,14 +146,6 @@ export const RELATION_OBJECTS = [
     nameCase: 'upper',
   },
   {
-    type: 'SOBJ',
-    native: 'SOBJ/MO',
-    path: 'vit/wb/object_type/sobjmo/object_name',
-    metadataRoot: 'mainObject',
-    resolve: 'quickSearch',
-    nameCase: 'upper',
-  },
-  {
     type: 'SHLP',
     native: 'SHLP/DH',
     path: 'vit/wb/object_type/shlpdh/object_name',

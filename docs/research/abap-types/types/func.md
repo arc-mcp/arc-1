@@ -141,3 +141,22 @@ Eclipse plugin reference (`com.sap.adt.core.apidoc-3.58.1`) — exhaustive grep 
   - E2E `tests/e2e/where-used.e2e.test.ts` (if exists, else add): assert scope-filter by
     `FUGR/FF` returns FM-only references, and that scope-filter by `FUNC/FM` raises a
     clear error rather than silently filtering nothing.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### FUGR/FF
+
+- Observed object: `BAPI_USER_GETLIST`; GET `/sap/bc/adt/functions/groups/su_user/fmodules/bapi_user_getlist`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `fmodule:abapFunctionModule`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/fugr-ff.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<fmodule:abapFunctionModule adtcore:name="BAPI_USER_GETLIST" adtcore:type="FUGR/FF" adtcore:version="active" xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:containerRef adtcore:uri="/sap/bc/adt/functions/groups/su_user" adtcore:type="FUGR/F" adtcore:name="SU_USER" adtcore:packageName="SUSR"/>
+</fmodule:abapFunctionModule>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

@@ -40,6 +40,15 @@ afterEach(() => {
 });
 
 describe('automatic live relations integration', () => {
+  it.each(['SOBJ', 'SOBJ/MO'])('rejects ambiguous maintenance/BOR type %s before SAP access', async (type) => {
+    const { client, get, post } = setup();
+    const query = vi.spyOn(client, 'runQuery');
+    const result = await handleToolCall(client, config, 'SAPNavigate', { ...input, type, name: '/BA1/B121' }, readAuth);
+    expect(result.isError).toBe(true);
+    expect(get).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
   it.each([401, 403])('keeps HTTP %i terminal after successful expansion and oversized error body', async (status) => {
     let networks = 0;
     const server = createServer((req, res) => {
@@ -77,12 +86,19 @@ describe('automatic live relations integration', () => {
   it('shows fields while capability is unknown; unsupported and denied actions add nothing', () => {
     const enabled = getToolDefinitions(config, undefined, undefined, { discoveryMap: discovery });
     expect(navigation(getToolDefinitions(config))).toEqual(navigation(enabled));
-    expect(navigation(enabled).description).toMatch(/^Experimental relations: dependency/);
-    expect(navigation(enabled).description).toContain('objectType="CLAS/OC" for class-only requests');
+    const stableDescription = navigation(
+      getToolDefinitions({ ...config, denyActions: ['SAPNavigate.relations'] }),
+    ).description;
+    expect(navigation(enabled).description.startsWith(`${stableDescription} Experimental relations:`)).toBe(true);
+    expect(navigation(enabled).description).toContain('objectType="CLAS/OC" for class-only;');
     expect(navigation(enabled).description).toContain('otherwise omit.');
     expect(navigation(enabled).inputSchema).toHaveProperty(
       'properties.type.description',
       expect.stringContaining('TTYP=table type; MSAG=message class'),
+    );
+    expect(navigation(enabled).inputSchema).toHaveProperty(
+      'properties.type.description',
+      expect.stringContaining('CLAS, INTF, DDLS, DCLS'),
     );
     expect(
       navigation(

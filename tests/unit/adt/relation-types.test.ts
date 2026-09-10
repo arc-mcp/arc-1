@@ -161,14 +161,6 @@ const observed = [
     nameCase: 'upper',
   },
   {
-    type: 'SOBJ',
-    native: 'SOBJ/MO',
-    path: 'vit/wb/object_type/sobjmo/object_name',
-    metadataRoot: 'mainObject',
-    resolve: 'quickSearch',
-    nameCase: 'upper',
-  },
-  {
     type: 'SHLP',
     native: 'SHLP/DH',
     path: 'vit/wb/object_type/shlpdh/object_name',
@@ -269,7 +261,7 @@ describe('qualified relation identities', () => {
     expect(RELATION_ROOT_TYPES).toEqual([...new Set(observed.map(({ type }) => type))]);
     for (const type of RELATION_ROOT_TYPES)
       expect(LiveRelationsInput.safeParse({ action: 'relations', type, name: 'ZROOT' }).success).toBe(true);
-    for (const type of ['DEVC', 'DDLX', 'SRVB', 'STOB', 'AUTH', 'UIAD', 'DTDC'])
+    for (const type of ['DEVC', 'DDLX', 'SRVB', 'STOB', 'AUTH', 'UIAD', 'DTDC', 'SOBJ', 'SOBJ/MO'])
       expect(LiveRelationsInput.safeParse({ action: 'relations', type, name: 'ZROOT' }).success).toBe(false);
   });
   it.each(observed)('$type $native validates namespaced metadata, with no unbounded side requests', async (row) => {
@@ -439,5 +431,20 @@ describe('qualified relation identities', () => {
     expect(() =>
       normalizeRelationNetwork(relationXml(root, [spot, { ...spot, type: 'ENHS/XB' }]), 'ENV', root),
     ).toThrow('conflicting native object identity');
+  });
+  it('keeps maintenance objects as visible boundaries without treating them as BOR roots', async () => {
+    const root = relationObject('ZROOT');
+    const maintenance = {
+      ...root,
+      name: 'ZMAINTENANCE',
+      type: 'SOBJ/MO',
+      uri: '/sap/bc/adt/vit/wb/object_type/sobjmo/object_name/ZMAINTENANCE',
+    };
+    const network = normalizeRelationNetwork(relationXml(root, [maintenance]), 'ENV', root);
+    const provider = { options: {}, lookup: vi.fn().mockResolvedValue(network) };
+    const result = await walkRelations(root, provider, { direction: 'outgoing', depth: 3, maxResults: 20 });
+    expect(result.nodes).toContainEqual(expect.objectContaining({ uri: maintenance.uri, type: 'SOBJ/MO' }));
+    expect(result.scopeBoundaries).toEqual([{ uri: maintenance.uri, reason: 'type' }]);
+    expect(provider.lookup).toHaveBeenCalledTimes(1);
   });
 });

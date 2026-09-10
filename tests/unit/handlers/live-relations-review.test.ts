@@ -195,7 +195,11 @@ describe('full external-review regressions', () => {
 
   it.each([false, true])('manual probe refreshes discovery only for the shared client, PP=%s', async (perUser) => {
     const { client } = setup();
+    const otherClient = new AdtClient({ baseUrl: 'https://not-contacted.invalid' });
     const absent = new Map([['/sap/bc/adt/oo/classes', ['application/xml']]]);
+    client.http.setDiscoveryMap(absent);
+    otherClient.http.setDiscoveryMap(absent);
+    const setMap = vi.spyOn(client.http, 'setDiscoveryMap');
     setCachedDiscovery(absent);
     vi.spyOn(featuresModule, 'probeFeatures').mockResolvedValue({ ...features(), discoveryMap: discovery });
     const result = await handleToolCall(
@@ -210,6 +214,10 @@ describe('full external-review regressions', () => {
     );
     expect(result.isError).toBeUndefined();
     expect(getCachedDiscovery()).toEqual(perUser ? absent : discovery);
+    expect(setMap).toHaveBeenCalledTimes(perUser ? 0 : 1);
+    expect(client.http.discoveryAcceptFor(RELATIONS_PATH)).toBe(perUser ? undefined : RELATIONS_MIME);
+    expect(otherClient.http.discoveryAcceptFor(RELATIONS_PATH)).toBeUndefined();
+    expect(otherClient.http.discoveryAcceptFor('/sap/bc/adt/oo/classes')).toBe('application/xml');
   });
 
   it('shares the transport/parser byte ceiling and distinguishes unsupported markup', () => {

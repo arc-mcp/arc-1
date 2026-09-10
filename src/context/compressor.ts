@@ -287,7 +287,7 @@ function formatResult(
   lines.push(
     `* === Dependency context for ${objectName} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) ===`,
   );
-  lines.push('* Source-derived dependency contracts, not a SAP-native relationship inventory or runtime evidence.', '');
+  lines.push('* Source-derived dependency contracts; not complete dependency coverage or runtime evidence.', '');
 
   for (const contract of successful) {
     const typeLabel = contract.type.toLowerCase();
@@ -479,7 +479,7 @@ function formatCdsResult(
   lines.push(
     `* === CDS dependency context for ${objectName} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) ===`,
   );
-  lines.push('* Source-derived CDS dependencies, not a SAP-native relationship inventory or runtime evidence.', '');
+  lines.push('* Source-derived CDS dependencies; not complete dependency coverage or runtime evidence.', '');
 
   for (const r of successful) {
     lines.push(`* --- ${r.name} (${r.resolvedType}, ${r.kind}) ---`);

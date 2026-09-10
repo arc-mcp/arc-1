@@ -46,6 +46,10 @@ until re-evaluated; removal of an exposure flag does not itself resolve them.
 
 ## Completed review
 
+The later [expansion review](../research/2026-09-10-pr769-expansion-review.md) removes the ambiguous
+`SOBJ` root, leaving 25 qualified types, and adds sanitized recorded fixtures plus citation/parity
+guards. Counts below are the historical pre-review runs, not a claim about the revised head.
+
 Steps 1–6 are implemented and locally verified: 26 qualified root types; a final 108-call live
 matrix with 100 graphs/eight expected refusals; all 26 absent roots rejected; real HTTP/stdin MCP
 checks; actual GPT/Qwen/Gemma comparisons with failures retained; 6,396 unit tests and full local

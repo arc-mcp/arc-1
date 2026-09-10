@@ -1,17 +1,31 @@
 # SOBJ — BOR Business Object (pseudo)
 
 ## TL;DR
-`SOBJ` is **not** an ADT object type — ARC-1 implements it as an SQL-only synonym for
+ARC-1's `SAPRead(type="SOBJ")` is an SQL-backed pseudo type for
 "BOR (Business Object Repository) object type", reading methods from table `SWOTLV` and
 fetching the implementing program source via `getProgram`. There is no
-`/sap/bc/adt/sobj/...` endpoint. The short form `SOBJ` happens to coincide with TADIR's
-`R3TR SOBJ` (object directory entry container) but the relationship is incidental — ARC-1
-does not call any SOBJ-specific ADT URL. This is a **pseudo type** that should remain
-typed as such; it does not belong in any slash-form alias map.
+`/sap/bc/adt/sobj/...` endpoint used by that reader. SAP also has an unrelated native
+maintenance-object identity, `SOBJ/MO`, reachable through a VIT metadata path. ARC-1's
+BOR reader does not use that API. Do not map `SOBJ/MO` to this pseudo read type.
+
+## Relation review correction — 2026-09-10
+
+Live metadata GETs on SAP_BASIS 758 resolved `/BA1/B121` and `/BA1/B122` as `SOBJ/MO`,
+with `adtcore:mainObject` roots under
+`/sap/bc/adt/vit/wb/object_type/sobjmo/object_name/`. These are maintenance objects,
+not BOR object types such as `BUS1001`. The former relation-root mapping is removed;
+both `SOBJ` and `SOBJ/MO` are rejected for `SAPNavigate(action="relations")` before SAP access.
+Native `SOBJ/MO` neighbors may remain visible as unexpanded boundary evidence. Existing
+SAPRead BOR behavior and its permissions remain unchanged. A future naming solution must
+be coordinated across tools, not introduced as a silent alias here.
+
+SAP distinguishes [BOR object types](https://help.sap.com/docs/PRODUCT_ID/0d74d6667d234d4fa1dcd4440b7334be/adae3e3fd5a24db380adc8b7ff48058c.html)
+from [central maintenance object types](https://help.sap.com/docs/ABAP_PLATFORM_NEW/521cd184dd2f491a9a4179edb66951c3/4dad3efbbd316d57e10000000a42189e.html)
+and [SOBJ transport-object definitions](https://help.sap.com/docs/ABAP_PLATFORM_NEW/f7db12726e594673b085a18f19d14ba4/4a2c10af6ed91c62e10000000a42189c.html).
 
 ## TADIR ground truth
-- **R3TR type**: `SOBJ` exists in TADIR as a generic "object directory entry" container
-  type, but ARC-1's SOBJ has nothing to do with it. ARC-1's SOBJ refers to **BOR object
+- **R3TR type**: SAP's `SOBJ` maintenance objects are distinct from ARC-1's pseudo type.
+  ARC-1's SOBJ refers to **BOR object
   types** (table `TOJTB`, methods in `SWOTLV`).
 - **LIMU sub-objects**: N/A
 - **abap-file-formats support**: ❌ — no `sobj/` directory; BOR objects are not

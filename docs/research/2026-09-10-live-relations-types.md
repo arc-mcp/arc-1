@@ -1,6 +1,12 @@
 # Automatic live relations: per-type qualification
 
 Status: implemented, with final verification recorded below, 2026-09-10. PR #769 remains unmerged.
+
+Review correction: the current registry has **25 roots**, not 26. `SOBJ/MO` is a real SAP maintenance
+object identity, but its short name collides with ARC-1's existing BOR pseudo type; it is no longer
+accepted or expanded. Historical test counts below describe their pinned revisions. Sanitized,
+independently replayed GET/native fixtures and per-type citation guards were added in the
+[expansion-review follow-up](2026-09-10-pr769-expansion-review.md).
 Baseline: `18f42c30`; main: `c55adcb8`. This is a research record, not a cross-release support guarantee.
 Operational setup and current limits: [Live relations](../../docs_page/live-relations.md).
 
@@ -28,7 +34,8 @@ Read-only testing used the existing A4H/001 S/4HANA 2023 trial (SAP_BASIS 758), 
 TLS and its existing SAP identity. Search results selected actual objects; metadata GETs verified
 name, exact ADT subtype and active version. Both ENV and WUL were explicitly requested. Negative
 results were retained. Raw XML and model transcripts remain in the private local comparison lab;
-only sanitized observations and synthetic regression fixtures belong in this repository.
+sanitized recorded identity/edge projections now supplement the synthetic regression fixtures in
+this repository. Full bodies and model transcripts remain private.
 
 First pass: 21 type/subtype groups, normally two roots each, two directions. Second pass: real
 ARC-1 dispatch with depth 2 / 25 nodes, 62 calls. Unlike the exploratory 4-MiB wire probe, these
@@ -65,7 +72,7 @@ Zero edges are observations, never proof of absence or non-use.
 | MSAG | `/BOBF/COM_GEN_MODEL`: 0 / 12; `/BOBF/COM_GEN_FRAME`: 0 / 10 | `messageClass`, MSAG/N; add after representative namespace samples; the initial Z objects were insufficient evidence |
 | DEVC | `ZSSI_SAMPLES`: context empty, no root | Unsupported native root; package listing/search remains the correct entry point |
 | TRAN | `ZABAPGIT`, `ZTOAD`: 1 / 0 each | TRAN/T, uppercase VIT mainObject; add with independent exact search; links to program, does not execute it |
-| SOBJ | `/BA1/B121`, `/BA1/B122`: 1 / 0 each | SOBJ/MO, VIT mainObject; add with exact search; maintenance-object/program metadata, not table contents |
+| SOBJ | `/BA1/B121`, `/BA1/B122`: 1 / 0 each | Native SOBJ/MO identity demonstrated, but removed from the qualified registry: maintenance objects collide with ARC-1's existing BOR pseudo type. Boundary only. |
 | SHLP | `ZSHLP01`: 2 / 0 | SHLP/DH, VIT mainObject; add with exact search; table and data-element dependencies |
 | SKTD | `ZARC1SKTDMO1FSEY21IL3`: 1 / 0 | SKTD/TYP, docu; add; link to documented DDLS, not its business rule; inactive sibling correctly rejected |
 | ENHS | `/AIF/ALERT`: 2 / 0 | ENHS/XSB, objectData; add this enhancement-spot subtype only; interface links; conflicting facets still fail |
