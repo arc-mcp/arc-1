@@ -20,6 +20,7 @@ import {
   ATC_BATCH_NAME_PATTERN,
   ATC_BATCH_TYPES,
 } from '../adt/atc-batch.js';
+import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
@@ -206,7 +207,9 @@ export const SAPReadSchema = z
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured']).optional(),
-    version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
+    // Keep omission observable: source handlers still default it to active, while DTEL
+    // uses SAP's version-less developer view for read-after-write consistency.
+    version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
@@ -243,7 +246,8 @@ export const SAPReadSchemaBtp = z
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     format: z.enum(['text', 'structured']).optional(),
-    version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
+    // Keep this aligned with the on-prem schema; the handler owns the per-type default.
+    version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
@@ -499,6 +503,11 @@ const fmParameterSchema = z.object({
   optional: looseOptionalBoolean,
 });
 
+const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
+const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();
+const dtelLongLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.long).optional();
+const dtelHeadingLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.heading).optional();
+
 const batchObjectSchemaOnprem = z
   .object({
     type: z.enum(SAPWRITE_TYPES_ONPREM),
@@ -523,13 +532,18 @@ const batchObjectSchemaOnprem = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
@@ -568,13 +582,18 @@ const batchObjectSchemaBtp = z.object({
   typeName: z.string().optional(),
   domainName: z.string().optional(),
   shortLabel: z.string().optional(),
+  shortLength: dtelShortLengthSchema,
   mediumLabel: z.string().optional(),
+  mediumLength: dtelMediumLengthSchema,
   longLabel: z.string().optional(),
+  longLength: dtelLongLengthSchema,
   headingLabel: z.string().optional(),
+  headingLength: dtelHeadingLengthSchema,
   searchHelp: z.string().optional(),
   searchHelpParameter: z.string().optional(),
   setGetParameter: z.string().optional(),
   defaultComponentName: z.string().optional(),
+  deactivateInputHistory: looseOptionalBoolean,
   changeDocument: looseOptionalBoolean,
   messages: z.array(messageClassMessageSchema).optional(),
   serviceDefinition: z.string().optional(),
@@ -649,13 +668,18 @@ export const SAPWriteSchema = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
@@ -746,13 +770,18 @@ export const SAPWriteSchemaBtp = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),

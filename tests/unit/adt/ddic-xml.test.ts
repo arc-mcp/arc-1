@@ -380,18 +380,45 @@ describe('ddic-xml builders', () => {
         mediumLabel: 'Status',
         longLabel: 'Order Status',
         headingLabel: 'Status',
+        shortLength: 10,
+        mediumLength: 20,
+        longLength: 40,
+        headingLength: 55,
         searchHelp: 'ZSH_STATUS',
         searchHelpParameter: 'STATUS',
         setGetParameter: 'ZST',
         defaultComponentName: 'STATUS',
+        deactivateInputHistory: true,
         changeDocument: true,
       });
 
+      expect(xml).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
+      expect(xml).toContain('<dtel:mediumFieldLength>20</dtel:mediumFieldLength>');
+      expect(xml).toContain('<dtel:longFieldLength>40</dtel:longFieldLength>');
+      expect(xml).toContain('<dtel:headingFieldLength>55</dtel:headingFieldLength>');
       expect(xml).toContain('<dtel:searchHelp>ZSH_STATUS</dtel:searchHelp>');
       expect(xml).toContain('<dtel:searchHelpParameter>STATUS</dtel:searchHelpParameter>');
       expect(xml).toContain('<dtel:setGetParameter>ZST</dtel:setGetParameter>');
       expect(xml).toContain('<dtel:defaultComponentName>STATUS</dtel:defaultComponentName>');
+      expect(xml).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
       expect(xml).toContain('<dtel:changeDocument>true</dtel:changeDocument>');
+    });
+
+    it('preserves explicit zero label lengths', () => {
+      const xml = buildDataElementXml({
+        name: 'ZZERO',
+        description: 'Zero lengths',
+        package: '$TMP',
+        shortLength: 0,
+        mediumLength: 0,
+        longLength: 0,
+        headingLength: 0,
+      });
+
+      expect(xml).toContain('<dtel:shortFieldLength>00</dtel:shortFieldLength>');
+      expect(xml).toContain('<dtel:mediumFieldLength>00</dtel:mediumFieldLength>');
+      expect(xml).toContain('<dtel:longFieldLength>00</dtel:longFieldLength>');
+      expect(xml).toContain('<dtel:headingFieldLength>00</dtel:headingFieldLength>');
     });
 
     it('uses defaults for omitted values', () => {
@@ -407,6 +434,7 @@ describe('ddic-xml builders', () => {
       expect(xml).toContain('<dtel:mediumFieldLength>20</dtel:mediumFieldLength>');
       expect(xml).toContain('<dtel:longFieldLength>40</dtel:longFieldLength>');
       expect(xml).toContain('<dtel:headingFieldLength>55</dtel:headingFieldLength>');
+      expect(xml).toContain('<dtel:deactivateInputHistory>false</dtel:deactivateInputHistory>');
       expect(xml).toContain('<dtel:changeDocument>false</dtel:changeDocument>');
     });
   });

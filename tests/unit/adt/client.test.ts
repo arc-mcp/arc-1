@@ -1069,18 +1069,29 @@ describe('AdtClient', () => {
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
     <dtel:typeKind>domain</dtel:typeKind><dtel:typeName>BUKRS</dtel:typeName>
     <dtel:dataType>CHAR</dtel:dataType><dtel:dataTypeLength>000004</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals>
-    <dtel:shortFieldLabel>CoCd</dtel:shortFieldLabel><dtel:mediumFieldLabel>Company Code</dtel:mediumFieldLabel>
-    <dtel:longFieldLabel>Company Code</dtel:longFieldLabel><dtel:headingFieldLabel>CoCd</dtel:headingFieldLabel>
+    <dtel:shortFieldLabel>CoCd</dtel:shortFieldLabel><dtel:shortFieldLength>06</dtel:shortFieldLength>
+    <dtel:mediumFieldLabel>Company Code</dtel:mediumFieldLabel><dtel:mediumFieldLength>15</dtel:mediumFieldLength>
+    <dtel:longFieldLabel>Company Code</dtel:longFieldLabel><dtel:longFieldLength>15</dtel:longFieldLength>
+    <dtel:headingFieldLabel>CoCd</dtel:headingFieldLabel><dtel:headingFieldLength>04</dtel:headingFieldLength>
     <dtel:searchHelp>C_T001</dtel:searchHelp><dtel:defaultComponentName>COMP_CODE</dtel:defaultComponentName>
+    <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>
   </dtel:dataElement>
 </blue:wbobj>`,
         ),
       );
       const client = createClient();
-      const dtel = await client.getDataElement('BUKRS');
+      const dtel = await client.getDataElement('BUKRS', 'inactive');
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/ddic/dataelements/BUKRS?version=inactive',
+      );
       expect(dtel.name).toBe('BUKRS');
       expect(dtel.typeName).toBe('BUKRS');
       expect(dtel.searchHelp).toBe('C_T001');
+      expect(dtel.shortLength).toBe('06');
+      expect(dtel.mediumLength).toBe('15');
+      expect(dtel.longLength).toBe('15');
+      expect(dtel.headingLength).toBe('04');
+      expect(dtel.deactivateInputHistory).toBe(true);
     });
 
     it('getTransaction returns parsed metadata', async () => {

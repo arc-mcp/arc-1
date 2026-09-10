@@ -43,14 +43,23 @@ export interface DataElementCreateParams {
   length?: number | string;
   decimals?: number | string;
   shortLabel?: string;
+  shortLength?: number | string;
   mediumLabel?: string;
+  mediumLength?: number | string;
   longLabel?: string;
+  longLength?: number | string;
   headingLabel?: string;
+  headingLength?: number | string;
   searchHelp?: string;
   searchHelpParameter?: string;
   setGetParameter?: string;
   defaultComponentName?: string;
+  /** Negative ADT flag: true disables SAP GUI input history for fields using this data element. */
+  deactivateInputHistory?: boolean;
   changeDocument?: boolean;
+  /** No public input; carried from SAP's stored metadata on update. */
+  leftToRightDirection?: boolean;
+  deactivateBIDIFiltering?: boolean;
   /** ADT master/original language (2-char, e.g. "DE"). Defaults to "EN" when unset. */
   language?: string;
   /** ADT "person responsible" (logon user). Omitted when it cannot be an on-prem user name (#636). */
@@ -128,7 +137,7 @@ export function normalizeSrvbBindingType(input?: string): {
   return { type: 'ODATA', odataVersion, category };
 }
 
-const DTEL_MAX_LABEL_LENGTHS = {
+export const DTEL_MAX_LABEL_LENGTHS = {
   short: 10,
   medium: 20,
   long: 40,
@@ -213,7 +222,10 @@ function formatLength(value: number | string | undefined, width: number): string
   return ''.padStart(width, '0');
 }
 
-function formatLabelLength(label: string, maxLength: number): string {
+function formatLabelLength(label: string, maxLength: number, explicitLength?: number | string): string {
+  if (explicitLength !== undefined && explicitLength !== null && String(explicitLength).trim() !== '') {
+    return formatLength(explicitLength, 2);
+  }
   if (!label) return String(maxLength).padStart(2, '0');
   return String(Math.min(label.length, maxLength)).padStart(2, '0');
 }
@@ -488,25 +500,25 @@ export function buildDataElementXml(params: DataElementCreateParams): string {
     <dtel:dataTypeLength>${formatLength(params.length, 6)}</dtel:dataTypeLength>
     <dtel:dataTypeDecimals>${formatLength(params.decimals, 6)}</dtel:dataTypeDecimals>
     <dtel:shortFieldLabel>${escapeXmlAttr(shortLabel)}</dtel:shortFieldLabel>
-    <dtel:shortFieldLength>${formatLabelLength(shortLabel, DTEL_MAX_LABEL_LENGTHS.short)}</dtel:shortFieldLength>
+    <dtel:shortFieldLength>${formatLabelLength(shortLabel, DTEL_MAX_LABEL_LENGTHS.short, params.shortLength)}</dtel:shortFieldLength>
     <dtel:shortFieldMaxLength>${String(DTEL_MAX_LABEL_LENGTHS.short).padStart(2, '0')}</dtel:shortFieldMaxLength>
     <dtel:mediumFieldLabel>${escapeXmlAttr(mediumLabel)}</dtel:mediumFieldLabel>
-    <dtel:mediumFieldLength>${formatLabelLength(mediumLabel, DTEL_MAX_LABEL_LENGTHS.medium)}</dtel:mediumFieldLength>
+    <dtel:mediumFieldLength>${formatLabelLength(mediumLabel, DTEL_MAX_LABEL_LENGTHS.medium, params.mediumLength)}</dtel:mediumFieldLength>
     <dtel:mediumFieldMaxLength>${DTEL_MAX_LABEL_LENGTHS.medium}</dtel:mediumFieldMaxLength>
     <dtel:longFieldLabel>${escapeXmlAttr(longLabel)}</dtel:longFieldLabel>
-    <dtel:longFieldLength>${formatLabelLength(longLabel, DTEL_MAX_LABEL_LENGTHS.long)}</dtel:longFieldLength>
+    <dtel:longFieldLength>${formatLabelLength(longLabel, DTEL_MAX_LABEL_LENGTHS.long, params.longLength)}</dtel:longFieldLength>
     <dtel:longFieldMaxLength>${DTEL_MAX_LABEL_LENGTHS.long}</dtel:longFieldMaxLength>
     <dtel:headingFieldLabel>${escapeXmlAttr(headingLabel)}</dtel:headingFieldLabel>
-    <dtel:headingFieldLength>${formatLabelLength(headingLabel, DTEL_MAX_LABEL_LENGTHS.heading)}</dtel:headingFieldLength>
+    <dtel:headingFieldLength>${formatLabelLength(headingLabel, DTEL_MAX_LABEL_LENGTHS.heading, params.headingLength)}</dtel:headingFieldLength>
     <dtel:headingFieldMaxLength>${DTEL_MAX_LABEL_LENGTHS.heading}</dtel:headingFieldMaxLength>
     <dtel:searchHelp>${escapeXmlAttr(params.searchHelp ?? '')}</dtel:searchHelp>
     <dtel:searchHelpParameter>${escapeXmlAttr(params.searchHelpParameter ?? '')}</dtel:searchHelpParameter>
     <dtel:setGetParameter>${escapeXmlAttr(params.setGetParameter ?? '')}</dtel:setGetParameter>
     <dtel:defaultComponentName>${escapeXmlAttr(params.defaultComponentName ?? '')}</dtel:defaultComponentName>
-    <dtel:deactivateInputHistory>false</dtel:deactivateInputHistory>
+    <dtel:deactivateInputHistory>${boolToXml(params.deactivateInputHistory)}</dtel:deactivateInputHistory>
     <dtel:changeDocument>${boolToXml(params.changeDocument)}</dtel:changeDocument>
-    <dtel:leftToRightDirection>false</dtel:leftToRightDirection>
-    <dtel:deactivateBIDIFiltering>false</dtel:deactivateBIDIFiltering>
+    <dtel:leftToRightDirection>${boolToXml(params.leftToRightDirection)}</dtel:leftToRightDirection>
+    <dtel:deactivateBIDIFiltering>${boolToXml(params.deactivateBIDIFiltering)}</dtel:deactivateBIDIFiltering>
   </dtel:dataElement>
 </blue:wbobj>`;
 }

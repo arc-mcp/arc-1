@@ -925,11 +925,22 @@ export interface DataElementInfo {
   length: string;
   decimals: string;
   shortLabel: string;
+  shortLength: string;
   mediumLabel: string;
+  mediumLength: string;
   longLabel: string;
+  longLength: string;
   headingLabel: string;
+  headingLength: string;
   searchHelp: string;
+  searchHelpParameter: string;
+  setGetParameter: string;
   defaultComponentName: string;
+  /** Negative ADT flag: true means SAP GUI input history is disabled. */
+  deactivateInputHistory: boolean;
+  changeDocument: boolean;
+  leftToRightDirection: boolean;
+  deactivateBIDIFiltering: boolean;
   package: string;
 }
 

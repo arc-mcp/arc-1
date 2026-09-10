@@ -126,7 +126,7 @@ export function getHyperfocusedToolDefinition(
         version: {
           type: 'string',
           enum: ['active', 'inactive', 'auto'],
-          description: 'For read action: source version (active, inactive, auto)',
+          description: 'For read action: object version (active, inactive, auto)',
         },
         params: {
           type: 'object',
