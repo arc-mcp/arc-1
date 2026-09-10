@@ -21,10 +21,9 @@ export const DATA_ELEMENT_TOOL_PROPERTIES = {
     minimum: 0,
     maximum: DTEL_MAX_LABEL_LENGTHS.heading,
   },
-  deactivateInputHistory: {
-    type: 'boolean',
-    description: 'DTEL: true disables SAP GUI input history for fields using this data element',
-  },
+  // Its negative polarity is stated in the SAPWrite description: one more property description
+  // exceeds the BTP full-tool descriptionCount ratchet.
+  deactivateInputHistory: { type: 'boolean' },
 } as const;
 
 export const DATA_ELEMENT_BATCH_TOOL_PROPERTIES = {
