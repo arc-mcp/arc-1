@@ -3,11 +3,43 @@
 **PR:** https://github.com/arc-mcp/arc-1/pull/774 (`codex/issue-771-dtel-metadata`)
 
 **Reviewed:** 2026-09-10 — round 1 on `d613b32f`, re-review on `1f5fb2a6`, follow-up commits
-`22e99e81`, `f7b86918`, `ac7792e7`, and Claude round 3 on `e163cadd`
+`22e99e81`, `f7b86918`, `ac7792e7`, Claude round 3 on `e163cadd`, and Claude round 4 on
+`53e49dc5`
 
-**Verdict:** round 1 REQUEST CHANGES → round 3 REQUEST CHANGES → **APPROVE after the final follow-up**.
-Every blocking finding is fixed and the final local gate matrix is green.
+**Verdict:** round 1 REQUEST CHANGES → round 3 REQUEST CHANGES → round 4 **APPROVE**. Every blocking
+finding is fixed and the final local gate matrix is green.
 **Linked issue:** [#771](https://github.com/arc-mcp/arc-1/issues/771) (dossier: `docs/research/issues/771-dtel-label-lengths-input-history.md`)
+
+## Round 4 — approval and complexity review
+
+Claude independently re-reviewed `53e49dc5`, approved the PR, and live-tested the final DTEL read-routing
+fix on SAP_BASIS 750 SP02, 758 and 816. Results were identical on all three releases:
+
+| State | `version` omitted | `active` | `inactive` | `auto` |
+|---|---|---|---|---|
+| Never activated (draft `Old`) | `Old` | `Old` | `Old` | `Old` |
+| Draft pending (active `Old`, draft `New`) | **`New`** | `Old` | `New` | `New` |
+
+The review also audited every consumer affected by removing the runtime schema's `active` default. Source
+reads and cache layers still default to active, while hyperfocused mode and the CLI already tolerate an
+omitted value. Claude's one local failure was an unrelated OIDC parse error during concurrent live probes;
+that test passed 7/7 in isolation, all 16 checks were green on GitHub, and the final post-review local run
+passed all 6,579 tests.
+
+The optional complexity suggestions were handled as follows:
+
+| Suggestion | Decision |
+|---|---|
+| Share the identical top-level and batch DTEL property definitions | Applied; the nullable-schema transform copies nodes before changing them |
+| Derive the DTEL metadata version directly from `args.version` | Applied with the developer-view rule in one comment |
+| Remove the top-level SAPRead version wording | Kept; `tools.test.ts` explicitly checks that tool-selection guidance mentions the `version parameter` |
+| Consolidate duplicate DTEL merge fixtures | Applied without removing any assertions |
+| Consolidate repeated lock-aware DTEL mocks | Applied with one local helper that captures PUT bodies |
+| Case-insensitive search-help comparison | Kept; case-only re-sends must retain the parameter to avoid an invalid binding on 750 and 758 |
+
+The cleanup removes duplicated code and test setup while preserving the public schema snapshots and tool
+budgets. The branch was then merged with `main` through `9e9097cf`; that merge only added unrelated research
+documentation.
 
 ## Summary
 
@@ -143,7 +175,7 @@ One earlier full run hit `ECONNRESET` and a timeout in the unrelated
 `tests/unit/server/http-multi-target-routes.test.ts`, while three live runs and a build competed for CPU. It
 passed 6/6 in isolation and in the final full run.
 
-The follow-up keeps `tests/unit/handlers/write-ddic.test.ts` under its 3,000-line default ratchet (2,996);
+The follow-up keeps `tests/unit/handlers/write-ddic.test.ts` under its 3,000-line default ratchet (2,979);
 the batch regression lives in `write-create-batch.test.ts`.
 
 ### Live — SAP_BASIS 750 SP02, 758, 816
@@ -166,8 +198,8 @@ raw `GET /sap/bc/adt/ddic/dataelements/{name}?version=…` after `SAPActivate`. 
 
 ## Remaining notes (non-blocking)
 
-- **Title.** #771 is a `[Feature]` adding five `SAPWrite` inputs; a squash title of `feat:` gives the matching
-  minor release.
+- **Title.** `fix:` is retained because the final change prevents metadata loss and stale read-after-write
+  results, even though #771 began as a feature request for five inputs.
 - **Merge read version.** `mergeMetadataWriteProperties` reads the default (developer) view. `?version=inactive`
   returned identical content on all three releases and might sidestep the documented 750 session-sensitive
   404, which now fails the update closed. Not changed without a reproduction.

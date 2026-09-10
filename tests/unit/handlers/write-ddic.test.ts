@@ -23,6 +23,27 @@ describe('SAPWrite handler — DDIC writes', () => {
   });
 
   describe('SAPWrite metadata writes (DOMA/DTEL/SRVB)', () => {
+    const mockDtelMetadataWrite = (metadata?: string): string[] => {
+      const putBodies: string[] = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        if (method === 'GET' && metadata !== undefined) {
+          return Promise.resolve(mockResponse(200, metadata, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH0</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (method === 'PUT' && typeof opts?.body === 'string') putBodies.push(opts.body);
+        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+      return putBodies;
+    };
+
     it('creates DOMA with v2 content type and no source PUT', async () => {
       mockFetch.mockReset();
       const calls: Array<{ method: string; url: string; contentType?: string }> = [];
@@ -109,21 +130,7 @@ describe('SAPWrite handler — DDIC writes', () => {
     });
 
     it('creates DTEL with an explicit zero length using the follow-up PUT', async () => {
-      mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string; body?: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
-        const method = opts?.method ?? 'GET';
-        const urlStr = String(url);
-        calls.push({ method, url: urlStr, body: typeof opts?.body === 'string' ? opts.body : undefined });
-        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
-          return Promise.resolve(
-            mockResponse(200, '<asx:values><LOCK_HANDLE>LH0</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
-              'x-csrf-token': 'T',
-            }),
-          );
-        }
-        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
-      });
+      const putBodies = mockDtelMetadataWrite();
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
@@ -137,24 +144,12 @@ describe('SAPWrite handler — DDIC writes', () => {
       });
 
       expect(result.isError).toBeUndefined();
-      const putCall = calls.find((call) => call.method === 'PUT');
-      expect(putCall?.body).toContain('<dtel:shortFieldLength>00</dtel:shortFieldLength>');
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('<dtel:shortFieldLength>00</dtel:shortFieldLength>');
     });
 
     it('creates DTEL without labels still PUTs so SAP keeps the description', async () => {
-      mockFetch.mockReset();
-      const putBodies: string[] = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
-        if (String(url).includes('_action=LOCK')) {
-          return Promise.resolve(
-            mockResponse(200, '<asx:values><LOCK_HANDLE>LH0</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
-              'x-csrf-token': 'T',
-            }),
-          );
-        }
-        if (opts?.method === 'PUT') putBodies.push(String(opts.body));
-        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
-      });
+      const putBodies = mockDtelMetadataWrite();
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
@@ -1002,19 +997,7 @@ describe('SAPWrite handler — DDIC writes', () => {
     <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory><dtel:changeDocument>true</dtel:changeDocument><dtel:leftToRightDirection>true</dtel:leftToRightDirection><dtel:deactivateBIDIFiltering>true</dtel:deactivateBIDIFiltering>
   </dtel:dataElement>
 </blue:wbobj>`;
-      const lockBody =
-        '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H1</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
-      mockFetch.mockReset();
-      const putBodies: string[] = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
-        const method = opts?.method ?? 'GET';
-        if (method === 'GET') return Promise.resolve(mockResponse(200, metadata, { 'x-csrf-token': 'T' }));
-        if (method === 'POST' && String(url).includes('_action=LOCK')) {
-          return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
-        }
-        if (method === 'PUT' && typeof opts?.body === 'string') putBodies.push(opts.body);
-        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
-      });
+      const putBodies = mockDtelMetadataWrite(metadata);
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'update',

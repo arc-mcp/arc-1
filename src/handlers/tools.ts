@@ -934,7 +934,7 @@ export function getToolDefinitions(
                 mediumLabel: { type: 'string' },
                 longLabel: { type: 'string' },
                 headingLabel: { type: 'string' },
-                ...DtelFields.DATA_ELEMENT_BATCH_TOOL_PROPERTIES,
+                ...DtelFields.DATA_ELEMENT_TOOL_PROPERTIES,
                 searchHelp: { type: 'string' },
                 searchHelpParameter: { type: 'string' },
                 setGetParameter: { type: 'string' },

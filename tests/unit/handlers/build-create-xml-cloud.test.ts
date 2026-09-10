@@ -205,28 +205,33 @@ describe('mergeMetadataWriteProperties — DTEL metadata preservation (#771)', (
     description: 'Existing',
     package: 'ZPKG',
     dataType: 'CHAR',
-    length: '000010',
+    length: '000004',
     decimals: '000000',
-    typeKind: 'predefinedAbapType',
-    typeName: '',
-    shortLabel: 'Short',
-    shortLength: '10',
-    mediumLabel: 'Medium',
+    typeKind: 'domain',
+    typeName: 'BUKRS',
+    shortLabel: 'CoCd',
+    shortLength: '06',
+    mediumLabel: '',
     mediumLength: '20',
-    longLabel: 'Long',
+    longLabel: '',
     longLength: '40',
-    headingLabel: 'Heading',
+    headingLabel: '',
     headingLength: '55',
-    searchHelp: '',
-    defaultComponentName: 'VALUE',
+    searchHelp: 'C_T001',
+    searchHelpParameter: 'BUKRS',
+    setGetParameter: 'BUK',
+    defaultComponentName: 'COMP_CODE',
     deactivateInputHistory: true,
+    changeDocument: true,
+    leftToRightDirection: true,
+    deactivateBIDIFiltering: true,
   };
   const stubClient = { getDataElement: async () => existing } as unknown as AdtClient;
 
   it('preserves stored lengths and input-history state on a description-only update', async () => {
     const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {});
     expect(merged).toMatchObject({
-      shortLength: '10',
+      shortLength: '06',
       mediumLength: '20',
       longLength: '40',
       headingLength: '55',
@@ -257,60 +262,18 @@ describe('mergeMetadataWriteProperties — DTEL metadata preservation (#771)', (
 
   it('preserves stored lengths when unchanged labels are re-sent', async () => {
     const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {
-      shortLabel: 'Short',
-      mediumLabel: 'Medium',
-      longLabel: 'Long',
-      headingLabel: 'Heading',
+      shortLabel: 'CoCd',
+      mediumLabel: '',
+      longLabel: '',
+      headingLabel: '',
     });
     expect(merged).toMatchObject({
-      shortLength: '10',
+      shortLength: '06',
       mediumLength: '20',
       longLength: '40',
       headingLength: '55',
     });
   });
-
-  it('aborts when existing metadata cannot be read', async () => {
-    const unreadableClient = {
-      getDataElement: async () => {
-        throw new Error('metadata read failed');
-      },
-    } as unknown as AdtClient;
-
-    await expect(mergeMetadataWriteProperties(unreadableClient, 'DTEL', 'ZDTEL', {})).rejects.toThrow(
-      'metadata read failed',
-    );
-  });
-});
-
-describe('mergeMetadataWriteProperties — remaining DTEL fields survive a partial update', () => {
-  const existing = {
-    name: 'ZDTEL',
-    description: 'Existing',
-    package: 'ZPKG',
-    dataType: 'CHAR',
-    length: '000004',
-    decimals: '000000',
-    typeKind: 'domain',
-    typeName: 'BUKRS',
-    shortLabel: 'CoCd',
-    shortLength: '06',
-    mediumLabel: '',
-    mediumLength: '20',
-    longLabel: '',
-    longLength: '40',
-    headingLabel: '',
-    headingLength: '55',
-    searchHelp: 'C_T001',
-    searchHelpParameter: 'BUKRS',
-    setGetParameter: 'BUK',
-    defaultComponentName: 'COMP_CODE',
-    deactivateInputHistory: false,
-    changeDocument: true,
-    leftToRightDirection: true,
-    deactivateBIDIFiltering: true,
-  };
-  const stubClient = { getDataElement: async () => existing } as unknown as AdtClient;
 
   it('keeps the search-help parameter, SET/GET parameter, change document and bidi flags', async () => {
     const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', {});
@@ -339,6 +302,18 @@ describe('mergeMetadataWriteProperties — remaining DTEL fields survive a parti
   it('keeps the parameter when the same search help is re-sent in lower case', async () => {
     const merged = await mergeMetadataWriteProperties(stubClient, 'DTEL', 'ZDTEL', { searchHelp: 'c_t001' });
     expect(merged.searchHelpParameter).toBe('BUKRS');
+  });
+
+  it('aborts when existing metadata cannot be read', async () => {
+    const unreadableClient = {
+      getDataElement: async () => {
+        throw new Error('metadata read failed');
+      },
+    } as unknown as AdtClient;
+
+    await expect(mergeMetadataWriteProperties(unreadableClient, 'DTEL', 'ZDTEL', {})).rejects.toThrow(
+      'metadata read failed',
+    );
   });
 });
 

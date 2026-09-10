@@ -621,10 +621,8 @@ export async function handleSAPRead(
       return textResult(toolJson(domain));
     }
     case 'DTEL': {
-      // A version-less DTEL metadata GET is SAP's developer view. Keep omitted and `auto`
-      // reads version-less so read-after-write sees a pending draft; pass explicit active/inactive
-      // through to SAP.
-      const dtelVersion = args.version === undefined || requestedVersion === 'auto' ? undefined : effectiveVersion;
+      // SAP's version-less developer view exposes pending drafts for omitted and `auto` reads.
+      const dtelVersion = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
       const dtel = await client.getDataElement(name, dtelVersion);
       return textResult(toolJson(dtel));
     }
