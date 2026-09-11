@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<aunit:run xmlns:aunit="http://www.sap.com/adt/api/aunit" xmlns:atom="http://www.w3.org/2005/Atom">
+  <aunit:progress status="FINISHED"/>
+  <atom:link href="/sap/bc/adt/api/abapunit/results/aunit-result-1" rel="http://www.sap.com/adt/relations/abapunit/result" type="application/vnd.sap.adt.api.junit.run-result.v1+xml"/>
+</aunit:run>

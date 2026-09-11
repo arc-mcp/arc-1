@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { diagnoseCiQualityFailed } from '../../../src/handlers/diagnose.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
+import { textResult, toolJson } from '../../../src/handlers/shared.js';
 import { detectFilename } from '../../../src/lint/lint.js';
 import { VERSION } from '../../../src/server/server.js';
 
@@ -25,5 +27,30 @@ describe('CLI', () => {
   it('search shortcut arg shape satisfies SAPSearchSchema', () => {
     const schema = getToolSchema('SAPSearch', false)!;
     expect(schema.safeParse({ query: 'ZCL_FOO*', maxResults: 50 }).success).toBe(true);
+  });
+
+  it('call SAPDiagnose atc_ci/unittest_ci JSON shape is valid and exits 1 when fail is true', () => {
+    const schema = getToolSchema('SAPDiagnose', false)!;
+    const atcArgs = {
+      action: 'atc_ci',
+      packages: ['Z_TEST'],
+      failOnSeverity: 'error',
+      timeoutSeconds: 600,
+    };
+    const aunitArgs = {
+      action: 'unittest_ci',
+      softwareComponents: ['/DMO/SWC'],
+      evaluateResults: true,
+    };
+    expect(schema.safeParse(atcArgs).success).toBe(true);
+    expect(schema.safeParse(aunitArgs).success).toBe(true);
+
+    const failed = textResult(toolJson({ status: 'completed', fail: true, reportXml: '<checkstyle/>' }));
+    const passed = textResult(toolJson({ status: 'completed', fail: false, reportXml: '<testsuites/>' }));
+    expect(diagnoseCiQualityFailed(atcArgs, failed)).toBe(true);
+    expect(diagnoseCiQualityFailed(aunitArgs, passed)).toBe(false);
+    expect(diagnoseCiQualityFailed(atcArgs, passed) ? 1 : 0).toBe(0);
+    expect(diagnoseCiQualityFailed(atcArgs, failed) ? 1 : 0).toBe(1);
+    expect(diagnoseCiQualityFailed(aunitArgs, failed) ? 1 : 0).toBe(1);
   });
 });
