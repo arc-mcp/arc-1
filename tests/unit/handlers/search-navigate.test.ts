@@ -44,6 +44,38 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPSearch', () => {
+    it.each([undefined, 'object'])('forwards typed object search before the result limit (%s)', async (searchType) => {
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<objectReferences><objectReference type="UIAC" name="ZAPP" uri="/sap/bc/adt/fiori/uiac/zapp"/></objectReferences>',
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+        query: '*',
+        searchType,
+        objectType: 'uiac',
+        maxResults: 1,
+      });
+      expect(result.isError).toBeUndefined();
+      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('objectType')).toBe('UIAC');
+      expect(params.get('maxResults')).toBe('1');
+      expect(params.has('searchObjectType')).toBe(false);
+      expect(JSON.parse(result.content[0].text)[0].objectType).toBe('UIAC');
+    });
+
+    it('preserves and encodes a slash type without injecting query parameters', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+        query: '*',
+        objectType: 'clas/oc&maxResults=999',
+        maxResults: 2,
+      });
+      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('objectType')).toBe('CLAS/OC&MAXRESULTS=999');
+      expect(params.getAll('maxResults')).toEqual(['2']);
+    });
+
     it('executes search', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'ZCL_*',

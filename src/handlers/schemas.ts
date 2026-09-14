@@ -272,7 +272,7 @@ export const SAPSearchSchema = z
     query: z.string().optional(),
     maxResults: z.coerce.number().optional(),
     searchType: z.enum(['object', 'source_code', 'tadir_lookup']).optional(),
-    objectType: z.string().optional(),
+    objectType: z.string().max(64).optional(),
     objectTypes: z.array(z.string()).optional(),
     packageName: z.string().optional(),
     names: z.array(z.string()).optional(),
@@ -314,7 +314,7 @@ export const SAPSearchSchemaNoSource = z
     query: z.string().optional(),
     maxResults: z.coerce.number().optional(),
     searchType: z.enum(['object', 'tadir_lookup']).optional(),
-    objectType: z.string().optional(),
+    objectType: z.string().max(64).optional(),
     objectTypes: z.array(z.string()).optional(),
     names: z.array(z.string()).optional(),
     source: z

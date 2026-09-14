@@ -234,7 +234,8 @@
         },
         "objectType": {
           "type": "string",
-          "description": "For source_code search: filter by object type (e.g., PROG, CLAS, FUNC). For tadir_lookup: single type filter; use objectTypes for multiple."
+          "maxLength": 64,
+          "description": "Object search: SAP-side type filter before the result limit (e.g., UIAC, CLAS, CLAS/OC). Source search: type filter (e.g., PROG, CLAS, FUNC). For tadir_lookup: single type filter; use objectTypes for multiple."
         },
         "source": {
           "type": "string",

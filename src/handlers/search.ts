@@ -222,7 +222,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     ? `Note: Query contained non-ASCII characters. Transliterated "${rawQuery}" → "${query}" (SAP object names are ASCII-only).\n\n`
     : '';
 
-  const results = await client.searchObject(query, maxResults);
+  const results = await client.searchObject(query, maxResults, args.objectType as string | undefined);
   if (Array.isArray(results) && results.length === 0) {
     let hint =
       '[]' +

@@ -462,6 +462,11 @@ describe('SAPReadSchemaBtp', () => {
 });
 
 describe('SAPSearchSchema', () => {
+  it.each([SAPSearchSchema, SAPSearchSchemaNoSource])('bounds the type filter in both tool variants', (schema) => {
+    expect(schema.safeParse({ query: '*', objectType: 'CLAS/OC' }).success).toBe(true);
+    expect(schema.safeParse({ query: '*', objectType: 'X'.repeat(65) }).success).toBe(false);
+  });
+
   it('accepts valid input with query', () => {
     const result = SAPSearchSchema.safeParse({ query: 'ZCL_*' });
     expect(result.success).toBe(true);

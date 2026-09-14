@@ -320,8 +320,9 @@ function buildSAPSearchTool(btp: boolean, textSearchAvailable?: boolean): ToolDe
   };
   properties.objectType = {
     type: 'string',
+    maxLength: 64,
     description:
-      'For source_code search: filter by object type (e.g., PROG, CLAS, FUNC). For tadir_lookup: single type filter; use objectTypes for multiple.',
+      'Object search: SAP-side type filter before the result limit (e.g., UIAC, CLAS, CLAS/OC). Source search: type filter (e.g., PROG, CLAS, FUNC). For tadir_lookup: single type filter; use objectTypes for multiple.',
   };
   properties.source = {
     type: 'string',
