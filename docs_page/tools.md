@@ -52,7 +52,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `to` | string | No | For `action="diff"`: NEW side — defaults to `"inactive"`. Same accepted values as `from`. |
 | `fromLabel` | string | No | For `action="diff"`: optional display label for the OLD side in the summary and patch header, e.g. `DNT-6-6: Validate discounts (DS7K900123)`. Does not affect source resolution. |
 | `toLabel` | string | No | For `action="diff"`: optional display label for the NEW side in the summary and patch header, e.g. `active` or `inactive draft`. Does not affect source resolution. |
-| `format` | string | No | Output format: `"text"` (default) or `"structured"`. For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured is supported for CLAS only (see below). |
+| `format` | string | No | Output format: `"text"` (default) or `"structured"`. For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured supports CLAS metadata and DEVC package listings (see below). |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for all of them. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
@@ -127,7 +127,25 @@ An empty local include does not mean the global class has no declarations. For a
 check use, for example, `SAPRead(type="CLAS", name="ZCL_ORDER", grep="INTERFACES|INHERITING")`.
 This checks source declarations; it does not enumerate subclasses or prove runtime calls.
 
-**Structured format (CLAS only):**
+**Package listings (DEVC):**
+
+`SAPRead(type="DEVC", name="ZPKG")` keeps the JSON array in the first text block
+and adds a second JSON text block with `listing` metadata. Use
+`format="structured"` for one JSON object, `{objects: [...], listing: {...}}`.
+Existing first-block array consumers and the public client's `getPackageContents`
+array API retain their contracts. Consumers that concatenate text blocks before
+JSON parsing should switch to the structured format.
+
+`listing` reports `returned`, `effectiveLimit` (default 200, clamped to 1–1000),
+`limitReached`, `possiblyTruncated`, `completeness: "unknown"`, `total: null`,
+`coverage: "adt-search"`, and an explanatory `note`. Reaching the cap suggests
+possible truncation; it does not prove additional objects exist. Below the cap,
+`possiblyTruncated: false` only means the requested limit was not reached. ADT
+search can omit repository types, so even an empty result is not proof of a
+complete inventory. There is no continuation token or fabricated total. Raise
+the limit up to 1000 or use targeted searches when the cap is reached.
+
+**Structured class format:**
 
 When `format="structured"` is used with CLAS type, the response is a JSON object with:
 - `metadata` — class metadata (description, language, category, package, fixPointArithmetic, abapLanguageVersion)

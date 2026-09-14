@@ -11,6 +11,7 @@ import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
+import { describePackageListing } from '../adt/package-contents.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
   ensureServerDrivenSupport,
@@ -285,10 +286,10 @@ export async function handleSAPRead(
     return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
   };
 
-  // Structured format is only supported for CLAS type
-  if (args.format === 'structured' && type !== 'CLAS') {
+  // Structured ordinary reads: class metadata or a package listing envelope.
+  if (args.format === 'structured' && type !== 'CLAS' && type !== 'DEVC') {
     return errorResult(
-      'For ordinary reads, format="structured" is CLAS only. Retry this read with format="text" or omit format; DDIC metadata is returned by its normal reader.',
+      'For ordinary reads, format="structured" supports CLAS and DEVC. Retry this read with format="text" or omit format; DDIC metadata is returned by its normal reader.',
     );
   }
 
@@ -811,7 +812,11 @@ export async function handleSAPRead(
     case 'DEVC': {
       const maxResults = args.maxResults != null ? Number(args.maxResults) : undefined;
       const contents = await client.getPackageContents(name, maxResults);
-      return textResult(toolJson(contents));
+      const listing = describePackageListing(contents.length, maxResults);
+      if (args.format === 'structured') return textResult(toolJson({ objects: contents, listing }));
+      const result = textResult(toolJson(contents));
+      result.content.push({ type: 'text', text: toolJson({ listing }) });
+      return result;
     }
     case 'SYSTEM':
       return textResult(await client.getSystemInfo());

@@ -499,7 +499,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['text', 'structured'],
             description:
-              'Default "text", including TABL, TTYP, DTEL, DOMA and INTF metadata. Ordinary "structured": CLAS metadata + all includes; prefer method/grep for targeted reads. action="diff": "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default is a patch.',
+              'Default "text". DEVC: array in first text block + listing metadata in second; "structured" returns {objects, listing}. CLAS "structured": metadata + all includes; prefer method/grep for targeted reads. action="diff": "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default is a patch.',
           },
           version: {
             type: 'string',
@@ -525,7 +525,7 @@ export function getToolDefinitions(
           maxResults: {
             type: 'number',
             description:
-              'For DEVC: max number of objects to list (default 200, clamped to [1, 1000]). Larger packages may be silently truncated by SAP at this limit; raise it if needed.',
+              'DEVC object limit (default 200, clamped to [1, 1000]). Listing metadata reports the effective limit and possible truncation. Total and full repository completeness remain unknown.',
           },
           sqlFilter: {
             type: 'string',
