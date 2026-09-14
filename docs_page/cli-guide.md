@@ -172,6 +172,19 @@ default to text, so it usually has no visible effect; it does not convert metada
 into source. Use the generic tool call with `format=structured` when you intentionally need the larger
 structured class result.
 
+Package reads (`read DEVC` or `call SAPRead` with `type=DEVC`) in default text mode
+print two JSON documents: the objects array, then listing metadata. A single
+`JSON.parse(stdout)` cannot parse that output. For scripts, use `--output json` and
+parse the outer MCP result (`content[0].text` contains the array and `content[1].text`
+contains the listing metadata), or request one structured document:
+
+```bash
+arc1-cli call SAPRead --json '{"type":"DEVC","name":"ZMY_PACKAGE","format":"structured"}'
+```
+
+The structured document contains `{objects, listing}`. Listing metadata reports the
+limit and unknown completeness; ADT search is not a full package inventory.
+
 `source` is the legacy alias of `read --flat`:
 
 ```bash

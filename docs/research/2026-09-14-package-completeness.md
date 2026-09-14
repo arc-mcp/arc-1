@@ -61,3 +61,21 @@ The shared helper's one-block assertion remains intact for other calls.
 The focused lifecycle E2E passed against A4H 7.58 through a freshly built MCP
 server: package creation, both response formats, and package deletion. Typecheck
 and build also passed after this test-only follow-up.
+
+## Follow-up review of Claude's findings
+
+Restored the default-text guidance for TABL/TTYP/DTEL/DOMA/INTF metadata; those
+handlers still reject structured format. Reviewed all seven regenerated snapshots:
+only this guidance changed. Documented that CLI text-mode package reads print two
+JSON documents, with both supported script alternatives (outer MCP JSON or one
+structured {objects, listing} document). Broadened the coverage note because ADT
+omissions are not limited to legacy SEGW types.
+
+Retained the listing contract: limitReached and possiblyTruncated distinguish an
+observed cap from the resulting possibility, and explicit unknown completeness
+prevents consumers from treating a below-cap result as a full inventory. Did not
+couple the package-specific default/clamp to unrelated URL-limit callers.
+
+All 6,588 unit tests (214 files), build, typecheck, lint, policy and size/schema
+gates passed. These follow-up changes alter guidance only, so the original live
+package-listing evidence remains applicable.

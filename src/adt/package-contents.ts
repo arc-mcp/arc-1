@@ -19,7 +19,6 @@ export function describePackageListing(returned: number, requested: number | und
     note:
       (limitReached
         ? `Result limit reached; listing may be truncated. ${effectiveLimit < 1000 ? 'Raise maxResults up to 1000 or use targeted SAPSearch queries. ' : 'Use targeted SAPSearch queries. '}`
-        : '') +
-      'ADT search may omit repository objects (including legacy SEGW types); this is not a complete package inventory.',
+        : '') + 'ADT search omits many repository object types; this is not a complete package inventory.',
   };
 }
