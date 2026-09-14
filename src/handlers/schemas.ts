@@ -36,6 +36,7 @@ import {
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
+import { BATCH_CREATE_MAX_OBJECTS } from './write/batch-results.js';
 
 // Re-exported so tests/unit/handlers/schemas.test.ts can assert the write-type matrix against
 // the single source of truth. The lists themselves live in tool-registry.ts.
@@ -713,7 +714,7 @@ export const SAPWriteSchema = z
      * splices it into the FM source body. Backward-compatible: when omitted, the existing
      * source-only path runs unchanged. */
     parameters: z.array(fmParameterSchema).optional(),
-    objects: z.array(batchObjectSchemaOnprem).optional(),
+    objects: z.array(batchObjectSchemaOnprem).max(BATCH_CREATE_MAX_OBJECTS).optional(),
   })
   .strict()
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
@@ -808,7 +809,7 @@ export const SAPWriteSchemaBtp = z
     /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
      * is on-prem-only. */
     parameters: z.array(fmParameterSchema).optional(),
-    objects: z.array(batchObjectSchemaBtp).optional(),
+    objects: z.array(batchObjectSchemaBtp).max(BATCH_CREATE_MAX_OBJECTS).optional(),
   })
   .strict()
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));

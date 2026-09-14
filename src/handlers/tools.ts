@@ -6,9 +6,7 @@
  * - description: Rich LLM-friendly description
  * - inputSchema: JSON Schema for tool arguments
  *
- * The 12 intent-based design is ARC-1's key differentiator:
- * instead of 200+ individual tools (one per object type per operation),
- * we group by *intent* with a `type` parameter for routing.
+ * Group operations by intent, with a `type` parameter for object routing.
  * This keeps the LLM's tool selection simple and the context window small.
  *
  * Tool definitions adapt based on system type (BTP vs on-premise):
@@ -44,6 +42,7 @@ import {
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
+import { BATCH_CREATE_MAX_OBJECTS } from './write/batch-results.js';
 
 /** MCP tool behavior annotations (a subset of the spec; all optional, all advisory hints). */
 export interface ToolAnnotations {
@@ -887,6 +886,7 @@ export function getToolDefinitions(
           },
           objects: {
             type: 'array',
+            maxItems: BATCH_CREATE_MAX_OBJECTS,
             items: {
               type: 'object',
               properties: {

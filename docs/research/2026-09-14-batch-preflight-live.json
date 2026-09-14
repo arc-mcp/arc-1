@@ -1,0 +1,191 @@
+{
+  "time": "2026-09-14T19:15:37.974Z",
+  "cases": [
+    {
+      "release": "758",
+      "tests": [
+        {
+          "name": "late invalid entry",
+          "passed": true,
+          "result": {
+            "phase": "preflight",
+            "requested": 2,
+            "created": 0,
+            "creationUnknown": 0,
+            "completed": 0,
+            "failed": 1,
+            "skipped": 1,
+            "results": [
+              {
+                "index": 0,
+                "type": "PROG",
+                "name": "ZARC1BP_758MI06V_A",
+                "packageName": "$TMP",
+                "status": "skipped",
+                "creation": "not_attempted",
+                "write": "not_attempted",
+                "activation": "not_attempted"
+              },
+              {
+                "index": 1,
+                "type": "PROG",
+                "name": "zarc1bp_758mi06v_b",
+                "packageName": "$TMP",
+                "status": "failed",
+                "creation": "not_attempted",
+                "write": "not_required",
+                "activation": "not_attempted",
+                "failedPhase": "preflight",
+                "error": "Object name \"zarc1bp_758mi06v_b\" must be non-empty, uppercase, and have no surrounding whitespace."
+              }
+            ]
+          }
+        },
+        {
+          "name": "persisted source after activation failure",
+          "passed": true,
+          "result": {
+            "phase": "execution",
+            "requested": 2,
+            "created": 1,
+            "creationUnknown": 0,
+            "completed": 0,
+            "failed": 1,
+            "skipped": 1,
+            "results": [
+              {
+                "index": 0,
+                "type": "PROG",
+                "name": "ZARC1BF_758MI06V_A",
+                "packageName": "$TMP",
+                "status": "failed",
+                "creation": "confirmed",
+                "write": "confirmed",
+                "activation": "failed",
+                "failedPhase": "activate",
+                "error": "activation failed: Activation was cancelled. — \"Editing canceled\" (EU 202); Type \"ZARC1_MISSING_TYPE_B14\" is unknown."
+              },
+              {
+                "index": 1,
+                "type": "PROG",
+                "name": "ZARC1BF_758MI06V_B",
+                "packageName": "$TMP",
+                "status": "skipped",
+                "creation": "not_attempted",
+                "write": "not_attempted",
+                "activation": "not_attempted"
+              }
+            ]
+          },
+          "inactiveSourceVerified": true
+        },
+        {
+          "name": "30 dependent interfaces activated together",
+          "passed": true,
+          "elapsedMs": 37733,
+          "activeReadbacks": 30,
+          "result": "Batch created 30 objects in package $TMP; activated as a single batch: ZIF_ABP_758MI06V_00 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_01 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_02 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_03 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_04 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_05 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_06 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_07 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_08 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_09 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_10 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_11 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_12 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_13 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_14 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_15 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_16 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_17 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_18 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_19 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_20 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_21 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_22 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_23 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_24 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_25 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_26 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_27 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_28 (INTF) ✓ [$TMP], ZIF_ABP_758MI06V_29 (INTF) ✓ [$TMP]"
+        }
+      ],
+      "cleanup": [],
+      "remaining": [],
+      "cleanupHarnessCorrection": "Search result uses objectName; corrected standalone cleanup harness and verified all fixtures removed."
+    },
+    {
+      "release": "816",
+      "tests": [
+        {
+          "name": "late invalid entry",
+          "passed": true,
+          "result": {
+            "phase": "preflight",
+            "requested": 2,
+            "created": 0,
+            "creationUnknown": 0,
+            "completed": 0,
+            "failed": 1,
+            "skipped": 1,
+            "results": [
+              {
+                "index": 0,
+                "type": "PROG",
+                "name": "ZARC1BP_816MOH0W_A",
+                "packageName": "$TMP",
+                "status": "skipped",
+                "creation": "not_attempted",
+                "write": "not_attempted",
+                "activation": "not_attempted"
+              },
+              {
+                "index": 1,
+                "type": "PROG",
+                "name": "zarc1bp_816moh0w_b",
+                "packageName": "$TMP",
+                "status": "failed",
+                "creation": "not_attempted",
+                "write": "not_required",
+                "activation": "not_attempted",
+                "failedPhase": "preflight",
+                "error": "Object name \"zarc1bp_816moh0w_b\" must be non-empty, uppercase, and have no surrounding whitespace."
+              }
+            ]
+          }
+        },
+        {
+          "name": "persisted source after activation failure",
+          "passed": true,
+          "result": {
+            "phase": "execution",
+            "requested": 2,
+            "created": 1,
+            "creationUnknown": 0,
+            "completed": 0,
+            "failed": 1,
+            "skipped": 1,
+            "results": [
+              {
+                "index": 0,
+                "type": "PROG",
+                "name": "ZARC1BF_816MOH0W_A",
+                "packageName": "$TMP",
+                "status": "failed",
+                "creation": "confirmed",
+                "write": "confirmed",
+                "activation": "failed",
+                "failedPhase": "activate",
+                "error": "activation failed: Activation was cancelled.; Type \"ZARC1_MISSING_TYPE_B14\" is unknown."
+              },
+              {
+                "index": 1,
+                "type": "PROG",
+                "name": "ZARC1BF_816MOH0W_B",
+                "packageName": "$TMP",
+                "status": "skipped",
+                "creation": "not_attempted",
+                "write": "not_attempted",
+                "activation": "not_attempted"
+              }
+            ]
+          },
+          "inactiveSourceVerified": true
+        },
+        {
+          "name": "30 dependent interfaces activated together",
+          "passed": true,
+          "elapsedMs": 42207,
+          "activeReadbacks": 30,
+          "result": "Batch created 30 objects in package $TMP; activated as a single batch: ZIF_ABP_816MOH0W_00 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_01 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_02 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_03 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_04 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_05 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_06 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_07 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_08 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_09 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_10 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_11 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_12 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_13 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_14 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_15 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_16 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_17 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_18 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_19 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_20 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_21 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_22 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_23 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_24 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_25 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_26 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_27 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_28 (INTF) ✓ [$TMP], ZIF_ABP_816MOH0W_29 (INTF) ✓ [$TMP]"
+        }
+      ],
+      "cleanup": [],
+      "remaining": []
+    }
+  ],
+  "mcpE2E": {
+    "tests": 3,
+    "passed": 3,
+    "release": "758",
+    "checked": 7,
+    "remaining": []
+  }
+}

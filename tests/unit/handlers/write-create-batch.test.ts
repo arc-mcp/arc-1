@@ -2397,9 +2397,9 @@ lv = CONV string( 1 ).`,
         expect(text).toContain('written, batch activation failed');
       });
 
-      it('activateAtEnd=true caches are invalidated only after the terminal activate succeeds', async () => {
-        // We don't have a clean cache-spy; instead assert the activation call ordering:
-        // every create+source PUT must precede the single terminal activation call.
+      it('activateAtEnd=true completes all writes before the terminal activation call', async () => {
+        // Cache failure behavior has separate coverage in batch-preflight.test.ts.
+        // This test checks every create+source PUT precedes terminal activation.
         mockFetch.mockReset();
         mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
 

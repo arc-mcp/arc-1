@@ -275,7 +275,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(activationIndex).toBeGreaterThan(putIndex);
     });
 
-    it('batch_create TTYP returns an error if the post-create PUT fails, not a Created summary', async () => {
+    it('batch_create TTYP reports its created shell and failed completion after a PUT failure', async () => {
       mockFetch.mockReset();
       const calls: Array<{ method: string; url: string }> = [];
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
@@ -303,7 +303,14 @@ describe('SAPWrite handler — DDIC writes', () => {
 
       expect(result.isError).toBe(true);
       const message = result.content[0]?.text ?? '';
-      expect(message).toContain('Batch created 0/1 objects');
+      expect(message).toContain('Batch created 1/1 objects');
+      expect(message).toContain('0 completed');
+      expect(JSON.parse(result.content[1].text).batch.results[0]).toMatchObject({
+        creation: 'confirmed',
+        write: 'unknown',
+        activation: 'not_attempted',
+        failedPhase: 'write',
+      });
       expect(message).toContain('TTYP post-create update failed');
       expect(message).toContain('default metadata shell');
       // Recovery guidance must point at the path that actually works (update), not a plain re-create
@@ -1688,7 +1695,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       }
     });
 
-    it('refuses TABL in batch_create when /tables/ is missing — other entries continue (issue #285)', async () => {
+    it('refuses the whole batch before creation when /tables/ is missing (issue #285)', async () => {
       setCachedFeatures({
         ...featuresOff(),
         abapRelease: '750',
@@ -1720,6 +1727,7 @@ describe('SAPWrite handler — DDIC writes', () => {
         // TABL entry must be marked failed with the SE11 hint
         expect(message).toContain('ZTABL_750_BATCH');
         expect(message).toContain('Transparent table writes via ADT REST are not available');
+        expect(mockFetch).not.toHaveBeenCalled();
       } finally {
         resetCachedFeatures();
       }
@@ -1983,7 +1991,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       }
     });
 
-    it('SAPWrite batch_create: TABL/DS succeeds while TABL/DT is refused on NW 7.50 (mixed batch)', async () => {
+    it('SAPWrite batch_create rejects a mixed batch containing unavailable TABL/DT on NW 7.50', async () => {
       setCachedFeatures({
         ...featuresOff(),
         abapRelease: '750',
@@ -2023,10 +2031,11 @@ describe('SAPWrite handler — DDIC writes', () => {
           ],
         });
         const message = result.content[0]?.text ?? '';
-        // TABL/DS entry succeeds; TABL/DT entry fails with the SE11 hint
+        // TABL/DS remains unattempted; TABL/DT fails preflight with the SE11 hint.
         expect(message).toContain('ZSTR_MIX_BATCH');
         expect(message).toContain('ZTBL_MIX_BATCH');
         expect(message).toContain('Transparent table writes via ADT REST are not available');
+        expect(mockFetch).not.toHaveBeenCalled();
       } finally {
         resetCachedFeatures();
       }
