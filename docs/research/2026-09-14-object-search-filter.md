@@ -50,3 +50,22 @@ changed. Direct-client tests cover omitted filters, subtype preservation, and a
 rejected type propagating without an unfiltered retry. Security review: the new
 value is bounded at dispatch and encoded at the URL sink; the existing search
 permission check still runs first. No mutation, identity or caching changes.
+
+## Follow-up review of Claude's findings
+
+Accepted the missing normal-search documentation and contextual guidance for a
+filtered 406 or empty result. Only a filtered 406 is translated; authorization
+and other failures propagate, with no automatic unfiltered retry. Empty results
+on older systems mention the requested filter. The guidance does not copy SAP
+response details, including under minimalErrors.
+
+Additional inspection found that dispatch collapsed recognized slash types before
+calling the handler. The earlier encoding test used an unrecognized slash string,
+so it did not catch this. Object search now preserves real CLAS/OC and DDLS/DF
+subtypes while translating the existing friendly KTD alias to SKTD. Source-code
+and exact-lookup normalization retain their prior behavior.
+
+Validation: 130 focused tests and all 6,594 unit tests (213 files) passed; build,
+typecheck, lint, policy and size/schema gates passed. Read-only live calls through
+dispatch on SAP_BASIS 758 SP02 and 816 SP01 verified NOSUCH produces the new error
+and CLAS/OC and DDLS/DF each return the requested subtype with maxResults=1.

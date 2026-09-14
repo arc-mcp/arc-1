@@ -238,7 +238,7 @@ Search for ABAP objects by name pattern, exact object-directory names, or ABAP s
 | `searchType` | string | No | `object` (default, name search), `tadir_lookup` (exact cross-package object lookup), or `source_code` (text search within ABAP source) |
 | `names` | array | No | For `tadir_lookup`: exact object names to resolve across packages |
 | `objectTypes` | array | No | For `tadir_lookup`: optional ADT/TADIR type filters such as `TABL`, `DDLS`, `BDEF`, `SRVB`, `CLAS/OC` |
-| `objectType` | string | No | For `source_code`: filter by object type. For `tadir_lookup`: single type filter |
+| `objectType` | string | No | For normal/object search: SAP applies this ADT type filter before `maxResults`; slash subtypes such as `CLAS/OC` stay intact. For `source_code`: filter by object type. For `tadir_lookup`: single type filter |
 | `source` | string | No | For `tadir_lookup` only: `adt` (default), `db`, or `both`. `db`/`both` require the `sql` scope and `SAP_ALLOW_FREE_SQL=true`. See [TADIR lookup `source` modes](#tadir-lookup-source-modes) below. |
 | `packageName` | string | No | For `source_code` search: filter by package |
 

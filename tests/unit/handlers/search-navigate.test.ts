@@ -44,6 +44,47 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPSearch', () => {
+    it.each([
+      ['clas/oc', 'CLAS/OC'],
+      ['ddls/df', 'DDLS/DF'],
+      ['ktd', 'SKTD'],
+    ])('preserves real search subtypes and translates friendly aliases: %s', async (objectType, expected) => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams.get('objectType')).toBe(expected);
+    });
+
+    it.each([false, true])('explains a rejected filter without retrying (minimalErrors=%s)', async (minimalErrors) => {
+      mockFetch.mockResolvedValue(mockResponse(406, 'private SAP diagnostic'));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPSearch', {
+        query: '*',
+        objectType: 'NOSUCH',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('SAP rejected the object search with objectType="NOSUCH"');
+      expect(result.content[0].text).not.toContain('private SAP diagnostic');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['NOSUCH', undefined])('gives appropriate empty-result guidance for filter %s', async (objectType) => {
+      mockFetch.mockResolvedValue(mockResponse(200, '<objectReferences/>'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(result.isError).toBeUndefined();
+      if (objectType) {
+        expect(result.content[0].text).toContain('query="*" with objectType="NOSUCH"');
+        expect(result.content[0].text).not.toContain('try Z*');
+      } else {
+        expect(result.content[0].text).toContain('try Z* or Y*');
+      }
+    });
+
+    it('preserves authorization errors instead of misclassifying them as rejected filters', async () => {
+      const client = createClient();
+      const error = new AdtApiError('Forbidden', 403, '/sap/bc/adt/repository/informationsystem/search');
+      vi.spyOn(client, 'searchObject').mockRejectedValue(error);
+      const { handleSAPSearch } = await import('../../../src/handlers/search.js');
+      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' })).rejects.toBe(error);
+    });
+
     it.each([undefined, 'object'])('forwards typed object search before the result limit (%s)', async (searchType) => {
       mockFetch.mockResolvedValue(
         mockResponse(
