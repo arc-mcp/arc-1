@@ -107,6 +107,21 @@ describe('parseServerDrivenMetadata', () => {
 });
 
 describe('SDO registry + gate', () => {
+  it('honors an explicit UIAD creation language version without changing other SDO types', () => {
+    expect(buildServerDrivenMetadataXml('UIAD', 'ZTEST', '$TMP', 'Test', 'cloudDevelopment')).toContain(
+      'adtcore:abapLanguageVersion="cloudDevelopment"',
+    );
+    expect(buildServerDrivenMetadataXml('DESD', 'ZTEST', '$TMP', 'Test', 'cloudDevelopment')).not.toContain(
+      'abapLanguageVersion',
+    );
+    expect(buildServerDrivenMetadataXml('UIAD', 'ZTEST', '$TMP', 'Test')).not.toContain('abapLanguageVersion');
+  });
+  it('preserves the PUT failure when unlock also fails', async () => {
+    const { http } = mockWriteHttp({ putThrows: true, unlockThrows: true });
+    await expect(
+      updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'UIAD', 'ZTEST', '{}'),
+    ).rejects.toThrow('put failed');
+  });
   it('isServerDrivenObjectType', () => {
     expect(isServerDrivenObjectType('DESD')).toBe(true);
     expect(isServerDrivenObjectType('EVTB')).toBe(true);
