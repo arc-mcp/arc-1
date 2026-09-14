@@ -53,3 +53,11 @@ in text and structured modes. Both returned two objects, effectiveLimit 2,
 limitReached/possiblyTruncated true, unknown completeness and null total. The
 default mode preserved its first-block array. No extra request, write capability,
 cache, identity or safety-policy change was introduced.
+
+Remote E2E review found one stale assumption in the package lifecycle test: its
+shared helper required exactly one text block. Updated that test to assert the
+two-block contract explicitly and compare the structured envelope against it.
+The shared helper's one-block assertion remains intact for other calls.
+The focused lifecycle E2E passed against A4H 7.58 through a freshly built MCP
+server: package creation, both response formats, and package deletion. Typecheck
+and build also passed after this test-only follow-up.
