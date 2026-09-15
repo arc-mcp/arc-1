@@ -53,6 +53,14 @@ login expires after **60 minutes**, but the process remains available for anothe
 `--login-timeout-minutes` (5–720) or `--port` when required. The candidate auth module must export
 the accepted new contract; an old package cannot silently produce misleading evidence.
 
+That 60-minute timeout is only the **local callback wait**, not the server's OAuth state lifetime.
+The candidate callback proxy defaults to a 10-minute signed state lifetime once the authorization
+URL is opened. Prepare the browser/operator first, then start and promptly complete sign-in.
+If the server reports expired state, request a new `login` with a new label and open its new
+authorization URL; do not replay the old callback or weaken state expiry for the test. A browser
+blocking the loopback success page is a different issue: check whether `login_received` and
+`scenario_complete` already arrived before retrying.
+
 ## JSON-line commands
 
 ```json
@@ -77,8 +85,12 @@ the token was received: consult `scenario_complete.failed` for the actual test o
 
 `refresh` preserves the old access-token snapshot and stores the refreshed one under a new
 label. This supports genuine revocation-window comparisons before and after an operator changes
-roles/IAS membership. A fresh login remains a separate action; `prompt=login` alone is not proof
-that IAS membership was refreshed. `concurrent` interleaves separate users/snapshots to exercise
+roles/IAS membership. A fresh login remains a separate action. The harness's optional
+`forceLogin: true` only appends `prompt=login&max_age=0` to the ARC authorization URL; the reviewed
+MCP SDK handler and XSUAA proxy do **not forward those parameters**. It does not force a credential
+prompt or refresh IAS membership. Use a genuinely fresh private session or the documented
+sign-out workflow, and record whether credentials were actually requested. `concurrent`
+interleaves separate users/snapshots to exercise
 request-local isolation. `exchange-user` performs a real JWT-bearer exchange against the isolated
 binding's XSUAA token endpoint, not against SAP. An exchanged token may contain a different
 documented grant type; a classifier failure is evidence to investigate, not permission to loosen it.
