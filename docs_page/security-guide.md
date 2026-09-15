@@ -1,4 +1,4 @@
-# Production Security
+# Production security
 
 <a id="security-best-practices-guide"></a>
 
@@ -21,8 +21,9 @@ Enable only required capabilities; no user role can widen the server ceiling.
 Use XSUAA on BTP, OIDC for an external identity provider, or API keys for a shared technical SAP identity.
 The [authentication chooser](enterprise-auth.md#choosing-your-setup) links each setup.
 
-For human SAP access, prefer explicit `SAP_PP_STRICT=true`. Supported mixed mode uses `false`:
-JWT calls use PP and API keys use the shared identity. JWT PP failures always return an error.
+With PP enabled, set `SAP_PP_STRICT=true` explicitly to reject API-key/non-JWT tool calls.
+If unset or `false`, API-key calls use the configured shared SAP client and startup warns about mixed identities.
+JWT PP failures always return an error; they never fall back to the shared user.
 
 <a id="3-oidcjwt-configuration-checklist"></a>
 
@@ -96,11 +97,13 @@ ARC-1's HTTP listener does not terminate TLS. Configure the proxy to:
 1. Terminate HTTPS and restrict direct access to the ARC-1 port.
 2. Replace untrusted `Forwarded` / `X-Forwarded-*` headers with the proxy's own values. ARC-1 trusts one proxy hop.
 3. Forward the selected MCP paths and OAuth metadata/callback paths, including host-root well-known routes when using a base path.
-4. Support streaming and timeouts suitable for long SAP operations; test activation/ATC workloads before setting a limit.
+4. Support streaming. Start proxy read/write timeouts at 120 seconds for activation and Unit tests; increase them to cover longer ATC/CI deadlines, then test the expected workload.
 5. Use unauthenticated `/health` for process probes, then verify an authenticated SAP read separately.
 
-Set `ARC1_PUBLIC_URL` to the external URL. Proxy body limits must match the application and intended payloads;
-raising the proxy limit alone does not change ARC-1's parser limit.
+Set `ARC1_PUBLIC_URL` to the external URL. ARC-1 currently uses the Express JSON-body default of
+**100 KiB (102,400 bytes)** for the complete JSON request body, including JSON overhead. Larger writes
+can receive HTTP `413` before tool dispatch. Raising a proxy limit does not raise this application
+limit; there is no ARC-1 setting for it. See [Express JSON parsing](https://expressjs.com/en/api/express/).
 
 <a id="11-network-security"></a>
 
@@ -138,7 +141,7 @@ Set exact origins in the deployment configuration, then restart:
 ARC1_ALLOWED_ORIGINS=https://your-ui.example.com,https://other.example.com
 ```
 
-Wildcards are not accepted. Allowed origins receive credentialed responses with their exact origin reflected.
+Origins are compared literally: `*` and wildcard hostnames do not match browser origins. Allowed origins receive credentialed responses with their exact origin reflected.
 Allowed methods are `GET`, `POST`, `DELETE`, `OPTIONS`; request headers are `Content-Type`, `Authorization`,
 `mcp-session-id`, `mcp-protocol-version`, `last-event-id`. The exposed response header is `mcp-session-id`.
 Disallowed browser origins receive no CORS permission and produce `cors_rejected` events; CORS is not authentication.
@@ -216,10 +219,10 @@ Use mounted files where supported; limit access to environment dumps, crash repo
 
 | Compromised item | Immediate action | Evidence to review |
 |---|---|---|
-| API key | Remove it, restart ARC-1 and distribute a new key | Profile's tool calls and any SAP changes; a shared profile limits attribution |
+| API key | Remove it, restart ARC-1 and distribute a new key | Profile's tool calls; for write-enabled keys, recent transports/object changes in STMS and system messages in SM21. A shared profile limits attribution. |
 | BTP service key | Revoke/replace it with its owner; update local files or destinations using it | BTP audit and affected consumers |
 | JWT / OIDC token | Contain access with IAM/network owners and revoke affected sessions where supported | Token lifetime, user's ARC-1 calls and SAP actions if PP was enabled |
-| Cloud Connector PP trust | Have Basis/security contain the connection and replace compromised trust/certificates | SAP users asserted during the compromise window |
+| Cloud Connector PP trust | Basis removes the compromised Connector CA from SAP STRUST, generates a new CA/key pair, rotates Connector PP certificates, then restores trust and checks subject-mapping rules | Review SM20 for all users during the compromise window |
 
 Already-issued JWTs can remain valid until expiry; sign-out or role removal alone does not prove immediate revocation.
 Preserve sanitized timestamps and request IDs before making recovery changes.

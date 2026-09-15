@@ -1,4 +1,4 @@
-# BTP Destination Reference
+# BTP destination reference
 
 Find the destination fields for your SAP connection below. Create destinations in **BTP Cockpit → subaccount → Connectivity → Destinations**.
 
@@ -37,7 +37,7 @@ URL=http://a4h-basic:50000
 ProxyType=OnPremise
 Authentication=BasicAuthentication
 User=<least-privileged-sap-user>
-Password=<managed-secret>
+Password=<strong-generated-ASCII-password>
 sap-client=100
 ```
 
@@ -61,7 +61,7 @@ URL=http://a4h-basic:50000
 ProxyType=OnPremise
 Authentication=BasicAuthentication
 User=<least-privileged-startup-user>
-Password=<managed-secret>
+Password=<strong-generated-ASCII-password>
 sap-client=100
 ```
 
@@ -134,7 +134,7 @@ For the shared Basic exception, use the fields below **and a URL for a separate 
 ```properties
 Authentication=BasicAuthentication
 User=<dedicated-read-only-technical-user>
-Password=<managed-secret>
+Password=<strong-generated-ASCII-password>
 Preemptive=true
 ```
 
@@ -142,11 +142,13 @@ Any Basic target forces the whole multi-target application to exactly one non-ro
 Basic is never a fallback for PP. Use a separate principal-type-None Cloud Connector mapping and
 internal HTTPS; verify the ADT ICF service accepts HTTP Basic for this user.
 
-## Multi-target field contract
+<a id="multi-target-field-contract"></a>
+
+## Multi-target destination fields
 
 Property names are case-sensitive.
 
-| Property | Contract |
+| Property | Required format |
 |---|---|
 | `Name` | Required; 1–200 letters, digits, `_`, `.`, or `-`; destination identity, not public route |
 | `Type` | Exactly `HTTP` |
@@ -167,7 +169,7 @@ Property names are case-sensitive.
 
 Boolean values accept surrounding whitespace and are case-insensitive; use lowercase `true`/`false`. Aliases are case-sensitive and are not trimmed.
 
-Unknown/wrong-case `arc1.*` keys, malformed booleans, and any write/package/transport/Git property
+Unknown/wrong-case `arc1.*` keys, malformed booleans, and write/package/transport/Git `arc1.*` properties
 quarantine the destination. Enabled candidates count toward the 256 limit even when invalid. More
 than 256 enabled candidates disables the whole registry rather than serving a partial set.
 
@@ -196,7 +198,7 @@ It must match the intended Cloud Connector. Single-target startup and PP destina
 different location IDs. Multi-target Admin diagnostics expose only whether this property exists,
 not its raw value.
 
-## Cloud Connector URL Path Reference
+## Cloud Connector URL path reference
 
 | URL path | Access policy | Needed for |
 |---|---|---|
@@ -214,7 +216,7 @@ Use an Internet destination with `OAuth2UserTokenExchange` for a same-subaccount
 
 | Change | Action |
 |---|---|
-| Single-target destination name in app config | Update reviewed `.mtaext` and deploy |
+| Single-target destination name in app config | Update the customer `.mtaext` and deploy |
 | Single-target destination content, including Basic credentials | Restart every app instance; it is resolved at startup |
 | Multi-target destination add/remove or non-secret field | `cf restart arc1-mcp-server` |
 | Multi-target Basic `User`/`Password` only | No restart; next protected request |

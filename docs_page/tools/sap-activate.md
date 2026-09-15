@@ -50,6 +50,6 @@ SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_ty
 ```
 
 UIAD source saves are already active on the verified system; see the
-[UIAD write contract](sap-write.md#uiad-create-and-update).
+[UIAD save behavior](sap-write.md#uiad-create-and-update).
 
 [All tools](../tools.md)

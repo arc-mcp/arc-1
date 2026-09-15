@@ -32,6 +32,17 @@ Read the [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/A
 for the applicable wording. ARC-1 mainly uses `/sap/bc/adt/*`; the existence of an ADT SDK or another
 ADT client does not by itself establish permission for your agent-driven use.
 
+## Why the ADT question remains open
+
+An API Hub entry for an OData business API does not cover ARC-1's `/sap/bc/adt/*` development
+endpoints. Establish the published status and permitted purpose of those specific endpoints from
+matching product documentation or SAP confirmation. API discovery alone does not settle either question.
+
+The MCP architecture guidance below discusses access to SAP APIs and business capabilities; it does
+not specifically identify ADT automation as an endorsed use. Our reading is that it provides
+conditions for operating a third-party server, not blanket approval for every endpoint that server
+can reach. Confirm the ADT use case as part of the deployment review.
+
 ## Architecture and operator responsibilities
 
 SAP's [third-party MCP guidance](https://architecture.learning.sap.com/docs/ref-arch/137800)

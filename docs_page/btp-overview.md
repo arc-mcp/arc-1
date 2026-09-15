@@ -1,4 +1,6 @@
-# SAP BTP: Start Here
+# SAP BTP: choose a setup
+
+<a id="sap-btp-start-here"></a>
 
 Deploy ARC-1 on SAP Business Technology Platform (BTP) Cloud Foundry so your team can use AI tools with SAP. First choose your SAP landscape, then follow one setup guide.
 
@@ -30,15 +32,15 @@ For a single-target `/mcp` alongside multi-target routes, review the [independen
 <a id="5-hand-over-operations"></a>
 <a id="minimum-customer-acceptance"></a>
 
-Follow the [Cloud Foundry deployment runbook](btp-cloud-foundry-deployment.md) through verification and handover. It tells you when to involve the Destination, Cloud Connector, SAP Basis, and IAM owners. The [optional worksheet](btp-setup-worksheet.md) records their inputs and acceptance evidence.
+Follow the [Cloud Foundry deployment runbook](btp-cloud-foundry-deployment.md) through verification and handover. It tells you when to involve the Destination, Cloud Connector, SAP Basis, and identity administrators. The [optional worksheet](btp-setup-worksheet.md) records their inputs and test results.
 
-Use documentation and examples from **the source revision that built your deployed artifact**. The website and repository `main` may be newer. Ask the deployment owner for the revision if it is unknown; `docs/plans/` and `docs/research/` describe research, not shipped setup requirements.
+Use documentation and examples from **the source revision that built your deployed artifact**. The website and repository `main` may be newer. Ask the person who deployed the service for the revision if it is unknown.
 
 ## Where settings belong
 
 <a id="keep-each-value-in-one-place"></a>
 
-| Setting | Owner/location |
+| Setting | Location |
 |---|---|
 | Product defaults, service bindings, role templates | Repository `mta.yaml` |
 | Durable app settings, safety limits, route, instance count | Customer `.mtaext` |

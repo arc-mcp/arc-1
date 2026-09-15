@@ -131,7 +131,9 @@ Plugins do not currently have package-aware `ctx.write`, scoped `ctx.data`, or `
 
 Additional controls:
 
-- `SAP_DENY_ACTIONS=Custom_*` disables all extension tools; `Custom_Foo` disables one.
+- To disable an extension, remove its path from `ARC1_PLUGINS` and restart. Clear `ARC1_PLUGINS`
+  to disable all extensions. `SAP_DENY_ACTIONS` accepts built-in tool names only; `Custom_*` and
+  `Custom_Foo` are invalid and prevent startup.
 - Reuse the seven built-in scopes; custom scopes are not supported and no new XSUAA scope is needed.
 - `availableOn: 'onprem'` or `'btp'` limits visibility when the system type is known. Default: `all`.
 - Under principal propagation, `ctx` uses the caller's SAP identity.

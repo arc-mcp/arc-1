@@ -4,7 +4,7 @@
 **Date:** 2026-05-12
 **Related PR:** [#276](https://github.com/arc-mcp/arc-1/pull/276)
 **Amended:** 2026-07-17 by [#579](https://github.com/arc-mcp/arc-1/pull/579) to separate the OAuth and MCP HTTP edge controls
-**Closes:** [SEC-05](../../docs_page/roadmap.md#sec-05), CodeQL alert #12 (`js/missing-rate-limiting`)
+**Closes:** [SEC-05](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#sec-05), CodeQL alert #12 (`js/missing-rate-limiting`)
 **Supersedes:** N/A
 **Superseded by:** N/A
 
@@ -104,5 +104,5 @@ Rejected for v1. Single retry with `Retry-After` honoring already gives graceful
 
 - [Rate Limiting Guide](../../docs_page/rate-limiting.md) — operator-facing guide
 - [docs/plans/completed/2026-05-27-layered-rate-limiting.md](../plans/completed/2026-05-27-layered-rate-limiting.md) — implementation plan
-- [docs_page/roadmap.md#sec-05](../../docs_page/roadmap.md#sec-05) — original roadmap entry
+- [docs_page/roadmap.md#sec-05](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#sec-05) — original roadmap entry
 - [PR #212](https://github.com/arc-mcp/arc-1/pull/212) — stateless DCR (the design we preserve by going per-instance)

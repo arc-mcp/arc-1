@@ -19,7 +19,10 @@ before string conversion. Crossing the configured allowance returns `DATA_RESPON
 without partial rows or an automatic retry. Submit a new request with lower `maxRows`, fewer
 selected columns, or a restrictive, non-overlapping key-range `WHERE` clause.
 
-**Important:** Uses the ADT freestyle SQL endpoint (`/sap/bc/adt/datapreview/freestyle`) with ABAP SQL syntax, NOT standard SQL:
+## SQL syntax
+
+The ADT freestyle endpoint (`/sap/bc/adt/datapreview/freestyle`) expects ABAP SQL:
+
 - Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)
 - Use `ASCENDING`/`DESCENDING` (not `ASC`/`DESC`)
 - Use `maxRows` parameter (not `LIMIT`)
@@ -39,9 +42,6 @@ SAPQuery(sql="SELECT carrid, COUNT(*) as cnt FROM sflight GROUP BY carrid ORDER 
 SAPQuery(sql="SELECT * FROM mara WHERE matnr LIKE 'Z%'", maxRows=50)
 ```
 
-**Note:** Not available by default (free SQL blocked). Enable with `SAP_ALLOW_FREE_SQL=true` / `--allow-free-sql=true`. User also needs the `sql` scope (or API-key profile `viewer-sql`/`developer-sql`/`admin`).
-
-
 ## Data-source restrictions and errors
 
 When `SAP_BLOCKED_DATA_SOURCES` is non-empty, SAPQuery is restricted to one statically provable
@@ -59,6 +59,8 @@ current behavior and adds no metadata calls; a non-empty list is slower by desig
 blocklist is not an allowlist and not a replacement for SAP authorization or CDS DCL. See
 [Authorization & Roles](../authorization.md#experimental-data-source-blocklist).
 
-> **Self-correcting errors.** An unknown *table* yields a "Did you mean …?" suggestion; an unknown *column* (here or in `SAPRead type=TABLE_QUERY`) yields the table's actual column list (`Unknown column "X" on T000. Available columns: MANDT, MTEXT, …`), so the agent retries in one shot. Best-effort: if column discovery is unavailable (e.g. the `datapreview` endpoint is unbound on older NW 7.50 SPs), the original error is returned unchanged.
+For an unknown table, ARC-1 may suggest similar names. For an unknown column here or in
+`SAPRead(type="TABLE_QUERY")`, it tries to list available columns. If that lookup fails, the
+original error is returned. Check the suggested name before retrying.
 
 [All tools](../tools.md)

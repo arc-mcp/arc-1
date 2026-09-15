@@ -10,8 +10,11 @@ For every parameter and supported object type, use the [tool reference](tools.md
 SAPRead(type="SYSTEM")
 ```
 
-Confirm the intended SAP system and release before a batch of calls. If this fails, resolve the
-connection or authentication error before starting parallel work.
+This confirms ADT access and returns discovery collections plus the username known to ARC-1.
+It does not identify the SAP system or prove the mapped backend user. Confirm the endpoint/client
+with your administrator; read `SAPRead(type="COMPONENTS")` for the `SAP_BASIS` release. For principal
+propagation, use the [backend identity check](principal-propagation-setup.md#verify-the-backend-identity).
+Resolve connection or authentication errors before starting parallel work.
 
 ## Choose a tool
 
@@ -51,10 +54,11 @@ package. See [Authorization](authorization.md) when a capability is unavailable.
    ```
 
    Omit `include` to read the global class declaration and implementation. `definitions` and
-   `implementations` hold **local helper classes**. A qualified method such as
-   `lhc_travel~accept` automatically selects the local implementation include.
+   `implementations` hold **local helper classes**. Qualified `lhc_*`/`lcl_*` methods automatically
+   select `implementations`; `ltc_*` selects `testclasses`. An explicit `include` overrides this.
+   See [editing class members](tools/write-class-members.md#edit-one-method-body).
 
-3. State the limits of the evidence. Dependency contracts omit method bodies. Static references do
+3. Explain what the results show and what they leave unknown. Dependency contracts omit method bodies. Static references do
    not prove runtime execution, and a capped or empty search does not prove a complete inventory.
 
 For CDS views, use the same `deps` → targeted `SAPRead` sequence with `type="DDLS"`.
@@ -76,12 +80,12 @@ Pass its returned ID to the write:
 ```text
 SAPWrite(action="create", type="CLAS", name="ZCL_ORDER",
   package="ZDEV", transport="<returned transport ID>", source="<complete class source>")
+SAPDiagnose(action="syntax", type="CLAS", name="ZCL_ORDER", version="inactive")
 SAPActivate(type="CLAS", name="ZCL_ORDER")
 ```
 
-Check each result before continuing. Use `SAPDiagnose(action="syntax", ..., version="inactive")`
-to inspect saved drafts before activation; use `action="unittest"` after activation when tests
-apply. A timeout or incomplete diagnostic result is not a passing check.
+Check each result before continuing; fix syntax errors before activation. Use
+`SAPDiagnose(action="unittest", type="CLAS", name="ZCL_ORDER")` after activation when tests apply. A timeout or incomplete diagnostic result is not a passing check.
 
 ### Related objects and RAP
 
@@ -89,8 +93,9 @@ Create dependencies first. Confirm that the connected release supports the propo
 successful connection does not establish support for every CDS or RAP feature.
 
 `SAPWrite(action="batch_create")` accepts shared `package` and `transport` values and per-object
-overrides. Inspect partial results before retrying: some objects may already have been created.
-Activate dependent objects together with `SAPActivate(objects=[...])`.
+overrides. By default, each object activates before the next is created. Set `activateAtEnd=true`
+for interdependent objects so the successfully written set activates together after the batch.
+Inspect partial results before retrying: some objects may already have been created.
 
 Use the [RAP service skill](skills.md) for a complete workflow, and the
 [SAPWrite reference](tools/sap-write.md) for batch and behavior-implementation options.

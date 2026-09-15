@@ -1,6 +1,6 @@
 # SAPContext
 
-Get dependency contracts, CDS impact, DDIC structure, or where-used evidence. Start with an object
+Get dependency API declarations, CDS impact, DDIC structure, or where-used results. Start with an object
 whose purpose or dependencies you need to understand:
 
 ```text
@@ -38,9 +38,9 @@ SAPContext(action="deps", type="CLAS", name="ZCL_ORDER")
 ## Dependency contracts
 
 `deps` returns the target's Knowledge Transfer Document (KTD), when available, followed by selected
-source-derived API contracts. Use requirements and targeted [SAPRead](sap-read.md) calls together
-when assessing behavior or designing tests. Contracts omit implementation; without requirements,
-intent remains unverified.
+source-derived API contracts: the declarations needed to call a dependency. These omit method
+bodies. Compare any documented requirements with targeted [SAPRead](sap-read.md) calls when
+assessing behavior or designing tests.
 
 | Dependency | Returned content |
 |---|---|

@@ -7,7 +7,7 @@ Run the published ARC-1 image as an authenticated HTTP MCP server, or let a loca
 
 For BTP Cloud Foundry, use the [MTA deployment runbook](btp-cloud-foundry-deployment.md).
 
-## Quick Start
+## Quick start
 
 ### HTTP streamable (default — recommended)
 
@@ -23,7 +23,7 @@ For BTP Cloud Foundry, use the [MTA deployment runbook](btp-cloud-foundry-deploy
 
    Generate the key with `openssl rand -hex 32`, then set `chmod 600 arc1.env` on Unix. Keep the key for the MCP client's bearer-token setting.
 
-2. Start the container:
+2. Choose an exact version from [GitHub releases](https://github.com/arc-mcp/arc-1/releases). The examples use `1.2.0`; replace that tag consistently when deploying another release. Start the container:
 
    ```bash
    docker run -d --name arc1 \
@@ -41,7 +41,7 @@ For BTP Cloud Foundry, use the [MTA deployment runbook](btp-cloud-foundry-deploy
    docker logs arc1
    ```
 
-4. Ask the client to read SAP system information. A healthy process alone does not prove SAP access.
+4. Ask the client to call `SAPRead(type="COMPONENTS")` or search for a known object. A healthy process alone does not prove SAP access.
 
 The example binds only to localhost and starts read-only. For a team endpoint, configure HTTPS at a reverse proxy and [API key](api-key-setup.md) or [OIDC](oauth-jwt-setup.md) authentication before exposing it. HTTP mode requires ARC-1 authentication.
 
@@ -58,7 +58,7 @@ docker run -i --rm \
 
 Use `-i` to keep stdin open; omit `-d` and port mapping. The container exits when the client disconnects.
 
-## Pre-Built Images (GHCR)
+## Pre-built images (GHCR)
 
 <a id="image-location"></a>
 <a id="available-tags"></a>
@@ -71,15 +71,15 @@ Images are available from [GitHub Container Registry](https://github.com/arc-mcp
 |---|---|
 | Exact version, such as `1.2.0` | Reproducible team and production deployments |
 | Minor version, such as `1.2` | Latest release in that minor line |
-| `latest` | Development builds, including unreleased `main` changes |
+| `latest` | Updated by releases and development builds; can include unreleased `main` changes |
 
 <a id="github-actions-automated-publishing"></a>
 <a id="manual-re-publish-workflow_dispatch"></a>
 <a id="visibility"></a>
 
-Publishing is maintained in the repository's [Docker workflow](https://github.com/arc-mcp/arc-1/blob/main/.github/workflows/docker.yml). Maintainers can rerun it through **Actions → Docker → Run workflow**. GHCR package visibility is separate from repository visibility; private packages require `docker login ghcr.io`.
+Versioned images are published by the [release workflow](https://github.com/arc-mcp/arc-1/blob/main/.github/workflows/release.yml). The [Docker (dev) workflow](https://github.com/arc-mcp/arc-1/blob/main/.github/workflows/docker.yml) updates `latest` on pushes to `main`; maintainers can rerun it through **Actions → Docker (dev) → Run workflow**. GHCR package visibility is separate from repository visibility; private packages require `docker login ghcr.io`.
 
-## Building the Image
+## Building the image
 
 ### From source
 
@@ -89,19 +89,18 @@ From a checked-out source revision:
 docker build -t arc1:local .
 ```
 
-The Dockerfile uses a Node.js 22 Alpine build stage and a runtime with production dependencies. Optional build arguments are `VERSION`, `COMMIT`, and `BUILD_DATE`.
+The Dockerfile uses a Node.js 22 Alpine build stage and a runtime with production dependencies. The image version comes from the checked-out `package.json`; the Dockerfile has no version build arguments.
 
 ### Multi-platform build (for sharing)
 
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=<version> \
   -t ghcr.io/<your-org>/arc1:<version> \
   --push .
 ```
 
-## How arc1 Runs in Docker
+## How ARC-1 runs in Docker
 
 <a id="http-streamable-default"></a>
 <a id="stdio-mode-classic"></a>
@@ -135,11 +134,11 @@ Keep these settings together in the deployment definition:
 
 Before increasing data limits, use the [RAM sizing model](btp-administration.md#data-preview-ram-sizing) and measure the widest expected result at full concurrency. A starting old-space allowance is about 75% of container RAM. Docker's numeric `NODE_OPTIONS` does not adjust when the container memory limit changes; the CF buildpack's `OPTIMIZE_MEMORY`/`MEMORY_AVAILABLE` behavior does not apply here.
 
-## Passing Configuration into Docker
+## Passing configuration into Docker
 
 ### Env vars and env files
 
-Pass settings with `--env-file arc1.env` or one `-e KEY=value` per variable. A host `.env` file is not loaded automatically inside the container. CLI flags after the image name override env values.
+Pass settings with `--env-file arc1.env` or one `-e KEY=value` per variable. A host `.env` file is not loaded automatically inside the container. To use CLI flags, supply the command too: arguments after the image name replace the image's `CMD`. For example, append `node dist/index.js --transport stdio` after the image name. These ARC-1 flags then override environment values.
 
 Use the [configuration recipes](configuration-reference.md#recipes) for approved capabilities. Quote shell-sensitive package patterns when passing them directly:
 
@@ -187,7 +186,7 @@ Use `host.docker.internal` as the hostname on Docker Desktop. On Linux, `--netwo
 
 Attach both containers to the same Docker network with `--network <network>`, then use the SAP container's network hostname and HTTPS port.
 
-## MCP Client Integration
+## MCP client integration
 
 ### HTTP streamable (recommended)
 
@@ -213,20 +212,20 @@ Use an absolute env-file path in the client's server configuration:
 }
 ```
 
-### Gemini CLI / Other Agents
+### Gemini CLI / other agents
 
 Choose HTTP or stdio according to the client's supported transport. See [MCP client configuration](local-development.md#mcp-client-configuration) for examples.
 
-## Updating the Image
+## Updating the image
 
 <a id="quick-reference"></a>
 <a id="pinning-a-version-recommended"></a>
 <a id="rebuilding-from-source"></a>
 <a id="staying-up-to-date-automatically"></a>
 
-Follow [Updating](updating.md) to pull a reviewed version, recreate the container with the **same ports, limits, mounts, and env file**, and verify it. Keep the previous image tag for rollback. For a source build, check out the selected revision and rebuild; changing the running container's filesystem is not an update procedure.
+Follow [Updating](updating.md) to pull the selected version, recreate the container with the **same ports, limits, mounts, and env file**, and verify it. Keep the previous image tag for rollback. For a source build, check out the selected revision and rebuild; changing the running container's filesystem is not an update procedure.
 
-## Security Notes
+## Security notes
 
 - Supply credentials at runtime and protect env files with owner-only permissions.
 - Mount session cookies read-only; never include them or passwords in an image.
@@ -248,8 +247,8 @@ The runtime uses a non-root user and exposes HTTP port 8080. See the [Security g
 | Symptom | Check |
 |---|---|
 | Container exits in stdio mode | Use `-i`, omit `-d`, and verify `SAP_TRANSPORT=stdio` |
-| HTTP startup refuses authentication | Set `ARC1_API_KEYS`, OIDC, or XSUAA; SAP credentials alone do not authenticate MCP clients |
-| `SAP URL is required` | Check the env-file path and `SAP_URL` value inside the supplied config |
+| `HTTP transport requires ARC-1 authentication` | Set `ARC1_API_KEYS`, OIDC, or XSUAA; SAP credentials alone do not authenticate MCP clients |
+| `SAP_URL is not configured — no SAP system connection available` | Check the env-file path and `SAP_URL`; the process can start without a target |
 | Certificate error | Mount the CA and set `NODE_EXTRA_CA_CERTS`; verify hostname and certificate chain |
 | SAP login fails | Inspect SAP credentials/client and the [authentication setup](enterprise-auth.md) |
 | Tool or action missing | Check detected SAP features, user scopes and `SAP_DENY_ACTIONS` |

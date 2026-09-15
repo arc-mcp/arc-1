@@ -8,7 +8,7 @@ SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", maxResults=20)
 
 An [experimental `relations` action](../live-relations.md) adds bounded live metadata
 networks for qualified ABAP object types. It is listed automatically unless denied or SAP discovery
-has established that the capability is absent. Invocation still requires exact discovery evidence.
+has established that the capability is absent. Invocation still checks SAP's advertised endpoint and media type.
 
 
 ## Parameters

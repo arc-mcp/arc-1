@@ -1,4 +1,6 @@
-# Multi-System Setup (Multi-Target v1)
+# Multi-target setup
+
+<a id="multi-system-setup-multi-target-v1"></a>
 
 Connect one ARC-1 service to several on-premise SAP systems or clients. This experimental mode is **default-off and mutation-free**, supports up to 256 targets, and requires BTP Cloud Foundry with XSUAA.
 
@@ -33,7 +35,7 @@ Basic requires `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`. It never replaces fail
 - An ARC-1 app with XSUAA, Destination and Connectivity bindings.
 - A Cloud Connector mapping for each SAP target with [required ADT paths](btp-destination-setup.md#cloud-connector-url-path-reference) and verified internal HTTPS.
 - For PP, working [certificate trust and user mapping](principal-propagation-setup.md).
-- Destination and IAM owners who can create subaccount destinations and assign a test user.
+- Destination and identity administrators who can create subaccount destinations and assign a test user.
 
 <a id="1-enable-the-mode-in-the-mta-override"></a>
 
@@ -49,7 +51,7 @@ modules:
       ARC1_CACHE: none
 ```
 
-The mode also requires HTTP transport, XSUAA, standard tools, UI/plugins off and no shared cookies or direct SAP credentials. See the [startup contract](multi-target-administration.md#startup-contract).
+The mode also requires HTTP transport, XSUAA, standard tools, UI/plugins off and no shared cookies or direct SAP credentials. See the [startup requirements](multi-target-administration.md#startup-contract).
 
 For a multi-only app, keep `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` absent. An intentional [single-target `/mcp` alongside it](multi-target-administration.md#optional-single-target-mcp) has separate policy.
 
@@ -98,9 +100,9 @@ Assign `ARC-1 Viewer (<space>)` to a test user, then configure a [pinned or aggr
 ### 7. Verify one safe read
 
 1. Check `/health` reports `components.multiTarget.status: "ready"`.
-2. On `/multi/mcp`, use an Admin connection to call `SAPTargets` and inspect the expected active target and any exclusions. Basic acceptance requires this check; PP acceptance may proceed without an Admin test identity if the Viewer read succeeds.
-3. As Viewer, call `SAPRead` with `type: "SYSTEM"`. On the aggregate connection, also pass `target: "A4H/100"`.
-4. Verify the backend SAP user through [Basis identity evidence](principal-propagation-setup.md#verify-the-backend-identity). `SYSTEM.user` alone is not proof. For PP, record the intended human; for Basic, the intended technical user and `identity: "shared"` catalog label.
+2. On `/multi/mcp`, use an Admin connection to call `SAPTargets` and inspect the expected active target and any exclusions. Basic setup requires this check; PP setup may proceed without an Admin test identity if the Viewer read succeeds.
+3. As Viewer, call `SAPRead` with `type: "COMPONENTS"`, then `SAPSearch` for a known object. On the aggregate connection, pass `target: "A4H/100"` on both calls.
+4. Verify the backend SAP user through [SAP user verification](principal-propagation-setup.md#verify-the-backend-identity). `SYSTEM.user` alone is not proof. For PP, record the intended human; for Basic, the intended technical user and `identity: "shared"` catalog label.
 5. For PP, use an approved unmapped or unauthorized test identity to confirm failure without shared-user fallback.
 
 Record health, safe-read access and backend identity separately in the [worksheet](btp-setup-worksheet.md). A ready registry can have zero targets; a successful read does not establish client-data isolation.
@@ -158,9 +160,9 @@ On `/multi/mcp`:
 
 ### Required fields and validation
 
-Use the [destination field contract](btp-destination-setup.md#multi-target-field-contract) for required fields, language, descriptions and validation. Only four `arc1.*` properties are supported: `arc1.enabled`, `arc1.target_alias`, `arc1.allow_data_preview`, and `arc1.allow_free_sql`.
+Use the [destination fields](btp-destination-setup.md#multi-target-field-contract) for required fields, language, descriptions and validation. Only four `arc1.*` properties are supported: `arc1.enabled`, `arc1.target_alias`, `arc1.allow_data_preview`, and `arc1.allow_free_sql`.
 
-Real `sap-sysid` and three-digit `sap-client` are mandatory. Descriptions must be factual labels; do not include instructions or secrets. Unknown or write-related properties quarantine the destination.
+Real `sap-sysid` and three-digit `sap-client` are mandatory. Descriptions must be factual labels; do not include instructions or secrets. Unknown or write-related `arc1.*` properties quarantine the destination.
 
 ### Systems that reuse the same SID and client
 
@@ -198,7 +200,9 @@ arc1.allow_free_sql=true
 
 Both target switches default to false. Preview needs the app data ceiling and target preview opt-in; SQL needs the app free-SQL ceiling and target SQL opt-in. XSUAA scopes and SAP authorization must also allow the call. An enabled app ceiling does not enable all targets. See [RAM sizing](btp-administration.md#data-preview-ram-sizing) before increasing result limits.
 
-### Clone reviewed destinations carefully
+<a id="clone-reviewed-destinations-carefully"></a>
+
+### Copy destinations carefully
 
 Review name, URL, SID/client, identity, Connector mapping, description and data policy for every copy. Destination exports can contain credentials. Use [sanitized templates](btp-destination-setup.md#destination-importexport) for sharing.
 
@@ -263,16 +267,17 @@ For one target, create `.vscode/mcp.json`:
 }
 ```
 
-For several targets, use the same structure with the URL `https://<arc1-route>/multi/mcp`. Both use XSUAA OAuth. Choose pinned connections when wrong-target reads would be unacceptable; separate deployments provide stronger isolation for lookalike production and non-production systems.
+For several targets, use the same structure with the URL `https://<arc1-route>/multi/mcp`. Both use XSUAA OAuth. On an aggregate connection, a model can select the wrong allowed target and disclose its source, table data or SQL results while treating them as another system's data. Choose pinned connections to reduce that risk; use separate deployments for lookalike systems when a wrong-target read is unacceptable.
 
 ## Quick troubleshooting
 
 | Symptom | Next check |
 |---|---|
-| App exits | `cf logs arc1-mcp-server --recent`; [startup contract](multi-target-administration.md#startup-contract) |
+| App exits | `cf logs arc1-mcp-server --recent`; [startup requirements](multi-target-administration.md#startup-contract) |
 | Health component is `error` | Admin `SAPTargets`; discovery and enabled-target count |
 | Target missing | Subaccount scope, `arc1.enabled`, required fields, conflicts, then restart |
 | `SAPTargets` missing | Aggregate URL, number of active targets, user role and deny rules |
+| Viewer sees no SAP tools | Expected with zero active targets. Repair discovery/configuration and restart; an Admin can still call `SAPTargets` on `/multi/mcp`. |
 | Data/SQL missing or denied | App ceiling, target opt-in, XSUAA scope and SAP authorization |
 | PP or Basic authentication fails | [Failure codes and retry rules](multi-target-administration.md#user-access-failures-and-retries) |
 

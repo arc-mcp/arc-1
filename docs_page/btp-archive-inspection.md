@@ -1,10 +1,12 @@
 # Inspect a BTP deployment archive
 
-Before deploying an MTAR, check **every nested application payload** for credentials and local files. Run the Bash or PowerShell check below in a protected workspace from the reviewed ARC-1 checkout.
+Before deploying an MTAR, check **every nested application payload** for credentials and local files. Run the Bash or PowerShell check below from the ARC-1 checkout used to build the archive.
 
-An MTAR contains `<module>/data.zip` payloads. Listing only the outer archive misses application files. The checks reject missing/unreadable payloads and known sensitive filenames. The UI AppRouter's root `.npmrc` is allowed only when it exactly matches `btp/approuter/.npmrc` in the reviewed source.
+An MTAR contains `<module>/data.zip` payloads. Listing only the outer archive misses application files. The checks reject missing/unreadable payloads and known sensitive filenames. The UI AppRouter's root `.npmrc` is allowed only when it exactly matches `btp/approuter/.npmrc` in that checkout.
 
-## Bash
+<a id="bash"></a>
+
+## Bash or zsh
 
 ```bash
 inspect_mtar() (
@@ -18,7 +20,7 @@ inspect_mtar() (
     { echo 'FAIL: no <module>/data.zip member'; return 1; }
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' EXIT
-  for member in $members; do
+  while IFS= read -r member; do
     unzip -p "$mtar" "$member" > "$tmp/payload.zip" || { echo "FAIL: cannot extract $member"; return 1; }
     entries=$(unzip -Z1 "$tmp/payload.zip") || { echo "FAIL: cannot read $member"; return 1; }
     n=$(printf '%s\n' "$entries" | wc -l) || { echo "FAIL: cannot count $member"; return 1; }
@@ -30,22 +32,27 @@ inspect_mtar() (
       unzip -p "$tmp/payload.zip" .npmrc > "$tmp/approuter.npmrc" ||
         { echo 'FAIL: cannot extract arc1-ui-router/.npmrc'; return 1; }
       cmp -s "$tmp/approuter.npmrc" btp/approuter/.npmrc ||
-        { echo 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'; return 1; }
+        { echo 'FAIL: packaged arc1-ui-router/.npmrc differs from the source checkout'; return 1; }
       bad=$(printf '%s\n' "$bad" | grep -Ev '^\.npmrc$' || true)
     fi
     [ -z "$bad" ] || { printf '%s\n' "$bad"; echo "FAIL: denied path in $member"; return 1; }
-  done
-  echo 'PASS: every payload inspected, no denied paths or unreviewed npm config'
+  done <<< "$members"
+  echo 'PASS: every payload inspected, no denied paths or unexpected npm config'
 )
 inspect_mtar "mta_archives/arc1-mcp_<version>.mtar"
 ```
 
-The function returns success only after every payload passes. Pass the exact archive you intend to deploy; the function prints its path. The subshell keeps its options and cleanup trap local.
+The function returns success only after every payload passes. Use the exact archive path, without a glob: multiple archives are not scanned automatically. The subshell keeps its options and cleanup trap local.
 
 Review the full payload listing for unexpected files too. Substitute the exact archive and member names printed above:
 
 ```bash
-unzip -p "<exact-path-to.mtar>" '<module>/data.zip' > payload.zip && unzip -l payload.zip | less
+(
+  arc1_inspect_dir=$(mktemp -d) || exit 1
+  trap 'rm -rf "$arc1_inspect_dir"' EXIT
+  unzip -p "<exact-path-to.mtar>" '<module>/data.zip' > "$arc1_inspect_dir/payload.zip" || exit 1
+  unzip -l "$arc1_inspect_dir/payload.zip" | less
+)
 ```
 
 ## PowerShell
@@ -79,7 +86,7 @@ try {
       $sourceNpmrc = (Resolve-Path 'btp/approuter/.npmrc').Path
       if ((Get-FileHash $allowedNpmrc -Algorithm SHA256).Hash -ne
           (Get-FileHash $sourceNpmrc -Algorithm SHA256).Hash) {
-        throw 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'
+        throw 'FAIL: packaged arc1-ui-router/.npmrc differs from the source checkout'
       }
     }
     $bad += $files | Where-Object {
@@ -88,7 +95,7 @@ try {
     }
   }
   if ($bad) { $bad.FullName; throw 'FAIL: denied path in payload' }
-  'PASS: every payload inspected, no denied paths or unreviewed npm config'
+  'PASS: every payload inspected, no denied paths or unexpected npm config'
 } finally {
   Remove-Item "$tmp.zip","$tmp-outer","$tmp-payload" -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -96,7 +103,7 @@ try {
 
 The application payload must not contain `.env*`, service-key exports, customer `.mtaext` files,
 private keys, certificates, local MCP configuration, source tests, operator artifacts, or an
-`.npmrc` other than the exact reviewed `btp/approuter/.npmrc` in the UI AppRouter payload. The MTA
+`.npmrc` other than the exact `btp/approuter/.npmrc` from the source checkout in the UI AppRouter payload. The MTA
 build has an explicit denylist and CI coverage for critical names; archive inspection is still a
 release gate because a future file type can evade a denylist.
 

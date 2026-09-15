@@ -1,4 +1,4 @@
-# Configuration Precedence
+# Configuration precedence
 
 If a setting has no effect, inspect the configuration of the running server. Values in an HTTP client configuration do not change the remote server.
 
@@ -26,19 +26,23 @@ The rule above is universal. What differs across modes is **where `process.env` 
 | Docker | `-e` or `--env-file` | Only if a file is mounted into the container's working directory |
 | BTP Cloud Foundry | MTA/manifest, `cf set-env`, service bindings | Repository `.env` files are excluded from shipped artifacts |
 
-### The one that surprises people: HTTP mode
+### Remote HTTP configuration
 
 An MCP client configured with `"url": "https://arc1.example.com/mcp"` sends requests to an existing server.
 Its local `env` block is not sent. Change the remote server's configuration and restart it.
 
 ## How to debug "which value am I actually using?"
 
-ARC-1 logs an effective-config summary on startup. The most useful lines are:
+Search startup logs for `auth:` and `effective safety:`. For example, a read-only API-key
+server with Basic SAP authentication logs these message bodies:
 
+```text
+auth: MCP=[api-keys] SAP=basic (shared)
+effective safety: writes=NO data=NO sql=NO packages=[$TMP] transports=NO git=NO gzipDataPreview=NO blockedDataSources=0 denyActions=0
 ```
-INFO: auth: MCP=[…] SAP=[…] (shared|per-user) [disable-saml=on?]
-INFO: safety: writes=… data=… freeSQL=… transports=… git=… packages=…
-```
+
+`effective policy resolved` carries the same settings as structured fields. These startup messages
+go to the normal logger; the audit file contains request events rather than every startup message.
 
 Run `arc1 config show` with the same arguments, environment and working directory as the server. It shows resolved values and their source labels. Dotenv has already merged file values into the environment at startup.
 

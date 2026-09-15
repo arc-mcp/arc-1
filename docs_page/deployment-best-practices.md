@@ -1,4 +1,4 @@
-# Deployment Design
+# Deployment design
 
 <a id="arc-1-deployment-best-practices"></a>
 
@@ -22,8 +22,9 @@ Several users can share it through PP or per-user BTP ABAP token exchange.
 ### Multi-user within each instance
 
 For human access, use per-user SAP identities. Prefer separate strict PP and API-key automation instances.
-A mixed single-target instance is supported with explicit `SAP_PP_STRICT=false`; JWT uses PP, API keys use the shared identity.
-Failed PP never falls back to a shared user.
+With PP enabled, set `SAP_PP_STRICT=true` explicitly to reject API-key/non-JWT tool calls.
+If unset or `false`, API-key calls use the configured shared SAP client and startup warns about mixed identities.
+JWT PP failures always return an error; they never fall back to the shared user.
 
 ### Scaling out: what changes at more than one instance
 
@@ -118,7 +119,7 @@ See [proxy requirements](security-guide.md#7-reverse-proxy-requirements).
 | `mta.yaml` | Tracked MTA services and target-free defaults |
 | `mta-overrides.mtaext.example` | Template to copy for a landscape extension |
 | `mta-*.mtaext` | Local, gitignored landscape settings |
-| `manifest.yml` / `manifest-btp-abap.yml` | Direct CF deployment manifests |
+| `manifest.yml` / `manifest-btp-abap.yml` | Direct CF templates; inspect before use. The BTP ABAP template enables writes, free SQL and transport writes and uses `:latest`. Prefer the read-only MTA setup. |
 | `Dockerfile` | Maintained container build |
 | `.env.example` | Local configuration template |
 | `xs-security.json` | XSUAA scopes, roles and redirect policy; update through its lifecycle owner |

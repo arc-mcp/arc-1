@@ -52,6 +52,7 @@ on another image.
 <a id="unlocking-the-developer-user"></a>
 
 Create or configure an ADT developer user in the intended client, commonly `001` for the trial.
+The 2023 image includes `DEVELOPER`; confirm the supplied users for your selected tag.
 Use `SU01` to maintain or unlock the user. Test writes need the relevant development authorizations;
 a successful `DDIC` login is not evidence of those permissions.
 
@@ -117,7 +118,7 @@ and identity steps; the [destination reference](btp-destination-setup.md) owns t
 If your trial image includes Cloud Connector, check its startup instructions. The 2023 image uses:
 
 ```bash
-docker exec a4h rcscc_daemon start
+docker exec a4h /usr/local/sbin/rcscc_daemon start
 ```
 
 Keep its administration interface reachable only through your administrative access path.
@@ -132,7 +133,11 @@ TEST_SAP_URL=https://sap.example.com
 TEST_SAP_USER=YOUR_TEST_USER
 TEST_SAP_PASSWORD=YOUR_TEST_PASSWORD
 TEST_SAP_CLIENT=001
+TEST_SAP_INSECURE=false
 ```
+
+For a self-signed development endpoint only, `TEST_SAP_INSECURE=true` disables TLS verification;
+keep it `false` for the trusted reverse-proxy endpoint above.
 
 These suites use a real SAP system; some create, activate, and delete test objects.
 Use a dedicated development system and select the suite you need:
@@ -170,7 +175,7 @@ the live SAP lanes. Use manual dispatch when a live run is needed.
 | --- | --- |
 | HTTP 401 | Client, credentials, password state, and user lock in `SU01` |
 | HTTP 403 on ADT | ADT service activation and the user's SAP authorization |
-| HTTP 503 under parallel tests | SAP dialog work-process availability, abandoned sessions, and [ARC-1 concurrency](rate-limiting.md) |
+| HTTP 503 during tests | SAP dialog work-process availability, abandoned sessions, and [test-load tuning](#work-process-tuning) |
 | Invalid or expired license | Trial image's license-renewal procedure |
 | TLS error | Public hostname, certificate chain, and CA trust |
 | Test object already exists | Prior interrupted run and fixture cleanup; inspect the object before deleting it |
@@ -179,8 +184,43 @@ the live SAP lanes. Use manual dispatch when a live run is needed.
 <a id="work-process-tuning"></a>
 <a id="session-timeout-tuning"></a>
 
-Tune SAP work processes and session timeouts with the system owner based on observed load.
-Start by reducing test concurrency; do not copy test-host profile values into another landscape.
+### Tune test load and idle sessions
+
+Integration test files run serially by default. If you enabled `TEST_FILE_PARALLELISM=true`, unset
+it before retrying an overloaded system. Also check `ARC1_MAX_CONCURRENT` on the test server and
+other clients using SAP. Serial test files can still perform concurrent requests.
+
+Use `SM50` to inspect work-process use and `RZ11` to read the current values and documentation:
+
+| Parameter | What to check |
+| --- | --- |
+| `rdisp/wp_no_dia` | Dialog work-process count. Leave capacity for interactive users; increase only when CPU and memory can support the additional processes. |
+| `rdisp/plugin_auto_logout` | Idle HTTP application-session lifetime. Shortening it can release abandoned stateful sessions, but can also expire an editor's locks. |
+| `http/security_session_timeout` | Security-session lifetime. Coordinate it with application-session timeouts; a shorter value can force reauthentication first. |
+| `icm/keep_alive_timeout` | Idle network-connection lifetime. This does **not** release the ABAP user context. |
+
+SAP explains the distinction in its [ICM timeout reference](https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/0c333adb55cd4dbf8e92a5175703224c/15f6c60fdc8642bfbfeecb1c211c89df.html)
+and [session-timeout diagnosis](https://userapps.support.sap.com/sap/support/knowledge/en/1914112).
+The earlier trial's fixed values are not a sizing recommendation for a different image or workload.
+
+For a persistent change, back up and edit the instance profile (`RZ10`, or the profile file in this
+self-hosted trial). Check its path first:
+
+```bash
+docker exec a4h ls /usr/sap/A4H/SYS/profile
+```
+
+If the parameter requires a restart, stop the ABAP instance during a test window. Wait for it to
+stop before starting it; check readiness with `GetProcessList` again afterward:
+
+```bash
+docker exec a4h /usr/sap/hostctrl/exe/sapcontrol -nr 00 -function Stop
+docker exec a4h /usr/sap/hostctrl/exe/sapcontrol -nr 00 -function GetProcessList
+# After the instance has stopped:
+docker exec a4h /usr/sap/hostctrl/exe/sapcontrol -nr 00 -function Start
+```
+
+Rerun the failing test and inspect `SM50` before raising concurrency again.
 
 <a id="writes-fail-with-423-invalid-lock-handle-nw-751"></a>
 
@@ -193,7 +233,7 @@ returned a handle.
 Have the SAP owner evaluate the
 [`abapfs_extensions` stateful-session enhancement](https://github.com/marcellourbani/abapfs_extensions)
 for that system. Review and activate it through the normal development process, then retry a small
-write in a test package. The [earlier trial notes](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/sap-trial-setup.md#writes-fail-with-423-invalid-lock-handle-nw-751)
+write in a test package. The [earlier trial notes](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/sap-trial-setup.md#writes-fail-with-423-invalid-lock-handle-nw--751)
 record the manual implementation and observed release behavior.
 
 For certificate-based BTP access, continue with

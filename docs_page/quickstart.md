@@ -11,6 +11,10 @@ For a team server, use [Deployment](deployment.md); for BTP ABAP, use
 - Network access to your SAP system's ADT HTTPS endpoint.
 - An SAP user and password with ADT read authorization.
 
+Use the HTTPS host and port supplied by your SAP administrator. Include a port only when the
+endpoint requires one, for example `https://sap.example.com:44300`. A reverse proxy commonly uses
+standard port 443 (`https://sap.example.com`); the SAP GUI application-server address may differ.
+
 ## 1. Configure your client
 
 Your client starts ARC-1 and passes it the SAP connection settings. Replace the four example values
@@ -66,8 +70,8 @@ below. Use a private user configuration for credentials; do not commit a file co
 
 === "GitHub Copilot / Eclipse"
 
-    Open the GitHub Copilot preferences and select **MCP**. Add the `servers` configuration
-    from the VS Code tab, then choose **Apply and Close**. Open Copilot Chat in **Agent** mode.
+    Follow [GitHub Copilot in Eclipse](skills-eclipse.md#arc-1-mcp-in-eclipse) for the complete MCP
+    configuration, then return to **Verify a read** below.
 
 For other clients, configure a stdio server that launches `npx -y arc-1@latest` with the same
 four environment variables. The JSON wrapper depends on the client.

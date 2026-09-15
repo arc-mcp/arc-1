@@ -1,9 +1,7 @@
 # Write text elements
 
-Read, replace, or clear one part of a class, program, or function-group text pool.
-
-Read and write an object's **text pool** via the ADT textelements service. Three subobjects, each
-with its own media type: `symbols` (the numbered `'Text'(001)` literals), `selections` (a report's
+Read, replace, or clear one part of a class, program, or function-group **text pool** via ADT.
+Each of its three parts has its own media type: `symbols` (the numbered `'Text'(001)` literals), `selections` (a report's
 selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`) and `headings` (list header and
 column headers). Writes support `symbols` for classes and all three parts for `PROG` and `FUGR`.
 Selection texts require selection-screen fields in the program/function group source.
@@ -32,8 +30,7 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw
   parameter names.
-- **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent
-  on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
+- **On-prem only, discovery-gated.** When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
 - **Reads:** `objectType` defaults to `PROG`; use `CLAS` or `FUGR` explicitly for those objects.
   Whole-pool reads label the non-empty raw bodies of supported parts. SAP may return empty-value
@@ -45,7 +42,8 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   placeholders on the verified systems). Class writes remain restricted to `symbols`; attempts
   to write `selections` or `headings` are refused before HTTP.
 
-Text-pool operations were verified on SAP_BASIS 758. Other releases may return different bodies;
-start from the part returned by SAPRead.
+The service was verified on SAP_BASIS 758 and 816; the full program/function-group write lifecycle
+was verified on 758. The service is absent on the tested NW 7.50 system. Other releases may
+return different bodies. Start from the part returned by SAPRead.
 
 [All SAPWrite parameters](sap-write.md)

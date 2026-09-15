@@ -1,4 +1,6 @@
-# Authentication Test Process
+# Authentication tests
+
+<a id="authentication-test-process"></a>
 
 Verify three things after an auth change: valid users can connect, invalid credentials are rejected,
 and SAP uses the intended identity. Choose the section matching your deployment.
@@ -6,14 +8,14 @@ and SAP uses the intended identity. Choose the section matching your deployment.
 ## Prerequisites
 
 - An ARC-1 HTTP server configured through [API keys](api-key-setup.md), [OIDC](oauth-jwt-setup.md) or [XSUAA](xsuaa-setup.md).
-- Its reviewed MCP URL and a valid key/token in your local shell as `ARC1_TEST_TOKEN`.
+- Its reviewed MCP URL and a valid key/token in your local shell as `ARC1_TEST_TOKEN`. Use your existing API key or [acquire an OIDC access token](oauth-jwt-setup.md#manual-token-testing).
 - A test user with source-read access; keep tokens out of logs and tickets.
 
 ```bash
 ARC1_TEST_URL=https://arc1.example.com/mcp
 ```
 
-These runtime checks do not require a source checkout or a build.
+These runtime checks do not require a source checkout or a build. Run `unset ARC1_TEST_TOKEN` after the tests.
 
 ## API Key Setup
 
@@ -85,7 +87,7 @@ Complete [PP setup](principal-propagation-setup.md) before testing. Then:
 1. Run a safe SAP read from a JWT-authenticated MCP client.
 2. Ask the SAP owner to verify the mapped SAP user in the security audit log (`SM20`) or relevant session evidence (`SM04`). ARC-1's username alone does not prove SAP identity.
 3. Repeat with a second mapped test user to check per-user separation.
-4. For explicit `SAP_PP_STRICT=true`, verify non-JWT tool calls are rejected. For supported mixed mode (`false`), verify API-key calls use the intended shared identity.
+4. For explicit `SAP_PP_STRICT=true`, verify non-JWT tool calls are rejected. For supported mixed mode (unset or `false`), verify API-key calls use the intended shared identity and the startup warning is present.
 5. In staging, verify a user with no valid PP mapping receives an error and never reaches SAP as the shared user.
 
 ## BTP / Cloud Foundry

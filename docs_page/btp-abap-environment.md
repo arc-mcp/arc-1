@@ -1,4 +1,4 @@
-# BTP ABAP Environment Setup
+# BTP ABAP Environment setup
 
 Connect ARC-1 to SAP BTP ABAP Environment (Steampunk). Choose the connection for your environment:
 
@@ -19,9 +19,11 @@ Both call the `.abap.` API host and need no Cloud Connector. Leave `SAP_DISABLE_
 
 XSUAA authenticates the MCP user. Destination Service exchanges that user's token for an ABAP token, so SAP applies their own permissions.
 
-### 1. Bind the BTP services
+<a id="1-bind-the-btp-services"></a>
 
-Use the [Cloud Foundry deployment runbook](btp-cloud-foundry-deployment.md) for the app, XSUAA and Destination bindings. The cloud connection does not require Connectivity or Cloud Connector. In the runbook's extension step, use the ABAP settings in step 3 below instead of an on-premise PP profile.
+### 1. Prepare the ARC-1 checkout
+
+Complete [deployment steps 1–3](btp-cloud-foundry-deployment.md#1-choose-the-topology-before-configuring-anything), then clone the source and run `npm ci` as shown at the start of step 4. Return here for the destination and extension below; do not select an on-premise profile. The MTA will bind XSUAA and Destination during deployment. This cloud connection does not need Connectivity or Cloud Connector; the base MTA's Connectivity binding is harmless.
 
 ### 2. Create the per-user destination
 
@@ -31,7 +33,7 @@ Create an HTTP destination in **BTP Cockpit → Connectivity → Destinations**:
 |---|---|
 | `Name` | `ABAP_PP` |
 | `Type` | `HTTP` |
-| `URL` | Service key `url`: `https://<guid>.abap.<region>.hana.ondemand.com` |
+| `URL` | Service key `abap.url` when present, otherwise `url`: `https://<guid>.abap.<region>.hana.ondemand.com` |
 | `ProxyType` | `Internet` |
 | `Authentication` | `OAuth2UserTokenExchange` |
 | `tokenServiceURL` | Service key `uaa.url` plus `/oauth/token` |
@@ -65,7 +67,7 @@ modules:
       SAP_ALLOW_GIT_WRITES: "false"
 ```
 
-Keep any separate `SAP_BTP_PP_DESTINATION` absent unless it intentionally names this cloud destination. Complete the runbook's validation, archive inspection, deployment and role checks.
+Keep any separate `SAP_BTP_PP_DESTINATION` absent unless it intentionally names this cloud destination. Continue at [deployment step 5](btp-cloud-foundry-deployment.md#5-validate-build-and-inspect-the-mtar) for validation, archive inspection and deployment, then complete the DCR and role checks.
 
 ### 4. Grant users access
 
@@ -83,7 +85,7 @@ Check the deployed app's logs after a safe read:
 cf logs arc1-mcp-server --recent
 ```
 
-With debug logging enabled, successful setup includes `PP: using destination-exchanged Bearer token (OAuth2UserTokenExchange)` and `auth_pp_created` with `success:true`. These confirm exchange/client creation; verify the actual ABAP user separately with the ABAP administrator. A successful setup log alone does not prove backend identity.
+With `SAP_VERBOSE=true`, successful setup logs include `PP: using destination-exchanged Bearer token (OAuth2UserTokenExchange)` and `auth_pp_created` with `success:true`. These confirm exchange/client creation; verify the actual ABAP user separately with the ABAP administrator. A successful setup log alone does not prove backend identity.
 
 ## Local development: service key + browser login
 
@@ -165,11 +167,11 @@ For CF, put these in the protected `.mtaext` and deploy. `$TMP` is unavailable a
 
 ARC-1 uses ABAP Cloud creation metadata automatically. Backend feature support remains authoritative; UIAD writes are unverified on ABAP Environment, and DSFD/DTDC support is discovery-gated.
 
-## Constraints vs On-Premise
+## Constraints vs on-premise
 
 Use SAP's [ABAP Cloud development model](https://help.sap.com/docs/abap-cloud/abap-cloud/abap-cloud-in-nutshell) for language, API and transport constraints. These apply even when ARC-1 enables a capability.
 
-## Configuration Reference
+## Configuration reference
 
 ### Deployed BTP CF destination
 
@@ -204,13 +206,12 @@ Destination Service auth token error … Token header claim [kid] references unk
 
 The systems may be in different identity zones. Check their subaccounts and destination authentication before changing roles.
 
-**Fix — pick one** (SAP's rule in [Routing via Destination](https://help.sap.com/docs/ABAP_ENVIRONMENT/250515df61b74848810389e964f8c367/97d7a02cd6fd4f579fd96f41ee0d0c1d.html):
+**Fix — pick one** (SAP's rule in [Routing via Destination](https://help.sap.com/docs/btp/sap-business-technology-platform/routing-via-destination):
 same subaccount → `OAuth2UserTokenExchange`, different subaccounts → `SAMLAssertion`):
 
 1. **Same subaccount (simplest):** deploy ARC-1 into the ABAP Environment's subaccount and keep the
    destination as-is.
-2. **Different subaccounts:** switch the destination to `SAMLAssertion` (or
-   `OAuth2SAMLBearerAssertion`) and register the source subaccount's Destination service as a trusted
+2. **Different subaccounts:** configure the documented `SAMLAssertion` destination and register the source subaccount's Destination service as a trusted
    IdP in the ABAP environment's subaccount — see
    [OAuth SAML Bearer Assertion Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-saml-bearer-assertion-authentication)
    and [User Propagation via SAML 2.0 Bearer Assertion Flow](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/user-propagation-via-saml-2-0-bearer-assertion-flow).
@@ -230,7 +231,7 @@ scenario (e.g. remote ATC) needs a communication arrangement. See the
 
 ### Browser opens but login fails / the browser never opens
 
-Verify the service key is current (recreate it in the cockpit if unsure) and that its `uaa.url`
+Verify the service key is current with the ABAP administrator and that its `uaa.url`
 matches the system's region. When ARC-1 cannot launch a browser it logs the authorization URL —
 copy/paste only works if that browser can reach the loopback callback, which rules out most remote
 and headless hosts. Use the [deployed destination path](#recommended-btp-deployment-with-a-per-user-destination)
@@ -244,14 +245,13 @@ host.
 
 ### Timeouts / `ECONNREFUSED` on a free-tier system
 
-Free-tier instances are stopped automatically; restart from the Landscape Portal
-([prerequisites](btp-abap-prerequisites.md#1-provision-the-instance)).
+Free-tier systems stop automatically each night. Start the system through **Landscape Portal → Manage System Hibernation** before retrying; opening the Fiori launchpad does not start it. See SAP's [hibernation guidance](https://help.sap.com/docs/btp/btp-developers-guide/use-system-hibernation).
 
 ## References
 
 - [SAP-Side Prerequisites](btp-abap-prerequisites.md) — provisioning, booster, developer role, service key
 - [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) · [BTP Destination Setup](btp-destination-setup.md) · [Principal Propagation](principal-propagation-setup.md)
 - [S/4HANA Public Cloud](s4hana-public-cloud.md) — the sibling ABAP Cloud setup (`SAMLAssertion`)
-- SAP: [OAuth User Token Exchange Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication) · [Routing via Destination](https://help.sap.com/docs/ABAP_ENVIRONMENT/250515df61b74848810389e964f8c367/97d7a02cd6fd4f579fd96f41ee0d0c1d.html)
+- SAP: [OAuth User Token Exchange Authentication](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/oauth-user-token-exchange-authentication) · [Routing via Destination](https://help.sap.com/docs/btp/sap-business-technology-platform/routing-via-destination)
 - Testing ARC-1 against a BTP ABAP system (contributors): [Authentication Test Process](auth-test-process.md#btp-abap-environment-service-key)
 - Design background: [BTP ABAP Environment connectivity report](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-04-01-btp-abap-environment-connectivity.md)

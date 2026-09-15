@@ -1,14 +1,12 @@
 # SAPGit
 
-Work with abapGit or gCTS repositories. The backend must be installed and available on SAP; mutations require both `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_GIT_WRITES=true`.
+Work with abapGit or gCTS repositories installed on SAP. ARC-1 prefers gCTS when available,
+otherwise abapGit; set `backend` to choose explicitly. gCTS is read-only. abapGit mutations require
+both `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_GIT_WRITES=true`.
 
 ```text
 SAPGit(action="list_repos", backend="abapgit")
 ```
-
-Git-based ABAP repository workflows with backend auto-selection: **gCTS** is preferred when available,
-otherwise ARC-1 uses the **abapGit ADT bridge**. gCTS is currently read-only in ARC-1; its mutation
-actions fail closed before any mutating HTTP request.
 
 ## Parameters
 
@@ -26,7 +24,7 @@ actions fail closed before any mutating HTTP request.
 | `objects` | array | No | For abapGit `push`, the changed objects to commit (`[{type,name}]`); omit to push every local change |
 | `user` | string | No | Remote Git username |
 | `password` | string | No | Remote Git password |
-| `token` | string | No | abapGit remote token, sent as basic auth with user `x-access-token` (GitHub convention) unless `user` is also given. gCTS mutations, including credential-bearing repository creation, are quarantined. |
+| `token` | string | No | abapGit remote token, sent as basic auth with user `x-access-token` (GitHub convention) unless `user` is also given. gCTS mutations, including credential-bearing repository creation, are disabled. |
 | `limit` | number | No | Limit for history queries (gCTS) |
 
 ## Backend support matrix
@@ -35,7 +33,7 @@ actions fail closed before any mutating HTTP request.
 - **gCTS reads:** `whoami`, `config`, `branches`, `history`, `objects`
 - **abapGit only:** `external_info`, `check`, `stage`, `clone`, `pull`, `push`, `switch_branch`,
   `create_branch`, `unlink`
-- **gCTS mutation names, currently quarantined:** `clone`, `pull`, `switch_branch`,
+- **gCTS mutation names, currently disabled:** `clone`, `pull`, `switch_branch`,
   `create_branch`, `unlink`
 
 ## Safety and scope rules
@@ -46,13 +44,13 @@ actions fail closed before any mutating HTTP request.
 - `external_info` also requires those mutation gates. Although it returns metadata, SAP performs
   outbound network access to a caller-selected remote URL. All remote URLs must be absolute HTTPS
   without userinfo; `external_info` additionally rejects localhost and literal private/link-local
-  addresses. DNS-aware resolution/hostname allowlisting remains a follow-up.
+  addresses. It does not check DNS-resolved addresses or enforce a hostname allowlist.
 - Package-bound clone and repository actions that import, export, change branch, or unlink enforce the
   configured allowlist against the real server-side package. A caller-supplied package cannot widen
   that boundary. The allowlist must contain the exact repository subtree pattern (`<ROOT>/**`) or
   `*`; an exact root entry or a broad prefix such as `Z*` is not sufficient for these subtree-wide
   operations.
-- Every gCTS mutation is additionally quarantined and returns an error before HTTP mutation, even when
+- Every gCTS mutation is additionally disabled and returns an error before HTTP mutation, even when
   the write gates are enabled. Safe support is deferred until ARC-1 can stage without import, inventory
   affected objects, preflight authorization, deploy explicitly, confirm terminal state, and roll back.
 
@@ -62,7 +60,9 @@ bridge on every remote-touching call — `external_info`, `clone`, `pull`, `chec
 reads. They are request-scoped: never stored, never logged (the `Password` header is redacted). In CLI
 automation, load them from a protected JSON input or secret-backed workflow rather than literal argv.
 
-## Mutation evidence and retry contract
+<span id="mutation-evidence-and-retry-contract"></span>
+
+## Mutation results and retries
 
 - abapGit `clone`/`pull` responses report bridge object rows and repository readback, not complete
   import/activation reconciliation. Non-empty rows are returned with `verified:false`; an empty wrapper
@@ -76,16 +76,18 @@ automation, load them from a protected JSON input or secret-backed workflow rath
   repository is error/incomplete.
 
 For the latter incomplete outcomes, the mutation may already have happened. **Do not retry blindly**;
-inspect the remote/repository state first. The latest postcondition hardening is adversarially unit
-tested, but the final A4H pass sent no Git mutation and is not presented as final live verification.
+inspect the remote/repository state first.
 
 **abapGit push** stages first, then commits the objects you select: ARC-1 calls the stage endpoint, keeps
 the objects (with their file lists) that match `objects`, and sends them back with your `message`. Author
 and committer come from the git user abapGit has stored for the repo, so no identity parameters are needed.
 A push with no matching local change is reported as a no-op instead of an empty commit; a selected push
-uses the accepted-but-incomplete contract above.
+returns `accepted:true`, `verified:false` as described above.
 
 ## Examples
+
+The clone examples assume an existing `ZARC1` package and `SAP_ALLOWED_PACKAGES=ZARC1/**`,
+in addition to the required scopes and write settings.
 
 ```
 SAPGit(action="list_repos")
@@ -94,8 +96,8 @@ SAPGit(action="config", backend="gcts")
 SAPGit(action="history", backend="gcts", repoId="ZARC1", limit=20)
 SAPGit(action="external_info", backend="abapgit", url="https://github.com/abapGit-tests/CLAS.git")
 SAPGit(action="switch_branch", repoId="000000000006", branch="main", backend="abapgit")
-SAPGit(action="clone", backend="abapgit", package="$TMP", url="https://github.com/org/repo.git")
-SAPGit(action="clone", backend="abapgit", package="$TMP", url="https://github.com/org/private.git", token="ghp_…")
+SAPGit(action="clone", backend="abapgit", package="ZARC1", url="https://github.com/org/repo.git")
+SAPGit(action="clone", backend="abapgit", package="ZARC1", url="https://github.com/org/private.git", token="ghp_…")
 SAPGit(action="stage", backend="abapgit", repoId="000000000001")
 SAPGit(action="push", backend="abapgit", repoId="000000000001", message="Add order validation")
 ```

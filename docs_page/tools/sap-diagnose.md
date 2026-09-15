@@ -6,15 +6,6 @@ Run diagnostics such as ATC, ABAP Unit, short-dump inspection, and quickfix disc
 SAPDiagnose(action="dumps")
 ```
 
-Server-side code analysis and runtime diagnostics: syntax check, ABAP unit tests, ATC checks, CDS
-test-case scaffolding, active/inactive object state, short dumps (ST22), ABAP profiler trace
-arming/list/analysis, SM02 messages, Gateway errors, the on-prem STUSERTRACE authorization trace, an
-OData performance probe (`sap-statistics`), CDS Show-SQL, and ST05 trace control.
-
-Multi-target v1 includes `atc` and `unittest` under the existing `read` scope. They do not mutate
-repository objects, but they execute SAP workloads and may create transient worklists/results;
-administrators can disable them with `SAP_DENY_ACTIONS`.
-
 ## Parameters
 
 | Parameter | Type | Required | Description |
@@ -30,7 +21,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 | `includeSubpackages` | boolean | No | For `unittest` with `type="DEVC"`: include the package subtree. Default false selects only objects whose actual package is `name`. Rejected for other types/actions. |
 | `resultFormat` | string | No | For `unittest`: `legacy` (default), `structured`, or `junit`; JUnit uses SAP's public asynchronous AUnit endpoint when available and otherwise generates JUnit from the legacy result. For `atc`: `legacy` or `structured`; `junit` is rejected because ATC JUnit output is not implemented. Other actions reject this parameter. Dedicated CLI checks choose their required format automatically. |
 | `timeoutSeconds` | number | No | Overall execution/verification budget, `1..3600` seconds. Default `300` for `unittest`/`atc`, `600` for `unittest_ci`/`atc_ci`. Timeout cannot pass. |
-| `source` | string | No | Current source code (required for `quickfix` and `apply_quickfix`) |
+| `source` | string | No | Optional proposed source for a `syntax` dry run; nothing is saved. Required current source for `quickfix` and `apply_quickfix`. |
 | `line` | number | No | Source line number (required for `quickfix` and `apply_quickfix`) |
 | `column` | number | No | Source column number (optional for `quickfix` and `apply_quickfix`, default `0`) |
 | `proposalUri` | string | No | Quickfix proposal URI from `quickfix` response (required for `apply_quickfix`) |
@@ -66,9 +57,22 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 
 ## Actions
 
+Multi-target v1 includes `atc` and `unittest` under the existing `read` scope. They do not mutate
+repository objects, but they execute SAP workloads and may create transient worklists/results;
+administrators can disable them with `SAP_DENY_ACTIONS`.
+
 ### `syntax`
 
-Run SAP syntax check on an object. Returns errors/warnings with line, column, and message. Uses stored active source by default. Pass `version="inactive"` to check a saved draft before activation. It does not accept proposed source in place of the stored object.
+Run SAP syntax checking and return errors/warnings with line, column, and message. By default it
+checks stored active source. Pass `version="inactive"` for a saved draft, or `source` for proposed
+source without saving it:
+
+```text
+SAPDiagnose(action="syntax", type="CLAS", name="ZCL_ORDER", source="<complete proposed class source>")
+```
+
+SAP must be able to check the named object. If the result has `checked=false`, no check ran; do not
+treat an empty message list as approval to write or activate.
 
 ### `unittest`
 
@@ -83,7 +87,7 @@ SAPDiagnose(action="unittest", type="CLAS", name="ZCL_ORDER", resultFormat="stru
   JUnit uses SAP's package object set; legacy, coverage, and corroboration runs use resolved roots.
 - **Completeness:** ARC-1 checks package membership and active source before and after the run.
   Changed or unreadable source, invalid URIs, the 1,000-row package-search bound, and risk refusals
-  remain incomplete evidence. They are not passing tests.
+  leave the run incomplete. They are not passing tests.
 - **Output:** per-class/method status, alerts, and duration. `resultFormat="structured"` exposes
   outcome/completeness; `junit` uses native or generated JUnit and reconciles native results with a
   harmless legacy run so missing risk alerts cannot imply success.
@@ -104,7 +108,9 @@ Findings contain priority, check title, message, source URI, line, and quickfix 
 (`quickfixInfo`, `hasQuickfix`). Omit `variant` to bind SAP's configured default; the literal variant
 `DEFAULT` can be different. Unknown names are rejected rather than silently substituted.
 
-#### Variant evidence
+<span id="variant-evidence"></span>
+
+#### Selected check variant
 
 | `variantSource` | Meaning |
 |---|---|
@@ -113,7 +119,9 @@ Findings contain priority, check title, message, source URI, line, and quickfix 
 | `sapFallback` | Customizing was unavailable; SAP supplied the fallback |
 | `requestedUnverified` | A variant was requested, but listing failed and ARC-1 could not verify it |
 
-#### Completion evidence
+<span id="completion-evidence"></span>
+
+#### Check completion
 
 On asynchronous systems, ARC-1 follows a validated status location until `Completed`; unknown
 non-failure states keep polling. Older systems require a ten-second quiet interval over the full
@@ -130,7 +138,7 @@ worklist read.
 | `expectedFindingCount` | Deprecated alias of `findingStatistics.total`; does not establish completeness |
 | `truncated` | Compatibility field; false until SAP provides a reliable truncation signal |
 
-Missing/false object-set completeness, zero processed objects, malformed evidence, cancellation,
+Missing/false object-set completeness, zero processed objects, malformed results, cancellation,
 timeouts, or an unsettled worklist cannot pass. Default output contains `findings`, `variant`, and
 `variantSource`; incomplete default results are tool errors that still carry recovered findings.
 Structured callers must check completeness explicitly. Empty HTTP 201 run bodies do not provide
@@ -141,7 +149,7 @@ finding statistics.
 Pass 1–20 `objects` for one native worklist. The limit applies **before** deduplication; divide
 larger selections explicitly. Supported types are listed in the parameter table. DDIC `TABL`,
 `DTEL`, and `DOMA` use R3TR identities and need no editor/subtype lookup. `FUNC` and `INCL` are
-outside this batch contract; `DEVC` uses the single/package call.
+not supported in object batches; `DEVC` uses the single/package call.
 
 If a completed run omits selected objects, ARC-1 attempts one additional batch containing only
 those objects, with the same confirmed variant, SAP identity, and original timeout. It skips this
@@ -151,7 +159,7 @@ retries or automatic chunks.
 
 | Batch field | Meaning |
 |---|---|
-| `complete` | Must be true before treating the batch as evaluable |
+| `complete` | Must be true before evaluating the batch findings |
 | `coverage` | Ordered entries with canonical `type`, `name`, input `uri`, `status` (`reported`/`notReported`), nullable `findingCount`, and `worklistId` |
 | `findings` | Flat findings with owning `object` and `worklistId`; `uri` remains the actual source location |
 | `runs` | Evidence per run; totals describe the complete returned worklist |
@@ -164,7 +172,7 @@ Missing records remain unknown. Zero findings requires a unique object record in
 Findings for other supported roots, including repeated first-run objects, are excluded from that
 run's batch contribution. Unqualified child identities may belong to a selected container: their
 findings are retained, with incomplete results and unknown coverage counts. ARC-1 does not guess
-parentage. Unassigned, unowned, or contradictory evidence also remains incomplete.
+parentage. Findings without a clear owner, or with conflicting ownership, leave the result incomplete.
 
 Keep source stable while checking: two runs are separate observations, not an atomic snapshot.
 Default/legacy incomplete batches return a tool error. The generic CLI accepts the same input:
@@ -199,9 +207,9 @@ and active-source reconciliation:
 SAPDiagnose(action="unittest_ci", packages=["ZORDER"], includeReportXml=true)
 ```
 
-Empty, all-skipped, omitted-test or otherwise incomplete evidence returns `status="incomplete"`
+Empty, all-skipped, omitted-test or otherwise incomplete results return `status="incomplete"`
 and `fail=true`. Test failures also set `fail=true`. There are no risky-test or failure-bypass
-options. After a package execution/protocol failure, earlier evidence is retained and remaining
+options. After a package execution/protocol failure, earlier results are retained and remaining
 packages are marked unattempted.
 
 | Result field | Meaning |
@@ -234,7 +242,7 @@ list is truncated. Reports above the 2 MiB parsing limit are incomplete.
 | `summary` | `findingCount`, `errorCount`, `warningCount`, `infoCount` across the full report |
 | `findings` | Up to 200 rows with `file`, `message`, `source`, `severity`, and optional `line` |
 | `truncated` | More than 200 findings exist; the full set still determines the gate |
-| `incompleteReason`, `lastStatus`, `progress` | Available evidence for an incomplete run |
+| `incompleteReason`, `lastStatus`, `progress` | Available status details for an incomplete run |
 
 A local deadline or cancellation may leave a SAP job running. Inspect the returned `runPath` and
 last status/progress before starting another run.
@@ -257,11 +265,15 @@ Get SAP quickfix proposals for a specific source position (`name`, `type`, `sour
 
 ### `apply_quickfix`
 
-Apply one proposal (`proposalUri` + `proposalUserContent`) and return text deltas (range + replacement content). This does not write source; use `SAPWrite` to persist.
+Apply one proposal (`proposalUri` + `proposalUserContent`) and return text deltas (range +
+replacement content). It requires `write` scope and `SAP_ALLOW_WRITES=true`, although it does not
+save the deltas. Inspect them and use `SAPWrite` to persist the changed source.
 
 ### `dumps`
 
-List short dumps (ST22). Without `id`: returns recent dumps (filterable by `user`, `maxResults`). With `id`: returns full dump detail including error type, exception, program, stack trace, and formatted output.
+List short dumps (ST22), filtered by `user` and `maxResults`. Pass a returned `id` for detail.
+The default detail selects focused chapters; use `sections` for specific chapters or
+`includeFullText=true` for the full formatted dump.
 
 ### `traces`
 

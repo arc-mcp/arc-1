@@ -1,4 +1,6 @@
-# BTP ABAP Environment: SAP-Side Prerequisites
+# BTP ABAP Environment prerequisites
+
+<a id="btp-abap-environment-sap-side-prerequisites"></a>
 
 Prepare the SAP system and user access before configuring ARC-1. If Eclipse ADT already logs in and reads an object, continue to [BTP ABAP Environment setup](btp-abap-environment.md).
 
@@ -16,7 +18,7 @@ Prepare the SAP system and user access before configuring ARC-1. If Eclipse ADT 
 
 Create the ABAP Environment instance with `"is_development_allowed": true`; ARC-1 needs the same ADT access as Eclipse. Follow SAP's [customer-account setup](https://help.sap.com/docs/btp/sap-business-technology-platform/getting-started-with-customer-account-in-abap-environment) or [trial setup](https://developers.sap.com/mission.abap-env-trial-user.html).
 
-For free-tier eligibility, lifetime and availability, check SAP's current [service plans](https://help.sap.com/docs/btp/sap-business-technology-platform/commercial-information). A stopped system produces timeouts or `ECONNREFUSED`; check the Landscape Portal before debugging authentication.
+For free-tier eligibility, lifetime and availability, check SAP's current [service plans](https://help.sap.com/docs/sap-btp-abap-environment/abap-environment/commercial-information). Free instances stop automatically each night and must be started through the Landscape Portal. A stopped system can produce timeouts or `ECONNREFUSED`; check its state before debugging authentication.
 
 ## 2. Run the booster
 
@@ -41,9 +43,10 @@ the developer role is assigned to the user."*
 
 ## 4. Create a service key
 
-Create it on the ABAP instance in the cockpit and download the JSON. ARC-1 reads exactly four fields —
-`url` (the ABAP system), `uaa.url`, `uaa.clientid`, `uaa.clientsecret` — and uses them either for
-[local browser login](btp-abap-environment.md#local-development-service-key-browser-login) or as the
+Create it on the ABAP instance in the cockpit and download the JSON. ARC-1 requires
+`url`, `uaa.url`, `uaa.clientid`, and `uaa.clientsecret`. Local login uses optional `abap.url` and
+`abap.sapClient` as URL/client overrides. Use the key for
+[local browser login](btp-abap-environment.md#local-development-service-key-browser-login) or the
 OAuth client of a [per-user destination](btp-abap-environment.md#recommended-btp-deployment-with-a-per-user-destination).
 
 Keep the key outside the repository, for example under `~/.config/arc-1/`, with restricted permissions. It contains OAuth client credentials; never commit or share it.

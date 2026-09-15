@@ -1,4 +1,4 @@
-# Install the Agent Plugin
+# Install the agent plugin
 
 Install the ARC-1 server and SAP workflow skills together in an Agent Plugins-compatible client.
 For Claude, use [Install in Claude](install-in-claude.md).
@@ -90,7 +90,10 @@ Your computer's `.env` does not configure the cloud runner.
    copilot mcp get arc-1
    ```
 
-2. Ask the client to call `SAPRead(type="SYSTEM")`. Verify the returned SAP system and client.
+2. Ask the client to call `SAPRead(type="SYSTEM")` to check ADT access. It returns discovery
+   collections and the username known to ARC-1, not the SID or client. Confirm the endpoint/client
+   with your administrator; under principal propagation, use the
+   [backend identity check](principal-propagation-setup.md#verify-the-backend-identity).
    A successful MCP handshake alone does not prove SAP access.
 
 3. Start a [read workflow](mcp-usage.md). Writes, table data, and SQL remain controlled by the server
@@ -100,6 +103,7 @@ Your computer's `.env` does not configure the cloud runner.
 |---|---|
 | Plugin missing | Installation path, enablement, and whether the client needs a reload |
 | Skills appear, server missing | Node.js/`npx` on the IDE path; MCP process-launch output |
+| Missing SAP configuration | Expected until `${PLUGIN_DATA}/.env` exists; create it and restart the MCP server |
 | Server starts, SAP calls fail | Data-directory `.env`, network/TLS, credentials, and SAP authorization |
 | Duplicate tools or unexpected server | Disable the manually configured ARC-1 server and inspect the plugin server's launch command |
 

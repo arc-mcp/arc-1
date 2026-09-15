@@ -35,7 +35,9 @@ SAPSearch(query="SELECT * FROM mara", searchType="source_code", objectType="CLAS
 
 **Umlaut handling:** Object name queries containing non-ASCII characters (ä, ö, ü, ß) are automatically transliterated to ASCII equivalents (AE, OE, UE, SS). SAP object names are ASCII-only. Source code search preserves non-ASCII characters.
 
-**Field names:** If searching for a field/column name (e.g., MATNR, BUKRS), use SAPQuery against DD03L instead — SAPSearch only searches object names.
+**Field names:** Object search matches repository object names. To find tables containing a field
+such as MATNR, query DD03L with authorized `SAPQuery` or `SAPRead(type="TABLE_QUERY")` access.
+`source_code` can find text occurrences but does not inventory DDIC fields.
 
 **TADIR lookup:** Use `searchType="tadir_lookup"` for reset/create preflights that need to know whether objects exist anywhere, regardless of package. The default `source='adt'` uses ADT repository quick search, which avoids long `IN (...)` parser limits and works in read/search-only configurations. The endpoint deliberately filters out TADIR rows that don't resolve to a live workbench resource, so orphan/ghost entries (left behind by aborted create/delete cycles) are invisible to the default path — see the source modes section below.
 
@@ -44,11 +46,12 @@ SAPSearch(query="SELECT * FROM mara", searchType="source_code", objectType="CLAS
 | `source` | Underlying call | Scope required | When to use |
 |----------|-----------------|----------------|-------------|
 | `adt` (default) | `GET /sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=...` (one per name) | `read` | Default; workbench-resolvable objects only. Skips TADIR ghost rows by design. |
-| `db` | `POST /sap/bc/adt/datapreview/freestyle` with `SELECT pgmid, object, obj_name, devclass FROM tadir WHERE obj_name IN (…)` | `sql` (server-side: `SAP_ALLOW_FREE_SQL=true`) | One round-trip for any number of names — much faster for large lists, and surfaces orphan TADIR rows the ADT route hides. |
+| `db` | `POST /sap/bc/adt/datapreview/freestyle` with `SELECT pgmid, object, obj_name, devclass FROM tadir WHERE obj_name IN (…)` | `sql` (server-side: `SAP_ALLOW_FREE_SQL=true`) | One SQL query for the name list; surfaces orphan TADIR rows. Row, byte, and backend SQL-list limits still apply, so split large selections explicitly. |
 | `both` | Parallel `adt` + `db` calls; merge by `(base type, name)` with dedupe | `sql` | Explicit split-brain detection. Returns `splitBrain: [name, ...]` and a `warnings` array when the two sources disagree (e.g. a TADIR ghost from an aborted create/delete). |
 
 Every match in the result set is stamped with an `_origin: 'adt' | 'db'` field so callers can colour-code or filter rows by provenance. The `'db'` path also covers legacy SEGW types (`IWSV`/`IWMO`/`IWPR`) that the ADT info-system does not return; the URL is left empty for types that aren't addressable via a single ADT base URL (e.g. function modules, which need the parent group).
 
-**Source code search availability:** Not available on all SAP systems. Requires SICF service activation. If unavailable, falls back with an error suggesting SAPQuery as an alternative.
+**Source code search availability:** Depends on SAP release and SICF service activation. If
+unavailable, ARC-1 returns an error; it does not automatically run an SQL fallback.
 
 [All tools](../tools.md)

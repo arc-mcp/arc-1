@@ -17,7 +17,7 @@ Run ARC-1 as a shared service for your team. Choose a host and SAP identity mode
 
 The host must reach the SAP HTTPS endpoint. Start with [the Docker quick start](docker.md#quick-start), which configures an authenticated, read-only HTTP server.
 
-### Shared service account + API Key
+### Shared service account + API key
 
 Store the SAP connection and ARC-1 key in a protected runtime env file:
 
@@ -40,7 +40,7 @@ SAP_OIDC_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0
 SAP_OIDC_AUDIENCE=<client-id-guid>
 ```
 
-ARC-1 logs identify the MCP user; SAP logs identify the shared account. Startup checks the SAP credentials and blocks tool calls on 401/403 until the connection is corrected.
+ARC-1 logs identify the MCP user; SAP logs identify the shared account. Startup checks the SAP credentials and blocks tool calls on 401/403. Correct the credentials or SAP authorization, then restart ARC-1 to rerun the check.
 
 ## BTP Cloud Foundry with Principal Propagation
 
@@ -56,7 +56,7 @@ MCP user → XSUAA → ARC-1 → Destination → Cloud Connector → user's SAP 
 
 Choose the single-PP profile for one `/mcp` target or the multi-PP profile for several mutation-free targets. Keep durable application settings in the customer `.mtaext`.
 
-With `SAP_PP_ENABLED=true`, JWT propagation failures return an error; they never fall back to the shared SAP user. Strict PP rejects API-key/non-JWT tool calls. See [Principal Propagation](principal-propagation-setup.md) for the explicit mixed-mode option.
+With `SAP_PP_ENABLED=true`, JWT propagation failures return an error; they never fall back to the shared SAP user. Set `SAP_PP_STRICT=true` explicitly to reject API-key/non-JWT tool calls. If it is unset or `false`, configured API keys use the shared SAP client and startup logs a mixed-mode warning. See [Principal propagation](principal-propagation-setup.md).
 
 ## BTP Cloud Foundry + BTP ABAP Environment
 

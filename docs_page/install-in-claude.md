@@ -54,7 +54,7 @@ Skip the bundle and edit `~/Library/Application Support/Claude/claude_desktop_co
 
 Read-only by default; restart Claude Desktop after editing. To enable writes, SQL, data preview, or
 transports, add the `SAP_ALLOW_*` flags to the `env` block — see
-[Enabling writes](quickstart.md#enabling-writes-sql-and-data-preview).
+[capability settings](configuration-reference.md#capability-flags).
 
 ## Claude Code — plugin (server + skills)
 
@@ -69,13 +69,21 @@ Claude Code prompts for your SAP connection when the plugin is enabled (password
 starts the `arc-1` MCP server via `npx`, and loads the skills namespaced as `/arc-1:<skill>` — e.g.
 `/arc-1:generate-rap-service`. Manage it with `/plugin`; run `/reload-plugins` after an update.
 
-??? tip "Just the server, or just the skills"
-    - **Only the MCP server** (no skills, no plugin): `claude mcp add arc-1 --env SAP_URL=… --env
-      SAP_USER=… --env SAP_PASSWORD=… -- npx -y arc-1` — see the
-      [Claude Code MCP docs](https://code.claude.com/docs/en/mcp).
-    - **Only the skills** (server already added another way): `npx skills add arc-mcp/arc-1` —
-      see the [skills README](https://github.com/arc-mcp/arc-1/tree/main/skills) for the
-      cross-agent CLI (Cursor, Copilot, Codex, Gemini CLI, …).
+### Install only the server or only the skills
+
+For only the MCP server, configure SAP in a protected `.env` file as shown in the
+[CLI connection setup](cli-guide.md#configure-the-sap-connection). From that directory, run:
+
+```bash
+claude mcp add arc-1 -- npx -y arc-1@latest
+claude
+```
+
+Keep the working directory the same so ARC-1 can read `.env`. Do not put the password in
+`claude mcp add --env` arguments. See [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp)
+for other ways to supply the server environment.
+
+For only the skills, run `npx skills add arc-mcp/arc-1`; see [Skills](skills.md).
 
 ## Remote (BTP Cloud Foundry) — custom connector
 
@@ -96,7 +104,7 @@ Use the endpoint URL supplied by your ARC-1 administrator.
 === "Claude Code (remote)"
 
     ```bash
-    claude mcp add --transport http arc-1 https://<your-cf-app>/mcp
+    claude mcp add --transport http arc-1 "https://<your-cf-app>/mcp"
     ```
 
     Claude Code opens a browser for the OAuth login. Add the [skills](#claude-code-plugin-server-skills)

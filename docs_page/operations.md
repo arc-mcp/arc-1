@@ -1,4 +1,6 @@
-# Operations Overview
+# Operations
+
+<a id="operations-overview"></a>
 
 Use these runbooks to maintain a working ARC-1 service or investigate a failure.
 For a first deployment, start with [deployment options](deployment.md).
@@ -16,13 +18,13 @@ For a first deployment, start with [deployment options](deployment.md).
 | Verify authentication and permissions | [Authentication Test Process](auth-test-process.md) |
 | Review access before exposing a server | [Production Security](security-guide.md) |
 
-## Shared operating model
+## During an incident
 
 For an incident:
 
 1. Capture the ARC-1 version, route, public target, user, timestamp and request ID.
 2. Find the failed gate: MCP sign-in, ARC-1 policy, SAP connectivity or SAP authorization.
-3. Make a reversible change in the configuration owned by that layer.
+3. Correct the failing configuration with the ARC-1, BTP or SAP administrator responsible for it.
 4. Retest a safe SAP read and a request that should remain denied.
 5. Copy emergency runtime changes into the durable deployment configuration.
 
@@ -38,9 +40,9 @@ For an incident:
 | Docker or shared host | [Docker guide](docker.md): image, secret injection, persistent volumes and TLS proxy |
 | Local development | [Local Development](local-development.md): process environment and local client configuration |
 
-## Incident evidence to preserve
+## Keep these incident details
 
 Keep relevant sanitized ARC-1 logs, the last known-good version and the rollback procedure.
-For BTP, record app/service health and ask the Cloud Connector or SAP owner for the matching error reference.
+For BTP, record app/service health and ask the Cloud Connector or SAP administrator for the matching error reference.
 
 Share identifiers and error codes. Keep bearer tokens, passwords, cookies, PP assertions and unredacted `cf env` output out of tickets and chat.

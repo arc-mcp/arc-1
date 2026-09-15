@@ -77,8 +77,8 @@ SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name")
 | `TABLE_CONTENTS` | Legacy table preview. Useful for an unfiltered sample; filtering and exact row caps are backend-dependent (see parameters above). Prefer `TABLE_QUERY` for deterministic structured projection/filtering. With experimental `SAP_BLOCKED_DATA_SOURCES` active, only unfiltered requests are supported — a `sqlFilter` returns `DATA_SQL_UNSUPPORTED`, so use `TABLE_QUERY`. |
 | `TABLE_QUERY` | Structured table/CDS query through data preview (`columns`, `where`, `maxRows`); requires the data-preview gate. A configured experimental source blocklist checks direct and transitive active CDS/replacement lineage before execution. |
 | `DEVC` | Package contents |
-| `SYSTEM` | System info (SID, release, kernel) |
-| `COMPONENTS` | Installed software components |
+| `SYSTEM` | ADT discovery collections and the username from ARC-1 configuration or its token. Confirms ADT access; does not return SID, client, release, kernel, or prove the SAP-mapped user. |
+| `COMPONENTS` | Installed software components (`name`, `release`, `description`); use the `SAP_BASIS` row for the ABAP release. |
 | `MSAG` | Message class metadata (structured JSON with `number`, `shortText`, `longText` per message). `MSAG` is the canonical TADIR R3TR short type. |
 | `MESSAGES` | Deprecated alias for `MSAG`. Still accepted for one minor release with stderr warning; use `MSAG` going forward. |
 | `TEXT_ELEMENTS` | Text pools for programs, classes, or function groups; use `objectType` and optional `include` to select one part. |
@@ -94,7 +94,10 @@ This checks source declarations; it does not enumerate subclasses or prove runti
 
 ## Edit KTD nodes
 
-Knowledge Transfer Document attached to an ABAP object. Returns Markdown decoded from the ADT XML envelope, one `## <node id>` section per documented node when routing is needed (BDEF entities, savers, actions, functions, …). A heading that names a node — its id, or the node name the index prints — is reserved routing syntax; a colliding heading inside stored body text is reversibly shown with one leading `\`. Behind a reserved HTML-comment marker, the response lists populated per-node short texts and a compact index of EVERY writable node, each by the spelling that resolves back to it (the name, or the full id when only that does), with the empty ones on an `empty (n):` line. Add a `## <name>` section above the marker to document one; use `shortTexts` to update its short text. Start multi-node edits from the complete `SAPRead` result; a standalone `## <object name>` is refused when it could instead be a visible root title (use `# <object name>` for that title). `SAPWrite` ignores the marker and context below it; the writable Markdown still follows the requested active/inactive version semantics. Documented non-writable sections can pass through unchanged while attempted edits remain refused. `KTD` is a friendly alias; `SKTD` remains the canonical SAP object type.
+KTD reads return Markdown, with `## <node>` routing sections where needed, followed by a read-only
+node index and short texts. Preserve the complete result when preparing an update; do not edit
+below the HTML-comment marker. See [KTD editing and routing](sap-write.md#edit-ktd-nodes) for node
+selection, escaped headings, short texts, and `dryRun`.
 
 ## Package listings (DEVC)
 
@@ -117,6 +120,7 @@ the limit up to 1000 or use targeted searches when the cap is reached.
 ## Structured class format
 
 When `format="structured"` is used with CLAS type, the response is a JSON object with:
+
 - `metadata` — class metadata (description, language, category, package, fixPointArithmetic, abapLanguageVersion)
 - `main` — main class source code
 - `testclasses` — test class source (or null if none)
@@ -169,15 +173,20 @@ SAPRead(type="CLAS", name="ZCL_ORDER", version="auto")           — draft if it
 
 ## Cache Behaviour
 
-ARC-1 caches every source read with the SAP-emitted `ETag`. On the next read, ARC-1 sends `If-None-Match` so the server itself confirms freshness:
+When source caching is enabled, ARC-1 stores supported source reads with the SAP-emitted `ETag`.
+Outside the activation guard below, ARC-1 sends `If-None-Match` on the next read so SAP can confirm freshness:
 
 - **`304 Not Modified`** → cached body is still authoritative; response is prefixed with `[cached:revalidated]`.
 - **`200 OK` with new body and ETag** → cache is replaced; no prefix on the response.
 - **`404` / `410`** → cache entry is invalidated and the error is propagated.
 
-Conditional reads detect external changes when SAP updates its ETag. Pass `force_refresh=true`
-to bypass the source and inactive-list caches for one read.
+After a successful activation with a shared SAP client, ARC-1 can serve the activated draft from
+cache for **120 seconds** without revalidation. External changes may be hidden during that window.
+PP activation invalidates cached entries instead. See [After activation](../caching.md#after-activation).
 
-The full caching architecture (per-version cache keys, conditional GET, pure parse memoization, inactive-list session cache, write invalidation) is documented in [Caching System](../caching.md).
+Conditional reads detect external changes when SAP updates its ETag. Pass `force_refresh=true`
+to bypass the activation guard, source cache, and inactive-list cache for one read.
+
+The full caching architecture (per-version cache keys, conditional GET, pure parse memoization, inactive-list session cache, write invalidation) is documented in [Caching](../caching.md).
 
 [All tools](../tools.md)

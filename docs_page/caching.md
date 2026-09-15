@@ -1,6 +1,8 @@
-# Caching System
+# Caching
 
-Keep the default memory cache for repeated source reads. Choose SQLite for persistence or `none` to disable caching. SAP validates cached source freshness; ARC-1 does not scan the repository at startup.
+<a id="caching-system"></a>
+
+Keep the default memory cache for repeated source reads. Choose SQLite for persistence or `none` to disable caching. SAP normally validates cached source freshness on each read; [recent activations](#after-activation) have a short exception. ARC-1 does not scan the repository at startup.
 
 ## Backends
 
@@ -30,7 +32,7 @@ Only requested data enters the cache:
 
 | Data | Key | Freshness |
 |---|---|---|
-| Source | Object type, name, and `active`/`inactive` version | Revalidated with SAP `ETag` on every hit when available |
+| Source | Object type, name, and `active`/`inactive` version | Normally revalidated with SAP `ETag`; see the post-activation exception below |
 | Parsed ABAP contracts/dependencies (memory only) | Source content hash, object identity and parser language version | Consulted after source retrieval under the normal cache/auth policy; no aggregate reuse |
 | Released API metadata | Object name and type | Populated on demand |
 | Function-group mapping | Function module name | Populated on demand; mappings rarely change |
@@ -54,7 +56,13 @@ If-None-Match: <etag>
 | `200 OK` without `ETag` | Store the body; the next read performs a normal GET |
 | `404` or `410` | Evict the entry and surface the ADT error |
 
-There is no source TTL. SAP validates freshness on each cached source read.
+Outside the post-activation window below, there is no source TTL: SAP validates freshness on each cached source read.
+
+### After activation
+
+For a shared SAP client, a successful activation can promote the cached draft to active source. ARC-1 serves that promoted body without a conditional GET for **120 seconds**, protecting it from SAP temporarily returning the old active body. A later ARC-1 write or `force_refresh=true` clears the guard.
+
+External changes, including a Git pull, can therefore be hidden during this window. Use `SAPRead(..., force_refresh=true)` when you need to verify external changes immediately. Under PP, activation invalidates entries instead of promoting a shared cached draft.
 
 ### Active and inactive source
 
@@ -89,7 +97,7 @@ For CDS blast-radius analysis, prefer `SAPContext(action="impact", type="DDLS", 
 
 ## Invalidation
 
-`SAPWrite` and `SAPActivate` invalidate active and inactive source entries for affected objects and refresh the inactive-object state. Edits made outside ARC-1 are detected by the next conditional GET.
+`SAPWrite` invalidates affected source entries and inactive-object state. `SAPActivate` invalidates or promotes entries as described above. Edits made outside ARC-1 are detected by the next conditional GET; during the activation guard, use `force_refresh=true` to force that request.
 
 ## Security
 

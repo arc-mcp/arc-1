@@ -1,10 +1,10 @@
-# BTP Cloud Foundry Deployment
+# BTP Cloud Foundry deployment
 
 Deploy a read-only ARC-1 service with XSUAA login and per-user SAP access. This runbook uses `mta.yaml` to deploy the app, service bindings and role collections together.
 
 Use documentation and examples from the revision you will deploy. For changes to an existing service, start with [BTP administration](btp-administration.md).
 
-SAP's **Multi-Target Application (MTA)** describes the app and service resources deployed from an `.mtar` archive. ARC-1 **multi-target** means serving several SAP systems/clients; both single- and multi-target deployments use MTA packaging.
+SAP's **Multi-Target Application (MTA)** describes the app and service resources deployed from an `.mtar` archive. ARC-1 **multi-target** means serving several SAP systems/clients; both single- and multi-target deployments use MTA packaging. **Principal Propagation (PP)** lets SAP authorize each human user.
 
 ## 1. Choose the topology before configuring anything
 
@@ -15,16 +15,18 @@ SAP's **Multi-Target Application (MTA)** describes the app and service resources
 | BTP ABAP Environment | Use [BTP ABAP setup](btp-abap-environment.md) for destination/authentication settings |
 | S/4HANA Public Cloud | Use [Public Cloud setup](s4hana-public-cloud.md) for destination/authentication settings |
 
-Principal Propagation lets SAP authorize each human user. Multi-target routes remain mutation-free. Shared Basic is a separately enabled exception that requires one non-rolling CF process.
+Multi-target routes remain mutation-free. Shared Basic is a separately enabled exception that requires one non-rolling CF process.
 
 Use separate apps for different write limits, capacity or administrative boundaries; use separate subaccounts when destination inventory must be isolated. Before combining a writable `/mcp` with multi-target routes, review the [side-by-side risks](multi-target-administration.md#optional-single-target-mcp).
 
-## 2. Assign owners
+<a id="2-assign-owners"></a>
 
-Deployment crosses several independent control planes. Confirm the handoffs before the change
+## 2. Assign deployment tasks
+
+Several administrators must configure their part of the connection. Agree who will do each task before the change
 window. The [optional worksheet](btp-setup-worksheet.md) can help record them.
 
-| Task | Typical owner |
+| Task | Administrator |
 |---|---|
 | Entitlements and subaccount/space | BTP subaccount administrator |
 | MTA build, deploy, route, and bindings | CF Space Developer |
@@ -32,7 +34,7 @@ window. The [optional worksheet](btp-setup-worksheet.md) can help record them.
 | XSUAA role collections and users/groups | User and Role Administrator |
 | Cloud Connector mapping and resources | Cloud Connector administrator |
 | STRUST, CERTRULE, ICM/SICF, SU01, SAP roles | SAP Basis/security |
-| MCP client and safe-read acceptance | ARC-1 service owner/user |
+| MCP client login and first read | ARC-1 administrator and test user |
 
 Destinations and trust belong to the subaccount; the app and service instances belong to the CF space. Multi-target discovery sees subaccount destinations, so another space does not isolate that inventory.
 
@@ -42,15 +44,15 @@ Destinations and trust belong to the subaccount; the app and service instances b
 
 - Cloud Foundry is enabled in the intended BTP subaccount.
 - The subaccount has quota for XSUAA (`application`), Destination (`lite`), and Connectivity (`lite`).
-- Node.js 22.19 or later, npm, CF CLI, CF MultiApps plugin, and MBT are available.
+- Node.js 22.19 or later, npm, CF CLI, CF MultiApps plugin, and the Cloud MTA Build Tool (MBT) are available.
 - The operator is logged in and targeted at the intended org and space.
 - For on-premise SAP, Cloud Connector is connected to this exact subaccount.
-- For PP, the SAP and Cloud Connector administrators can complete the
+- For on-premise PP, the SAP and Cloud Connector administrators can complete the
   [Principal Propagation runbook](principal-propagation-setup.md).
 - A User and Role Administrator can inspect and assign the generated collections.
 
 SAP Business Application Studio can supply the CLI toolchain when an administrator cannot build on
-a local workstation. Use a controlled Dev Space, clone the reviewed revision, and follow the same
+a local workstation. Use a controlled Dev Space, clone the selected revision, and follow the same
 commands below.
 
 ### Preflight
@@ -82,7 +84,7 @@ resources:
       service-name: my-shared-destination
 ```
 
-The instance remains **MTA-managed**: deployment creates it if absent, and `cf undeploy --delete-services` can delete it. Use this only when ARC-1 owns its lifecycle. For a service owned elsewhere, a reviewed `org.cloudfoundry.existing-service` change in `mta.yaml` is required; an extension cannot change a resource's `type`.
+The instance remains **MTA-managed**: deployment creates it if absent, and `cf undeploy --delete-services` can delete it. Use this only when ARC-1 owns its lifecycle. For a service owned elsewhere, an `org.cloudfoundry.existing-service` change in `mta.yaml` is required; an extension cannot change a resource's `type`.
 
 ## 4. Create the landscape extension
 
@@ -92,7 +94,7 @@ durable landscape-specific settings. Destinations own target-local connection an
 ```bash
 git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
-git checkout <reviewed-tag-or-commit>
+git checkout <tag-or-commit>
 npm ci
 ```
 
@@ -100,7 +102,7 @@ For BTP ABAP or S/4HANA Public Cloud, use the complete extension in the selected
 and adapt it instead of copying another template over it. The `cp -n` commands preserve an existing
 file; a skipped copy does not mean the selected profile was applied.
 
-The real `mta-overrides.mtaext` is gitignored. Store the reviewed copy in the customer's protected
+The real `mta-overrides.mtaext` is gitignored. Store the customer copy in the customer's protected
 configuration process. Never add secrets to it and never edit generated `mtad.yaml`.
 
 ### Single-target read-only PP profile
@@ -131,16 +133,15 @@ needed. Keep `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` absent, includin
 ### Prepare the selected PP profile
 
 Both examples keep strict PP on, all mutation/data/SQL flags off, UI/plugins off and cache none.
-They also deny ATC/Unit workloads for initial acceptance; that is a profile choice, not a general
+They also deny ATC/Unit workloads during initial setup; that is a profile choice, not a general
 multi-target limitation. Do not combine the profiles or add UI overlays.
 
 Replace names, virtual URLs, real SID/client and descriptions in your private destination files.
-Keep clients such as `001` quoted. Add `CloudConnectorLocationId` only if the Connector owner
+Keep clients such as `001` quoted. Add `CloudConnectorLocationId` only if the Cloud Connector administrator
 supplies one. JSON files show the destination fields to create in the cockpit; they do not provision
-anything or guarantee a particular import format. Keep startup credentials in the owner's secure
-process, not in a PR or LLM prompt.
+anything or guarantee a particular import format. Keep startup credentials in the destination administrator's secret store, not in a PR or LLM prompt.
 
-Ask the Connector/Basis owners to complete [Principal Propagation Setup](principal-propagation-setup.md)
+Ask the Cloud Connector and SAP Basis administrators to complete [Principal Propagation Setup](principal-propagation-setup.md)
 and create/review the destinations using [Destination Reference](btp-destination-setup.md).
 **For single PP, both destinations must exist before deploying this profile:** startup resolves
 the startup destination and fails if it is missing. Multi PP can start empty, but requires all
@@ -183,11 +184,17 @@ npm run btp:build
 
 The first command validates tracked descriptors; the second validates your actual customer override. Both must pass. MBT creates `mta_archives/arc1-mcp_<version>.mtar`.
 
-Before deploying, [inspect the MTAR](btp-archive-inspection.md): check every nested `data.zip` payload, then review the file lists for credentials and unexpected local files. Record the exact archive path and digest for handover.
+Before deploying, [inspect the MTAR](btp-archive-inspection.md): check every nested `data.zip` payload, then review the file lists for credentials and unexpected local files. Record the exact archive path and SHA-256 digest. On macOS/Linux:
+
+```bash
+shasum -a 256 "mta_archives/arc1-mcp_<version>.mtar"
+```
+
+On PowerShell, use `Get-FileHash "mta_archives/arc1-mcp_<version>.mtar" -Algorithm SHA256`.
 
 ## 6. Deploy the MTA
 
-Run from the reviewed checkout as the CF Space Developer:
+Run from the selected checkout as the CF Space Developer:
 
 ```bash
 npm run btp:deploy-ext
@@ -219,7 +226,7 @@ targets is healthy-but-unconfigured, not ready for users.
 
 ## 7. Set the stable OAuth DCR key
 
-Do this once in a protected operator shell:
+Dynamic Client Registration (DCR) lets MCP clients register during OAuth login. Set a stable signing key once in an operator shell with restricted access:
 
 ```bash
 cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
@@ -251,13 +258,16 @@ details.
 
 ## 9. Configure SAP connectivity and destinations
 
-If step 4 already prepared the destinations and PP mapping, verify those settings here; do not
-recreate them. Otherwise complete the setup now (multi-target can start with an empty catalog).
+For BTP ABAP or S/4HANA Cloud, verify the Internet destination from that cloud guide, then continue
+to step 10. The on-premise steps below do not apply.
 
-Give the connectivity owners the subaccount, CF org/space, route, topology, SAP clients, destination names and test-user details from the [worksheet](btp-setup-worksheet.md).
+For on-premise SAP, verify the destinations and PP mapping prepared in step 4. Otherwise complete
+them now (multi-target can start with an empty catalog).
 
-For on-premise PP, complete [Principal Propagation Setup](principal-propagation-setup.md). It is the
-only canonical Cloud Connector/SAP certificate procedure. Expose `/sap/bc/adt` and required
+Give the Cloud Connector and Destination administrators the subaccount, CF org/space, route, topology, SAP clients, destination names and test-user details from the [worksheet](btp-setup-worksheet.md).
+
+For on-premise PP, complete [Principal Propagation Setup](principal-propagation-setup.md). It contains the
+Cloud Connector/SAP certificate procedure. Expose `/sap/bc/adt` and required
 subpaths, not `/`; preserve backend TLS verification; and prove issuer-restricted certificate
 mapping in CERTRULE before testing ARC-1.
 
@@ -313,11 +323,11 @@ Use the Viewer identity. After OAuth:
 These calls establish safe-read access, not the backend login identity: `SYSTEM.user` can come from
 configuration or token claims. Follow [backend identity verification](principal-propagation-setup.md#verify-the-backend-identity)
 with Basis and record that result separately. For shared Basic, verify the intended technical user
-in the backend evidence; Admin `SAPTargets` labels that target `identity: "shared"`.
+in the SAP logs; Admin `SAPTargets` labels that target `identity: "shared"`.
 
 For the multi-only example, verify that `/mcp` is unavailable and pinned routes do not expose
 `SAPTargets`. The aggregate catalog is configuration inventory, not proof of the user's SAP access.
-For each PP target, use an owner-approved negative identity to verify that failed mapping or SAP
+For each PP target, use a test identity approved by the SAP administrator to verify that failed mapping or SAP
 authorization does not become shared-user access. Do not change working users or grant Admin just
 to manufacture a test. Repository metadata alone does not prove client isolation; keep any separate
 client-data check unverified until approved rather than enabling data/SQL for the smoke test.
@@ -326,15 +336,17 @@ As Admin on multi-target, call `SAPTargets` and review zero/one/many behavior, r
 quarantined/disabled entries, duplicate/shadow warnings, and instance policy narrowing. There is no
 public or standalone `/targets` endpoint.
 
-### Add capability only after acceptance
+<a id="add-capability-only-after-acceptance"></a>
 
-For a single-target instance, widen the application ceiling in the reviewed `.mtaext`, redeploy,
+### Enable additional capabilities after verification
+
+For a single-target instance, widen the application ceiling in the customer `.mtaext`, redeploy,
 assign the least-privilege XSUAA collection, and retest the negative boundary. Data, SQL, writes,
 transports, Git, and package scope are independent decisions.
 
 For multi-target v1, data preview and SQL require both application ceilings and target-local
-destination opt-ins. The [reviewed tool/action surface](multi-target-setup.md#allowed-tools) also
-includes offline lint, read-only transport inspection, ATC and ABAP Unit. ATC/Unit execute SAP
+destination opt-ins. The [supported tools and actions](multi-target-setup.md#allowed-tools) also
+include offline lint, read-only transport inspection, ATC and ABAP Unit. ATC/Unit execute SAP
 workloads: keep them out of routine deployment smoke tests, and deny their actions when not approved.
 Writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI,
 and hyperfocused mode remain unavailable.
@@ -346,13 +358,13 @@ Keep the MTA's `OPTIMIZE_MEMORY=true` and `exec sh ./bin/start-cf.sh` launcher. 
 ## 11. Handover and ongoing operation
 
 Before customer users connect, complete the
-[pre-customer acceptance checklist](btp-administration.md#pre-customer-acceptance). Record:
+[checks before users connect](btp-administration.md#pre-customer-acceptance). Record:
 
-- the reviewed Git revision and `.mtaext` desired state;
+- the Git revision and `.mtaext` desired state;
 - exact route, org/space, services, mode, instance count, target ownership, and role assignments;
-- DCR-key backup/rotation owner without recording the value in the ticket;
-- SAP/Cloud Connector evidence and the first successful safe reads;
-- concurrency/rate decisions and monitoring owner; and
+- DCR-key backup/rotation administrator without recording the value in the ticket;
+- SAP/Cloud Connector checks and the first successful reads;
+- concurrency/rate decisions and monitoring contact; and
 - the prior MTAR and mode-appropriate rollback procedure.
 
 Use [BTP Administration](btp-administration.md) for change/restart decisions, upgrades, role
@@ -372,7 +384,7 @@ For a container pipeline, start from [Docker Deployment](docker.md). Pin an exac
 `:latest`, and use a dedicated customer manifest rather than treating the repository MTA and a
 manifest as two simultaneous desired-state sources.
 
-## Deploying Without Docker (Node.js Buildpack)
+## Deploying without Docker (Node.js buildpack)
 
 The shipped MTA already deploys a Node.js buildpack module; it does not require Docker. If you mean a
 manual `cf push` without MTA, build the runtime first and provide the same services/properties in a
@@ -381,11 +393,11 @@ customer-owned manifest:
 ```bash
 npm ci
 npm run build
-cf push -f <reviewed-customer-manifest.yml>
+cf push -f <customer-manifest.yml>
 ```
 
 This is an advanced alternative. Validate it against `mta.yaml`, `xs-security.json`, the selected
-single/multi startup contract, the MTAR secret exclusions, and the acceptance checklist. A raw
+single/multi startup requirements, the MTAR secret exclusions, and the connection checklist. A raw
 buildpack push does not create the seven MTA role collections for you.
 
 ## Troubleshooting deployment
@@ -396,7 +408,7 @@ buildpack push does not create the seven MTA role collections for you.
 | App has no target but is healthy | Expected for target-free base; configure explicit `/mcp` destinations or marked multi destinations |
 | Multi-target startup exits | Check XSUAA, Destination, Connectivity bindings and required mode invariants (`ARC1_CACHE=none`, standard tools, UI/plugins off) |
 | Multi-target is ready with zero active targets | Call Admin `SAPTargets`; health is not SAP readiness |
-| Role collection missing/empty | Perform full MTA deploy, inspect roles, reconcile stale collection roles with the IAM owner, then obtain a fresh token |
+| Role collection missing/empty | Perform full MTA deploy, inspect roles, reconcile stale collection roles with the identity administrator, then obtain a fresh token |
 | OAuth `invalid_client` after deploy | Restore the intended DCR signing key or re-register clients; do not invent a new key on every deploy |
 | OAuth `invalid_scope` after a grant | On the failure page choose **Role assigned? Refresh access**, then reconnect the MCP client; verify the user's IdP origin if it persists |
 | SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |

@@ -1,6 +1,6 @@
 # Edit class members
 
-Change method declarations and visibility without resending the whole class.
+Change a method body, declaration, or visibility without resending the whole class.
 
 These actions require `type="CLAS"`. ARC-1 reads the current structure and source, makes the
 requested change, and saves an inactive draft under the class lock.
@@ -8,13 +8,42 @@ requested change, and saves an inactive draft under the class lock.
 Run `SAPActivate` after editing and inspect its result. Whole-include replacement initializes a
 missing include automatically, then writes the complete supplied source.
 
+## Edit one method body
+
+Read the method first, then pass `action="edit_method"` with its replacement body or a complete
+`METHOD … ENDMETHOD.` block. The method must already exist; use `add_method` to create one.
+
+```text
+SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name", version="auto")
+SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER",
+  method="get_name", source="result = name.")
+SAPDiagnose(action="syntax", type="CLAS", name="ZCL_ORDER", version="inactive")
+SAPActivate(type="CLAS", name="ZCL_ORDER")
+```
+
+Check each result before continuing. `edit_method` replaces only the selected implementation;
+changing its parameters requires `edit_method_signature`.
+
+| Method selector | Source selected when `include` is omitted |
+|---|---|
+| `get_name` or `zif_order~process` | Global class MAIN |
+| `lhc_travel~accept` or `lcl_helper~run` | `implementations` |
+| `ltc_order~test_create` | `testclasses` |
+
+An explicit `include="definitions"`, `"implementations"`, `"macros"`, or `"testclasses"` overrides
+that routing. Use a qualified local-class name when several classes contain the same method;
+an ambiguous bare name is rejected. Local include edits use the current draft when one exists.
+Pre-write lint and syntax checks skip include fragments, so check and activate the complete class
+afterwards. `add_method`, `edit_method_signature`, `delete_method`, and
+`change_method_visibility` operate on MAIN and reject `include`.
+
 ## `action="edit_class_definition"` — replace the DEFINITION block whole
 
 Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim.
 
 With `include=definitions|implementations|macros|testclasses`, send the full replacement body for that local include. For ABAP Unit tests, target `include="testclasses"` and write local `ltc_*` classes; ARC-1 creates the missing CCAU include automatically on first write.
 
-**Validation.** Before PUT, ARC-1 diffs the new DEFINITION against the current class structure. If the diff would produce a non-activatable draft, the call is refused with a structured error pointing at the right tool:
+**Validation.** Before PUT, ARC-1 diffs the new DEFINITION against the current class structure. ARC-1 rejects declaration/body mismatches before saving:
 
 - Added concrete method without a matching `METHOD …. ENDMETHOD.` block in IMPLEMENTATION → "use `add_method`".
 - Removed method that still has an orphan METHOD/ENDMETHOD block in IMPLEMENTATION → "use `delete_method`".
@@ -79,7 +108,7 @@ Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRA
 
 ## `action="change_method_visibility"` — move a method between sections (body preserved)
 
-Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
+Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. Pass the method name and target section; the method body stays unchanged.
 
 - Idempotent: if the method is already in the target section, it's a no-op (no write).
 - The target section header must already exist; if not, ARC-1 refuses with a hint to add it via `edit_class_definition` first.

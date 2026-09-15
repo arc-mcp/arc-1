@@ -19,8 +19,8 @@ description: ARC-1 — MCP Server for SAP ABAP Systems
 #   2. BTP Destination Service entries for the intended SAP connections
 #   3. Users assigned to ARC-1 role collections (see xs-security.json)
 #
-# Deploy:
-#   npm run btp:build-deploy
+# Deployment preflight, archive inspection, and deploy commands:
+#   docs_page/btp-cloud-foundry-deployment.md
 #
 # For an optional single-target `/mcp` using on-premise PP, two destinations
 # are recommended:

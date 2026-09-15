@@ -1,6 +1,6 @@
 # SAPManage
 
-Inspect system capabilities and manage packages, API release state, UI5 repositories, and launchpad content. Available actions depend on the SAP system and server permissions.
+Inspect system capabilities and manage packages, API release state, and launchpad content. Available actions depend on the SAP system and server permissions.
 
 ```text
 SAPManage(action="features")
@@ -31,18 +31,18 @@ SAPManage(action="features")
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `probe`, `features`, `cache_stats`, `create_package`, `delete_package`, `change_package`, `set_api_state`, `flp_list_catalogs`, `flp_list_groups`, `flp_list_tiles`, `flp_create_catalog`, `flp_create_group`, `flp_create_tile`, `flp_add_tile_to_group`, `flp_delete_catalog` |
-| `name` | string | No | Required for `create_package` and `delete_package` (package name) |
+| `name` | string | No | Package name for `create_package`/`delete_package`; object name for `set_api_state` when `objectUri` is omitted. |
 | `description` | string | No | Required for `create_package` (package description) |
-| `superPackage` | string | No | Optional parent package for `create_package` (use `$TMP` for local packages) |
-| `softwareComponent` | string | No | Optional software component for `create_package` (default: `LOCAL`) |
-| `responsible` | string | No | Package-responsible ABAP user (XUBNAME, max 12 characters). Defaults to the connection user; pass explicitly under principal propagation. SAP rejects email identities here. |
+| `superPackage` | string | No | Parent for `create_package`: optional on-premises (`$TMP` for local packages), required on BTP ABAP (a structure package, for example `ZLOCAL`). |
+| `softwareComponent` | string | No | For `create_package`: default `LOCAL` on-premises, `ZLOCAL` on BTP ABAP. |
+| `responsible` | string | No | Package-responsible ABAP user (XUBNAME, max 12 characters). On-premises defaults to a valid connection username; pass explicitly under principal propagation. BTP uses an explicit value or the internal ABAP user resolved by a prior object create. Email identities are rejected. |
 | `transportLayer` | string | No | Optional transport layer for `create_package` |
-| `recordChanges` | boolean | No | Whether the new package records object changes in transports. The default follows software-component/transport-layer context; literal LOCAL packages default false. |
+| `recordChanges` | boolean | No | Record package changes in transports. BTP defaults false. On-premises defaults true for a non-LOCAL software component or a supplied transport layer, otherwise false. |
 | `packageType` | string | No | Optional package type for `create_package`: `development`, `structure`, `main` (default: `development`) |
-| `transport` | string | No | Optional transport request ID (`corrNr`) for `create_package`/`delete_package`/`change_package` |
+| `transport` | string | No | Optional transport request ID (`corrNr`) for `create_package`/`delete_package`/`change_package`/`set_api_state` |
 | `objectName` | string | No | Required for `change_package` — name of the object to move (e.g., `ZCL_MY_CLASS`) |
-| `objectType` | string | No | Required for `change_package` — ADT object type (e.g., `CLAS/OC`, `DDLS/DF`, `PROG/P`) |
-| `objectUri` | string | No | Optional for `change_package` — ADT URI of the object. Auto-resolved from objectName + objectType if not provided |
+| `objectType` | string | No | Required for `change_package`; optional type for `set_api_state` with `name` (otherwise inferred from the name). Examples: `CLAS/OC`, `DDLS/DF`, `PROG/P`. |
+| `objectUri` | string | No | ADT object URI for `change_package` or `set_api_state`. If omitted, resolved from the action's name/type fields. |
 | `oldPackage` | string | No | Required for `change_package` — current package of the object |
 | `newPackage` | string | No | Required for `change_package` — target package to move the object to |
 | `apiState` | string | No | For `set_api_state`: `RELEASED` (default) or `NOT_RELEASED`; visibility follows SAP's contract defaults. |
@@ -85,7 +85,7 @@ SAPManage(action="features")
 SAPManage(action="probe")       → discover system capabilities
 SAPManage(action="features")    → get cached results (no SAP call)
 SAPManage(action="cache_stats") → check request-driven cache state
-SAPManage(action="create_package", name="ZRAP_TRAVEL", description="RAP Travel Demo")
+SAPManage(action="create_package", name="ZRAP_TRAVEL", description="RAP Travel Demo", superPackage="$TMP")
 SAPManage(action="create_package", name="ZRAP_TRAVEL", description="RAP Travel Demo", superPackage="ZRAP", softwareComponent="HOME", transportLayer="HOME", packageType="development", transport="K900123")
 SAPManage(action="delete_package", name="ZRAP_TRAVEL")
 SAPManage(action="change_package", objectName="ZCL_MY_CLASS", objectType="CLAS/OC", oldPackage="$TMP", newPackage="Z_PRODUCTION", transport="K900123")

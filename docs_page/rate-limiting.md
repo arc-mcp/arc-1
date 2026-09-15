@@ -1,7 +1,9 @@
-# Rate Limiting Guide
+# Rate limiting
+
+<a id="rate-limiting-guide"></a>
 
 Use rate limits to control incoming traffic and concurrency limits to control work sent to SAP.
-For a shared server, first agree on a SAP capacity budget, then tune user and HTTP quotas from audit evidence.
+For a shared server, first agree on a SAP capacity budget, then tune user and HTTP quotas from audit logs.
 
 ## 1. Why ARC-1 rate-limits
 
@@ -19,7 +21,7 @@ All limits are per process. More instances increase the fleet's possible traffic
 
 ### `ARC1_AUTH_RATE_LIMIT` — Layer 1 (default `20`)
 
-Caps requests per minute per IP to `/register`, `/authorize`, `/token` and `/revoke`.
+Caps requests per minute per IP to `/register`, `/authorize`, `/token`, `/revoke` and `/oauth/callback`.
 `0` disables the OAuth limit only; keep it enabled unless an upstream service protects those routes.
 A denial emits `auth_rate_limited` with the OAuth endpoint.
 
@@ -81,7 +83,7 @@ For an agreed budget of 24 simultaneous requests and two ARC-1 processes:
 ARC1_MAX_CONCURRENT = floor(24 / 2) = 12 per process
 ```
 
-The earlier 60%-of-dialog-processes rule is a starting estimate, not a universal safe allocation.
+Allocating 60% of dialog processes is a starting estimate, not a universal safe allocation.
 For example, Basis might allocate `floor(0.6 × 40) = 24` from a 40-process pool.
 HTTP concurrency is not an exact work-process guarantee: validate the budget using SAP workload and latency measurements.
 
@@ -97,7 +99,7 @@ User count alone does not determine SAP capacity. Start with:
 | Deployment | First action |
 |---|---|
 | Single local user | Keep HTTP/user quotas at defaults; lower SAP concurrency for a constrained backend |
-| Shared team | Consider `ARC1_RATE_LIMIT=60`, then measure legitimate batch work and queueing |
+| Shared team | Start with `ARC1_RATE_LIMIT=120`, then measure legitimate batch work and queueing |
 | Several ARC-1 instances | Divide the agreed SAP budget across all processes; account for per-process HTTP/user quotas |
 | Many users behind one corporate IP | Inspect `auth_rate_limited` before changing the relevant per-IP cap |
 
@@ -116,8 +118,18 @@ Use the most constrained target when assigning a common process cap. Multiple SA
 may share the same dialog pool; confirm with Basis. Split deployments when backend capacities need different limits.
 Shared Basic multi-target permits exactly one instance, including during updates.
 
-Repeated pinned OAuth connections can create login bursts. An aggregate endpoint can reduce the number of
-connections when a user needs several targets; endpoint choice still determines the target-selection contract.
+These multi-target starting values allow corporate login bursts and per-user fairness. They do
+not increase the SAP concurrency budget:
+
+| Active users | `ARC1_AUTH_RATE_LIMIT` | `ARC1_MCP_HTTP_RATE_LIMIT` | `ARC1_RATE_LIMIT` |
+|---:|---:|---:|---:|
+| 1–5 | 30 | 1,000 | 120 |
+| 6–20 | 60 | 3,000 | 120 |
+| 21–50 | 120 | 7,500 | 180 |
+| 51–100 | 240 | 20,000 | 180 |
+
+Measure denials, queueing and latency before raising them. Repeated pinned OAuth connections can create login bursts. An aggregate endpoint can reduce the number of
+connections when a user needs several targets; a pinned endpoint fixes the target while an aggregate call requires explicit selection.
 
 ## 5. Audit events
 

@@ -88,7 +88,7 @@ the signature read. See the create-side docs above for how the attributes are wr
 
 ## Function-group structural includes (`type="INCL"` with `group=`)
 
-`SAPWrite(type="INCL", group=<FUGR>)` creates, updates and deletes a function group's structural includes (`LZ<GROUP>TOP` global data, `F01` subroutines, `O01`/`I01` PBO/PAI modules, `T99` unit tests):
+`SAPWrite(type="INCL", group=<FUGR>)` creates, updates and deletes a function group's structural includes (`L<GROUP>TOP` global data, `F01` subroutines, `O01`/`I01` PBO/PAI modules, `T99` unit tests):
 
 ```jsonc
 SAPWrite({ action: "create", type: "INCL", name: "LZARC1_FGF01", group: "ZARC1_FG",

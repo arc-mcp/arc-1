@@ -22,14 +22,20 @@ tarball. Use a package lock or container digest in a maintained pipeline.
 
 ## Configure the SAP connection
 
-Use environment variables or a protected `.env` file for credentials:
+Have your secret store supply environment variables, or create `.env` in your working directory
+using an editor:
+
+```dotenv
+SAP_URL=https://sap.example.com
+SAP_CLIENT=001
+SAP_USER=ci_adt_user
+SAP_PASSWORD=YOUR_PASSWORD
+```
+
+Keep the file outside version control. Restrict it to your user, then run ARC-1 from that directory:
 
 ```bash
-export SAP_URL=https://sap.example.com
-export SAP_CLIENT=001
-export SAP_USER=ci_adt_user
-export SAP_PASSWORD='use-your-secret-store-here'
-
+chmod 600 .env  # macOS/Linux; use user-only file permissions on Windows
 arc1 search 'ZCL_ORDER*'
 ```
 
@@ -62,7 +68,7 @@ after `extract-cookies`, which that helper parses independently.
 
 Direct SAP commands currently support one `SAP_URL` target authenticated with Basic credentials or a
 cookie file/string. Before a SAP call, ARC-1 checks authentication and then collects target-local ADT
-feature evidence using the same client session.
+capabilities using the same client session.
 
 Direct commands do not bootstrap these server-only modes:
 
@@ -136,7 +142,7 @@ arc1
 # HTTP Streamable transport; keep the API key in the environment
 export SAP_TRANSPORT=http-streamable
 export ARC1_HTTP_ADDR=0.0.0.0:3000
-export ARC1_API_KEYS='replace-with-secret:viewer'
+# Set ARC1_API_KEYS in the protected .env file first (<secret>:viewer)
 arc1 serve
 ```
 
@@ -306,7 +312,7 @@ medium, and long harmless tests remain eligible.
 For `DEVC`, native JUnit uses SAP's package object set; legacy, coverage, and corroboration runs use
 the resolved package `CLAS`, `PROG`, and `FUGR` roots. Package membership and active source are read
 both before and after the run. A changed selection, an unreadable source tree, an invalid object URI,
-or a package search that reaches the 1,000-row bound is reported as incomplete evidence (exit `3`),
+or a package search that reaches the 1,000-row bound is reported as incomplete results (exit `3`),
 never as a pass. Exact scope uses each object's actual package; `--include-subpackages` is the
 explicit recursive mode.
 
@@ -320,7 +326,7 @@ Domain exits are:
 - `0`: tests passed; `no_tests` also passes only with `--allow-empty`; requested measurable coverage
   met its thresholds.
 - `1`: assertion/error, `--fail-on-skipped` violation, or measurable coverage below a threshold.
-- `3`: incomplete run, disallowed-risk/refusal evidence, non-evaluable empty run, all tests skipped,
+- `3`: incomplete run, tests outside the harmless risk category or other run refusals, non-evaluable empty run, all tests skipped,
   or a requested coverage threshold whose metric is unavailable/non-measurable (`total=0`).
 
 `--coverage` without a minimum adds no percentage threshold, but it is still a measurability gate: all
@@ -382,7 +388,7 @@ Options:
 
 Without `--check`/`--fail-on-diff`, a non-empty diff is informational and exits `0`. JSON includes
 `hasDifferences`, `identical`, added/removed counts, labels, and the unified diff. Malformed or
-internally contradictory structured evidence exits `3` and emits no report.
+internally contradictory structured results exits `3` and emits no report.
 
 ### `lint`
 
@@ -422,7 +428,7 @@ export SAP_ALLOW_TRANSPORT_WRITES=true
 export SAP_ALLOWED_TRANSPORTS=A4HK900123
 arc1 call SAPTransport --arg action=release --arg id=A4HK900123 --output json
 
-# Machine-readable terminal evidence for one release
+# Machine-readable final status for one release
 arc1 call SAPTransport --json \
   '{"action":"release","id":"A4HK900123","resultFormat":"structured"}' --output json
 ```
@@ -430,7 +436,7 @@ arc1 call SAPTransport --json \
 Inspect the returned state before retrying a mutation. An incomplete result can mean that SAP
 accepted the change but ARC-1 could not verify its outcome.
 
-- **Transport release:** requires terminal CTS evidence. `timeoutSeconds` defaults to 300. A
+- **Transport release:** requires a confirmed final CTS status. `timeoutSeconds` defaults to 300. A
   restrictive `SAP_ALLOWED_TRANSPORTS` list permits single-ID release but blocks
   `release_recursive`; recursive release requires an empty list or explicit `*` and authorization
   for current and concurrently attached children. See [SAPTransport](tools/sap-transport.md).

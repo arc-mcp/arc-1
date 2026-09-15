@@ -5,21 +5,7 @@ import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-rela
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { features, fullConfig } from './handler-test-config.js';
 
-const TOOL_NAMES = [
-  'SAPRead',
-  'SAPSearch',
-  'SAPWrite',
-  'SAPActivate',
-  'SAPNavigate',
-  'SAPQuery',
-  'SAPTransport',
-  'SAPGit',
-  'SAPContext',
-  'SAPLint',
-  'SAPDiagnose',
-  'SAPManage',
-];
-const TOOL_DOCS = TOOL_NAMES.map((name) => {
+const TOOL_DOCS = getToolDefinitions(fullConfig(false), true, features()).map(({ name }) => {
   const path = `tools/sap-${name.slice(3).toLowerCase()}.md`;
   const markdown = readFileSync(new URL(`../../../docs_page/${path}`, import.meta.url), 'utf8');
   // Keep each page as one tool section for the parameter/action completeness checks.

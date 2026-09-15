@@ -1,13 +1,13 @@
 # SAPTargets
 
-List the SAP targets available through `/multi/mcp`. This catalog is separate from the 12 core tools and is available only on the aggregate multi-target route.
+List available SAP targets on the experimental `/multi/mcp` route. This catalog is separate from
+the 12 core tools and is available only on that aggregate route.
 
 ```text
 SAPTargets()
 ```
 
-List the SAP targets that can be selected through `/multi/mcp`. The tool takes no `target` parameter
-and does not contact SAP. Listing a target proves only that ARC-1 accepted its configuration; it
+The tool takes no `target` parameter and does not contact SAP. Listing a target proves only that ARC-1 accepted its configuration; it
 does not prove that the current user's SAP identity can access it.
 
 | Parameter | Type | Required | Description |

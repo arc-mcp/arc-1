@@ -26,15 +26,14 @@ identify the reader's task and its next step. Use these rules:
 
 Run `npm run docs:build` and the documentation/profile tests. The strict build rejects omitted
 navigation pages and broken local links/anchors. Test important reader paths in the rendered site.
-The [September 2026 review](research/2026-09-15-documentation-review.md) records research sources,
-page-level decisions, and validation evidence.
 
 ## BTP documentation
 
 `docs_page/btp-overview.md` is the shared task map for people and assistants; the deployment
 runbook owns the ordered commands. Example READMEs explain their files, not another setup sequence.
-Keep the map readable as raw Markdown as well as HTML. `docs_page/llms.txt` links the main task entry points, including BTP, and is copied unchanged by
-MkDocs; there is no manifest or custom build hook.
+Keep the map readable as raw Markdown as well as HTML. `docs_page/llms.txt` links the main task
+entry points, including BTP, and is copied unchanged by MkDocs; there is no manifest or custom
+build hook.
 
 When changing setup guidance, check the relevant runtime/descriptor and existing examples together.
 Run the focused documentation/profile tests and strict MkDocs build, then follow the affected task

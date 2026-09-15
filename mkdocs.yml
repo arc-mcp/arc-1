@@ -49,81 +49,81 @@ theme:
 nav:
   - Home: index.md
   - Get started:
-      - Quickstart: quickstart.md
-      - Install in Claude: install-in-claude.md
-      - Agent plugin: agent-plugin.md
+      - quickstart.md
+      - install-in-claude.md
+      - agent-plugin.md
   - Use ARC-1:
-      - Workflows and prompts: mcp-usage.md
+      - mcp-usage.md
       - Skills:
-          - Install and choose skills: skills.md
-          - GitHub Copilot in VS Code: skills-vscode.md
-          - GitHub Copilot in Eclipse: skills-eclipse.md
-      - CLI: cli-guide.md
-      - Live relations (experimental): live-relations.md
+          - skills.md
+          - skills-vscode.md
+          - skills-eclipse.md
+      - cli-guide.md
+      - live-relations.md
   - Deploy:
-      - Choose a deployment: deployment.md
-      - Docker: docker.md
+      - deployment.md
+      - docker.md
       - SAP BTP:
-          - Choose a setup: btp-overview.md
-          - Cloud Foundry deployment: btp-cloud-foundry-deployment.md
-          - Inspect the deployment archive: btp-archive-inspection.md
-          - Setup worksheet: btp-setup-worksheet.md
-          - BTP ABAP environment: btp-abap-environment.md
-          - BTP ABAP prerequisites: btp-abap-prerequisites.md
-          - S/4HANA Public Cloud: s4hana-public-cloud.md
-          - Multi-target setup (experimental): multi-target-setup.md
-      - Deployment practices: deployment-best-practices.md
+          - btp-overview.md
+          - btp-cloud-foundry-deployment.md
+          - btp-archive-inspection.md
+          - btp-setup-worksheet.md
+          - btp-abap-environment.md
+          - btp-abap-prerequisites.md
+          - s4hana-public-cloud.md
+          - multi-target-setup.md
+      - deployment-best-practices.md
   - Access and security:
-      - Authentication: enterprise-auth.md
-      - Permissions and roles: authorization.md
-      - XSUAA: xsuaa-setup.md
-      - Principal propagation: principal-propagation-setup.md
-      - BTP destinations: btp-destination-setup.md
-      - API keys: api-key-setup.md
-      - OAuth and JWT: oauth-jwt-setup.md
-      - Security checklist: security-guide.md
-      - SAP API policy: sap-api-policy-and-architecture.md
+      - enterprise-auth.md
+      - authorization.md
+      - xsuaa-setup.md
+      - principal-propagation-setup.md
+      - btp-destination-setup.md
+      - api-key-setup.md
+      - oauth-jwt-setup.md
+      - security-guide.md
+      - sap-api-policy-and-architecture.md
   - Operate:
-      - Find an operation: operations.md
-      - BTP administration: btp-administration.md
-      - Multi-target administration: multi-target-administration.md
-      - Update ARC-1: updating.md
-      - Logs and troubleshooting: log-analysis.md
-      - Rate limits: rate-limiting.md
-      - Caching: caching.md
-      - Test authentication: auth-test-process.md
+      - operations.md
+      - btp-administration.md
+      - multi-target-administration.md
+      - updating.md
+      - log-analysis.md
+      - rate-limiting.md
+      - caching.md
+      - auth-test-process.md
   - Reference:
-      - Configuration: configuration-reference.md
-      - Configuration precedence: configuration-precedence.md
+      - configuration-reference.md
+      - configuration-precedence.md
       - Tools:
-          - Choose a tool: tools.md
-          - SAPRead: tools/sap-read.md
-          - SAPSearch: tools/sap-search.md
-          - SAPWrite: tools/sap-write.md
-          - SAPActivate: tools/sap-activate.md
-          - SAPNavigate: tools/sap-navigate.md
-          - SAPQuery: tools/sap-query.md
-          - SAPTransport: tools/sap-transport.md
-          - SAPGit: tools/sap-git.md
-          - SAPContext: tools/sap-context.md
-          - SAPLint: tools/sap-lint.md
-          - SAPDiagnose: tools/sap-diagnose.md
-          - SAPManage: tools/sap-manage.md
-          - SAPTargets: tools/sap-targets.md
-          - Function module writes: tools/write-function-modules.md
-          - Class member edits: tools/write-class-members.md
-          - Text element edits: tools/write-text-elements.md
-      - Custom tool extensions: extensions.md
+          - tools.md
+          - tools/sap-read.md
+          - tools/sap-search.md
+          - tools/sap-write.md
+          - tools/sap-activate.md
+          - tools/sap-navigate.md
+          - tools/sap-query.md
+          - tools/sap-transport.md
+          - tools/sap-git.md
+          - tools/sap-context.md
+          - tools/sap-lint.md
+          - tools/sap-diagnose.md
+          - tools/sap-manage.md
+          - tools/sap-targets.md
+          - tools/write-function-modules.md
+          - tools/write-class-members.md
+          - tools/write-text-elements.md
+      - extensions.md
   - Develop:
-      - Run locally and from source: local-development.md
-      - Architecture: architecture.md
-      - SAP test system: sap-trial-setup.md
+      - local-development.md
+      - architecture.md
+      - sap-trial-setup.md
   - Project:
-      - Release notes: release-notes.md
-      - Roadmap: roadmap.md
-      - Compare with SAP ADT MCP: arc-1-vs-sap-abap-mcp-server.md
-      - Blog articles: blog-series.md
-      - Newsletter: newsletter.md
+      - release-notes.md
+      - roadmap.md
+      - arc-1-vs-sap-abap-mcp-server.md
+      - blog-series.md
+      - newsletter.md
 
 markdown_extensions:
   - admonition

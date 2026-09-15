@@ -7,11 +7,6 @@ SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER",
   method="get_name", source="METHOD get_name.\n  result = name.\nENDMETHOD.")
 ```
 
-> **NetWeaver < 7.51:** ADT writes over HTTP require a stateful session that older releases
-> don't honor, so writes fail with `423 invalid lock handle` until the `abapfs_extensions`
-> enhancement is installed on the SAP system. This is *not* SAP Note 2727890 (a separate
-> narrow bug). See [SAP trial setup → Writes fail with 423](../sap-trial-setup.md) (423 troubleshooting section). S/4HANA (≥ 7.51) is unaffected.
-
 ## Editing recipes
 
 - [Function modules and structural includes](write-function-modules.md)
@@ -22,6 +17,7 @@ SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER",
 - [Launchpad descriptors (UIAD)](#uiad-create-and-update)
 
 ## Parameters
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. See the [editing recipes](#editing-recipes) for specialized actions. |
@@ -92,11 +88,46 @@ SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER",
 
 **DDIC metadata writes:** `DOMA`, `DTEL`, `MSAG`, and `SRVB` use structured XML payloads and do **not** use `/source/main`. On DTEL create, an omitted label length is derived from its label text, or defaults to the field's maximum when the label is absent; omitted `deactivateInputHistory` defaults to `false`. On DTEL update, omitted fields keep their stored values, including lengths, the history flag, the SET/GET parameter, the change-document and bidi flags, and the search-help parameter while the search help is unchanged. Changing a label without supplying its length derives a new length from that label. Every DTEL create sends a follow-up metadata PUT because SAP's create POST drops the description, labels, and custom lengths. `MSAG` writes use the `/sap/bc/adt/messageclass/` endpoint and accept a `messages` array of `{number, shortText, longText?}` entries. `SRVB` create uses wildcard content type (`application/*`) and SRVB update uses vendor type (`application/vnd.sap.adt.businessservices.servicebinding.v2+xml`).
 
-**Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` write source via `/source/main`. `SKTD`/`KTD` instead GETs the complete `<sktd:docu>` envelope and PUTs it back with the v2 KTD media type, changing only addressed Base64 long-text bodies and existing short-text attributes. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one KTD-capable ABAP object; `KTD` is accepted as a friendly alias. Create requires `refObjectType` and uses `name` as the documented object name. ARC-1 supports KTD creates for parent types with verified ADT parent URI routing, including `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `SRVB/SVB`, and `DEVC/K`. `CLAS/OC`, `INTF/OI`, and `PROG/P` were not registered for KTD DOCUMENTATION scope on the tested SAP_BASIS 758 and 816 systems; use ABAP Doc for those code objects. Other SAP-registered KTD parent types require ARC-1 parent URI routing before create is enabled.
+## Source-based writes
 
-**KTD node routing:** Copy a node name from the SAPRead index into a `## <node>` section or `shortTexts[].node`. Exact full IDs take precedence; case-insensitive IDs and names must identify one element. If several elements match, use the exact full ID printed in the error or index. An update merges only the addressed nodes. Create/update responses list changed nodes and headings kept as prose. Use `dryRun=true` to inspect that report before writing. Duplicate-ID documents remain readable through SAPRead, grep, and SAPContext; their read context explains that writes are unavailable because the elements cannot be addressed separately.
+`TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` write source via `/source/main`. `TABL` covers transparent
+tables (`TABL/DT`) and DDIC structures (`TABL/DS`);
+ARC-1 resolves `/ddic/tables/` or `/ddic/structures/` for reads and updates.
 
-Keep edits above the read-only metadata marker in a complete SAPRead result. For a root-only H2 edit, keep that context so the root heading is distinguishable from a visible Markdown title. When only the root has documentation, a bare body without its routing H2 also works. Ordinary unmatched headings remain prose and are reported; a node-shaped typo aborts the update. Prefix a reserved prose heading with one backslash (`\## …`) to keep it inside the current node.
+## Edit KTD nodes
+
+`SKTD` (alias `KTD`) stores Markdown documentation attached to an ABAP object. For create, provide
+`refObjectType`; the documented parent name defaults to `name` and can be set with `refObjectName`.
+Supported parent routes include `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `SRVB/SVB`, and `DEVC/K`.
+`CLAS/OC`, `INTF/OI`, and `PROG/P` did not support KTD DOCUMENTATION on the tested SAP_BASIS 758/816
+systems; use ABAP Doc for them. Other parent types need both SAP support and ARC-1 URI routing.
+
+To update an existing document:
+
+1. Read the complete result with `SAPRead(type="SKTD", name="<document>")`. It includes documented
+   nodes, short texts, and an index of every writable node, including empty nodes.
+2. Edit above the read-only HTML-comment marker. Use `## <node>` with a name or ID from the index;
+   exact full IDs take precedence. Other ID/name matches are case-insensitive and must resolve
+   uniquely. Ambiguous names are rejected with their matching IDs.
+3. Keep the marker and index when editing a root-only H2 section, so ARC-1 can distinguish its
+   routing heading from a visible title. Use `# <object name>` for a visible root title. When only
+   the root has documentation, a bare body without a routing H2 also works.
+4. Pass the edited source to `SAPWrite(action="update", type="SKTD", name="<document>",
+   source="<edited Markdown>", dryRun=true)`. Inspect the node-change report, then repeat with
+   `dryRun=false` to save.
+
+Updates merge only the addressed nodes. Unmatched headings remain prose and appear in the report;
+node-shaped typos abort the update. A reserved node heading used as prose is escaped with one
+backslash (`\## …`) on read and restored on write. Leave that escape in place. Populated non-writable
+sections can pass through unchanged, but edits to them are refused.
+
+Use `shortTexts=[{node:"<index name or ID>",text:"<up to 60 characters>"}]` to update short texts,
+with or without `source`; an empty text clears one. Nodes marked `obligation="forbidden"` are refused.
+Duplicate-ID documents remain readable through SAPRead, grep, and SAPContext, but cannot be updated.
+
+ARC-1 reads the full ADT document and replaces only selected Base64 long texts and existing
+short-text attributes. Read-only context below the marker is ignored on write. Reads honor the
+requested active/inactive version; updates preserve the developer's current draft.
 
 ## Server-driven object writes
 
@@ -167,7 +198,8 @@ Create a function group, declare function-module parameters, and maintain struct
 
 ## Input conventions
 
-Omit optional parameters you do not need. ARC-1 treats null and blank values as omitted and accepts
+Omit optional parameters you do not need. ARC-1 normally treats null and blank values as omitted, except an explicit empty
+text-element `source` clears the selected part. It accepts
 optional booleans as JSON booleans or `"true"`/`"false"`, `"1"`/`"0"`, and `"yes"`/`"no"`.
 Use uppercase repository names for `create` and `batch_create`; source text may use mixed case.
 A `BDEF` create requires the behavior definition in `source`.
@@ -290,7 +322,7 @@ Activation additionally uses `failed` for an explicit SAP activation error. Skip
 
 Check `isError` and parse the second block on its own. Do not concatenate the blocks into one JSON value.
 `ARC1_MINIMAL_ERRORS=true` hides SAP diagnostics in both blocks while retaining phases and counts.
-The manifest contains bounded per-object diagnostics and no source code; unassigned activation
+The batch result contains bounded per-object diagnostics and no source code; unassigned activation
 messages appear in the readable summary.
 
 ## RAP handler scaffolding
@@ -369,5 +401,11 @@ Change method declarations and visibility without resending the whole class. See
 ## Text elements
 
 Read, replace, or clear one part of a class, program, or function-group text pool. See [Write text elements](write-text-elements.md).
+
+## Older NetWeaver releases
+
+On tested NetWeaver 7.50 systems, ADT writes need the `abapfs_extensions` stateful-session
+enhancement; otherwise SAP can return `423 invalid lock handle`. See
+[trial-system write troubleshooting](../sap-trial-setup.md) before retrying.
 
 [All tools](../tools.md)

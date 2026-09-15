@@ -1,4 +1,6 @@
-# Authentication Overview
+# Authentication
+
+<a id="authentication-overview"></a>
 
 Choose how the MCP client signs in to ARC-1 and which identity ARC-1 uses in SAP.
 These are separate decisions: a user can sign in with their corporate account while SAP still sees a shared technical user.
@@ -32,7 +34,9 @@ For per-user access, set `SAP_PP_ENABLED=true` and explicit `SAP_PP_STRICT=true`
 JWT requests use the human's SAP identity; non-JWT tool calls are rejected.
 For API-key automation, use a separate instance with `SAP_PP_ENABLED=false` and a least-privileged technical SAP user.
 
-A single mixed instance is supported with explicit `SAP_PP_STRICT=false`: JWT calls use PP and API-key calls use the shared identity. **A failed JWT/PP request never falls back to the shared user.**
+With PP enabled, set `SAP_PP_STRICT=true` explicitly to reject API-key/non-JWT tool calls.
+If unset or `false`, API-key calls use the configured shared SAP client and startup warns about mixed identities.
+JWT PP failures always return an error; they never fall back to the shared user.
 
 Experimental multi-target mode can mix strict PP targets and explicitly enabled shared Basic targets.
 Basic requires `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`, exactly one CF instance and no rolling deployment overlap. The gateway remains mutation-free; Basic never replaces failed PP.
@@ -196,13 +200,13 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 <a id="all-auth-related-flags"></a>
 
 Use [Configuration Reference](configuration-reference.md) for all flags, defaults and validation rules.
-The startup line `auth: MCP=[...] SAP=[...]` shows which methods are active.
+The startup line `auth: MCP=[...] SAP=...` shows which methods are active.
 
 ## Coexistence Matrix
 
 API keys, OIDC and XSUAA can coexist on single-target HTTP routes. SAP authentication has these constraints:
 
-| Layer B combination | Status | Reason |
+| SAP authentication combination | Status | Reason |
 |---|---|---|
 | Basic only | Supported | Standard on-prem |
 | Cookie only | Supported | On-prem SSO developer loop |
@@ -210,10 +214,10 @@ API keys, OIDC and XSUAA can coexist on single-target HTTP routes. SAP authentic
 | Direct service-key bearer (BTP ABAP) only | Supported | Local BTP ABAP Environment browser OAuth |
 | Destination only | Supported | BTP Cloud Foundry, shared user |
 | Destination + PP with explicit `SAP_PP_STRICT=true` | Recommended | Enterprise standard on BTP CF; JWT tool calls use one per-user SAP identity model |
-| Destination + PP + API keys with `SAP_PP_STRICT=false` | Supported | JWT calls are per-user while API-key calls use the shared technical identity; separate instances are recommended for clearer boundaries |
+| Destination + PP + API keys with `SAP_PP_STRICT` unset or `false` | Supported | JWT calls are per-user while API-key calls use the shared technical identity; separate instances are recommended for clearer boundaries |
 | PP + Cookie | Startup error | Cookies would leak into per-user requests |
 | PP + Cookie + SAP_PP_ALLOW_SHARED_COOKIES=true | Allowed with warning | Cookies stay on shared client only |
-| Bearer + Cookie | Startup error | Two Layer B methods in conflict |
+| Bearer + Cookie | Startup error | Two SAP authentication methods in conflict |
 | Direct service-key bearer + PP | Startup error | `SAP_BTP_SERVICE_KEY` is local interactive OAuth and cannot be combined with `SAP_PP_ENABLED=true` |
 | Destination-exchanged bearer + PP | Supported | BTP ABAP deployed path: `SAP_BTP_DESTINATION` + `SAP_PP_ENABLED=true` + destination `OAuth2UserTokenExchange` |
 | Multi-target PP + Basic destinations | Read-only exception | XSUAA remains the human authorization layer; Basic targets are shared SAP identity, require the default-off ceiling, and force one CF instance |
@@ -239,7 +243,7 @@ Use only settings listed in [Configuration Reference](configuration-reference.md
 | SAP sees the wrong user | [PP identity verification](principal-propagation-setup.md) |
 | Sign-in succeeds but a tool is blocked | [Authorization troubleshooting](authorization.md#troubleshooting-which-layer-blocked-me) |
 
-## Setup Guides
+## Verify the connection
 
 After setup, run the matching [authentication smoke test](auth-test-process.md).
 A successful `/health` response proves process health only; verify a safe SAP read and the expected SAP identity.

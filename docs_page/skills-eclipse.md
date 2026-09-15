@@ -92,7 +92,10 @@ On Windows, if Eclipse cannot resolve `npx`, use `"command": "npx.cmd"` or the a
 }
 ```
 
-After connecting, ask Copilot to call `SAPRead(type="SYSTEM")` and verify the returned system.
+After connecting, ask Copilot to call `SAPRead(type="SYSTEM")` to check ADT access. It does not
+return the SID or release. Confirm the endpoint/client with your administrator and use
+`SAPRead(type="COMPONENTS")` for the `SAP_BASIS` release. Under principal propagation, follow the
+[backend identity check](principal-propagation-setup.md#verify-the-backend-identity).
 See [Quickstart](quickstart.md) for server setup or [XSUAA setup](xsuaa-setup.md) for BTP login.
 
 ## Troubleshooting

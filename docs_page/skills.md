@@ -21,9 +21,20 @@ npx skills add arc-mcp/arc-1 --list
 npx skills add arc-mcp/arc-1 --agent github-copilot --skill bootstrap-system-context
 ```
 
-Add `--global` for a user-wide install. If `npx` is unavailable, copy the relevant folder from
-[`skills/`](https://github.com/arc-mcp/arc-1/tree/main/skills) into your client's supported skill directory.
-The [skills CLI](https://github.com/vercel-labs/skills#readme) handles those paths automatically.
+Add `--global` for a user-wide install. If `npx` is unavailable, copy the **whole skill folder**,
+including `SKILL.md` and its supporting files, from
+[`skills/`](https://github.com/arc-mcp/arc-1/tree/main/skills):
+
+| Client | Project folder | Personal folder |
+|---|---|---|
+| Claude Code | `.claude/skills/<name>/` | `~/.claude/skills/<name>/` |
+| GitHub Copilot | `.agents/skills/<name>/` or `.github/skills/<name>/` | `~/.copilot/skills/<name>/` |
+| Cursor | `.agents/skills/<name>/` | `~/.cursor/skills/<name>/` |
+| Codex | `.agents/skills/<name>/` | `~/.agents/skills/<name>/` |
+
+For Eclipse, import the local project folder into the workspace. See the
+[full installation list](https://github.com/arc-mcp/arc-1/blob/main/skills/README.md#manual-install-without-the-cli)
+for other clients.
 
 ## Run a skill
 
@@ -32,8 +43,9 @@ The [skills CLI](https://github.com/vercel-labs/skills#readme) handles those pat
 
    > Use the explain-abap-code skill to explain ZCL_ORDER and its dependencies.
 
-3. Review the result and validation evidence. Some research workflows also require the
-   `mcp-sap-docs` server; check the selected skill's prerequisites.
+3. Review the result and validation output. `mcp-sap-docs` is optional for general use and provides
+   SAP documentation lookup. Individual workflows can require it or other servers, such as UI5
+   or Fiori MCP; check the selected skill's prerequisites.
 
 | Client | Where to start |
 |---|---|
@@ -46,6 +58,10 @@ The [skills CLI](https://github.com/vercel-labs/skills#readme) handles those pat
 <span id="github-copilot-in-vs-code-with-sap-adt"></span>
 
 ## Choose a workflow
+
+For an unfamiliar system, start with `bootstrap-system-context`, then `explain-abap-code` before
+editing. Use `generate-rap-service` for a straightforward prototype, or
+`generate-rap-service-researched` when existing code and team conventions must guide the design.
 
 ### Create code and tests
 
@@ -64,7 +80,7 @@ The [skills CLI](https://github.com/vercel-labs/skills#readme) handles those pat
 | Skill | Use it to |
 |---|---|
 | [explain-abap-code](https://github.com/arc-mcp/arc-1/blob/main/skills/explain-abap-code/SKILL.md) | Reads an ABAP object, pulls dependency context, and explains it in structure |
-| [debug-slow-sql](https://github.com/arc-mcp/arc-1/blob/main/skills/debug-slow-sql/SKILL.md) | Root-causes a slow ABAP SQL or Fiori OData request — sap-statistics timing split (`odata_perf`), CDS Show-SQL, SAPQuery execution metrics, ST05 trace control + ABAP profiler — and proposes the cheapest fix |
+| [debug-slow-sql](https://github.com/arc-mcp/arc-1/blob/main/skills/debug-slow-sql/SKILL.md) | Finds whether slow SQL/OData spends time in the database, ABAP, or framework, then inspects the relevant SQL or traces |
 | [migrate-custom-code](https://github.com/arc-mcp/arc-1/blob/main/skills/migrate-custom-code/SKILL.md) | Runs migration-oriented checks and groups findings by priority |
 | [sap-migration-dossier](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-migration-dossier/SKILL.md) | Builds a scoped ECC to S/4HANA migration dossier with inventory, usage, ATC, Clean Core, dependency, and SAP Docs evidence |
 | [sap-object-documenter](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-object-documenter/SKILL.md) | Batch-documents custom objects as Markdown |
@@ -88,7 +104,7 @@ The [skills CLI](https://github.com/vercel-labs/skills#readme) handles those pat
 
 | Skill | Use it to |
 |---|---|
-| [bootstrap-system-context](https://github.com/arc-mcp/arc-1/blob/main/skills/bootstrap-system-context/SKILL.md) | Probes the target system and writes a local `system-info.md` with SID, release, installed components, feature flags, and lint preset |
+| [bootstrap-system-context](https://github.com/arc-mcp/arc-1/blob/main/skills/bootstrap-system-context/SKILL.md) | Collects system context and writes `system-info.md` with known target details, component releases, feature flags, and lint preset; unavailable details must remain unknown |
 | [setup-abap-mirror](https://github.com/arc-mcp/arc-1/blob/main/skills/setup-abap-mirror/SKILL.md) | Creates a local abapGit-style mirror of a package or object list using ARC-1's existing reads |
 
 ### Review tool usage

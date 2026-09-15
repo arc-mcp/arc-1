@@ -1,8 +1,10 @@
-# SAP S/4HANA Public Cloud Setup
+# SAP S/4HANA Cloud Public Edition setup
+
+<a id="sap-s4hana-public-cloud-setup"></a>
 
 Connect ARC-1 to S/4HANA Cloud Public Edition **developer extensibility** with each user's own SAP identity. ARC-1 runs on BTP Cloud Foundry and uses a `SAMLAssertion` destination. Basic auth and local service-key login are unsupported for this target.
 
-If SAP Business Application Studio already connects to this system, reuse its reviewed SAML destination. Otherwise follow the trust and destination steps below. Leave `SAP_DISABLE_SAML` unset or false.
+If SAP Business Application Studio already connects to this system, reuse its SAML destination. Otherwise follow the trust and destination steps below. Leave `SAP_DISABLE_SAML` unset or false.
 
 ## How it works
 
@@ -14,7 +16,7 @@ Destination Service supplies a per-user SAML assertion. ARC-1 sends it directly 
 
 ## Prerequisites
 
-- ARC-1 on Cloud Foundry with XSUAA login and Destination bindings; follow [the deployment runbook](btp-cloud-foundry-deployment.md).
+- A BTP subaccount with Cloud Foundry, XSUAA and Destination quota, plus the [deployment runbook prerequisites](btp-cloud-foundry-deployment.md#3-prepare-the-landscape).
 - A business user for each MCP user, with matching email and developer-extensibility authorization.
 - BTP Destination and S/4HANA Communication Management administrators for trust setup.
 
@@ -30,8 +32,7 @@ Summary:
    - **General → Technical Data**: enable **Inbound Only**.
    - **General → Identity Provider / OAuth 2.0 / SAML**: set **SAML Bearer Assertion Provider** to **ON**, upload the exported BTP certificate, and set the **SAML Bearer Issuer** to the certificate's Subject CN.
 
-No communication *arrangement* and no communication *user* are needed for the developer connection —
-the SAML assertion carries the real user identity (email), which S/4HANA Cloud maps to a business user.
+These trust steps do not create a communication arrangement or communication user. The assertion carries the human user's email. The SAP tutorial demonstrates the BAS connection; ARC-1 additionally needs the developer-extensibility ADT access listed above.
 
 ## Step 2: Create the `SAMLAssertion` destination
 
@@ -53,9 +54,11 @@ the SAP tutorial:
 
 Enable **Use default JDK truststore** for public TLS certificates. If reusing a BAS destination, keep its `HTML5.*` and `WebIDE*` properties; ARC-1 ignores those BAS hints.
 
-## Step 3: Bind BTP services
+<a id="step-3-bind-btp-services"></a>
 
-The [MTA deployment runbook](btp-cloud-foundry-deployment.md) supplies XSUAA and Destination bindings. This Internet destination does not require Connectivity or Cloud Connector. In the runbook's extension step, use the cloud settings below instead of an on-premise profile.
+## Step 3: Prepare the ARC-1 checkout
+
+Complete [deployment steps 1–3](btp-cloud-foundry-deployment.md#1-choose-the-topology-before-configuring-anything), then clone the source and run `npm ci` as shown at the start of step 4. Return here to create the cloud extension below; do not select an on-premise profile. The MTA will bind XSUAA and Destination during deployment. The Internet connection does not need Connectivity or Cloud Connector; the base MTA's Connectivity binding is harmless.
 
 ## Step 4: Configure ARC-1
 
@@ -74,6 +77,7 @@ modules:
       SAP_XSUAA_AUTH: "true"
       SAP_PP_ENABLED: "true"
       SAP_PP_STRICT: "true"
+      SAP_BTP_DESTINATION: <SYSTEM_ID>_SAML_ASSERTION
       SAP_BTP_PP_DESTINATION: <SYSTEM_ID>_SAML_ASSERTION
       SAP_ALLOW_WRITES: "false"
       SAP_ALLOW_DATA_PREVIEW: "false"
@@ -82,7 +86,9 @@ modules:
       SAP_ALLOW_GIT_WRITES: "false"
 ```
 
-Continue the runbook through validation, archive inspection and deployment. `ProxyType=Internet` routes directly to SAP even if the app has a Connectivity binding.
+`SAP_BTP_DESTINATION` initializes ARC-1's BTP runtime at startup; setting only `SAP_BTP_PP_DESTINATION` is insufficient. Both names above intentionally refer to the same cloud destination.
+
+Continue at [deployment step 5](btp-cloud-foundry-deployment.md#5-validate-build-and-inspect-the-mtar) for validation, archive inspection and deployment, then complete the DCR and role checks. `ProxyType=Internet` routes directly to SAP even if the app has a Connectivity binding.
 
 ## Step 5: Grant users access
 
@@ -96,8 +102,8 @@ Developer extensibility uses ABAP Cloud language rules, released APIs and ADT ac
 ## Verification
 
 1. Sign in as the Viewer test user and call `SAPRead` with `type: "COMPONENTS"`, then search for a known object.
-2. In the app logs, check `auth_pp_created` with `success:true`; debug logs can also show `hasSamlAssertion:true`.
-3. Have the SAP administrator verify the actual business user for that request using the system's supported audit evidence.
+2. In the app logs, check `auth_pp_created` with `success:true`; `SAP_VERBOSE=true` enables debug logs that can also show `hasSamlAssertion:true`.
+3. Have the SAP administrator verify the actual business user for that request using the system's supported audit logs.
 
 Record safe-read access and backend identity separately. An exchange-success log or `SYSTEM.user` does not establish which user SAP accepted.
 

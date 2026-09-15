@@ -1,4 +1,4 @@
-# API Key Setup
+# API key setup
 
 <a id="when-to-use"></a><a id="architecture"></a>
 
@@ -125,9 +125,29 @@ and the header value to `Bearer <your-key>`.
 
 ### Claude Desktop (via mcp-remote)
 
-For Claude Desktop connection options, use [Connect Claude](install-in-claude.md).
-If your setup needs an HTTP bridge, configure its Authorization header through its supported secret handling;
-keep the API key out of command-line arguments and tracked configuration.
+For native connection options, use [Connect Claude](install-in-claude.md). If you need a local HTTP bridge, `mcp-remote` 0.14.2 supports a [header file](https://github.com/punkpeye/mcp-remote#custom-headers). Create a private file outside the repository containing:
+
+```text
+Authorization: Bearer REPLACE_WITH_YOUR_KEY
+```
+
+Restrict access to your user (for example, `chmod 600 /absolute/path/arc1-headers.txt` on macOS/Linux). Add this entry to Claude Desktop's MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "arc1": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote@0.14.2", "https://arc1.company.com/mcp",
+        "--header-file", "/absolute/path/arc1-headers.txt"
+      ]
+    }
+  }
+}
+```
+
+Replace the URL and absolute file path, then restart the client. On Windows, use a user-restricted file and JSON-escaped path such as `C:\\Users\\you\\arc1-headers.txt`. The command line contains the file path, not the credential.
 
 ## Production Deployment
 

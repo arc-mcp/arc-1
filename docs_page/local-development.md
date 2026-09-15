@@ -101,8 +101,9 @@ For the local HTTP server above, a VS Code entry is:
 }
 ```
 
-Use the same key as in the server’s `.env`. An HTTP client connects to an existing server. Set SAP credentials and capability flags on that
-server, then restart it; an `env` block beside a remote `url` does not configure ARC-1.
+Use the same key as in the server’s `.env`. An HTTP client connects to an existing server. Set SAP
+credentials and capability flags on that server, then restart it; an `env` block beside a remote
+`url` does not configure ARC-1.
 
 ## Read-only local UI
 
@@ -141,8 +142,9 @@ to an SSO page. These cookies identify that developer; use
     npm run extract-sap-cookies -- --url https://your-sap-host --output ./cookies.txt
     ```
 
-2. Complete the normal SAP login in the Chrome window it opens. The extractor writes the SAP cookies
-   to `cookies.txt` with file mode `0600`.
+2. Answer `y` to the local-use confirmation. Complete the normal SAP login in the Chrome window
+   it opens, then return to the terminal and press **Enter** to capture the cookies. The extractor
+   writes them to `cookies.txt` with file mode `0600`.
 3. Start ARC-1 with the resulting file:
 
     ```bash
@@ -162,7 +164,8 @@ The startup auth summary reports the active methods, for example:
 INFO: auth: MCP=[none] SAP=basic (shared)
 ```
 
-Use it to check which identity path was selected, then perform a read to verify access.
+The cookie-file path reports `SAP=cookie`. Use the summary to check which identity path was
+selected, then perform a read to verify access.
 For failures, see [Authentication](enterprise-auth.md) and [Log analysis](log-analysis.md).
 
 ## CLI usage (outside MCP)

@@ -34,7 +34,8 @@ action uses `type` for its root and does not accept `objectType`.
   permission is needed.
 - For Cloud Connector: discovery, objectrelations, and the requested types' metadata paths.
   `TABL`, `FUNC`, `VIEW`, `TRAN`, and `SHLP` also need
-  `/sap/bc/adt/repository/informationsystem/search` for exact identity resolution.
+  `/sap/bc/adt/repository/informationsystem/search` for exact identity resolution. Add only the
+  needed resources to the Cloud Connector allowlist; do not expose all SAP paths for this feature.
 
 The action uses your existing SAP identity. It does not fall back to another identity on failure.
 
@@ -49,8 +50,9 @@ before reading an object. Known unsupported capability hides it. If it is missin
 check discovery, Cloud Connector resources, and the caller's SAP authorization.
 
 To disable it, append `SAPNavigate.relations` to the existing `SAP_DENY_ACTIONS` list and restart or
-redeploy. This hides the action and rejects direct invocation. Early-preview
-`ARC1_LIVE_RELATIONS` / `--live-relations` settings are obsolete; an old `false` value does not deny it.
+redeploy. This hides the action and rejects direct invocation. Remove early-preview
+`ARC1_LIVE_RELATIONS` / `--live-relations` settings: the flag no longer exists and
+`--live-relations` prevents startup. An old environment value of `false` does not disable the action.
 
 ## Parameters
 

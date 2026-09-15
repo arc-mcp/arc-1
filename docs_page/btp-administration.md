@@ -1,4 +1,4 @@
-# BTP Administration
+# BTP administration
 
 Operate an ARC-1 deployment on SAP BTP Cloud Foundry after the first successful read. This page
 covers the controls shared by single-target and multi-target deployments. For initial installation,
@@ -13,9 +13,11 @@ For topology selection, use [BTP: Start here](btp-overview.md).
 
 ## Responsibilities
 
-Use the [deployment owner map](btp-cloud-foundry-deployment.md#2-assign-owners) for CF, Destination, IAM, Connector and SAP changes. Destination administrators also control credentials for shared Basic users.
+Use the [deployment task map](btp-cloud-foundry-deployment.md#2-assign-owners) for CF, Destination, IAM, Connector and SAP changes. Destination administrators also control credentials for shared Basic users.
 
-## Configuration ownership
+<a id="configuration-ownership"></a>
+
+## Where to store configuration
 
 Use one source of truth for each kind of value:
 
@@ -29,7 +31,7 @@ Use one source of truth for each kind of value:
 | Cloud Connector and SAP | Network exposure, certificate trust/mapping, SAP authorization | ARC-1 OAuth roles |
 
 Keep the customer `.mtaext` in an access-controlled configuration repository. It is ignored by the
-ARC-1 repository by default. Never edit generated `mtad.yaml`; rebuild it from the reviewed source
+ARC-1 repository by default. Never edit generated `mtad.yaml`; rebuild it from the source
 descriptor and extension.
 
 An MTA extension can add or override values but cannot remove a base property. Use an explicit off
@@ -73,10 +75,10 @@ The MTA creates seven role collections with the CF space suffix, for example
 5. Have the user sign in again and restart/reconnect the MCP client if its tool catalog is cached.
 
 An older or recreated XSUAA instance can leave same-name collections with empty/orphaned roles.
-First [inspect and reconcile the collection with its owner](xsuaa-setup.md#repair-missing-or-stale-collection-roles-with-the-owner);
-empty roles alone do not justify deletion. Only when the owner confirms an orphaned collection
+First [inspect and reconcile the collection with its administrator](xsuaa-setup.md#repair-missing-or-stale-collection-roles-with-the-owner);
+empty roles alone do not justify deletion. Only when the identity administrator confirms an orphaned collection
 requires replacement, record its roles, user/group assignments and IdP mappings before removal.
-Then perform the reviewed MTA deployment, inspect the recreated roles, restore the approved
+Then deploy the MTA, inspect the recreated roles, restore the approved
 assignments/mappings and verify a fresh user grant. This is not a generic login fix and does not
 require deleting XSUAA.
 
@@ -192,10 +194,10 @@ Build and deploy the MTA so the next deployment retains the new limits. Afterwar
 
 ### Non-rolling update for shared Basic
 
-Build and [inspect the exact MTAR](btp-archive-inspection.md) before the maintenance window. Confirm the protected override sets one instance. During the window, use the inspected artifact without rebuilding; do not pass a rolling strategy or use blue-green deployment:
+Before the maintenance window, follow [validate, build and inspect](btp-cloud-foundry-deployment.md#5-validate-build-and-inspect-the-mtar), including validation of your actual `.mtaext`. Set `parameters.instances: 1` in that extension before deploying. During the window, use the inspected artifact without rebuilding; do not pass a rolling strategy or use blue-green deployment:
 
 ```bash
-# CF Space Developer, from the reviewed source checkout
+# CF Space Developer, from the source checkout used to build this MTAR
 cf stop arc1-mcp-server
 npm run btp:deploy-ext
 cf scale arc1-mcp-server -i 1
@@ -205,18 +207,20 @@ cf app arc1-mcp-server
 
 The normal MTA deploy may already start the application; the explicit start is harmless. The final
 `cf app` output must show exactly one desired/running instance before users reconnect. Roll back by
-stopping the app, deploying the previous reviewed MTAR with the same `.mtaext` and DCR secret, and
+stopping the app, deploying the previous MTAR with the same `.mtaext` and DCR secret, and
 again verifying exactly one process.
 
 `enable-parallel-deployments: true` in `mta.yaml` lets the MTA deployer schedule independent MTA
 operations. It does not authorize two ARC-1 application processes and does not make rolling Basic
 deployment safe.
 
-## Monitoring and incident evidence
+<a id="monitoring-and-incident-evidence"></a>
+
+## Monitoring and incident investigation
 
 Use request IDs to correlate MCP responses, ARC-1 audit events, Connectivity/Cloud Connector logs,
 and SAP logs. Keep log access restricted: even with central redaction, logs contain identities,
-target IDs, paths, statuses, timing, and topology evidence.
+target IDs, paths, statuses, timing, and topology details.
 
 Useful read-only checks:
 
@@ -232,25 +236,29 @@ curl -fsS "https://<route>/health" | jq .
 active targets or quarantined configuration. It does not prove Destination Service, PP, SAP login,
 SAP authorization, data/SQL policy, or a usable tool catalog.
 
-For multi-target acceptance, call `SAPTargets` as an Admin, review exclusions and registry revision,
-then perform the same safe read as a Viewer through each endpoint style. Verify the actual SAP identity separately with [backend identity evidence](principal-propagation-setup.md#verify-the-backend-identity). `SYSTEM.user` may come from configuration or token claims. PP must reach the intended human; Basic must reach the approved technical user, with the human caller recorded in ARC-1 audit.
+For multi-target checks, call `SAPTargets` as an Admin, review exclusions and registry revision,
+then perform the same safe read as a Viewer through each endpoint style. Verify the actual SAP identity separately with [backend user verification](principal-propagation-setup.md#verify-the-backend-identity). `SYSTEM.user` may come from configuration or token claims. PP must reach the intended human; Basic must reach the approved technical user, with the human caller recorded in ARC-1 audit.
 
-## Pre-customer acceptance
+<a id="pre-customer-acceptance"></a>
 
-Record the checks in the [setup worksheet](btp-setup-worksheet.md). Include evidence and an owner for unresolved items.
+## Before users connect
 
-| Area | Acceptance evidence |
+Record the checks in the [setup worksheet](btp-setup-worksheet.md). Record the result and the administrator responsible for any unresolved item.
+
+| Area | Required check or record |
 |---|---|
 | Reproducible deployment | Source revision, protected `.mtaext`, route/org/space, inspected MTAR and rollback artifact |
 | Services and roles | Intended bindings; seven space-specific collections with current roles; fresh user tokens |
-| SAP access and identity | Safe reads succeed; backend evidence identifies the intended user; approved unmapped/unauthorized users fail without fallback |
+| SAP access and identity | Reads succeed; SAP logs identify the intended user; approved unmapped/unauthorized users fail without fallback |
 | Network | Required Connector paths only; verified backend HTTPS |
 | Multi-target catalog | Admin `SAPTargets` explains exclusions, conflicts and narrowing; selected endpoint styles work |
+| Multi-target routing | Unknown/lowercase target routes fail; aggregate calls without `target` fail; bare `/mcp` is unavailable unless explicitly configured; `/targets` is absent |
+| Multi-target roles | Test Viewer, Data Viewer, Viewer + SQL, Admin and no-read users separately; assigned scopes cannot exceed app/target settings |
 | Capabilities | User scopes and app/target settings enforce the [allowed action surface](multi-target-setup.md#allowed-tools); multi-target mutations stay unavailable |
 | Data and SQL | Enabled only where both app and destination permit them; tested only if required |
 | Workload controls | ATC/Unit explicitly allowed or denied; RAM, concurrency and rate limits reviewed |
 | Shared Basic, if enabled | Least-privileged technical user, lockout monitoring, one process and non-rolling rollback rehearsed |
-| Client and operations | Required clients complete login/reconnect and a safe call; audit, secret rotation, incident and rollback owners accept handover |
+| Client and operations | Required clients complete login/reconnect and a safe call; audit, secret rotation, incident and rollback responsibilities are assigned |
 
 Do not use ATC/Unit as routine deployment smoke tests. Mark unapproved data/client-isolation checks unverified instead of enabling capabilities just to complete the checklist.
 

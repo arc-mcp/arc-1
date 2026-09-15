@@ -1,4 +1,6 @@
-# XSUAA OAuth for MCP-Native Clients
+# XSUAA setup
+
+<a id="xsuaa-oauth-for-mcp-native-clients"></a>
 
 Use XSUAA for browser sign-in to ARC-1 on SAP BTP Cloud Foundry.
 If the repository MTA is already deployed, start at [role assignment](#step-3-assign-role-collections).
@@ -89,12 +91,22 @@ cf logs arc1-mcp-server --recent | grep XSUAA
 
 **Assign before you hand out the MCP URL.** The assignment creates the shadow user, so it works for users who have never logged in — use the **Users** tab above, or:
 
+Find the application identity-provider origin first:
+
+```bash
+btp list security/trust --subaccount <subaccount-id>
+```
+
+Match the origin key to the provider users select for application sign-in. Then assign the collection:
+
 ```bash
 btp assign security/role-collection "ARC-1 Viewer (<space>)" \
   --subaccount <subaccount-id> --to-user <email> --of-idp <origin-key>
 ```
 
-Choose the least-privilege collection for the task (normally Viewer for source-read acceptance),
+The `--of-idp` value is the trust origin, not the identity-provider tenant used to log into the `btp` CLI. See [SAP trust lookup](https://help.sap.com/docs/BTP/btp-cli/btp-get-security-trust.html).
+
+Choose the least-privilege collection for the task (normally Viewer for source-read verification),
 not Admin simply to make login work. Use the **application** identity-provider origin; a platform
 CLI/cockpit login is not proof of the user's application assignment.
 
@@ -257,8 +269,14 @@ For stale registration, quit Eclipse and back up its MCP login database before r
 mv ~/.config/github-copilot/copilot-eclipse.db ~/.config/github-copilot/copilot-eclipse.db.backup
 ```
 
-On Windows the file is under `$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db`.
-For Citrix/VDI, resolve `$env:LOCALAPPDATA` in the user's session; the profile may be redirected.
+On Windows, check `$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db`. If it is missing, locate it in the affected user's session (Citrix/VDI profiles may be redirected):
+
+```powershell
+Get-ChildItem -Path $env:LOCALAPPDATA,$env:APPDATA,$env:USERPROFILE -Filter copilot-eclipse.db -File -Recurse -Force -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty FullName
+```
+
+With Eclipse closed, rename the matching database to a backup before reopening the client.
 Reopen Eclipse and sign in to each MCP server again. This affects cached MCP logins, not code or Eclipse preferences.
 
 #### Cursor
@@ -379,8 +397,8 @@ XSUAA credentials are automatically loaded from `VCAP_SERVICES` when the service
 ## How Auth Coexistence Works
 
 The single-target verifier tries configured XSUAA, OIDC and API-key methods in order.
-The first valid identity wins. With PP, explicit `SAP_PP_STRICT=true` rejects non-JWT tool calls;
-`false` permits API keys to use the shared SAP identity. JWT PP errors always fail closed.
+The first valid identity wins. With PP, explicit `SAP_PP_STRICT=true` rejects non-JWT tool calls.
+Unset or `false` permits API keys to use the configured shared SAP identity and emits a mixed-identity warning. JWT PP errors always fail closed.
 See [authentication combinations](enterprise-auth.md#coexistence-matrix).
 
 ## Troubleshooting
@@ -408,6 +426,14 @@ only for a manually managed app; do not attach a similarly named XSUAA instance 
 well as scopes exceeding the grant ([RFC 6749](https://www.rfc-editor.org/rfc/rfc6749#section-4.1.2.1)).
 Read the exact error description, selected endpoint and intended application identity before
 changing roles or clearing state. Do not share full callback URLs, tokens or binding credentials.
+
+Extract only the callback error code from recent CF logs:
+
+```bash
+cf logs arc1-mcp-server --recent | rg -o '/oauth/callback\?error=[^& ]+'
+```
+
+If it is absent, record the error code from the failed sign-in page; absence in logs does not prove success.
 
 | Evidence | Owner and next check |
 |---|---|

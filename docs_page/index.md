@@ -9,7 +9,8 @@ Run it on your laptop or host it for a team.
 | What you want to do | Start with |
 | --- | --- |
 | Connect your assistant to a development system | [Quickstart](quickstart.md) |
-| Connect Claude to an existing ARC-1 server | [Install in Claude](install-in-claude.md) |
+| Set up Claude Code or Claude Desktop | [Install in Claude](install-in-claude.md) |
+| Install the plugin with bundled skills | [Agent plugin](agent-plugin.md) |
 | Deploy ARC-1 for a team | [Choose a deployment](deployment.md) |
 | Deploy on SAP BTP | [BTP setup](btp-overview.md) |
 | Use an already connected assistant | [Workflows and example prompts](mcp-usage.md) |

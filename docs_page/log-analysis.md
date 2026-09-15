@@ -1,4 +1,6 @@
-# ARC-1 Log Analysis Guide
+# Log analysis
+
+<a id="arc-1-log-analysis-guide"></a>
 
 Find the failed tool call, trace its `requestId`, then check whether auth, policy or SAP failed. The examples below read JSON-line audit files with `jq`.
 
@@ -16,16 +18,16 @@ In containers, mount a persistent log volume; a CF container's local filesystem 
 
 ## Log Levels
 
-Control stderr verbosity with `ARC1_LOG_LEVEL`:
+Control the stderr **audit sink** with `ARC1_LOG_LEVEL`:
 
 ```bash
-ARC1_LOG_LEVEL=debug  # Show everything (HTTP requests, CSRF fetches)
+ARC1_LOG_LEVEL=debug  # Include HTTP/CSRF audit events
 ARC1_LOG_LEVEL=info   # Default — tool calls, auth events
 ARC1_LOG_LEVEL=warn   # Only warnings and errors
 ARC1_LOG_LEVEL=error  # Only errors
 ```
 
-The file sink always receives ALL events regardless of stderr level.
+The audit file receives all event levels. Ordinary server messages use a separate logger: set `SAP_VERBOSE=true` to include its debug messages, such as PP diagnostics. This also sets the audit level to `debug`. Neither setting makes the audit file capture ordinary server messages.
 
 ## Event Types
 
@@ -36,7 +38,7 @@ include:
 | Group | Events |
 |-------|--------|
 | Tool and SAP HTTP lifecycle | `tool_call_start`, `tool_call_end`, `http_request`, `http_csrf_fetch` |
-| Authorization and safety | `auth_scope_denied`, `safety_blocked`, `data_response_limited`, `auth_rate_limited`, `mcp_rate_limited` |
+| Authorization and safety | `auth_scope_denied`, `safety_blocked`, `data_source_policy_decision`, `data_response_limited`, `auth_rate_limited`, `mcp_rate_limited` |
 | Selected identity | `auth_pp_created`, `auth_shared_created` |
 | Multi-target failure stage | `target_resolution_failed`, `pp_exchange_failed`, `shared_auth_failed`, `cloud_connector_access_denied`, `sap_service_unavailable`, `sap_authentication_failed`, `sap_authorization_failed`, `target_policy_denied` |
 | Server/client protocol | `server_start`, OAuth/DCR, and CORS events |
@@ -109,7 +111,16 @@ destination name. `identity` distinguishes `per-user` Principal Propagation from
 technical user. Correlate the failure-stage event with the same `requestId`'s `tool_call_end`; do not
 expect raw SAP response bodies in these events.
 
-### Bad/Wrong Tool Calls (for improving LLM feedback)
+### Data-source policy decisions
+
+```bash
+# Correlate a blocked-data error with its policy decision
+jq 'select(.event == "data_source_policy_decision" and .decisionId == "REPLACE_WITH_DECISION_ID")' arc1-audit.jsonl
+```
+
+The record identifies direct roots, matched source/path, allow/deny reason and metadata work. It contains no SQL text, literals or result rows. See the [blocklist boundary](authorization.md#experimental-data-source-blocklist).
+
+### Invalid or denied tool calls
 
 ```bash
 # Tool calls that returned client-visible handler errors (unknown tool/action, validation, etc.)
@@ -182,15 +193,22 @@ jq 'select(.event == "tool_call_start" and .user == "john.doe@company.com")' arc
 ## BTP Audit Log Service
 
 When deployed on BTP with the Audit Log Service premium plan bound, ARC-1 automatically forwards
-categorized security and tool-call events to the BTP Audit Log Viewer. Low-level HTTP, startup, and
-elicitation events remain in stderr/file logs. Forwarded events are categorized as:
+categorized security and tool-call events to the BTP Audit Log Viewer. Low-level HTTP, startup, OAuth/CORS events, HTTP rate-limit events and `data_source_policy_decision` remain in stderr/file logs. Forwarded events are categorized as:
 
 - **security-events**: auth/target/service failures, scope denials, safety blocks, shared-identity use
-- **data-accesses**: tool calls that read SAP data (SAPRead, SAPSearch, SAPQuery)
-- **data-modifications**: tool calls that write data (SAPWrite, SAPManage)
-- **configuration-changes**: transport and activation operations (SAPTransport, SAPActivate)
+- **data-accesses**: tool calls other than the four tool families below
+- **data-modifications**: all SAPWrite and SAPManage calls
+- **configuration-changes**: all SAPTransport and SAPActivate calls
+
+Tool-call categories depend on the tool name, not its action; for example, a transport read is still categorized as a configuration change. Successful `auth_pp_created` events stay in stderr/file; failed ones are security events.
 
 View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**.
+
+## Retain Cloud Foundry application logs
+
+For searchable application logs beyond `cf logs --recent`, bind SAP Cloud Logging using its [Cloud Foundry ingestion procedure](https://help.sap.com/docs/cloud-logging/cloud-logging/ingest-via-cloud-foundry-runtime). Keep service bindings in the deployment descriptor.
+
+SAP Application Logging Service (`application-logs`, Kibana) is deprecated; the optional resource in `mta.yaml` is inactive by default. Use [SAP Cloud Logging](https://help.sap.com/docs/cloud-logging) for a new deployment; see [SAP KBA 3557260](https://userapps.support.sap.com/sap/support/knowledge/en/3557260) for the retirement policy. Application logging and the categorized Audit Log Service above serve different purposes.
 
 ## Docker Volume Mount Example
 
@@ -211,6 +229,7 @@ tail -f /data/arc1-logs/audit.jsonl | jq .
 | `tool_call_start` | Tool name and centrally redacted arguments. |
 | `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
 | `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
+| `data_source_policy_decision` | Exact-name blocklist decision: `decisionId`, allow/deny, `executed`, direct roots, optional matched source/path and failure code, policy fingerprint, metadata/graph counts, duration. No SQL, literals, rows or credentials. |
 | `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
 | `http_csrf_fetch` | CSRF-token fetch success and duration. |
 | `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |

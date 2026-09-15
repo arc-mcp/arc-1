@@ -1,7 +1,7 @@
 # Updating ARC-1
 
 Pin the new version, test it in staging, then follow the procedure for your deployment.
-Keep the previous artifact and configuration until acceptance checks pass.
+Keep the previous artifact and configuration until verification passes.
 
 | Deployment | Procedure |
 |---|---|
@@ -21,7 +21,7 @@ Keep the last known-good artifact and configuration for rollback.
 1. **Check what changed** — start with the annotated [Release Notes](release-notes.md): every release with its impact and the action it needs (usually none). The raw [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) and the [Releases page](https://github.com/arc-mcp/arc-1/releases) list every merged PR.
 2. **Pin to a version** — in production, use exact version tags (for example `:1.2.0`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
 3. **Test first** — update a dev/staging instance before production. Verify MCP clients still connect and tools work as expected.
-4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=[...]` summary before and after. If it's different, the upgrade changed something you didn't expect.
+4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=...` summary before and after. If it's different, the upgrade changed something you didn't expect.
 
 
 ## npx / npm
@@ -130,18 +130,9 @@ and verify that multi-target processes use the same intended registry revision.
 
 ### Multi-target shared Basic
 
-Before deployment, verify the effective descriptor keeps exactly one instance. Its process-local lockout guard
-forbids rolling/blue-green overlap. Prepare and inspect the artifact above, then use a maintenance window:
-
-```bash
-cf target
-cf stop arc1-mcp-server
-npm run btp:deploy-ext
-cf app arc1-mcp-server
-```
-
-The normal MTA deployment starts the app. Confirm exactly one desired and running process before clients reconnect.
-If the deployment fails, inspect its operation before retrying or starting another process.
+Prepare and inspect the artifact above, then follow the
+[single stop/deploy/one-instance/start procedure](btp-administration.md#non-rolling-update-for-shared-basic)
+in a maintenance window. Use it for rollback too. Rolling/blue-green process overlap is unsupported.
 
 ### Verification and rollback
 
@@ -151,7 +142,9 @@ For every mode:
 2. inspect all expected XSUAA role collections/roles after a security-descriptor change;
 3. obtain a fresh token when roles changed;
 4. for multi-target, inspect Admin `SAPTargets` and registry revision; and
-5. perform one Viewer `SAPRead SYSTEM` and verify the intended SAP identity.
+5. perform one Viewer `SAPRead(type="SYSTEM")` to verify SAP access, then verify the actual SAP
+   user through the [backend identity check](principal-propagation-setup.md#verify-the-backend-identity).
+   Use `SAPRead(type="COMPONENTS")` and its `SAP_BASIS` row for the release.
 
 Keep the previous reviewed MTAR, `.mtaext`, and DCR signing secret available. Roll back through the
 same strategy as the update. Shared Basic rollback is also stop/deploy/start and must finish at one
@@ -262,7 +255,8 @@ deployments.
 ### Who needs to act
 
 Fix PP configuration before upgrading if a deployment relied on falling back to the shared SAP user after a JWT/PP failure.
-`SAP_PP_STRICT=false` still permits API-key/non-JWT shared access, but never JWT fallback.
+`SAP_PP_STRICT` unset or `false` still permits API-key/non-JWT shared access and logs a mixed-identity
+warning when API keys are configured. Set `SAP_PP_STRICT=true` explicitly to reject these calls. Neither mode permits JWT fallback.
 Verify a JWT-authenticated SAP read and the mapped SAP identity in staging; `/health` alone can still succeed with broken PP.
 
 ## v0.7 — Authorization Refactor (breaking change)

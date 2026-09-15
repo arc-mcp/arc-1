@@ -39,11 +39,11 @@ The full capability rules are in [Authorization](authorization.md).
 
 ## Tool discovery
 
-Standard mode groups operations into 12 intent tools. `ARC1_TOOL_MODE=hyperfocused` routes the same
+Standard mode groups operations into 12 intent tools. `ARC1_TOOL_MODE=hyperfocused` routes supported
 operations through one `SAP` tool. The [tool reference](tools.md) documents their inputs.
 
 [SAPDiagnose](tools/sap-diagnose.md) includes package ATC and harmless AUnit checks for CI.
-These actions execute backend workloads and require complete evidence to pass; they are single-target only.
+These actions execute backend workloads and require complete results to pass; they are single-target only.
 
 `tools/list` uses configuration, caller permissions, and available SAP discovery evidence. It does
 not wait for a SAP probe. Before discovery completes, a capability can appear that the backend later
@@ -64,8 +64,10 @@ from cached client schemas or through the CLI.
 | ARC-1 → BTP ABAP | Local browser OAuth or deployed per-user token exchange | [BTP ABAP](btp-abap-environment.md) |
 
 With strict principal propagation, callers need a JWT suitable for the configured destination path.
-The explicit single-target `SAP_PP_STRICT=false` option permits API-key/non-JWT calls through a
-separately configured shared client. JWT propagation failures still fail closed.
+In single-target PP mode, `SAP_PP_STRICT=true` rejects API-key/non-JWT calls. If the setting is
+unset or `false`, those callers can use a separately configured shared SAP client; startup logs warn
+about the mixed identity mode. JWT propagation failures still fail closed. BTP deployment profiles
+can explicitly enable strict mode; check the effective configuration.
 
 The default is one target per instance. Experimental BTP
 [multi-target mode](multi-target-setup.md) discovers approved destinations and exposes mutation-free
@@ -120,7 +122,7 @@ Paths are relative to the [repository](https://github.com/arc-mcp/arc-1).
 | HTTP authentication | `src/server/http.ts`, the `@arc-mcp/xsuaa-auth` dependency |
 | Per-user SAP connections | `src/server/server.ts`, `src/adt/oauth.ts` |
 | Multi-target routing | `src/server/multi-target-*.ts`, `src/server/destination-*.ts` |
-| Cache and dependency context | `src/cache/`, `src/context/` |
+| Cache and dependency context | `src/cache/`, `src/context/`, `src/handlers/cache-security.ts` |
 | Audit and logs | `src/server/audit.ts`, `src/server/sinks/`, `src/server/logger.ts` |
 
 For a new action, update the input schema, public tool schema, policy, and handler together.

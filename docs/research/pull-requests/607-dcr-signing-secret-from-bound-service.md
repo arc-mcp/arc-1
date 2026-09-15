@@ -6,7 +6,7 @@
 - **Verdict**: **REQUEST CHANGES** — the happy path works, but the current discovery algorithm can silently select an unintended service as the DCR trust anchor, and a blank explicit override prevents the new bound-service fallback from being used.
 - **Disposition (2026-07-31)**: **Closed pending architecture work.** The implementation-first PR
   is superseded by [durable DCR signing-key lifecycle research](../2026-07-31-durable-dcr-signing-key-lifecycle.md)
-  and roadmap item [SEC-15](../../../docs_page/roadmap.md#sec-15). Its service-binding direction
+  and roadmap item [SEC-15](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#sec-15). Its service-binding direction
   remains an evaluated option, not a rejected requirement.
 
 ## Scope and claims checked

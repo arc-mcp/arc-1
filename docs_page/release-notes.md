@@ -59,6 +59,8 @@ systems, fixes local-class method reads, and patches the optional BTP AppRouter.
 |---|---|---|
 | Correct ATC completion evidence ([#729](https://github.com/arc-mcp/arc-1/pull/729)) | ARC-1 follows SAP's asynchronous ATC run to `Completed` instead of comparing informational counters with visible findings. Structured results expose run status and completion evidence. | `none` — runs previously reported as incomplete may now complete successfully. |
 
+<a id="111-you-get-the-scope-you-asked-for-2026-08-20"></a>
+
 ## 1.1.1 — ATC variants and transport-list scope (2026-08-20)
 
 | Change | Impact | Action |
@@ -67,6 +69,8 @@ systems, fixes local-class method reads, and patches the optional BTP AppRouter.
 | Stop polling settled ATC worklists ([#710](https://github.com/arc-mcp/arc-1/pull/710)) | Settled runs return promptly. Incomplete runs still report `complete:false`, and `arc1-cli atc` still exits `3`. | `none` |
 | Honor `user=*` for transport lists ([#706](https://github.com/arc-mcp/arc-1/pull/706)) | `SAPTransport(action="list", user="*")` now returns all visible owners and preserves SAP ordering. | Expect larger lists; use `user=<name>` to narrow them. |
 
+<a id="110-a-truthful-cli-for-sap-ci-workflows-2026-08-18"></a>
+
 ## 1.1.0 — CLI checks and exit codes for CI (2026-08-18)
 
 The CLI now shares the MCP server's configuration, authentication, authorization, safety, and audit path.
@@ -74,10 +78,10 @@ The CLI now shares the MCP server's configuration, authentication, authorization
 | Change | Impact | Action |
 |---|---|---|
 | Harden CLI automation ([#703](https://github.com/arc-mcp/arc-1/pull/703)) | Adds stable `unittest`, `atc`, `diff`, and offline `lint` commands. Exit codes are `0` pass, `1` evaluated/tool failure, `2` CLI/config error, and `3` incomplete evidence. Unavailable or uncertain Git operations no longer report success. | Pin the version in CI, preserve exit codes, and treat `3` as incomplete. Remove `SAPGit.commit` callers. See [Updating → v1.1.0](updating.md#v110-clici-hardening-compatibility-changes). |
-| Add transport source diffs ([#671](https://github.com/arc-mcp/arc-1/pull/671)) | `arc1 diff` and `SAPTransport(diff)` compare request revisions, including class includes, while retaining non-source objects as inventory. | `none` |
+| Add transport source diffs ([#671](https://github.com/arc-mcp/arc-1/pull/671)) | `SAPTransport(diff)` compares transport request revisions, including class includes, and retains non-source objects as inventory. `arc1 diff` compares selected source versions. | `none` |
 | Add opt-in gzip for WAF-blocked data preview ([#694](https://github.com/arc-mcp/arc-1/pull/694)) | Gzips only the affected data-preview request bodies; it does not relax access controls. | Prefer a scoped WAF fix. If logs confirm the issue and the security owner approves compressed request bodies, set `SAP_GZIP_DATAPREVIEW_BODY=true`. |
 | Correct ADT source search ([#683](https://github.com/arc-mcp/arc-1/pull/683)) | Source search now uses the live ADT contract and distinguishes disabled service from missing authorization. | `none` |
-| Correct `TABLE_QUERY` IN/NOT IN guidance ([#691](https://github.com/arc-mcp/arc-1/pull/691)) | ARC-1 quotes and escapes comma-separated values. | Pass `values: "T000,T001"`, not pre-quoted values. |
+| Correct `TABLE_QUERY` IN/NOT IN guidance ([#691](https://github.com/arc-mcp/arc-1/pull/691)) | ARC-1 quotes and escapes comma-separated values. | Pass `value: "T000,T001"`, not pre-quoted values. |
 | Patch transitive dependencies ([#672](https://github.com/arc-mcp/arc-1/pull/672)) | Updates patched versions of `fast-uri`, `ip-address`, `hono`, and `postcss`. | `none` |
 | Fail closed when SAP skips syntax checks ([#681](https://github.com/arc-mcp/arc-1/pull/681)) | A `notProcessed` response now returns `checked:false` instead of an empty clean result. | Consumers must check `checked` as well as `hasErrors`. |
 | Fix CSRF/session pairing and 7.50 table functions ([#680](https://github.com/arc-mcp/arc-1/pull/680), [#693](https://github.com/arc-mcp/arc-1/pull/693)) | Bearer-authenticated requests keep tokens with their session cookie; CDS table functions remain writable on SAP_BASIS 750. | `none` |
@@ -87,7 +91,10 @@ The CLI now shares the MCP server's configuration, authentication, authorization
 The package is identical to 1.0.1. This release completed its SBOM and MCP Registry publication and fixed
 the release-workflow gate ([#669](https://github.com/arc-mcp/arc-1/pull/669)). No action is required.
 
-## 1.0.1 — startup, UI, and OAuth fixes (2026-08-03)
+<a id="101-three-total-outage-fixes-2026-08-03"></a>
+<a id="101-startup-ui-and-oauth-fixes-2026-08-03"></a>
+
+## 1.0.1 — write-schema, Windows plugin, FLP, and CTS fixes (2026-08-03)
 
 Upgrade if you use strict-schema clients, Windows plugins, or FLP tile listing.
 
@@ -96,7 +103,7 @@ Upgrade if you use strict-schema clients, Windows plugins, or FLP tile listing.
 | Accept inapplicable FUNC metadata ([#665](https://github.com/arc-mcp/arc-1/pull/665)) | Fixes a 1.0.0 regression that rejected all `SAPWrite` calls from clients that populate every schema field. | `none`; on 1.0.0, set `ARC1_SCHEMA_NULLABLE_OPTIONALS=on` as a workaround. |
 | Load plugins on Windows ([#662](https://github.com/arc-mcp/arc-1/pull/662)) | Stops POSIX permission checks from rejecting every Windows plugin path at startup. | `none` |
 | Fix FLP tile listing ([#663](https://github.com/arc-mcp/arc-1/pull/663)) | Uses the Pages association and avoids an SAP short dump on every `flp_list_tiles` call. | `none` |
-| Correct CTS transport checks ([#659](https://github.com/arc-mcp/arc-1/pull/659)) | Parses candidate requests, locks, and fatal diagnostics correctly; adds `operation=create|modify`. Transport creation remains Workbench-only. | `none` |
+| Correct CTS transport checks ([#659](https://github.com/arc-mcp/arc-1/pull/659)) | Parses candidate requests, locks, and fatal diagnostics correctly; adds `operation=create` or `operation=modify`. Transport creation remains Workbench-only. | `none` |
 
 ## 1.0.0 — semver commitment, experimental multi-target, bounded tool results (2026-07-31)
 
