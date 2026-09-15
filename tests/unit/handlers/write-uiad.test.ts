@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import type { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
@@ -65,6 +66,7 @@ async function write(
 const mutations = () => calls.filter((c) => c.method !== 'GET' && !c.path.includes('/checkruns'));
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   resetCachedFeatures();
   calls = [];
@@ -110,6 +112,7 @@ describe('UIAD write orchestration', () => {
   it.each(['pattern', 'patternProperties', 'format'])(
     'does not execute backend %s constraints or claim a schema pass',
     async (keyword) => {
+      const debug = vi.spyOn(logger, 'debug');
       schemaBody = JSON.stringify({
         type: 'object',
         properties: {
@@ -121,8 +124,18 @@ describe('UIAD write orchestration', () => {
       expect(data.validation.schema).toBe('unavailable');
       expect(data.validation.semantic).toBe('passed');
       expect(data.validation.issues[0]).toContain('pattern/format');
+      expect(debug.mock.calls.filter(([message]) => message === 'UIAD schema validation unavailable')).toEqual([
+        ['UIAD schema validation unavailable', { reason: 'pattern_or_format', operation: 'create' }],
+      ]);
     },
   );
+  it('does not report a regex fallback for the supported target schema', async () => {
+    const debug = vi.spyOn(logger, 'debug');
+    const { data } = await write();
+    expect(data.validation.schema).toBe('passed');
+    expect(debug.mock.calls.filter(([message]) => message === 'UIAD schema validation unavailable')).toEqual([]);
+  });
+
   it('bounds diagnostics while retaining errors that occur after many warnings', async () => {
     checkBody = semantic(catalogError.replace('type="E"', 'type="W"').repeat(30) + catalogError);
     const { result, data } = await write();

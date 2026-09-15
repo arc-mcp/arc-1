@@ -1,5 +1,6 @@
 /** UIAD full-source validation. All metadata is request-local to the current SAP identity. */
 import { Ajv2020 } from 'ajv/dist/2020.js';
+import { logger } from '../server/logger.js';
 import { syntaxCheck } from './devtools.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
@@ -147,6 +148,10 @@ export async function validateUiadSource(
         'The target schema describes a different AFF format version; SAP candidate and save checks determine validity.',
       );
     } else if (requiresRegexEvaluation(schema)) {
+      logger.debug('UIAD schema validation unavailable', {
+        reason: 'pattern_or_format',
+        operation: create ? 'create' : 'update',
+      });
       result.issues.push(
         'The target schema requires pattern/format evaluation; schema validation is unavailable. SAP candidate and save checks determine validity.',
       );

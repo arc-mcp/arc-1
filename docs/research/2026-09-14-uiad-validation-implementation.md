@@ -156,3 +156,14 @@ bytes, original-error preservation, partial-state reporting, output limits, and 
 
 Round-2 verification: build, typecheck, lint, policy and size/schema budgets passed; all
 **6,624 tests in 215 files** passed. The BTP description snapshot changed only as described above.
+
+## Review round 3
+
+The schema fallback now emits a debug event with the fixed reason `pattern_or_format`
+and operation (`create`/`update`). No schema, regex, candidate source, object URI, or SAP
+response is logged. The returned validation state and subsequent SAP checks are unchanged.
+The three fallback tests failed before the log was added; they now assert its exact
+payload. A normal-schema control verifies that the event is not emitted unnecessarily.
+
+Round-3 verification: build, typecheck, lint, policy, file/schema budgets and all
+**6,625 tests in 215 files** passed. No tool-definition or snapshot changes.
