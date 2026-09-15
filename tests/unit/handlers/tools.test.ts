@@ -40,8 +40,8 @@ describe('Tool Definitions', () => {
 
   it.each(['onprem', 'btp'] as const)('distinguishes global MAIN from local class includes on %s', (systemType) => {
     const read = getToolDefinitions({ ...DEFAULT_CONFIG, systemType }).find((tool) => tool.name === 'SAPRead')!;
-    expect(read.description).toContain('Global class declaration + implementation: MAIN');
-    expect(read.description).toContain('local helper-class includes, not the global declaration');
+    expect(read.description).toContain('Global class declaration/implementation: MAIN');
+    expect(read.description).toContain('definitions/implementations contain local helpers');
     const props = (read.inputSchema as Record<string, any>).properties;
     expect(props.include.description).toContain('omit include or use main');
     expect(props.include.description).toContain('Explicit include wins');
@@ -58,8 +58,8 @@ describe('Tool Definitions', () => {
         });
         const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
         const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
-        expect(read).toContain('spec work, reviews, or pre-change orientation, prefer SAPContext first');
-        expect(read).toContain('method="NAME" (one body)');
+        expect(read).toContain('specs, reviews or pre-change context, prefer SAPContext first');
+        expect(read).toContain('method="NAME" for one body');
         expect(context).toContain('Primary tool for understanding ABAP/CDS objects');
         expect(context).toContain('KTD when available');
         expect(context).toContain('"What does <object> do?" / "Explain" / "deps before editing"');
