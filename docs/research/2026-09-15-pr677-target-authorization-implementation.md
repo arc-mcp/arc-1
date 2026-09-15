@@ -119,8 +119,8 @@ not used as an in-place experimental authorization target.
   before Viewer/Data/SQL and denial cases; existing unrelated assignments were preserved.
 - In the first session, IAS administration was accessible but the subaccount application had no
   dedicated `arc1_targets` mapping. The resumed session below adds only an explicitly approved,
-  narrowly filtered test mapping. A completed secondary-user incognito login is now measured;
-  it must not be confused with the separate post-mapping login still pending below.
+  narrowly filtered test mapping. Secondary-user, IAS-only and combined-grant application tokens
+  are now measured below, separately from stale-refresh and browser-display behavior.
 
 All generated secrets, callbacks and fixture credentials belong outside the repository with
 owner-only permissions. Record cleanup of test app/service/roles/temporary mappings when finished.
@@ -172,12 +172,25 @@ recorded here. Its pre-existing isolated Viewer and unrelated assignments were p
   display name is `ARC-1 canonical target A4H/100 spike`. Membership changed from zero to one
   and was read back. A separate pre-existing group has display name `A4H/100` but a technical
   name `ARC1_TARGET_A4H_100_SPIKE`; these are not interchangeable expression inputs.
-- A new post-mapping incognito login was opened. Browser automation could not attach to the
-  private tab, so completion was handed to the owner. Mapping/membership read-back is **not**
-  yet proof of a successfully issued IAS-fed grant; the positive IAS-only/union gates remain open.
+- Independently read the secondary user's **Assigned Groups**: both the canonical group and
+  the pre-existing `ARC1_TARGET_A4H_100_SPIKE` membership are present. The verified IAS-only
+  token contains only `A4H/100`, proving exclusion of that nonmatching technical group in this
+  fixture. Its existing membership was not changed to make the test pass.
+- The first post-mapping flow expired while waiting for the owner. Its callback was correctly
+  rejected and yielded no test token. At 19:15 UTC a new authorization request in the same private
+  window, after the owner's IAS sign-in, yielded the verified IAS-only grant. A subsequent
+  combined static+IAS authorization-code request also passed. These are new authorization codes
+  in the private session, not proof that `prompt=login` forced credentials on every request.
+- Temporarily added static `A4H/001` through `ARC1 PR677 Matrix Targets`: new user exchange and
+  authorization-code tokens both held exactly clients 001/100. Removed that secondary assignment,
+  then briefly assigned the exact-001 collection to the primary user. Primary static-001 and
+  secondary IAS-100 snapshots passed concurrent, disjoint live calls. Removed the primary
+  assignment again and emptied the Matrix collection; no temporary primary grant remains.
 
 At this checkpoint the isolated app, route and memory-only harness are running; the temporary
-canonical group membership and isolated IAS collection assignment remain for the pending test.
+canonical group membership and isolated IAS collection assignment remain for the removal test,
+which is awaiting the owner's action-time confirmation. The Matrix collection is empty and
+the primary user has no remaining `ARC1 PR677` assignments, both verified by CLI read-back.
 Remove that temporary membership after testing and explicitly record final cleanup. The shared
 mapping is restricted to that exact group name; broadening it requires a separate reviewed change.
 
@@ -197,7 +210,7 @@ mapping is restricted to that exact group name; broadening it requires a separat
 | CF startup, registry and primary-user PP calls | Passed; real `SAPRead(SYSTEM)` through aggregate and pinned client 001/100 routes | Not a client-marker/data/SQL or second-SAP-user proof |
 | Audit diagnostic regression | Fixed, redeployed and rechecked through real CF logs; six adjacent scenario replays passed 421 assertions | Recent CF logs, not durable BTP Audit Log service retrieval |
 | Primary-user static grants, role unions, capability matrix and issued-token sizes | Passed as detailed below | No 17+ active destination fixture or installed-client coverage |
-| Secondary-user baseline, static grant and empty IdP value | Fresh incognito baseline and separate user exchanges passed as detailed below | Positive IAS-fed login, two-human concurrency and independent SAP-user evidence remain open |
+| Secondary-user baseline, static/IAS/combined grants and empty IdP value | Verified application tokens, unrelated-group exclusion and two-human disjoint concurrency passed as detailed below | Group-removal recovery and independent SAP-user evidence remain open |
 | Refresh/reused-session/revocation behavior | Measured for both humans; stale claims preserved as failed new-permission expectations | Fresh incognito recovery after removal and cross-origin isolation remain open |
 | LLM-driven and installed-client acceptance | **Pending** | Run after deterministic live gates, not inferred from unit tests |
 
@@ -236,6 +249,13 @@ refer to each recorded run; they are not counts of distinct security properties.
 | Secondary Viewer, no target role | Fresh incognito authorization code / 2,049 | 49 passed; verified intended identity, missing attribute, zero tools, hidden/unknown target denials |
 | Secondary Viewer, exact client 100 | JWT bearer / 2,137 | 116 passed after fixture correction; explicit client 100 selector, no reader catalog, aggregate/pinned PP `SYSTEM` succeeds, client 001 denied |
 | Secondary Viewer, IdP-backed role before attribute mapping | JWT bearer / 2,132 | 49 passed after fixture correction; valid empty array, zero tools, all target calls denied |
+| Secondary Viewer, IAS-only client 100 | Authorization code / 2,162 | 116 passed; exact one-value array and permitted aggregate/pinned PP reads, client 001 denied; no static grant assigned |
+| Dedicated IAS mapping excludes nonmatching group | IAS membership read-back + verified IAS-only token | Existing technical-name group remains assigned but does not appear in the exact one-value `arc1_targets` array |
+| Secondary Viewer, static client 001 + IAS client 100 | JWT bearer / 2,240; authorization code / 2,213 | 123 passed per flow; exact two-value union and filtered unpaged catalog; PP execution probe limited to client 100 |
+| Secondary Viewer after removing the static union role | JWT bearer / 2,189 | 116 passed; only IAS client 100 remains, client 001 is denied again |
+| Primary Viewer, static client 001 | Authorization code / 2,461 | 116 passed; client 001 reads succeed and client 100 is denied |
+| Two distinct human users, disjoint static/IAS grants | Existing primary-001 and secondary-100 snapshots | 116 + 116 passed concurrently, including each user's known-other-target denial |
+| Primary valid user without `read`, strengthened fixture | JWT bearer / 2,350 | 28 passed; SDK-verified user with no local scopes receives `insufficient_scope` and the `read` challenge on aggregate, compatibility and pinned routes |
 
 The 257-value token is smaller than the 256-value token because its capability/collection
 context differs; sizes are measurements, not a monotonic per-value formula. Scale roles contain
@@ -280,8 +300,9 @@ mocked.
   regression review confirms this branch intentionally returns `insufficient_scope` with a
   `read` challenge. A boundary-only replay passed 20/20; the harness now has an explicit
   missing-scope fixture and tests reason/challenge checks on aggregate, alias and pinned routes.
-  Those strengthened assertions were added after the running harness had loaded its module;
-  replay them with the next live harness process. No production scope behavior was changed.
+  Those strengthened assertions were added after the first harness had loaded its module. The
+  restarted harness's 19:20 UTC replay passed all 28 assertions, including the denial reason and
+  challenge on every route. No production scope behavior was changed.
 - Chrome blocked rendering some loopback callback pages even though the harness had consumed
   the authorization code and completed its assertions. OAuth/MCP success is separately verified;
   callback-page UX and installed-client compatibility remain unproven.
@@ -295,6 +316,22 @@ mocked.
   accepted specification already defines both behaviors. Corrected replays passed 116/116 and
   49/49 respectively, without changing production code. The harness examples now distinguish
   missing and empty attributes and document single-target reader catalog visibility.
+- Adding static client 001 to the IAS-only secondary user did not update the earlier token's
+  refresh result: it still held only client 100 (2,185 bytes; **97 passed, 17 failed union
+  expectations**, including each operational schema enum). New JWT-bearer and authorization-code
+  requests both obtained the two-value union. This difference is recorded, not hidden by changing
+  the refresh fixture or broadening ARC authorization.
+- The first post-mapping login exceeded the callback proxy's 10-minute signed-state lifetime
+  while the local harness was still waiting under its separate 60-minute timeout. The expired
+  callback did not reach the harness. Starting a new authorization request recovered without
+  clearing cookies or relaxing expiry. Chrome then blocked display of the loopback landing page,
+  but `login_received` and successful assertions independently proved completed token exchange.
+- Source review confirms the harness's `forceLogin` query hint does not force reauthentication:
+  the MCP SDK authorization handler strips `prompt`/`max_age` and the candidate proxy does not
+  forward them. Therefore the successful post-sign-in IAS/union requests above are labeled new
+  authorization-code requests in a reused private session, not repeated fresh credential logins.
+  Keep the final fresh-session removal control separate; do not weaken this distinction to pass
+  an acceptance gate. Adding supported upstream reauthentication parameters is a separate change.
 
 Before customer rollout, verify the actual new token and reload the MCP catalog. Do not prescribe
 JWT-bearer exchange as a user-facing recovery workaround or silently loop refresh. Use the existing
@@ -318,14 +355,14 @@ are already measured. The remaining work, in order, is:
 
 1. Review/release the companion candidate, integrate a registry dependency and lockfile in ARC,
    then repeat a clean install and CI. Do not merge either candidate merely to make CI appear green.
-2. Complete the remaining secondary-user matrix and concurrent disjoint grants; verify the
-   actual mapped SAP user/client through an independently observed backend identity/marker.
-3. Complete the pending post-mapping secondary login and verify IAS-only, static+IAS and
-   unrelated-group exclusion using real issued tokens. The approved exact-group mapping and
-   membership are saved; keep the optional IAS recipe gated until token tests pass.
+2. Complete the remaining secondary-user matrix; disjoint two-human concurrency now passed.
+   Verify the actual mapped SAP user/client through an independently observed backend identity/marker.
+3. IAS-only, static+IAS and exclusion of the fixture's existing nonmatching technical group now
+   pass. Complete group-removal/re-login tests; keep the optional IAS recipe gated until those
+   tests and its other acceptance requirements are measured.
 4. Finish fresh-incognito recovery after removal, old token versus refresh/new login, distinct
    origins/tenants where available, and two human application tokens with the same attribute name.
-   Run the strengthened no-`read` denial-reason/challenge fixture in the restarted harness.
+   The strengthened no-`read` denial-reason/challenge fixture now passed in the restarted harness.
 5. Exercise 17+ **active** destinations and full catalog payload limits in a separate authorized
    registry fixture; the existing 50/100/256-value tokens are not a substitute. Test wildcard
    admission after an approved inventory reload, and capability/destination/instance ceilings
