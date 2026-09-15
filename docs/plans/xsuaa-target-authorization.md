@@ -1,9 +1,9 @@
 # XSUAA Target Authorization for Read-Only Multi-Target
 
-- **Status:** Proposed implementation specification
+- **Status:** Accepted specification; implementation/live validation in PR #677
 - **Date:** 2026-08-04
-- **Last revised:** 2026-09-06 (approved opt-in rollout, simple-first scope, implementation-gap review)
-- **Code baseline reviewed:** `origin/main` at `5c36f2a7` (ARC-1 1.2.0;
+- **Last revised:** 2026-09-15 (latest-main implementation review; accepted opt-in contract unchanged)
+- **Code baseline reviewed:** `origin/main` at `5bc5310b` (ARC-1 1.2.0;
   `@arc-mcp/xsuaa-auth ^1.0.2`), not the older dependencies installed in this spec worktree
 - **Applies to:** experimental BTP Cloud Foundry multi-target mode from
   [ADR-0006](../adr/0006-experimental-read-only-multi-target.md)
@@ -45,17 +45,18 @@ feature is additive: single-target deployments and legacy multi-target deploymen
 Throughout the remaining target-grant sections, requirements apply to `xsuaa-attribute` mode unless
 explicitly stated otherwise. Existing safety controls still apply in both modes.
 
-This is a **proposal, not a shipped authorization feature**. The implementation must record a new
-accepted ADR qualifying ADR-0006's global-reader, mixed-route, and paged-catalog rules **only for
-the opted-in mode** before code merges. ADR-0007's shared-Basic restrictions and the mutation-free
-boundary are not relaxed; the ADR must also qualify ADR-0007's eight-row diagnostic limit for the
-opted-in catalog only. This spec update authorizes no implementation or live configuration change.
+This is an **accepted design, not yet a shipped authorization feature**.
+[ADR-0008](../adr/0008-opt-in-xsuaa-target-authorization.md) qualifies ADR-0006's global-reader,
+mixed-route and paged-catalog rules **only for the opted-in mode**, and ADR-0007's eight-row
+diagnostic limit for that catalog only. Shared-Basic restrictions and the mutation-free boundary
+are not relaxed. The [implementation validation record](../research/2026-09-15-pr677-target-authorization-implementation.md)
+tracks tests and outstanding live gates separately from design acceptance.
 
 ### Decisions after Wouter's review
 
 | Feedback / issue | Refined decision |
 |---|---|
-| Remove the all-readers property | Qualified by the later, explicit non-breaking rollout decision: retain one deployment opt-in. Once enabled, no request, role, missing claim, or error can bypass grant enforcement. Removing the setting is a security downgrade, described below. |
+| Remove the all-readers property | Qualified by the later, explicit non-breaking rollout decision: retain one deployment opt-in. Once enabled, no request, role, missing claim, or error can bypass grant enforcement. Actually unsetting the effective runtime setting is a security downgrade, described below. |
 | Allow a role for all systems | Accepted as the complete literal `*`; not `A4H/*`, regex, or SAP Unrestricted. |
 | Provide useful predefined collections | One new all-target collection; no automatic assignment and no broadening existing collections. |
 | Avoid accidental global access in ordinary roles | Two templates: exact/IAS with **no default**, separately named all-target template with `*`. Both were accepted by the live broker. |
@@ -591,8 +592,11 @@ Use an explicit mode branch, parser, and caller-projection function. No pluggabl
 needed for this release. Existing legacy functions should remain reusable without duplicating
 the entire server; shared refactoring must pass the legacy regression suite.
 
-**Accepted compatibility tradeoff:** deleting the setting or selecting `legacy` restores broader
-access. This is not fully equivalent to Wouter's proposed mandatory enforcement. Without durable
+**Accepted compatibility tradeoff:** actually unsetting the effective runtime setting or selecting
+`legacy` restores broader access. Deleting a line from an MTA extension is not proof that CF removed
+the deployed environment value; use an explicit `ARC1_MULTI_TARGET_AUTHORIZATION: legacy` in the
+owning extension for an approved rollback and verify the actual CF environment and logged mode.
+This is not fully equivalent to Wouter's proposed mandatory enforcement. Without durable
 state, ARC-1 cannot know a previously enforced installation lost its setting. Do not add a database
 or persistent activation latch to solve that in v1. Keep the setting in version-controlled
 deployment configuration, emit the effective mode at startup, and make rollout verification check
@@ -932,12 +936,15 @@ Recommended rollout:
 9. reconnect clients so cached tokens/tool schemas refresh, then repeat the verified procedure for
    the customer route, with a recorded IAM owner and accepted revocation window.
 
-A rollback to pre-feature code, deleting the opt-in setting, or selecting `legacy` restores
-**broader all-reader behavior**. It is not a security-neutral rollback. Prefer fixing forward with
+A rollback to pre-feature code, actually unsetting the effective runtime setting, or selecting
+`legacy` restores **broader all-reader behavior**. It is not a security-neutral rollback. Prefer fixing forward with
 enforcement still enabled. If inventory confidentiality is required, isolate/stop the route first
 and restore service only under an approved policy; do not recommend bypassing grants to fix an
-outage. Keep descriptor templates and assignments during emergency rollback; deleting them can
-break other bound consumers and is unnecessary. Assigning `*` is an audited IAM privilege change,
+outage. For a CF mode rollback, set `ARC1_MULTI_TARGET_AUTHORIZATION: legacy` explicitly in the
+owning `.mtaext`, deploy, and verify the actual CF environment and mode on every serving process;
+deleting the descriptor line may leave the old CF value retained. Keep descriptor templates and
+assignments during emergency rollback; deleting them can break other bound consumers and is
+unnecessary. Assigning `*` is an audited IAM privilege change,
 not a runtime troubleshooting toggle.
 
 ### Customer administration and handover
@@ -1015,8 +1022,8 @@ and exact target grants are different dimensions, and collapsing them makes futu
 - explicit enforcement applies to every multi surface; missing/invalid grants never select legacy;
 - invalid/empty mode and enforcement with multi disabled fail clearly; opted-in mixed-runtime
   configurations fail **before** startup canaries/probes/authentication;
-- deleting the setting on a subsequent startup deliberately selects legacy, is logged as such,
-  and fails a rollout assertion expecting enforcement; no hidden previous-mode state;
+- actually unsetting the effective runtime setting on a subsequent startup deliberately selects
+  legacy, is logged as such, and fails a rollout assertion expecting enforcement; no hidden previous-mode state;
 - wrong issuer/audience/tenant and machine-Admin rejected before request-time target resolution or
   Admin diagnostics;
 - scalar/array/missing/empty/malformed/oversized claim handling and typed extraction-status mapping;

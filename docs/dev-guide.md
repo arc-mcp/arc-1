@@ -73,6 +73,10 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    the [normative implementation plan](plans/destination-discovered-multi-target-v1.md). The
    [setup](../docs_page/multi-target-setup.md) and
    [administration](../docs_page/multi-target-administration.md) guides are the user/operator contract.
+   For the opt-in target-authorization candidate, also read
+   [ADR-0008](adr/0008-opt-in-xsuaa-target-authorization.md), the
+   [accepted spec](plans/xsuaa-target-authorization.md) and its linked implementation/live-validation
+   record. These qualify only enforced mode; legacy behavior must remain unchanged.
 2. At startup, `src/server/destination-discovery.ts` projects subaccount destinations into a
    secret-safe shape, `destination-registry.ts` validates them, and `server.ts`/`http.ts` create the
    pinned and aggregate HTTP factories.
@@ -80,9 +84,12 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    `multi-target-server.ts` performs the early policy/scope/rate checks; `server.ts` performs the
    uncached selected-destination lookup and drift check; PP stays per-user, while Basic credentials
    are bound behind `multi-target-shared-auth-state.ts`; `dispatch.ts` runs the normal tool pipeline.
-4. `SAPTargets` is an aggregate-only MCP tool. Readers get target/description/identity when multiple
+4. `SAPTargets` is an aggregate-only MCP tool. Legacy readers get target/description/identity when multiple
    targets exist; admins get secret-safe registry diagnostics and passive Basic runtime health.
-   There is no HTTP target-catalog endpoint and catalog reads never probe SAP.
+   Enforced readers get the tool only with more than one granted active target; zero grants expose
+   no tools, and one target stays explicit in the SAP tool schemas. Admins get complete bounded
+   diagnostics at zero/one/many grants, not execution permission. There is no HTTP target-catalog endpoint and
+   catalog reads never probe SAP.
 
 ### Invariants
 
@@ -91,9 +98,9 @@ use SAP's separate **Multi-Target Application** packaging terminology.
   targets are strict per-user. Basic is a separate default-off shared identity, never fallback, and
   requires exactly one CF instance. ATC and ABAP Unit are available as workload-producing reads;
   operators can disable them with `SAP_DENY_ACTIONS`.
-- `/mcp` is never assigned a discovered destination. An optional single-target `/mcp` is configured
+- `/mcp` is never assigned a discovered destination. In legacy mode an optional single-target `/mcp` is configured
   independently and may coexist with pinned `/<PUBLIC-SYSTEM>/<CLIENT>/mcp` and aggregate
-  `/multi/mcp` routes.
+  `/multi/mcp` routes. Enforced mode rejects that mixed configuration before startup network calls.
 - The public target is immutable `SYSTEM-OR-ALIAS/CLIENT`. Without `arc1.target_alias`, the public
   system segment is the real SID. An alias is allowed only to distinguish independent systems that
   reuse a real SID/client; it never replaces the required real `sap-sysid` or `sap-client` used by
