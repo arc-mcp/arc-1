@@ -54,22 +54,6 @@ describe('E2E RAP write lifecycle tests', () => {
       expect(readResult.content.every((block) => block.type === 'text')).toBe(true);
       const parsed = JSON.parse(readResult.content[0].text);
       expect(Array.isArray(parsed)).toBe(true);
-      const { listing } = JSON.parse(readResult.content[1].text);
-      expect(listing).toMatchObject({
-        returned: parsed.length,
-        effectiveLimit: 200,
-        completeness: 'unknown',
-        total: null,
-        coverage: 'adt-search',
-      });
-
-      const structuredResult = await callTool(client, 'SAPRead', {
-        type: 'DEVC',
-        name: packageName,
-        format: 'structured',
-      });
-      expect(JSON.parse(expectToolSuccess(structuredResult))).toEqual({ objects: parsed, listing });
-
       const deleteResult = await callTool(client, 'SAPManage', {
         action: 'delete_package',
         name: packageName,

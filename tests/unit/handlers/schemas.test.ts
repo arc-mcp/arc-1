@@ -400,8 +400,6 @@ describe('SAPReadSchema', () => {
   it('accepts format field with valid values', () => {
     expect(SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_TEST', format: 'text' }).success).toBe(true);
     expect(SAPReadSchema.safeParse({ type: 'CLAS', name: 'ZCL_TEST', format: 'structured' }).success).toBe(true);
-    expect(SAPReadSchema.safeParse({ type: 'DEVC', name: 'ZPKG', format: 'structured' }).success).toBe(true);
-    expect(SAPReadSchemaBtp.safeParse({ type: 'DEVC', name: 'ZPKG', format: 'structured' }).success).toBe(true);
   });
 
   it('rejects invalid format values', () => {

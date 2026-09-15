@@ -31,9 +31,9 @@ import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
-import { clampPackageResults } from './package-contents.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { canonicalRevisionSourcePath } from './path-safety.js';
+import { clampUrlLimit } from './result-limits.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
 import { buildTableQuerySql, clampPreviewRows, executeDataPreviewStatements } from './table-query.js';
@@ -186,18 +186,6 @@ function tadirObjectUrl(tadirType: string, name: string): string {
       // empty URI so callers know not to navigate; the row still surfaces.
       return '';
   }
-}
-
-/** Floor + clamp a caller-supplied result limit to [1, 1000] before it is interpolated into an
- *  ADT search/listing URL query param (`maxResults=`, `rowNumber=`). Non-finite input — NaN from a
- *  coerced non-numeric, or undefined — falls back to the caller's default, so no float or
- *  out-of-range value ever reaches a SAP URL regardless of which tool supplied it. Mirrors
- *  `clampSearchResults` and diagnostics' `clampMaxResults`. The tool schemas advertise `maxResults`
- *  as `type: number` and SAPRead promises "clamped to [1, 1000]"; this is where that promise is
- *  kept (see docs/research/2026-06-12-maxresults-contract-asymmetry.md). */
-function clampUrlLimit(requested: number | undefined, fallback: number): number {
-  if (requested === undefined || !Number.isFinite(requested)) return fallback;
-  return Math.max(1, Math.min(1000, Math.floor(requested)));
 }
 
 /** The five source includes a class keeps its revisions under. */
@@ -1276,7 +1264,7 @@ export class AdtClient {
     maxResults = 200,
   ): Promise<Array<{ type: string; name: string; description: string; uri: string }>> {
     checkOperation(this.safety, OperationType.Read, 'GetPackage');
-    const limit = clampPackageResults(maxResults);
+    const limit = clampUrlLimit(maxResults, 200);
     const resp = await this.http.get(
       `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=*&packageName=${encodeURIComponent(packageName)}&maxResults=${limit}`,
     );

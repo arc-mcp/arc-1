@@ -1,12 +1,8 @@
-/** Shared by the package request and its completeness report. */
-export function clampPackageResults(requested: number | undefined): number {
-  if (requested === undefined || !Number.isFinite(requested)) return 200;
-  return Math.max(1, Math.min(1000, Math.floor(requested)));
-}
+import { clampUrlLimit } from './result-limits.js';
 
 /** ADT quick search provides neither a total nor proof of full package coverage. */
 export function describePackageListing(returned: number, requested: number | undefined) {
-  const effectiveLimit = clampPackageResults(requested);
+  const effectiveLimit = clampUrlLimit(requested, 200);
   const limitReached = returned >= effectiveLimit;
   return {
     returned,
