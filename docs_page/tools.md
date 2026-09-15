@@ -385,38 +385,16 @@ Keep edits above the read-only metadata marker in a complete SAPRead result. For
 
 Other actions (`edit_method`, surgery, `batch_create`, RAP scaffolding) are not supported for server-driven types and return a clear error.
 
-**UIAD create/update:** Supply complete AFF JSON in `source`. ARC-1 checks the target's full
-source schema and then submits the exact candidate to SAP's JSON check endpoint before creating
-metadata or taking an update lock. SAP semantic errors include their code, T100 identity, and
-line/column; warnings remain warnings. `checkBeforeWrite` and ABAP lint switches do not disable
-this UIAD-specific validation.
-
-For a new manual descriptor, an explicit `header.abapLanguageVersion` is carried into creation
-metadata. For example, `"cloudDevelopment"` enabled the verified editable lifecycle on 816.
-ARC-1 does not choose a catalog or change an existing descriptor's language version. Use a complete
-source from the target system as your starting point. Metadata-only create remains available and
-explicitly reports that source validation did not run.
-
-The JSON result reports `validation.schema`, `validation.semantic`, and `validation.configuration`.
-Unavailable endpoints, unprocessed checks, and a schema for a different AFF version are explicitly
-marked unavailable, never passed. SAP can accept older AFF formats than its current schema describes:
-816 accepted v1 and returned v2 on read-back. Such candidates go through SAP validation without
-rewriting the input. Missing endpoint support does not disable SAP's final save checks. Authorization
-and transient preflight failures stop before mutation.
-
-A root `sap.adt.readonly` flag blocks updates. For deployment-generated descriptors, change the app's
-`manifest.json` and redeploy; manually created descriptors have an independent lifecycle. Nested
-readonly field flags do not mark the whole descriptor readonly. See
-[SAP's lifecycle documentation](https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/1d9deef79d7d4936850b2d6343206ec8.html).
-
-On failure, the result preserves the original SAP save error and identifies the last `phase` plus
-confirmed or unknown `metadata`/`source` state. Read the object before retrying; a created metadata
-shell can require an update or explicit deletion. A confirmed source save followed by an unlock
-failure is reported as saved with cleanup failure. Diagnostics are bounded to 20 messages with
-errors first; `minimalErrors` hides SAP diagnostic details. Candidate JSON is limited to 1 MiB;
-schema/configuration/check response parsing is limited to 256 KiB, with JSON nesting/node limits.
-These are validation limits, not a general HTTP response memory ceiling.
-
+**UIAD create/update:** Supply complete AFF JSON in `source`. ARC-1 checks the target's
+matching schema, then sends the exact candidate to SAP before metadata creation or locking.
+Schema and semantic errors block writes; warnings remain warnings. Unsupported checks are
+reported as unavailable. Authorization and transient preflight failures stop the operation.
+The source header's explicit language version is honored on create; metadata-only create
+remains supported. Root readonly configuration blocks updates. For generated descriptors,
+change the app's `manifest.json` and redeploy; see [SAP's lifecycle documentation](https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/1d9deef79d7d4936850b2d6343206ec8.html).
+Results retain confirmed or unknown `metadata`/`source` state, the original save failure,
+and any unlock failure. Read the object before retrying. Diagnostics show at most 20 messages,
+errors first, plus the total `messageCount`; `minimalErrors` hides SAP details.
 
 **Function group (`FUGR`) create:** POSTs `<group:abapFunctionGroup … adtcore:type="FUGR/F">` to `/sap/bc/adt/functions/groups` with content type `application/vnd.sap.adt.functions.groups.v3+xml`. Provide `package` and (for non-`$TMP`) `transport`. Delete the FUGR only after all its function modules have been deleted.
 

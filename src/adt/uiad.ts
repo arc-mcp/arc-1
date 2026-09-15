@@ -90,25 +90,6 @@ async function optionalJson(http: AdtHttpClient, uri: string, accept: string): P
   }
 }
 
-export async function checkUiadCandidate(
-  http: AdtHttpClient,
-  safety: SafetyConfig,
-  uri: string,
-  source: string,
-): Promise<SyntaxCheckResult> {
-  try {
-    return await syntaxCheck(http, safety, uri, { content: source, artifactContentType: 'application/json' });
-  } catch (error) {
-    if (!unsupported(error)) throw error;
-    return {
-      checked: false,
-      hasErrors: false,
-      messages: [],
-      statusText: 'SAP does not support this JSON candidate check.',
-    };
-  }
-}
-
 export async function validateUiadSource(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -175,7 +156,17 @@ export async function validateUiadSource(
       }
     }
   }
-  result.check = await checkUiadCandidate(http, safety, uri, source);
+  try {
+    result.check = await syntaxCheck(http, safety, uri, { content: source, artifactContentType: 'application/json' });
+  } catch (error) {
+    if (!unsupported(error)) throw error;
+    result.check = {
+      checked: false,
+      hasErrors: false,
+      messages: [],
+      statusText: 'SAP does not support this JSON candidate check.',
+    };
+  }
   result.semantic = result.check.hasErrors ? 'failed' : result.check.checked ? 'passed' : 'unavailable';
   return result;
 }
@@ -183,15 +174,13 @@ export async function validateUiadSource(
 export function uiadValidationSummary(validation: UiadValidation, minimalErrors: boolean): Record<string, unknown> {
   const { check, issues, ...status } = validation;
   const prioritized = check
-    ? [...check.messages.filter((m) => m.severity === 'error'), ...check.messages.filter((m) => m.severity !== 'error')]
+    ? [...check.messages].sort((a, b) => Number(b.severity === 'error') - Number(a.severity === 'error'))
     : [];
   return {
     ...status,
     ...(minimalErrors ? {} : { issues }),
     ...(check
       ? {
-          checked: check.checked,
-          hasErrors: check.hasErrors,
           messageCount: check.messages.length,
           ...(minimalErrors
             ? {}
@@ -205,7 +194,6 @@ export function uiadValidationSummary(validation: UiadValidation, minimalErrors:
                   ...(code ? { code: code.slice(0, 100) } : {}),
                   ...(t100 ? { t100: { id: t100.id.slice(0, 100), number: t100.number.slice(0, 10) } } : {}),
                 })),
-                messagesTruncated: check.messages.length > 20,
               }),
         }
       : {}),

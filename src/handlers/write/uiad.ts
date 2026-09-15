@@ -9,13 +9,7 @@ import {
   serverDrivenUnavailableMessage,
   updateServerDrivenObjectSource,
 } from '../../adt/server-driven.js';
-import {
-  checkUiadCandidate,
-  parseUiadSource,
-  type UiadValidation,
-  uiadValidationSummary,
-  validateUiadSource,
-} from '../../adt/uiad.js';
+import { parseUiadSource, type UiadValidation, uiadValidationSummary, validateUiadSource } from '../../adt/uiad.js';
 import type { CachingLayer } from '../../cache/caching-layer.js';
 import type { ServerConfig } from '../../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from '../cache-security.js';
@@ -67,7 +61,6 @@ export async function writeUiad(
     action: string;
     metadata: 'notAttempted' | 'unknown' | 'created' | 'existing';
     source: 'notAttempted' | 'unknown' | 'saved';
-    phase: string;
     unlockFailed?: boolean;
   } = {
     type: 'UIAD',
@@ -75,7 +68,6 @@ export async function writeUiad(
     action,
     metadata: create ? 'notAttempted' : 'existing',
     source: 'notAttempted',
-    phase: 'validation',
   };
   const response = (
     isError: boolean,
@@ -113,7 +105,6 @@ export async function writeUiad(
   const transport = args.transport as string | undefined;
   try {
     if (create) {
-      manifest.phase = 'metadata';
       manifest.metadata = 'unknown';
       await createServerDrivenObject(client.http, client.safety, 'UIAD', name, {
         package: pkg,
@@ -124,19 +115,16 @@ export async function writeUiad(
       manifest.metadata = 'created';
     }
     if (parsed) {
-      manifest.phase = 'lock';
       await updateServerDrivenObjectSource(client.http, client.safety, 'UIAD', name, source, {
         transport,
         onSourceWrite: (state) => {
           manifest.source = state === 'attempted' ? 'unknown' : 'saved';
-          manifest.phase = state === 'attempted' ? 'source' : 'unlock';
         },
         onUnlockFailure: () => {
           manifest.unlockFailed = true;
         },
       });
     }
-    manifest.phase = 'complete';
     return response(
       false,
       create ? 'created' : 'updated',
@@ -145,20 +133,6 @@ export async function writeUiad(
         : 'UIAD metadata created without source validation. Read the object and supply its complete AFF JSON to finish it.',
     );
   } catch (error) {
-    // A save can discover context-dependent errors that did not appear for an uncreated URI.
-    // Recheck the same candidate once, without another write; never replace the original failure.
-    let afterFailure: Record<string, unknown> | undefined;
-    if (manifest.phase === 'source' && error instanceof AdtApiError && [400, 422].includes(error.statusCode)) {
-      try {
-        const check = await checkUiadCandidate(client.http, client.safety, uri, source);
-        afterFailure = uiadValidationSummary(
-          { ...validation, check, semantic: check.hasErrors ? 'failed' : check.checked ? 'passed' : 'unavailable' },
-          config.minimalErrors,
-        );
-      } catch {
-        afterFailure = { semantic: 'unavailable' };
-      }
-    }
     const failure =
       config.minimalErrors || (error instanceof AdtApiError && [401, 403].includes(error.statusCode))
         ? 'SAP rejected or could not confirm the operation.'
@@ -182,7 +156,6 @@ export async function writeUiad(
       {
         failure,
         ...(error instanceof AdtApiError ? { httpStatus: error.statusCode } : {}),
-        ...(afterFailure ? { afterFailure } : {}),
       },
     );
   } finally {

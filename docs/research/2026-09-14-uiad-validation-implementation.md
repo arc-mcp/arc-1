@@ -1,7 +1,4 @@
-# UIAD validation: implementation evidence and review
-
-Date: 2026-09-14. Base: main `6dd53c14`. Plan:
-[UIAD validation](../plans/2026-09-14-uiad-validation.md).
+# UIAD validation: protocol and lifecycle
 
 ## Evaluation
 
@@ -80,39 +77,14 @@ cached across users; no external schema resolver is installed. Parsing/compilati
 complexity limits, and diagnostics are capped at 20 messages with errors first. These parsing caps
 do not replace the HTTP transport's response-memory controls.
 
-The result records the phase and metadata/source confirmation. A failed source write retains a
+The result records metadata/source confirmation. A failed source write retains a
 confirmed metadata shell; ambiguous network outcomes remain unknown. If PUT succeeds but unlock
 fails, the result reports saved source and cleanup failure. If both fail, the original PUT error wins.
-After a semantic save rejection, one additional candidate check may recover context-dependent
-messages without repeating the mutation. Cache invalidation covers confirmed and possible writes,
+Save failures retain the original diagnostic without repeating candidate validation. Cache invalidation covers confirmed and possible writes,
 using the existing per-user inactive-list key. Minimal-errors mode hides SAP diagnostic details;
 authentication/authorization failures are redacted independently of that setting.
 
-## Review findings and corrections
-
-| Finding | Correction and evidence |
-|---|---|
-| Wrong candidate MIME and false clean results | Ten red regression cases reproduced failures; JSON MIME and strict matching-report checks now pass. Legacy ABAP check tests remain compatible. |
-| Unlock masks the save failure | Preserve the original exception; distinguish a confirmed PUT from cleanup failure. Tested both failing together and separately. |
-| Prior docs describe on-prem UIAD as universally read-only | Corrected after a complete manual Cloud-language lifecycle on on-prem 816. Readonly generated/Standard items remain protected. |
-| Applying the current v2 schema would reject valid AFF v1 input | A live v1 candidate passed SAP, and a v1 update saved successfully and read back as v2. A mismatched schema is now unavailable; SAP validates the original input without client rewriting. |
-| Diagnostic truncation could hide an error after many warnings | Errors are prioritized before the 20-message cap; total message count and truncation remain explicit. |
-| Fallback error text could include a lock handle | Return the bounded SAP response message or a generic HTTP failure, without the internal request path. Minimal-errors and auth-error tests cover redaction. |
-| Unknown/partial write state could leave stale caches | Invalidate after a possible metadata POST or source PUT, including failures; verify the current principal's inactive-list key. |
-
-## Live verification
-
-The maintained probe is `scripts/probe-uiad-validation.ts`. Supply explicit `TEST_SAP_URL`,
-`TEST_SAP_USER`, `TEST_SAP_PASSWORD`, and `TEST_SAP_CLIENT`, then run:
-
-```sh
-npx tsx scripts/probe-uiad-validation.ts
-```
-
-It creates only a random owned `$TMP` fixture, verifies absence first, cleans up in `finally`, and
-verifies absence afterward. It uses SAP's default Cloud technical catalog only in the fixture, not
-in product code. The optional `TEST_UIAD_READONLY_NAME` is read and validated without any save.
-Use the verified HTTPS proxy URL for the target, not a backend SAP port.
+## Live facts
 
 | Target / case | Result |
 |---|---|
@@ -126,44 +98,23 @@ Use the verified HTTPS proxy URL for the target, not a backend SAP port.
 | 816 cleanup | Owned fixture deleted and confirmed absent |
 
 The URL-type fixture produces `SUI_UIAD_CHECK_UI(009)` as a warning on this system but still saves.
-The probe validates the repository lifecycle; it does not establish launchpad access or app launchability.
+These checks validate the repository lifecycle; it does not establish launchpad access or app launchability.
 BTP ABAP and the 758 UIAD backport were not live-tested. Availability is discovered, not inferred
 from a hardcoded 816 release threshold.
 
-## Local verification
+## Validation boundaries
 
-Final local checks completed on 2026-09-15: build, typecheck (source/scripts/tests), lint, action-policy
-validation, file-size and MCP-schema budgets, strict documentation build, and all **6,620 tests in 215 files** passed. This includes
-41 new regression cases. Five tool-definition snapshots were intentionally refreshed and reviewed
-to correct the outdated on-prem readonly claim and describe UIAD validation/creation. No input fields
-or enums changed. The focused tests cover no-mutation
-failures, readonly interpretation, unavailable checks, authorization/package gates, exact source
-bytes, original-error preservation, partial-state reporting, output limits, and cache isolation.
+The target schema stays request-local and no external references are resolved. Regex/format
+constraints make local schema validation explicitly unavailable; a debug event carries only
+that fixed reason and the create/update operation. SAP candidate/save checks still run.
 
-## Review round 2 (2026-09-15)
+A separate reviewer tested seven candidates on 8.16. SAP caught invalid navigation, field
+lengths/types and format versions, but accepted and silently dropped an unknown root property
+on save. Local schema validation catches that mistake before metadata creation; removing the
+layer would lose input validation. The readonly preflight also avoids a lock/save attempt for
+items that SAP explicitly marks read-only. Both checks remain intentional.
 
-- Confirmed the suppressed unlock failure and state-independent recovery text. The shared SDO
-  engine now logs the object URL and HTTP status without a lock handle or raw error; UIAD records
-  the failed unlock and warns about a possible remaining lock. The original save exception still wins.
-- Recovery guidance distinguishes confirmed creation, unknown creation outcome, and existing-object
-  update. Tests assert the message as well as the structured state.
-- Softened BTP tool guidance because its save lifecycle has not been verified live.
-- A backend schema containing pattern/format constraints is now explicitly unavailable rather than
-  evaluated on the shared event loop or silently weakened. SAP candidate/save checks remain in force.
-  The verified UIAD schema has none of those constraints; regressions cover this fallback.
-- Clarification to the external review: discovery is a read and can precede the package gate;
-  package authorization does precede candidate validation and every mutation.
-
-Round-2 verification: build, typecheck, lint, policy and size/schema budgets passed; all
-**6,624 tests in 215 files** passed. The BTP description snapshot changed only as described above.
-
-## Review round 3
-
-The schema fallback now emits a debug event with the fixed reason `pattern_or_format`
-and operation (`create`/`update`). No schema, regex, candidate source, object URI, or SAP
-response is logged. The returned validation state and subsequent SAP checks are unchanged.
-The three fallback tests failed before the log was added; they now assert its exact
-payload. A normal-schema control verifies that the event is not emitted unnecessarily.
-
-Round-3 verification: build, typecheck, lint, policy, file/schema budgets and all
-**6,625 tests in 215 files** passed. No tool-definition or snapshot changes.
+The source parser, matching-report check, partial-save states, original-error preservation,
+possible remaining lock, per-user cache invalidation and diagnostic bounds have focused tests.
+The result uses semantic status and total message count rather than duplicate boolean flags.
+Structured T100 identities remain available even if a backend omits the display code.

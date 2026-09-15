@@ -142,7 +142,6 @@ describe('UIAD write orchestration', () => {
     expect(result.isError).toBe(true);
     expect(data.validation.messageCount).toBe(31);
     expect(data.validation.messages).toHaveLength(20);
-    expect(data.validation.messagesTruncated).toBe(true);
     expect(data.validation.messages[0].severity).toBe('error');
     expect(mutations()).toHaveLength(0);
   });
@@ -240,7 +239,6 @@ describe('UIAD write orchestration', () => {
     expect(result.isError).toBeUndefined();
     expect(data.validation).toMatchObject({
       semantic: 'unavailable',
-      checked: false,
       messages: [{ severity: 'warning' }],
     });
   });
@@ -277,7 +275,6 @@ describe('UIAD write orchestration', () => {
       const cache = { invalidate: vi.fn(), inactiveLists: { invalidate: vi.fn() } } as unknown as CachingLayer;
       const { result, data } = await write('create', {}, false, cache);
       expect(result.isError).toBe(true);
-      expect(data.phase).toBe(phase === 'create' ? 'metadata' : phase === 'put' ? 'source' : 'unlock');
       expect(data.metadata).toBe(phase === 'create' ? 'unknown' : 'created');
       expect(data.message).toContain(
         phase === 'create' ? 'creation outcome is unknown' : phase === 'put' ? 'creation was confirmed' : 'source save',
@@ -290,20 +287,14 @@ describe('UIAD write orchestration', () => {
       expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(phase === 'create' ? 0 : 1);
     },
   );
-  it('keeps the original save failure when unlock and diagnostic recheck fail', async () => {
+  it('keeps the original save failure and avoids repeating validation when unlock fails', async () => {
     statuses.put = 400;
     statuses.unlock = 400;
-    const original = mockFetch.getMockImplementation()!;
-    let checkCount = 0;
-    mockFetch.mockImplementation((url, init) => {
-      if (String(url).includes('/checkruns') && ++checkCount > 1) statuses.check = 500;
-      return original(url, init);
-    });
     const { data } = await write();
     expect(data.failure).toContain('put original failure');
     expect(data.unlockFailed).toBe(true);
     expect(data.message).toContain('SAP lock may remain');
-    expect(data.afterFailure.semantic).toBe('unavailable');
+    expect(calls.filter((call) => call.path.includes('/checkruns'))).toHaveLength(1);
     expect(data.source).toBe('unknown');
   });
   it('does not imply that an update created a metadata shell', async () => {
@@ -321,7 +312,7 @@ describe('UIAD write orchestration', () => {
     checkBody = semantic(catalogError);
     const blocked = await write('create', {}, true);
     expect(blocked.result.content[0].text).not.toMatch(/Technical Catalog|SUI_UIAD/);
-    expect(blocked.data.validation.hasErrors).toBe(true);
+    expect(blocked.data.validation.semantic).toBe('failed');
   });
   it('does not retain schema state across calls or resolve remote refs', async () => {
     await write();
