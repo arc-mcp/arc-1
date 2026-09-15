@@ -794,7 +794,7 @@ Activate (publish) ABAP objects. Supports single object or batch activation.
 | `preaudit` | boolean | No | Request pre-activation audit from SAP (default: `true`). Set `false` to skip pre-audit for faster activation. |
 | `objects` | array | No | For batch: array of `{type, name, group?}` objects to activate together |
 
-Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `warning`, `error`) with attached messages, so failed members can be retried selectively.
+Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `warning`, `error`, `unknown`). After an overall failure, objects without their own error stay `unknown`; SAP may have cancelled their activation too. Messages match the object URI or its source/include path, and global messages appear separately. Read active/inactive source before selecting objects to retry.
 
 For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a concrete batch re-activation template derived from where-used results.
 
