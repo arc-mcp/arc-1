@@ -18,7 +18,7 @@ currently [multi-target mode](multi-target-setup.md), may still change in a mino
 `1.0.0` onward and every `0.9` release are listed individually. `0.1`–`0.8` are summarized, with the
 important `0.7.0` authorization migration retained below.
 
-## 1.3.0 — package CI and clearer write outcomes (unreleased)
+## 1.3.0 — package CI and clearer write outcomes (2026-09-15)
 
 This release adds package CI checks and improves search, package listings, and write diagnostics.
 Automation should inspect completeness and saved-state evidence before retrying an operation.
