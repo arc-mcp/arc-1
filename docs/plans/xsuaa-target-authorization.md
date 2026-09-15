@@ -431,8 +431,11 @@ this limitation of offline validation explicitly.
 
 Test role removal separately with the old access token, refresh exchange, reused browser session,
 and a fresh authorization-code login. Do not promise that refresh recalculates IAS membership or
-adds newly assigned scopes. Prefer ARC-1's existing refresh-access/sign-out workflow before asking
-users to remove specific cookies. MCP clients may also retain a tool catalog after token renewal.
+adds newly assigned scopes. A refresh or reused SSO session can issue another token containing
+old grants with a new expiry; access-token lifetime alone is not the maximum revocation window.
+Prefer ARC-1's existing refresh-access/sign-out workflow before asking users to remove specific
+cookies, and verify the resulting claims. MCP clients may also retain a tool catalog after token
+renewal.
 
 Keep the current token lifetime unchanged in this feature. Customer IAM must accept the effective
 revocation window; SAP currently recommends short validity but not less than 30 minutes. Online

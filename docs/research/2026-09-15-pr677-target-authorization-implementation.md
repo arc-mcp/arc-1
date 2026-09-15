@@ -187,12 +187,25 @@ recorded here. Its pre-existing isolated Viewer and unrelated assignments were p
   secondary IAS-100 snapshots passed concurrent, disjoint live calls. Removed the primary
   assignment again and emptied the Matrix collection; no temporary primary grant remains.
 
-At this checkpoint the isolated app, route and memory-only harness are running; the temporary
-canonical group membership and isolated IAS collection assignment remain for the removal test,
-which is awaiting the owner's action-time confirmation. The Matrix collection is empty and
-the primary user has no remaining `ARC1 PR677` assignments, both verified by CLI read-back.
-Remove that temporary membership after testing and explicitly record final cleanup. The shared
-mapping is restricted to that exact group name; broadening it requires a separate reviewed change.
+After the owner's explicit removal approval, removed only the secondary user's membership from
+the canonical `A4H/100` group at approximately 19:31 UTC. IAS read-back showed **Users (0 out of
+0)**. The account, group, existing technical-name membership and attribute mappings were not
+deleted or modified. The removal/re-login comparisons below ran while the IdP-backed role was
+still assigned, so a missing role cannot explain the fresh token's empty attribute.
+
+Final cleanup at 19:39 UTC was verified:
+
+- Removed the temporary `ARC1 PR677 IAS Targets` collection assignment from the secondary user.
+  CLI read-back retained exactly its baseline `ARC1 PR677 Viewer` and unrelated `arc1-mcp Data
+  Viewer` collections. The primary user still had no `ARC1 PR677` assignments; Matrix remained
+  empty after its earlier verified cleanup.
+- Stopped only `arc1-ta-677-test` and unmapped the approved spare hostname. CF read-back showed
+  requested state `stopped`, zero running instances and no routes. The staged fixture, isolated
+  XSUAA service/key and existing service bindings remain available for a subsequent test run.
+- Finished the harness; it reported `tokensPersisted:false`. This clears in-memory snapshots,
+  not already-issued tokens or the issuer's browser sessions.
+- Retained the narrowly filtered IAS mapping and empty canonical group, as agreed. Broadening
+  that shared mapping or removing unrelated memberships requires a separate reviewed change.
 
 ## Validation results
 
@@ -210,8 +223,8 @@ mapping is restricted to that exact group name; broadening it requires a separat
 | CF startup, registry and primary-user PP calls | Passed; real `SAPRead(SYSTEM)` through aggregate and pinned client 001/100 routes | Not a client-marker/data/SQL or second-SAP-user proof |
 | Audit diagnostic regression | Fixed, redeployed and rechecked through real CF logs; six adjacent scenario replays passed 421 assertions | Recent CF logs, not durable BTP Audit Log service retrieval |
 | Primary-user static grants, role unions, capability matrix and issued-token sizes | Passed as detailed below | No 17+ active destination fixture or installed-client coverage |
-| Secondary-user baseline, static/IAS/combined grants and empty IdP value | Verified application tokens, unrelated-group exclusion and two-human disjoint concurrency passed as detailed below | Group-removal recovery and independent SAP-user evidence remain open |
-| Refresh/reused-session/revocation behavior | Measured for both humans; stale claims preserved as failed new-permission expectations | Fresh incognito recovery after removal and cross-origin isolation remain open |
+| Secondary-user baseline, static/IAS/combined grants and empty IdP value | Verified application tokens, unrelated-group exclusion, two-human disjoint concurrency and fresh-session group-removal denial passed | Independent SAP-user evidence remains open |
+| Refresh/reused-session/revocation behavior | Old token, refresh and reused SSO retained the removed grant; fresh private login and its refresh each passed 59 no-grant assertions | Immediate revocation is not provided; customer recovery/window acceptance and cross-origin isolation remain open |
 | LLM-driven and installed-client acceptance | **Pending** | Run after deterministic live gates, not inferred from unit tests |
 
 ### Real BTP matrix (2026-09-15)
@@ -256,6 +269,12 @@ refer to each recorded run; they are not counts of distinct security properties.
 | Primary Viewer, static client 001 | Authorization code / 2,461 | 116 passed; client 001 reads succeed and client 100 is denied |
 | Two distinct human users, disjoint static/IAS grants | Existing primary-001 and secondary-100 snapshots | 116 + 116 passed concurrently, including each user's known-other-target denial |
 | Primary valid user without `read`, strengthened fixture | JWT bearer / 2,350 | 28 passed; SDK-verified user with no local scopes receives `insufficient_scope` and the `read` challenge on aggregate, compatibility and pinned routes |
+| IAS group removed, old positive token replayed | Existing authorization-code snapshot / 2,162 | 116 positive assertions still passed: old grant retained, **not** a revocation pass |
+| IAS group removed, old session refreshed | Refresh / 2,185 | 77 passed, **25 failed no-grant expectations**; client 100 remained accessible and the new token had a new one-hour lifetime |
+| IAS group removed, new code in reused private SSO session | Authorization code / 2,162 | 77 passed, **25 failed no-grant expectations**; issued token still contained client 100 |
+| IAS group removed, fresh private session | Authorization code / 2,105 | 59 passed; valid empty array, zero tools, client 100/001 and unknown-target denials across tested routes |
+| Concurrent old positive and fresh no-grant tokens | Existing secondary-user snapshots | 116 + 59 passed; each token retained its own projection without cross-request leakage |
+| Refresh of the fresh no-grant session | Refresh / 2,128 | 59 passed; empty array and client 100 denial preserved |
 
 The 257-value token is smaller than the 256-value token because its capability/collection
 context differs; sizes are measurements, not a monotonic per-value formula. Scale roles contain
@@ -330,8 +349,23 @@ mocked.
   the MCP SDK authorization handler strips `prompt`/`max_age` and the candidate proxy does not
   forward them. Therefore the successful post-sign-in IAS/union requests above are labeled new
   authorization-code requests in a reused private session, not repeated fresh credential logins.
-  Keep the final fresh-session removal control separate; do not weaken this distinction to pass
-  an acceptance gate. Adding supported upstream reauthentication parameters is a separate change.
+  The final fresh-session removal control below is separate. Adding supported upstream
+  reauthentication parameters is a separate change.
+- After the verified IAS group removal, the old positive token still passed 116 positive
+  assertions. Refresh at 19:32 UTC and a new authorization code in the reused private session
+  both retained client 100; each failed 25 of the no-grant fixture's expectations. In particular,
+  aggregate/pinned client 100 reads still succeeded. ARC was enforcing the issuer's signed old
+  grant, not discovering current IAS membership or overriding the token.
+- Closed the test's old private window and opened a fresh private session. Its IAS email/password
+  form was observed before the callback. At 19:33 UTC the completed authorization-code flow
+  yielded a verified empty `arc1_targets` array; all 59 denial/catalog/schema assertions passed.
+  The IdP-backed role remained assigned until cleanup. Concurrent replay with the old positive
+  token passed 116 + 59 assertions, and refreshing the fresh no-grant session at 19:38 UTC passed
+  another 59. The account/group were not deleted to obtain that result.
+- The stale refresh produced a new access token with a new one-hour lifetime. Therefore the
+  descriptor's one-hour access-token validity is **not an upper bound on time from IAM removal
+  to loss of access**. This fixture establishes fresh-session recovery, not the maximum stale
+  session/refresh lifetime, an immediate-revocation mechanism, or the exact responsible cache.
 
 Before customer rollout, verify the actual new token and reload the MCP catalog. Do not prescribe
 JWT-bearer exchange as a user-facing recovery workaround or silently loop refresh. Use the existing
@@ -357,12 +391,14 @@ are already measured. The remaining work, in order, is:
    then repeat a clean install and CI. Do not merge either candidate merely to make CI appear green.
 2. Complete the remaining secondary-user matrix; disjoint two-human concurrency now passed.
    Verify the actual mapped SAP user/client through an independently observed backend identity/marker.
-3. IAS-only, static+IAS and exclusion of the fixture's existing nonmatching technical group now
-   pass. Complete group-removal/re-login tests; keep the optional IAS recipe gated until those
-   tests and its other acceptance requirements are measured.
-4. Finish fresh-incognito recovery after removal, old token versus refresh/new login, distinct
-   origins/tenants where available, and two human application tokens with the same attribute name.
-   The strengthened no-`read` denial-reason/challenge fixture now passed in the restarted harness.
+3. IAS-only, static+IAS, nonmatching-group exclusion and fresh-session group-removal denial now
+   pass. Agree the customer's acceptable stale-session/refresh window and verify its normal
+   sign-out/re-login workflow; fresh private recovery alone is not an operational revocation SLA.
+   Keep the optional IAS recipe gated by the remaining acceptance requirements.
+4. Finish distinct-origin/tenant checks where available and two human application tokens with
+   the same attribute name. Old token versus refresh/reused SSO/fresh private login is now
+   measured, including refresh of the fresh no-grant session. The strengthened no-`read`
+   denial-reason/challenge fixture also passed in the restarted harness.
 5. Exercise 17+ **active** destinations and full catalog payload limits in a separate authorized
    registry fixture; the existing 50/100/256-value tokens are not a substitute. Test wildcard
    admission after an approved inventory reload, and capability/destination/instance ceilings

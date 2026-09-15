@@ -108,9 +108,13 @@ in the owning extension; see [configuration persistence](configuration-precedenc
 
 An already-issued token retains its old grants until expiry; changing a role, signing out, or
 restarting ARC-1 does not revoke every outstanding token. Do not promise that refresh acquires new
-scopes or recalculates IAS membership. The shipped descriptor's access-token validity is one hour;
-confirm the actual service setting and the customer's revocation requirements. Immediate revocation
-is not provided by this feature. Missing/invalid grants fail closed while enforcement stays enabled.
+scopes or recalculates IAS membership. The shipped descriptor's access-token validity is one hour,
+but **this is not a one-hour revocation guarantee**: live testing showed refresh and reused SSO
+issuing new tokens with the removed grant and a new expiry. A fresh private login obtained the
+updated empty grant, and its subsequent refresh preserved the denial. Verify the customer's normal
+sign-out/new-sign-in workflow, inspect the resulting application's verified grant status, and agree
+an acceptable revocation window. Immediate revocation is not provided by this feature.
+Missing/invalid grants fail closed while enforcement stays enabled.
 
 Instructions, `tools/list`, and catalogs are caller-specific. ARC-1 emits `Cache-Control: private,
 no-store` for enforced MCP responses, including streaming output. Do not add shared proxy caching;
