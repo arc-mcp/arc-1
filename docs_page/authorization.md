@@ -321,6 +321,37 @@ To grant SQL to one BTP user, assign a role collection that includes `MCPSqlUser
 
 See [XSUAA Setup](xsuaa-setup.md) for BTP Cockpit assignment steps.
 
+### Opt-in multi-target grants
+
+The **PR #677 implementation candidate**, not yet customer-ready, adds a separate target boundary
+only when the deployment owner selects `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`.
+Unset/`legacy` preserves existing access. The
+[canonical setup and validation status](multi-target-setup.md#optional-target-authorization)
+cover activation, the pending auth-library release, and live acceptance.
+
+The additive `MCPTargetReadAccess` role template supplies `read` plus required `arc1_targets`
+values with **no default grant**. One static cohort can contain multiple exact public IDs, such as
+`A4H/001` and `A4H/100`; no IAS change is required. The separate `MCPAllTargetReadAccess` template
+supplies `read` and literal `*` through the unassigned `ARC-1 All Targets (<space>)` collection.
+That intentionally includes future targets. Existing functional templates/collections are unchanged.
+
+```text
+eligible operation = global functional scopes × union of granted targets
+                   ∩ instance ceiling ∩ selected destination policy ∩ SAP authorization
+```
+
+XSUAA does not preserve a capability/target pair from each role. SQL capability with target A,
+combined with another role granting B, makes SQL eligible on both A and B where downstream policies
+permit it. The same is true for data and Admin. Use separate applications with distinct XSUAA
+identities if one user needs SQL on A but only source reads on B; disabling B's destination SQL
+switch restricts everyone, not just that user.
+
+Admin grants full safe catalog diagnostics, **not execution on an ungranted target**. Choose exact
+operator grants or deliberately add All Targets. Missing/malformed grants never disable enforcement;
+partial wildcards and XSUAA Unrestricted are unsupported. Only supported verified XSUAA user tokens
+enter enforced routes; a machine token, API key or generic OIDC token is not an alternative.
+Target grants do not create SAP users, prove PP access, or enable multi-target writes.
+
 ---
 
 ## API-key profiles (non-BTP)
@@ -531,6 +562,8 @@ For the specific message **"this user is not allowed any of the requested scopes
 collection's roles and the signed-in IdP origin below. `invalid_scope` can also mean an unknown or
 malformed requested scope; use the [XSUAA diagnosis table](xsuaa-setup.md#insufficient-scope-invalid_scope)
 before changing roles or browser state.
+
+<a id="role-assigned-but-login-still-fails"></a>
 
 ### "I changed the user's role but the new scopes don't appear"
 

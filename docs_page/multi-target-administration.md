@@ -11,6 +11,10 @@ copy-paste deployment, destination, role, and MCP client configuration. Common B
 ownership, XSUAA collection lifecycle, DCR secrets, upgrades, scaling, rollback, logging, and
 customer handover live in [BTP Administration](btp-administration.md).
 
+This page distinguishes existing **legacy** behavior from the **PR #677 target-authorization
+candidate**. The latter is opt-in and is not customer-ready while its auth-library release and live
+acceptance remain pending; see [setup and validation status](multi-target-setup.md#optional-target-authorization).
+
 <a id="administration-model"></a>
 <a id="4-configure-xsuaa-roles"></a>
 <a id="5-choose-an-endpoint-style"></a>
@@ -25,7 +29,7 @@ Responsibility is intentionally split across administrators:
 |---|---|---|
 | ARC-1 deployment owner | ARC-1 application environment, usually deployed through MTA | Enables the mode and sets the application-wide maximum for data and SQL. |
 | BTP destination administrator | One subaccount destination per SAP connection | Defines the real SID/client, optional public route alias, connection, label, and narrower data/SQL opt-ins. |
-| Identity administrator | Existing XSUAA role collections | Grants global read, data, SQL, or admin scope. There are no per-target roles in v1. |
+| Identity administrator | XSUAA roles and collections | Grants global capabilities; in the opt-in candidate, also assigns exact target cohorts or explicit all-target access. |
 | Cloud Connector administrator | Virtual mappings, principal mode, trust, and exposed paths | Carries the selected destination securely to the intended SAP backend. |
 | SAP/Basis administrator | PP mapping or shared technical user, plus SAP authorizations | Determines whether the selected per-user or shared SAP identity can access a client and operation. |
 
@@ -36,6 +40,7 @@ multi-target v1 ceiling
 ∩ ARC-1 instance ceiling
 ∩ selected destination policy
 ∩ XSUAA user scope
+∩ target grant (only when xsuaa-attribute enforcement is enabled)
 ∩ selected SAP identity authorization
 ```
 
@@ -57,8 +62,9 @@ scope step-up. It also means a trusted Admin receives all assigned mutation-free
 login. Treat the token accordingly and keep its lifetime short. This model must be redesigned—not
 merely expanded—before any multi-target write, transport, or Git scope is introduced.
 
-A pinned route reduces accidental target switching, but it is not an ACL. A global read user can
-try every accepted pinned route. The aggregate route introduces an additional wrong-target risk: a
+A pinned route reduces accidental target switching, but it is not by itself an ACL. In legacy mode,
+a global read user can try every accepted pinned route. Enforced mode checks a target grant first.
+The aggregate route introduces an additional wrong-target risk: a
 model can select a different authorized system and read data or run SQL there. Keep data/SQL off
 unless approved, use distinct factual descriptions, and separate lookalike systems when that risk
 is unacceptable.
@@ -69,7 +75,8 @@ Use one ARC-1 instance per target, optionally behind an external router such as
 [`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub), when you need:
 
 - writes, activation, transport mutation, or Git mutation;
-- target-specific visibility or authorization before SAP is contacted;
+- target-specific visibility on released builds without the opt-in candidate, or different
+  capabilities per target for the same user;
 - different XSUAA tenants, subaccounts, or identity providers;
 - hard performance, maintenance, or failure isolation;
 - independent production and non-production security boundaries; or
@@ -77,6 +84,47 @@ Use one ARC-1 instance per target, optionally behind an external router such as
 
 Multi-target v1 reduces application sprawl; it does not create independent security or capacity
 domains inside one process.
+
+### Target authorization lifecycle
+
+For the PR candidate, use the [static-cohort setup](multi-target-setup.md#optional-target-authorization)
+before activating `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`. Existing deployments stay
+`legacy` when the property is absent; explicitly setting `legacy` has the same effect. Only trusted
+deployment operators may change this policy. Keep the chosen value in the protected landscape
+extension, not only a temporary `cf set-env` override.
+
+| Change | Operator action |
+|---|---|
+| Assign/remove a target role or collection | Obtain a fresh application token and reconnect/reload MCP tools. No destination restart is required. |
+| Role was assigned but login/catalog still reflects old access | Use [Refresh access](authorization.md#role-assigned-but-login-still-fails), then start sign-in from the MCP client again. If testing another identity, use a private browser window and confirm its email and IdP origin. |
+| Rename a public target alias/client ID | Coordinate the destination change, exact role values, all-process restart and fresh client login. Old IDs do not become aliases automatically. |
+| Repoint a destination under the same public ID | Existing grants still match. Require the IAM/data owner's review before routing those grants to a different backend. |
+| Activate enforcement | Deploy the reviewed multi-only extension, verify the effective mode on every process and run positive/negative user acceptance. |
+| Disable/roll back enforcement | Obtain the security owner's approval, then set `ARC1_MULTI_TARGET_AUTHORIZATION: legacy` explicitly in the owning protected `.mtaext`, deploy, and verify the actual CF environment and logged mode on every serving process. This security downgrade restores broader all-reader access; verify that population and never use it as automatic error recovery. |
+
+An actually unset runtime setting also selects `legacy`, but deleting the line from an MTA
+extension does not reliably unset an already-deployed CF value. Keep the explicit rollback value
+in the owning extension; see [configuration persistence](configuration-precedence.md#restriction-lists-on-btp-mtaext-is-durable-cf-set-env-is-not).
+
+An already-issued token retains its old grants until expiry; changing a role, signing out, or
+restarting ARC-1 does not revoke every outstanding token. Do not promise that refresh acquires new
+scopes or recalculates IAS membership. The shipped descriptor's access-token validity is one hour;
+confirm the actual service setting and the customer's revocation requirements. Immediate revocation
+is not provided by this feature. Missing/invalid grants fail closed while enforcement stays enabled.
+
+Instructions, `tools/list`, and catalogs are caller-specific. ARC-1 emits `Cache-Control: private,
+no-store` for enforced MCP responses, including streaming output. Do not add shared proxy caching;
+an MCP client can still retain its own tool catalog, so reconnect/reload it after identity or grant
+changes. Server-side checks remain authoritative even if the client tries an old or hidden target.
+
+Admin can see complete safe inventory without a target grant, but **cannot execute on an ungranted
+target**. Grant a specific cohort for operator test calls, or deliberately assign the separate
+All Targets collection. Functional permissions apply over the complete grant union; see
+[the scope/target limitation](authorization.md#opt-in-multi-target-grants).
+
+Do not collect raw JWTs, complete grant arrays, IAS group lists or credentials in support tickets.
+Record the effective mode, application/IdP identity, request ID and safe decision/status counts.
+CLI platform login is not evidence that the application's user token has the expected grants.
 
 ## Process and registry lifecycle
 
@@ -105,6 +153,11 @@ The process may start with zero targets. This supports deploy first, create dest
 then restart.
 
 ### Optional single-target `/mcp`
+
+This mixed topology is **legacy-only**. Enforced mode rejects independent single-target connection
+settings before startup destination lookups or SAP probes. Use a separate application and XSUAA
+identity with reviewed assignments when single-target access is also required. Also review other
+apps sharing the current XSUAA identity; this process cannot restrict their endpoints.
 
 An explicitly configured `SAP_BTP_DESTINATION` and optional `SAP_BTP_PP_DESTINATION` may keep one
 single target at bare `/mcp`. Discovered targets are never assigned there and do not inherit the
@@ -151,10 +204,19 @@ Conflict handling is deterministic and fail closed:
 - duplicate destination names quarantine every enabled claimant; disabled or marker-missing entries remain non-active;
 - multiple enabled destinations claiming one public target ID quarantine every claimant;
 - a subaccount candidate shadowed by a same-name instance destination is excluded; and
-- more than 256 enabled candidates activates none of them—ARC-1 never chooses a “first 256”.
+- in legacy mode, more than 256 enabled candidates activates none of them—ARC-1 never chooses a “first 256”.
 
-Invalid enabled destinations count toward the 256 ceiling. Destination ordering never selects a
-winner.
+Invalid enabled destinations count toward that legacy ceiling. With `xsuaa-attribute`, the bound
+is **256 total ARC-related candidates**, including disabled, invalid and marker-missing entries;
+case-insensitive `arc1.*` property detection prevents malformed capitalization evading the count.
+Unrelated destinations do not count. Exceeding it makes the entire registry unavailable, with no
+partial routable snapshot. Destination ordering never selects a winner.
+
+Enforced mode also bounds the **complete serialized MCP ToolResult to 512 KiB**, including the
+escaped text wrapper. A startup catalog that cannot fit makes the registry unavailable; output is
+never silently truncated. These are safety ceilings, not a promise that a 256-grant enterprise JWT
+fits every proxy or MCP client. Begin sizing at 50/100 exact grants and measure actual token/header
+and catalog sizes before expanding; live scale acceptance is still pending.
 
 When separate systems reuse a real SID/client, set `arc1.target_alias` on at least one so their
 public IDs differ—for example, preserve `A4H/001` and add `A4H-2025/001`. You may alias both for
@@ -201,10 +263,13 @@ through admin `SAPTargets`. To route an authenticated aggregate MCP request to o
 | Health component | Meaning |
 |---|---|
 | `multiTarget.status="ready"` | The registry snapshot is usable. Zero active targets and individually quarantined destinations are still valid snapshots. |
-| `multiTarget.status="error"` | Discovery failed or the 256-enabled-target ceiling invalidated the entire registry. |
+| `multiTarget.status="error"` | Discovery failed or the mode-specific candidate/result-size ceiling invalidated the entire registry. |
 
 During registry-wide failure, `/multi/mcp` stays reachable so an admin can call `SAPTargets`.
-Pinned routes return HTTP 503 and other aggregate tool calls return a structured registry error.
+In legacy mode, pinned routes return HTTP 503 and other aggregate tool calls return a structured
+registry error. Enforced mode checks the caller's target grant first: an ungranted ID still returns
+generic pinned HTTP 404 or aggregate `TARGET_NOT_AVAILABLE`; only a granted ID reaches the pinned
+503 or aggregate `MULTI_TARGET_REGISTRY_UNAVAILABLE` result.
 The admin catalog distinguishes `ready`, `degraded`, and `error` configuration states in more
 detail than `/health`.
 
@@ -292,7 +357,7 @@ request IDs, audit events, and the per-user MCP limiter when `ARC1_RATE_LIMIT` i
 
 ### Reader view
 
-Readers see the tool only when more than one target is active. With no arguments it returns accepted
+In legacy mode, readers see the tool only when more than one target is active. With no arguments it returns accepted
 public IDs, descriptions, and the effective SAP identity mode:
 
 ```json
@@ -313,13 +378,13 @@ user can access SAP.
 Admins see `SAPTargets` at zero, one, or many active targets and during registry failure. Their
 response wraps the public target list and adds secret-projected registry state.
 
-Without `query`, diagnostics contain a bounded page of non-active ARC-related destinations and
+In legacy mode, without `query`, diagnostics contain a bounded page of non-active ARC-related destinations and
 their exclusion reasons. With `query`, diagnostics also include matching active targets and can
 match target ID, active-target description, destination name, status, code, or safe message.
 
 `admin.sharedAuthentication` contains passive counts for `not_checked`, `checking`, `healthy`,
 `configuration_invalid`, `authentication_failed`, `authorization_failed`, and
-`temporarily_unavailable`. At most 8 non-normal target rows are returned in `exceptions`, with
+`temporarily_unavailable`. In legacy mode, at most 8 non-normal target rows are returned in `exceptions`, with
 explicit total/returned/truncation metadata; narrow `query` to the target ID when that list is
 truncated. Reading `SAPTargets` never performs a destination lookup, SAP login, canary, or feature
 probe; this is only the last process-local state observed during a real request.
@@ -380,7 +445,7 @@ Readers still receive only `target`, `description`, and `identity`.
 }
 ```
 
-Diagnostics are sorted and paged at 50 rows. When `diagnosticNextOffset` is present, call the tool
+The legacy diagnostics above are sorted and paged at 50 rows. When `diagnosticNextOffset` is present, call the tool
 again with the same `query` and `offset` set to that value. `offset` is admin-only, accepts integers
 from 0 through 1,000,000, and makes every matching destination reachable without one unbounded
 result. `query` is optional and limited to 160 characters; extra arguments are rejected. Raw query
@@ -403,6 +468,31 @@ configuration. The admin response is still operator-sensitive: it exposes intern
 names, topology labels, normalized policy, and failure reasons to the MCP client/model. Use it only
 in trusted operator sessions and redact it before pasting into issues, pull requests, chats, or
 support tickets.
+
+### Enforced catalog differences
+
+Only the opt-in candidate changes this contract; legacy paging and tool visibility stay unchanged.
+
+| Audience | `SAPTargets` in enforced mode |
+|---|---|
+| Reader | Available only with more than one granted active target on the aggregate route. Returns only those targets' IDs, descriptions and identity labels. No hidden counts or rejected inventory. |
+| Admin | Available at zero/one/many grants. All active targets with a `granted` boolean, plus all safe active/non-active diagnostics and an `admin.authorization` summary (`mode`, `grantMode`, `status`, and exact-grant count where applicable). No raw grant list. |
+
+At zero granted active targets, a reader receives `tools: []` and only a caller-specific no-target
+explanation. At one, SAP tool schemas contain the one exact target, still required on each call,
+but no `SAPTargets`. Calling the unlisted catalog directly returns `UNKNOWN_TOOL`; it cannot reveal
+whether another user has more targets. Existing deny-actions also apply, including to Admin.
+
+Only optional `query` is accepted (at most 160 characters); `offset` and other arguments are
+rejected. Without a query the Admin gets the complete bounded inventory, not an exceptions page.
+A query filters displayed rows, not registry totals or aggregate Basic health counts. Every matching
+Basic exception is included, without the legacy eight-row cap. The same passive/no-probe rule applies.
+
+The [total-candidate and serialized-result bounds](#discovery-conflicts-and-the-256-target-ceiling)
+make completeness possible. Oversized snapshots are unavailable rather than partially active.
+When discovery stopped at the limit, `countsComplete:false` and `arcRelatedAtLeast` explicitly mark
+the incomplete count; ordinary counts are omitted rather than invented. Invalid diagnostic fields
+are sanitized/omitted for display without making an invalid destination valid.
 
 <a id="7-understand-status-and-reason-codes"></a>
 
@@ -433,7 +523,8 @@ support tickets.
 | `DUPLICATE_BASIC_CONNECTION` | Keep exactly one enabled Basic destination for each physical URL/client/Cloud Connector location. Aliases cannot duplicate a shared Basic backend; every claimant is quarantined to preserve the lockout guard. |
 | `DUPLICATE_DESTINATION_NAME` | Remove duplicate inputs; every enabled claimant is quarantined and all claimants remain non-routable. |
 | `SHADOWED_BY_INSTANCE` | Remove/rename the same-name instance destination or subaccount candidate. |
-| `TARGET_LIMIT_EXCEEDED` | Reduce enabled candidates to 256 or fewer and restart; none are active while over limit. |
+| `TARGET_LIMIT_EXCEEDED` | Reduce enabled candidates (legacy) or all ARC-related candidates (enforced) to 256 or fewer and restart; none are active while over limit. |
+| `CATALOG_SIZE_LIMIT_EXCEEDED` | Enforced only: the full safe catalog cannot fit 512 KiB. Reduce/review inventory and restart; no partial result or partial snapshot is accepted. |
 | `REGISTRY_DISCOVERY_ERROR` | Check Destination binding/token/network health, then restart. |
 
 `LIMITED_BY_INSTANCE` is not a reason code. An active entry keeps `code: "ACTIVE"` and sets
@@ -447,6 +538,8 @@ ARC-1 reports the proven failure stage without exposing raw SAP responses:
 
 | Error | Meaning and response |
 |---|---|
+| Generic target unavailable/denied | Enforced mode intentionally does not distinguish an unknown ID from an ungranted ID. Use a trusted Admin session and the request ID to diagnose; never probe other IDs as a workaround. |
+| `TARGET_GRANT_MISSING` / `TARGET_GRANT_MALFORMED` / `TARGET_GRANT_LIMIT_EXCEEDED` | Safe Admin/audit decision: check the correct application's role source/values, missing versus Unrestricted attribute, exact ID format and the 256 unique-grant bound. Fresh sign-in after IAM repair; no fallback to legacy. |
 | `BASIC_CREDENTIALS_MISSING` | The authoritative request-time Find result has no usable `User`/`Password`. Repair the destination and retry without restart. |
 | `BASIC_CREDENTIALS_INVALID` | The Basic username contains `:` or surrounding whitespace. Correct the destination and retry without restart. |
 | `DESTINATION_AUTH_SETUP_FAILED` | Destination Find or Basic request-client preparation failed safely before ADT. Check the request ID and Destination/Connectivity health; retry only when transient or after repair. |
@@ -519,7 +612,9 @@ caller.
 - [ ] Every target has a valid real SID, client, factual description, `arc1.enabled=true`, and a unique valid route alias when its SID/client is reused.
 - [ ] Data/SQL is approved and enabled only where required at both instance and target layers.
 - [ ] No target contains unknown or write-related `arc1.*` keys.
-- [ ] Enabled candidate count is 256 or fewer.
+- [ ] The effective authorization mode matches the deployment decision on every process. Enforced mode has no independent single-target connection or shared-identity app that defeats that boundary.
+- [ ] Enabled candidate count (legacy) or total ARC-related candidate count (enforced) is 256 or fewer; enforced full catalog fits 512 KiB.
+- [ ] If opting in, exact/disjoint-user, explicit all-target, missing/malformed grants, Admin-without-execution, refresh and client-catalog checks passed; IAM reviewed the global capability × target union.
 - [ ] Admin `SAPTargets` shows no duplicate, shadow, quarantine, or unexpected policy narrowing.
 - [ ] PP-only scaled deployments report the same registry revision on every instance; Basic-enabled deployments have exactly one instance.
 - [ ] Viewer, unmapped-user, SAP-unauthorized, broken-PP, changed-destination, and (if enabled) Basic credential rotation/lockout-protection cases were tested.
@@ -534,7 +629,7 @@ caller.
 
 - multi-target writes, activation, transport mutation, and Git mutation;
 - a full-write destination template;
-- target-specific ARC-1 ACLs or XSUAA roles;
+- per-target capability pairing; opt-in XSUAA target grants are a separate PR candidate, not released v1 behavior;
 - persisted per-user target availability;
 - API-key or direct Entra/IAS OIDC access to multi-target routes;
 - SaaS subscriber/provider and cross-subaccount discovery;
