@@ -316,6 +316,7 @@ export async function handleSAPActivate(
       details: result.details.filter(
         (detail) => !objects.some((object) => activationDetailMatchesObject(detail.uri, object.url)),
       ),
+      // Exclude assigned details before the global formatter sees only the unmatched subset.
       messages: result.messages.filter((message) => !result.details.some((detail) => detail.text === message)),
     });
 
@@ -481,28 +482,21 @@ export function buildBatchActivationStatuses(
   objects: BatchActivationObject[],
   result: ActivationResult,
 ): BatchActivationObjectStatus[] {
-  const perObject = objects.map((object) =>
-    result.details.filter((detail) => activationDetailMatchesObject(detail.uri, object.url)),
-  );
-
-  return objects.map((obj, index) => {
-    const details = perObject[index];
-    const hasError = details.some((detail) => detail.severity === 'error');
-    const hasWarning = details.some((detail) => detail.severity === 'warning');
-    const status: BatchActivationObjectStatus['status'] = hasError
-      ? 'error'
-      : !result.success
-        ? 'unknown'
-        : hasWarning
-          ? 'warning'
-          : 'active';
+  return objects.map((obj) => {
+    const details = result.details.filter((detail) => activationDetailMatchesObject(detail.uri, obj.url));
     const messages = details.map(
       (detail) => `${detail.line ? `[line ${detail.line}] ` : ''}${detail.text}${detail.uri ? ` (${detail.uri})` : ''}`,
     );
     return {
       type: obj.type,
       name: obj.name,
-      status,
+      status: details.some((detail) => detail.severity === 'error')
+        ? 'error'
+        : !result.success
+          ? 'unknown'
+          : details.some((detail) => detail.severity === 'warning')
+            ? 'warning'
+            : 'active',
       messages,
     };
   });
@@ -510,16 +504,10 @@ export function buildBatchActivationStatuses(
 
 export function formatBatchActivationStatuses(statuses: BatchActivationObjectStatus[]): string {
   if (statuses.length === 0) return '';
-  const lines: string[] = [];
-  for (const status of statuses) {
-    if (status.messages.length === 0) {
-      lines.push(`- ${status.name} (${status.type}): ${status.status}`);
-    } else {
-      for (const msg of status.messages) {
-        lines.push(`- ${status.name} (${status.type}): ${status.status} — ${msg}`);
-      }
-    }
-  }
+  const lines = statuses.flatMap(({ name, type, status, messages }) => {
+    const label = `- ${name} (${type}): ${status}`;
+    return messages.length ? messages.map((message) => `${label} — ${message}`) : [label];
+  });
   return `\n${lines.join('\n')}`;
 }
 

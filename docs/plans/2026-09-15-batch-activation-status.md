@@ -4,9 +4,6 @@
 
 The mapper used a raw URI prefix, so an error on ZFIRST2 was assigned to ZFIRST.
 It also inferred active from absence of a diagnostic after SAP cancelled the batch.
-Reproduced with seven failing regressions before implementation, including namespace
-boundaries, source fragments, warning-only members, and global cancellation.
-
 Use a shared boundary-aware object/source matcher (the same helper as #788), mark
 unreported members unknown when the overall activation fails, retain their own
 warnings, and render global messages separately. Include the status in every row,
@@ -16,35 +13,18 @@ Plan review: overall success still permits active/warning statuses; an own error
 always wins. Names sharing a prefix must not share diagnostics. No transport,
 activation protocol, publication retry or authorization changes are needed.
 
-## Verification
+## Message retention
 
-All 48 focused activation tests passed. Build, typecheck, lint, policy and size/schema
-checks passed, as did **6,586 tests in 214 files** with four test workers. A concurrent
-full-suite run timed out in the unrelated OAuth callback tests; all 18 callback tests
-passed in isolation before the full successful rerun. No checks were disabled.
+Global messages are separated from object-specific details before formatting. Flat
+messages matching any original detail must be excluded before the formatter sees
+only the unmatched details, or each object's error appears again as a global message.
+Keep informational and flat-only global messages, including lock guidance, once.
 
-Compiled CLI live test on SAP_BASIS 8.16: two interface names deliberately share a
-prefix, and only the second contains an unknown type. SAP cancelled batch activation;
-the first was reported unknown and the second error. Readback showed the empty active
-shells and the submitted inactive sources. Both fixtures were deleted and confirmed
-absent. [Sanitized evidence](../research/2026-09-15-batch-activation-status-live.json).
+## Live facts
 
-This is a standalone follow-up to #788. The shared helper file is byte-identical in
-both PRs so either merge order is supported; combined checks cover their composition.
-
-## Review round 3
-
-The optional flat-message finding is valid: an early return suppressed messages when
-no structured details existed. Further review found that global informational details
-were also filtered out of the flat list and then discarded by the formatter.
-
-Plan and implementation: retain informational details and otherwise-unrepresented flat
-messages, deduplicate them, and render them alongside any error/warning sections. Keep
-per-object attribution and unknown activation states unchanged. Four new regressions
-failed before the fix; they cover success/failure with flat-only messages and mixed
-structured/flat messages, including duplicate text.
-
-All 52 focused activation tests and **6,590 tests in 214 files** passed. Build,
-typecheck, lint, policy and size/schema checks passed. This follow-up changes output
-formatting only; it adds no SAP requests. No additional live run was needed for these
-injected response shapes; the release-specific live evidence above remains applicable.
+On SAP_BASIS 8.16, two interface names shared a prefix and only the second referenced
+an unknown type. SAP cancelled activation; the first remained unknown and the second
+received its own error. Readback showed empty active shells and the submitted
+inactive sources. Both fixtures were deleted and their absence confirmed. The
+reviewer independently confirmed the attribution on 7.50 and 7.58; SAP's global
+cancellation is displayed with the severity SAP supplies.

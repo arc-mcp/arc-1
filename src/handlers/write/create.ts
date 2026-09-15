@@ -1292,9 +1292,6 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         const key = `${result.type}\x00${result.name}`;
         const matched = statusByName.get(key);
         if (!matched) continue;
-        // Some entries may still report status 'active' if the activator returned
-        // success: false but had no per-object error details — keep them as 'success'.
-        if (matched.status === 'active') continue;
         result.status = 'failed';
         const detail = matched.messages.length > 0 ? ` — ${matched.messages.join('; ')}` : '';
         // Preserve the "create + source-write succeeded" context so the user sees that
