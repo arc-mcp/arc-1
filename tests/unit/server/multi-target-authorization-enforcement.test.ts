@@ -1,5 +1,6 @@
 /** Real HTTP bearer middleware + SDK transport + request-local MCP server contracts. */
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import type { XsuaaCredentials } from '@arc-mcp/xsuaa-auth';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -122,8 +123,10 @@ function payload(value: Result): any {
 
 describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
   let app: express.Express;
+  let httpServer: HttpServer;
   let sequence = 0;
   const servers: Server[] = [];
+  const httpServers: HttpServer[] = [];
   let network: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -142,6 +145,15 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
   });
   afterEach(async () => {
     await Promise.all(servers.splice(0).map((server) => server.close()));
+    await Promise.all(
+      httpServers.splice(0).map(
+        (server) =>
+          new Promise<void>((resolve, reject) => {
+            server.close((error) => (error ? reject(error) : resolve()));
+            server.closeAllConnections();
+          }),
+      ),
+    );
     expect(network).not.toHaveBeenCalled();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -170,9 +182,16 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
         return server;
       },
     });
+    // Supertest's implicit listen(0) binds :: but connects to 127.0.0.1. On macOS
+    // that wildcard can share a port with an unrelated IPv4 listener. Bind the
+    // exact loopback address and keep the listener alive for this test's calls.
+    httpServer = createHttpServer(app);
+    httpServer.listen(0, '127.0.0.1');
+    await once(httpServer, 'listening');
+    httpServers.push(httpServer);
   }
   function rpc(token: string | undefined, method: string, params?: unknown, path = '/multi/mcp') {
-    const call = request(app)
+    const call = request(httpServer)
       .post(path)
       .set('Accept', 'application/json, text/event-stream')
       .set('MCP-Protocol-Version', '2025-11-25');
@@ -337,7 +356,10 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
       }
       expect((await rpc(noRead, 'tools/list', undefined, path)).status).toBe(403);
       const machine = await rpc('machine.token.signature', 'tools/list', undefined, path);
-      expect(machine.status).toBe(403);
+      expect(
+        machine.status,
+        `${path}: ${JSON.stringify({ body: machine.body, challenge: machine.headers['www-authenticate'] })}`,
+      ).toBe(403);
       expect(machine.body).toEqual({
         error: 'forbidden',
         error_description: 'A supported XSUAA user token is required.',
@@ -355,7 +377,7 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
     expect(explicit.headers['cache-control']).toBe('private, no-store, no-transform');
     const denied = await rpc(token, 'tools/list', undefined, '/A4H/000/mcp');
     expect(denied.headers['cache-control']).toBe('private, no-store, no-transform');
-    expect((await request(app).get('/targets')).status).toBe(404);
+    expect((await request(httpServer).get('/targets')).status).toBe(404);
   });
 
   it('does not reveal whether an ungranted target exists, including to Admin', async () => {
