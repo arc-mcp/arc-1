@@ -31,6 +31,14 @@
       "description": "Administrative access to ARC-1 (implies all other scopes at runtime)"
     }
   ],
+  "attributes": [
+    {
+      "name": "arc1_targets",
+      "description": "Exact ARC-1 public target IDs, or explicit * for all targets",
+      "valueType": "string",
+      "valueRequired": true
+    }
+  ],
   "role-templates": [
     {
       "name": "MCPViewer",
@@ -68,6 +76,23 @@
         "$XSAPPNAME.transports",
         "$XSAPPNAME.git",
         "$XSAPPNAME.admin"
+      ]
+    },
+    {
+      "name": "MCPTargetReadAccess",
+      "description": "Read-only ARC-1 access to selected SAP targets",
+      "scope-references": ["$XSAPPNAME.read"],
+      "attribute-references": ["arc1_targets"]
+    },
+    {
+      "name": "MCPAllTargetReadAccess",
+      "description": "Read-only ARC-1 access to all current and future SAP targets",
+      "scope-references": ["$XSAPPNAME.read"],
+      "attribute-references": [
+        {
+          "name": "arc1_targets",
+          "default-values": ["*"]
+        }
       ]
     }
   ],
