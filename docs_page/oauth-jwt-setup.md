@@ -1,168 +1,71 @@
 # OAuth / JWT Setup
 
-Authenticate MCP clients using OAuth 2.1 with an external identity provider (Microsoft Entra ID, Cognito, Okta, Keycloak). ARC-1 validates JWT bearer tokens and extracts user identity.
+Use this guide when an external identity provider issues JWT access tokens for your ARC-1 HTTP server.
+ARC-1 validates those tokens; it does not issue them. For SAP BTP sign-in, use [XSUAA setup](xsuaa-setup.md).
 
 ## When to Use
 
-- Enterprise environments with existing IdP
-- When you need to know which user is making requests
-- Audit trail requirements
-- When combined with per-user SAP auth through BTP Destination principal propagation
+<a id="architecture"></a>
 
-## Architecture
-
-```
-                                 ┌─────────────────────┐
-                                 │  Identity Provider   │
-                                 │  (Entra ID / Cognito)│
-                                 └──────┬──────────────┘
-                                        │ OIDC tokens
-┌──────────────────┐     JWT Bearer     │     ┌──────────────────┐     Basic Auth      ┌────────────┐
-│  MCP Client      │ ──────────────────►├────►│  arc1 Server      │ ──────────────────► │  SAP ABAP  │
-│  (IDE / Copilot) │   Authorization    │     │  validates JWT    │   service account  │  System    │
-└──────────────────┘                    │     └──────────────────┘                     └────────────┘
-                                        │
-                          ┌─────────────┘
-                          │ JWKS keys
-                          │ (cached 1h)
-```
+Choose this path for an existing OIDC provider and a client that can acquire tokens from it.
+Check [client discovery compatibility](#auto-discovery-rfc-9728), especially for Microsoft Entra ID, before configuring the server.
 
 ## Identity Provider Setup
 
 ### Microsoft Entra ID (Azure AD)
 
-1. **Create App Registration:**
-   - Azure Portal → Microsoft Entra ID → App registrations → New registration
-   - Name: `ARC-1 SAP MCP Server`
-   - Supported account types: **Single tenant** (`Accounts in this organizational directory only`)
-   - Redirect URI: leave blank (will be set after Copilot Studio connector creation)
+1. Register the ARC-1 API in your tenant and record the tenant and application IDs.
+2. Expose an API scope, such as `api://<client-id>/access_as_user`, and authorize the intended client.
+3. For the v2 setup below, set `api.requestedAccessTokenVersion` to `2` in the API application manifest.
+4. Register the client's exact redirect URI. Create a client secret only for a confidential client that needs one.
+5. Obtain an access token for ARC-1 and inspect `iss`, `aud`, `exp` and scope claims locally.
 
-2. **Expose an API:**
-   - App registration → Expose an API → Set Application ID URI (accept default `api://{client-id}`)
-   - Add a scope: `access_as_user` — Type: `Admins and users`, Display name: `Access ARC-1`
+Token version is controlled by the resource application's manifest; match the issuer metadata to that version.
+See [Microsoft's access-token reference](https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens).
 
-3. **Set Token Version to v2.0:**
-   - App registration → Manifest → set `"requestedAccessTokenVersion": 2`
-   - Or via Azure CLI:
-     ```bash
-     # Get the object ID of the service principal's associated app
-     az ad app show --id {client-id} --query id -o tsv
-     # Patch the API application to use v2.0 tokens
-     az rest --method PATCH \
-       --url "https://graph.microsoft.com/v1.0/applications/{object-id}" \
-       --body '{"api":{"requestedAccessTokenVersion":2}}'
-     ```
-   - **Why:** v2.0 tokens use the raw client ID as `aud` claim, while v1.0 uses `api://...` URI. The OIDC validator needs a consistent audience value.
-
-4. **Add Microsoft Graph User.Read permission:**
-   - App registration → API permissions → Add a permission → Microsoft Graph → Delegated → `User.Read`
-   - Click **Grant admin consent** for your organization
-   - Or via Azure CLI:
-     ```bash
-     az ad app permission add --id {client-id} \
-       --api 00000003-0000-0000-c000-000000000000 \
-       --api-permissions e1fe6dd8-ba31-4d61-89e7-88639da4683d=Scope
-     az ad app permission admin-consent --id {client-id}
-     ```
-   - **Why:** Power Platform requires this permission for OAuth connectors.
-
-5. **Create a Client Secret:**
-   - App registration → Certificates & secrets → New client secret
-   - Copy the secret value immediately (it won't be shown again)
-   - Or via Azure CLI:
-     ```bash
-     az ad app credential reset --id {client-id} --display-name "PowerAutomate" --years 2
-     ```
-
-6. **Note the values:**
-   - **Application (client) ID** — used as both Client ID and audience
-   - **Directory (tenant) ID** — e.g., `9ef3a122-4319-496a-a394-a7318c2d0a7e`
-   - **Client secret** — from step 5
-   - **Issuer URL:** `https://login.microsoftonline.com/{tenant-id}/v2.0`
+For Power Platform, follow [Microsoft's custom-connector registration](https://learn.microsoft.com/en-us/connectors/custom-connectors/azure-active-directory-authentication)
+and the connection settings below. Review permissions and consent with the identity owner.
 
 ### AWS Cognito
 
-1. Create User Pool
-2. Create App Client
-3. Configure domain
-4. Issuer URL: `https://cognito-idp.{region}.amazonaws.com/{pool-id}`
+Use an OIDC-capable user pool and app client. Issuer format:
+`https://cognito-idp.<region>.amazonaws.com/<pool-id>`.
+Confirm the issued access token contains the audience ARC-1 will validate.
+See [Cognito user pools](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools.html).
 
 ### Keycloak
 
-1. Create Realm
-2. Create Client (confidential)
-3. Issuer URL: `https://keycloak.company.com/realms/{realm}`
+Create the realm and client for your MCP application. Issuer format:
+`https://keycloak.company.com/realms/<realm>`.
+Configure access-token audience and ARC-1 scopes; see [Keycloak realm configuration](https://www.keycloak.org/docs/latest/server_admin/#configuring-realms).
 
 ## Server Setup
 
-### Start arc1 with OIDC Validation
+<a id="start-arc1-with-oidc-validation"></a><a id="environment-variables"></a>
 
-> **`SAP_OIDC_AUDIENCE` is mandatory.** When `--oidc-issuer` is set, `--oidc-audience` must also be provided. ARC-1 will refuse to start without an explicit audience to prevent token confusion attacks.
-
-```bash
-arc1 --url https://sap.example.com:44300 \
-    --user SAP_SERVICE_USER \
-    --password 'ServicePassword123' \
-    --transport http-streamable \
-    --http-addr 0.0.0.0:8080 \
-    --oidc-issuer 'https://login.microsoftonline.com/{tenant-id}/v2.0' \
-    --oidc-audience '{client-id-guid}'
-```
-
-### Environment Variables
+Set the issuer and the exact audience of the access token issued for ARC-1. ARC-1 refuses to start with an issuer but no audience.
+Configure SAP credentials separately through your deployment's secret handling.
 
 ```bash
-export SAP_URL=https://sap.example.com:44300
-export SAP_USER=SAP_SERVICE_USER
-export SAP_PASSWORD=ServicePassword123
 export SAP_TRANSPORT=http-streamable
-export SAP_HTTP_ADDR=0.0.0.0:8080
-export SAP_OIDC_ISSUER='https://login.microsoftonline.com/{tenant-id}/v2.0'
-export SAP_OIDC_AUDIENCE='{client-id-guid}'
-export SAP_OIDC_CLOCK_TOLERANCE='5'                  # seconds, optional (default: 0 — no tolerance)
+export ARC1_HTTP_ADDR=127.0.0.1:8080
+export SAP_OIDC_ISSUER='https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/v2.0'
+export SAP_OIDC_AUDIENCE='REPLACE_WITH_API_CLIENT_ID'
+export SAP_OIDC_SCOPES='api://REPLACE_WITH_API_CLIENT_ID/access_as_user'
+arc1
 ```
 
-> **Note:** `SAP_OIDC_AUDIENCE` must match the exact `aud` claim in your tokens. For Entra ID v2 access tokens, this is typically the raw client ID GUID. Validate with a real token from your tenant.
+Use a TLS reverse proxy and `ARC1_PUBLIC_URL` for remote access. On CF, place non-secret settings in the deployment descriptor.
 
 ### How ARC-1 permissions are derived
 
-OIDC answers **who the MCP caller is**. It does not, by itself, grant write access or override ARC-1 safety settings.
+ARC-1 recognizes `read`, `write`, `data`, `sql`, `transports`, `git`, `admin` in `scope` or `scp`.
+A verified token with no accepted ARC-1 scopes receives fallback `read`, including an `access_as_user`-only token.
+To grant more, configure the IdP to issue the matching ARC-1 scopes; `SAP_OIDC_SCOPES` advertises requested IdP scopes, not a scope mapping.
 
-ARC-1 combines three things on each request:
-
-1. The user's JWT scopes from the `scope` or `scp` claim. For ARC-1 these are `read`, `write`, `data`, `sql`, `transports`, `git`, and `admin`.
-2. The server's safety configuration such as `SAP_ALLOW_WRITES`, `SAP_ALLOW_DATA_PREVIEW`, `SAP_ALLOW_FREE_SQL`, `SAP_ALLOW_TRANSPORT_WRITES`, `SAP_ALLOW_GIT_WRITES`, `SAP_ALLOWED_PACKAGES`, and `SAP_DENY_ACTIONS`.
-3. The SAP user's own authorization, which still runs after ARC-1 allows the request.
-
-These gates combine with **AND**, not OR:
-
-- If the token has `write` but the server runs with `SAP_ALLOW_WRITES=false`, writes are still blocked.
-- If the token has `sql` but the server keeps `SAP_ALLOW_FREE_SQL=false`, free SQL is still blocked.
-- If the token has no `scope` or `scp` claim at all, ARC-1 falls back to read-only access and logs a warning.
-
-For a shared development server, a common setup is:
-
-```bash
-export SAP_ALLOW_WRITES=true
-export SAP_ALLOW_TRANSPORT_WRITES=true
-export SAP_ALLOW_GIT_WRITES=true
-export SAP_ALLOWED_PACKAGES='Z*,$TMP'
-```
-
-Those are server-side variables on the ARC-1 process. If you want a read-only shared server with SQL + named table preview, set only `SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true` and leave `SAP_ALLOW_WRITES=false`. Do **not** put these server-side policy decisions in `.vscode/mcp.json`; that file only tells the client which MCP URL to call.
-
-Then let your IdP assign JWT scopes per user:
-
-- `read` for reviewers
-- `read write` for developers
-- `read write transports` for users allowed to create/release CTS requests
-- `read write git` for users allowed to run gated abapGit mutation/egress actions (the scope reserves
-  the gCTS mutation boundary too, but current gCTS mutations are quarantined before HTTP)
-- `read write data sql` only for users who should access SAP data through ARC-1
-
-Transport and Git mutations need both `write` and the specialized `transports` / `git` scope. Granting only `transports` or only `git` is not enough because ARC-1 disables all mutations for users without `write`.
-
-Full flag/profile reference: [configuration-reference.md](configuration-reference.md). Full scope and role model: [authorization.md](authorization.md).
+All operations still require the [server flags and SAP permissions](authorization.md#capability-requirements).
+OIDC sign-in does not change the SAP identity: configure [PP](principal-propagation-setup.md) or
+[BTP ABAP user-token exchange](btp-abap-environment.md) for per-user SAP access.
 
 ## Client Configuration
 
@@ -181,105 +84,45 @@ VS Code supports MCP OAuth natively. Configure in `.vscode/mcp.json`:
 }
 ```
 
-VS Code will:
-1. Discover the Protected Resource Metadata at `/.well-known/oauth-protected-resource/mcp` (root path also served)
-2. Find the Authorization Server (your IdP) from `authorization_servers`
-3. Open browser for OAuth login
-4. Send Bearer tokens automatically
-
-The same discovery serves Claude Desktop / Claude.ai custom connectors and `mcp-remote`, which have no
-manual authorization-server override. Set `SAP_OIDC_SCOPES` so clients know which IdP scope to request —
-see [Auto-discovery](#auto-discovery-rfc-9728) below, including the Entra ID caveat.
+The client reads ARC-1's protected-resource metadata and follows its IdP metadata.
+Whether sign-in completes depends on the client's registration and the IdP's supported OAuth flow.
+Set `SAP_OIDC_SCOPES` to the scopes your IdP expects; see [discovery](#auto-discovery-rfc-9728).
 
 ### Microsoft Copilot Studio / Power Automate
 
-Copilot Studio uses Power Automate custom connectors to connect to MCP servers. The connector handles OAuth token acquisition automatically.
+<a id="step-1-create-custom-connector"></a><a id="step-2-configure-security-tab"></a><a id="step-3-create-definition"></a><a id="step-4-add-redirect-uri-to-entra-id"></a><a id="step-5-create-connection"></a>
 
-#### Step 1: Create Custom Connector
+For a Power Platform custom connector, use the registered application's credentials and exact redirect URI.
+For the single-tenant Entra setup:
 
-1. Go to [Power Automate](https://make.powerautomate.com/) → **Custom connectors** → **New custom connector** → **Create from blank**
-2. **General tab:**
-   - Connector name: `ARC-1 SAP MCP`
-   - Host: `your-arc1-server.cfapps.us10-001.hana.ondemand.com` (or your server hostname)
-   - Base URL: `/`
+| Connector field | Value |
+|---|---|
+| Host | ARC-1's external hostname |
+| Base URL | `/` |
+| Authentication | OAuth 2.0 / Microsoft Entra ID |
+| Client ID / secret | The approved connector registration |
+| Tenant ID | Your tenant GUID |
+| Resource URL for the same-app flow | Raw API client-ID GUID |
+| Scope | `api://<api-client-id>/access_as_user offline_access` |
+| Action | `POST https://<arc1-host>/mcp` |
 
-#### Step 2: Configure Security Tab
-
-3. **Security tab** → Authentication type: **OAuth 2.0**
-   - Identity Provider: **Azure Active Directory**
-   - Enable **Dienstprinzipal-Unterstützung** (Service Principal support)
-   - **Client ID:** `{client-id}` (from Entra ID app registration)
-   - **Client secret:** `{client-secret}` (from Entra ID app registration)
-   - **Authorization URL:** `https://login.microsoftonline.com`
-   - **Tenant ID:** `{tenant-id}` (your actual tenant ID — **NOT** `common`)
-   - **Resource URL:** `{client-id}` (the raw GUID, **NOT** `api://...`)
-   - **Scope:** `api://{client-id}/access_as_user offline_access`
-
-> **⚠️ Critical:** The **Tenant ID** must be your actual tenant GUID, not `common`. Using `common` fails for single-tenant apps.
->
-> **⚠️ Critical:** The **Resource URL** must be the raw client ID GUID (e.g., `aa34a3d1-...`), not the `api://` URI. When an app requests a token for itself, Entra ID requires the GUID format.
-
-#### Step 3: Create Definition
-
-4. **Definition tab** → Create an action:
-   - Summary: `InvokeServer`
-   - Operation ID: `InvokeServer`
-   - Verb: **POST**
-   - URL: `https://your-arc1-server.example.com/mcp`
-5. Click **Connector aktualisieren** (Update Connector)
-
-#### Step 4: Add Redirect URI to Entra ID
-
-6. After creating the connector, copy the **Umleitungs-URL** (Redirect URL) shown at the bottom of the Security tab
-   - It looks like: `https://global.consent.azure-apim.net/redirect/crc25-5farc-2d1-20...`
-7. Go to Azure Portal → App registration → **Authentication** → Add platform → **Web**
-   - Add the redirect URI from step 6
-   - Also add the base: `https://global.consent.azure-apim.net/redirect`
-
-   Or via Azure CLI:
-   ```bash
-   az ad app update --id {client-id} \
-     --web-redirect-uris \
-       "https://global.consent.azure-apim.net/redirect" \
-       "https://global.consent.azure-apim.net/redirect/your-connector-specific-uri"
-   ```
-
-#### Step 5: Create Connection
-
-8. Click **Verbindung erstellen** (Create Connection)
-9. A Microsoft login popup will appear — sign in with your organization account
-10. Grant the requested permissions (Sign in and read user profile)
+Save the connector, copy its generated redirect URI into the Entra registration, then create a connection and sign in.
+Preserve existing redirect URIs when adding a new one.
 
 #### Troubleshooting Copilot Studio
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `AADSTS50011` (Reply address mismatch) | Redirect URI not registered | Add the connector's specific redirect URI to the app registration |
-| `AADSTS90009` (Requesting token for itself) | Resource URL uses `api://` format | Change Resource URL to raw client ID GUID |
-| `AADSTS90008` (Not consented, must require Graph) | Missing `User.Read` permission | Add Microsoft Graph `User.Read` and grant admin consent |
-| `AADSTS65001` (Consent not granted) | App not authorized | Run `az ad app permission admin-consent --id {client-id}` |
-| `Anmelden nicht möglich` (Login not possible) | Tenant ID is `common` or Resource URL empty | Set Tenant ID to actual GUID; set Resource URL to client ID |
-| OAuth popup opens/closes immediately | Multiple issues possible | Check Tenant ID, Resource URL, and redirect URI registration |
+| Error | Next check |
+|---|---|
+| `AADSTS50011` | Match the reported redirect URI and application ID to the intended registration |
+| `AADSTS90009` | Confirm whether the connector requests a token for its own app; review resource/audience format |
+| `AADSTS90008` | Have the identity owner inspect the connector's required API permissions; add only approved permissions |
+| `AADSTS65001` | Check the requested scopes and tenant consent policy with the identity owner |
+| Sign-in fails or popup closes | Inspect the exact provider error, tenant, redirect URI and client registration before changing grants |
 
 ### Manual Token Testing
 
-```bash
-# Get a token from your IdP (example with Azure CLI)
-# First, authorize Azure CLI for your app:
-az ad app update --id {client-id} --set "api.preAuthorizedApplications=[{\"appId\":\"04b07795-8ddb-461a-bbee-02f9e1bf7b46\",\"delegatedPermissionIds\":[\"your-scope-id\"]}]"
-
-# Login with the scope
-az login --scope "api://{client-id}/access_as_user"
-
-# Get a token
-TOKEN=$(az account get-access-token --scope "api://{client-id}/access_as_user" --query accessToken -o tsv)
-
-# Test against arc1
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' \
-  https://your-arc1-server.example.com/mcp
-```
+Obtain a token through the approved client flow and run the [JWT smoke tests](auth-test-process.md#oauth-jwt-setup).
+The token must target ARC-1, not Microsoft Graph or another API.
 
 ## Auto-discovery (RFC 9728)
 
@@ -329,57 +172,31 @@ If your Entra sign-in fails that way, turn discovery off:
 SAP_OIDC_DISCOVERY=false
 ```
 
-Clients then send no `resource` parameter, and the manual route works again: point the client at your IdP's
-metadata directly (Claude Code: `authServerMetadataUrl` → `https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration`).
-Clients without such an override (Claude Desktop / Claude.ai connectors, `mcp-remote`) cannot connect in that
-configuration. IdPs that ignore unknown authorization parameters — the common case — are unaffected; keep the
-default.
+This removes ARC-1's discovery document. For a client that supports a manual authorization-server override,
+configure the IdP metadata directly and verify the new request. Whether the client omits `resource` depends on that client's behavior;
+disabling discovery alone is not a guarantee.
+
+For example, clients with an `authServerMetadataUrl` setting can point it to
+`https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration`.
+Clients without a compatible manual path need a supported provider/client combination or a broker.
+Keep discovery enabled for providers that support the client's normal OAuth flow.
 
 #### If you need Claude.ai / Claude Desktop connectors behind Entra today
 
-Entra-backed connectors also hit a separate, client-side failure — discovery and login succeed, then the
-authorization code is never exchanged
-([anthropics/claude-ai-mcp#506](https://github.com/anthropics/claude-ai-mcp/issues/506)). The workaround
-reported and independently confirmed in that thread is the **token-broker pattern**: run your own minimal
-OAuth 2.1 authorization server in front, federating to Entra privately as a confidential client. The
-connector only ever talks to your AS (static pre-registered client, no DCR, `/authorize` + `/token` at the
-host root), so neither the connector bug nor Entra's `resource`/DCR limitations apply.
-
-ARC-1 needs no change for this — it stays a pure resource server validating the Entra token your broker
-attaches. Two ARC-1-specific points if you go that route:
-
-- **Let the broker own discovery.** It is the authorization server the client must be sent to, so it serves
-  the protected-resource metadata; set `SAP_OIDC_DISCOVERY=false` on ARC-1 so a passed-through request can't
-  answer with a document pointing at Entra instead.
-- **Keep the user's identity.** The broker must obtain the Entra token through a user-facing flow. A
-  `client_credentials` shortcut collapses every MCP user into one identity — ARC-1's audit trail, per-user
-  scopes, and Destination principal propagation all key off the token's user, and all of them degrade to a
-  single shared user.
-
-Weigh it against what it is: an extra internet-facing component you build, operate, and secure, holding
-confidential-client credentials for your tenant.
+Some client/provider combinations need an OAuth broker. It must own discovery and preserve the user's
+identity through a user-facing flow; a `client_credentials` shortcut cannot provide per-user PP.
+Set `SAP_OIDC_DISCOVERY=false` if the broker serves the protected-resource metadata.
+A broker is an additional service to operate and secure; ARC-1 does not provide it.
 
 ## How It Works
 
-1. MCP client sends request without token
-2. ARC-1 returns `401` with `WWW-Authenticate: Bearer resource_metadata="..."`
-3. Client fetches Protected Resource Metadata
-4. Client discovers IdP authorization server
-5. Client performs OAuth 2.1 Authorization Code + PKCE flow
-6. Client sends `Authorization: Bearer <jwt>` on every request
-7. ARC-1 validates JWT signature via JWKS (cached 1 hour)
-8. arc1 checks issuer, audience, expiry
-9. ARC-1 extracts username from configured claim
-10. Request proceeds (SAP auth still via service account)
+ARC-1 discovers the IdP's signing-key endpoint, verifies signature, issuer, audience and expiry,
+then applies ARC-1 scopes and server policy. SAP authentication and authorization run separately.
 
 ## Security Notes
 
-- JWT signatures are cryptographically verified via JWKS
-- JWKS keys are cached for 1 hour (auto-refresh)
-- Tokens must have correct issuer AND audience (`SAP_OIDC_AUDIENCE` is mandatory)
-- ARC-1 never sees user passwords (IdP handles login)
-- SAP still uses a shared service account unless you also configure BTP Destination principal propagation / per-user destination exchange
-- If your environment has clock drift between the IdP and ARC-1 server, set `SAP_OIDC_CLOCK_TOLERANCE` (in seconds) to allow a grace period on token `exp`/`nbf` checks
+Keep tokens out of shared tools, logs and tickets. Use trusted HTTPS for issuer discovery.
+`SAP_OIDC_CLOCK_TOLERANCE` permits explicit clock skew for expiry/not-before validation; default is zero.
 
 ## References
 

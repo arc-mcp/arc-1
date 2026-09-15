@@ -1,8 +1,7 @@
-# ARC-1 CLI Guide
+# CLI reference
 
-`arc1` is both a direct SAP command-line client and the launcher for the ARC-1 MCP server. Direct
-commands use the same schemas, dispatcher, safety policy, feature evidence, and audit path as MCP
-tool calls.
+Use `arc1` to read SAP objects, run CI checks, call MCP tools, or start the MCP server.
+Direct calls use the same permissions and tool behavior as MCP.
 
 The npm package installs three equivalent executable names: `arc1`, `arc-1`, and `arc1-cli`. This
 guide uses `arc1`.
@@ -12,20 +11,14 @@ guide uses `arc1`.
 Pin the package to a reviewed version in CI. Do not use `@latest` in a reproducible pipeline.
 
 ```bash
-# Replace x.y.z with the release your project reviewed. On an unreleased branch,
-# use its packed tarball or source checkout instead of an older registry version.
 export ARC1_VERSION=x.y.z
-
-# Global installation
 npm install --global "arc-1@$ARC1_VERSION"
 arc1 version
-
-# No installation; npx downloads the exact version
-npx --yes "arc-1@$ARC1_VERSION" version
 ```
 
-Replace `x.y.z` with the exact version your project has approved. A package lock or pinned container
-digest is preferable for a longer-lived pipeline.
+Replace `x.y.z` with the chosen version. For a one-off command without global installation, use
+`npx --yes "arc-1@$ARC1_VERSION" version`. Test unreleased changes from their checkout or packed
+tarball. Use a package lock or container digest in a maintained pipeline.
 
 ## Configure the SAP connection
 
@@ -104,6 +97,19 @@ report-write error exits `1`.
 For `unittest --format junit`, ARC-1 adds one diagnostic testcase when a nonzero CI policy verdict is
 not already represented by SAP's JUnit counters, so the published report cannot appear green.
 
+## Command lookup
+
+| Task | Command |
+|---|---|
+| Read source or metadata | `read`, `source` |
+| Find objects | `search` |
+| Query data | `sql` |
+| Check or activate SAP source | `syntax`, `activate` |
+| Run CI gates | `unittest`, `atc`, `diff`, `lint` |
+| Invoke any tool or inspect its schema | `call`, `tools` |
+| Inspect local configuration | `config show` |
+| Start MCP server | `serve` (default) |
+
 ## General commands
 
 ### `serve` (default)
@@ -165,7 +171,7 @@ arc1 read PROG ZARC1_FOO --source-version auto --output json
 ```
 
 `--source-version` accepts `active` (default), `inactive`, or `auto`. See [SAPRead active vs inactive
-source](tools.md#active-vs-inactive-source).
+source](tools/sap-read.md#active-vs-inactive-source).
 
 `--flat` is a legacy compatibility flag that passes `format="text"`. Ordinary source reads already
 default to text, so it usually has no visible effect; it does not convert metadata-shaped object types
@@ -234,23 +240,14 @@ arc1 call SAPQuery \
 Use ABAP SQL spelling such as `alias~field` and `ASCENDING`/`DESCENDING`, not `alias.field`, `ASC`,
 `DESC`, or `LIMIT`. Keep free SQL off unless its data-access use case is explicitly approved.
 
-With `SAP_ALLOW_DATA_PREVIEW=true`, prefer `SAPRead(type="TABLE_QUERY")` with structured `columns`,
-`where`, and `maxRows`. The legacy `TABLE_CONTENTS` path is suitable for an unfiltered sample, but on
-758 its requested limit returns `N+1` rows and its documented condition-only filter is not accepted by
-the backend. Do not use that legacy filter/limit as a CI data boundary; use TABLE_QUERY or enforce the
-final cap in your caller. On 758, spell inequality as `<>`; the currently accepted `!=` input is sent
-unchanged and SAP rejects it.
+For structured single-table reads, use `SAPRead(type="TABLE_QUERY")` with `columns`, `where`,
+and `maxRows`; this requires `SAP_ALLOW_DATA_PREVIEW=true`. Legacy `TABLE_CONTENTS` filtering and
+exact row counts vary by release. On SAP_BASIS 758, use `<>` for inequality instead of `!=`.
 
-For an approved but security-first deployment, `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` activates the
-experimental exact source blocklist. It performs strict SQL parsing and fresh live CDS/replacement lineage
-checks before execution; unsupported or unresolved requests are denied with a stable code, a decision id
-and a dependency path. This costs metadata round-trips and is slower by design (no cache). It is a
-blocklist, not a substitute for SAP authorization or a production allowlist.
-
-`arc1 config show` prints the exact normalized entries and their source — it is an explicit local
-administrator action, so unlike the startup log it is not redacted. Unset, empty and whitespace-only all
-mean off; once the value is non-empty every comma-separated field is mandatory, so a stray separator
-fails startup rather than silently disabling the policy.
+An enabled `SAP_BLOCKED_DATA_SOURCES` list adds strict parsing and live lineage checks, with extra
+SAP metadata calls. See [configuration syntax](configuration-reference.md#blocklist-syntax-and-limits)
+and [SQL restrictions](tools/sap-query.md). `arc1 config show` prints the normalized source names;
+startup logs do not disclose them.
 
 ## CI check commands
 
@@ -340,8 +337,8 @@ Options:
 Checkstyle maps priority `1` to `error`, `2` to `warning`, and `3+` to `info`. Exit `1` means the ATC
 run completed and crossed the chosen threshold. Exit `3` means ARC-1 cannot prove completeness: SAP
 omitted or denied the object-set completeness marker, reported no processed object, returned a
-malformed priority, or the asynchronously populated worklist did not reach the finding total reported
-by the completed run before the timeout. ARC-1 emits no report
+malformed priority, or the asynchronous run/legacy worklist did not reach a verified completed state
+within the timeout. SAP finding totals are informational, not completeness evidence. ARC-1 emits no report
 for exit `3`, because a partial Checkstyle/JSON/text report could be mistaken for a complete result.
 
 ### `diff`
@@ -392,9 +389,7 @@ Options:
 | `--report-file <path\|->` | File destination, or `-` for stdout. |
 | `--fail-on error\|warning\|info\|none` | Severity threshold; default `error`. `none` never fails for findings. |
 
-Exit `1` means at least one finding met the threshold. A normal completed lint run has no backend
-incomplete state; malformed/non-evaluable structured evidence is nevertheless fail-closed as exit `3`
-and emits no report. Configure the local parser with `SAP_ABAP_RELEASE` and, if needed,
+Exit `1` means at least one finding met the threshold. Malformed or non-evaluable results exit `3` without a report. Configure the local parser with `SAP_ABAP_RELEASE` and, if needed,
 `SAP_ABAPLINT_CONFIG`/`--abaplint-config`.
 
 ## Git and transport calls
@@ -419,52 +414,18 @@ arc1 call SAPTransport --json \
   '{"action":"release","id":"A4HK900123","resultFormat":"structured"}' --output json
 ```
 
-Transport release succeeds only with terminal CTS evidence for every selected ID. Requests are read
-back in `R` or `N`; on SAP releases that fold released tasks out of the organizer tree, a task is also
-confirmed by its accepted release report or by the parent reaching terminal state. `release_recursive`
-freezes the original parent/task tree. An unexplained disappearance, timeout, or unknown state is an
-error rather than optimistic success. `resultFormat="structured"` returns the confirmation evidence,
-poll count, and SAP reports; the default `legacy` format remains text-compatible.
+Inspect the returned state before retrying a mutation. An incomplete result can mean that SAP
+accepted the change but ARC-1 could not verify its outcome.
 
-The verification budget defaults to five minutes. Override it per call with `timeoutSeconds`, for
-example `{"action":"release","id":"A4HK900123","timeoutSeconds":120}`.
+- **Transport release:** requires terminal CTS evidence. `timeoutSeconds` defaults to 300. A
+  restrictive `SAP_ALLOWED_TRANSPORTS` list permits single-ID release but blocks
+  `release_recursive`; recursive release requires an empty list or explicit `*` and authorization
+  for current and concurrently attached children. See [SAPTransport](tools/sap-transport.md).
+- **Git:** gCTS mutations are currently refused. abapGit actions have action-specific verification
+  and package requirements; see [SAPGit](tools/sap-git.md). `external_info` also requires both write
+  opt-ins and `git` scope because it causes SAP-side outbound access.
 
-`release_recursive` is deliberately refused when `SAP_ALLOWED_TRANSPORTS` contains restrictive exact
-or prefix entries. SAP can attach/fold a concurrent child into the live subtree, so such a list cannot
-atomically authorize every released ID. Recursive release is available only with the legacy empty
-allowlist (no per-transport restriction) or an explicit `*`, and only when the administrator intends to
-authorize the parent plus every current or concurrently attached child. A restrictive list continues
-to work for single `release`.
-
-gCTS **read** actions are available, but all gCTS mutations currently fail closed before sending an
-HTTP mutation. Safe gCTS mutation needs staged no-import fetch, affected-object inventory,
-authorization preflight, explicit deployment, terminal confirmation, and rollback; that work is
-deferred. abapGit mutations remain separately gated by `SAP_ALLOW_WRITES`, `SAP_ALLOW_GIT_WRITES`,
-and caller scope; package-affecting repository actions additionally enforce the real server-side
-package allowlist. Subtree-wide actions require the exact `<ROOT>/**` pattern or `*`; an exact root or
-broad prefix such as `Z*` is insufficient.
-
-abapGit mutation results are intentionally conservative:
-
-- `clone`/`pull` with non-empty bridge rows return `verified:false`: the rows and repository readback
-  are evidence, not complete import/activation reconciliation. An empty wrapper is an error/incomplete
-  result.
-- `push` with no selected local changes is a verified no-op. A selected push is accepted by the bridge
-  but returns error/incomplete because ARC-1 has no authoritative remote-commit postcondition.
-- `switch_branch` and `create_branch` return error/incomplete after acceptance because repository
-  readback does not prove the imported objects or activation state.
-- `unlink` succeeds only when repository absence is confirmed; failed or still-present readback is
-  error/incomplete.
-
-An incomplete Git result can mean the mutation already happened. Do not retry blindly: inspect the
-remote/repository state first. The latest postcondition hardening is covered by adversarial automated
-tests; the final A4H pass did not send a Git mutation, so it is not claimed as final live verification.
-
-`SAPGit.external_info` performs SAP-side outbound access to a caller-selected URL. It therefore needs
-the `git` scope plus both write opt-ins even though it returns remote metadata. Git remotes must be
-absolute HTTPS URLs without userinfo; `external_info` also rejects localhost and literal
-private/link-local addresses. DNS-aware resolution/hostname allowlisting is not yet provided. Supply
-remote credentials through protected JSON on stdin/from a file, never as literal argv values.
+Supply remote Git credentials through protected JSON files or stdin, not literal command-line values.
 
 ## `extract-cookies`, `config`, and `version`
 

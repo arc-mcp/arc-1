@@ -1,160 +1,107 @@
 # API Key Setup
 
-Protect your centralized arc1 MCP server with API keys. This is the simplest way to secure a remote arc1 instance — no external identity provider needed.
+<a id="when-to-use"></a><a id="architecture"></a>
 
-## When to Use
-
-- Quick proof-of-concept
-- Small-to-medium teams with trusted users
-- When you don't need per-user SAP identity
-- Internal network deployments where you want role-based access without an IdP
-- All users share the same SAP service account
-
-## Architecture
-
-```
-┌──────────────────┐     Bearer API Key      ┌──────────────────┐     Basic Auth      ┌────────────┐
-│  MCP Client      │ ──────────────────────► │  arc1 Server      │ ──────────────────► │  SAP ABAP  │
-│  (IDE / Copilot) │   Authorization header  │  (centralized)   │   SAP_USER/PASS    │  System    │
-└──────────────────┘                         └──────────────────┘                     └────────────┘
-```
+Use API keys to protect a shared ARC-1 HTTP server without an identity provider.
+Each key selects a fixed access profile. SAP sees the shared technical account configured on the server.
+For per-user SAP identity, use [Principal Propagation](principal-propagation-setup.md).
 
 ## Server Setup
 
 ### 1. Generate an API Key
 
+Generate 32 random bytes and retain the value in your secret store:
+
 ```bash
-# Generate a random 32-character API key
-openssl rand -base64 32
-# Example output: K7mQ3xR9vL2pN8wY5tJ6hB4cF1gD0eA=
+ARC1_VIEWER_KEY=$(openssl rand -base64 32)
 ```
 
 ### 2. Start arc1 with API Key
 
-```bash
-# Using CLI flags
-arc1 --url https://sap.example.com:44300 \
-    --user SAP_SERVICE_USER \
-    --password 'ServicePassword123' \
-    --transport http-streamable \
-    --http-addr 0.0.0.0:8080 \
-    --api-keys 'K7mQ3xR9vL2pN8wY5tJ6hB4cF1gD0eA=:admin'
+Configure the existing SAP connection through your environment or secret injection.
+For this local HTTP test, bind only to loopback:
 
-# Using environment variables
-export SAP_URL=https://sap.example.com:44300
-export SAP_USER=SAP_SERVICE_USER
-export SAP_PASSWORD=ServicePassword123
+```bash
+export SAP_URL=https://sap.example.com
+export SAP_USER=YOUR_TECHNICAL_USER
+export SAP_PASSWORD='REPLACE_WITH_YOUR_PASSWORD'
 export SAP_TRANSPORT=http-streamable
-export SAP_HTTP_ADDR=0.0.0.0:8080
-export ARC1_API_KEYS='K7mQ3xR9vL2pN8wY5tJ6hB4cF1gD0eA=:admin'
+export ARC1_HTTP_ADDR=127.0.0.1:8080
+export ARC1_API_KEYS="$ARC1_VIEWER_KEY:viewer"
 arc1
 ```
 
-This starts with ARC-1's safe server defaults. The `admin` profile grants all user scopes, but it does not open the server ceiling. Add explicit `SAP_ALLOW_*` flags if this instance should permit writes, SQL, transports, or Git.
+The server starts read-only, with table preview and SQL disabled.
 
 ### 3. Test the Connection
 
+In another shell, set `ARC1_VIEWER_KEY` to the same generated key. A request without it must return `401`:
+
 ```bash
-# Should return 401 (no key)
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/mcp
-
-# Should return 200 (with key)
-curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer K7mQ3xR9vL2pN8wY5tJ6hB4cF1gD0eA=" \
-  http://localhost:8080/mcp
-
-# Health check (no auth required)
-curl http://localhost:8080/health
+curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/mcp
 ```
+
+A valid key should return the permitted tools:
+
+```bash
+curl -sS http://127.0.0.1:8080/mcp \
+  -H "Authorization: Bearer $ARC1_VIEWER_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+```
+
+Then connect an MCP client and run `SAPRead(type="SYSTEM")` to verify SAP access.
+See [Authentication tests](auth-test-process.md) for negative tests.
 
 ## Multi-Key Setup (Role-Based Access)
 
-For teams that need different access levels, use `--api-keys` to assign each key an [API-key profile](authorization.md#api-key-profiles-non-btp):
+<a id="1-generate-keys-per-role"></a><a id="2-start-arc1-with-per-key-profiles"></a>
 
-### 1. Generate Keys Per Role
-
-```bash
-VIEWER_KEY=$(openssl rand -base64 32)
-DEV_KEY=$(openssl rand -base64 32)
-SQL_KEY=$(openssl rand -base64 32)
-```
-
-### 2. Start arc1 with Per-Key Profiles
+Generate one key per required profile and configure the mapping on the server:
 
 ```bash
-# Using CLI flag
-arc1 --url https://sap.example.com:44300 \
-    --user SAP_SERVICE_USER \
-    --password 'ServicePassword123' \
-    --transport http-streamable \
-    --allow-writes=true \
-    --allow-data-preview=true \
-    --allow-free-sql=true \
-    --allow-transport-writes=true \
-    --api-keys "$VIEWER_KEY:viewer,$DEV_KEY:developer,$SQL_KEY:developer-sql"
-
-# Using environment variable
+ARC1_DEVELOPER_KEY=$(openssl rand -base64 32)
+export ARC1_API_KEYS="$ARC1_VIEWER_KEY:viewer,$ARC1_DEVELOPER_KEY:developer"
 export SAP_ALLOW_WRITES=true
-export SAP_ALLOW_DATA_PREVIEW=true
-export SAP_ALLOW_FREE_SQL=true
-export SAP_ALLOW_TRANSPORT_WRITES=true
-export ARC1_API_KEYS="$VIEWER_KEY:viewer,$DEV_KEY:developer,$SQL_KEY:developer-sql"
+export SAP_ALLOWED_PACKAGES='$TMP'
 arc1
 ```
 
-The profile mapping lives on the ARC-1 server, not in the client config. If you want a read-only SQL key, use `viewer-sql` in `ARC1_API_KEYS`, for example `"$VIEWER_KEY:viewer,$SQL_KEY:viewer-sql,$DEV_KEY:developer"`. The client still sends only `Authorization: Bearer ...`, and stricter global server flags still win.
-
-Each key gets both scopes (tool visibility) and safety restrictions from its profile. The server ceiling still wins.
-
-Profiles are fixed names built into ARC-1. `ARC1_API_KEYS` selects one profile per key; it does not support custom per-key scopes or custom per-key package allowlists.
-
-| Key | Profile | Can Do | Cannot Do |
-|-----|---------|--------|-----------|
-| `$VIEWER_KEY` | `viewer` | Read source, search, navigate, lint, diagnose | Write, data preview, SQL, transports, git |
-| `$DEV_KEY` | `developer` | All of viewer + write source in `$TMP` + transport mutations + gated abapGit workflows/egress if server flags allow them | Data preview, freestyle SQL, writes outside `$TMP`; gCTS mutations remain quarantined |
-| `$SQL_KEY` | `developer-sql` | All of developer + data preview + freestyle SQL | Writes outside `$TMP` (server ceiling still applies) |
-
-Important: `developer`, `developer-data`, and `developer-sql` API-key profiles are intentionally capped to `$TMP`. There is no `developer-z` profile and no `key:developer:Z*` syntax. If a key must write to `Z*` packages, use a tightly scoped `admin` key with `SAP_ALLOWED_PACKAGES='Z*,$TMP'`, or use OIDC/XSUAA for per-user authorization.
-
-Some accepted abapGit push/branch operations return error/incomplete because the bridge exposes no
-authoritative postcondition. Inspect repository/remote state before retrying; an API-key profile does
-not weaken that fail-closed contract.
-
-### 3. Test Per-Key Access
-
-```bash
-# Viewer key — should succeed for read operations
-curl -X POST -H "Authorization: Bearer $VIEWER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' \
-  http://localhost:8080/mcp
-
-# Developer key — should show additional tools (SAPWrite, SAPActivate, etc.)
-curl -X POST -H "Authorization: Bearer $DEV_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}' \
-  http://localhost:8080/mcp
-```
+The viewer remains read-only. The developer can write in `$TMP`.
+Transport and Git mutations need their separate server flags too; see [Capability requirements](authorization.md#capability-requirements).
 
 ### Available Profiles
 
-| Profile           | Scopes                                                  | Description                              |
-|-------------------|---------------------------------------------------------|------------------------------------------|
-| `viewer`          | `read`                                                  | Read-only source + search + navigate     |
-| `viewer-data`     | `read`, `data`                                          | + named table preview                    |
-| `viewer-sql`      | `read`, `data`, `sql`                                   | + freestyle SQL                          |
-| `developer`       | `read`, `write`, `transports`, `git`                    | Full developer (write + CTS + Git)       |
-| `developer-data`  | `read`, `write`, `data`, `transports`, `git`            | Developer + data preview                 |
-| `developer-sql`   | `read`, `write`, `data`, `sql`, `transports`, `git`     | Developer + data + SQL                   |
-| `admin`           | all 7 scopes                                            | Admin — implies everything at runtime    |
+| Need | Profile |
+|---|---|
+| Source reads | `viewer` |
+| Reads and named table preview | `viewer-data` |
+| Reads, table preview and SQL | `viewer-sql` |
+| Development in `$TMP` | `developer` |
+| Development and table preview | `developer-data` |
+| Development, table preview and SQL | `developer-sql` |
+| All scopes, within the server ceiling | `admin` |
 
-Each profile also carries a partial SafetyConfig that intersects with the server ceiling (never widens). Full authorization model: [authorization.md](authorization.md).
+Profiles cannot widen server permissions. `developer*` profiles always cap package writes to `$TMP`;
+there is no custom profile or `key:developer:Z*` syntax. For writes to transportable packages, use
+OIDC/XSUAA or an `admin` key on a server with a narrow package ceiling.
+The exact scope and safety mapping is in [API-key profiles](authorization.md#api-key-profiles-non-btp).
+
+### Test Per-Key Access
+
+<a id="3-test-per-key-access"></a>
+
+Repeat `tools/list` with each key. A viewer should not see `SAPWrite`; a developer should see it only
+when writes are enabled on the server. API-key users with the same profile share the same profile identity in audit and quota accounting.
 
 ## Client Configuration
 
+Clients send `Authorization: Bearer <key>`. The `:profile` suffix stays on the server.
+
 ### VS Code / Cursor
 
-In `.vscode/mcp.json` or Cursor MCP settings:
+For VS Code, use `.vscode/mcp.json`:
 
 ```json
 {
@@ -162,115 +109,46 @@ In `.vscode/mcp.json` or Cursor MCP settings:
     "arc1": {
       "type": "http",
       "url": "https://arc1.company.com/mcp",
-      "headers": {
-        "Authorization": "Bearer K7mQ3xR9vL2pN8wY5tJ6hB4cF1gD0eA="
-      }
+      "headers": {"Authorization": "Bearer REPLACE_WITH_YOUR_KEY"}
     }
   }
 }
 ```
+
+For Cursor, add the same URL and header in its MCP server configuration.
+See [client configuration](quickstart.md) for client-specific file formats.
 
 ### Copilot Studio
 
-1. Go to **Settings** → **Connectors** → **MCP Servers**
-2. Click **Add MCP Server**
-3. URL: `https://arc1.company.com/mcp`
-4. Authentication: **API Key**
-5. Header name: `Authorization`
-6. Header value: `Bearer K7mQ3xR9vL2pN8wY5tJ6hB4cF1gD0eA=`
+Choose API-key authentication for the MCP connection. Set the header name to `Authorization`
+and the header value to `Bearer <your-key>`.
 
 ### Claude Desktop (via mcp-remote)
 
-In `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "arc1": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "https://arc1.company.com/mcp",
-        "--header",
-        "Authorization: Bearer K7mQ3xR9vL2pN8wY5tJ6hB4cF1gD0eA="
-      ]
-    }
-  }
-}
-```
+For Claude Desktop connection options, use [Connect Claude](install-in-claude.md).
+If your setup needs an HTTP bridge, configure its Authorization header through its supported secret handling;
+keep the API key out of command-line arguments and tracked configuration.
 
 ## Production Deployment
 
-### Docker
+<a id="docker"></a>
 
-```dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM node:20-alpine
-WORKDIR /app
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./
-EXPOSE 8080
-CMD ["node", "dist/index.js", "--transport", "http-streamable", "--http-addr", "0.0.0.0:8080"]
-```
-
-```bash
-docker run -d \
-  -e SAP_URL=https://sap.example.com:44300 \
-  -e SAP_USER=SAP_SERVICE \
-  -e SAP_PASSWORD=secret \
-  -e SAP_TRANSPORT=http-streamable \
-  -e SAP_HTTP_ADDR=0.0.0.0:8080 \
-  -e ARC1_API_KEYS='your-api-key-here:admin' \
-  -p 8080:8080 \
-  arc1
-```
+Use the maintained [Docker guide](docker.md) or [deployment guide](deployment.md).
+Inject `ARC1_API_KEYS` through the deployment's secret handling and expose HTTP only behind HTTPS.
 
 ### Behind a Reverse Proxy (nginx)
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name arc1.company.com;
-
-    ssl_certificate /etc/ssl/certs/arc1.crt;
-    ssl_certificate_key /etc/ssl/private/arc1.key;
-
-    location /mcp {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-
-    location /health {
-        proxy_pass http://localhost:8080;
-    }
-}
-```
+A proxy must preserve the MCP and OAuth paths, support streaming and sanitize forwarded headers.
+Use the [reverse proxy requirements](security-guide.md#7-reverse-proxy-requirements).
 
 ## Security Notes
 
-- Always use HTTPS in production (TLS termination at reverse proxy or load balancer)
-- Store API keys in a secrets manager, not in plaintext configs
-- Rotate keys periodically
-- With multi-key, audit logs include the profile name (e.g. `api-key:viewer`) to identify which key was used
-- All API key users share the same SAP identity — no per-user SAP audit trail
-- For per-user SAP auth, use [OAuth / JWT](oauth-jwt-setup.md) + [Principal Propagation](principal-propagation-setup.md). Separate strict PP and API-key instances are recommended for clearer SAP identity and audit boundaries, but a single mixed instance is supported with explicit `SAP_PP_STRICT=false`.
+Store keys outside tracked client configuration. To rotate one, add the replacement, restart the server,
+update its clients, then remove the old key and restart again. After compromise, remove the old key immediately.
 
 ## Limitations
 
-- No true user identity — keys identify roles, not individuals
-- Cannot do per-user SAP authorization (all keys use the shared SAP service account)
-- Manual key rotation requires updating all clients that use that key
-- Not MCP-spec-compliant OAuth (but works with all major clients)
+<a id="next-steps"></a>
 
-## Next Steps
-
-→ [OAuth / JWT Setup](oauth-jwt-setup.md) — Add user identity
-→ [Principal Propagation Setup](principal-propagation-setup.md) — Per-user SAP auth
+API keys do not provide individual SAP identity or user-level revocation.
+Use [OIDC](oauth-jwt-setup.md) or [XSUAA](xsuaa-setup.md) when you need individual sign-in.

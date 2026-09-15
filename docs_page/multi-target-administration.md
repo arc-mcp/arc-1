@@ -1,15 +1,15 @@
 # Multi-Target Administration
 
-!!! warning "Experimental v1"
+Operate an existing multi-target service: diagnose excluded targets, apply destination changes, rotate shared credentials and size capacity. For initial connection, use [Multi-system setup](multi-target-setup.md); for app upgrades and roles, use [BTP administration](btp-administration.md).
 
-    Multi-target mode is default-off and mutation-free. Treat it as a shared read gateway, not as
-    256 isolated ARC-1 instances.
-
-This page is the operator reference for security boundaries, registry behavior, diagnostics,
-capacity, and incident handling. Follow [Multi-System Setup](multi-target-setup.md) first for the
-copy-paste deployment, destination, role, and MCP client configuration. Common BTP configuration
-ownership, XSUAA collection lifecycle, DCR secrets, upgrades, scaling, rollback, logging, and
-customer handover live in [BTP Administration](btp-administration.md).
+| Task | Go to |
+|---|---|
+| Target missing or excluded | [Registry codes](#status-warning-and-failure-codes) |
+| Target call fails | [Access failures and retries](#user-access-failures-and-retries) |
+| Destination changed | [Restart and rotation](#restart-drift-detection-rotation-and-cf-instances) |
+| Rotate Basic credentials | [Shared-identity controls](#basic-shared-identity-controls) |
+| Inspect configuration | [SAPTargets](#saptargets-operator-surface) |
+| Set load limits | [Shared capacity](#shared-capacity-and-rate-limits) |
 
 <a id="administration-model"></a>
 <a id="4-configure-xsuaa-roles"></a>
@@ -19,49 +19,21 @@ customer handover live in [BTP Administration](btp-administration.md).
 
 ## Operating model
 
-Responsibility is intentionally split across administrators:
-
-| Owner | Controls | Security effect |
-|---|---|---|
-| ARC-1 deployment owner | ARC-1 application environment, usually deployed through MTA | Enables the mode and sets the application-wide maximum for data and SQL. |
-| BTP destination administrator | One subaccount destination per SAP connection | Defines the real SID/client, optional public route alias, connection, label, and narrower data/SQL opt-ins. |
-| Identity administrator | Existing XSUAA role collections | Grants global read, data, SQL, or admin scope. There are no per-target roles in v1. |
-| Cloud Connector administrator | Virtual mappings, principal mode, trust, and exposed paths | Carries the selected destination securely to the intended SAP backend. |
-| SAP/Basis administrator | PP mapping or shared technical user, plus SAP authorizations | Determines whether the selected per-user or shared SAP identity can access a client and operation. |
-
-A request succeeds only when all applicable layers permit it:
+Multi-target v1 is experimental, default-off and mutation-free. Every request must pass all five layers:
 
 ```text
-multi-target v1 ceiling
-∩ ARC-1 instance ceiling
-∩ selected destination policy
-∩ XSUAA user scope
-∩ selected SAP identity authorization
+multi-target ceiling ∩ app ceiling ∩ destination policy ∩ XSUAA scope ∩ SAP authorization
 ```
 
-No layer can widen an earlier one. `MCPAdmin` cannot bypass SAP authorization or unlock mutations on
-multi-target routes. PrincipalPropagation targets are `per-user`; explicitly enabled
-BasicAuthentication targets are `shared` and use the same SAP technical user for every scoped
-XSUAA caller.
+The app owner sets maximum capabilities, the Destination owner selects connection/identity and target policy, IAM assigns global scopes, and Connector/Basis owners control network access and SAP authorization. `MCPAdmin` cannot enable multi-target mutations.
+
+PP uses each human's SAP identity. Basic uses one technical identity for all authorized callers. A pinned route is a selection guard, not a target-specific access rule.
 
 ### OAuth grant behavior
 
-Multi-target protected-resource metadata advertises `read`, `data`, `sql`, and `admin`, and the
-initial 401 does not force one fixed scope. General MCP clients request that mutation-free set;
-XSUAA intersects it with the authenticated user's assigned role collections, and ARC-1 filters the
-tool/action surface from the resulting token. A validated token without global read still receives
-403 before route membership is resolved.
+Routes advertise `read`, `data`, `sql`, and `admin`; XSUAA grants the assigned subset. A token without global `read` receives 403 before route lookup. Role changes require a new login/reconnect.
 
-This makes role changes visible after logout/reconnect in clients that do not support reliable MCP
-scope step-up. It also means a trusted Admin receives all assigned mutation-free scopes at initial
-login. Treat the token accordingly and keep its lifetime short. This model must be redesigned—not
-merely expanded—before any multi-target write, transport, or Git scope is introduced.
-
-A pinned route reduces accidental target switching, but it is not an ACL. A global read user can
-try every accepted pinned route. The aggregate route introduces an additional wrong-target risk: a
-model can select a different authorized system and read data or run SQL there. Keep data/SQL off
-unless approved, use distinct factual descriptions, and separate lookalike systems when that risk
-is unacceptable.
+Admin diagnostics may expose internal target names and policy. Use trusted operator sessions. Review [side-by-side `/mcp` access](#optional-single-target-mcp) before assigning Admin.
 
 ### When separate instances are safer
 
@@ -74,9 +46,6 @@ Use one ARC-1 instance per target, optionally behind an external router such as
 - hard performance, maintenance, or failure isolation;
 - independent production and non-production security boundaries; or
 - a security boundary stronger than a shared process with per-request target validation.
-
-Multi-target v1 reduces application sprawl; it does not create independent security or capacity
-domains inside one process.
 
 ## Process and registry lifecycle
 
@@ -138,10 +107,7 @@ ARC-1 reads one immutable snapshot of BTP **subaccount** destinations at startup
 service-instance destination names only to detect same-name shadowing; instance destinations do not
 become targets.
 
-A CF space is not a hard destination-inventory boundary. If two ARC-1 populations must not share
-subaccount destination visibility, isolate them in separate subaccounts or another deliberate
-platform boundary. Same-name instance destinations are quarantined rather than allowed to override
-a subaccount target through normal Destination Service lookup precedence.
+Use separate subaccounts for independent destination inventories; another CF space is not an inventory boundary.
 
 Only destinations containing an `arc1.*` property enter detailed ARC-1 validation. A destination is
 active only when `arc1.enabled=true` and all connection/identity fields pass validation.
@@ -215,70 +181,36 @@ detail than `/health`.
 
 ## Destination policy operations
 
-The complete field table and minimal/SQL examples are in
-[Destination configuration](multi-target-setup.md#destination-configuration). The operational rules
-are:
+Use the [destination field contract](btp-destination-setup.md#multi-target-field-contract) for accepted properties. Data and SQL default to off and require their app ceiling, target opt-in, user scope and SAP authorization.
 
-- the only supported v1 keys are `arc1.enabled`, `arc1.allow_data_preview`,
-  `arc1.allow_free_sql`, and optional `arc1.target_alias`;
-- `arc1.target_alias` changes only the public target/pinned route; real `sap-sysid` and `sap-client`
-  remain required for SAP and are visible to admins in diagnostics;
-- omitted data/SQL values are false and the two switches are independent;
-- unknown `arc1.*` keys and any write/package/transport/Git key quarantine an enabled destination;
-- `limitedByInstance: true` means a target requested data or SQL above the current instance ceiling;
-  source reads remain active;
-- changing any target field or policy requires a restart, except Basic `User`/`Password` rotation;
-  and
-- there is no `arc1.config_version` or full-write destination profile in v1.
+`limitedByInstance: true` means a target requested more data/SQL access than the app permits; source reads remain active. Unknown or write-related `arc1.*` properties quarantine the target. Change non-secret fields, then restart every instance.
 
-Descriptions are returned to users and models. Treat them as untrusted labels: no prompts,
-instructions, credentials, secrets, token-bearing links, or sensitive notes.
-
-Destination exports may contain connection or authentication material. Never commit, attach, paste,
-or screenshot an unredacted export. If an example must be shared, remove URLs, location IDs,
-credentials, tokens, certificates, and any nonessential topology details.
+Descriptions appear in model-visible catalogs. Keep them factual and short. [Sanitize destination exports](btp-destination-setup.md#destination-importexport) before sharing.
 
 ### Basic shared-identity controls
 
-BasicAuthentication is a compatibility option, not the recommended enterprise identity model.
-Enabling it separates responsibility deliberately: the deployment owner permits shared identity,
-the destination administrator controls the credential, XSUAA controls which humans may call ARC-1,
-and SAP authorizes only the technical user.
+Basic is a separately enabled shared identity. Use PP instead when per-user SAP attribution, target-specific SAP permissions or horizontal scaling is required.
 
-- Use a dedicated communication/technical user with the minimum ADT permissions required by the
-  exposed read actions. Never use `SAP_ALL`; read-like ADT POST operations may still require the
-  documented `S_ADT_RES` activities.
-- Do not assign developer-wide, transport, activation, or write authorizations merely because the
-  user is technical. Multi-target v1 cannot use them, and they enlarge the impact of credential
-  misuse outside ARC-1.
-- Prefer a different technical user per client and security boundary. Do not share one credential
-  across unrelated production and non-production systems.
-- Configure password-expiry and account-lock monitoring in SAP according to the customer's policy.
-  Alert on impending expiry, locked users, repeated failed logons, and unexpected use outside the
-  reviewed ADT paths. ARC-1 audit records identify the human XSUAA caller; SAP records only the
-  shared technical user.
-- Use a separate Cloud Connector mapping with principal type None (`NONE_RESTRICTED` in the API),
-  restricted ADT paths, and an internal HTTPS connection to SAP. An HTTP internal hop exposes the
-  reusable Basic password; ARC-1 cannot verify the mapping protocol.
-- Confirm `/sap/bc/adt` accepts HTTP Basic for the technical user. ARC-1 suppresses SAML and rejects
-  a 2xx HTML/SSO login page; it cannot make an SSO-only ICF logon procedure accept Basic.
-- Restrict and audit destination-administrator access as credential-administrator access.
-- Keep data/SQL off unless approved; SAP attributes those calls to the technical user.
-- Keep exactly one CF app instance and deploy it non-rolling. A rolling/blue-green replacement can
-  temporarily create a second independent guard even when the desired count is one. A Basic target
-  serializes request-time destination lookup,
-  credential-generation validation, canary/feature handling, and dispatch through one bounded
-  process-local gate.
-- For zero-downtime rotation, prepare a second least-privileged technical user, atomically update
-  both destination `User` and `Password`, perform safe reads through the pinned and aggregate
-  routes, and only then revoke the former user. For a same-user password change, accept a possible
-  consistency/outage window: SAP normally cannot keep both passwords valid. Verify rotation with
-  successful safe reads and absence of a shared-auth exception; aggregate healthy counts alone do
-  not prove that a new credential generation was used. Do not change another destination field in
-  the same rotation unless you also plan a restart.
+| Control | Requirement |
+|---|---|
+| SAP user | Dedicated technical user with only required ADT permissions; no `SAP_ALL` or unnecessary write/transport access |
+| Client boundaries | Prefer a separate user per SAP client and security boundary |
+| Network | Separate principal-type-None (`NONE_RESTRICTED`) Connector mapping, required ADT paths and verified internal HTTPS |
+| SAP logon | `/sap/bc/adt` must accept Basic; an SSO HTML response is rejected |
+| Credential ownership | Restrict/audit destination administrators; monitor expiry, lockout and unexpected logons |
+| Deployment | Exactly one CF process; [non-rolling stop/deploy/start](btp-administration.md#non-rolling-update-for-shared-basic), including rollback |
+| Audit | Correlate the human XSUAA caller in ARC-1 with the technical user's SAP activity |
 
-If per-user SAP attribution, target-specific SAP authorization, or horizontal scaling is required,
-use Principal Propagation or separate ARC-1 applications.
+**Rotate credentials without restarting:**
+
+1. Prepare a second approved, least-privileged technical user.
+2. Update destination `User` and `Password` together; leave non-secret fields unchanged.
+3. Verify safe reads through pinned and aggregate routes and inspect shared-auth exceptions.
+4. Revoke the previous user after successful verification.
+
+A same-user password change can have a short consistency/outage window because SAP normally cannot accept both passwords. Healthy aggregate counts alone do not prove a new generation was used.
+
+Each Basic target serializes credential validation and dispatch through one bounded process-local gate. Rolling or blue-green deployment creates independent guards even when the desired instance count is one.
 
 <a id="6-read-and-admin-saptargets-views"></a>
 
@@ -328,57 +260,14 @@ When an active target uses an alias, a matching admin diagnostic correlates its 
 with the real `sid` and `client`, and reports the validated value as `arcConfig.targetAlias`.
 Readers still receive only `target`, `description`, and `identity`.
 
-```json
-{
-  "targets": [
-    {
-      "target": "NPL/001",
-      "description": "Read-only NPL client 001",
-      "identity": "shared"
-    }
-  ],
-  "admin": {
-    "state": "degraded",
-    "source": "btp-subaccount",
-    "loadedAt": "<timestamp>",
-    "revision": "<sha256-hex>",
-    "counts": {
-      "scanned": 2,
-      "unrelated": 0,
-      "arcAdjacent": 0,
-      "arcRelated": 2,
-      "enabled": 2,
-      "active": 1,
-      "disabled": 0,
-      "ignored": 0,
-      "quarantined": 1
-    },
-    "sharedAuthentication": {
-      "targets": 1,
-      "statusCounts": { "healthy": 1 }
-    },
-    "diagnosticMode": "exceptions",
-    "diagnosticOffset": 0,
-    "diagnosticTotal": 1,
-    "diagnosticReturned": 1,
-    "diagnosticsTruncated": false,
-    "destinations": [
-      {
-        "destinationName": "ARC1_INVALID_PP",
-        "status": "quarantined",
-        "code": "INVALID_SYSID",
-        "message": "sap-sysid must match three uppercase alphanumeric characters and start with a letter.",
-        "type": "HTTP",
-        "proxyType": "OnPremise",
-        "client": "100",
-        "hasCloudConnectorLocationId": false,
-        "arcConfig": { "enabled": true },
-        "warnings": []
-      }
-    ]
-  }
-}
-```
+| Admin field | Meaning |
+|---|---|
+| `state` | `ready`, `degraded` or `error` configuration state |
+| `loadedAt`, `revision` | Startup snapshot time and safe configuration digest |
+| `counts` | Scanned, enabled, active, disabled, ignored and quarantined counts |
+| `destinations` | Safe diagnostic rows with destination name, status, code and policy |
+| `sharedAuthentication` | Last observed Basic authentication state, not a live probe |
+| `diagnosticNextOffset` | Value to pass as `offset` for the next page |
 
 Diagnostics are sorted and paged at 50 rows. When `diagnosticNextOffset` is present, call the tool
 again with the same `query` and `offset` set to that value. `offset` is admin-only, accepts integers
@@ -390,19 +279,7 @@ text is not written to the audit event.
 `arc1.*` marker. Their names are not returned. The count helps identify a likely missing
 `arc1.enabled=true` without exposing unrelated inventory.
 
-Admin output never contains:
-
-- destination URLs or raw Destination Service objects;
-- users, passwords, client secrets, tokens, SAML assertions, or authorization headers;
-- destination query/header properties or certificates;
-- raw Cloud Connector location IDs; or
-- per-user SAP/PP failures or inferred availability.
-
-`hasCloudConnectorLocationId` is a boolean only, and the revision is derived from safe normalized
-configuration. The admin response is still operator-sensitive: it exposes internal destination
-names, topology labels, normalized policy, and failure reasons to the MCP client/model. Use it only
-in trusted operator sessions and redact it before pasting into issues, pull requests, chats, or
-support tickets.
+Admin output omits credentials, raw URLs, auth responses, raw location IDs and per-user SAP availability. It still exposes internal destination names and policy: redact it before sharing outside the operator audience. `hasCloudConnectorLocationId` is only a boolean.
 
 <a id="7-understand-status-and-reason-codes"></a>
 
@@ -469,12 +346,7 @@ credential can proceed immediately; process restart also clears the block. An un
 credential may be attempted once again after expiry, so SAP account-lock monitoring remains
 necessary. A changed XSUAA role requires a new OAuth token/sign-in.
 
-HTTP middleware enforces XSUAA before tool dispatch. Audit events distinguish downstream target
-resolution, effective identity mode, PP exchange where applicable, Basic credential-generation
-state, Cloud Connector exposure denial, SAP authentication, SAP authorization, and execution. Raw
-authentication bodies and secrets are suppressed. SAP sees only the technical user for Basic
-targets, so human attribution requires the ARC-1 request/audit record. Whether SAP itself logs each
-login attempt depends on SAP security configuration.
+Use the returned request ID to correlate ARC-1 audit, Connector and SAP evidence. SAP records the technical user for Basic, so human attribution requires the ARC-1 audit record.
 
 <a id="9-size-the-shared-instance"></a>
 
@@ -500,7 +372,7 @@ tune from audit and latency evidence.
 
 ATC and ABAP Unit are available to the existing `read` role in multi-target mode for compatibility
 with single-target authorization. They are mutation-free at ARC-1's repository boundary but execute
-SAP workloads (ABAP Unit currently includes all risk levels and short, medium, and long durations).
+SAP workloads. ABAP Unit runs harmless tests with short, medium, and long durations; dangerous and critical tests are excluded.
 Review this with Basis before customer rollout. Use positive rate limits and an SAP-sized concurrency
 cap, or disable one or both with
 `SAP_DENY_ACTIONS=SAPDiagnose.atc,SAPDiagnose.unittest`. On a shared Basic target, the workload and
@@ -511,22 +383,15 @@ caller.
 
 ## Operational checklist
 
-- [ ] The feature is explicitly enabled and all multi-target routes remain mutation-free.
-- [ ] XSUAA, Destination, and Connectivity bindings are healthy.
-- [ ] Every target has an intentional identity: strict Principal Propagation, or explicitly enabled Basic with no fallback between modes.
-- [ ] PP destinations match an HTTPS/`X509_RESTRICTED` mapping and CERTRULE setup; Basic destinations match a separate principal-type-None mapping with internal HTTPS and a Basic-capable ADT ICF logon procedure. All required ADT paths are allowed.
-- [ ] Basic uses a least-privileged technical user (not `SAP_ALL`), strong reviewed credentials, password-expiry/account-lock monitoring, audited destination administration, and exactly one non-rolling CF instance.
-- [ ] Every target has a valid real SID, client, factual description, `arc1.enabled=true`, and a unique valid route alias when its SID/client is reused.
-- [ ] Data/SQL is approved and enabled only where required at both instance and target layers.
-- [ ] No target contains unknown or write-related `arc1.*` keys.
-- [ ] Enabled candidate count is 256 or fewer.
-- [ ] Admin `SAPTargets` shows no duplicate, shadow, quarantine, or unexpected policy narrowing.
-- [ ] PP-only scaled deployments report the same registry revision on every instance; Basic-enabled deployments have exactly one instance.
-- [ ] Viewer, unmapped-user, SAP-unauthorized, broken-PP, changed-destination, and (if enabled) Basic credential rotation/lockout-protection cases were tested.
-- [ ] Logs, audit sinks, tickets, and screenshots contain no destination secrets or raw SAP bodies.
-- [ ] Rate and concurrency limits were reviewed with Basis.
-- [ ] Lookalike production/non-production systems are separated if wrong-target reads are unacceptable.
-- [ ] Admin scope is restricted to trusted operator sessions, especially beside writable `/mcp`.
+Complete the common [BTP acceptance checklist](btp-administration.md#pre-customer-acceptance), then check these multi-target details:
+
+- Every target has the intended identity, real SID/client, unique public ID and factual description.
+- Admin `SAPTargets` explains exclusions, duplicates, shadowing and policy narrowing; no more than 256 candidates are enabled.
+- Every PP-only instance has the same registry revision; Basic-enabled deployments have exactly one process.
+- Approved negative-access tests and, if enabled, Basic rotation/retry behavior have been verified.
+- Data/SQL, diagnostics, rate limits and shared SAP capacity match the intended audience.
+- Separate deployments protect lookalike systems when a wrong-target read is unacceptable.
+- Trusted operators alone hold Admin, especially beside a writable `/mcp`.
 
 <a id="deferred-features"></a>
 

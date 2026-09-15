@@ -3,6 +3,14 @@
 > Use the documentation from the source revision used to build the deployed artifact.
 > The website and raw source below follow main and may describe unreleased changes.
 
+## Start with the task
+
+- [Start here](https://docs.arc-1-mcp.com/): choose a local connection, shared deployment, or existing-server workflow.
+- [Quickstart](https://docs.arc-1-mcp.com/quickstart/): connect a local client and verify a read.
+- [Tool reference](https://docs.arc-1-mcp.com/tools/): choose a tool, then read its focused reference.
+- [Configuration](https://docs.arc-1-mcp.com/configuration-reference/): find flags, defaults, and limits.
+- [Operations](https://docs.arc-1-mcp.com/operations/): update, diagnose, or administer an existing server.
+
 ## SAP BTP setup and administration
 
 - [BTP Start Here](https://docs.arc-1-mcp.com/btp-overview/): choose the topology, then follow its deployment or administration links.

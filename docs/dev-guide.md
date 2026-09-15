@@ -8,12 +8,33 @@ to a task and you need the deep background (exact endpoints, version quirks, ver
 read the matching row here. Content moved verbatim from the pre-2026-06 root file; module pointers
 reflect the post-consolidation handler layout (dispatch.ts + per-tool modules + write/ package).
 
+## Public documentation
+
+`docs_page/` contains the published Markdown; `mkdocs.yml` owns navigation. Before editing a page,
+identify the reader's task and its next step. Use these rules:
+
+- Give each page one purpose: setup, task instructions, reference, or explanation.
+- Put the action or decision first. Keep prerequisites and the expected result beside a procedure.
+- Maintain one canonical procedure or table; link it from other pages instead of copying it.
+- Split independent reference topics into separate pages. Keep parameters, defaults, limits, and
+  failure behavior complete; brevity is not a reason to remove an operational requirement.
+- Use short paragraphs, descriptive sentence-case headings, and task-based link text. Avoid internal
+  review history, repeated summaries, unsupported comparisons, and tables with paragraphs in cells.
+- Keep raw Markdown readable. Preserve useful old anchors when moving or renaming sections.
+- Check every example against the current source and every new page against navigation. After a
+  page review, apply useful lessons to previously edited pages, then reread the complete diff.
+
+Run `npm run docs:build` and the documentation/profile tests. The strict build rejects omitted
+navigation pages and broken local links/anchors. Test important reader paths in the rendered site.
+The [September 2026 review](research/2026-09-15-documentation-review.md) records research sources,
+page-level decisions, and validation evidence.
+
 ## BTP documentation
 
 `docs_page/btp-overview.md` is the shared task map for people and assistants; the deployment
 runbook owns the ordered commands. Example READMEs explain their files, not another setup sequence.
-Keep the map readable as raw Markdown as well as HTML. `docs_page/llms.txt` is only a short link to
-that entry point, copied unchanged by MkDocs; there is no manifest or custom build hook.
+Keep the map readable as raw Markdown as well as HTML. `docs_page/llms.txt` links the main task entry points, including BTP, and is copied unchanged by
+MkDocs; there is no manifest or custom build hook.
 
 When changing setup guidance, check the relevant runtime/descriptor and existing examples together.
 Run the focused documentation/profile tests and strict MkDocs build, then follow the affected task

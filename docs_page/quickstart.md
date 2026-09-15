@@ -1,71 +1,24 @@
 # Quickstart
 
-Get ARC-1 talking to your SAP system in five minutes. Zero install, Basic Auth, and a JSON config for your MCP client of choice — Claude Code or GitHub Copilot (VS Code / Eclipse). Using Claude Desktop? See [Install in Claude](install-in-claude.md).
-
-If this path doesn't match you — SSO-only SAP, Docker, BTP, a team server — skip straight to:
-
-- **[Local development](local-development.md)** — full local dev (npx / npm / Docker / git-clone), `.env` patterns, SSO cookie extractor
-- **[Deployment](deployment.md)** — multi-user / production (Docker, BTP Cloud Foundry, BTP ABAP)
-
----
+Connect an assistant to one SAP development system and read an ABAP object.
+This guide uses a local ARC-1 process with your SAP username and password.
+For a team server, use [Deployment](deployment.md); for BTP ABAP, use
+[service-key login](btp-abap-environment.md).
 
 ## Prerequisites
 
-- Node.js 22+
-- Network access to a SAP system (dev/sandbox ideally)
-- A SAP user + password with ADT authorizations
+- Node.js **22.19 or later**.
+- Network access to your SAP system's ADT HTTPS endpoint.
+- An SAP user and password with ADT read authorization.
 
-That's it. No global install, no config files.
+## 1. Configure your client
 
----
-
-## 1. Verify ARC-1 can reach your SAP
-
-```bash
-npx arc-1@latest --url https://your-sap-host:44300 \
-                 --user YOUR_USER --password YOUR_PASS \
-                 --client 100 \
-                 --insecure true   # only for self-signed dev certs; omit on trusted TLS
-```
-
-You should see a startup line like:
-
-```
-INFO: auth: MCP=[none] SAP=basic (shared)
-INFO: ARC-1 MCP server running on stdio
-```
-
-Hit `Ctrl+C` to stop. If this failed, check TLS, the client number, and that the user can log into SE80 via the web GUI.
-
-!!! warning "`--insecure` needs an explicit value"
-    Pass `--insecure true` (or `--insecure=true`), **not** a bare `--insecure`. The flag takes a value;
-    `--insecure` on its own is parsed as *off*, so a self-signed cert still fails with `fetch failed`.
-    The same applies to the other boolean flags (`--allow-writes true`, etc.) and to the `SAP_INSECURE=true`
-    environment variable.
-
-### If direct ADT HTTP(S) is not reachable
-
-ARC-1 normally connects to SAP's ADT HTTP(S) endpoint. For local systems where Eclipse ADT works through RFC/SAProuter but raw HTTP(S) routing to the ICM port is blocked, run a local ADT-to-RFC bridge and point `SAP_URL` at the bridge instead. One open-source option is [`enricoandreoli/adt-rfc-bridge`](https://github.com/enricoandreoli/adt-rfc-bridge):
-
-```bash
-# After starting the bridge on port 8410
-SAP_URL=http://127.0.0.1:8410 \
-SAP_USER=YOUR_USER SAP_PASSWORD=YOUR_PASS SAP_CLIENT=100 \
-ARC1_MAX_CONCURRENT=1 \
-npx arc-1@latest
-```
-
-This is a local development workaround, not needed for normal deployments. Details and caveats: [Authentication Overview -> Local ADT-to-RFC Bridge](enterprise-auth.md#3-local-adt-to-rfc-bridge-local-rfcsaprouter-workaround).
-
----
-
-## 2. Wire it into your MCP client
-
-ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subprocess — only the **config file and the top-level key differ**. Pick yours below; all three start read-only, and [enabling writes](#enabling-writes-sql-and-data-preview) covers the opt-in flags.
+Your client starts ARC-1 and passes it the SAP connection settings. Replace the four example values
+below. Use a private user configuration for credentials; do not commit a file containing your password.
 
 === "Claude Code"
 
-    Create `.mcp.json` in your project root (commit it to share with your team) — or `~/.claude.json` for user scope. Claude Code uses the `mcpServers` shape:
+    Add this server to the `mcpServers` object in your user configuration, `~/.claude.json`:
 
     ```json
     {
@@ -74,9 +27,9 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
           "command": "npx",
           "args": ["-y", "arc-1@latest"],
           "env": {
-            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_URL": "https://your-sap-host",
             "SAP_USER": "YOUR_USER",
-            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_PASSWORD": "YOUR_PASSWORD",
             "SAP_CLIENT": "100"
           }
         }
@@ -84,14 +37,12 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
     }
     ```
 
-    Or add it from the CLI: `claude mcp add sap --env SAP_URL=… --env SAP_USER=… --env SAP_PASSWORD=… --env SAP_CLIENT=100 -- npx -y arc-1@latest`. Keep secrets out of a committed `.mcp.json` — use user scope or shell env vars.
+    Restart Claude Code and check the server with `/mcp`.
+    For the plugin or Claude Desktop, follow [Install in Claude](install-in-claude.md).
 
-    !!! tip "Want the SAP skills, or using Claude Desktop?"
-        The Claude Code **plugin** bundles this server **and** the 18 SAP skills (RAP, CDS, ABAP Unit, clean-core, UI5) in one install. For that — and for Claude Desktop (`.mcpb` or direct JSON) — see **[Install in Claude](install-in-claude.md)**.
+=== "GitHub Copilot / VS Code"
 
-=== "GitHub Copilot — VS Code"
-
-    Create `.vscode/mcp.json` in your workspace (or run **MCP: Open User Configuration** from the Command Palette for a global setup). VS Code uses `servers` — **not** `mcpServers`:
+    Run **MCP: Open User Configuration** from the Command Palette and add this server:
 
     ```json
     {
@@ -101,9 +52,9 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
           "command": "npx",
           "args": ["-y", "arc-1@latest"],
           "env": {
-            "SAP_URL": "https://your-sap-host:44300",
+            "SAP_URL": "https://your-sap-host",
             "SAP_USER": "YOUR_USER",
-            "SAP_PASSWORD": "YOUR_PASS",
+            "SAP_PASSWORD": "YOUR_PASSWORD",
             "SAP_CLIENT": "100"
           }
         }
@@ -111,82 +62,53 @@ ARC-1 speaks stdio, so every client launches the same `npx arc-1@latest` subproc
     }
     ```
 
-    Open Copilot Chat, switch the mode selector to **Agent**, and the `SAP*` tools appear in the tools picker (🛠). Manage servers any time with **MCP: List Servers**.
+    Use **MCP: List Servers** to start `sap`, then open Copilot Chat in **Agent** mode.
 
-=== "GitHub Copilot — Eclipse"
+=== "GitHub Copilot / Eclipse"
 
-    Requires Eclipse 2024-03 or later with the latest **GitHub Copilot** plug-in. Click the **GitHub Copilot** status-bar icon → **Edit Preferences** → expand **GitHub Copilot** → **MCP**, paste the config, then **Apply and Close** — it takes effect immediately. Eclipse uses the same `servers` shape as VS Code:
+    Open the GitHub Copilot preferences and select **MCP**. Add the `servers` configuration
+    from the VS Code tab, then choose **Apply and Close**. Open Copilot Chat in **Agent** mode.
 
-    ```json
-    {
-      "servers": {
-        "sap": {
-          "type": "stdio",
-          "command": "npx",
-          "args": ["-y", "arc-1@latest"],
-          "env": {
-            "SAP_URL": "https://your-sap-host:44300",
-            "SAP_USER": "YOUR_USER",
-            "SAP_PASSWORD": "YOUR_PASS",
-            "SAP_CLIENT": "100"
-          }
-        }
-      }
-    }
-    ```
+For other clients, configure a stdio server that launches `npx -y arc-1@latest` with the same
+four environment variables. The JSON wrapper depends on the client.
 
-    Open Copilot Chat in **Agent** mode; the `SAP*` tools become available.
+<a id="1-verify-arc-1-can-reach-your-sap"></a>
+<a id="2-wire-it-into-your-mcp-client"></a>
+<a id="3-try-a-read"></a>
 
-### What you just got — read-only by default
+## 2. Verify a read
 
-| Capability | Result |
-|---|---|
-| Writes | Off |
-| Freestyle SQL | Off |
-| Named table preview | Off |
-| Transports / Git writes | Off |
-| Package scope | `$TMP` if you later enable writes |
+In your assistant, ask:
 
-Those four are the minimum. Any ARC-1 setting can live in this `env` block — TLS, request language, caching, rate limits, authentication, and more. For every supported variable, with its default and precedence, see the **[Configuration Reference](configuration-reference.md)** (connection variables under [SAP connection](configuration-reference.md#sap-connection)).
+> Using SAPSearch, find ABAP classes whose names start with `ZCL_`. Do not change anything.
 
-Cursor, Gemini CLI, Goose, and other stdio clients use the same shape — see [local-development.md](local-development.md#mcp-client-configuration).
+A successful tool result, even an empty list, confirms the connection. If a class is returned, ask
+for its source by name. A startup message alone does not verify this read.
 
-### Enabling writes, SQL, and data preview
+## If the connection fails
 
-Everything above is read-only. Each capability is a separate positive opt-in — add only the flags you need to the **same `env` block**, on any client. For full local development on a dev/sandbox system you are comfortable modifying:
+| Symptom | Check |
+| --- | --- |
+| ARC-1 cannot start | Run `node --version`; confirm `npx` is on the client's PATH. |
+| Cannot reach SAP | Check the HTTPS URL, VPN, proxy, and ADT service availability with your SAP administrator. |
+| Authentication fails | Check the client number and ADT credentials. A browser or SAP GUI login alone does not prove ADT access. |
+| Certificate error | Use the trusted HTTPS endpoint or configure the required CA certificate. For a self-signed development system only, `SAP_INSECURE=true` disables verification. |
+| SAP returns an HTML login page | Follow the [local SSO cookie procedure](local-development.md#sso-only-on-prem-cookie-extractor). |
 
-```json
-"SAP_ALLOW_WRITES": "true",
-"SAP_ALLOW_DATA_PREVIEW": "true",
-"SAP_ALLOW_FREE_SQL": "true",
-"SAP_ALLOW_TRANSPORT_WRITES": "true",
-"SAP_ALLOWED_PACKAGES": "*"
-```
+<a id="if-direct-adt-https-is-not-reachable"></a>
 
-| Capability | Result |
-|---|---|
-| Writes | On |
-| Free SQL | On |
-| Named table preview | On |
-| Transports | On |
-| Package scope | `*` (all packages) |
+If Eclipse can connect only through RFC/SAProuter, see the
+[local ADT-to-RFC bridge option](enterprise-auth.md#3-local-adt-to-rfc-bridge-local-rfcsaprouter-workaround).
 
-Want just table preview + SQL while staying read-only? Add only `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL`. Full model in [authorization.md](authorization.md#capability-requirements); each flag's default and precedence is in the [Configuration Reference](configuration-reference.md#authorization-and-safety).
-
----
-
-## 3. Try a read
-
-In your MCP client (Claude Code, or Copilot in **Agent** mode), ask:
-
-> Using the SAP tools, show me the source of report `RSPO0041`.
-
-The assistant should call `SAPRead` and return the ABAP source.
-
----
+<a id="what-you-just-got-read-only-by-default"></a>
+<a id="enabling-writes-sql-and-data-preview"></a>
 
 ## Next steps
 
-- **Your SAP uses SSO (SAML / SPNEGO / X.509)?** Basic Auth won't work. See [local-development.md → SSO-only on-prem](local-development.md#sso-only-on-prem-cookie-extractor).
-- **Running on BTP or deploying for a team?** → [deployment.md](deployment.md).
-- **Understand the authorization model** → [authorization.md](authorization.md). **Full flag reference** → [configuration-reference.md](configuration-reference.md).
+This setup leaves writes, table preview, SQL, transport mutations, and Git mutations disabled.
+To enable a capability, use the [permission requirements](authorization.md#capability-requirements)
+and add the required settings to the same server `env` block.
+
+- [Example workflows](mcp-usage.md) for a connected assistant.
+- [Local development](local-development.md) for `.env`, SSO, or running ARC-1 from source.
+- [Configuration](configuration-reference.md) for all settings.

@@ -71,7 +71,8 @@ describe('BTP UI AppRouter config', () => {
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter((line) => line !== '' && !line.startsWith('#'));
-    const runbook = await readFile('docs_page/btp-cloud-foundry-deployment.md', 'utf8');
+    const runbook = await readFile('docs_page/btp-archive-inspection.md', 'utf8');
+    expect(await readFile('docs_page/btp-cloud-foundry-deployment.md', 'utf8')).toContain('btp-archive-inspection.md');
 
     // Keep the one allowed project config non-secret and narrowly scoped.
     expect(activeSettings).toEqual(['install-links=true']);
@@ -80,6 +81,10 @@ describe('BTP UI AppRouter config', () => {
     expect(runbook).toContain('cmp -s "$tmp/approuter.npmrc" btp/approuter/.npmrc');
     expect(runbook).toContain("$member.Directory.Name -eq 'arc1-ui-router'");
     expect(runbook).toContain('Get-FileHash $allowedNpmrc -Algorithm SHA256');
+    // PowerShell hides dotfiles on Unix unless -Force is set; inspect directories in paths too.
+    expect(runbook).toContain('Get-ChildItem "$tmp-outer" -Recurse -Force -Filter data.zip -File');
+    expect(runbook).toContain('Get-ChildItem $dest -Recurse -Force -File');
+    expect(runbook).toContain('$relativePath -match $deny');
     // The blanket filename deny remains in place for every other module and path.
     expect(runbook.match(/deny\s*=\s*['"]\\\.env\|\\\.npmrc/g)).toHaveLength(2);
   });

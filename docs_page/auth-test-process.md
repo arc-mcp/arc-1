@@ -1,288 +1,108 @@
 # Authentication Test Process
 
-Step-by-step verification for each authentication method. Run these tests after deploying arc1 to confirm the configured methods work as intended.
+Verify three things after an auth change: valid users can connect, invalid credentials are rejected,
+and SAP uses the intended identity. Choose the section matching your deployment.
 
 ## Prerequisites
 
-```bash
-# Build arc1
-npm run build
+- An ARC-1 HTTP server configured through [API keys](api-key-setup.md), [OIDC](oauth-jwt-setup.md) or [XSUAA](xsuaa-setup.md).
+- Its reviewed MCP URL and a valid key/token in your local shell as `ARC1_TEST_TOKEN`.
+- A test user with source-read access; keep tokens out of logs and tickets.
 
-# Run unit tests first (all must pass)
-npm test
+```bash
+ARC1_TEST_URL=https://arc1.example.com/mcp
 ```
 
----
+These runtime checks do not require a source checkout or a build.
 
 ## API Key Setup
 
-### Unit Tests
+<a id="unit-tests"></a>
 
-```bash
-# Run auth-related unit tests
-npm test
-```
+### Manual Integration Test
+
+1. Without credentials, expect HTTP `401`:
+
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code}\n' "$ARC1_TEST_URL"
+   ```
+
+2. With incorrect credentials, expect HTTP `401`:
+
+   ```bash
+   curl -sS -o /dev/null -w '%{http_code}\n' "$ARC1_TEST_URL" \
+     -H 'Authorization: Bearer deliberately-invalid'
+   ```
+
+3. With the valid key, expect a JSON-RPC tool list:
+
+   ```bash
+   curl -sS "$ARC1_TEST_URL" \
+     -H "Authorization: Bearer $ARC1_TEST_TOKEN" \
+     -H 'Content-Type: application/json' \
+     -H 'Accept: application/json, text/event-stream' \
+     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+   ```
+
+4. In the MCP client, run `SAPRead(type="SYSTEM")`. Confirm the viewer's tool list excludes writes and SQL.
 
 ### HTTP Profile Manifest Smoke Test
 
-When a local HTTP authz test server is already running with four API-key profiles, run:
+For contributors with a prepared local auth test server:
 
 ```bash
 npm run test:authz:http
 ```
 
-Default assumptions:
-
-- URL: `http://127.0.0.1:19081/mcp` (override with `ARC1_AUTHZ_MCP_URL`)
-- Keys: `viewer-key-local`, `sql-key-local`, `dev-key-local`, `admin-key-local`
-- Server ceiling: writes, data preview, SQL, and transport writes enabled; Git writes disabled
-
-The script checks the live MCP `tools/list` manifest for each key. It verifies that unauthorized tools/actions are hidden before any SAP mutation can be attempted:
-
-- `viewer`: no `SAPWrite`, no `SAPQuery`, no `TABLE_CONTENTS`, transport read actions only
-- `viewer-sql`: `SAPQuery` and `TABLE_CONTENTS` visible, no writes
-- `developer`: writes and transport mutations visible, SQL hidden, Git write actions hidden
-- `admin`: writes, SQL, and transport mutations visible; Git write actions still hidden when `SAP_ALLOW_GIT_WRITES=false`
-
-### Manual Integration Test
-
-**1. Start arc1 with API key:**
-
-```bash
-npx arc-1 --url http://your-sap:8000 \
-  --user DEVELOPER --password secret --client 001 \
-  --transport http-streamable --http-addr 0.0.0.0:8080 \
-  --api-keys 'test-key-12345:admin'
-```
-
-**2. Verify health endpoint (no auth required):**
-
-```bash
-curl -s http://localhost:8080/health
-# Expected: {"status":"ok"}
-```
-
-**3. Verify request without API key is rejected:**
-
-```bash
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/mcp
-# Expected: 401
-```
-
-**4. Verify request with wrong API key is rejected:**
-
-```bash
-curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer wrong-key" \
-  http://localhost:8080/mcp
-# Expected: 401
-```
-
-**5. Verify request with correct API key succeeds:**
-
-```bash
-curl -s -H "Authorization: Bearer test-key-12345" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
-# Expected: 200 with JSON-RPC response containing tool list
-```
-
-**6. Verify case-insensitive Bearer prefix:**
-
-```bash
-curl -s -H "Authorization: bearer test-key-12345" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
-# Expected: 200 (same as above)
-```
-
-### Checklist
-
-- [ ] Health endpoint returns 200 without auth
-- [ ] Missing Authorization header → 401
-- [ ] Wrong API key → 401
-- [ ] Correct API key → 200 with tools
-- [ ] Case-insensitive "Bearer" prefix works
-- [ ] MCP client (VS Code/Cursor) connects with Authorization header
-
----
+The default URL is `http://127.0.0.1:19081/mcp` (`ARC1_AUTHZ_MCP_URL` overrides it).
+The script expects `viewer-key-local`, `sql-key-local`, `dev-key-local`, `admin-key-local` and a ceiling
+with writes, table preview, SQL and transports enabled; Git writes disabled.
+It checks the visible actions for `viewer`, `viewer-sql`, `developer` and `admin` without SAP mutations.
 
 ## OAuth / JWT Setup
 
-### Unit Tests
+<a id="unit-tests_1"></a><a id="manual-integration-test_1"></a><a id="checklist_1"></a>
 
-```bash
-npm test
-```
+1. Repeat the missing, invalid and valid-token tests above with an issued JWT.
+2. If OIDC discovery is enabled, inspect the protected-resource metadata:
 
-### Manual Integration Test
+   ```bash
+   curl -fsS https://arc1.example.com/.well-known/oauth-protected-resource/mcp | jq .
+   ```
 
-**Prerequisites:** You need an OIDC identity provider (Microsoft Entra ID, Keycloak, Cognito).
-
-**1. Start arc1 with OIDC:**
-
-```bash
-npx arc-1 --url http://your-sap:8000 \
-  --user DEVELOPER --password secret --client 001 \
-  --transport http-streamable --http-addr 0.0.0.0:8080 \
-  --oidc-issuer 'https://your-idp.example.com' \
-  --oidc-audience 'your-audience'
-```
-
-**2. Verify Protected Resource Metadata endpoint:**
-
-```bash
-curl -s http://localhost:8080/.well-known/oauth-protected-resource/mcp | jq .
-# Expected: JSON with "resource", "authorization_servers", "bearer_methods_supported"
-# (the root path /.well-known/oauth-protected-resource serves the same document;
-#  both are 404 when SAP_OIDC_DISCOVERY=false)
-```
-
-**3. Verify request without token is rejected, and points at the metadata:**
-
-```bash
-curl -s -o /dev/null -D - http://localhost:8080/mcp | grep -i "^HTTP/\|www-authenticate"
-# Expected: 401 + WWW-Authenticate: Bearer …, resource_metadata="http://localhost:8080/.well-known/oauth-protected-resource/mcp"
-```
-
-**4. Get a real JWT from your IdP:**
-
-```bash
-# Example for Azure CLI:
-TOKEN=$(az account get-access-token --resource your-audience --query accessToken -o tsv)
-
-# Example for Keycloak (password grant for testing):
-TOKEN=$(curl -s -X POST https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token \
-  -d "grant_type=password&client_id=arc1&username=testuser&password=testpass" | jq -r .access_token)
-```
-
-**5. Verify request with valid JWT succeeds:**
-
-```bash
-curl -s -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  http://localhost:8080/mcp \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
-# Expected: 200 with tool list
-```
-
-**6. Verify expired/invalid token is rejected:**
-
-```bash
-curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer invalid.jwt.token" \
-  http://localhost:8080/mcp
-# Expected: 401
-```
-
-**7. Check logs for username extraction:**
-
-```
-# In arc1 stderr output, look for:
-# [OIDC] Authenticated user: <username>
-```
-
-### Checklist
-
-- [ ] Protected Resource Metadata endpoint returns valid JSON
-- [ ] Missing token → 401
-- [ ] Invalid/expired token → 401
-- [ ] Valid JWT → 200 with tools
-- [ ] Username extracted from JWT claims (check logs)
-- [ ] JWKS auto-discovery works (check logs for JWKS fetch)
-
----
+   Verify `resource`, `authorization_servers` and the configured `scopes_supported` against the selected endpoint and IdP.
+   With `SAP_OIDC_DISCOVERY=false`, metadata endpoints return `404`.
+3. Confirm a `401` response includes the intended `WWW-Authenticate` metadata URL when discovery is enabled.
+4. Sign in through the real MCP client and run one safe SAP read. Confirm the audit identity and permitted tools.
+5. After changing roles, obtain a fresh token and reload the tool catalog. See [XSUAA scope diagnosis](xsuaa-setup.md#insufficient-scope-invalid_scope).
 
 ## Principal Propagation Setup
 
-### Unit Tests
+<a id="unit-tests_2"></a><a id="manual-integration-test_2"></a><a id="checklist_2"></a>
 
-```bash
-npm test
-```
+Complete [PP setup](principal-propagation-setup.md) before testing. Then:
 
-### Manual Integration Test
-
-**Prerequisites:**
-- OIDC or XSUAA configured and working
-- ARC-1 deployed on BTP CF with Destination + Connectivity services
-- Cloud Connector connected and configured for principal propagation
-- SAP system configured with CERTRULE / VUSREXTID (see [Principal Propagation Setup](principal-propagation-setup.md))
-
-**1. Configure ARC-1 with PP:**
-
-```bash
-SAP_BTP_DESTINATION=SAP_TRIAL \
-SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP \
-SAP_PP_ENABLED=true \
-SAP_PP_STRICT=true
-```
-
-**2. Verify per-user identity in SAP:**
-
-Check in SAP transaction `SM20` (security audit log) or `SM04` (user sessions) that the request was executed as the mapped SAP user, not a technical account.
-
-**3. Check ARC-1 logs:**
-
-```bash
-cf logs arc1-mcp-server --recent | grep -E "Principal propagation|per-user|BTP destination"
-```
-
-### Checklist
-
-- [ ] BTP Destination with `PrincipalPropagation` authentication type configured
-- [ ] Cloud Connector principal propagation enabled
-- [ ] SAP certificate mapping (CERTRULE / VUSREXTID) configured
-- [ ] JWT-authenticated requests use per-user destination
-- [ ] SAP logs show per-user identity (not technical account)
-- [ ] Identity topology is explicit: recommended strict PP + separate API-key instance, or supported mixed mode with `SAP_PP_STRICT=false`
-
----
+1. Run a safe SAP read from a JWT-authenticated MCP client.
+2. Ask the SAP owner to verify the mapped SAP user in the security audit log (`SM20`) or relevant session evidence (`SM04`). ARC-1's username alone does not prove SAP identity.
+3. Repeat with a second mapped test user to check per-user separation.
+4. For explicit `SAP_PP_STRICT=true`, verify non-JWT tool calls are rejected. For supported mixed mode (`false`), verify API-key calls use the intended shared identity.
+5. In staging, verify a user with no valid PP mapping receives an error and never reaches SAP as the shared user.
 
 ## BTP / Cloud Foundry
 
-### Unit Tests
+<a id="unit-tests_3"></a><a id="manual-integration-test_3"></a><a id="checklist_3"></a>
+
+Use the existing deployment; do not create or rebind services for a smoke test.
 
 ```bash
-npm test
+cf target
+cf app arc1-mcp-server
+cf logs arc1-mcp-server --recent
 ```
 
-### Manual Integration Test
-
-**To test on BTP Cloud Foundry:**
-
-**1. Deploy to CF:**
-
-```bash
-# Build Docker image
-docker build -t arc1 .
-# Push to CF (see btp-cloud-foundry-deployment.md)
-cf push
-```
-
-**2. Verify app is running** (check app logs):
-
-```bash
-cf logs arc1 --recent | grep "BTP"
-# Expected: Log messages showing parsed XSUAA and Destination bindings
-```
-
-**3. Verify health:**
-
-```bash
-cf ssh arc1 -c "curl -s http://localhost:8080/health"
-# Expected: {"status":"ok"}
-```
-
-### Checklist
-
-- [ ] BTP config → OAuth config conversion works
-- [ ] App starts on CF without errors
-- [ ] Health endpoint returns 200
-
----
+Verify XSUAA discovery using [Step 4 of XSUAA setup](xsuaa-setup.md#step-4-verify-oauth-discovery), then run the JWT and SAP-identity checks above.
+For multi-target, inspect Admin `SAPTargets`, verify each intended route and run the safe read with its explicit target.
+A successful `/health` proves process health only.
 
 ## BTP ABAP Environment (service key)
 
@@ -319,13 +139,14 @@ TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test
 | **Backend unavailable** | 503, maintenance page | Platform maintenance or provisioning |
 | **Assertion** | `expect` mismatch | API contract changed — a real regression to investigate |
 
-Only assertion failures indicate an ARC-1 problem; auth and connectivity failures are expected with
-free-tier instances.
+Investigate assertion failures as possible regressions. For auth/connectivity failures, first confirm the tenant is running and credentials are valid.
 
 ### Tenant assumptions
 
+<a id="checklist_4"></a>
+
 - Standard released objects exist (`CL_ABAP_RANDOM`, `IF_ABAP_RANDOM`).
-- Free tier: one system per global account, stopped automatically, 90-day limit.
+- If the tenant is stopped, start it before running the tests.
 
 ### Checklist
 
@@ -338,23 +159,15 @@ free-tier instances.
 
 ## Full Regression Suite
 
-Run all tests:
+<a id="quick-smoke-test"></a>
+
+For code changes in a repository checkout:
 
 ```bash
-# All unit tests
+npm ci
+npm run build
 npm test
-
-# Integration tests (requires SAP credentials)
-npm run test:integration
 ```
 
----
-
-## Quick Smoke Test
-
-For a quick check that nothing is broken after code changes:
-
-```bash
-npm test
-# Expected: All tests pass, no failures
-```
+Run `npm run test:integration` only against the configured SAP test system; individual integration suites can create test objects.
+Unit-test success does not replace live authentication verification.

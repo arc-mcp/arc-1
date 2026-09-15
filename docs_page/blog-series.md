@@ -1,6 +1,9 @@
-# Blog Series: AI ABAP Development
+# Blog: AI and ABAP development
 
-A series of long-form posts on [blog.zeis.de](https://blog.zeis.de/tags/ai-abap-development-series/) that progresses from AI development in general, to ABAP-specific problems, and then to ARC-1.
+Read these articles for background and worked examples. For current setup commands, use the
+[Quickstart](quickstart.md) or [BTP setup](btp-overview.md).
+
+Start with article 3 for an introduction to ARC-1, or choose a topic below.
 
 | # | Post | Date |
 |---|------|------|

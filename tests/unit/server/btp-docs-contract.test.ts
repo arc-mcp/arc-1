@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parse, parseDocument } from 'yaml';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
@@ -82,6 +82,23 @@ describe('BTP documentation contracts', () => {
         expect.objectContaining({ run: 'mkdocs build --strict' }),
       ]),
     );
+  });
+
+  it('lists every documentation page exactly once in navigation', () => {
+    const docs = readdirSync(new URL('../../../docs_page/', import.meta.url), { recursive: true, encoding: 'utf8' })
+      .filter((path) => path.endsWith('.md'))
+      .map((path) => path.replaceAll('\\', '/'))
+      .sort();
+    const pages: string[] = [];
+    const visit = (node: unknown): void => {
+      if (typeof node === 'string') pages.push(node);
+      else if (Array.isArray(node)) node.forEach(visit);
+      else if (node && typeof node === 'object') Object.values(node).forEach(visit);
+    };
+    const config = parse(read('mkdocs.yml'));
+    visit(config.nav);
+    expect(pages.sort()).toEqual(docs);
+    expect(config.validation.nav.omitted_files).toBe('warn');
   });
 
   it('makes broken local anchors fail the strict documentation build', () => {
