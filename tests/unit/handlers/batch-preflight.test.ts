@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
@@ -7,6 +8,7 @@ import { createClient, mockFetch } from './setup-undici-mock.js';
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { SAPWriteSchema, SAPWriteSchemaBtp } = await import('../../../src/handlers/schemas.js');
+const transportModule = await import('../../../src/adt/transport.js');
 const writeHelpers = await import('../../../src/handlers/write-helpers.js');
 const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
 const program = (name: string) => ({ type: 'PROG', name, source: `REPORT ${name.toLowerCase()}.` });
@@ -50,6 +52,7 @@ describe('batch preflight and persisted outcomes', () => {
 
   it.each([
     ['mixed-case name', { type: 'PROG', name: 'Zbad' }],
+    ['function-group structural include', { type: 'INCL', name: 'LZGROUPTOP' }],
     ['unsupported SDO', { type: 'UIAD', name: 'ZBAD' }],
     ['invalid AFF header', { type: 'PROG', name: 'ZBAD', description: 'x'.repeat(100) }],
     ['duplicate entry', program('ZFIRST')],
@@ -84,6 +87,82 @@ describe('batch preflight and persisted outcomes', () => {
     expect(JSON.parse(result.content[1].text).batch).toMatchObject({ phase: 'preflight', created: 0 });
   });
 
+  it.each(['create', 'batch_create'])('%s skips CTS checks for every local $ package', async (action) => {
+    const probe = vi.spyOn(transportModule, 'getTransportInfo').mockRejectedValue(new Error('Must not be called'));
+    const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+      action,
+      package: '$ZLOCAL',
+      ...(action === 'create' ? program('ZFIRST') : { objects: [program('ZFIRST')] }),
+    });
+    expect(result.isError).toBeFalsy();
+    expect(probe).not.toHaveBeenCalled();
+    expect(creates()).toHaveLength(1);
+  });
+
+  it.each(['create', 'batch_create'])(
+    '%s fails closed on transport authorization and safety refusals',
+    async (action) => {
+      for (const status of [401, 403]) {
+        mockFetch.mockImplementation((url) =>
+          Promise.resolve(
+            new URL(String(url)).pathname.includes('/cts/transportchecks')
+              ? mockResponse(status, 'PRIVATE_TRANSPORT_DETAIL', { 'x-csrf-token': 'T' })
+              : ok(),
+          ),
+        );
+        const result = await handleToolCall(createClient(), { ...config, minimalErrors: true }, 'SAPWrite', {
+          action,
+          package: 'ZTRANSPORTED',
+          ...(action === 'create' ? program('ZFIRST') : { objects: [program('ZFIRST')] }),
+        });
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).not.toContain('PRIVATE_TRANSPORT_DETAIL');
+        expect(creates()).toHaveLength(0);
+      }
+      vi.spyOn(transportModule, 'getTransportInfo').mockRejectedValue(new AdtSafetyError('Transport check denied'));
+      const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+        action,
+        package: 'ZTRANSPORTED',
+        ...(action === 'create' ? program('ZFIRST') : { objects: [program('ZFIRST')] }),
+      });
+      expect(result.isError).toBe(true);
+      expect(creates()).toHaveLength(0);
+    },
+  );
+
+  it('reports global activation messages once, outside per-object diagnostics', async () => {
+    mockFetch.mockImplementation((url, options) =>
+      Promise.resolve(
+        options?.method === 'POST' && new URL(String(url)).pathname === '/sap/bc/adt/activation'
+          ? mockResponse(
+              200,
+              '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><msg type="E" severity="error" shortText="Activation was cancelled."/></chkl:messages>',
+              { 'x-csrf-token': 'T' },
+            )
+          : ok(),
+      ),
+    );
+    const result = await run([program('ZFIRST'), program('ZSECOND')], { activateAtEnd: true });
+    expect(result.content[0].text.match(/Activation was cancelled\./g)).toHaveLength(1);
+    const { batch } = JSON.parse(result.content[1].text);
+    expect(batch.results.every((entry: { error: string }) => !entry.error.includes('Activation was cancelled.'))).toBe(
+      true,
+    );
+  });
+
+  it('caps large human diagnostics while retaining all manifest entries', async () => {
+    vi.spyOn(writeHelpers, 'buildCreateXml').mockImplementation(() => {
+      throw new Error('x'.repeat(4000));
+    });
+    const result = await run(Array.from({ length: 100 }, (_, index) => program(`ZFAIL${index}`)));
+    expect(result.content[0].text.length).toBeLessThan(8000);
+    expect(result.content[0].text).toContain('summary truncated');
+    const { batch } = JSON.parse(result.content[1].text);
+    expect(batch.results).toHaveLength(100);
+    expect(batch.failed).toBe(100);
+    expect(batch.results[99].error.length).toBeLessThan(2100);
+  });
+
   it('checks enabled source lint across the entire batch before creating', async () => {
     const result = await handleToolCall(createClient(), { ...config, lintBeforeWrite: true }, 'SAPWrite', {
       action: 'batch_create',
@@ -102,6 +181,7 @@ describe('batch preflight and persisted outcomes', () => {
     const { batch } = JSON.parse(result.content[1].text);
     expect(batch.failed).toBe(2);
     expect(batch.results[1].error).toContain('uppercase');
+    expect(batch.results[1].error).toContain('ZBAD');
     expect(batch.results[2].error).toContain('does not support');
   });
 
@@ -124,6 +204,14 @@ describe('batch preflight and persisted outcomes', () => {
     [
       { type: 'FUNC', name: 'ZFUNC', group: 'ZGROUP1' },
       { type: 'FUNC', name: 'ZFUNC', group: 'ZGROUP2' },
+    ],
+    [
+      { type: 'CLAS', name: 'ZSAME' },
+      { type: 'INTF', name: 'ZSAME' },
+    ],
+    [
+      { type: 'INTF', name: 'ZSAME' },
+      { type: 'CLAS', name: 'ZSAME' },
     ],
   ])('rejects duplicate repository identities across aliases/containers', async (first, second) => {
     const result = await run([first, second]);
@@ -315,6 +403,9 @@ describe('batch preflight and persisted outcomes', () => {
     const result = await run([program('ZFIRST'), program('ZFIRST2')], { activateAtEnd: true });
     const { batch } = JSON.parse(result.content[1].text);
     expect(batch.results[0].activation).toBe('unknown');
+    expect(batch.results[0].error).not.toContain('Specific failure');
+    expect(batch.results[0].error).toContain('without an object-specific error');
+    expect(batch.results[1].error).toContain('Specific failure');
     expect(batch.results[1].activation).toBe('failed');
   });
 

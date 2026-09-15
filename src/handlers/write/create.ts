@@ -22,10 +22,10 @@ import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
-import { getTransport, getTransportInfo } from '../../adt/transport.js';
+import { getTransport } from '../../adt/transport.js';
 import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
-import { logger } from '../../server/logger.js';
+import { activationDetailMatchesObject } from '../activation-results.js';
 import { guardCdsSyntax } from '../cds-hints.js';
 import {
   getCachedFeatures,
@@ -70,6 +70,7 @@ import {
   failBatchEntry,
 } from './batch-results.js';
 import type { SapWriteContext } from './context.js';
+import { resolveCreateTransport } from './create-transport.js';
 
 const FUNCTION_MODULE_MEDIA_TYPE = /^application\/vnd\.sap\.adt\.functions\.fmodules(?:\.v\d+)?\+xml\b/i;
 
@@ -475,39 +476,14 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
   const description = String(args.description ?? name);
 
-  // Pre-flight: check transport requirements for non-$TMP packages when no transport provided.
-  // SAP requires a transport number for objects in transportable packages.
-  // Instead of letting SAP return a cryptic error, we detect this early and return
-  // an actionable error message guiding the LLM to use SAPTransport first.
   let effectiveTransport = transport;
-  if (!transport && pkg.toUpperCase() !== '$TMP') {
+  if (!transport) {
     try {
-      const transportInfo = await getTransportInfo(client.http, client.safety, objectUrl, pkg, 'I');
-      if (transportInfo.lockedTransport) {
-        // Object is already locked in a transport — use it automatically
-        effectiveTransport = transportInfo.lockedTransport;
-      } else if (!transportInfo.isLocal && transportInfo.recording) {
-        // Transport IS required but none provided — return guidance
-        const existingList =
-          transportInfo.existingTransports.length > 0
-            ? `\n\nExisting transports for this package:\n${transportInfo.existingTransports
-                .slice(0, 10)
-                .map((t) => `  - ${t.id}: ${t.description} (${t.owner})`)
-                .join('\n')}`
-            : '';
-        return errorResult(
-          `Package "${pkg}" requires a transport number for object creation, but none was provided.\n\n` +
-            `To fix this, either:\n` +
-            `1. Use SAPTransport(action="list") to find an existing modifiable transport\n` +
-            `2. Use SAPTransport(action="create", description="...") to create a new one\n` +
-            `3. Then retry SAPWrite(action="create", ..., transport="<transport_id>")` +
-            existingList,
-        );
-      }
-      // isLocal=true or recording=false → no transport needed, proceed without one
-    } catch {
-      // If transportInfo check fails (older system, permissions, etc.), proceed without it.
-      // SAP will return its own error if a transport is actually needed.
+      const resolved = await resolveCreateTransport(client, objectUrl, pkg, config.minimalErrors);
+      if (resolved.error) return errorResult(resolved.error);
+      effectiveTransport = resolved.transport;
+    } catch (error) {
+      return errorResult(batchFailureMessage(error, config.minimalErrors));
     }
   }
 
@@ -866,7 +842,9 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
     };
   });
   const results = batchPlan.map((plan) => plan.result);
-  const report = (preflight = false) => batchCreateResult(results, { preflight, activateAtEnd, warnings });
+  const activationMessages: string[] = [];
+  const report = (preflight = false) =>
+    batchCreateResult(results, { preflight, activateAtEnd, warnings, activationMessages });
   const seen = new Map<string, number>();
 
   // Validate the complete input before package/transport reads or the first create.
@@ -874,9 +852,12 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
     const errors: string[] = [];
     try {
       if (!plan.name.trim() || plan.name !== plan.name.trim() || plan.name !== plan.name.toUpperCase()) {
-        errors.push(`Object name "${plan.name}" must be non-empty, uppercase, and have no surrounding whitespace.`);
+        errors.push(
+          `Object name "${plan.name}" must be non-empty, uppercase, and have no surrounding whitespace (e.g. "${plan.name.trim().toUpperCase()}"); source may stay mixed case.`,
+        );
       }
-      const keyType = plan.type === 'INCL' ? 'PROG' : canonicalTablType(plan.type);
+      const keyType =
+        plan.type === 'INCL' ? 'PROG' : ['CLAS', 'INTF'].includes(plan.type) ? 'OO' : canonicalTablType(plan.type);
       const key = `${keyType}\0${plan.name.toUpperCase()}`;
       const previous = seen.get(key);
       if (previous !== undefined)
@@ -963,37 +944,14 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
 
   const autoTransportByPackage = new Map<string, string | undefined>();
   for (const plan of batchPlan) {
-    if (plan.transport || plan.packageName.toUpperCase() === '$TMP' || autoTransportByPackage.has(plan.packageName))
-      continue;
+    if (plan.transport || autoTransportByPackage.has(plan.packageName)) continue;
     autoTransportByPackage.set(plan.packageName, undefined);
     try {
-      const info = await getTransportInfo(client.http, client.safety, plan.objectUrl, plan.packageName, 'I');
-      if (info.lockedTransport) autoTransportByPackage.set(plan.packageName, info.lockedTransport);
-      else if (!info.isLocal && info.recording) {
-        const existing =
-          !config.minimalErrors && info.existingTransports.length > 0
-            ? `\nExisting transports: ${info.existingTransports
-                .slice(0, 10)
-                .map((item) => `${item.id}: ${item.description} (${item.owner})`)
-                .join(', ')}`
-            : '';
-        failBatchEntry(
-          plan.result,
-          'preflight',
-          `Package "${plan.packageName}" requires a transport number for object creation, but none was provided. Use SAPTransport(action="list") or SAPTransport(action="create"), then retry with transport="<transport_id>".${existing}`,
-        );
-      }
-    } catch (err) {
-      if (err instanceof AdtSafetyError || (err instanceof AdtApiError && [401, 403].includes(err.statusCode))) {
-        failBatchEntry(plan.result, 'preflight', batchFailureMessage(err, config.minimalErrors));
-      } else {
-        logger.warn('SAPWrite batch_create transport preflight failed; continuing without auto transport', {
-          package: plan.packageName,
-          type: plan.type,
-          name: plan.name,
-          error: batchFailureMessage(err, config.minimalErrors),
-        });
-      }
+      const resolved = await resolveCreateTransport(client, plan.objectUrl, plan.packageName, config.minimalErrors);
+      if (resolved.error) failBatchEntry(plan.result, 'preflight', resolved.error);
+      else autoTransportByPackage.set(plan.packageName, resolved.transport);
+    } catch (error) {
+      failBatchEntry(plan.result, 'preflight', batchFailureMessage(error, config.minimalErrors));
     }
   }
   if (results.some((entry) => entry.status === 'failed')) return report(true);
@@ -1071,7 +1029,6 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         throw err;
       }
       entry.creation = 'confirmed';
-      invalidateWrittenObject(plan.type, plan.name);
       phase = 'write';
       if (entry.write !== 'not_required') entry.write = 'unknown';
       if (plan.type === 'FUNC' && plan.metadata.processingType !== undefined) {
@@ -1163,24 +1120,32 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         client.safety,
         writtenPlans.map((plan) => ({ type: plan.type, name: plan.name, url: plan.objectUrl })),
       );
+      if (!outcome.success) {
+        activationMessages.push(`${writtenPlans.length}/${writtenPlans.length} written, batch activation failed.`);
+        const unassigned = outcome.details.filter(
+          (detail) => !writtenPlans.some((plan) => activationDetailMatchesObject(detail.uri, plan.objectUrl)),
+        );
+        // Flat messages duplicate structured details; retain only otherwise-unrepresented messages.
+        const messages = [
+          ...unassigned.map((detail) => detail.text),
+          ...outcome.messages.filter((message) => !outcome.details.some((detail) => detail.text === message)),
+        ];
+        if (messages.length)
+          activationMessages.push(batchFailureMessage([...new Set(messages)].join('; '), config.minimalErrors));
+      }
       for (const plan of writtenPlans) {
         if (outcome.success) {
           plan.result.activation = 'confirmed';
           continue;
         }
-        const uri = plan.objectUrl.toLowerCase();
-        const details = outcome.details.filter((detail) => {
-          const target = detail.uri?.replace(/#.*$/, '').replace(/\/+$/, '').toLowerCase();
-          return target === uri || target?.startsWith(`${uri}/`);
-        });
-        plan.result.activation = details.some((detail) => detail.severity === 'error') ? 'failed' : 'unknown';
-        const message =
-          details.length > 0 ? details.map((detail) => detail.text).join('; ') : outcome.messages.join('; ');
-        failBatchEntry(
-          plan.result,
-          'activate',
-          `${writtenPlans.length}/${writtenPlans.length} written, batch activation failed — ${batchFailureMessage(message, config.minimalErrors)}`,
+        const errors = outcome.details.filter(
+          (detail) => detail.severity === 'error' && activationDetailMatchesObject(detail.uri, plan.objectUrl),
         );
+        plan.result.activation = errors.length ? 'failed' : 'unknown';
+        const message = errors.length
+          ? batchFailureMessage(errors.map((detail) => detail.text).join('; '), config.minimalErrors)
+          : 'Activation remains unknown: batch activation failed without an object-specific error.';
+        failBatchEntry(plan.result, 'activate', message);
       }
     } catch (err) {
       for (const plan of writtenPlans)

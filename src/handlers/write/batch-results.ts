@@ -45,12 +45,16 @@ export function batchFailureMessage(error: unknown, minimalErrors: boolean): str
 export function failBatchEntry(entry: BatchEntryResult, phase: BatchFailurePhase, error: string): void {
   entry.status = 'failed';
   entry.failedPhase = phase;
-  entry.error = error;
+  entry.error = batchFailureMessage(error, false);
+}
+
+function boundedSummary(text: string, limit: number): string {
+  return text.length > limit ? `${text.slice(0, limit)}… [summary truncated]` : text;
 }
 
 export function batchCreateResult(
   results: BatchEntryResult[],
-  options: { preflight?: boolean; activateAtEnd: boolean; warnings: string[] },
+  options: { preflight?: boolean; activateAtEnd: boolean; warnings: string[]; activationMessages?: string[] },
 ): ToolResult {
   const created = results.filter((entry) => entry.creation === 'confirmed').length;
   const creationUnknown = results.filter((entry) => entry.creation === 'unknown').length;
@@ -64,18 +68,31 @@ export function batchCreateResult(
       : packages.length <= 3
         ? `across packages [${packages.join(', ')}]`
         : `across ${packages.length} packages`;
-  const summary = results
-    .map((entry) => {
-      const label = `${entry.name} (${entry.type})`;
-      if (entry.status === 'success') return `${label} ✓ [${entry.packageName}]`;
-      const reason =
-        entry.status === 'skipped'
-          ? `skipped — ${options.preflight ? 'batch rejected by preflight' : 'stopped after previous failure'}`
-          : entry.error;
-      return `${label} ✗ [${entry.packageName}] — ${reason}`;
-    })
-    .join(', ');
-  const warnings = options.warnings.length > 0 ? `\n\nPreflight warnings:\n- ${options.warnings.join('\n- ')}` : '';
+  // The manifest retains every entry; keep the first block useful for large failures.
+  const visible =
+    (failed || skipped) && results.length > 10
+      ? results.filter((entry) => entry.status === 'failed').slice(0, 10)
+      : results;
+  const summary = boundedSummary(
+    visible
+      .map((entry) => {
+        const label = `${entry.name} (${entry.type})`;
+        if (entry.status === 'success') return `${label} ✓ [${entry.packageName}]`;
+        const reason =
+          entry.status === 'skipped'
+            ? `skipped — ${options.preflight ? 'batch rejected by preflight' : 'stopped after previous failure'}`
+            : entry.error;
+        return `${label} ✗ [${entry.packageName}] — ${reason}`;
+      })
+      .join(', '),
+    6000,
+  );
+  const omitted = failed || skipped ? '\nSee the manifest for every entry and full bounded diagnostics.' : '';
+  const warnings =
+    options.warnings.length > 0 ? `\n\nWarnings:\n- ${boundedSummary(options.warnings.join('\n- '), 2000)}` : '';
+  const activationMessages = options.activationMessages?.length
+    ? `\n\nBatch activation messages: ${boundedSummary(options.activationMessages.join('; '), 2000)}`
+    : '';
   if (failed === 0 && skipped === 0) {
     const activation = options.activateAtEnd ? '; activated as a single batch' : '';
     return textResult(`Batch created ${created} objects ${packageSummary}${activation}: ${summary}${warnings}`);
@@ -97,7 +114,10 @@ export function batchCreateResult(
   return {
     isError: true,
     content: [
-      { type: 'text', text: `${prefix}: ${summary}${persisted}${uncertain}\n\n${recovery}${warnings}` },
+      {
+        type: 'text',
+        text: `${prefix}: ${summary}${omitted}${persisted}${uncertain}\n\n${recovery}${activationMessages}${warnings}`,
+      },
       {
         type: 'text',
         text: toolJson({

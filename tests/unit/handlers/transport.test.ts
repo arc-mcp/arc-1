@@ -1631,12 +1631,10 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
         expect(result.content[0]?.text).not.toContain('requires a transport number');
         expect(warnSpy).toHaveBeenCalledWith(
-          'SAPWrite batch_create transport preflight failed; continuing without auto transport',
+          'SAPWrite transport preflight unavailable; continuing without auto transport',
           expect.objectContaining({
             package: 'Z_MY_PKG',
-            type: 'PROG',
-            name: 'ZTEST',
-            error: expect.stringContaining('ADT API error'),
+            statusCode: 500,
           }),
         );
       } finally {

@@ -144,3 +144,37 @@ possible and are represented explicitly; preflight is not an atomic transaction.
 
 The sanitized live record is
 [`2026-09-14-batch-preflight-live.json`](../research/2026-09-14-batch-preflight-live.json).
+
+## Review round 2 (2026-09-15)
+
+Confirmed R1–R3 against the implementation and regression tests. Plan: use one
+transport preflight helper for single and batch create, reject shared CLAS/INTF
+identities before I/O, and separate object-specific activation errors from global
+messages. Preserve unknown activation after an overall failure. Bound the human
+summary, restore naming guidance, remove duplicate mutation invalidation, and
+document structural includes and long-running batches.
+
+Plan review: skipping transport lookup does not skip package authorization or SAP's
+create checks. Safety errors and HTTP 401/403 must refuse both create paths;
+other lookup failures retain older-system compatibility. SAP documents all
+`$`-prefixed packages as temporary local packages, in both
+[NetWeaver 7.02](https://help.sap.com/docs/SAP_NETWEAVER_702/fe1a4b276c551014b24d80fe2b500e38/940e46d361b6417d805cdb8062ca40e9.html)
+and [ABAP Platform 2025](https://help.sap.com/docs/ABAP_PLATFORM_NEW/ba879a6e2ea04d9bb94c7ccd7cdac446/940e46d361b6417d805cdb8062ca40e9.html).
+A shared boundary-aware URI matcher is available for the SAPActivate follow-up.
+
+Kept uncertain creation for backend “already exists” errors: the backend text can
+be localized and a readback is still needed to establish the current object state.
+Did not generalize DDIC namespace collisions without supporting live evidence.
+
+Implementation review and final validation: build, typecheck, lint, policy,
+file/schema budgets and all **6,622 tests in 214 files** passed. Updated the transport
+logger regression to assert package/status only, without raw SAP error details.
+No tool schema or snapshot changed in this round.
+
+Compiled CLI live verification: 7.50, 7.58 and 8.16 each preserve `unknown` for the
+valid interface after the sibling fails activation, without copying the sibling's
+error. Each refuses INTF/CLAS duplicate names in preflight with zero creations.
+7.50 also confirms the existing runtime-collision manifest and successful three-interface
+dependency activation. Readback verified active shells versus inactive source; every
+fixture was deleted and confirmed absent. Sanitized evidence:
+[round-2 live results](../research/2026-09-15-batch-preflight-review-live.json).
