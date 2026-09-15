@@ -60,6 +60,19 @@ test('example scenarios validate and malformed target routes are rejected', asyn
   });
 });
 
+test('missing and empty IdP examples both deny targets without conflating attribute shape', async () => {
+  const examples = JSON.parse(await readFile(new URL('./scenarios.example.json', import.meta.url), 'utf8'));
+  const missing = examples['viewer-no-targets'].expect;
+  const empty = examples['viewer-empty-idp-targets'].expect;
+  assert.equal(missing.grantStatus, 'missing');
+  assert.equal(empty.grantStatus, 'valid');
+  assert.deepEqual({ ...missing, grantStatus: 'valid' }, empty);
+  assert.deepEqual(empty.grantValues, []);
+  assert.deepEqual(empty.schemaTargets, []);
+  assert.equal(empty.toolCount, 0);
+  assert.equal(empty.catalogVisible, false);
+});
+
 test('private input boundary cannot be fooled by a repository directory starting with two dots', () => {
   assert.equal(outsideRepository(REPO_ROOT), false);
   assert.equal(outsideRepository(resolve(REPO_ROOT, '..secret/input.json')), false);

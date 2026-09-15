@@ -122,6 +122,15 @@ Admin-machine fixture. The default omits `scope` to observe the service client's
   supplied in the scenario. Direct mutation-only tool names are checked as absent. Full mixed-tool
   action allowlists, capability-policy combinations and initialization prose are **not** exhaustively
   validated here; those require the implementation unit suite and separately specified live cases.
+- A non-Admin reader with exactly one granted active target has operational tools with an
+  explicit target selector, but **no `SAPTargets`**. Two or more granted active targets expose
+  the reader catalog. Do not copy an Admin/two-target catalog expectation into a single-target
+  reader scenario.
+- `grantStatus` describes the verified attribute's **shape**, not permission to execute. An
+  absent attribute uses `missing`; an IdP-backed role can instead produce a valid empty array
+  (`grantStatus: "valid"`, `grantValues: []`). Both must deny target access. Use separate
+  `viewer-no-targets` and `viewer-empty-idp-targets` fixtures to avoid mistaking this distinction
+  for an authorization failure.
 - When `allowedTargets` is supplied, `SAPRead(SYSTEM)` runs through aggregate and pinned routes.
   No application data, SQL, ATC, unit tests, writes or transports are run by this harness.
 - Hidden existing and nonexistent targets are directly called: generic aggregate errors and

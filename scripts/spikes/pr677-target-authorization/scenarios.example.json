@@ -44,6 +44,18 @@
       "deniedTargets": ["A4H/001", "ZZZ/999"]
     }
   },
+  "viewer-empty-idp-targets": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read"],
+      "grantValues": [],
+      "schemaTargets": [],
+      "grantStatus": "valid",
+      "toolCount": 0,
+      "catalogVisible": false,
+      "deniedTargets": ["A4H/001", "ZZZ/999"]
+    }
+  },
   "admin-no-targets": {
     "expect": {
       "userPrincipal": true,
