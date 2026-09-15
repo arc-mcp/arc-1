@@ -68,6 +68,8 @@ import {
 import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { loadPlugins } from './plugin-loader.js';
+import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
+import { buildServerInstructions } from './server-instructions.js';
 import { FileSink } from './sinks/file.js';
 import { filterToolsByAuthScope } from './tool-auth.js';
 import type { ServerConfig } from './types.js';
@@ -75,7 +77,7 @@ import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
-export const VERSION = '1.0.2'; // x-release-please-version
+export const VERSION = '1.2.0'; // x-release-please-version
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's
@@ -145,7 +147,10 @@ export function getConfiguredToolDefinitions(
   resolvedFeatures?: Parameters<typeof getToolDefinitions>[2],
   client?: Implementation,
 ): ToolDefinition[] {
-  return getToolDefinitions(config, textSearchAvailable, resolvedFeatures, getToolDefinitionOptions(config, client));
+  return getToolDefinitions(config, textSearchAvailable, resolvedFeatures, {
+    ...getToolDefinitionOptions(config, client),
+    discoveryMap: getCachedDiscovery(config.targetId ?? config.destinationName),
+  });
 }
 
 export { logAuthSummary } from './auth-summary.js';
@@ -208,23 +213,29 @@ export function buildAdtConfig(
   bearerTokenProvider?: () => Promise<string>,
   opts?: { perUser?: boolean },
   adtSemaphore?: Semaphore,
+  dataResultSemaphore?: Semaphore,
 ): Partial<AdtClientConfig> {
   const adtConfig: Partial<AdtClientConfig> = {
     baseUrl: config.url,
     client: config.client,
     language: config.language,
     insecure: config.insecure,
+    gzipDataPreviewBody: config.gzipDataPreviewBody,
     disableSaml: config.disableSaml2,
     btpProxy,
     bearerTokenProvider,
     maxConcurrent: config.maxConcurrent,
     adtSemaphore,
+    maxDataPreviewResponseBytes: config.maxDataPreviewResponseBytes,
+    maxConcurrentDataResults: config.maxConcurrentDataResults,
+    dataResultSemaphore,
     safety: {
       allowWrites: config.allowWrites,
       allowDataPreview: config.allowDataPreview,
       allowFreeSQL: config.allowFreeSQL,
       allowTransportWrites: config.allowTransportWrites,
       allowGitWrites: config.allowGitWrites,
+      blockedDataSources: [...config.blockedDataSources],
       allowedPackages: config.allowedPackages,
       allowedTransports: config.allowedTransports,
       denyActions: config.denyActions,
@@ -296,6 +307,7 @@ async function createPerUserClient(
   btpProxy: BTPProxyConfig | undefined,
   userJwt: string,
   adtSemaphore?: Semaphore,
+  dataResultSemaphore?: Semaphore,
   multiTarget?: { target: TargetDescriptor; instanceConfig: ServerConfig },
 ): Promise<AdtClient> {
   const { createConnectivityProxy, lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
@@ -328,7 +340,14 @@ async function createPerUserClient(
     ? (createConnectivityProxy(btpConfig, destination.CloudConnectorLocationId, authLibLogger) ?? undefined)
     : selectPerUserProxy(destination, btpProxy);
 
-  const adtConfig = buildAdtConfig(config, effectiveProxy, undefined, { perUser: true }, adtSemaphore);
+  const adtConfig = buildAdtConfig(
+    config,
+    effectiveProxy,
+    undefined,
+    { perUser: true },
+    adtSemaphore,
+    dataResultSemaphore,
+  );
   // Override URL from destination (in case it differs from startup-resolved URL)
   adtConfig.baseUrl = resolvedUrl;
   // Set per-user auth for principal propagation.
@@ -415,7 +434,7 @@ export function applyPerUserAuthTokens(
  * exception: every caller uses the same reviewed SAP identity, so authorization-limited
  * evidence is definitive for that credential generation and may be cached.
  */
-async function probeClientFeatures(
+export async function probeClientFeatures(
   config: ServerConfig,
   client: AdtClient,
   btpConfig?: BTPConfig,
@@ -480,7 +499,10 @@ async function probeClientFeatures(
         'installed and you can ignore this. See docs/sap-trial-setup.md (423 troubleshooting).',
     );
   }
-  setCachedDiscovery(features.discoveryMap ?? new Map(), featureKey);
+  const discoveryMap = features.discoveryMap ?? new Map();
+  setCachedDiscovery(discoveryMap, featureKey);
+  // Direct calls immediately reuse the probed client, so install its evidence too.
+  client.http.setDiscoveryMap(discoveryMap);
 }
 
 export function runStartupProbe(
@@ -512,6 +534,23 @@ export interface StartupAuthPreflightResult {
 }
 
 const STARTUP_AUTH_ENDPOINT = '/sap/bc/adt/core/discovery';
+
+function skippedStartupAuthPreflight(config: ServerConfig): StartupAuthPreflightResult | undefined {
+  const reason = config.ppEnabled
+    ? 'Skipped startup auth preflight: principal propagation mode is enabled (per-user auth at runtime).'
+    : !config.url
+      ? 'Skipped startup auth preflight: SAP_URL is not configured.'
+      : undefined;
+  if (!reason) return undefined;
+  logger.info(reason);
+  return {
+    status: 'skipped',
+    blocking: false,
+    endpoint: STARTUP_AUTH_ENDPOINT,
+    checkedAt: new Date().toISOString(),
+    reason,
+  };
+}
 
 function buildStartupAuthFailureReason(statusCode: number, config: ServerConfig): string {
   if (statusCode === 401) {
@@ -546,41 +585,30 @@ function buildStartupAuthFailureReason(statusCode: number, config: ServerConfig)
   return `Startup auth preflight failed with HTTP ${statusCode}.`;
 }
 
-/**
- * Run a startup auth preflight for shared-credential mode.
- *
- * Goal: detect invalid technical/shared credentials once at startup and avoid
- * repeated failed SAP requests from the first LLM tool call onward.
- *
- * Behavior:
- * - Never throws (server must stay up)
- * - PP mode and no-URL mode are skipped (non-blocking)
- * - 401/403 are blocking failures
- * - Network/other failures are inconclusive (non-blocking)
- */
+/** Shared-auth preflight: 401/403 block; PP/no-URL skip; other failures are non-blocking. */
 export async function runStartupAuthPreflight(
   config: ServerConfig,
   btpProxy?: BTPProxyConfig,
   bearerTokenProvider?: () => Promise<string>,
   adtSemaphore?: Semaphore,
 ): Promise<StartupAuthPreflightResult> {
+  const skipped = skippedStartupAuthPreflight(config);
+  if (skipped) return skipped;
+  const client = new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
+  return runStartupAuthPreflightWithClient(config, client);
+}
+
+/** Existing-client form retains authentication state for direct calls. */
+export async function runStartupAuthPreflightWithClient(
+  config: ServerConfig,
+  client: AdtClient,
+): Promise<StartupAuthPreflightResult> {
+  const skipped = skippedStartupAuthPreflight(config);
+  if (skipped) return skipped;
   const checkedAt = new Date().toISOString();
   const endpoint = STARTUP_AUTH_ENDPOINT;
 
-  if (config.ppEnabled) {
-    const reason = 'Skipped startup auth preflight: principal propagation mode is enabled (per-user auth at runtime).';
-    logger.info(reason);
-    return { status: 'skipped', blocking: false, endpoint, checkedAt, reason };
-  }
-
-  if (!config.url) {
-    const reason = 'Skipped startup auth preflight: SAP_URL is not configured.';
-    logger.info(reason);
-    return { status: 'skipped', blocking: false, endpoint, checkedAt, reason };
-  }
-
   try {
-    const client = new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
     await client.http.get(endpoint);
     const reason = 'Startup auth preflight succeeded for shared SAP credentials.';
     logger.info(reason, { endpoint });
@@ -627,28 +655,6 @@ export function formatStartupAuthPreflightToolError(preflight: StartupAuthPrefli
   );
 }
 
-/** Sent in the MCP initialize response. Clients that defer tool loading (Claude Code enables tool
- *  search by default) use this to decide whether to look for ARC-1's tools at all, so it names the
- *  domain first. Keep under 2 KB — Claude Code truncates server instructions silently. */
-const SERVER_INSTRUCTIONS = [
-  'ARC-1 gives this SAP ABAP system a read/write interface over SAP ADT: ABAP source (classes,',
-  'programs, function modules, includes), CDS/RAP artifacts (DDLS, BDEF, SRVD, SRVB), DDIC objects',
-  '(tables, domains, data elements), transports, abapGit/gCTS, ATC and ABAP Unit, SQL/table data,',
-  'and syntax/activation. Reach for it for any question about ABAP objects, CDS views, transport',
-  'requests, or dumps/traces on this system.',
-  '',
-  'Token-cheap paths, in order — a bare full read is the expensive last resort:',
-  '- Understanding an object: SAPContext(action="deps") returns compressed contracts, not source',
-  '  (measured 14-264x smaller than SAPRead on the same class).',
-  '- One method: SAPRead(type="CLAS", method="name"). Survey signatures: method="*".',
-  '- Finding a string: SAPRead(grep="pattern") instead of reading the whole object.',
-  '- Blast radius of a CDS change: SAPContext(action="impact").',
-  'Where-used, usages, impact and transport lists are paged: they report a complete "total"/summary',
-  'alongside a capped page — trust that count, not the page length. Other list actions are unpaged.',
-  '',
-  'One SAP system per instance: there is no system/destination selector, by design.',
-].join('\n');
-
 export interface CreateServerOptions {
   btpProxy?: BTPProxyConfig;
   btpConfig?: BTPConfig;
@@ -657,6 +663,7 @@ export interface CreateServerOptions {
   startupProbePromise?: Promise<void>;
   startupAuthPreflightPromise?: Promise<StartupAuthPreflightResult>;
   adtSemaphore?: Semaphore;
+  dataResultSemaphore?: Semaphore;
   mcpRateLimiter?: McpRateLimiter;
   multiTarget?: MultiTargetServerOptions;
 }
@@ -670,6 +677,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     startupProbePromise,
     startupAuthPreflightPromise,
     adtSemaphore,
+    dataResultSemaphore,
     mcpRateLimiter,
     multiTarget,
   } = options;
@@ -677,7 +685,9 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     { name: config.serverName, version: VERSION },
     {
       capabilities: { tools: { listChanged: true } },
-      instructions: multiTarget ? buildMultiTargetServerInstructions(multiTarget) : SERVER_INSTRUCTIONS,
+      instructions: multiTarget
+        ? buildMultiTargetServerInstructions(multiTarget)
+        : buildServerInstructions(config.systemLabel),
     },
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
@@ -687,7 +697,9 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   // time) share the same Layer 3 concurrency cap.
   const defaultClient = multiTarget
     ? undefined
-    : new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore));
+    : new AdtClient(
+        buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
+      );
 
   // Cookie-auth preflight propagation: when startup preflight returned a non-blocking
   // 401 in SAP_COOKIE_FILE mode, the throwaway preflight client marked itself stale —
@@ -872,6 +884,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         multiTargetMcpRateLimitConsumed ? undefined : mcpRateLimiter,
         requestId,
         postDispatchResult,
+        extra.signal,
       );
       return { ...result } as Record<string, unknown>;
     };
@@ -888,7 +901,8 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         clientId: extra.authInfo?.clientId,
         toolName,
         multiError,
-        buildClientConfig: (proxy) => buildAdtConfig(activeConfig, proxy, undefined, undefined, adtSemaphore),
+        buildClientConfig: (proxy) =>
+          buildAdtConfig(activeConfig, proxy, undefined, undefined, adtSemaphore, dataResultSemaphore),
         dispatch: (basicClient, postDispatchResult) => dispatchWithClient(basicClient, false, postDispatchResult),
       });
     }
@@ -930,6 +944,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           btpProxy,
           token,
           adtSemaphore,
+          dataResultSemaphore,
           selectedTarget
             ? { target: selectedTarget, instanceConfig: multiTarget?.instanceConfig ?? config }
             : undefined,
@@ -1084,6 +1099,7 @@ export async function createAndStartServer(
     logger.addSink(uiLogBuffer);
   }
   logAuthSummary(config);
+  logger.info('Runtime memory envelope', runtimeMemoryEnvelope());
 
   // Effective-policy log + contradiction warnings (Task 8 observability).
   // Sources is optional for test callers — defaults to 'default' for all fields.
@@ -1290,12 +1306,11 @@ export async function createAndStartServer(
   const sharedAuthState = config.multiTargetEndpoints ? new MultiTargetSharedAuthState() : undefined;
 
   // ─── Layer 3: shared SAP-bound Semaphore (server-wide cap) ────────
-  // One Semaphore for the whole process. Threaded into the shared startup client AND
-  // every per-user PP client built at request time, so ARC1_MAX_CONCURRENT is a true
-  // server-wide ceiling rather than a per-client one (the latter would multiply the cap
-  // by the number of active PP users — see ADR-0004).
+  // One process-wide instance gates the startup client and every per-user PP client;
+  // a per-client guard would multiply the cap by active users (ADR-0004).
   const adtSemaphore = new Semaphore(config.maxConcurrent);
   logger.info('SAP semaphore', { maxConcurrent: config.maxConcurrent, scope: 'server-wide' });
+  const dataResultSemaphore = createDataResultSemaphore(config);
 
   // ─── Layer 2: per-user MCP tool-call rate limiter ─────────────────
   // Applied inside handleToolCall. Stdio (no authInfo) is exempt — there's no user
@@ -1314,7 +1329,7 @@ export async function createAndStartServer(
     logger.info('Object cache enabled', {
       mode: config.cacheMode,
       sources: stats.sourceCount,
-      depGraphs: stats.contractCount,
+      legacyDepGraphs: stats.contractCount,
     });
   }
 
@@ -1353,6 +1368,7 @@ export async function createAndStartServer(
       startupProbePromise,
       startupAuthPreflightPromise,
       adtSemaphore,
+      dataResultSemaphore,
       mcpRateLimiter,
     });
   const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
@@ -1362,6 +1378,7 @@ export async function createAndStartServer(
           createServer(aggregateConfig, {
             btpConfig,
             adtSemaphore,
+            dataResultSemaphore,
             mcpRateLimiter,
             multiTarget: { mode: 'aggregate', registry, instanceConfig: config, sharedAuthState },
           })
@@ -1467,6 +1484,7 @@ export async function createAndStartServer(
               return createServer(targetConfig, {
                 btpConfig,
                 adtSemaphore,
+                dataResultSemaphore,
                 mcpRateLimiter,
                 multiTarget: { mode: 'pinned', registry, instanceConfig: config, target, sharedAuthState },
               });

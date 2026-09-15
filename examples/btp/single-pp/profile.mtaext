@@ -1,0 +1,25 @@
+# Fictional, conservative profile. Read README.md before copying to mta-overrides.mtaext.
+_schema-version: "3.1"
+ID: arc1-single-pp-example
+extends: arc1-mcp
+modules:
+  - name: arc1-mcp-server
+    properties:
+      SAP_BTP_DESTINATION: "ARC1_QAS_001_STARTUP"
+      SAP_BTP_PP_DESTINATION: "ARC1_QAS_001_PP"
+      SAP_PP_ENABLED: "true"
+      SAP_PP_STRICT: "true"
+      SAP_PP_ALLOW_SHARED_COOKIES: "false"
+      ARC1_MULTI_TARGET_ENDPOINTS: "false"
+      ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "false"
+      ARC1_CACHE: none
+      ARC1_TOOL_MODE: standard
+      ARC1_UI: "off"
+      ARC1_PLUGINS: ""
+      SAP_ALLOW_WRITES: "false"
+      SAP_ALLOW_DATA_PREVIEW: "false"
+      SAP_ALLOW_FREE_SQL: "false"
+      SAP_ALLOW_TRANSPORT_WRITES: "false"
+      SAP_ALLOW_GIT_WRITES: "false"
+      # These profiles do not opt users into analysis/test workloads in SAP.
+      SAP_DENY_ACTIONS: "SAPDiagnose.atc,SAPDiagnose.unittest"

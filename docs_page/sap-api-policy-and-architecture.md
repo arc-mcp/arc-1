@@ -38,6 +38,12 @@ A tool can be exemplary on the first and still unresolved on the second. That is
 is, and where every ADT-based tool is — including `abap-adt-api`, abapGit's ADT bridge, and abaplint's
 ADT integrations.
 
+Keeping the two apart is SAP's own framing, not a convenience of ours. SAP Note 3690029 states that
+"Clean Core and the API Policy are two independent, orthogonal governance dimensions" — clean core
+rates architectural quality and upgrade stability, the API policy governs how SAP's interfaces may be
+used. Concretely: an interface can be perfectly clean-core-compliant and still raise the §2.2.2
+question, and being API-policy compliant does not make an integration upgrade-safe.
+
 ---
 
 ## 2. SAP's recommended architecture, and ARC-1's place in it
@@ -159,6 +165,14 @@ to its conditions, which reads as an endorsed pathway for the MCP layer itself. 
 endorsement extends to the *underlying ADT endpoints* is not something the page addresses — and it is
 exactly the kind of question to put to your SAP contact.
 
+Treat this as a settled SAP position rather than one clause in one PDF. SAP restates the same
+prohibition in customer-facing collateral — the *Clean core integration* white paper (p. 26) lists
+"unendorsed agentic or AI access" among usage patterns prohibited across **all** clean core levels —
+and applies §2.2.2 at the technology level in SAP Note 3690029, which flags JDBC/ODBC as
+"must not be used for systematic/large-scale extraction (API Policy Section 2.2.2)" and marks
+ODP-RFC forbidden outright. None of that changes ARC-1's position; it means the clause is being
+propagated into SAP's operational guidance, so expect your account team to know it.
+
 ### 3.3 No circumvention of API controls (§3)
 
 SAP may monitor usage and throttle, suspend or terminate access for non-compliance. Customers,
@@ -262,6 +276,8 @@ alignment target we are building toward.
 - [Agentic AI & AI Agents](https://architecture.learning.sap.com/docs/ref-arch/98efa0) — the wider SAP agent architecture.
 - [Model Context Protocol in SAP Integration Suite](https://help.sap.com/docs/SAP_INTEGRATION_SUITE/9519789d5664487f8b9cd89eba514477/9eb9239c1b4c458198ca5234d191f8bd.html) — MCP Gateway documentation.
 - [SAP Business Accelerator Hub](https://api.sap.com/) — the register of Published APIs referenced by §1.1.
+- [White paper: Clean core integration](https://www.sap.com/documents/1327955) — restates the §2.2.2 agentic-access prohibition (p. 26) and the clean core / API policy separation (§3.4.4).
+- [SAP Note 3690029](https://me.sap.com/notes/3690029) — *Integration Technologies and Frameworks in Context of Clean Core Integration*. Source of the "two independent, orthogonal governance dimensions" wording and the A–D level table for interface technologies.
 
 - [Creating an ABAP in Eclipse plug-in using the ADT SDK](https://community.sap.com/t5/application-development-and-automation-blog-posts/creating-a-abap-in-eclipse-plug-in-using-the-adt-sdk/ba-p/13130846) — SAP Community, on the SDK SAP published for third-party ADT tooling (§3.1).
 

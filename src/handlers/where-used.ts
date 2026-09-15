@@ -6,7 +6,9 @@ import {
   type ReferenceResult,
   type WhereUsedResult,
 } from '../adt/codeintel.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
+import { internalOperationWarning } from '../adt/internal-data-operations.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
 
@@ -23,6 +25,8 @@ export interface LiveUsageLookup {
   total: number;
   truncated: boolean;
   fallbackUsed: boolean;
+  /** Present when an optional internal lookup was denied and the result may be incomplete. */
+  warning?: string;
 }
 
 /** Match a result's ADT type against a filter: "CLAS" matches "CLAS/OC", "CLAS/OC" matches exactly.
@@ -87,8 +91,9 @@ export async function lookupLiveUsages(
   }
 
   // Kept outside the try: an augment failure must not be mistaken for a missing where-used endpoint.
+  let warning: string | undefined;
   if (!fallbackUsed) {
-    await augmentInterfaceImplementers(client, uri, filter, results as WhereUsedResult[]);
+    warning = await augmentInterfaceImplementers(client, uri, filter, results as WhereUsedResult[]);
   }
 
   const filtered = filter ? results.filter((result) => matchesObjectType(result.type, filter)) : results;
@@ -98,6 +103,7 @@ export async function lookupLiveUsages(
     total: filtered.length,
     truncated: filtered.length > limit,
     fallbackUsed,
+    ...(warning ? { warning } : {}),
   };
 }
 
@@ -106,9 +112,9 @@ async function augmentInterfaceImplementers(
   uri: string,
   objectType: string | undefined,
   results: WhereUsedResult[],
-): Promise<void> {
+): Promise<string | undefined> {
   const intfMatch = uri.match(/\/sap\/bc\/adt\/oo\/interfaces\/([^/?]+)/i);
-  if (!intfMatch || (objectType && !/^CLAS/i.test(objectType))) return;
+  if (!intfMatch || (objectType && !/^CLAS/i.test(objectType))) return undefined;
 
   const interfaceName = decodeURIComponent(intfMatch[1]!).toUpperCase();
   const canFreeSQL = isOperationAllowed(client.safety, OperationType.FreeSQL);
@@ -122,15 +128,33 @@ async function augmentInterfaceImplementers(
         interfaceName,
       );
     } else if (canQuery) {
+      // Structured query rather than getTableContents(sqlFilter): the filtered DDIC preview is a
+      // condition language outside the analyzed subset and is refused whenever the blocklist is
+      // active. The structured form is the supported path and expresses the same restriction.
       implementers = await findInterfaceImplementersViaSeoMetaRel(
-        (_sql, max) => client.getTableContents('SEOMETAREL', max, `REFCLSNAME = '${interfaceName}' AND RELTYPE = '1'`),
+        (_sql, max) =>
+          client.runTableQuery('SEOMETAREL', {
+            columns: ['CLSNAME', 'REFCLSNAME', 'RELTYPE'],
+            where: [
+              { field: 'REFCLSNAME', op: '=', value: interfaceName },
+              { field: 'RELTYPE', op: '=', value: '1' },
+            ],
+            maxRows: max,
+          }),
         interfaceName,
       );
     }
 
     const existingNames = new Set(results.map((result) => result.name?.toUpperCase()).filter(Boolean));
     results.push(...implementers.filter((result) => !existingNames.has(result.name.toUpperCase())));
-  } catch {
-    // Best-effort augmentation: retain the native where-used response when SEOMETAREL is unavailable.
+    return undefined;
+  } catch (error) {
+    // Optional enrichment: the native where-used response is still correct, but the caller must be
+    // TOLD it may be incomplete. A bare catch here would let the model read a short list as
+    // authoritative - the exact silent degradation the internal registry exists to prevent.
+    return internalOperationWarning(
+      'interface_implementers',
+      error instanceof DataSourcePolicyError ? error.code : 'the SEOMETAREL lookup failed',
+    );
   }
 }

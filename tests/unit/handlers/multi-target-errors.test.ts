@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { DataResultScope, DEFAULT_DATA_PREVIEW_RESPONSE_BYTES } from '../../../src/adt/data-result-context.js';
 import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
 import { classifyMultiTargetSapError, handleToolCall } from '../../../src/handlers/dispatch.js';
 import { logger } from '../../../src/server/logger.js';
@@ -158,6 +159,7 @@ describe('multi-target SAP error contract', () => {
     ],
   ])('returns a safe structured envelope for a full %s dispatch failure', async (_kind, failure) => {
     const client = {
+      createDataResultScope: () => new DataResultScope(DEFAULT_DATA_PREVIEW_RESPONSE_BYTES),
       getSystemInfo: async () => {
         throw failure;
       },
@@ -192,6 +194,7 @@ describe('multi-target SAP error contract', () => {
       'Access denied to system npl.example.internal:80. In case this was a valid request, ' +
       'ensure to expose the system correctly in your cloud connector.';
     const client = {
+      createDataResultScope: () => new DataResultScope(DEFAULT_DATA_PREVIEW_RESPONSE_BYTES),
       getSystemInfo: async () => {
         throw new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', responseBody);
       },
@@ -232,6 +235,7 @@ describe('multi-target SAP error contract', () => {
   it('audits an inactive SAP service as unavailable rather than an authentication failure', async () => {
     const auditSpy = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
     const client = {
+      createDataResultScope: () => new DataResultScope(DEFAULT_DATA_PREVIEW_RESPONSE_BYTES),
       getSystemInfo: async () => {
         throw new AdtApiError(
           'Forbidden',

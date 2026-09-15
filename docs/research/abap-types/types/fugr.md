@@ -137,3 +137,22 @@ Eclipse plugin reference (`com.sap.adt.core.apidoc-3.58.1`) confirms `FUGR/FF` a
   - E2E sanity: extend the function-module fixture in `tests/e2e/fixtures.ts` to assert
     that an ADT search returning `FUGR/FF` for the fixture FM, fed back into `SAPRead`,
     round-trips successfully.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### FUGR/F
+
+- Observed object: `SU_USER`; GET `/sap/bc/adt/functions/groups/su_user`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `group:abapFunctionGroup`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/fugr-f.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<group:abapFunctionGroup adtcore:name="SU_USER" adtcore:type="FUGR/F" adtcore:version="active" xmlns:group="http://www.sap.com/adt/functions/groups" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/susr" adtcore:type="DEVC/K" adtcore:name="SUSR"/>
+</group:abapFunctionGroup>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

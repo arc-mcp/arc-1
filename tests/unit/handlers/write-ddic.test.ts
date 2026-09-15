@@ -23,6 +23,27 @@ describe('SAPWrite handler — DDIC writes', () => {
   });
 
   describe('SAPWrite metadata writes (DOMA/DTEL/SRVB)', () => {
+    const mockDtelMetadataWrite = (metadata?: string): string[] => {
+      const putBodies: string[] = [];
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
+        const method = opts?.method ?? 'GET';
+        if (method === 'GET' && metadata !== undefined) {
+          return Promise.resolve(mockResponse(200, metadata, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH0</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (method === 'PUT' && typeof opts?.body === 'string') putBodies.push(opts.body);
+        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+      });
+      return putBodies;
+    };
+
     it('creates DOMA with v2 content type and no source PUT', async () => {
       mockFetch.mockReset();
       const calls: Array<{ method: string; url: string; contentType?: string }> = [];
@@ -87,6 +108,11 @@ describe('SAPWrite handler — DDIC writes', () => {
         dataType: 'CHAR',
         length: 20,
         shortLabel: 'Text',
+        shortLength: 10,
+        mediumLength: 20,
+        longLength: 40,
+        headingLength: 55,
+        deactivateInputHistory: true,
       });
 
       expect(result.isError).toBeUndefined();
@@ -96,28 +122,50 @@ describe('SAPWrite handler — DDIC writes', () => {
       const putCall = calls.find((c) => c.method === 'PUT');
       expect(putCall?.url).toContain('/sap/bc/adt/ddic/dataelements/ZTEXT20');
       expect(putCall?.contentType).toContain('application/vnd.sap.adt.dataelements.v2+xml');
+      expect(createCall?.body).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
+      expect(putCall?.body).toContain('<dtel:mediumFieldLength>20</dtel:mediumFieldLength>');
+      expect(putCall?.body).toContain('<dtel:longFieldLength>40</dtel:longFieldLength>');
+      expect(putCall?.body).toContain('<dtel:headingFieldLength>55</dtel:headingFieldLength>');
+      expect(putCall?.body).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
     });
 
-    it('creates DTEL without labels skips follow-up PUT', async () => {
-      mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
-        calls.push({ method: opts?.method ?? 'GET', url: String(url) });
-        return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
+    it('creates DTEL with an explicit zero length using the follow-up PUT', async () => {
+      const putBodies = mockDtelMetadataWrite();
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'DTEL',
+        name: 'ZZERO',
+        package: '$TMP',
+        typeKind: 'predefinedAbapType',
+        dataType: 'CHAR',
+        length: 1,
+        shortLength: 0,
       });
+
+      expect(result.isError).toBeUndefined();
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('<dtel:shortFieldLength>00</dtel:shortFieldLength>');
+    });
+
+    it('creates DTEL without labels still PUTs so SAP keeps the description', async () => {
+      const putBodies = mockDtelMetadataWrite();
 
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
         type: 'DTEL',
         name: 'ZTEXT_NOLABEL',
         package: '$TMP',
+        description: 'No labels',
         typeKind: 'predefinedAbapType',
         dataType: 'CHAR',
         length: 10,
       });
 
       expect(result.isError).toBeUndefined();
-      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      // SAP's DTEL POST drops the description; only the follow-up PUT stores it.
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('adtcore:description="No labels"');
     });
 
     it('create TTYP returns an error if the post-create lock fails, not a Created message', async () => {
@@ -227,7 +275,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(activationIndex).toBeGreaterThan(putIndex);
     });
 
-    it('batch_create TTYP returns an error if the post-create PUT fails, not a Created summary', async () => {
+    it('batch_create TTYP reports its created shell and failed completion after a PUT failure', async () => {
       mockFetch.mockReset();
       const calls: Array<{ method: string; url: string }> = [];
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
@@ -255,7 +303,14 @@ describe('SAPWrite handler — DDIC writes', () => {
 
       expect(result.isError).toBe(true);
       const message = result.content[0]?.text ?? '';
-      expect(message).toContain('Batch created 0/1 objects');
+      expect(message).toContain('Batch created 1/1 objects');
+      expect(message).toContain('0 completed');
+      expect(JSON.parse(result.content[1].text).batch.results[0]).toMatchObject({
+        creation: 'confirmed',
+        write: 'unknown',
+        activation: 'not_attempted',
+        failedPhase: 'write',
+      });
       expect(message).toContain('TTYP post-create update failed');
       expect(message).toContain('default metadata shell');
       // Recovery guidance must point at the path that actually works (update), not a plain re-create
@@ -387,6 +442,80 @@ describe('SAPWrite handler — DDIC writes', () => {
       );
     });
 
+    // Multi-node KTDs: one <sktd:element> per documentable node, addressed by "## <id>".
+    // The single-element fixture above always takes the single-target fallback, so a
+    // mutant writing every body into elements[0] — the original bug — left this file green.
+    const KTD_LOCK_BODY =
+      '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>KTDLOCK</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+    const ktdB64 = (text: string) => Buffer.from(text, 'utf-8').toString('base64');
+    const KTD_ROOT_ID = 'ZTR_C_PAYMENT_VALUE_DATE';
+    const KTD_FIELD_ID =
+      '/sap/bc/adt/ddic/ddl/sources/ztr_c_payment_value_date/source/main#type=DDLS/DF;name=PaymentValueDate';
+    const twoNodeEnvelope = (rootText: string, fieldText: string) =>
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" ' +
+      `adtcore:name="${KTD_ROOT_ID}" adtcore:type="SKTD/TYP" adtcore:responsible="LEMAIWO">` +
+      '<adtcore:packageRef adtcore:name="ZE_TR"/>' +
+      `<sktd:refObject adtcore:name="${KTD_ROOT_ID}" adtcore:type="DDLS/DF"/>` +
+      `<sktd:element><sktd:id>${KTD_ROOT_ID}</sktd:id><sktd:text>${ktdB64(rootText)}</sktd:text></sktd:element>` +
+      `<sktd:element><sktd:id>${KTD_FIELD_ID}</sktd:id><sktd:text>${ktdB64(fieldText)}</sktd:text></sktd:element>` +
+      '</sktd:docu>';
+    const recordKtdCalls = (envelope: string) => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string | Buffer }) => {
+        const method = opts?.method ?? 'GET';
+        calls.push({ method, url: String(url), body: opts?.body ? String(opts.body) : undefined });
+        if (method === 'POST' && String(url).includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, KTD_LOCK_BODY, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'GET' && String(url).includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, envelope, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      return calls;
+    };
+
+    it('writes each addressed node of a multi-node KTD into ITS <sktd:element>', async () => {
+      const calls = recordKtdCalls(twoNodeEnvelope('old root', 'old field'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'SKTD',
+        name: KTD_ROOT_ID,
+        source: `## ${KTD_ROOT_ID}\n\nnew root\n\n## ${KTD_FIELD_ID}\n\nnew field`,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const putCall = calls.find((c) => c.method === 'PUT');
+      expect(putCall?.body).toContain(`<sktd:id>${KTD_ROOT_ID}</sktd:id><sktd:text>${ktdB64('new root')}</sktd:text>`);
+      expect(putCall?.body).toContain(
+        `<sktd:id>${KTD_FIELD_ID}</sktd:id><sktd:text>${ktdB64('new field')}</sktd:text>`,
+      );
+      expect(putCall?.body).not.toContain(ktdB64('old root'));
+      expect(putCall?.body).not.toContain(ktdB64('old field'));
+      // The whole two-section body must NOT have been Base64'd into node #1.
+      expect(putCall?.body).not.toContain(ktdB64(`## ${KTD_ROOT_ID}\n\nnew root\n\n## ${KTD_FIELD_ID}\n\nnew field`));
+    });
+
+    it('refuses an unaddressed body on a multi-node KTD before taking a lock (no LOCK, no PUT)', async () => {
+      const calls = recordKtdCalls(twoNodeEnvelope('root', 'field'));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'SKTD',
+        name: KTD_ROOT_ID,
+        source: 'Just prose — under the old code this replaced the root and dropped the field node.',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('addresses no node');
+      expect(result.content[0]?.text).toContain(KTD_FIELD_ID);
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(false);
+    });
+
     it('activates SKTD using the lowercased ADT URL in the objectReference', async () => {
       mockFetch.mockReset();
       const calls: Array<{ method: string; url: string; body?: string }> = [];
@@ -457,6 +586,123 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(postCall!.body).toContain('adtcore:type="DDLS/DF"');
       expect(postCall!.body).toContain('adtcore:uri="/sap/bc/adt/ddic/ddl/sources/ztr_c_payment_value_date"');
       expect(postCall!.body).toContain('adtcore:description="Treasury Payment Value Date"');
+    });
+
+    it('SKTD create with a body ARC-1 refuses reports the object as CREATED and points at update', async () => {
+      // The POST runs before the body is validated, so a refused body must not read
+      // like a plain Markdown error — the KTD now exists and a create retry 409s.
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      const created =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" adtcore:name="ZTR_C_PAYMENT_VALUE_DATE">' +
+        '<sktd:element><sktd:id>ZTR_C_PAYMENT_VALUE_DATE</sktd:id><sktd:text/></sktd:element>' +
+        '</sktd:docu>';
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        calls.push({ method, url: String(url) });
+        if (method === 'GET' && String(url).includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, created, { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+        refObjectName: 'ZTR_C_PAYMENT_VALUE_DATE',
+        source: '## /sap/bc/adt/does/not/exist#type=X;name=Y\n\nbody for a node that is not there',
+      });
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
+      expect(text).toContain('does not exist');
+      expect(text).toContain('action="update"');
+      // The collection URL carries sap-client/sap-language, so match the path, not the suffix.
+      const postCall = calls.find((c) => c.method === 'POST' && c.url.includes('/documentation/ktd/documents'));
+      expect(postCall).toBeDefined();
+      expect(postCall?.url).not.toContain('/documents/');
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
+
+    it('SKTD create reports partial success when the post-create envelope read fails', async () => {
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'GET' && urlStr.includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(500, 'post-create read failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+        refObjectName: 'ZTR_C_PAYMENT_VALUE_DATE',
+        source: '# Initial docs',
+      });
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
+      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('verify it with SAPRead');
+      expect(text).toContain('action="update"');
+      expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+    });
+
+    it('SKTD create reports partial success and unlocks when the initial body PUT fails', async () => {
+      const lockBody =
+        '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>KTDLOCK</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL></DATA></asx:values></asx:abap>';
+      const postCreateEnvelope =
+        '<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZTR_C_PAYMENT_VALUE_DATE">' +
+        '<sktd:element><sktd:id>ZTR_C_PAYMENT_VALUE_DATE</sktd:id><sktd:text/></sktd:element>' +
+        '</sktd:docu>';
+      mockFetch.mockReset();
+      const calls: Array<{ method: string; url: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        const method = opts?.method ?? 'GET';
+        const urlStr = String(url);
+        calls.push({ method, url: urlStr });
+        if (method === 'GET' && urlStr.includes('/documentation/ktd/documents/')) {
+          return Promise.resolve(mockResponse(200, postCreateEnvelope, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+          return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
+        }
+        if (method === 'PUT') {
+          return Promise.resolve(mockResponse(500, 'post-create update failed', { 'x-csrf-token': 'T' }));
+        }
+        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'SKTD',
+        name: 'ZTR_C_PAYMENT_VALUE_DATE',
+        package: '$TMP',
+        refObjectType: 'DDLS/DF',
+        refObjectName: 'ZTR_C_PAYMENT_VALUE_DATE',
+        source: '# Initial docs',
+      });
+
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Created SKTD ZTR_C_PAYMENT_VALUE_DATE');
+      expect(text).toContain('documentation body was NOT written');
+      expect(text).toContain('verify it with SAPRead');
+      expect(text).toContain('action="update"');
+      expect(calls.some((call) => call.method === 'PUT')).toBe(true);
+      expect(calls.some((call) => call.method === 'POST' && call.url.includes('_action=UNLOCK'))).toBe(true);
     });
 
     it('SKTD create rejects missing refObjectType with an actionable error', async () => {
@@ -743,10 +989,47 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(putCall?.contentType).toContain('application/vnd.sap.adt.dataelements.v2+xml');
     });
 
+    it('preserves stored DTEL metadata on a description-only update', async () => {
+      const metadata = `<?xml version="1.0" encoding="utf-8"?>
+<blue:wbobj adtcore:name="ZSTATUS" adtcore:description="Existing" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:packageRef adtcore:name="$TMP"/>
+  <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
+    <dtel:typeKind>predefinedAbapType</dtel:typeKind><dtel:typeName></dtel:typeName>
+    <dtel:dataType>CHAR</dtel:dataType><dtel:dataTypeLength>000010</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals>
+    <dtel:shortFieldLabel>Short</dtel:shortFieldLabel><dtel:shortFieldLength>10</dtel:shortFieldLength>
+    <dtel:mediumFieldLabel>Medium</dtel:mediumFieldLabel><dtel:mediumFieldLength>20</dtel:mediumFieldLength>
+    <dtel:longFieldLabel>Long</dtel:longFieldLabel><dtel:longFieldLength>40</dtel:longFieldLength>
+    <dtel:headingFieldLabel>Heading</dtel:headingFieldLabel><dtel:headingFieldLength>55</dtel:headingFieldLength>
+    <dtel:searchHelp>C_T001</dtel:searchHelp><dtel:searchHelpParameter>BUKRS</dtel:searchHelpParameter><dtel:setGetParameter>BUK</dtel:setGetParameter>
+    <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory><dtel:changeDocument>true</dtel:changeDocument><dtel:leftToRightDirection>true</dtel:leftToRightDirection><dtel:deactivateBIDIFiltering>true</dtel:deactivateBIDIFiltering>
+  </dtel:dataElement>
+</blue:wbobj>`;
+      const putBodies = mockDtelMetadataWrite(metadata);
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'DTEL',
+        name: 'ZSTATUS',
+        description: 'Changed description',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('adtcore:description="Changed description"');
+      expect(putBodies[0]).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:mediumFieldLength>20</dtel:mediumFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:longFieldLength>40</dtel:longFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:headingFieldLength>55</dtel:headingFieldLength>');
+      expect(putBodies[0]).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
+      expect(putBodies[0]).toMatch(
+        /searchHelpParameter>BUKRS<.*setGetParameter>BUK<.*changeDocument>true<.*leftToRightDirection>true<.*deactivateBIDIFiltering>true</s,
+      );
+    });
+
     it('batch_create supports DOMA + DTEL with label update PUT', async () => {
       mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+      const calls: Array<{ method: string; url: string; body?: string }> = [];
+      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: unknown }) => {
         const urlStr = String(url);
         // Lock needs a valid lock handle response
         if (urlStr.includes('_action=LOCK')) {
@@ -757,7 +1040,11 @@ describe('SAPWrite handler — DDIC writes', () => {
             }),
           );
         }
-        calls.push({ method: opts?.method ?? 'GET', url: urlStr });
+        calls.push({
+          method: opts?.method ?? 'GET',
+          url: urlStr,
+          body: typeof opts?.body === 'string' ? opts.body : undefined,
+        });
         return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
       });
 
@@ -766,7 +1053,18 @@ describe('SAPWrite handler — DDIC writes', () => {
         package: '$TMP',
         objects: [
           { type: 'DOMA', name: 'ZSTATUS_D', dataType: 'CHAR', length: 1, fixedValues: [{ low: 'A' }] },
-          { type: 'DTEL', name: 'ZSTATUS', typeKind: 'domain', typeName: 'ZSTATUS_D', shortLabel: 'Status' },
+          {
+            type: 'DTEL',
+            name: 'ZSTATUS',
+            typeKind: 'domain',
+            typeName: 'ZSTATUS_D',
+            shortLabel: 'Status',
+            shortLength: 10,
+            mediumLength: 20,
+            longLength: 40,
+            headingLength: 55,
+            deactivateInputHistory: true,
+          },
         ],
       });
 
@@ -776,24 +1074,8 @@ describe('SAPWrite handler — DDIC writes', () => {
       const putCalls = calls.filter((c) => c.method === 'PUT');
       expect(putCalls.length).toBe(1);
       expect(putCalls[0].url).toContain('/sap/bc/adt/ddic/dataelements/ZSTATUS');
-    });
-
-    it('batch_create DTEL without labels skips follow-up PUT', async () => {
-      mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
-        calls.push({ method: opts?.method ?? 'GET', url: String(url) });
-        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
-      });
-
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'batch_create',
-        package: '$TMP',
-        objects: [{ type: 'DTEL', name: 'ZSTATUS', typeKind: 'predefinedAbapType', dataType: 'CHAR', length: 10 }],
-      });
-
-      expect(result.isError).toBeUndefined();
-      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      expect(putCalls[0].body).toContain('<dtel:shortFieldLength>10</dtel:shortFieldLength>');
+      expect(putCalls[0].body).toContain('<dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>');
     });
 
     it('creates SRVB with service binding XML and publish hint', async () => {
@@ -1413,7 +1695,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       }
     });
 
-    it('refuses TABL in batch_create when /tables/ is missing — other entries continue (issue #285)', async () => {
+    it('refuses the whole batch before creation when /tables/ is missing (issue #285)', async () => {
       setCachedFeatures({
         ...featuresOff(),
         abapRelease: '750',
@@ -1445,6 +1727,7 @@ describe('SAPWrite handler — DDIC writes', () => {
         // TABL entry must be marked failed with the SE11 hint
         expect(message).toContain('ZTABL_750_BATCH');
         expect(message).toContain('Transparent table writes via ADT REST are not available');
+        expect(mockFetch).not.toHaveBeenCalled();
       } finally {
         resetCachedFeatures();
       }
@@ -1708,7 +1991,7 @@ describe('SAPWrite handler — DDIC writes', () => {
       }
     });
 
-    it('SAPWrite batch_create: TABL/DS succeeds while TABL/DT is refused on NW 7.50 (mixed batch)', async () => {
+    it('SAPWrite batch_create rejects a mixed batch containing unavailable TABL/DT on NW 7.50', async () => {
       setCachedFeatures({
         ...featuresOff(),
         abapRelease: '750',
@@ -1748,10 +2031,11 @@ describe('SAPWrite handler — DDIC writes', () => {
           ],
         });
         const message = result.content[0]?.text ?? '';
-        // TABL/DS entry succeeds; TABL/DT entry fails with the SE11 hint
+        // TABL/DS remains unattempted; TABL/DT fails preflight with the SE11 hint.
         expect(message).toContain('ZSTR_MIX_BATCH');
         expect(message).toContain('ZTBL_MIX_BATCH');
         expect(message).toContain('Transparent table writes via ADT REST are not available');
+        expect(mockFetch).not.toHaveBeenCalled();
       } finally {
         resetCachedFeatures();
       }

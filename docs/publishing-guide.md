@@ -13,6 +13,7 @@ This document describes how to publish ARC-1 to various MCP server registries, m
 | [Cursor Marketplace](#5-cursor-marketplace) | Manual | Ready | Cursor IDE built-in marketplace |
 | [Claude Desktop Extensions](#6-claude-desktop-extensions) | Yes (CI builds + validates + packs .mcpb) | Ready | Claude Desktop Extensions directory |
 | [Claude Code Plugin](#8-claude-code-plugin--marketplace) | Yes (repo is the marketplace) | Ready | `/plugin install` — MCP server + skills |
+| [Agent Plugin 1.0](#9-agent-plugin-10) | Yes (repo is the package + marketplace) | Ready | Portable MCP server + skills for Copilot, VS Code, Cursor, Codex, and compatible clients |
 
 ## Files in This Repository
 
@@ -20,8 +21,10 @@ This document describes how to publish ARC-1 to various MCP server registries, m
 |------|---------|
 | `server.json` | Official MCP Registry server metadata |
 | `glama.json` | Glama.ai ownership claim |
-| `mcp.json` | Cursor plugin MCP server config |
-| `.cursor-plugin/plugin.json` | Cursor Marketplace plugin manifest |
+| `plugin.json` | Portable Agent Plugins 1.0 manifest |
+| `mcp.json` | Portable Agent Plugins 1.0 MCP server config |
+| `.cursor-plugin/plugin.json` | Cursor-native Marketplace compatibility manifest |
+| `.cursor-plugin/mcp.json` | Cursor-native environment-variable MCP config |
 | `mcpb-manifest.json` | Claude Desktop Extension (MCPB) manifest |
 | `.mcpbignore` | Files excluded from MCPB bundle |
 | `icon.png` | Bundle + listing icon (regenerate with `scripts/assets/generate-icon.py`) |
@@ -182,8 +185,10 @@ Add this to the README for one-click VS Code setup:
 
 ### Files Already in Repo
 
-- `.cursor-plugin/plugin.json` — Plugin manifest
-- `cursor-mcp.json` — MCP server configuration
+- `plugin.json` + `mcp.json` — current Cursor releases load the portable Agent Plugins 1.0 package
+- `.cursor-plugin/plugin.json` + `.cursor-plugin/mcp.json` — compatibility adapter for the
+  Cursor-native plugin format; its MCP path is isolated so the native `${env:...}` syntax cannot
+  invalidate the portable root `mcp.json`
 
 ### Steps
 
@@ -342,7 +347,7 @@ The repository root doubles as a **single-plugin Claude Code marketplace**.
 ### Files Already in Repo
 
 - `.claude-plugin/plugin.json` — plugin manifest. Declares the `arc-1` MCP server **inline**
-  (`mcpServers` → `npx arc-1`) and a `userConfig` that prompts for the SAP connection (password →
+  (`mcpServers` → `npx arc-1@latest`) and a `userConfig` that prompts for the SAP connection (password →
   OS keychain). Skills are the repo's existing `skills/` directory, which Claude Code always
   auto-scans for a plugin — no duplication. Inline `mcpServers` (rather than a root `.mcp.json`)
   avoids auto-starting the server for anyone developing *in* this repo.
@@ -367,6 +372,64 @@ Run `claude plugin validate` first; approved plugins are pinned into `anthropics
 
 ---
 
+## 9. Agent Plugin 1.0
+
+**URL:** https://agent-plugins.org/
+
+**Impact:** High. One portable package supplies the ARC-1 server and all SAP skills to compatible
+agent clients.
+
+The repository root is the package; Agent Plugins 1.0 does not define a `.mcpb`-style archive or a
+central marketplace. Clients install a directory or source repository and may distribute it through
+their own marketplace.
+
+### Portable Files
+
+- `plugin.json` — closed Agent Plugins 1.0 manifest with the canonical schema identifier
+- `mcp.json` — stdio `npx arc-1@latest` server using `${PLUGIN_DATA}` as its working directory
+- `skills/*/SKILL.md` — the existing Agent Skills; no copied or generated skill tree
+
+The portable MCP document deliberately contains no SAP settings. Agent Plugins 1.0 does not define
+secret prompts or credential references, and conforming packages cannot depend on client-specific
+environment expansion. ARC-1 loads `.env` from `${PLUGIN_DATA}`, the standard writable directory
+that clients preserve across plugin updates. See `docs_page/agent-plugin.md` for the user flow.
+
+### Install And Test With Copilot CLI
+
+```bash
+copilot plugin marketplace add arc-mcp/arc-1
+copilot plugin install arc-1@arc-1
+copilot plugin list
+copilot mcp get arc-1 --json --show-secrets
+```
+
+For an isolated local regression, set `COPILOT_HOME` to a temporary directory before those commands.
+The install must report every bundled skill; `mcp get` must show `type: stdio`,
+`command: npx -y arc-1@latest`,
+`sourcePluginSpec: true`, and a resolved `env.PLUGIN_DATA`, with no literal `${user_config.*}` or
+`${env:...}` configuration values. Copilot preserves the portable `${PLUGIN_DATA}` token in the
+diagnostic `cwd` field and expands it when launching the process.
+
+### Release And Validation Guards
+
+- `release-please-config.json` bumps root `plugin.json`, Claude/Cursor manifests, MCPB, and
+  `server.json` together.
+- `tests/unit/plugin/plugin-manifest.test.ts` pins the closed portable fields, schema identifiers,
+  server shape, credential-free MCP config, adapter isolation, release wiring, and version parity.
+- Validate `plugin.json` and `mcp.json` against the canonical 1.0.0 JSON Schemas and validate every
+  skill with the official `skills-ref` library before publishing a format change.
+- Re-run the Claude plugin validator and Copilot marketplace install after any manifest precedence
+  change; both clients consume the same repository through different manifests.
+
+### Distribution Follow-Up
+
+- Verify installation from source in VS Code and Cursor.
+- Submit the root repository to client marketplaces that accept Agent Plugins.
+- For Copilot enterprise rollout, register the marketplace and plugin through managed plugin
+  settings after the public install has been verified.
+
+---
+
 ## Checklist
 
 - [ ] First-time `mcp-publisher publish` (manual, one-time)
@@ -381,4 +444,6 @@ Run `claude plugin validate` first; approved plugins are pinned into `anthropics
 - [ ] Test the Claude Code plugin: `/plugin marketplace add arc-mcp/arc-1` → `/plugin install arc-1@arc-1`
 - [ ] Submit Claude Code plugin (claude.ai/admin-settings/directory/submissions/plugins/new or platform.claude.com/plugins/submit)
 - [ ] Submit Claude Desktop extension at claude.com/partners/mcp
+- [ ] Test the Agent Plugin schemas, skills, Copilot marketplace install, and resolved MCP config
+- [ ] Submit the portable Agent Plugin to relevant client marketplaces
 - [ ] Submit to PulseMCP, MCP.so, Smithery (lower priority)

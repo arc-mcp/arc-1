@@ -3,12 +3,16 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { CachedDepGraph } from '../../../src/cache/cache.js';
 import { hashSource } from '../../../src/cache/cache.js';
 import { SqliteCache } from '../../../src/cache/sqlite.js';
 
 function fileMode(filePath: string): number {
   return fs.statSync(filePath).mode & 0o777;
+}
+
+// Compatibility fixtures use raw SQL: retired aggregate access is not a runtime API.
+function legacyDb(cache: SqliteCache): Database.Database {
+  return (cache as unknown as { db: Database.Database }).db;
 }
 
 describe('SqliteCache', () => {
@@ -205,7 +209,10 @@ describe('SqliteCache', () => {
     try {
       migrated = new SqliteCache(dbPath);
       expect(migrated.getSource('CLAS', 'ZCL_KEEP')?.source).toBe(source);
-      expect(migrated.getDepGraph(sourceHash)?.objectName).toBe('ZCL_KEEP');
+      expect(
+        legacyDb(migrated).prepare('SELECT object_name FROM dep_graphs WHERE source_hash = ?').get(sourceHash),
+      ).toEqual({ object_name: 'ZCL_KEEP' });
+      expect(migrated.stats().contractCount).toBe(1);
       const tables = (migrated as unknown as { db: Database.Database }).db
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
         .all()
@@ -217,7 +224,7 @@ describe('SqliteCache', () => {
 
       reopened = new SqliteCache(dbPath);
       expect(reopened.getSource('CLAS', 'ZCL_KEEP')?.etag).toBe('etag-1');
-      expect(reopened.getDepGraph(sourceHash)).not.toBeNull();
+      expect(reopened.stats().contractCount).toBe(1);
       reopened.close();
       reopened = undefined;
     } finally {
@@ -227,24 +234,13 @@ describe('SqliteCache', () => {
     }
   });
 
-  it('stores and retrieves a dependency graph', () => {
-    const graph: CachedDepGraph = {
-      sourceHash: 'abc123',
-      objectName: 'ZCL_TEST',
-      objectType: 'CLAS',
-      contracts: [{ name: 'ZCL_DEP', type: 'CLAS', methodCount: 3, source: 'compressed', success: true }],
-      cachedAt: new Date().toISOString(),
-    };
-    cache.putDepGraph(graph);
-    const found = cache.getDepGraph('abc123');
-    expect(found).not.toBeNull();
-    expect(found?.objectName).toBe('ZCL_TEST');
-    expect(found?.contracts).toHaveLength(1);
-    expect(found?.contracts[0]?.name).toBe('ZCL_DEP');
-  });
-
-  it('returns null for missing dep graph', () => {
-    expect(cache.getDepGraph('missing_hash')).toBeNull();
+  it('has no aggregate read/write API and never parses legacy payloads for stats', () => {
+    expect(cache).not.toHaveProperty('putDepGraph');
+    expect(cache).not.toHaveProperty('getDepGraph');
+    legacyDb(cache)
+      .prepare('INSERT INTO dep_graphs VALUES (?, ?, ?, ?, ?)')
+      .run('old', 'ZCL_OLD', 'CLAS', 'not valid JSON', '2026-01-01');
+    expect(cache.stats().contractCount).toBe(1);
   });
 
   it('stores and retrieves function group mapping', () => {
@@ -264,13 +260,9 @@ describe('SqliteCache', () => {
   it('returns correct stats including sourceCount and contractCount', () => {
     cache.putSource('CLAS', 'ZCL_A', 'source a');
     cache.putSource('PROG', 'ZTEST', 'source b');
-    cache.putDepGraph({
-      sourceHash: 'h1',
-      objectName: 'ZCL_A',
-      objectType: 'CLAS',
-      contracts: [],
-      cachedAt: '',
-    });
+    legacyDb(cache)
+      .prepare('INSERT INTO dep_graphs VALUES (?, ?, ?, ?, ?)')
+      .run('h1', 'ZCL_A', 'CLAS', '[]', '2026-01-01');
     const stats = cache.stats();
     expect(stats.sourceCount).toBe(2);
     expect(stats.contractCount).toBe(1);
@@ -279,13 +271,9 @@ describe('SqliteCache', () => {
   it('clears all data including sources, dep graphs, and func groups', () => {
     cache.putApi({ name: 'X', type: 'CLAS', releaseState: 'released' });
     cache.putSource('CLAS', 'ZCL_A', 'source');
-    cache.putDepGraph({
-      sourceHash: 'h1',
-      objectName: 'ZCL_A',
-      objectType: 'CLAS',
-      contracts: [],
-      cachedAt: '',
-    });
+    legacyDb(cache)
+      .prepare('INSERT INTO dep_graphs VALUES (?, ?, ?, ?, ?)')
+      .run('h1', 'ZCL_A', 'CLAS', '[]', '2026-01-01');
     cache.putFuncGroup('Z_FUNC', 'Z_GROUP');
     cache.clear();
 

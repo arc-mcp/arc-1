@@ -8,7 +8,9 @@ ARC-1 connects AI assistants (Claude, GitHub Copilot, Copilot Studio, and any MC
 [![CodeQL](https://github.com/arc-mcp/arc-1/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/arc-mcp/arc-1/security/code-scanning)
 [![Dependency Review](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/arc-mcp/arc-1/actions/workflows/dependency-review.yml)
 
-**[Full Documentation](https://docs.arc-1-mcp.com/)** | **[Quickstart](https://docs.arc-1-mcp.com/quickstart/)** | **[Tool Reference](https://docs.arc-1-mcp.com/tools/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
+**[Full Documentation](https://docs.arc-1-mcp.com/)** | **[Quickstart](https://docs.arc-1-mcp.com/quickstart/)** | **[Tool Reference](https://docs.arc-1-mcp.com/tools/)** | **[ARC-1 Updates](https://docs.arc-1-mcp.com/newsletter/)** | **[Blog Series](https://blog.zeis.de/tags/ai-abap-development-series/)**
+
+> 📬 **Stay current with ARC-1** — get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. **[Join ARC-1 Updates →](https://docs.arc-1-mcp.com/newsletter/)**
 
 > 📖 **New: AI ABAP Development blog series** — long-form posts on AI for ABAP, ARC-1 design, and real-world BTP / Copilot Studio / Joule walkthroughs. **[Read the series →](https://blog.zeis.de/tags/ai-abap-development-series/)**
 
@@ -22,6 +24,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Action deny list** — block specific tool actions with `SAP_DENY_ACTIONS` (for example `SAPWrite.delete`), without exposing low-level operation codes to admins
 - **Package restrictions** — limit AI write operations (create, update, delete) to specific packages with wildcards (`--allowed-packages "Z*,$TMP"`). Read operations are not restricted by package — use SAP's native authorization for read-level access control
 - **Data access control (off by default)** — `SAPRead(type=TABLE_CONTENTS)` and `SAPQuery` are gated behind explicit env vars (`SAP_ALLOW_DATA_PREVIEW=true`, `SAP_ALLOW_FREE_SQL=true`). These capabilities can expose application data or run ad-hoc SQL, so they are intentionally separated from the default development-tooling surface. They can be enabled for governed use cases, but should be reviewed against the [SAP API Policy](docs_page/sap-api-policy-and-architecture.md), your SAP agreement, and internal data-governance rules
+- **Experimental data-source emergency brake** — approved data/SQL deployments can set `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002`. ARC-1 then parses each SQL request and resolves active CDS plus replacement-object lineage before execution, denying direct or transitive exact-name matches and failing closed when lineage is unsupported or cannot be proven. The empty default adds no metadata calls. This denylist is defense in depth, not a production allowlist or replacement for SAP authorization/CDS DCL; see [Authorization & Roles](docs_page/authorization.md#experimental-data-source-blocklist).
 - **Transport safety** — transport reads are available for review, while transport mutations require both `--allow-writes` and `--allow-transport-writes`. Update/delete operations auto-use the lock correction number when no explicit transport is provided
 - **Git workflow safety** — Git operations are disabled by default. Enable explicitly with `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES=true`
 - **API-key profiles** — multi-key HTTP deployments can assign `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, or `admin` per key
@@ -29,7 +32,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **HTTP security headers (helmet) on by default** — HSTS, CSP, X-Frame-Options, CORP, X-Content-Type-Options. COOP is deliberately not set so popup-based OAuth flows (Copilot Studio) keep working. No flag to disable.
 - **Opt-in CORS for browser MCP clients** — `ARC1_ALLOWED_ORIGINS` (comma-separated, exact match). Off by default; native MCP clients don't need it
 - **Layered rate limiting** — three layers out of the box: per-IP OAuth and shared MCP HTTP edge limits (Layer 1; MCP inherits the historical derived cap unless `ARC1_MCP_HTTP_RATE_LIMIT` overrides it), per-user MCP quota (Layer 2, **off by default** — multi-user deployments opt in via `ARC1_RATE_LIMIT=60`), and a server-wide SAP-bound semaphore (Layer 3, default 10, **on**). Honors `Retry-After` on 429/503 from SAP / BTP gateways. See the [Rate Limiting Guide](https://docs.arc-1-mcp.com/rate-limiting/)
-- **Supply-chain security** — Dependabot (npm + GitHub Actions + Docker, weekly + same-day security advisories), `npm audit --audit-level=high` PR gate, GitHub Dependency Review on every PR, CodeQL SAST, Trivy container scanning (gating on release, advisory on dev), all third-party GitHub Actions pinned to commit SHA, [`SECURITY.md`](SECURITY.md) policy with severity-tiered SLAs. Image and npm package both ship with [provenance attestations](https://docs.npmjs.com/generating-provenance-statements), and the release workflow publishes a best-effort CycloneDX SBOM for the production npm dependency graph. See the [security guide §13](https://docs.arc-1-mcp.com/security-guide/#13-dependency--supply-chain-security)
+- **Supply-chain security** — Dependabot (npm + GitHub Actions + Docker, weekly + same-day security advisories), `npm audit --audit-level=high` PR gate, GitHub Dependency Review on every PR, CodeQL SAST, Trivy container scanning (scheduled multi-architecture HIGH/CRITICAL gate plus advisory release/dev scans), all third-party GitHub Actions pinned to commit SHA, [`SECURITY.md`](SECURITY.md) policy with severity-tiered SLAs. Image and npm package both ship with [provenance attestations](https://docs.npmjs.com/generating-provenance-statements), and the release workflow publishes a best-effort CycloneDX SBOM for the production npm dependency graph. See the [security guide §13](https://docs.arc-1-mcp.com/security-guide/#13-dependency--supply-chain-security)
 
 ### Authentication
 
@@ -57,13 +60,13 @@ Deploy ARC-1 as a Cloud Foundry app on SAP BTP with full platform integration:
 
 - **12 intent-based tools** instead of 200+ individual tools — keeps tool selection simple, with the schema payload guarded by CI budgets and a hyperfocused 1-tool mode for tight context windows
 - **Method-level read/edit** — read or update a single class method, not the whole source (up to 20x fewer tokens)
-- **Context-first understanding** — `SAPContext(action="deps")` is the first call for "what does this object do?": it returns the object's Knowledge Transfer Document (`SKTD`/`KTD`) when available plus public API contracts of dependencies in one call (7-30x compression)
+- **Focused source and dependency context** — use targeted `SAPRead` for exact implementation behavior. For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)` for available Knowledge Transfer Documents (`SKTD`/`KTD`) and dependency contracts, then compare requirements with source. Without documented requirements, intent is unverified.
 
 ### Built-in Object Caching
 
 - **Server-validated source caching** — every SAP object read is cached in memory (stdio) or SQLite (http-streamable). Repeated reads use `If-None-Match`/ETag conditional GET, so unchanged objects return from cache after SAP confirms `304 Not Modified`.
-- **Dependency graph caching** — `SAPContext` dep resolution keyed by source hash; unchanged objects skip all ADT calls on subsequent runs.
-- **KTD-aware context** — Knowledge Transfer Documents are cached as source entries and composed into `SAPContext(action="deps")` separately from the dependency graph, so cached dependency context can still include revalidated documentation.
+- **Dependency parsing reuse** — unchanged, authorized source can reuse parsed dependencies and contracts in memory. Aggregate dependency graphs are not cached; SAP authorization and source validation still apply.
+- **KTD-aware context** — Knowledge Transfer Documents use the source cache and are revalidated when composed into `SAPContext(action="deps")`.
 - **Live where-used** — `SAPContext(action="usages")` and CDS impact analysis query SAP's current repository index with the caller's identity; no startup repository scan is required.
 - **Active/inactive source views** — `SAPRead` accepts `version="active" | "inactive" | "auto"` and warns when the active source has an unactivated draft.
 - **Write invalidation** — when `SAPWrite` or `SAPActivate` mutates an object, both active and inactive source cache entries are dropped; next read revalidates or fetches fresh source.
@@ -94,7 +97,7 @@ The 12 tools are designed from real LLM interaction feedback:
 | **SAPQuery** | Execute ABAP SQL with table-not-found suggestions and automatic chunking for simple long literal `IN (...)` lists |
 | **SAPTransport** | CTS transport management (list/get/create/release/delete/reassign/release-recursive), transport layer/target lookup, package transport requirement checks, and reverse lookup history (`action="history"`) |
 | **SAPGit** | Git-based ABAP workflows across gCTS and abapGit (list/clone/pull/push/commit/branch/unlink) with backend auto-selection and safety gating (`--allow-git-writes`) |
-| **SAPContext** | Context-first object understanding (`action="deps"`): prepends the object's KTD when available and returns compressed dependency contracts. Also supports reverse dependency lookup (`action="usages"`) and CDS upstream/downstream impact analysis (`action="impact"` for DDLS) |
+| **SAPContext** | Dependency APIs (`action="deps"`): optional KTD plus bounded source-derived contracts, not a complete relationship inventory. Also supports live where-used (`action="usages"`), CDS impact (`action="impact"`), and TABL includes/appends (`action="structure"`) |
 | **SAPLint** | Local ABAP lint (system/release-aware presets, auto-fix, pre-write validation) + ADT PrettyPrint (server-side formatting) |
 | **SAPDiagnose** | Syntax check, ABAP Unit tests, ATC code quality, CDS test-case suggestions, active/inactive object-state comparison, generic ADT quickfix proposals/application deltas, gateway/system message diagnostics, short dumps, profiler traces, and the on-prem authorization trace (`SUAUTHVALTRC`, data-preview gated) |
 | **SAPManage** | Feature probing, cache statistics, package lifecycle/change-package operations, and FLP catalog/group/tile helpers |
@@ -130,6 +133,13 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL. Both are 
 | ---------- | ------- | ------- | ----------- |
 | Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
 | Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Exact source blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Denies exact direct/transitive table or CDS dependencies; active mode is deliberately fail-closed and slower. |
+
+When either capability is enabled, successful data-preview bodies are limited cumulatively per tool
+call (2 MiB by default), and only two data-result calls per process remain admitted through parsing
+and serialization. `SAPQuery.maxRows` is separately clamped to 10,000, but wide rows can reach the
+byte limit much earlier. See [Configuration](docs_page/configuration-reference.md) before tuning
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` or `ARC1_MAX_CONCURRENT_DATA_RESULTS`.
 
 With both flags at their defaults, ARC-1's data/sql rows are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
 
@@ -139,11 +149,24 @@ ARC-1's strategy is to stay close to documented and discoverable ADT behavior, p
 
 From `1.0` onward ARC-1 follows [semantic versioning](https://semver.org/): patch releases fix bugs, minor releases add backward-compatible capability, and breaking changes to the MCP tool surface, configuration, or auth contract bump the major version.
 
-**Experimental, default-off features are excluded from this guarantee until they are promoted** — they are clearly labeled and their surface may still change in a minor release. Today this covers the [multi-target BTP mode](docs_page/multi-target-setup.md) (ADR-0006 / ADR-0007): a mutation-free, read-only exception to the single-target default.
+**Experimental, default-off features are excluded from this guarantee until they are promoted** — they are clearly labeled and their surface may still change in a minor release. Today this covers the [multi-target BTP mode](docs_page/multi-target-setup.md) (ADR-0006 / ADR-0007) and the [data-source blocklist](docs_page/authorization.md#experimental-data-source-blocklist).
 
 What changed per release: the annotated [Release Notes](https://docs.arc-1-mcp.com/release-notes/) give each release its impact and upgrade action; [CHANGELOG.md](CHANGELOG.md) lists every merged PR.
 
 ## Quick Start
+
+**Install as an Agent Plugin** — one portable install for the MCP server and all bundled SAP skills in
+GitHub Copilot, VS Code, Cursor, Codex, and other compatible clients:
+
+```bash
+copilot plugin marketplace add arc-mcp/arc-1
+copilot plugin install arc-1@arc-1
+```
+
+Agent Plugins 1.0 does not define secret prompts, so create the ARC-1 `.env` in the installed
+plugin's persistent data directory before connecting to SAP. See the
+**[Agent Plugin guide](https://docs.arc-1-mcp.com/agent-plugin/)** for client-specific installation,
+safe configuration, and verification.
 
 **Install in Claude** — pick your surface (full guide: [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/)):
 
@@ -186,6 +209,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | Guide | Description |
 |-------|-------------|
 | [Quickstart](https://docs.arc-1-mcp.com/quickstart/) | 5-minute npx + Claude Desktop setup |
+| [Agent Plugin](https://docs.arc-1-mcp.com/agent-plugin/) | Portable server + all skills for Copilot, VS Code, Cursor, Codex, and compatible clients |
 | [Install in Claude](https://docs.arc-1-mcp.com/install-in-claude/) | Desktop `.mcpb`, Claude Code plugin (server + skills), and remote BTP connector |
 | [Local Development](https://docs.arc-1-mcp.com/local-development/) | Full local dev — all install methods, MCP client configs, SSO cookie extractor |
 | [Deployment](https://docs.arc-1-mcp.com/deployment/) | Multi-user deployment — Docker, BTP Cloud Foundry, BTP ABAP |

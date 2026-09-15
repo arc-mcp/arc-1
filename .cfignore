@@ -21,8 +21,7 @@ mta_archives/
 *.mtaext*
 
 # Dev config
-.env
-.env.*
+.env*
 .npmrc
 *service-key*.json
 *.key

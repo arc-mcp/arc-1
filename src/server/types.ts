@@ -32,6 +32,8 @@ export interface ServerConfig {
   client: string;
   language: string;
   insecure: boolean;
+  /** Gzip non-empty ADT data-preview POST bodies for approved WAF compatibility. */
+  gzipDataPreviewBody: boolean;
 
   // --- Cookie Authentication ---
   cookieFile?: string;
@@ -41,6 +43,8 @@ export interface ServerConfig {
   transport: TransportType;
   httpAddr: string;
   serverName: string;
+  /** Human-readable single-target label prepended to model-facing MCP instructions. */
+  systemLabel: string;
 
   // --- Read-only Admin UI ---
   /** Read-only inspection UI: off (default), local sidecar server, or mounted web routes on the HTTP server. */
@@ -56,6 +60,8 @@ export interface ServerConfig {
   allowFreeSQL: boolean;
   allowTransportWrites: boolean;
   allowGitWrites: boolean;
+  /** Experimental exact-name denylist applied to every SQL/data-preview source and live CDS lineage. */
+  blockedDataSources: string[];
   allowedPackages: string[];
   allowedTransports: string[];
   /** Resolved deny-action patterns from SAP_DENY_ACTIONS (parsed + validated at startup). */
@@ -204,6 +210,10 @@ export interface ServerConfig {
    *  enforces the cap across all per-user clients — not `maxConcurrent` per user.
    *  See docs/adr/0004-layered-rate-limiting.md (Layer 3). */
   maxConcurrent: number;
+  /** Cumulative decompressed data-preview response bytes per MCP tool call (default: 2 MiB). */
+  maxDataPreviewResponseBytes: number;
+  /** Concurrent admitted data-result calls across all users and targets (default: 2). */
+  maxConcurrentDataResults: number;
 
   // --- Rate limiting (Layer 1 + Layer 2) ---
   /** Per-IP cap on OAuth endpoints (`/register`, `/authorize`, `/token`, `/revoke`) in
@@ -249,9 +259,11 @@ export const DEFAULT_CONFIG: ServerConfig = {
   client: '100',
   language: 'EN',
   insecure: false,
+  gzipDataPreviewBody: false,
   transport: 'stdio',
   httpAddr: '0.0.0.0:8080',
   serverName: 'arc-1',
+  systemLabel: '',
   uiMode: 'off',
   uiAddr: '127.0.0.1:8711',
   uiOpen: false,
@@ -260,6 +272,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   allowFreeSQL: false,
   allowTransportWrites: false,
   allowGitWrites: false,
+  blockedDataSources: [],
   allowedPackages: ['$TMP'],
   allowedTransports: [],
   denyActions: [],
@@ -295,6 +308,8 @@ export const DEFAULT_CONFIG: ServerConfig = {
   cacheMode: 'auto',
   cacheFile: '.arc1-cache.db',
   maxConcurrent: 10,
+  maxDataPreviewResponseBytes: 2 * 1024 * 1024,
+  maxConcurrentDataResults: 2,
   authRateLimit: 20,
   mcpHttpRateLimit: undefined,
   rateLimit: 0, // Layer 2 disabled by default — operators opt in (see ADR-0004)

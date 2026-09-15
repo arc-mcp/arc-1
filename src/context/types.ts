@@ -58,13 +58,13 @@ export interface ContextResult {
   objectName: string;
   /** Target object type */
   objectType: string;
-  /** Dependencies found in source */
+  /** Root-source dependency candidates after filtering */
   depsFound: number;
-  /** Dependencies resolved (contracts fetched) */
+  /** Contracts resolved across all explored levels */
   depsResolved: number;
-  /** Dependencies filtered (SAP standard, self-refs, built-ins) */
+  /** Root candidates not fetched; excludes failed attempts and deeper unexpanded work */
   depsFiltered: number;
-  /** Dependencies that failed to resolve */
+  /** Failed source-resolution attempts across all explored levels */
   depsFailed: number;
   /** Total lines in output */
   totalLines: number;

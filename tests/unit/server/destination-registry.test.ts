@@ -60,13 +60,28 @@ describe('DestinationRegistry', () => {
       authentication: 'PrincipalPropagation',
       identity: 'per-user',
     });
-    expect(targetSafety(registry.targets[0])).toMatchObject({
+    expect(targetSafety(registry.targets[0], [])).toMatchObject({
       allowWrites: false,
       allowDataPreview: true,
       allowFreeSQL: false,
       allowTransportWrites: false,
       allowGitWrites: false,
     });
+  });
+
+  // The instance-wide blocklist is a required input, so a target can never be built without it.
+  // Previously multiTargetSafety() returned [] and was correct only because its single caller
+  // overrode the value afterwards.
+  it('copies the instance-wide blocklist into every target and lets no target weaken it', () => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([destination({ arcProperties: { 'arc1.enabled': 'true', 'arc1.allow_data_preview': 'true' } })]),
+      { ...DEFAULT_CONFIG, allowDataPreview: true },
+    );
+    const safety = targetSafety(registry.targets[0], ['USR02', 'PA0002']);
+    expect(safety.blockedDataSources).toEqual(['USR02', 'PA0002']);
+    // Defensive copy: mutating the result must not corrupt another target's ceiling.
+    safety.blockedDataSources.push('SCARR');
+    expect(targetSafety(registry.targets[0], ['USR02', 'PA0002']).blockedDataSources).toEqual(['USR02', 'PA0002']);
   });
 
   it('uses an optional route alias without changing the real SAP SID or client', () => {

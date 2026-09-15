@@ -5,6 +5,9 @@
 
 ## What ships
 
+> NOTE (2026-08-19): the "system default is what an empty `checkVariant` runs" premise was disproven —
+> see `docs/research/2026-08-19-atc-default-check-variant.md`.
+
 `SAPDiagnose action=atc_variants` → text result listing the system default check variant + the
 available variants (name + description). Closes the "LLM must guess the `variant` string" gap for
 `SAPDiagnose action=atc`. Read-only. Mirrors adt-ls's own `list_atc_variants` tool.

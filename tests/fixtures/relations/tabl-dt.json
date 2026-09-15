@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/ddic/tables/zabapgit",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "60e74b4571d42be1747a42b715e623191e8ec7b17ca57936b864cba1491f092e",
+    "networkSha256": "f8cabd671165aaa08d6c3e68eeab187dc242f88d654e7deebc554264871e5a87",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 3,
+    "observedEdges": 2
+  },
+  "type": "TABL",
+  "native": "TABL/DT",
+  "name": "ZABAPGIT",
+  "uri": "/sap/bc/adt/ddic/tables/zabapgit",
+  "metadataRootQName": "blue:blueSource",
+  "context": "WUL",
+  "metadataXml": "<blue:blueSource adtcore:name=\"ZABAPGIT\" adtcore:type=\"TABL/DT\" adtcore:version=\"active\" xmlns:blue=\"http://www.sap.com/wbobj/blue\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%24tmp\" adtcore:type=\"DEVC/K\" adtcore:name=\"$TMP\"/>\n</blue:blueSource>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>WUL</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/lockobjects/sources/ezabapgit\" adtcore:type=\"ENQU/DL\" adtcore:name=\"EZABAPGIT\" adtcore:packageName=\"$TMP\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/tables/zabapgit\" adtcore:type=\"TABL/DT\" adtcore:name=\"ZABAPGIT\" adtcore:packageName=\"$TMP\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/ddic/tables/zabapgit</oro:object1><oro:object2>/sap/bc/adt/ddic/lockobjects/sources/ezabapgit</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

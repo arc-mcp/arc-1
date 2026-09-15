@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -49,6 +49,13 @@
     }
   ],
   "files": {
-    "includes": ["src/**", "tests/**", "bin/**", "!tests/fixtures/tool-definitions"]
+    "includes": [
+      "src/**",
+      "tests/**",
+      "bin/**",
+      "scripts/smoke-live-relations.ts",
+      "scripts/bench-context-parsing.ts",
+      "!tests/fixtures/tool-definitions"
+    ]
   }
 }

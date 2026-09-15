@@ -350,28 +350,63 @@ export function detectSystemType(
 /**
  * Probe text search (source_code) availability with a real request.
  *
- * Unlike HEAD-based feature probes, this does a real GET with a query
- * to detect auth, SICF, and framework errors that HEAD doesn't surface.
+ * Unlike HEAD-based feature probes, this does a real GET to detect auth,
+ * SICF, and framework errors that HEAD doesn't surface.
+ *
+ * It hits the dedicated `textsearch/support` sub-resource rather than running
+ * an actual search: it answers the same question, costs no repository scan
+ * (measured ~300 ms vs. seconds for a real query), and cannot be mistaken for
+ * a search that legitimately found nothing. The `db` selector is part of the
+ * advertised support template; an explicit empty value asks about source search.
  */
 export async function probeTextSearch(client: AdtHttpClient): Promise<{ available: boolean; reason?: string }> {
   try {
-    await client.get(
-      '/sap/bc/adt/repository/informationsystem/textSearch?searchString=SY-SUBRC&maxResults=1',
-      undefined,
-      {
-        probe: true,
-      },
-    );
+    await client.get('/sap/bc/adt/repository/informationsystem/textsearch/support?db=', undefined, {
+      probe: true,
+    });
     return { available: true };
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'statusCode' in err) {
-      return classifyTextSearchError((err as { statusCode: number }).statusCode);
+      const apiError = err as { statusCode: number; responseBody?: unknown };
+      return classifyTextSearchError(
+        apiError.statusCode,
+        typeof apiError.responseBody === 'string' ? apiError.responseBody : undefined,
+      );
     }
-    return { available: false, reason: 'Network error — cannot reach the textSearch endpoint.' };
+    return { available: false, reason: 'Network error — cannot reach the textsearch endpoint.' };
   }
 }
 
-export function classifyTextSearchError(statusCode: number): { available: boolean; reason?: string } {
+/** The text-search support resource uses 403 for two different outcomes:
+ *
+ * - a real authorization failure; and
+ * - the stable SAP backend response SADT_REST/020 ("The action is not supported").
+ *
+ * SAP ADT's own `AdtRisTextSearchService.isSupported()` catches the latter as
+ * `ResourceForbiddenException` and returns false. Preserve that distinction so
+ * users are not sent to SU53/PFCG for a feature that is disabled server-side. */
+function isUnsupportedTextSearchResponse(statusCode: number, responseBody?: string): boolean {
+  if (statusCode !== 403 || !responseBody) return false;
+  const properties = AdtApiError.extractProperties(responseBody);
+  const messageId = (properties['T100KEY-ID'] ?? properties['T100KEY-MSGID'] ?? '').toUpperCase();
+  const messageNumber = properties['T100KEY-NO'] ?? properties['T100KEY-MSGNO'] ?? '';
+  return (
+    (messageId === 'SADT_REST' && messageNumber.padStart(3, '0') === '020') ||
+    /\bthe action is not supported\b/i.test(responseBody)
+  );
+}
+
+export function classifyTextSearchError(
+  statusCode: number,
+  responseBody?: string,
+): { available: boolean; reason?: string } {
+  if (isUnsupportedTextSearchResponse(statusCode, responseBody)) {
+    return {
+      available: false,
+      reason: 'Source code search is not supported by this SAP backend (SADT_REST 020).',
+    };
+  }
+
   switch (statusCode) {
     case 401:
     case 403:
@@ -383,14 +418,16 @@ export function classifyTextSearchError(statusCode: number): { available: boolea
       return {
         available: false,
         reason:
-          'textSearch ICF service not activated — activate /sap/bc/adt/repository/informationsystem/textSearch in SICF.',
+          'The textsearch endpoint is not available on this system — ADT answered "No suitable resource found". ' +
+          'This is the generic reply for any URI the ADT handler does not map, so confirm the collection is ' +
+          'missing from /sap/bc/adt/discovery before asking Basis to activate anything in SICF.',
       };
     case 500:
       return { available: false, reason: 'Search framework error (component BC-DWB-AIE) — check SAP Note 3605050.' };
     case 501:
       return { available: false, reason: 'Not implemented — source code search requires SAP_BASIS >= 7.51.' };
     default:
-      return { available: false, reason: `textSearch returned HTTP ${statusCode}.` };
+      return { available: false, reason: `textsearch returned HTTP ${statusCode}.` };
   }
 }
 

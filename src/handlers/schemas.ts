@@ -14,10 +14,22 @@
  */
 
 import { z } from 'zod';
+import {
+  ATC_BATCH_MAX_OBJECTS,
+  ATC_BATCH_NAME_MAX_LENGTH,
+  ATC_BATCH_NAME_PATTERN,
+  ATC_BATCH_TYPES,
+} from '../adt/atc-batch.js';
+import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
+import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
+import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
+import { LiveRelationsInput, relationNumber } from './relation-input.js';
 import {
+  ATC_BATCH_TYPES_BTP,
   SAPCONTEXT_TYPES_BTP,
   SAPCONTEXT_TYPES_ONPREM,
   SAPREAD_TYPES_BTP,
@@ -25,6 +37,7 @@ import {
   SAPWRITE_TYPES_BTP,
   SAPWRITE_TYPES_ONPREM,
 } from './tool-registry.js';
+import { BATCH_CREATE_MAX_OBJECTS } from './write/batch-results.js';
 
 // Re-exported so tests/unit/handlers/schemas.test.ts can assert the write-type matrix against
 // the single source of truth. The lists themselves live in tool-registry.ts.
@@ -63,7 +76,6 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 // Kept separate from SAPREAD_CLAS_INCLUDES so VERSIONS (which shares that list) stays strict.
 const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
-
 function validateSapReadInput(
   input: { type: string; name?: string; action?: string; include?: string; versionUri?: string; sqlFilter?: string },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
@@ -96,6 +108,17 @@ function validateSapReadInput(
       });
     }
 
+    if (
+      input.type === 'TEXT_ELEMENTS' &&
+      !SAPREAD_TEXT_ELEMENT_INCLUDES.includes(include as (typeof SAPREAD_TEXT_ELEMENT_INCLUDES)[number])
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['include'],
+        message: `Invalid include value "${input.include}" for type TEXT_ELEMENTS. Valid values: ${SAPREAD_TEXT_ELEMENT_INCLUDES.join(', ')}`,
+      });
+    }
+
     if (input.type === 'DDLS' && !SAPREAD_DDLS_INCLUDES.includes(include as (typeof SAPREAD_DDLS_INCLUDES)[number])) {
       ctx.addIssue({
         code: 'custom',
@@ -115,11 +138,12 @@ function validateSapReadInput(
       });
       return;
     }
-    if (!versionUri.startsWith('/sap/bc/adt/')) {
+    if (!canonicalRevisionSourcePath(versionUri)) {
       ctx.addIssue({
         code: 'custom',
         path: ['versionUri'],
-        message: 'VERSION_SOURCE versionUri must start with /sap/bc/adt/.',
+        message:
+          'VERSION_SOURCE versionUri must be a canonical source URI under /sap/bc/adt/ from a VERSIONS response.',
       });
     }
   }
@@ -185,7 +209,9 @@ export const SAPReadSchema = z
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured']).optional(),
-    version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
+    // Keep omission observable: source handlers still default it to active, while DTEL
+    // uses SAP's version-less developer view for read-after-write consistency.
+    version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
@@ -222,7 +248,8 @@ export const SAPReadSchemaBtp = z
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     format: z.enum(['text', 'structured']).optional(),
-    version: z.enum(['active', 'inactive', 'auto']).optional().default('active'),
+    // Keep this aligned with the on-prem schema; the handler owns the per-type default.
+    version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),
     /** For type=DEVC: max number of objects to list. Default 200, clamped to [1, 1000]. */
@@ -247,7 +274,7 @@ export const SAPSearchSchema = z
     query: z.string().optional(),
     maxResults: z.coerce.number().optional(),
     searchType: z.enum(['object', 'source_code', 'tadir_lookup']).optional(),
-    objectType: z.string().optional(),
+    objectType: z.string().max(64).optional(),
     objectTypes: z.array(z.string()).optional(),
     packageName: z.string().optional(),
     names: z.array(z.string()).optional(),
@@ -289,7 +316,7 @@ export const SAPSearchSchemaNoSource = z
     query: z.string().optional(),
     maxResults: z.coerce.number().optional(),
     searchType: z.enum(['object', 'tadir_lookup']).optional(),
-    objectType: z.string().optional(),
+    objectType: z.string().max(64).optional(),
     objectTypes: z.array(z.string()).optional(),
     names: z.array(z.string()).optional(),
     source: z
@@ -351,6 +378,12 @@ const messageClassMessageSchema = z.object({
 
 const functionProcessingTypeSchema = z.enum(FUNCTION_PROCESSING_TYPES);
 const functionUpdateTaskKindSchema = z.enum(FUNCTION_UPDATE_TASK_KINDS);
+const ktdShortTextSchema = z.object({
+  node: z.string().trim().min(1),
+  // Length is enforced after the XML helper normalizes this single-line value.
+  // A raw max here would reject valid input containing collapsible whitespace.
+  text: z.string(),
+});
 
 /**
  * Actions that may target a CLAS local include (CCDEF/CCIMP/macros/testclasses).
@@ -370,6 +403,7 @@ function validateSapWriteInput(
     include?: string;
     processingType?: string;
     updateTaskKind?: string;
+    shortTexts?: unknown[];
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -390,6 +424,23 @@ function validateSapWriteInput(
         code: 'custom',
         path: ['include'],
         message: 'SAPWrite include is only supported for type="CLAS".',
+      });
+    }
+  }
+
+  if (input.shortTexts !== undefined && input.shortTexts.length > 0) {
+    if (input.type !== 'SKTD') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shortTexts'],
+        message: 'shortTexts is only supported for type="SKTD" (alias "KTD").',
+      });
+    }
+    if (input.action !== 'update' && input.action !== 'create') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shortTexts'],
+        message: 'shortTexts is only supported with action="update" or action="create".',
       });
     }
   }
@@ -454,6 +505,11 @@ const fmParameterSchema = z.object({
   optional: looseOptionalBoolean,
 });
 
+const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
+const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();
+const dtelLongLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.long).optional();
+const dtelHeadingLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.heading).optional();
+
 const batchObjectSchemaOnprem = z
   .object({
     type: z.enum(SAPWRITE_TYPES_ONPREM),
@@ -478,13 +534,18 @@ const batchObjectSchemaOnprem = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
@@ -523,13 +584,18 @@ const batchObjectSchemaBtp = z.object({
   typeName: z.string().optional(),
   domainName: z.string().optional(),
   shortLabel: z.string().optional(),
+  shortLength: dtelShortLengthSchema,
   mediumLabel: z.string().optional(),
+  mediumLength: dtelMediumLengthSchema,
   longLabel: z.string().optional(),
+  longLength: dtelLongLengthSchema,
   headingLabel: z.string().optional(),
+  headingLength: dtelHeadingLengthSchema,
   searchHelp: z.string().optional(),
   searchHelpParameter: z.string().optional(),
   setGetParameter: z.string().optional(),
   defaultComponentName: z.string().optional(),
+  deactivateInputHistory: looseOptionalBoolean,
   changeDocument: looseOptionalBoolean,
   messages: z.array(messageClassMessageSchema).optional(),
   serviceDefinition: z.string().optional(),
@@ -566,6 +632,8 @@ export const SAPWriteSchema = z
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
+    /** For action="edit_text_symbols": which textpool subobject to write. Defaults to symbols. */
+    textPart: z.enum(SAPREAD_TEXT_ELEMENT_INCLUDES).optional(),
     method: z.string().optional(),
     /** For action="edit_unit": FORM or MODULE name to replace. */
     unit: z.string().optional(),
@@ -602,13 +670,18 @@ export const SAPWriteSchema = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
@@ -622,6 +695,7 @@ export const SAPWriteSchema = z
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
+    shortTexts: z.array(ktdShortTextSchema).optional(),
     bdefName: z.string().optional(),
     autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),
@@ -641,7 +715,7 @@ export const SAPWriteSchema = z
      * splices it into the FM source body. Backward-compatible: when omitted, the existing
      * source-only path runs unchanged. */
     parameters: z.array(fmParameterSchema).optional(),
-    objects: z.array(batchObjectSchemaOnprem).optional(),
+    objects: z.array(batchObjectSchemaOnprem).max(BATCH_CREATE_MAX_OBJECTS).optional(),
   })
   .strict()
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
@@ -698,13 +772,18 @@ export const SAPWriteSchemaBtp = z
     typeName: z.string().optional(),
     domainName: z.string().optional(),
     shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
     mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
     longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
     headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
     searchHelp: z.string().optional(),
     searchHelpParameter: z.string().optional(),
     setGetParameter: z.string().optional(),
     defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
     changeDocument: looseOptionalBoolean,
     messages: z.array(messageClassMessageSchema).optional(),
     serviceDefinition: z.string().optional(),
@@ -718,6 +797,7 @@ export const SAPWriteSchemaBtp = z
     refObjectType: z.string().optional(),
     refObjectName: z.string().optional(),
     refObjectDescription: z.string().optional(),
+    shortTexts: z.array(ktdShortTextSchema).optional(),
     bdefName: z.string().optional(),
     autoApply: looseOptionalBoolean,
     targetAlias: z.string().optional(),
@@ -730,7 +810,7 @@ export const SAPWriteSchemaBtp = z
     /** FUNC structured signature parameters — same shape as on-prem. Harmless on BTP since FUNC write
      * is on-prem-only. */
     parameters: z.array(fmParameterSchema).optional(),
-    objects: z.array(batchObjectSchemaBtp).optional(),
+    objects: z.array(batchObjectSchemaBtp).max(BATCH_CREATE_MAX_OBJECTS).optional(),
   })
   .strict()
   .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
@@ -762,17 +842,28 @@ export const SAPActivateSchema = z
 
 export const SAPNavigateSchema = z
   .object({
-    action: z.enum(['definition', 'references', 'completion', 'hierarchy']),
+    action: z.enum(['definition', 'references', 'completion', 'hierarchy', 'relations']),
     uri: z.string().optional(),
     type: z.string().optional(),
     name: z.string().optional(),
     objectType: z.string().optional(),
-    maxResults: z.coerce.number().optional(),
+    maxResults: relationNumber.optional(),
     line: z.coerce.number().optional(),
     column: z.coerce.number().optional(),
     source: z.string().optional(),
+    direction: z.enum(['incoming', 'outgoing']).optional(),
+    depth: relationNumber.optional(),
+    expandPackages: z.array(z.string()).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.action === 'relations') {
+      const checked = LiveRelationsInput.safeParse(value);
+      if (!checked.success)
+        for (const issue of checked.error.issues)
+          ctx.addIssue({ code: 'custom', path: issue.path, message: issue.message });
+    }
+  });
 
 // ─── SAPLint ────────────────────────────────────────────────────────
 
@@ -804,12 +895,28 @@ const QuickfixAffectedObjectSchema = z.object({
   content: z.string().optional(),
 });
 
+const atcBatchObjectsSchema = (types: readonly string[]) =>
+  z
+    .array(
+      z
+        .object({
+          type: z.enum(types),
+          name: z.string().min(1).max(ATC_BATCH_NAME_MAX_LENGTH).regex(new RegExp(ATC_BATCH_NAME_PATTERN)),
+        })
+        .strict(),
+    )
+    .min(1)
+    .max(ATC_BATCH_MAX_OBJECTS)
+    .optional();
+
 export const SAPDiagnoseSchema = z
   .object({
     action: z.enum([
       'syntax',
       'unittest',
+      'unittest_ci',
       'atc',
+      'atc_ci',
       'atc_variants',
       'cds_testcases',
       'dumps',
@@ -832,6 +939,7 @@ export const SAPDiagnoseSchema = z
     name: z.string().optional(),
     url: z.string().optional(),
     type: z.string().optional(),
+    objects: atcBatchObjectsSchema(ATC_BATCH_TYPES),
     source: z.string().optional(),
     sourceUri: z.string().optional(),
     line: z.coerce.number().optional(),
@@ -852,6 +960,9 @@ export const SAPDiagnoseSchema = z
     sections: z.array(z.string()).optional(),
     includeFullText: looseOptionalBoolean,
     coverage: looseOptionalBoolean,
+    includeSubpackages: looseOptionalBoolean,
+    resultFormat: z.enum(['legacy', 'structured', 'junit']).optional(),
+    timeoutSeconds: z.coerce.number().int().min(1).max(3600).optional(),
     sqlOn: looseOptionalBoolean,
     onlyFailures: looseOptionalBoolean,
     analysis: z.enum(['hitlist', 'statements', 'dbAccesses']).optional(),
@@ -864,8 +975,117 @@ export const SAPDiagnoseSchema = z
     sqlTrace: looseOptionalBoolean,
     aggregate: looseOptionalBoolean,
     description: z.string().optional(),
+    packages: CI_PACKAGES_SCHEMA.optional(),
+    packageTrees: CI_PACKAGES_SCHEMA.optional(),
+    configuration: z.string().min(1).max(128).optional(),
+    failOnSeverity: z.enum(['error', 'warning', 'info']).optional(),
+    includeReportXml: looseOptionalBoolean,
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    const ci = input.action === 'atc_ci' || input.action === 'unittest_ci';
+    if (ci) {
+      const count = (input.packages?.length ?? 0) + (input.packageTrees?.length ?? 0);
+      if (count < 1 || count > 50)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['packages'],
+          message: 'CI actions require 1..50 packages or packageTrees in total.',
+        });
+      const allowed = new Set([
+        'action',
+        'packages',
+        'packageTrees',
+        'timeoutSeconds',
+        'includeReportXml',
+        ...(input.action === 'atc_ci' ? ['variant', 'configuration', 'failOnSeverity'] : []),
+      ]);
+      for (const [key, value] of Object.entries(input))
+        if (value !== undefined && !allowed.has(key))
+          ctx.addIssue({ code: 'custom', path: [key], message: `${key} is not supported for ${input.action}.` });
+      if (input.variant !== undefined && (input.variant.length === 0 || input.variant.length > 128))
+        ctx.addIssue({ code: 'custom', path: ['variant'], message: 'CI variant must contain 1..128 characters.' });
+    } else {
+      for (const key of ['packages', 'packageTrees', 'configuration', 'failOnSeverity', 'includeReportXml'] as const)
+        if (input[key] !== undefined)
+          ctx.addIssue({ code: 'custom', path: [key], message: `${key} is only supported for CI actions.` });
+    }
+
+    if (
+      input.objects !== undefined &&
+      (input.action !== 'atc' || input.name !== undefined || input.type !== undefined || input.url !== undefined)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['objects'],
+        message: 'objects is only supported for atc and cannot be combined with name, type, or url.',
+      });
+    }
+    if (input.action === 'unittest' && input.type !== undefined) {
+      const type = input.type.toUpperCase().split('/')[0];
+      if (!['CLAS', 'PROG', 'FUGR', 'DEVC'].includes(type ?? '')) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['type'],
+          message: 'SAPDiagnose action="unittest" supports CLAS, PROG, FUGR, and DEVC package targets.',
+        });
+      }
+    }
+    if (
+      input.includeSubpackages !== undefined &&
+      (input.action !== 'unittest' || input.type?.toUpperCase().split('/')[0] !== 'DEVC')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['includeSubpackages'],
+        message: 'SAPDiagnose includeSubpackages is only supported for action="unittest" with type="DEVC".',
+      });
+    }
+    if (
+      input.timeoutSeconds !== undefined &&
+      input.action !== 'unittest' &&
+      input.action !== 'atc' &&
+      input.action !== 'unittest_ci' &&
+      input.action !== 'atc_ci'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['timeoutSeconds'],
+        message:
+          'SAPDiagnose timeoutSeconds is only supported for action="unittest", "atc", "unittest_ci", or "atc_ci".',
+      });
+    }
+    if (input.resultFormat !== undefined) {
+      if (input.action === 'atc' && input.resultFormat === 'junit') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['resultFormat'],
+          message:
+            'SAPDiagnose action="atc" resultFormat must be "legacy" or "structured"; "junit" is only supported for action="unittest".',
+        });
+      } else if (input.action !== 'atc' && input.action !== 'unittest') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['resultFormat'],
+          message: 'SAPDiagnose resultFormat is only supported for action="unittest" or action="atc".',
+        });
+      }
+    }
+
+    if (
+      input.action === 'gateway_errors' &&
+      input.detailUrl !== undefined &&
+      !isCanonicalHostRelativeAdtPath(input.detailUrl, '/sap/bc/adt/gw/errorlog/')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['detailUrl'],
+        message: 'gateway_errors detailUrl must be a canonical host-relative gateway-error ADT path.',
+      });
+    }
+  });
+
+const SAPDiagnoseSchemaBtp = SAPDiagnoseSchema.safeExtend({ objects: atcBatchObjectsSchema(ATC_BATCH_TYPES_BTP) });
 
 // ─── SAPTransport ───────────────────────────────────────────────────
 
@@ -905,11 +1125,22 @@ export const SAPTransportSchema = z
     // For list: headers-only view — omit each transport's object lists (keep an objectCount).
     summary: looseOptionalBoolean,
     maxResults: z.coerce.number().optional(),
+    resultFormat: z.enum(['legacy', 'structured']).optional(),
+    timeoutSeconds: z.coerce.number().int().min(1).max(1800).optional(),
     // For diff: object-level paging (cap 40, matching SAP's own transport-diff pageSize ceiling).
     offset: z.coerce.number().optional(),
     limit: z.coerce.number().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.timeoutSeconds !== undefined && input.action !== 'release' && input.action !== 'release_recursive') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['timeoutSeconds'],
+        message: 'SAPTransport timeoutSeconds is only supported for release and release_recursive.',
+      });
+    }
+  });
 
 // ─── SAPGit ─────────────────────────────────────────────────────────
 
@@ -928,7 +1159,6 @@ export const SAPGitSchema = z
       'clone',
       'pull',
       'push',
-      'commit',
       'switch_branch',
       'create_branch',
       'unlink',
@@ -940,7 +1170,6 @@ export const SAPGitSchema = z
     transport: z.string().optional(),
     commit: z.string().optional(),
     message: z.string().optional(),
-    description: z.string().optional(),
     objects: z
       .array(
         z.object({
@@ -1098,7 +1327,7 @@ export function getToolSchema(toolName: string, isBtp: boolean, textSearchAvaila
     case 'SAPLint':
       return SAPLintSchema;
     case 'SAPDiagnose':
-      return SAPDiagnoseSchema;
+      return isBtp ? SAPDiagnoseSchemaBtp : SAPDiagnoseSchema;
     case 'SAPTransport':
       return SAPTransportSchema;
     case 'SAPGit':

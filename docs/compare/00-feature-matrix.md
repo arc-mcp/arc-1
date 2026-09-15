@@ -61,6 +61,7 @@ _Last updated: 2026-07-17._
 | Op allowlist/blocklist | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Package restrictions | ✅ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Block free SQL | ✅ | N/A (no free SQL) | ✅ | ❌ | ❌ | N/A | ❌ | ❌ | ❌ | ❌ |
+| Table/CDS source policy | ✅ (experimental exact blocklist + live transitive CDS lineage) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Transport gating | ✅ | ⚠️ (human-in-the-loop selection) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Dry-run mode | ⚠️ (RAP handler preview, `generate_behavior_implementation dryRun`, and syntax/check-before-write previews; no universal write dry-run) | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Audit logging | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ (CloudWatch) | ❌ | ❌ | ❌ | ❌ |

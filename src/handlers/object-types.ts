@@ -136,6 +136,12 @@ export function normalizeObjectType(type: string): string {
   return FRIENDLY_TYPE_ALIAS_MAP[normalized] ?? SLASH_TYPE_MAP[normalized] ?? normalized;
 }
 
+/** Object search accepts SAP slash subtypes; only friendly aliases may collapse. */
+export function normalizeSearchObjectType(type: string): string {
+  const normalized = type.trim().toUpperCase();
+  return FRIENDLY_TYPE_ALIAS_MAP[normalized] ?? normalized;
+}
+
 /** TABL subtypes that SAPWrite preserves (instead of collapsing to bare 'TABL' via
  *  SLASH_TYPE_MAP) so the create path can route TABL/DT → /ddic/tables and
  *  TABL/DS → /ddic/structures. See docs/plans/completed/2026-05-27-fix-tabl-ds-create-routing.md. */
@@ -261,6 +267,10 @@ export function normalizeTypeArgsForValidation(
           cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
       };
     case 'SAPWrite': {
+      const action = String(cleaned.action ?? '');
+      // A text-pool PUT replaces the selected part; an explicit empty string clears it.
+      // Null/omitted source remains a missing-source error; other actions keep normal stripping.
+      if (action === 'edit_text_symbols' && typeof args.source === 'string') cleaned.source = args.source;
       // SAPWrite preserves TABL/DT and TABL/DS so the create path can route by subtype.
       const normType = cleaned.type === undefined ? undefined : normalizeWriteObjectType(String(cleaned.type ?? ''));
       // Drop an inapplicable `include`: it is only meaningful for a CLAS local-include
@@ -269,7 +279,6 @@ export function normalizeTypeArgsForValidation(
       // which validateSapWriteInput would otherwise hard-reject even though the requested
       // intent is valid. A garbage include VALUE on a real CLAS include path is still
       // rejected by the z.enum check downstream (issue #360).
-      const action = String(cleaned.action ?? '');
       const includeApplies =
         normType === 'CLAS' && (action === 'update' || action === 'edit_method' || action === 'edit_class_definition');
       if (!includeApplies) delete cleaned.include;
@@ -306,13 +315,14 @@ export function normalizeTypeArgsForValidation(
             )
           : cleaned.objects,
       };
-    case 'SAPSearch':
-      return {
-        ...cleaned,
-        objectType:
-          cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
-      };
     case 'SAPNavigate':
+      // Strict-schema clients fill in optional fields for unrelated actions (#360).
+      // Relations-only controls must not break ordinary navigation or reach its handler.
+      if (cleaned.action !== 'relations') {
+        delete cleaned.direction;
+        delete cleaned.depth;
+        delete cleaned.expandPackages;
+      }
       // Only normalize `type` (for URL building). `objectType` is passed to SAP's
       // where-used scope API in slash format (e.g., CLAS/OC) — normalizing it would break the filter.
       return {
@@ -320,9 +330,35 @@ export function normalizeTypeArgsForValidation(
         type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPDiagnose':
+      // Strict-schema clients may supply an empty placeholder on single-object
+      // or unrelated actions. An actual empty ATC batch remains a validation error.
+      if (
+        Array.isArray(cleaned.objects) &&
+        cleaned.objects.length === 0 &&
+        (cleaned.action !== 'atc' ||
+          cleaned.name !== undefined ||
+          cleaned.type !== undefined ||
+          cleaned.url !== undefined)
+      ) {
+        delete cleaned.objects;
+      }
       return {
         ...cleaned,
         type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
+        objects: Array.isArray(cleaned.objects)
+          ? cleaned.objects.map((obj) => {
+              if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return obj;
+              const item = obj as Record<string, unknown>;
+              return {
+                ...item,
+                type: typeof item.type === 'string' ? normalizeObjectType(item.type.trim()) : item.type,
+                name:
+                  typeof item.name === 'string'
+                    ? item.name.trim().replace(/[a-z]/g, (char) => char.toUpperCase())
+                    : item.name,
+              };
+            })
+          : cleaned.objects,
       };
     case 'SAPContext':
       return {
@@ -524,10 +560,10 @@ export function normalizeClassWriteInclude(include: unknown): ClassWriteInclude 
 
 /**
  * Auto-detect which class include a method specifier targets, based on the
- * local-class prefix on the LHS of `<localclass>~<method>`. Used by
- * `edit_method` so callers can pass `lhc_project~approve_project` and have
- * ARC-1 transparently route the read+write to `/includes/implementations`
- * instead of `/source/main`.
+ * local-class prefix on the LHS of `<localclass>~<method>`. Used by method-level
+ * reads and `edit_method` so callers can pass `lhc_project~approve_project` and
+ * have ARC-1 transparently route to `/includes/implementations` instead of
+ * `/source/main`.
  *
  * Prefix → include mapping (intentionally narrow; extend via explicit
  * `include` parameter when a code-base uses other conventions):

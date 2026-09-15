@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTableQuerySql } from '../../../src/adt/client.js';
+import { exactSqlIdentifier } from '../../../src/adt/table-query.js';
 
 describe('buildTableQuerySql', () => {
   // ─── Basic SELECT ──────────────────────────────────────────────────
@@ -128,37 +129,56 @@ describe('buildTableQuerySql', () => {
     expect(sql).toBe("SELECT * FROM MARA WHERE MATNR = 'O''Brien'");
   });
 
-  it('strips non-word characters from field names', () => {
-    const sql = buildTableQuerySql('T000', undefined, [{ field: 'MANDT; DROP', op: '=', value: '100' }]);
-    expect(sql).toBe("SELECT * FROM T000 WHERE MANDTDROP = '100'");
+  // Identifiers are validated, never rewritten. Stripping used to make the authorized identity
+  // differ from the executed one, so anything needing character removal is now refused outright.
+  it('rejects field names containing non-identifier characters instead of stripping them', () => {
+    expect(() => buildTableQuerySql('T000', undefined, [{ field: 'MANDT; DROP', op: '=', value: '100' }])).toThrow(
+      /not an exact technical name/,
+    );
   });
 
-  it('strips non-word characters from column names', () => {
-    const sql = buildTableQuerySql('T000', ['MANDT; DROP TABLE T000--', 'MTEXT']);
-    expect(sql).toBe('SELECT MANDTDROPTABLET000, MTEXT FROM T000');
+  it('rejects column names containing non-identifier characters instead of stripping them', () => {
+    expect(() => buildTableQuerySql('T000', ['MANDT; DROP TABLE T000--', 'MTEXT'])).toThrow(
+      /not an exact technical name/,
+    );
+  });
+
+  it('never rewrites an identifier: checked identity equals executed identity', () => {
+    // The old sanitiser stripped `$`, so the policy authorized USR02$ while SAP executed USR02.
+    // `$` and namespace slashes are legal name characters and must now survive intact; the only
+    // permitted transformation is ASCII case folding.
+    expect(buildTableQuerySql('USR02$')).toBe('SELECT * FROM USR02$');
+    expect(buildTableQuerySql('$tmp_view')).toBe('SELECT * FROM $TMP_VIEW');
+    expect(buildTableQuerySql('/dmo/i_flight')).toBe('SELECT * FROM /DMO/I_FLIGHT');
+
+    for (const name of ['usr02', 'USR02', '/dmo/i_flight', 'z_table_2', 'USR02$', '$tmp_view']) {
+      const executed = /FROM (\S+)$/.exec(buildTableQuerySql(name))?.[1];
+      expect(executed).toBe(exactSqlIdentifier(name, 'table'));
+    }
   });
 
   // ─── Error cases ───────────────────────────────────────────────────
 
   it('throws on empty table name', () => {
-    expect(() => buildTableQuerySql('')).toThrow('table name "" is invalid');
+    expect(() => buildTableQuerySql('')).toThrow(/TABLE_QUERY table name is empty/);
   });
 
-  it('throws on table name that sanitises to empty', () => {
-    expect(() => buildTableQuerySql('!!!')).toThrow('table name "!!!" is invalid');
+  it('throws on a table name made only of punctuation', () => {
+    expect(() => buildTableQuerySql('!!!')).toThrow(/TABLE_QUERY table name/);
+    expect(() => buildTableQuerySql('___')).toThrow(/at least one ASCII letter or digit/);
   });
 
-  it('throws on a column that sanitises to empty (fail closed, no "SELECT , X")', () => {
-    expect(() => buildTableQuerySql('T000', ['', 'MTEXT'])).toThrow('column name "" is invalid');
-    expect(() => buildTableQuerySql('T000', ['!!!', 'MTEXT'])).toThrow('column name "!!!" is invalid');
+  it('throws on an invalid column (fail closed, no "SELECT , X")', () => {
+    expect(() => buildTableQuerySql('T000', ['', 'MTEXT'])).toThrow(/TABLE_QUERY column name is empty/);
+    expect(() => buildTableQuerySql('T000', ['!!!', 'MTEXT'])).toThrow(/TABLE_QUERY column name/);
   });
 
-  it('throws on a where-field that sanitises to empty (fail closed, no "WHERE  =")', () => {
+  it('throws on an invalid where-field (fail closed, no "WHERE  =")', () => {
     expect(() => buildTableQuerySql('T000', undefined, [{ field: '', op: '=', value: '100' }])).toThrow(
-      'field name "" is invalid',
+      /TABLE_QUERY field name is empty/,
     );
     expect(() => buildTableQuerySql('T000', undefined, [{ field: '@@@', op: '=', value: '1' }])).toThrow(
-      'field name "@@@" is invalid',
+      /TABLE_QUERY field name/,
     );
   });
 
@@ -205,14 +225,14 @@ describe('buildTableQuerySql', () => {
       'x) UNION SELECT * FROM usr02 --',
       '/* */ ; SELECT',
     ];
+    // Hostile IDENTIFIERS are now rejected outright rather than sanitised into something else.
+    for (const hostileIdentifier of ['T000); DROP TABLE T000 --', 'MANDT UNION SELECT', 'MANDT OR 1']) {
+      expect(() => buildTableQuerySql(hostileIdentifier)).toThrow(/not an exact technical name/);
+    }
+
     for (const v of hostileValues) {
       for (const op of ['=', 'LIKE', 'IN'] as const) {
-        const sql = buildTableQuerySql(
-          // identifiers also fed hostile tokens (spaces/`;`/`*` are stripped by sanitisation)
-          'T000); DROP TABLE T000 --',
-          ['MANDT UNION SELECT', 'MTEXT'],
-          [{ field: 'MANDT OR 1', op, value: v }],
-        );
+        const sql = buildTableQuerySql('T000', ['MANDT', 'MTEXT'], [{ field: 'MANDT', op, value: v }]);
         expect(sql.startsWith('SELECT ')).toBe(true);
         const skeleton = stripLiterals(sql);
         // The hostile value must live ONLY inside a literal — gone from the skeleton.

@@ -1,0 +1,209 @@
+{
+  "source": "SAP_BASIS 758 SP02, 2026-09-09. Projection of native worklist object identities/counts; XML in tests is reconstructed, findings are synthetic.",
+  "selection": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_ABAP_LANGUAGE_VERS"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_ADT_LINK"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AFF_FACTORY"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AFF_INJECTOR"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AFF_REGISTRY"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_FILTER_LIB"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_MAPPING"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_REF_INIT_LIB"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_UTILITIES"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_HELPER"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_MIGRATION"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_READER"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_WRITER"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AUTH"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND_PULL"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND_PUSH_AU"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND_PUSH_FI"
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_CODE_INSPECTOR"
+    }
+  ],
+  "initial": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_ABAP_LANGUAGE_VERS",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_ABAP_LANGUAGE_VERS",
+      "findings": 7
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_ADT_LINK",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_ADT_LINK",
+      "findings": 7
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AJSON",
+      "findings": 68
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_FILTER_LIB",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AJSON_FILTER_LIB",
+      "findings": 1
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_MAPPING",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AJSON_MAPPING",
+      "findings": 2
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_UTILITIES",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AJSON_UTILITIES",
+      "findings": 6
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_HELPER",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_APACK_HELPER",
+      "findings": 7
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_MIGRATION",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_APACK_MIGRATION",
+      "findings": 27
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_BACKGROUND",
+      "findings": 5
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND_PULL",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_BACKGROUND_PULL",
+      "findings": 1
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND_PUSH_AU",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_BACKGROUND_PUSH_AU",
+      "findings": 5
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_BACKGROUND_PUSH_FI",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_BACKGROUND_PUSH_FI",
+      "findings": 3
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_CODE_INSPECTOR",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_CODE_INSPECTOR",
+      "findings": 11
+    }
+  ],
+  "verification": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AFF_FACTORY",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AFF_FACTORY",
+      "findings": 0
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AFF_INJECTOR",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AFF_INJECTOR",
+      "findings": 0
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AFF_REGISTRY",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AFF_REGISTRY",
+      "findings": 0
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AJSON_REF_INIT_LIB",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AJSON_REF_INIT_LIB",
+      "findings": 0
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_READER",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_APACK_READER",
+      "findings": 0
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_APACK_WRITER",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_APACK_WRITER",
+      "findings": 0
+    },
+    {
+      "type": "CLAS",
+      "name": "ZCL_ABAPGIT_AUTH",
+      "uri": "/sap/bc/adt/atc/objects/R3TR/CLAS/ZCL_ABAPGIT_AUTH",
+      "findings": 0
+    }
+  ]
+}

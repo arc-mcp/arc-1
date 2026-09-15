@@ -120,6 +120,19 @@ or SAP request.
 
 **When to tune.** Use the sizing math below.
 
+### Data-result memory admission (defaults: 2 MiB and `2` calls)
+
+This is a separate resource-safety boundary, not a fourth request-rate quota.
+`ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` caps the cumulative successful data-preview bodies in one
+tool call; `ARC1_MAX_CONCURRENT_DATA_RESULTS` limits how many such calls can remain in the
+fetch/parse/serialize/audit phase across the process. Ordinary source and metadata reads do not use
+this second semaphore.
+
+The default raw-body admission product is `2 MiB × 2 = 4 MiB`. It is not a process-memory guarantee:
+XML object graphs and JSON serialization amplify the raw bytes. If a batch/file consumer needs a
+larger response allowance, benchmark peak RSS for the real row shape and normally reduce data-result
+concurrency proportionally. Both settings require positive integers; `0` does not disable them.
+
 ## 3. Capacity sizing math against `rdisp/wp_no_dia`
 
 The hard ceiling on the SAP side is the dialog-work-process count, configurable via the SAP profile parameter `rdisp/wp_no_dia`. Find your system's value with transaction `RZ11` → search `rdisp/wp_no_dia`.
@@ -224,6 +237,7 @@ backend protection. Tune all three from audit and latency evidence.
 | `mcp_rate_limited` | 2 | A single user hit the per-user quota. Their LLM was in a tight retry loop or doing heavy batch work. | Check user behavior. If legitimate → raise `ARC1_RATE_LIMIT`. If runaway loop → the limit is working as designed. |
 | `http_request` status `429` | 3 | SAP or BTP gateway throttled us; we retried once after honoring `Retry-After`. | If frequent → lower `ARC1_MAX_CONCURRENT`. You're running too hot. |
 | `http_request` status `503` | 3 | SAP overloaded (ICM / work-process exhaustion); we retried. | Same as 429 — lower the concurrency cap. Cross-check with SAP transaction `SM50`. |
+| `data_response_limited` | Data-result memory admission | One tool call crossed the configured data-preview response ceiling; no partial rows were returned. | Reduce rows/columns or use restrictive non-overlapping key ranges. Raise the byte ceiling only after peak-RSS testing, normally with lower data-result concurrency. |
 
 **`requestId` correlation note.** Layer 2 (`mcp_rate_limited`) and Layer 3 (`http_request`) events include a `requestId` field so you can join them against the full tool-call lifecycle (`tool_call_start` / `tool_call_end`) in your audit log. Layer 1 (`auth_rate_limited`) fires at the Express middleware layer **before** any MCP request context exists, so it does NOT carry a `requestId` — correlate Layer 1 events by `ip` + timestamp instead.
 

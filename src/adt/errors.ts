@@ -25,6 +25,22 @@ export class AdtError extends Error {
   }
 }
 
+/** A bounded data-preview response crossed the configured decompressed-byte ceiling. */
+export class AdtResponseLimitError extends AdtError {
+  readonly code = 'DATA_RESPONSE_TOO_LARGE';
+  readonly retryable = false;
+
+  constructor(
+    public readonly limitBytes: number,
+    public readonly observedBytes: number,
+    public readonly endpointFamily: string,
+    public readonly requestId?: string,
+  ) {
+    super(`ADT ${endpointFamily} response exceeded the configured ${limitBytes}-byte limit.`);
+    this.name = 'AdtResponseLimitError';
+  }
+}
+
 export interface DdicDiagnostic {
   messageId?: string;
   messageNumber?: string;
@@ -75,6 +91,14 @@ export class AdtApiError extends AdtError {
    * "what happened → diagnostics → how to fix".
    */
   extraHint?: string;
+
+  /**
+   * Handler-owned result of the metadata probe after a failed post-lock DELETE.
+   * Only a probe 404 proves absence; other probe failures are explicitly unknown.
+   * Lets generic formatting avoid claiming an object is absent without teaching it
+   * the handler's request sequence.
+   */
+  resourceExistenceAfterDelete?: 'exists' | 'absent' | 'unknown';
 
   constructor(
     message: string,

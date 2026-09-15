@@ -39,7 +39,6 @@ import type {
   RevisionInfo,
   RevisionListResult,
   ServerDrivenObjectMetadata,
-  SourceSearchResult,
   TransactionInfo,
 } from './types.js';
 
@@ -83,6 +82,8 @@ const ARRAY_TAGS = new Set([
   'proposal',
   'referencedObject',
   'textSearchResult',
+  'textSearchObject',
+  'textLine',
   'testClass',
   'testMethod',
   'alert',
@@ -236,9 +237,10 @@ export function parseSubpackageNodestructure(xml: string): string[] {
  * After namespace stripping, both converge but with different casing.
  * We try both patterns with fallback.
  */
-export function parseTableContents(xml: string): { columns: string[]; rows: Record<string, string>[] } {
-  const parsed = parseXml(xml);
-
+function parseTableContentsObject(parsed: Record<string, unknown>): {
+  columns: string[];
+  rows: Record<string, string>[];
+} {
   // Try old format first: abap > values > COLUMNS > COLUMN
   let columns = getDeepArray(parsed, ['abap', 'values', 'COLUMNS', 'COLUMN']);
   if (columns.length === 0) {
@@ -293,14 +295,12 @@ export interface DataPreviewMeta {
   executedQueryString?: string;
 }
 
-/**
- * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
- * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
- * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
- */
-export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
-  if (!xml || xml.trim().length === 0) return {};
-  const parsed = parseXml(xml);
+export interface DataPreviewResult extends DataPreviewMeta {
+  columns: string[];
+  rows: Record<string, string>[];
+}
+
+function parseDataPreviewMetaObject(parsed: Record<string, unknown>): DataPreviewMeta {
   const td = (parsed.tableData ?? parsed) as Record<string, unknown>;
   const meta: DataPreviewMeta = {};
 
@@ -319,6 +319,28 @@ export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
     meta.executedQueryString = executed.trim().replace(/\s+/g, ' ');
   }
   return meta;
+}
+
+/** Parse data-preview rows and metrics from one shared fast-xml-parser object tree. */
+export function parseDataPreviewResult(xml: string): DataPreviewResult {
+  if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
+  const parsed = parseXml(xml);
+  return { ...parseTableContentsObject(parsed), ...parseDataPreviewMetaObject(parsed) };
+}
+
+export function parseTableContents(xml: string): { columns: string[]; rows: Record<string, string>[] } {
+  if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
+  return parseTableContentsObject(parseXml(xml));
+}
+
+/**
+ * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
+ * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
+ * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
+ */
+export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
+  if (!xml || xml.trim().length === 0) return {};
+  return parseDataPreviewMetaObject(parseXml(xml));
 }
 
 /**
@@ -528,7 +550,15 @@ export function parseDiscoveryDocument(xml: string): Map<string, string[]> {
   if (!xml?.trim()) return new Map();
 
   try {
-    const parsed = parseXml(xml);
+    return parseDiscoveryObject(parseXml(xml));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Map an already-parsed discovery document without parsing its XML a second time. */
+export function parseDiscoveryObject(parsed: Record<string, unknown>): Map<string, string[]> {
+  try {
     const service = (parsed.service ?? {}) as Record<string, unknown>;
     const workspaces = Array.isArray(service.workspace)
       ? service.workspace
@@ -604,69 +634,6 @@ function normalizeDiscoveryPath(href: string): string | undefined {
 }
 
 /**
- * Parse ADT source/text search results.
- *
- * The textSearch endpoint returns results as either XML with objectReference elements
- * containing match details, or an Atom-like feed. We handle both formats.
- */
-export function parseSourceSearchResults(xml: string): SourceSearchResult[] {
-  const parsed = parseXml(xml);
-  const results: SourceSearchResult[] = [];
-
-  // Try objectReferences format (similar to quickSearch)
-  const refs = getNestedArray(parsed, 'objectReferences', 'objectReference');
-  if (refs.length > 0) {
-    for (const ref of refs) {
-      const matchNodes = findDeepNodes(ref, 'textSearchResult');
-      const matches = matchNodes.map((m: Record<string, unknown>) => ({
-        line: Number(m['@_line'] ?? 0),
-        snippet: String(m['@_snippet'] ?? m['#text'] ?? ''),
-      }));
-      results.push({
-        objectType: String(ref['@_type'] ?? ''),
-        objectName: String(ref['@_name'] ?? ''),
-        uri: String(ref['@_uri'] ?? ''),
-        matches,
-      });
-    }
-    return results;
-  }
-
-  // Try Atom feed format
-  const entries = getNestedArray(parsed, 'feed', 'entry');
-  for (const entry of entries) {
-    const uri = String(entry.id ?? entry['@_href'] ?? '');
-    const title = String(entry.title ?? '');
-    results.push({
-      objectType: '',
-      objectName: title || uri.split('/').pop() || '',
-      uri,
-      matches: [],
-    });
-  }
-
-  // Fallback: try to find any matching nodes
-  if (results.length === 0) {
-    const nodes = findDeepNodes(parsed, 'match');
-    for (const node of nodes) {
-      results.push({
-        objectType: String(node['@_type'] ?? ''),
-        objectName: String(node['@_name'] ?? node['@_objectName'] ?? ''),
-        uri: String(node['@_uri'] ?? ''),
-        matches: [
-          {
-            line: Number(node['@_line'] ?? 0),
-            snippet: String(node['@_snippet'] ?? node['#text'] ?? ''),
-          },
-        ],
-      });
-    }
-  }
-
-  return results;
-}
-
-/**
  * Parse domain metadata XML from /sap/bc/adt/ddic/domains/{name}.
  *
  * Domains don't have /source/main — they return structured XML with
@@ -734,6 +701,7 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
   // Find the dataElement node — after NS strip: dtel:dataElement → dataElement
   const dtelNodes = findDeepNodes(parsed, 'dataElement');
   const dtel = dtelNodes[0] ?? {};
+  const flag = (value: unknown) => String(value ?? '').toLowerCase() === 'true';
 
   return {
     name: String(wbobj['@_name'] ?? ''),
@@ -744,11 +712,21 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
     length: String(dtel.dataTypeLength ?? ''),
     decimals: String(dtel.dataTypeDecimals ?? ''),
     shortLabel: String(dtel.shortFieldLabel ?? ''),
+    shortLength: String(dtel.shortFieldLength ?? ''),
     mediumLabel: String(dtel.mediumFieldLabel ?? ''),
+    mediumLength: String(dtel.mediumFieldLength ?? ''),
     longLabel: String(dtel.longFieldLabel ?? ''),
+    longLength: String(dtel.longFieldLength ?? ''),
     headingLabel: String(dtel.headingFieldLabel ?? ''),
+    headingLength: String(dtel.headingFieldLength ?? ''),
     searchHelp: String(dtel.searchHelp ?? ''),
+    searchHelpParameter: String(dtel.searchHelpParameter ?? ''),
+    setGetParameter: String(dtel.setGetParameter ?? ''),
     defaultComponentName: String(dtel.defaultComponentName ?? ''),
+    deactivateInputHistory: flag(dtel.deactivateInputHistory),
+    changeDocument: flag(dtel.changeDocument),
+    leftToRightDirection: flag(dtel.leftToRightDirection),
+    deactivateBIDIFiltering: flag(dtel.deactivateBIDIFiltering),
     package: String(pkgRef['@_name'] ?? ''),
   };
 }
@@ -1295,8 +1273,9 @@ export function parseNamedItems(xml: string): NamedItem[] {
 
 /**
  * Read the system default ATC check variant from an `<atc:customizing>` response — the
- * `<property name="systemCheckVariant" value="…"/>` entry. This is the variant ATC runs when
- * `checkVariant` is empty. Returns undefined when the property is absent.
+ * `<property name="systemCheckVariant" value="…"/>` entry. This is the system's CONFIGURED ATC
+ * variant; SAP does NOT apply it on an empty `checkVariant` (that runs `DEFAULT`), so `runAtcCheck`
+ * sends it explicitly. Returns undefined when the property is absent.
  */
 export function parseAtcSystemCheckVariant(xml: string): string | undefined {
   const parsed = parseXml(xml);

@@ -4,11 +4,13 @@
  */
 
 import type { AdtClient } from '../adt/client.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
 import { classifyTextSearchError } from '../adt/features.js';
+import { internalOperationDenial } from '../adt/internal-data-operations.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
 import { getCachedFeatures } from './feature-cache.js';
-import { normalizeObjectType } from './object-types.js';
+import { normalizeObjectType, normalizeSearchObjectType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 // ─── Search Helpers ─────────────────────────────────────────────────
@@ -84,16 +86,34 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     if (source === 'adt') {
       finalLookups = tagOrigin(await client.lookupObjects(names, { maxResults, objectTypes }), 'adt');
     } else if (source === 'db') {
+      // TADIR is a declared internal source; if policy blocks it, tell the model to use source="adt"
+      // rather than surfacing a bare policy error with no route forward.
       // The 'db' path bypasses ADT info-system entirely; `lookupObjectsViaDb` already
       // tags matches with `_origin:'db'`. Safety/scope gating runs at handleToolCall
       // and in client.runQuery (FreeSQL operation), so unauthorized callers never reach here.
-      finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
+      try {
+        finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
+      } catch (error) {
+        if (error instanceof DataSourcePolicyError) {
+          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+        }
+        throw error;
+      }
     } else {
       // 'both' — parallel ADT + DB, merge per name with dedupe.
-      const [adtLookups, dbLookups] = await Promise.all([
-        client.lookupObjects(names, { maxResults, objectTypes }).then((r) => tagOrigin(r, 'adt')),
-        client.lookupObjectsViaDb(names, { maxResults, objectTypes }),
-      ]);
+      let adtLookups: AdtObjectLookupResult[];
+      let dbLookups: AdtObjectLookupResult[];
+      try {
+        [adtLookups, dbLookups] = await Promise.all([
+          client.lookupObjects(names, { maxResults, objectTypes }).then((r) => tagOrigin(r, 'adt')),
+          client.lookupObjectsViaDb(names, { maxResults, objectTypes }),
+        ]);
+      } catch (error) {
+        if (error instanceof DataSourcePolicyError) {
+          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+        }
+        throw error;
+      }
 
       const dbByName = new Map(dbLookups.map((l) => [l.name.toUpperCase(), l]));
       const adtByName = new Map(adtLookups.map((l) => [l.name.toUpperCase(), l]));
@@ -185,7 +205,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
       if (err instanceof AdtApiError) {
         const permanentCodes = [401, 403, 404, 501];
         if (permanentCodes.includes(err.statusCode)) {
-          const classified = classifyTextSearchError(err.statusCode);
+          const classified = classifyTextSearchError(err.statusCode, err.responseBody);
           return errorResult(
             `Source code search is not available on this SAP system. ${classified.reason ?? ''}` +
               `\nUse SAPSearch with searchType="object" to search by object name instead, or use SAPQuery to search metadata tables.`,
@@ -202,7 +222,19 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     ? `Note: Query contained non-ASCII characters. Transliterated "${rawQuery}" → "${query}" (SAP object names are ASCII-only).\n\n`
     : '';
 
-  const results = await client.searchObject(query, maxResults);
+  const objectType = typeof args.objectType === 'string' ? normalizeSearchObjectType(args.objectType) : undefined;
+  let results: AdtSearchResult[];
+  try {
+    results = await client.searchObject(query, maxResults, objectType);
+  } catch (error) {
+    if (objectType && error instanceof AdtApiError && error.statusCode === 406) {
+      return errorResult(
+        `SAP rejected the object search with objectType="${objectType}". Verify that this system supports the ADT type ` +
+          '(for example CLAS, CLAS/OC, DDLS/DF or UIAC), or explicitly omit objectType to search without a type filter.',
+      );
+    }
+    throw error;
+  }
   if (Array.isArray(results) && results.length === 0) {
     let hint =
       '[]' +
@@ -210,6 +242,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
       transliterationNote +
       'No objects found. If searching for custom objects, try Z* or Y* prefixes (e.g., "Z*ESTIM*"). ' +
       'If you already found objects in a package, use SAPRead with type=DEVC to list all package contents instead of more searches.';
+    if (objectType) hint += `\nobjectType="${objectType}" was applied; omit it to search all types.`;
     if (looksLikeFieldName(query)) {
       const stripped = query.replace(/\*/g, '');
       hint += `\nThis looks like a field/column name. Use SAPQuery("SELECT fieldname, rollname, domname FROM dd03l WHERE fieldname = '${stripped}'") or SAPRead(type='DDLS', include='elements') to find fields.`;

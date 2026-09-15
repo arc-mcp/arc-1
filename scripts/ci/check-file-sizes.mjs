@@ -35,7 +35,12 @@ const BUDGETS = {
   // +text-pool SAPWrite actions/description (edit_text_symbols/edit_selection_texts).
   // +per-action SAPWrite description (one line per action, incl. the destructive/refusing ones).
   // +3 for SAPTransport action="diff" (action list + offset/limit properties).
-  'src/handlers/tools.ts': 1730,
+  // +30 for the inline shortTexts object schema and retained refObjectDescription guidance. Keeping
+  // this public schema beside SAPWrite avoids a one-constant module whose only purpose was the ratchet.
+  // +5 for the optional relations projection hook; its implementation stays in relation-tool.ts.
+  // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
+  // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
+  'src/handlers/tools.ts': 1782,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -53,7 +58,22 @@ const BUDGETS = {
   // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past
   // the default. Keep tight headroom.
   // + getFunctionModuleProperties and the getFunctionGroup pre-7.52 objectstructure fallback.
-  'src/adt/client.ts': 1730,
+  // + the #739 data-result scope/budget plumbing (main raised this to 1730 for it).
+  // +10 on top of that for runQueryBatch, the single freestyle-SQL entry point that authorizes a
+  // whole logical request once and then executes its statements inside one response-memory scope.
+  // Authorization and the POSTs must stay inside one private client operation, so this genuinely
+  // belongs on the facade; the two parts that did not were extracted first (guard wiring to
+  // data-source-policy.ts, the statement-execution loop to table-query.ts).
+  'src/adt/client.ts': 1739,
+  // The single live ADT integration suite covers every read/write surface against a real system;
+  // it passed the 3000-line default test budget with the ATC check-variant binding cases
+  // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
+  'tests/integration/adt.integration.test.ts': 3100,
+  // Typed attempt accounting and scoped response ownership must stay at the transport choke point.
+  // Relation parsing/traversal and response controls live outside this file; no feature algorithm here.
+  'src/adt/http.ts': 1510,
+  // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
+  'src/server/server.ts': 1504,
 };
 
 const DEFAULT_SRC = 1500;
@@ -74,7 +94,10 @@ function countLines(path) {
 // NUL-delimited so paths with spaces/non-ASCII are never quoted-and-mangled (git's default
 // core.quotePath would wrap "tests/.../zäh.ts" in quotes, and a naive .endsWith('.ts') would
 // then silently skip it — voiding the ratchet for that file).
-const files = execSync('git ls-files -z src tests bin', { encoding: 'utf8' })
+// Include the maintained relation-validation entry points, not unrelated research scripts.
+const files = execSync('git ls-files -z src tests bin scripts/smoke-live-relations.ts scripts/bench-context-parsing.ts', {
+  encoding: 'utf8',
+})
   .split('\0')
   .filter((f) => f.endsWith('.ts') || f.endsWith('.mjs'));
 

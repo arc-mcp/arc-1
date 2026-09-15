@@ -8,7 +8,15 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { AdtClient } from '../adt/client.js';
-import { AdtApiError, AdtNetworkError, AdtSafetyError, classifySapDomainError } from '../adt/errors.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
+import {
+  AdtApiError,
+  AdtNetworkError,
+  AdtResponseLimitError,
+  AdtSafetyError,
+  classifySapDomainError,
+} from '../adt/errors.js';
+import { AdtAnalysisDeadlineError, AdtRequestBudgetError } from '../adt/request-attempt-budget.js';
 /**
  * Scope required for each tool.
  *
@@ -83,6 +91,37 @@ export function hasRequiredScope(authInfo: AuthInfo, requiredScope: string): boo
 }
 
 const DDIC_SAVE_HINT_TYPES = new Set(['TABL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'SRVB', 'DDLX', 'DOMA', 'DTEL']);
+const DATA_PREVIEW_COLLECTION_PATHS = new Set(['/sap/bc/adt/datapreview/freestyle', '/sap/bc/adt/datapreview/ddic']);
+
+function isPossibleDataPreviewWafBlock(err: AdtApiError, tool: string, args: Record<string, unknown>): boolean {
+  if (err.statusCode !== 403) return false;
+  const collectionPath = err.path.split(/[?#]/, 1)[0] ?? '';
+  if (!DATA_PREVIEW_COLLECTION_PATHS.has(collectionPath)) return false;
+  if (collectionPath === '/sap/bc/adt/datapreview/ddic') {
+    const isFilteredTableContents =
+      tool === 'SAPRead' &&
+      canonicalTablType(String(args.type ?? '').toUpperCase()) === 'TABLE_CONTENTS' &&
+      typeof args.sqlFilter === 'string' &&
+      args.sqlFilter.trim().length > 0;
+    if (!isFilteredTableContents) return false;
+  }
+
+  const body = (err.responseBody ?? '').trim();
+  return body === '' || /^(?:403\s+)?forbidden\.?$/i.test(body);
+}
+
+function formatPossibleDataPreviewWafBlock(err: AdtApiError, minimalErrors: boolean): string {
+  const prefix = minimalErrors
+    ? 'ADT API error: status 403. Use the request ID to correlate server-side audit and gateway logs.'
+    : err.message;
+  return (
+    `${prefix}\n\nHint: This bare 403 on an ADT data-preview endpoint is a possible upstream WAF/body inspection ` +
+    'block or a rejected CSRF/session pair, not proof of an SAP authorization failure. Compare an unfiltered ' +
+    'TABLE_CONTENTS call and inspect gateway logs for the matched rule. Prefer a scoped WAF rule exclusion. If ' +
+    'the security owner approves sending these request bodies as compressed content, set ' +
+    'SAP_GZIP_DATAPREVIEW_BODY=true as a compatibility fallback.'
+  );
+}
 
 function getWriteInfrastructureHint(err: AdtApiError, tool: string, args: Record<string, unknown>): string | undefined {
   if (tool !== 'SAPWrite') return undefined;
@@ -128,7 +167,37 @@ function buildBaseErrorMessage(
   args: Record<string, unknown>,
   config: ServerConfig,
 ): string {
+  if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
+    return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
+  }
+  if (err instanceof AdtResponseLimitError) {
+    const mebibytes = err.limitBytes / (1024 * 1024);
+    const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;
+    return toolJson({
+      error: err.code,
+      message:
+        `The SAP data-preview result exceeded the ${displayLimit} server limit. ` +
+        'Submit a new request with lower maxRows, fewer columns, or a restrictive non-overlapping key-range WHERE clause.',
+      limitBytes: err.limitBytes,
+      retryable: false,
+      requestId: err.requestId ?? getCurrentContext()?.requestId,
+      ...(config.targetId ? { target: config.targetId } : {}),
+    });
+  }
   if (err instanceof AdtApiError) {
+    if (
+      tool === 'SAPNavigate' &&
+      args.action === 'relations' &&
+      err.statusCode >= 300 &&
+      err.statusCode < 400 &&
+      err.statusCode !== 304
+    ) {
+      return 'Bounded live relations do not follow HTTP redirects. Use an authenticated SAP session or a direct ADT destination; check SAML/SSO and reverse-proxy routing. Do not disable TLS verification.';
+    }
+    if (isPossibleDataPreviewWafBlock(err, tool, args)) {
+      return formatPossibleDataPreviewWafBlock(err, config.minimalErrors);
+    }
     if (config.minimalErrors) return formatMinimalAdtError(err);
 
     // Append additional SAP messages (line numbers, secondary errors) if available
@@ -146,6 +215,16 @@ function buildBaseErrorMessage(
     }
 
     if (err.isNotFound) {
+      if (err.resourceExistenceAfterDelete === 'exists') {
+        return (
+          `${enriched}\n\n` +
+          "Hint: ARC-1 confirmed this object still existed after SAP rejected DELETE, so this 404 means SAP's delete handler rejected the operation rather than that the object was absent."
+        );
+      }
+      if (err.resourceExistenceAfterDelete === 'unknown') {
+        const name = String(args.name ?? '');
+        return `${enriched}\n\nHint: SAP returned 404 after DELETE, but ARC-1 could not determine whether the object still exists because the follow-up metadata check failed. Use SAPSearch with query "${name}" to verify the current object state before retrying DELETE.`;
+      }
       const diagnosticsHint = buildDiagnosticsNotFoundHint(tool, args);
       if (diagnosticsHint) {
         return `${enriched}\n\nHint: ${diagnosticsHint}`;
@@ -228,6 +307,11 @@ function buildBaseErrorMessage(
   }
 
   if (err instanceof AdtSafetyError) {
+    // Minimal mode is a CLIENT disclosure control only: it strips the direct root, the matched rule,
+    // the dependency path and the configuration variable name, while keeping the stable code,
+    // executed=false, the decision id and a safe alternative. The audit event still records the
+    // complete normalized decision either way.
+    if (err instanceof DataSourcePolicyError) return err.clientMessage(config.minimalErrors);
     const argType = canonicalTablType(String(args.type ?? '').toUpperCase());
     if (tool === 'SAPRead' && argType === 'TABLE_CONTENTS') {
       return (
@@ -343,6 +427,21 @@ function buildAuditResultPreview(toolName: string, args: Record<string, unknown>
   } catch {
     return truncate(fullText);
   }
+}
+
+function resultTextForAuditPreview(toolName: string, content: ToolResult['content']): string {
+  if (content.length <= 1) return content[0]?.text ?? '';
+  // Detailed diagnostic previews parse their JSON before removing large sections.
+  if (toolName === 'SAPDiagnose') return content.map((item) => item.text).join('');
+
+  // Other previews never inspect beyond 500 characters. Avoid concatenating a
+  // potentially large multi-block result merely to truncate it immediately.
+  let prefix = '';
+  for (const item of content) {
+    prefix += item.text.slice(0, 501 - prefix.length);
+    if (prefix.length >= 501) break;
+  }
+  return prefix;
 }
 
 /** Enrich error message with additional SAP XML diagnostic detail (extra messages, properties) */
@@ -463,11 +562,14 @@ function getBehaviorPoolSaveFailureHint(err: AdtApiError, args: Record<string, u
 }
 
 function classifyError(err: unknown): string {
+  if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return err.name;
+  if (err instanceof AdtResponseLimitError) return 'AdtResponseLimitError';
   if (err instanceof AdtApiError) {
     const classification = classifySapDomainError(err.statusCode, err.responseBody, err.path);
     return classification ? `AdtApiError:${classification.category}` : 'AdtApiError';
   }
   if (err instanceof AdtNetworkError) return 'AdtNetworkError';
+  if (err instanceof DataSourcePolicyError) return `DataSourcePolicyError:${err.code}`;
   if (err instanceof AdtSafetyError) return 'AdtSafetyError';
   if (err instanceof Error) return err.constructor.name;
   return 'Unknown';
@@ -494,7 +596,11 @@ export function getToolRegistry(): ToolRegistry {
   reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args));
   reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));
   reg('SAPActivate', (ctx) => handleSAPActivate(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
-  reg('SAPNavigate', (ctx) => handleSAPNavigate(ctx.client, ctx.args));
+  reg('SAPNavigate', async (ctx) =>
+    ctx.args.action === 'relations'
+      ? (await import('./live-relations.js')).handleLiveRelations(ctx.client, ctx.config, ctx.args, ctx.cacheSecurity)
+      : handleSAPNavigate(ctx.client, ctx.args),
+  );
   reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
   reg('SAPDiagnose', (ctx) => handleSAPDiagnose(ctx.client, ctx.args));
   reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args, ctx.config));
@@ -513,6 +619,8 @@ export function getToolRegistry(): ToolRegistry {
       ctx.server,
       ctx.cache,
       ctx.isPerUserClient,
+      undefined,
+      ctx.requestId,
     );
   });
   _toolRegistry = r;
@@ -635,6 +743,8 @@ export async function handleToolCall(
   requestId?: string,
   /** Request-local guard that may replace a handler result before the terminal audit event. */
   postDispatchResult?: () => ToolResult | undefined,
+  /** MCP caller cancellation; nested dispatch inherits it through RequestContext. */
+  signal?: AbortSignal,
 ): Promise<ToolResult> {
   const reqId = requestId ?? generateRequestId();
   const start = Date.now();
@@ -815,6 +925,10 @@ export async function handleToolCall(
     args = parsed.data as Record<string, unknown>;
   }
 
+  const inheritedDataResultScope = inherited?.dataResultScope;
+  const dataResultScope = inheritedDataResultScope ?? client.createDataResultScope();
+  const ownsDataResultScope = inheritedDataResultScope === undefined;
+
   // Run within request context so HTTP-level logs get the requestId
   return requestContext.run(
     {
@@ -825,6 +939,8 @@ export async function handleToolCall(
       target: config.targetId,
       identity,
       clientAgent,
+      signal: signal ?? inherited?.signal,
+      dataResultScope,
       // Carried forward from the HTTP edge so the outbound SAP call keeps the caller's trace.
       traceparent: inherited?.traceparent,
       tracestate: inherited?.tracestate,
@@ -862,9 +978,12 @@ export async function handleToolCall(
         if (guardedResult) result = guardedResult;
 
         const durationMs = Date.now() - start;
-        const fullText = result.content.map((c) => c.text).join('');
-        const resultSize = fullText.length;
-        const resultPreview = buildAuditResultPreview(toolName, args, fullText);
+        const resultSize = result.content.reduce((bytes, item) => bytes + item.text.length, 0);
+        const resultPreview = buildAuditResultPreview(
+          toolName,
+          args,
+          resultTextForAuditPreview(toolName, result.content),
+        );
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -894,6 +1013,25 @@ export async function handleToolCall(
             ? `SAP HTTP ${err.statusCode} authentication/authorization failure (response details suppressed)`
             : message;
         const durationMs = Date.now() - start;
+
+        if (err instanceof AdtResponseLimitError) {
+          logger.emitAudit({
+            timestamp: new Date().toISOString(),
+            level: 'warn',
+            event: 'data_response_limited',
+            destination: config.targetId ? undefined : config.destinationName,
+            target: config.targetId,
+            identity,
+            requestId: reqId,
+            user,
+            clientId,
+            tool: toolName,
+            limitBytes: err.limitBytes,
+            observedBytes: err.observedBytes,
+            endpointFamily: err.endpointFamily,
+            queueWaitMs: dataResultScope.queueWaitMs,
+          });
+        }
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -949,6 +1087,8 @@ export async function handleToolCall(
         }
 
         return errorResult(formatErrorForLLM(err, message, toolName, args, config));
+      } finally {
+        if (ownsDataResultScope) dataResultScope.release();
       }
     },
   );

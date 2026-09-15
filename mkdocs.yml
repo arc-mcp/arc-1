@@ -7,8 +7,13 @@ edit_uri: edit/main/docs_page/
 
 docs_dir: docs_page
 
+validation:
+  links:
+    anchors: warn
+
 theme:
   name: material
+  custom_dir: overrides
   palette:
     # `media` = follow the OS light/dark setting on first visit; the toggle then pins a choice.
     - media: '(prefers-color-scheme: light)'
@@ -26,6 +31,7 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
+    - announce.dismiss
     - navigation.path
     - navigation.sections
     - navigation.top
@@ -40,7 +46,9 @@ theme:
 
 nav:
   - Home: index.md
+  - Newsletter: newsletter.md
   - Quickstart: quickstart.md
+  - Agent Plugin: agent-plugin.md
   - Install in Claude: install-in-claude.md
   - Deployment:
       - Overview: deployment.md
@@ -50,9 +58,11 @@ nav:
       - Multi-System Setup (Multi-Target): multi-target-setup.md
       - Other SAP Environments:
           - BTP ABAP Environment: btp-abap-environment.md
+          - BTP ABAP Prerequisites (SAP side): btp-abap-prerequisites.md
           - S/4HANA Public Cloud: s4hana-public-cloud.md
       - Administration & Alternatives:
           - BTP Administration: btp-administration.md
+          - Optional Setup Worksheet: btp-setup-worksheet.md
           - Multi-Target Administration: multi-target-administration.md
           - Best Practices: deployment-best-practices.md
   - Auth & Permissions:
@@ -83,6 +93,7 @@ nav:
           - Log Analysis: log-analysis.md
           - Updating: updating.md
           - Caching: caching.md
+          - Live Relations (Experimental): live-relations.md
           - Rate Limiting: rate-limiting.md
   - Development:
       - Local Development: local-development.md

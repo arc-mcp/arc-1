@@ -5,6 +5,63 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.2.0](https://github.com/arc-mcp/arc-1/compare/v1.1.2...v1.2.0) (2026-09-03)
+
+
+### Features
+
+* add experimental data-source blocklist ([#740](https://github.com/arc-mcp/arc-1/issues/740)) ([97560ae](https://github.com/arc-mcp/arc-1/commit/97560ae1365a94ee7cf7c204b4318d762e812d9d))
+* bound data-preview response memory ([#739](https://github.com/arc-mcp/arc-1/issues/739)) ([e0320b3](https://github.com/arc-mcp/arc-1/commit/e0320b332fdd5ff54a4e907b239933d64c6a0609))
+* identify direct-connect SAP systems in instructions ([#735](https://github.com/arc-mcp/arc-1/issues/735)) ([7969a9b](https://github.com/arc-mcp/arc-1/commit/7969a9b2c39d06ce848656b2fbcd4b21a63aaf6b))
+
+
+### Bug Fixes
+
+* **security:** patch pre-authentication decoder DoS in optional BTP AppRouter ([#738](https://github.com/arc-mcp/arc-1/issues/738)) ([3d89008](https://github.com/arc-mcp/arc-1/commit/3d8900852be296870626bd8ed40325bff75a2713))
+* read local-class methods from class includes ([#744](https://github.com/arc-mcp/arc-1/issues/744)) ([978c0fe](https://github.com/arc-mcp/arc-1/commit/978c0feef45902d221c7f6f79a86738dfa8bc767))
+
+## [1.1.2](https://github.com/arc-mcp/arc-1/compare/v1.1.1...v1.1.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* correct ATC completeness evidence ([#729](https://github.com/arc-mcp/arc-1/issues/729)) ([da71f80](https://github.com/arc-mcp/arc-1/commit/da71f8088c7b67f2fc957ef041ff9d2522c73167))
+
+## [1.1.1](https://github.com/arc-mcp/arc-1/compare/v1.1.0...v1.1.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* add Agent Plugins 1.0 package ([#695](https://github.com/arc-mcp/arc-1/issues/695)) ([03ec895](https://github.com/arc-mcp/arc-1/commit/03ec895300b676d165cd5cd808ce8cdfbb4d66b5))
+* bind the ATC check variant SAPDiagnose claims to run ([#708](https://github.com/arc-mcp/arc-1/issues/708)) ([3c3e9f1](https://github.com/arc-mcp/arc-1/commit/3c3e9f1a7a4f721039d484f0f1437fe68a1a495c))
+* forward user=* when listing transports across owners ([#706](https://github.com/arc-mcp/arc-1/issues/706)) ([e1b9dfb](https://github.com/arc-mcp/arc-1/commit/e1b9dfba5e3c81e858cf72ea615455df445659df))
+* refresh runtime security packages before image scans ([#726](https://github.com/arc-mcp/arc-1/issues/726)) ([284935c](https://github.com/arc-mcp/arc-1/commit/284935cf671f6c1b727a812ac935422014ad7914))
+* resolve BSP paths from response metadata ([#727](https://github.com/arc-mcp/arc-1/issues/727)) ([c429720](https://github.com/arc-mcp/arc-1/commit/c429720d7666442e1f3dc25e3b09816508061881))
+* stop ATC polling once the worklist settles ([#710](https://github.com/arc-mcp/arc-1/issues/710)) ([4dcde5f](https://github.com/arc-mcp/arc-1/commit/4dcde5f4b5206ded189bb15c2cc843ee36bc5a09))
+
+## [1.1.0](https://github.com/arc-mcp/arc-1/compare/v1.0.2...v1.1.0) (2026-08-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* SAPGit no longer accepts the advertised but unimplemented commit action. Use abapGit push for supported commit-and-push workflows; gCTS mutations remain quarantined.
+
+### Features
+
+* add SAPTransport action="diff" for transport review ([#671](https://github.com/arc-mcp/arc-1/issues/671)) ([475e6f0](https://github.com/arc-mcp/arc-1/commit/475e6f02a47bd4c5d5b114f7dad8d8879ce31763))
+* harden ARC-1 CLI for SAP CI workflows ([#703](https://github.com/arc-mcp/arc-1/issues/703)) ([8c09b81](https://github.com/arc-mcp/arc-1/commit/8c09b810fefbc61520e6ae81e96d4802f8cad1a0))
+
+
+### Bug Fixes
+
+* add opt-in gzip for WAF-blocked data-preview requests ([#694](https://github.com/arc-mcp/arc-1/issues/694)) ([ba3e1d9](https://github.com/arc-mcp/arc-1/commit/ba3e1d950aeb75265ee245814922398d6e4f74c2))
+* correct and harden ADT source text search ([#683](https://github.com/arc-mcp/arc-1/issues/683)) ([33546e3](https://github.com/arc-mcp/arc-1/commit/33546e327a4630f9272ee63afdfa00c1c18aaf9b))
+* correct TABLE_QUERY IN value guidance ([#691](https://github.com/arc-mcp/arc-1/issues/691)) ([9fba0b6](https://github.com/arc-mcp/arc-1/commit/9fba0b6910dabf23d29fd52e4a3dfd16a27df6c1))
+* **deps:** resolve npm audit advisories in transitive dependencies ([#672](https://github.com/arc-mcp/arc-1/issues/672)) ([c24fb13](https://github.com/arc-mcp/arc-1/commit/c24fb13c7492bef779cc6587acfd5b4f57323a2a))
+* never report a syntax check as clean when SAP refused to run it ([#681](https://github.com/arc-mcp/arc-1/issues/681)) ([a9aedeb](https://github.com/arc-mcp/arc-1/commit/a9aedebbf31b2f373d29852f1523131a6f6f627e))
+* read the CSRF token and session cookie atomically ([#680](https://github.com/arc-mcp/arc-1/issues/680)) ([9c29f6d](https://github.com/arc-mcp/arc-1/commit/9c29f6d359e7e0614656cda0601cc848d919796d))
+* support DDLS table functions on 7.50 ([#693](https://github.com/arc-mcp/arc-1/issues/693)) ([1f29817](https://github.com/arc-mcp/arc-1/commit/1f29817eea57eb51a8ec5a1fe7fe915b5a9585a2))
+
 ## [1.0.2](https://github.com/arc-mcp/arc-1/compare/v1.0.1...v1.0.2) (2026-08-03)
 
 

@@ -37,12 +37,15 @@ A version (`1.0.1`), a release-please PR number, or nothing (then annotate every
    - Behavior change an existing setup would notice? Breaking? Security-relevant?
    - Which `docs_page/*.md` page documents it now?
 4. **Write the entry** using the template below, newest-first, above the previous version.
-5. **Verify** — `npx vitest run tests/unit/server/release-notes.test.ts`, and check every relative doc
+5. **Cut the draft** — remove implementation detail, debugging history, validation anecdotes, repeated
+   facts, and claims already clear from the change title. Link to detailed documentation instead.
+6. **Verify** — `npx vitest run tests/unit/server/release-notes.test.ts`, and check every relative doc
    link resolves to a file that exists. The guard counts a version as annotated only when it has its own
    `##`/`###` heading or is the first cell of a table row — a mention in prose does not satisfy it.
 
 **Accuracy beats completeness.** Every claim must trace to a diff you read. If you cannot determine
-the impact, write `(unverified)` — never guess what a change does for a user.
+the impact, write `(unverified)` — never guess what a change does for a user. The changelog remains the
+complete inventory; the release notes should contain only information needed to understand impact or act.
 
 ---
 
@@ -51,20 +54,28 @@ the impact, write `(unverified)` — never guess what a change does for a user.
 ```markdown
 ## 1.0.1 — <short theme> (YYYY-MM-DD)
 
-<2–4 sentences: what this release is about as a whole.>
+<1–2 sentences: the release theme and the most important action, if any.>
 
-| Change | What it means | Action |
+| Change | Impact | Action |
 |---|---|---|
-| <short title> ([#NNN](https://github.com/arc-mcp/arc-1/pull/NNN)) | plain-English impact for an operator or an LLM using the tools | `none` / `opt-in: SAP_X=true` / `re-read <page>` |
+| <short title> ([#NNN](https://github.com/arc-mcp/arc-1/pull/NNN)) | <one or two short sentences about user-visible behavior> | `none` / one specific action |
 
 **Upgrade notes** — only when something breaks or needs a config change.
 **New configuration** — one bullet per new flag, with its default.
 **Tool-surface changes** — one bullet per change an MCP client or LLM sees.
 ```
 
-Rules: terse and factual, no marketing. `Action` is `none` for the majority — say so plainly, that is
-the useful signal. Group trivial dependency bumps into one row. A release that only touches CI or
-release plumbing gets one line saying exactly that.
+Rules:
+
+- Be terse and factual; no marketing, scene-setting, or implementation narrative.
+- Keep the framing to 1–2 sentences and each table cell to 1–2 short sentences.
+- Group related PRs by one user-visible outcome. Do not mirror every changelog line into its own row.
+- Keep only details that change behavior, compatibility, security, configuration, or a user's next step.
+- Put deep protocol details, benchmarks, reproduction history, and evidence in linked documentation.
+- Use `Action: none` when no action is required. Give one concrete action otherwise.
+- Summarize CI-only or release-plumbing releases in one sentence.
+- As a default target, keep an entry under 350 words; exceed it only for a breaking migration that cannot
+  be stated safely in less space.
 
 ---
 

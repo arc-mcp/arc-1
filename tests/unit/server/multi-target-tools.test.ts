@@ -55,6 +55,7 @@ describe('multi-target tool surface', () => {
     expect(lint.inputSchema.properties).not.toHaveProperty('style');
 
     const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose') as ToolDefinition;
+    expect(diagnose.inputSchema.properties).toHaveProperty('includeSubpackages');
     expect(property(diagnose, 'action').enum).toEqual([
       'syntax',
       'unittest',
@@ -77,6 +78,7 @@ describe('multi-target tool surface', () => {
     expect(property(transport, 'action').enum).toEqual(['list', 'get', 'check', 'history']);
     expect(transport.inputSchema.properties).not.toHaveProperty('target');
     expect(transport.inputSchema.properties).not.toHaveProperty('transportLayer');
+    expect(transport.inputSchema.properties).not.toHaveProperty('resultFormat');
   });
 
   it('adds data and SQL only when the effective target/union policy permits them', () => {
@@ -105,6 +107,25 @@ describe('multi-target tool surface', () => {
       'sql_trace_directory',
       'authorization_trace',
     ]);
+  });
+
+  it('explicitly permits bounded ATC batches within one pinned or aggregate target', () => {
+    const tools = multiTargetToolDefinitions(getToolDefinitions(DEFAULT_CONFIG), DEFAULT_CONFIG);
+    const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose')!;
+    const objects = property(diagnose, 'objects');
+    expect(objects).toMatchObject({
+      minItems: 1,
+      maxItems: 20,
+      items: { additionalProperties: false, required: ['type', 'name'] },
+    });
+    expect(diagnose.annotations?.readOnlyHint).toBe(true);
+    const aggregate = injectTargetSchema(diagnose, [target(1)]);
+    expect(property(aggregate, 'objects')).toEqual(objects);
+    expect(aggregate.inputSchema.required).toContain('target');
+    const selection = [{ type: 'CLAS', name: 'ZCL_A' }];
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc', objects: selection }, DEFAULT_CONFIG)).toBe(
+      'allowed',
+    );
   });
 
   it.each([1, 16])('uses an exact target enum for %i targets', (count) => {
@@ -143,7 +164,9 @@ describe('multi-target tool surface', () => {
     expect(multiTargetInvocationDecision('SAPTransport', { action: 'create' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPTransport', { action: 'layers' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc_ci' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest_ci' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_start' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_cancel' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'apply_quickfix' }, DEFAULT_CONFIG)).toBe(

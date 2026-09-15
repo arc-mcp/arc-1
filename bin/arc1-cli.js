@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 
-// ARC-1 CLI — direct tool invocation entry point
-// Delegates to compiled TypeScript (dist/cli.js).
-//
-// This bin is separate from `arc1` because the MCP server entry (`bin/arc1.js` → dist/index.js)
-// must own stdin/stdout cleanly for the JSON-RPC stream. `arc1-cli` is for command-line use
-// (read, activate, syntax, call, extract-cookies, …) and exits after a single invocation.
+// Back-compatible alias of arc1/arc-1. All names expose the same command set.
 
-import('../dist/cli.js');
+const { main } = await import('../dist/cli.js');
+process.exitCode = await main(process.argv.slice(2));

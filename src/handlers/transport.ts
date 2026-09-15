@@ -7,6 +7,7 @@ import { type AdtClient, clampSearchResults } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
 import { checkTransport } from '../adt/safety.js';
 import {
+  checkRecursiveTransportReleaseScope,
   createTransport,
   createTransportWithTarget,
   deleteTransport,
@@ -19,10 +20,11 @@ import {
   listTransports,
   listTransportTargets,
   reassignTransport,
-  releaseTransport,
+  releaseTransportAndWait,
   releaseTransportRecursive,
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
+  type TransportReleaseResult,
 } from '../adt/transport.js';
 import { diffTransportObject, type LogicalTransportObject, rollupTransportObjects } from '../adt/transport-diff.js';
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
@@ -76,38 +78,92 @@ function formatReleaseReport(r: TransportReleaseReport): string {
 }
 
 /**
- * Turn release check reports into a tool result. A blocked release returns HTTP 200 with
- * `status≠released` — so this is the only place that distinguishes a real release from a silent abort.
- * Clean release → the same concise line as before (token-lean); warnings → that line + the findings;
- * blocked → an error with the reporter status + messages so the agent knows why.
- *
- * @param released  ids that actually released (recursive case); enables the `Released (recursive): …` form.
+ * Preserve the legacy human response by default; structured mode returns machine-readable terminal
+ * evidence so CLI/CI callers can inspect every frozen id and raw SAP report.
  */
-function summarizeRelease(id: string, reports: TransportReleaseReport[], released?: string[]): ToolResult {
-  const failed = failedReleaseReports(reports);
-  const reconciledAsReleased = failed.length > 0 && released?.includes(id) === true;
-  if (failed.length > 0 && !reconciledAsReleased) {
+function summarizeRelease(result: TransportReleaseResult, resultFormat: 'legacy' | 'structured'): ToolResult {
+  const { requestedId: id } = result;
+  const allReports = result.submissions.flatMap((submission) => submission.reports);
+  const failed = failedReleaseReports(allReports);
+  const render = (legacy: ToolResult): ToolResult => {
+    if (resultFormat === 'legacy') return legacy;
+    const payload = toolJson({
+      message: legacy.content[0]?.text ?? '',
+      requestedId: result.requestedId,
+      recursive: result.recursive,
+      outcome: result.outcome,
+      verified: result.verified,
+      intendedIds: result.intended.map((node) => node.id),
+      released: result.released,
+      polls: result.polls,
+      elapsedMs: result.elapsedMs,
+      statuses: result.intended,
+      reports: result.submissions,
+      ...(result.reportConflicts ? { reportConflicts: result.reportConflicts } : {}),
+      ...(result.unexpectedChildren ? { unexpectedChildren: result.unexpectedChildren } : {}),
+      ...(result.lastReadError ? { lastReadError: result.lastReadError } : {}),
+    });
+    return legacy.isError ? errorResult(payload) : textResult(payload);
+  };
+
+  if (!result.verified) {
+    const observed = result.intended.length
+      ? result.intended.map((node) => `${node.id}=${node.lastStatus || 'unknown'}`).join(', ')
+      : 'no CTS state';
+    if (failed.length === 0) {
+      const reason =
+        result.outcome === 'timeout'
+          ? `terminal status R/N was not observed before the verification deadline (${observed})`
+          : `terminal status could not be verified (${observed})${result.lastReadError ? `: ${result.lastReadError}` : ''}`;
+      return render(errorResult(`Transport ${id} release is ${result.outcome}: ${reason}.`));
+    }
+
     const detail = failed.map(formatReleaseReport).join('\n');
-    const partial = released && released.length > 0 ? `\nReleased before the block: ${released.join(', ')}.` : '';
-    return errorResult(
-      `Transport ${id} was NOT released — SAP returned HTTP 200 but aborted the release:\n${detail}${partial}\n` +
-        `Fix the reported errors (e.g. ATC findings, locks), then retry.`,
+    const partial =
+      result.released.length > 0 ? `\nConfirmed released before the block: ${result.released.join(', ')}.` : '';
+    if (result.outcome === 'unknown') {
+      const stateEvidence = result.lastReadError ? `\n${result.lastReadError}` : '';
+      return render(
+        errorResult(
+          `Transport ${id} release could not be verified: SAP returned a failed release-check report, and the ` +
+            `final CTS state is unknown:\n${detail}${partial}${stateEvidence}\nInspect the transport state before retrying.`,
+        ),
+      );
+    }
+    return render(
+      errorResult(
+        `Transport ${id} was NOT released — SAP returned HTTP 200 but aborted the release:\n${detail}${partial}\n` +
+          'Fix the reported errors (e.g. ATC findings, locks), then retry.',
+      ),
     );
   }
-  const prefix = released
-    ? `Released (recursive): ${released.length ? released.join(', ') : id}`
+
+  const prefix = result.recursive
+    ? `Released (recursive): ${result.released.length ? result.released.join(', ') : id}`
     : `Released transport request: ${id}`;
-  if (reconciledAsReleased) {
-    return textResult(
-      `${prefix}\nSAP returned a conflicting release-check report; the refreshed request state confirmed status R.`,
+  if (result.reportConflicts?.length) {
+    return render(
+      textResult(
+        `${prefix}\nSAP returned a conflicting release-check report; the refreshed request state confirmed released status R/N.`,
+      ),
     );
   }
-  const warnings = reports.flatMap((r) => r.messages);
+  const uncertainSubmissions = result.submissions.filter((submission) => submission.error);
+  if (uncertainSubmissions.length > 0) {
+    return render(
+      textResult(
+        `${prefix}\nSAP returned an error for release submission ${uncertainSubmissions
+          .map((submission) => submission.id)
+          .join(', ')}, but the refreshed request state confirmed released status R/N.`,
+      ),
+    );
+  }
+  const warnings = allReports.flatMap((r) => r.messages);
   if (warnings.length > 0) {
     const list = warnings.map((m) => `  - ${m.severity}: ${m.text}${m.uri ? ` (${m.uri})` : ''}`).join('\n');
-    return textResult(`${prefix}\nReleased with ${warnings.length} warning(s):\n${list}`);
+    return render(textResult(`${prefix}\nReleased with ${warnings.length} warning(s):\n${list}`));
   }
-  return textResult(prefix);
+  return render(textResult(prefix));
 }
 
 // ─── SAPTransport Handler ────────────────────────────────────────────
@@ -155,7 +211,8 @@ export async function handleSAPTransport(
       // per-request object lists, not the count — capping at 50 of 55 saved only 2%, while dropping
       // object lists saves 4.7x. So `list` summarises by default (the list→get workflow this tool
       // already documents); pass summary=false for the old full-object payload. maxResults stays as
-      // a backstop for a large backlog.
+      // a backstop for a large backlog. It bounds the returned tool payload after the full SAP
+      // response has been fetched; /cts/transportrequests has no server-side row-limit parameter.
       const limit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_TRANSPORT_RESULTS);
       const page = transports.slice(0, limit);
       const truncated = transports.length > limit;
@@ -168,8 +225,8 @@ export async function handleSAPTransport(
           ...(truncated
             ? {
                 hint:
-                  `Showing ${page.length} of ${transports.length} transports. Narrow with user/status, ` +
-                  `or raise maxResults (max 1000).`,
+                  `Showing ${page.length} of ${transports.length} transports${user === '*' ? ' (all visible users)' : ''}. ` +
+                  `Narrow with ${user === '*' ? 'user=<name>, ' : ''}status, or raise maxResults (max 1000).`,
               }
             : {}),
           transports: payload,
@@ -419,8 +476,10 @@ export async function handleSAPTransport(
       checkTransport(client.safety, id, 'ReleaseTransport', true);
       const blocking = await precheckInactiveForRelease(client, id);
       if (blocking.length > 0) return inactiveReleaseError(id, blocking);
-      const reports = await releaseTransport(client.http, client.safety, id);
-      return summarizeRelease(id, reports);
+      const result = await releaseTransportAndWait(client.http, client.safety, id, {
+        ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+      });
+      return summarizeRelease(result, args.resultFormat === 'structured' ? 'structured' : 'legacy');
     }
     case 'delete': {
       const id = String(args.id ?? '');
@@ -484,14 +543,17 @@ export async function handleSAPTransport(
       const id = String(args.id ?? '');
       if (!id) return errorResult('Transport ID is required for "release_recursive" action.');
       // Safety ceiling before the diagnostic read (see 'release' above). releaseTransportRecursive
-      // re-checks the request and each task defensively.
+      // re-checks the request, broad recursive scope, and each task defensively.
       checkTransport(client.safety, id, 'ReleaseTransportRecursive', true);
+      checkRecursiveTransportReleaseScope(client.safety);
       // One probe on the parent request id catches child-task objects too (their parentTransport
       // ends in /<request>), so no per-task fetch is needed.
       const blocking = await precheckInactiveForRelease(client, id);
       if (blocking.length > 0) return inactiveReleaseError(id, blocking);
-      const { released, reports } = await releaseTransportRecursive(client.http, client.safety, id);
-      return summarizeRelease(id, reports, released);
+      const result = await releaseTransportRecursive(client.http, client.safety, id, {
+        ...(args.timeoutSeconds === undefined ? {} : { timeoutMs: Number(args.timeoutSeconds) * 1000 }),
+      });
+      return summarizeRelease(result, args.resultFormat === 'structured' ? 'structured' : 'legacy');
     }
     case 'check': {
       // Check transport requirements for an object/package combination.

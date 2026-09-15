@@ -284,6 +284,58 @@ cf ssh arc1 -c "curl -s http://localhost:8080/health"
 
 ---
 
+## BTP ABAP Environment (service key)
+
+ARC-1 has two tiers of BTP ABAP integration tests. Both are **local-only**: the service-key provider
+authenticates with the browser Authorization Code flow, and free-tier instances are stopped
+automatically. Tests skip when no credentials are configured. Setup: [BTP ABAP Environment](btp-abap-environment.md).
+
+### Smoke tests
+
+Core connectivity and API contracts, no repository mutations: connect + CSRF token, system-info
+shape, read a released class (`CL_ABAP_RANDOM`), search released objects, and confirm classic
+programs (`RSHOWTIM`) are not reachable.
+
+```bash
+TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test:integration:btp:smoke
+# or: TEST_BTP_SERVICE_KEY='{"uaa":{…},…}' npm run test:integration:btp:smoke
+```
+
+### Extended tests
+
+Interactive scenarios — browser OAuth login, writes (create/update/delete), code intelligence,
+transports, and restriction behavior. Never run in CI.
+
+```bash
+TEST_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-abap-service-key.json npm run test:integration:btp
+```
+
+### Failure taxonomy
+
+| Category | Symptoms | Cause |
+|---|---|---|
+| **Auth** | 401, token exchange failure | Token expired, service key invalid or revoked |
+| **Connectivity** | `ECONNREFUSED`, `ETIMEDOUT`, DNS failure | Instance stopped (free tier), network unreachable |
+| **Backend unavailable** | 503, maintenance page | Platform maintenance or provisioning |
+| **Assertion** | `expect` mismatch | API contract changed — a real regression to investigate |
+
+Only assertion failures indicate an ARC-1 problem; auth and connectivity failures are expected with
+free-tier instances.
+
+### Tenant assumptions
+
+- Standard released objects exist (`CL_ABAP_RANDOM`, `IF_ABAP_RANDOM`).
+- Free tier: one system per global account, stopped automatically, 90-day limit.
+
+### Checklist
+
+- [ ] Smoke suite passes against a running instance
+- [ ] Browser login completes and the token is reused for later calls
+- [ ] `SAPManage probe` reports `systemType: "btp"`
+- [ ] Write tests target a real development package (not `ZLOCAL`/`$TMP`)
+
+---
+
 ## Full Regression Suite
 
 Run all tests:

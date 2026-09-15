@@ -1,6 +1,6 @@
 _schema-version: "3.1"
 ID: arc1-mcp
-version: 1.0.2 # x-release-please-version
+version: 1.2.0 # x-release-please-version
 description: ARC-1 — MCP Server for SAP ABAP Systems
 
 # ──────────────────────────────────────────────────────────────────────
@@ -71,17 +71,16 @@ modules:
       # `host:` in your `mta-overrides.mtaext` (see mta-overrides.mtaext.example).
       health-check-type: http
       health-check-http-endpoint: /health
-      # Node heap target sized to 87.5% of dyno memory (512M -> 448M) so V8 GCs
-      # cleanly inside the CF cgroup instead of being SIGKILL'd; bump in
-      # lockstep when memory: changes.
-      command: node --max-old-space-size=448 dist/index.js
       buildpack: nodejs_buildpack
+      # Invoke the wrapper through sh because Windows-built MTARs do not preserve
+      # its executable bit. It validates MEMORY_AVAILABLE, applies the adaptive
+      # 75% policy, then execs Node so CF's SIGTERM reaches ARC-1.
+      command: exec sh ./bin/start-cf.sh
     build-parameters:
       builder: custom
       commands: []
       ignore:
-        - .env
-        - .env.*
+        - .env*
         - .npmrc
         - "*service-key*.json"
         - "*.key"
@@ -97,6 +96,7 @@ modules:
         - .cursor-plugin/
         - .cursorignore
         - .dockerignore
+        - .gitattributes
         - .gitignore
         - .mcp.json.example
         - .mcpbignore
@@ -105,6 +105,8 @@ modules:
         - tests/
         - docs/
         - docs_page/
+        - examples/
+        - .arc1/
         - btp/
         - skills/
         - coverage/
@@ -142,6 +144,10 @@ modules:
         - vitest*.ts
         - xs-security.json
     properties:
+      # Let the CF launcher size old-space to 75% of MEMORY_AVAILABLE.
+      # This follows durable MTA memory overrides (512M -> 384M, 1G -> 768M)
+      # while preserving native/Buffer/parser headroom outside the V8 heap.
+      OPTIMIZE_MEMORY: "true"
       SAP_TRANSPORT: http-streamable
       SAP_SYSTEM_TYPE: auto
       SAP_LANGUAGE: EN
@@ -192,6 +198,7 @@ modules:
       SAP_ALLOW_WRITES: "false"
       SAP_ALLOW_DATA_PREVIEW: "false"
       SAP_ALLOW_FREE_SQL: "false"
+      SAP_BLOCKED_DATA_SOURCES: ""
       SAP_ALLOW_TRANSPORT_WRITES: "false"
       SAP_ALLOW_GIT_WRITES: "false"
       SAP_ALLOWED_PACKAGES: "$TMP"

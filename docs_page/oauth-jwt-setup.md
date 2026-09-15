@@ -156,7 +156,8 @@ Then let your IdP assign JWT scopes per user:
 - `read` for reviewers
 - `read write` for developers
 - `read write transports` for users allowed to create/release CTS requests
-- `read write git` for users allowed to run gCTS/abapGit mutations
+- `read write git` for users allowed to run gated abapGit mutation/egress actions (the scope reserves
+  the gCTS mutation boundary too, but current gCTS mutations are quarantined before HTTP)
 - `read write data sql` only for users who should access SAP data through ARC-1
 
 Transport and Git mutations need both `write` and the specialized `transports` / `git` scope. Granting only `transports` or only `git` is not enough because ARC-1 disables all mutations for users without `write`.

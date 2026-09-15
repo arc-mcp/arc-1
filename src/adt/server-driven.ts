@@ -23,6 +23,7 @@
  * the metadata content-type varies (blues v1, EVTO=blues v2, DTDC=ddic.dtdc.v1) — all stored per
  * registry entry, verified live: the blue family on 816, DTDC create→activate on 758 + 816.
  */
+import { logger } from '../server/logger.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError } from './errors.js';
@@ -195,9 +196,8 @@ export const SDO_REGISTRY = {
   },
   // Launchpad content: the LADI replaces the deprecated tile/target-mapping model and is the
   // developer-owned unit on ABAP Cloud. blues.v2 (v1 -> 406, verified on 816).
-  // Read-only in practice on on-prem: create -> 400 'Editing of LADIs with ALV "Standard" not
-  // allowed in workbench tools' (LADI edits need the ABAP Cloud language version). SAP's refusal is
-  // clear and also covers read-only manifest-generated items, so no client-side guard.
+  // Manual Cloud-language items are editable, including on-prem 816. Generated items and Standard
+  // language items can be readonly. The UIAD writer probes the object's root configuration flag.
   UIAD: {
     href: '/sap/bc/adt/fiori/uiad',
     label: 'Launchpad App Descriptor Item (LADI)',
@@ -294,7 +294,7 @@ export function serverDrivenUnavailableMessage(tool: string, code: string): stri
   return (
     `${tool} type=${code} (server-driven object): this system does not advertise ADT support for it. ` +
     'These types are discovery-gated and depend on the SAP release / support package ' +
-    '(e.g. DTSC/CSNM/EVTO/UIAD need ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB also ship on S/4HANA 2023 / 758).'
+    '(e.g. DTSC/CSNM/EVTO ship on ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB and UIAD backports also ship on S/4HANA 2023 / 758).'
   );
 }
 
@@ -338,11 +338,19 @@ export async function getServerDrivenObject(
  * it would be an ADT-ignored attribute — so the body here is exactly the form proven to create every
  * registered type.
  */
-export function buildServerDrivenMetadataXml(code: string, name: string, pkg: string, description: string): string {
+export type UiadLanguageVersion = 'standard' | 'keyUser' | 'cloudDevelopment';
+
+export function buildServerDrivenMetadataXml(
+  code: string,
+  name: string,
+  pkg: string,
+  description: string,
+  uiadLanguageVersion?: UiadLanguageVersion,
+): string {
   const entry = sdoEntry(code);
   const [prefix] = entry.metadataRootQName.split(':');
   return `<?xml version="1.0" encoding="UTF-8"?>
-<${entry.metadataRootQName} xmlns:${prefix}="${entry.metadataNamespace}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${escapeXmlAttr(entry.createType)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}">
+<${entry.metadataRootQName} xmlns:${prefix}="${entry.metadataNamespace}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${escapeXmlAttr(entry.createType)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}"${code === 'UIAD' && uiadLanguageVersion ? ` adtcore:abapLanguageVersion="${escapeXmlAttr(uiadLanguageVersion)}"` : ''}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
 </${entry.metadataRootQName}>`;
 }
@@ -350,6 +358,9 @@ export function buildServerDrivenMetadataXml(code: string, name: string, pkg: st
 /** Options shared by the SDO write operations. */
 export interface ServerDrivenWriteOptions {
   transport?: string;
+  /** Internal mutation accounting; never a tool input. */
+  onSourceWrite?: (state: 'attempted' | 'confirmed') => void;
+  onUnlockFailure?: () => void;
 }
 
 /**
@@ -362,11 +373,11 @@ export async function createServerDrivenObject(
   safety: SafetyConfig,
   code: string,
   name: string,
-  opts: { package: string; description: string; transport?: string },
+  opts: { package: string; description: string; transport?: string; uiadLanguageVersion?: UiadLanguageVersion },
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
   const entry = sdoEntry(code);
-  const body = buildServerDrivenMetadataXml(code, name, opts.package, opts.description);
+  const body = buildServerDrivenMetadataXml(code, name, opts.package, opts.description, opts.uiadLanguageVersion);
   const url = opts.transport ? `${entry.href}?corrNr=${encodeURIComponent(opts.transport)}` : entry.href;
   const resp = await http.post(url, body, entry.metadataContentType);
   return resp.body;
@@ -392,13 +403,27 @@ export async function updateServerDrivenObjectSource(
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, objUrl, 'MODIFY');
     const transport = opts.transport ?? (lock.corrNr || undefined);
+    let unlockError: unknown;
     try {
       const params = [`lockHandle=${encodeURIComponent(lock.lockHandle)}`];
       if (transport) params.push(`corrNr=${encodeURIComponent(transport)}`);
+      opts.onSourceWrite?.('attempted');
       await session.put(`${objUrl}/source/main?${params.join('&')}`, source, serverDrivenSourceContentType(code));
+      opts.onSourceWrite?.('confirmed');
     } finally {
-      await unlockObject(session, objUrl, lock.lockHandle);
+      try {
+        await unlockObject(session, objUrl, lock.lockHandle);
+      } catch (error) {
+        unlockError = error;
+        logger.warn('Server-driven object unlock failed; a SAP lock may remain.', {
+          objectUrl: objUrl,
+          ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
+        });
+        opts.onUnlockFailure?.();
+      }
     }
+    // Reached only when the PUT succeeded. A failed PUT keeps its original exception.
+    if (unlockError !== undefined) throw unlockError;
   });
 }
 

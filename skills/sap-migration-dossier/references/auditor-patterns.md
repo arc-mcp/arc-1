@@ -9,7 +9,8 @@ Use these patterns when a user wants a full migration-readiness dossier, persist
 | Versioned extract schema | Makes reruns and imported evidence reproducible | Write `inventory.json` with `schemaVersion`, `system`, `scope`, `generatedAt`, and `evidenceSources` |
 | Node/edge/source model | Separates inventory, graph, and source text | Keep `inventory.json`, `graph.json`, and optional source mirror separate |
 | Bounded LLM cards | Prevents huge prompts and hidden assumptions | Cap source context, summarize dependencies, flag truncation |
-| Strict enums | Makes review/report aggregation reliable | Use fixed `classification`, `effort`, `status`, `usageStatus`, and `cleanCoreLevel` values |
+| Strict enums | Makes review/report aggregation reliable | Use fixed `classification`, `effort`, `status`, `usageStatus`, `extensibilityLevel`, and `integrationLevel` values |
+| Two clean core axes | Note 3578329 (extensibility) and Note 3690029 (integration) are independent scales that share the letters A–D | Keep `extensibilityLevel` and `integrationLevel` as separate fields; never collapse them into one `cleanCoreLevel` |
 | Human review state | Keeps AI drafts out of customer-facing decisions | Use `cards.jsonl` + `reviews.jsonl`; final report includes only validated/corrected cards |
 | Integrity seal | Helps prove the report matches extracted source | Hash source bodies or source excerpts and report match/missing counts |
 | Declared limits | Makes the dossier honest | Always list missing runtime data, dynamic calls, skipped objects, and unavailable APIs |

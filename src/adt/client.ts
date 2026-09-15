@@ -16,15 +16,35 @@
  * This keeps the client class manageable (not a 2,400-line God class).
  */
 
+import { getCurrentContext } from '../server/context.js';
+import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
-import { lockObject, unlockObject } from './crud.js';
+import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
+import { canonicalDataSourceName } from './data-source-name.js';
+import {
+  CDS_DEPENDENCY_GRAPH_PATH,
+  createDataSourceBlocklistGuard,
+  type DataSourceBlocklistGuard,
+} from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
+import type { AdtRequestOptions } from './http-deadline.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
+import { canonicalRevisionSourcePath } from './path-safety.js';
+import { clampUrlLimit } from './result-limits.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
+import { buildTableQuerySql, clampPreviewRows, executeDataPreviewStatements } from './table-query.js';
+import {
+  readTextElementPart,
+  readTextElements,
+  type TextElementObjectType,
+  type TextElementPart,
+  writeTextElementPart,
+} from './text-elements.js';
+import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
 import type {
   AdtObjectLookupResult,
   AdtSearchResult,
@@ -58,7 +78,7 @@ import {
   parseClassMetadata,
   parseClassStructure,
   parseDataElementMetadata,
-  parseDataPreviewMeta,
+  parseDataPreviewResult,
   parseDomainMetadata,
   parseEnhancementImplementation,
   parseFeatureToggleStates,
@@ -71,12 +91,13 @@ import {
   parseRevisionFeed,
   parseSearchResults,
   parseServiceBinding,
-  parseSourceSearchResults,
   parseSubpackageNodestructure,
   parseSystemInfo,
   parseTableContents,
   parseTransactionMetadata,
 } from './xml-parser.js';
+
+export { buildTableQuerySql, clampPreviewRows, clampSearchResults, toTextSearchObjectType };
 
 export interface SourceReadResult {
   source: string;
@@ -85,7 +106,9 @@ export interface SourceReadResult {
   statusCode: number;
 }
 
-export interface SourceReadOptions {
+export type BspPathContent = { kind: 'folder'; nodes: BspFileNode[] } | { kind: 'file'; content: string };
+
+export interface SourceReadOptions extends AdtRequestOptions {
   ifNoneMatch?: string;
   version?: 'active' | 'inactive';
   accept?: string;
@@ -165,142 +188,6 @@ function tadirObjectUrl(tadirType: string, name: string): string {
   }
 }
 
-// ─── TABLE_QUERY SQL builder ───────────────────────────────────────────────
-
-/** Allowed SQL comparison operators for TABLE_QUERY where conditions. */
-const ALLOWED_OPS = new Set([
-  '=',
-  '!=',
-  '<>',
-  '<',
-  '<=',
-  '>',
-  '>=',
-  'LIKE',
-  'NOT LIKE',
-  'IN',
-  'NOT IN',
-  'IS NULL',
-  'IS NOT NULL',
-]);
-
-// BETWEEN is intentionally excluded: the value would require parsing "low AND high"
-// where AND is a reserved word, making safe escaping complex and error-prone.
-// Use two separate conditions (>= low, <= high) instead.
-
-/**
- * Build a safe IN/NOT IN list from a comma-separated string of raw values.
- * Each value is trimmed, single-quote-escaped, and wrapped in quotes.
- * Surrounding parentheses are accepted for caller convenience but stripped.
- * Subquery injection is impossible because every element becomes a string literal.
- */
-function buildInList(raw: string): string {
-  const trimmed = raw.trim();
-  const inner = trimmed.startsWith('(') && trimmed.endsWith(')') ? trimmed.slice(1, -1) : trimmed;
-  const parts = inner.split(',').map((p) => {
-    const escaped = p.trim().replace(/'/g, "''");
-    return `'${escaped}'`;
-  });
-  return `(${parts.join(', ')})`;
-}
-
-/** Upper bound on rows returned by a single TABLE_QUERY — a memory-safety rail (the whole
- *  result set is buffered in `parseTableContents`), not a SAP-side limit. Page client-side
- *  for more. Generous on purpose; adjust if a real use case needs it. */
-const MAX_TABLE_QUERY_ROWS = 10_000;
-
-/** Coerce a caller-supplied row limit into a safe positive integer in [1, MAX_TABLE_QUERY_ROWS].
- *  NaN / non-finite / non-positive / undefined fall back to the default (prevents `rowNumber=NaN`
- *  and unbounded result buffering). */
-export function clampPreviewRows(requested: number | undefined, fallback = 100): number {
-  if (requested === undefined || !Number.isFinite(requested) || requested < 1) return fallback;
-  return Math.min(Math.floor(requested), MAX_TABLE_QUERY_ROWS);
-}
-
-/** Media type for a class's text symbols on the top-level ADT textelements service. Used as BOTH
- *  Content-Type and Accept on the write PUT (SAP returns 400 "Accept header missing" otherwise).
- *  Symbols only — a class has no selection screen, so its `source/selections` segment is always
- *  empty and un-writable (SAP 406); selection texts are a program concept (future follow-up). */
-const TEXT_SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
-
-const MAX_SEARCH_RESULTS = 1_000;
-
-/** Coerce a caller-supplied search-result limit into a safe positive integer in
- *  [1, MAX_SEARCH_RESULTS]. NaN / non-finite / non-positive / undefined fall back to the
- *  caller's default — prevents an unbounded `maxResults` from buffering a huge result set
- *  on the shared event loop. */
-export function clampSearchResults(requested: number | undefined, fallback: number): number {
-  if (requested === undefined || !Number.isFinite(requested) || requested < 1) return fallback;
-  return Math.min(Math.floor(requested), MAX_SEARCH_RESULTS);
-}
-
-/** Floor + clamp a caller-supplied result limit to [1, 1000] before it is interpolated into an
- *  ADT search/listing URL query param (`maxResults=`, `rowNumber=`). Non-finite input — NaN from a
- *  coerced non-numeric, or undefined — falls back to the caller's default, so no float or
- *  out-of-range value ever reaches a SAP URL regardless of which tool supplied it. Mirrors
- *  `clampSearchResults` and diagnostics' `clampMaxResults`. The tool schemas advertise `maxResults`
- *  as `type: number` and SAPRead promises "clamped to [1, 1000]"; this is where that promise is
- *  kept (see docs/research/2026-06-12-maxresults-contract-asymmetry.md). */
-function clampUrlLimit(requested: number | undefined, fallback: number): number {
-  if (requested === undefined || !Number.isFinite(requested)) return fallback;
-  return Math.max(1, Math.min(1000, Math.floor(requested)));
-}
-
-/** Sanitize a SQL identifier (table / column / field): uppercase, then strip everything but
- *  word characters and the namespace slash. Throws when nothing survives — a structurally
- *  invalid identifier must fail closed rather than emit malformed SQL (e.g. `SELECT , X FROM`).
- *  Stripping spaces is also what blocks keyword injection (UNION/JOIN/OR collapse to one token). */
-function sanitizeIdentifier(raw: string, kind: 'table' | 'column' | 'field'): string {
-  const safe = raw.toUpperCase().replace(/[^\w/]/g, '');
-  if (!safe) throw new Error(`TABLE_QUERY: ${kind} name "${raw}" is invalid (empty after sanitization)`);
-  return safe;
-}
-
-/**
- * Build a safe SELECT statement from structured parameters.
- * All identifiers are uppercased, stripped to word-chars + namespace slash, and rejected if empty.
- * String values are single-quote escaped (doubled single quotes).
- * IN/NOT IN values are strictly parsed as quoted literal lists (no subqueries).
- * Raises if the table, any column, or any where-field is empty after sanitization.
- * ORDER BY is intentionally omitted: the ADT freestyle endpoint rejects it on NW 7.50/7.51.
- */
-export function buildTableQuerySql(
-  tableName: string,
-  columns?: string[],
-  where?: Array<{ field: string; op: string; value?: string }>,
-): string {
-  const safeTable = sanitizeIdentifier(tableName, 'table');
-
-  const colList = columns && columns.length > 0 ? columns.map((c) => sanitizeIdentifier(c, 'column')).join(', ') : '*';
-
-  let sql = `SELECT ${colList} FROM ${safeTable}`;
-
-  if (where && where.length > 0) {
-    const clauses = where.map(({ field, op, value }) => {
-      const safeField = sanitizeIdentifier(field, 'field');
-      const safeOp = op.trim().toUpperCase();
-      if (!ALLOWED_OPS.has(safeOp)) throw new Error(`TABLE_QUERY: operator "${op}" is not allowed`);
-
-      if (safeOp === 'IS NULL' || safeOp === 'IS NOT NULL') return `${safeField} ${safeOp}`;
-
-      if (safeOp === 'IN' || safeOp === 'NOT IN') {
-        // Each element is individually escaped — subquery injection impossible.
-        const safeList = buildInList(String(value ?? ''));
-        return `${safeField} ${safeOp} ${safeList}`;
-      }
-
-      const escaped = String(value ?? '').replace(/'/g, "''");
-      return `${safeField} ${safeOp} '${escaped}'`;
-    });
-    sql += ` WHERE ${clauses.join(' AND ')}`;
-  }
-
-  // ORDER BY intentionally omitted: the ADT freestyle SQL endpoint rejects it on
-  // NW 7.50/7.51 (parser error: '"DESC" is not allowed here'). Sort client-side if needed.
-
-  return sql;
-}
-
 /** The five source includes a class keeps its revisions under. */
 export const CLASS_REVISION_INCLUDES = ['main', 'definitions', 'implementations', 'macros', 'testclasses'] as const;
 
@@ -346,6 +233,14 @@ const REVISION_URL_BUILDERS: Record<
 /** Types with an addressable revisions feed — derived, never hand-maintained. */
 export const REVISION_TYPES: ReadonlySet<string> = new Set(Object.keys(REVISION_URL_BUILDERS));
 
+export {
+  isTextElementObjectType,
+  TEXT_ELEMENT_OBJECT_TYPES,
+  TEXT_ELEMENT_PARTS,
+  type TextElementObjectType,
+  type TextElementPart,
+} from './text-elements.js';
+
 export class AdtClient {
   readonly http: AdtHttpClient;
   readonly safety: SafetyConfig;
@@ -362,6 +257,10 @@ export class AdtClient {
   private internalUser?: string;
   /** The configured SAP client number (from --client / SAP_CLIENT) */
   readonly sapClient: string;
+  /** Per-call response ceiling shared by every data method in the current MCP request. */
+  private readonly maxDataPreviewResponseBytes: number;
+  /** Shared process-wide data admission guard (private fallback outside server-managed clients). */
+  private readonly dataResultSemaphore: Semaphore;
   /** Per-client cache of resolved TABL URLs for **reads** (transparent table at
    *  /tables/, structure at /structures/). Populated by getTabl() via the
    *  /tables/→/structures/ 404 fallback. */
@@ -383,6 +282,8 @@ export class AdtClient {
     this.bearerTokenProvider = config.bearerTokenProvider;
     this.usesBearerAuth = !!config.bearerTokenProvider;
     this.sapClient = config.client;
+    this.maxDataPreviewResponseBytes = config.maxDataPreviewResponseBytes;
+    this.dataResultSemaphore = config.dataResultSemaphore ?? new Semaphore(config.maxConcurrentDataResults);
 
     const httpConfig: AdtHttpConfig = {
       baseUrl: config.baseUrl,
@@ -391,6 +292,7 @@ export class AdtClient {
       client: config.client,
       language: config.language,
       insecure: config.insecure,
+      gzipDataPreviewBody: config.gzipDataPreviewBody,
       cookies: config.cookies,
       cookieFile: config.cookieFile,
       cookieString: config.cookieString,
@@ -463,7 +365,7 @@ export class AdtClient {
     const headers: Record<string, string> = {};
     if (opts.accept) headers.Accept = opts.accept;
     if (opts.ifNoneMatch) headers['If-None-Match'] = opts.ifNoneMatch;
-    const resp = await this.http.get(url, Object.keys(headers).length > 0 ? headers : undefined);
+    const resp = await this.http.get(url, Object.keys(headers).length > 0 ? headers : undefined, opts);
     return {
       source: resp.body,
       etag: resp.headers.etag ?? undefined,
@@ -1002,10 +904,11 @@ export class AdtClient {
     return parseTableType(resp.body);
   }
 
-  /** Get data element metadata (domain, labels, search help) */
-  async getDataElement(name: string): Promise<DataElementInfo> {
+  /** Get data element metadata (domain, labels/reserved lengths, search help, input-history flag) */
+  async getDataElement(name: string, version?: 'active' | 'inactive'): Promise<DataElementInfo> {
     checkOperation(this.safety, OperationType.Read, 'GetDataElement');
-    const resp = await this.http.get(`/sap/bc/adt/ddic/dataelements/${encodeURIComponent(name)}`);
+    const versionQuery = version ? `?version=${version}` : '';
+    const resp = await this.http.get(`/sap/bc/adt/ddic/dataelements/${encodeURIComponent(name)}${versionQuery}`);
     return parseDataElementMetadata(resp.body);
   }
 
@@ -1043,10 +946,13 @@ export class AdtClient {
   /** Read source content for a specific revision URI from the revisions feed. */
   async getRevisionSource(versionUri: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetRevisionSource');
-    if (!versionUri.startsWith('/sap/bc/adt/')) {
-      throw new Error('versionUri must be an ADT path starting with /sap/bc/adt/');
+    const canonicalUri = canonicalRevisionSourcePath(versionUri);
+    if (!canonicalUri) {
+      throw new Error(
+        'Path must be a canonical host-relative ADT path under /sap/bc/adt/ and a source URI from a VERSIONS response.',
+      );
     }
-    const resp = await this.http.get(versionUri, { Accept: 'text/plain' });
+    const resp = await this.http.get(canonicalUri, { Accept: 'text/plain' });
     return resp.body;
   }
 
@@ -1154,11 +1060,12 @@ export class AdtClient {
   // ─── Search Operations ─────────────────────────────────────────────
 
   /** Search for ABAP objects by name pattern */
-  async searchObject(query: string, maxResults = 100): Promise<AdtSearchResult[]> {
+  async searchObject(query: string, maxResults = 100, objectType?: string): Promise<AdtSearchResult[]> {
     checkOperation(this.safety, OperationType.Search, 'SearchObject');
     const limit = clampSearchResults(maxResults, 100);
+    const typeFilter = objectType ? `&objectType=${encodeURIComponent(objectType)}` : '';
     const resp = await this.http.get(
-      `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=${encodeURIComponent(query)}&maxResults=${limit}`,
+      `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=${encodeURIComponent(query)}&maxResults=${limit}${typeFilter}`,
     );
     return parseSearchResults(resp.body);
   }
@@ -1315,20 +1222,14 @@ export class AdtClient {
     });
   }
 
-  /** Search within ABAP source code (full-text search) */
+  /** Search within ABAP source code through the bounded ADT text-search contract. */
   async searchSource(
     pattern: string,
     maxResults = 50,
     objectType?: string,
     packageName?: string,
   ): Promise<SourceSearchResult[]> {
-    checkOperation(this.safety, OperationType.Search, 'SearchSource');
-    const limit = clampSearchResults(maxResults, 50);
-    let url = `/sap/bc/adt/repository/informationsystem/textSearch?searchString=${encodeURIComponent(pattern)}&maxResults=${limit}`;
-    if (objectType) url += `&objectType=${encodeURIComponent(objectType)}`;
-    if (packageName) url += `&packageName=${encodeURIComponent(packageName)}`;
-    const resp = await this.http.get(url);
-    return parseSourceSearchResults(resp.body);
+    return executeSourceSearch(this.http, this.safety, pattern, maxResults, objectType, packageName);
   }
 
   // ─── Package Operations ────────────────────────────────────────────
@@ -1353,8 +1254,8 @@ export class AdtClient {
    *
    * @param packageName — DEVC name to inspect
    * @param maxResults — soft cap on number of returned entries (default 200,
-   *                     clamped to [1, 1000]). Larger packages may be silently
-   *                     truncated by SAP at this limit; raise it if needed.
+   *                     clamped to [1, 1000]). This array API has no completeness
+   *                     metadata; SAPRead supplies it alongside these entries.
    * @returns array of `{ type, name, description, uri }` (URIs may be empty
    *          for objects that the workbench does not expose via ADT, e.g.
    *          some `IWMO`/`IWPR`/`SICF/TYP` entries).
@@ -1440,6 +1341,51 @@ export class AdtClient {
 
   // ─── Table Data Operations ─────────────────────────────────────────
 
+  /** A fresh guard per logical request; instrumentation never leaks between decisions. */
+  private dataSourceBlocklistGuard(): DataSourceBlocklistGuard {
+    return createDataSourceBlocklistGuard({
+      blockedDataSources: this.safety.blockedDataSources,
+      searchObject: (name, maxResults) => this.searchObject(name, maxResults),
+      // Canonical /tables source only: the NW 7.50 /structures fallback omits
+      // replacementObject metadata and therefore cannot prove authorization.
+      readTableSource: async (name) => (await this.getTable(name)).source,
+      dependencyGraphAccept: () => this.http.discoveryAcceptFor(CDS_DEPENDENCY_GRAPH_PATH),
+      readDependencyGraph: async (path, accept) => {
+        checkOperation(this.safety, OperationType.Read, 'GetCdsDependencyGraph');
+        return (await this.http.get(path, { Accept: accept })).body;
+      },
+    });
+  }
+
+  /** Create the lazy request-level result scope inherited by nested handler dispatch. */
+  createDataResultScope(): DataResultScope {
+    return new DataResultScope(this.maxDataPreviewResponseBytes, this.dataResultSemaphore);
+  }
+
+  private async withDataResultScope<T>(
+    operation: (budget: DataResponseBudget, signal?: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const context = getCurrentContext();
+    const inheritedScope = context?.dataResultScope;
+    const scope = inheritedScope ?? this.createDataResultScope();
+    await scope.acquire(context?.signal);
+    try {
+      return await operation(scope.responseBudget, context?.signal);
+    } finally {
+      if (!inheritedScope) scope.release();
+    }
+  }
+
+  private async postDataPreview(
+    path: string,
+    body: string | undefined,
+    budget: DataResponseBudget,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const resp = await this.http.post(path, body, 'text/plain', undefined, { responseBudget: budget, signal });
+    return resp.body;
+  }
+
   /** Get table contents via data preview */
   async getTableContents(
     tableName: string,
@@ -1447,18 +1393,30 @@ export class AdtClient {
     sqlFilter?: string,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'GetTableContents');
+    // Canonicalize BEFORE authorizing and before building the URL so the name the policy checks is
+    // byte-for-byte the name SAP receives. This runs with the blocklist off too: identifier handling
+    // must not depend on policy state.
+    const source = canonicalDataSourceName(tableName, 'TABLE_CONTENTS table name');
+    await this.dataSourceBlocklistGuard().enforceTableContents(source, sqlFilter);
     const rowLimit = clampPreviewRows(maxRows);
-    const resp = await this.http.post(
-      `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(tableName)}`,
-      sqlFilter,
-      'text/plain',
+    // Response memory is bounded per logical request (#739); the URL uses the canonical `source`
+    // so the name the policy authorized is byte-for-byte the name SAP receives.
+    return this.withDataResultScope(async (budget, signal) =>
+      parseTableContents(
+        await this.postDataPreview(
+          `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(source)}`,
+          sqlFilter,
+          budget,
+          signal,
+        ),
+      ),
     );
-    return parseTableContents(resp.body);
   }
 
   /** Execute freestyle SQL query and return just the rows/columns. */
   async runQuery(sql: string, maxRows = 100): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
-    return parseTableContents(await this.postFreestyleQuery(sql, maxRows));
+    const { columns, rows } = await this.runQueryBatch([sql], maxRows);
+    return { columns, rows };
   }
 
   /**
@@ -1471,14 +1429,56 @@ export class AdtClient {
     sql: string,
     maxRows = 100,
   ): Promise<{ columns: string[]; rows: Record<string, string>[] } & DataPreviewMeta> {
-    const body = await this.postFreestyleQuery(sql, maxRows);
-    return { ...parseTableContents(body), ...parseDataPreviewMeta(body) };
+    return this.runQueryBatch([sql], maxRows);
   }
 
-  private async postFreestyleQuery(sql: string, maxRows: number): Promise<string> {
+  /**
+   * Authorize a set of server-generated statements ONCE, then execute them.
+   *
+   * This is the single freestyle-SQL entry point. IN-list chunking splits one logical caller request
+   * into N statements; authorizing each separately would repeat the whole lineage resolution N times
+   * (a search plus a graph read plus a table-source read per distinct source, per chunk). Instead the
+   * union of every chunk's canonical direct sources is authorized in one decision, and only then are
+   * the already-authorized statements posted.
+   *
+   * Authorization and the POST deliberately live inside the same private operation: there is no
+   * caller-supplied `authorized`/`internal` receipt that could be forged to skip the guard, and the
+   * decision is a local const that cannot outlive this call.
+   *
+   * The whole batch runs inside ONE data-result scope, so the response-memory budget (#739) is
+   * cumulative across chunks rather than reset per chunk — N chunks cannot together exceed the limit
+   * a single response may consume. Metrics are reported only for a single statement, because an
+   * early break on the row cap would make a summed totalRows misleading.
+   */
+  async runQueryBatch(
+    statements: string[],
+    maxRows = 100,
+  ): Promise<{ columns: string[]; rows: Record<string, string>[] } & Partial<DataPreviewMeta>> {
     checkOperation(this.safety, OperationType.FreeSQL, 'RunQuery');
-    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
-    return resp.body;
+    if (statements.length === 0) throw new Error('runQueryBatch requires at least one statement');
+
+    // ONE policy decision covering every statement in this logical request.
+    await this.dataSourceBlocklistGuard().enforceSqlBatch(statements);
+
+    const rowLimit = clampPreviewRows(maxRows);
+    return this.withDataResultScope(async (budget, signal) => {
+      const post = (sql: string, limit: number): Promise<string> => this.postFreestyleQuery(sql, limit, budget, signal);
+
+      if (statements.length === 1) {
+        return parseDataPreviewResult(await post(statements[0]!, rowLimit));
+      }
+      return executeDataPreviewStatements(post, parseTableContents, statements, rowLimit);
+    });
+  }
+
+  private async postFreestyleQuery(
+    sql: string,
+    maxRows: number,
+    budget: DataResponseBudget,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const rowLimit = clampPreviewRows(maxRows);
+    return this.postDataPreview(`/sap/bc/adt/datapreview/freestyle?rowNumber=${rowLimit}`, sql, budget, signal);
   }
 
   /**
@@ -1497,10 +1497,14 @@ export class AdtClient {
     } = {},
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'RunTableQuery');
-    const sql = buildTableQuerySql(tableName, opts.columns, opts.where);
+    // One canonical identity: authorize it, then build the statement from the SAME string.
+    const source = canonicalDataSourceName(tableName, 'TABLE_QUERY table name');
+    await this.dataSourceBlocklistGuard().enforceSources([source]);
+    const sql = buildTableQuerySql(source, opts.columns, opts.where);
     const maxRows = clampPreviewRows(opts.maxRows);
-    const resp = await this.http.post(`/sap/bc/adt/datapreview/freestyle?rowNumber=${maxRows}`, sql, 'text/plain');
-    return parseTableContents(resp.body);
+    return this.withDataResultScope(async (budget, signal) =>
+      parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal)),
+    );
   }
 
   // ─── System Information ────────────────────────────────────────────
@@ -1573,58 +1577,37 @@ export class AdtClient {
     return parseMessageClass(resp.body);
   }
 
-  /** Get program text elements */
-  async getTextElements(program: string): Promise<string> {
-    checkOperation(this.safety, OperationType.Read, 'GetTextElements');
-    const resp = await this.http.get(`/sap/bc/adt/programs/programs/${encodeURIComponent(program)}/textelements`);
-    return resp.body;
+  /** Read an object's text elements (CLAS/PROG/FUGR). Without `part`, every subobject that carries
+   *  text is returned under a `=== part ===` marker. See adt/text-elements.ts. */
+  async getTextElements(name: string, options?: { objectType?: string; part?: TextElementPart }): Promise<string> {
+    return readTextElements(this.http, this.safety, name, options);
   }
 
-  /** Fail clean when the ADT textelements service is absent (SAP_BASIS < 7.51, e.g. NW 7.50 — the
-   *  whole collection is missing from discovery). Only blocks when discovery is loaded, so a
-   *  not-yet-populated map does not false-block 758/816; otherwise a real 404 surfaces. */
-  private assertClassTextElementsService(): void {
-    if (
-      this.http.hasDiscoveryData() &&
-      this.http.discoveryAcceptFor('/sap/bc/adt/textelements/classes') === undefined
-    ) {
-      throw new AdtApiError(
-        'Class text elements require the ADT textelements service (SAP_BASIS ≥ 7.51; not available on this system).',
-        404,
-        '/sap/bc/adt/textelements/classes',
-      );
-    }
+  /** Read one subobject of a textpool (symbols | selections | headings). */
+  async getTextElementPart(objectType: TextElementObjectType, name: string, part: TextElementPart): Promise<string> {
+    return readTextElementPart(this.http, this.safety, objectType, name, part);
   }
 
-  /** Read a global class's text symbols. Returns the raw properties-style body
-   *  (`@MaxLength:NN` then `NNN=text`, blank-line separated). */
+  /** Read a global class's text symbols. */
   async getClassTextSymbols(name: string): Promise<string> {
-    checkOperation(this.safety, OperationType.Read, 'GetClassTextSymbols');
-    this.assertClassTextElementsService();
-    const resp = await this.http.get(`/sap/bc/adt/textelements/classes/${encodeURIComponent(name)}/source/symbols`, {
-      Accept: TEXT_SYMBOLS_CT,
-    });
-    return resp.body;
+    return readTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols');
   }
 
-  /** Write a global class's text symbols. Locks the textelements object (not the class), PUTs the
-   *  body with the symbols media type as BOTH Content-Type and Accept (SAP returns 400 "Accept header
-   *  missing" otherwise), then unlocks. Immediately active — no SAPActivate needed. */
+  /** Write one subobject of a textpool. Locks the textelements object, PUTs, unlocks. Immediately
+   *  active — no SAPActivate needed. */
+  async writeTextElementPart(
+    objectType: TextElementObjectType,
+    name: string,
+    part: TextElementPart,
+    source: string,
+    transport?: string,
+  ): Promise<void> {
+    return writeTextElementPart(this.http, this.safety, objectType, name, part, source, transport);
+  }
+
+  /** Write a global class's text symbols. */
   async writeClassTextSymbols(name: string, source: string, transport?: string): Promise<void> {
-    checkOperation(this.safety, OperationType.Update, 'WriteClassTextSymbols');
-    this.assertClassTextElementsService();
-    const obj = `/sap/bc/adt/textelements/classes/${encodeURIComponent(name)}`;
-    await this.http.withStatefulSession(async (session) => {
-      const lock = await lockObject(session, this.safety, obj, 'MODIFY');
-      const corr = transport ?? (lock.corrNr || undefined);
-      try {
-        let url = `${obj}/source/symbols?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
-        if (corr) url += `&corrNr=${encodeURIComponent(corr)}`;
-        await session.put(url, source, TEXT_SYMBOLS_CT, { Accept: TEXT_SYMBOLS_CT });
-      } finally {
-        await unlockObject(session, obj, lock.lockHandle);
-      }
-    });
+    return writeTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols', source, transport);
   }
 
   /** Get program variants */
@@ -1643,33 +1626,53 @@ export class AdtClient {
     if (query) params.set('name', query);
     if (maxResults !== undefined) params.set('maxResults', String(maxResults));
     const qs = params.toString();
-    const path = `/sap/bc/adt/filestore/ui5-bsp/objects${qs ? `?${qs}` : ''}`;
+    const path = `${BSP_OBJECTS_PATH}${qs ? `?${qs}` : ''}`;
     const resp = await this.http.get(path, { Accept: 'application/atom+xml' });
     return parseBspAppList(resp.body);
   }
 
-  /** Browse BSP app file structure (root or subfolder) */
+  /** @deprecated Use getBspPathContent(); throws when SAP identifies the path as a file. */
   async getBspAppStructure(appName: string, subPath?: string): Promise<BspFileNode[]> {
     checkOperation(this.safety, OperationType.Read, 'GetBSPApp');
-    const normalizedSubPath = subPath && !subPath.startsWith('/') ? `/${subPath}` : subPath || '';
-    const objectPath = appName.toUpperCase() + normalizedSubPath;
-    const resp = await this.http.get(
-      `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(objectPath)}/content`,
-      { Accept: 'application/xml', 'Content-Type': 'application/atom+xml' },
-    );
-    return parseBspFolderListing(resp.body, appName.toUpperCase());
+    const resolved = resolveBspNameAndPath(appName, subPath);
+    const content = await this.getBspPathContent(resolved.appName, resolved.path);
+    if (content.kind !== 'folder') {
+      throw new AdtApiError(
+        'The requested BSP path is a file, not a folder.',
+        400,
+        bspContentPath(resolved.appName, resolved.path),
+      );
+    }
+    return content.nodes;
   }
 
-  /** Read a single file from a BSP app */
+  /** @deprecated Use getBspPathContent(); throws when SAP identifies the path as a folder. */
   async getBspFileContent(appName: string, filePath: string): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetBSPFile');
-    const cleanPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
-    const objectPath = `${appName.toUpperCase()}/${cleanPath}`;
-    const resp = await this.http.get(
-      `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent(objectPath)}/content`,
-      { Accept: 'application/xml', 'Content-Type': 'application/octet-stream' },
-    );
-    return resp.body;
+    const resolved = resolveBspNameAndPath(appName, filePath);
+    const content = await this.getBspPathContent(resolved.appName, resolved.path);
+    if (content.kind !== 'file') {
+      throw new AdtApiError(
+        'The requested BSP path is a folder, not a file.',
+        400,
+        bspContentPath(resolved.appName, resolved.path),
+      );
+    }
+    return content.content;
+  }
+
+  /**
+   * Read a BSP path and let SAP's response media type identify files vs folders.
+   * Binary assets remain outside this text-oriented API because AdtResponse exposes a string body.
+   */
+  async getBspPathContent(appName: string, path?: string): Promise<BspPathContent> {
+    checkOperation(this.safety, OperationType.Read, 'GetBSPPathContent');
+    // Explicit */* suppresses discovery MIME negotiation so SAP can select the resource's real media type.
+    const resp = await this.http.get(bspContentPath(appName, path), { Accept: '*/*' });
+    if (resp.headers['content-type']?.toLowerCase().startsWith('application/atom+xml')) {
+      return { kind: 'folder', nodes: parseBspFolderListing(resp.body, appName.toUpperCase()) };
+    }
+    return { kind: 'file', content: resp.body };
   }
 
   /**

@@ -4,6 +4,7 @@ import {
   parseApiKeys,
   parseArgs,
   resolveConfig,
+  SYSTEM_LABEL_MAX_LENGTH,
   validateConfig,
 } from '../../../src/server/config.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -30,12 +31,14 @@ describe('parseArgs', () => {
     expect(config.url).toBe('');
     expect(config.client).toBe('100');
     expect(config.language).toBe('EN');
+    expect(config.gzipDataPreviewBody).toBe(false);
     expect(config.transport).toBe('stdio');
     expect(config.allowWrites).toBe(false);
     expect(config.allowFreeSQL).toBe(false);
     expect(config.allowDataPreview).toBe(false);
     expect(config.allowTransportWrites).toBe(false);
     expect(config.allowGitWrites).toBe(false);
+    expect(config.blockedDataSources).toEqual([]);
     expect(config.denyActions).toEqual([]);
     expect(config.schemaNullableOptionals).toBe('auto');
     expect(config.multiTargetAllowBasicAuth).toBe(false);
@@ -122,6 +125,109 @@ describe('parseArgs', () => {
     const config = parseArgs([]);
     expect(config.allowWrites).toBe(true);
     expect(config.allowFreeSQL).toBe(true);
+  });
+
+  it('parses SAP_GZIP_DATAPREVIEW_BODY and lets the CLI override it', () => {
+    process.env.SAP_GZIP_DATAPREVIEW_BODY = 'true';
+
+    const fromEnv = resolveConfig([]);
+    expect(fromEnv.config.gzipDataPreviewBody).toBe(true);
+    expect(fromEnv.sources.gzipDataPreviewBody).toEqual({ env: 'SAP_GZIP_DATAPREVIEW_BODY' });
+
+    const fromCli = resolveConfig(['--gzip-datapreview-body', 'false']);
+    expect(fromCli.config.gzipDataPreviewBody).toBe(false);
+    expect(fromCli.sources.gzipDataPreviewBody).toEqual({ flag: '--gzip-datapreview-body' });
+  });
+
+  it('normalizes, deduplicates, and source-attributes the experimental data-source blocklist', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = ' usr02,SCARR,usr02 ';
+    const fromEnv = resolveConfig([]);
+    expect(fromEnv.config.blockedDataSources).toEqual(['USR02', 'SCARR']);
+    expect(fromEnv.sources.blockedDataSources).toEqual({ env: 'SAP_BLOCKED_DATA_SOURCES' });
+
+    const fromCli = resolveConfig(['--blocked-data-sources', '/dmo/i_flight,spfli']);
+    expect(fromCli.config.blockedDataSources).toEqual(['/DMO/I_FLIGHT', 'SPFLI']);
+    expect(fromCli.sources.blockedDataSources).toEqual({ flag: '--blocked-data-sources' });
+  });
+
+  // Unset / empty / ASCII-whitespace-only are the documented OFF values. They must stay off so the
+  // shipped Dockerfile and MTA descriptors can carry a visible `""` default and operators keep a
+  // one-field rollback.
+  it.each([
+    ['empty string', ''],
+    ['single space', ' '],
+    ['tabs and newlines', ' \t\n '],
+  ])('treats %s as off', (_label, value) => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = value;
+    const { config, sources } = resolveConfig([]);
+    expect(config.blockedDataSources).toEqual([]);
+    // Still attributed to the environment: the operator DID set it, to the off value.
+    expect(sources.blockedDataSources).toEqual({ env: 'SAP_BLOCKED_DATA_SOURCES' });
+  });
+
+  // Once the value is active every field is mandatory. The prototype used .filter(Boolean), so a
+  // stray separator silently shortened the list and `,` silently disabled the whole control.
+  it.each([
+    ['separator only', ','],
+    ['repeated separators only', ',,,'],
+    ['leading comma', ',USR02'],
+    ['trailing comma', 'USR02,'],
+    ['repeated inner comma', 'USR02,,PA0002'],
+    ['whitespace-only field', 'USR02, ,PA0002'],
+  ])('fails startup on %s rather than silently dropping fields', (_label, value) => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = value;
+    expect(() => resolveConfig([])).toThrow(/SAP_BLOCKED_DATA_SOURCES entry #\d+ of \d+ is empty/);
+  });
+
+  it.each([
+    ['wildcard', 'SCARR*'],
+    ['embedded space', 'SCARR SPFLI'],
+    ['statement injection', 'SCARR;DELETE'],
+    ['type prefix', 'TABL:SCARR'],
+    ['negation', '!SCARR'],
+    ['quoting', "'SCARR'"],
+    ['punctuation only: slash', '/'],
+    ['punctuation only: dollar', '$'],
+    ['punctuation only: underscores', '___'],
+    ['non-ASCII that would case-fold into a valid name', 'u\u017Fr02'],
+    ['over the length limit', 'Z'.repeat(129)],
+  ])('fails fast on invalid blocked source: %s', (_label, value) => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = value;
+    expect(() => resolveConfig([])).toThrow(/SAP_BLOCKED_DATA_SOURCES/);
+  });
+
+  it('names the offending token position and source without dumping the environment', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02,SCARR*,PA0002';
+    process.env.SAP_PASSWORD = 'super-secret-value';
+    try {
+      resolveConfig([]);
+      expect.unreachable('should have thrown');
+    } catch (error) {
+      const message = (error as Error).message;
+      expect(message).toContain('SAP_BLOCKED_DATA_SOURCES');
+      expect(message).toContain('#2 of 3');
+      expect(message).toContain('SCARR*');
+      expect(message).not.toContain('super-secret-value');
+    }
+  });
+
+  it('reports the CLI flag rather than the env var when the flag is the active source', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02';
+    expect(() => resolveConfig(['--blocked-data-sources', 'USR02,'])).toThrow(/--blocked-data-sources/);
+  });
+
+  it('CLI takes precedence over the environment', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02,PA0002';
+    const { config, sources } = resolveConfig(['--blocked-data-sources', 'SCARR']);
+    expect(config.blockedDataSources).toEqual(['SCARR']);
+    expect(sources.blockedDataSources).toEqual({ flag: '--blocked-data-sources' });
+  });
+
+  it('a blank higher-precedence CLI value turns a non-empty environment value off', () => {
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02,PA0002';
+    const { config, sources } = resolveConfig(['--blocked-data-sources', '']);
+    expect(config.blockedDataSources).toEqual([]);
+    expect(sources.blockedDataSources).toEqual({ flag: '--blocked-data-sources' });
   });
 
   it('parses --allow-git-writes flag', () => {
@@ -295,6 +401,36 @@ describe('parseArgs', () => {
     } finally {
       delete process.env.ARC1_SERVER_NAME;
     }
+  });
+
+  it('defaults systemLabel to empty', () => {
+    expect(parseArgs([]).systemLabel).toBe('');
+  });
+
+  it('parses ARC1_SYSTEM_LABEL env var', () => {
+    process.env.ARC1_SYSTEM_LABEL = 'ERP production (read-only)';
+    expect(parseArgs([]).systemLabel).toBe('ERP production (read-only)');
+  });
+
+  it('parses --system-label flag over ARC1_SYSTEM_LABEL env', () => {
+    process.env.ARC1_SYSTEM_LABEL = 'ERP development';
+    expect(parseArgs(['--system-label', 'ERP quality assurance']).systemLabel).toBe('ERP quality assurance');
+  });
+
+  it('normalizes a system label to one trimmed line', () => {
+    const config = parseArgs(['--system-label', '  ＥＲＰ\tproduction\n(read-only)\u007f  ']);
+    expect(config.systemLabel).toBe('ERP production (read-only)');
+  });
+
+  it('normalizes a blank system label to the empty default', () => {
+    process.env.ARC1_SYSTEM_LABEL = ' \n\t ';
+    expect(parseArgs([]).systemLabel).toBe('');
+  });
+
+  it('rejects a system label over the model-context budget', () => {
+    expect(() => parseArgs(['--system-label', 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH + 1)])).toThrow(
+      `ARC1_SYSTEM_LABEL must be at most ${SYSTEM_LABEL_MAX_LENGTH} characters`,
+    );
   });
 
   it('parses --port flag and overrides httpAddr port', () => {
@@ -779,6 +915,41 @@ describe('parseArgs', () => {
     expect(config.maxConcurrent).toBe(3);
   });
 
+  // --- Data-result safety envelope ---
+
+  it('defaults the data response budget to 2 MiB and data-result concurrency to 2', () => {
+    const config = parseArgs([]);
+    expect(config.maxDataPreviewResponseBytes).toBe(2 * 1024 * 1024);
+    expect(config.maxConcurrentDataResults).toBe(2);
+  });
+
+  it('parses data-result limits with CLI precedence over environment', () => {
+    process.env.ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES = '3000000';
+    process.env.ARC1_MAX_CONCURRENT_DATA_RESULTS = '3';
+    const { config, sources } = resolveConfig([
+      '--max-datapreview-response-bytes',
+      '4000000',
+      '--max-concurrent-data-results',
+      '4',
+    ]);
+    expect(config.maxDataPreviewResponseBytes).toBe(4_000_000);
+    expect(config.maxConcurrentDataResults).toBe(4);
+    expect(sources.maxDataPreviewResponseBytes).toEqual({ flag: '--max-datapreview-response-bytes' });
+    expect(sources.maxConcurrentDataResults).toEqual({ flag: '--max-concurrent-data-results' });
+  });
+
+  it.each([
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', '0'],
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', '-1'],
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', '1.5'],
+    ['ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES', ' 10'],
+    ['ARC1_MAX_CONCURRENT_DATA_RESULTS', 'not-a-number'],
+    ['ARC1_MAX_CONCURRENT_DATA_RESULTS', String(Number.MAX_SAFE_INTEGER + 1)],
+  ])('rejects invalid positive-integer setting %s=%s', (name, value) => {
+    process.env[name] = value;
+    expect(() => parseArgs([])).toThrow(/positive base-10 integer|safe-integer range/);
+  });
+
   // --- Rate limiting (Layer 1 + Layer 2) ---
 
   it('defaults authRateLimit to 20 (Layer 1 on) and rateLimit to 0 (Layer 2 off)', () => {
@@ -1014,6 +1185,8 @@ describe('parseArgs', () => {
   it('resolveConfig returns per-field sources (default when unset)', () => {
     const { sources } = resolveConfig([]);
     expect(sources.allowWrites).toBe('default');
+    expect(sources.gzipDataPreviewBody).toBe('default');
+    expect(sources.blockedDataSources).toBe('default');
     expect(sources.allowedPackages).toBe('default');
     expect(sources.schemaNullableOptionals).toBe('default');
   });
@@ -1067,15 +1240,32 @@ describe('parseApiKeys', () => {
   });
 
   it('throws on missing colon separator', () => {
-    expect(() => parseApiKeys('keyonly')).toThrow(/expected 'key:profile' format/);
+    expect(() => parseApiKeys('keyonly')).toThrow(/entry at position 1.*'key:profile' format/);
   });
 
   it('throws on empty key', () => {
-    expect(() => parseApiKeys(':viewer')).toThrow(/key cannot be empty/);
+    expect(() => parseApiKeys(':viewer')).toThrow(/entry at position 1.*non-empty key/);
   });
 
   it('throws on invalid profile name', () => {
-    expect(() => parseApiKeys('mykey:nonexistent')).toThrow(/Invalid profile 'nonexistent'/);
+    expect(() => parseApiKeys('mykey:nonexistent')).toThrow(/entry at position 1.*Valid profiles:/);
+  });
+
+  it.each([
+    ['first-secret-key', 1, ['first-secret-key']],
+    ['valid-key:viewer,second-secret-key', 2, ['valid-key', 'second-secret-key']],
+    ['third-secret-key:secret-profile-name', 1, ['third-secret-key', 'secret-profile-name']],
+  ])('never includes caller material in an invalid entry error for %s', (raw, position, sentinels) => {
+    let message = '';
+    try {
+      parseApiKeys(raw);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain(`entry at position ${position}`);
+    expect(message).toContain("'key:profile' format");
+    for (const sentinel of sentinels) expect(message).not.toContain(sentinel);
   });
 
   it('throws on empty string', () => {

@@ -2194,7 +2194,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
     });
   });
 
-  describe('SAPWrite edit_text_symbols (class text symbols)', () => {
+  describe('SAPWrite edit_text_symbols (text pool)', () => {
     const LOCK_BODY =
       '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H9</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL><MODIFICATION_SUPPORT>X</MODIFICATION_SUPPORT></DATA></asx:values></asx:abap>';
 
@@ -2224,19 +2224,57 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
         source: '@MaxLength:10\n001=Hi\n',
       });
       expect(result.isError).toBeUndefined();
-      expect(result.content[0]?.text ?? '').toContain('text symbols');
+      expect(result.content[0]?.text ?? '').toContain('symbols of CLAS ZCL_FOO');
       expect(String(putCall()?.[0])).toContain('/sap/bc/adt/textelements/classes/ZCL_FOO/source/symbols');
     });
 
-    it('rejects edit_text_symbols when type is not CLAS', async () => {
+    it("writes a program's selection texts (textPart=selections → programs collection)", async () => {
+      mockTextPoolFlow();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'edit_text_symbols',
         type: 'PROG',
-        name: 'ZPROG',
+        name: 'ZHU_CREATE',
+        textPart: 'selections',
+        source: 'P_LGNUM=Warehouse\n',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text ?? '').toContain('selections of PROG ZHU_CREATE');
+      expect(String(putCall()?.[0])).toContain('/sap/bc/adt/textelements/programs/ZHU_CREATE/source/selections');
+    });
+
+    it('defaults textPart to symbols for a program', async () => {
+      mockTextPoolFlow();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'PROG',
+        name: 'ZHU_CREATE',
+        source: '@MaxLength:10\n001=Hi\n',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(String(putCall()?.[0])).toContain('/sap/bc/adt/textelements/programs/ZHU_CREATE/source/symbols');
+    });
+
+    it('rejects edit_text_symbols for a type with no text pool', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'INTF',
+        name: 'ZIF_FOO',
         source: '@MaxLength:10\n001=Hi\n',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text ?? '').toContain('type=CLAS');
+      expect(result.content[0]?.text ?? '').toContain('CLAS/PROG/FUGR');
+    });
+
+    it('rejects selections on a class (SAP answers 406 — refuse before the round-trip)', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'CLAS',
+        name: 'ZCL_FOO',
+        textPart: 'selections',
+        source: 'P_X=Label\n',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text ?? '').toContain('Only symbols can be written for CLAS');
     });
 
     it('rejects edit_text_symbols without source', async () => {

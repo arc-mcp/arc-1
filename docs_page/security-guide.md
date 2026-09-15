@@ -108,6 +108,22 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | ---------- | ------- | ------- | ----------- |
 | Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
 | Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Exact table/CDS blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Defense-in-depth denial with live CDS/replacement lineage; unresolved requests fail closed. Not an allowlist or SAP authorization replacement. |
+
+**Recommended security-focused profile.** Keep structured data access and remove caller-authored SQL,
+which is the largest parser and SQL-Console surface:
+
+```bash
+SAP_ALLOW_DATA_PREVIEW=true
+SAP_ALLOW_FREE_SQL=false
+SAP_BLOCKED_DATA_SOURCES=USR02,PA0002
+```
+
+Blocklist + free SQL remains a supported *advanced* profile for installations that genuinely need
+`SAPQuery`; it is the less restrictive choice and subjects callers to the strict static-SQL subset.
+Either way, apply **SAP Note 3772411** independently — this feature is default-off and remediates
+nothing, and `SAP_ALLOW_WRITES=false` does not neutralize a database-side mutation reached through a
+vulnerable SQL Console host expression.
 
 **Recommendation for productive systems:** keep both flags at their defaults unless there is an approved use case. ARC-1 still covers the core developer-tooling surface — read source/metadata, search, navigate, lint, write/activate ABAP objects, manage transports, drive Git workflows. Turning either flag on can be appropriate, but should be a deliberate operator decision against the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules.
 
@@ -118,9 +134,10 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | `SAP_ALLOW_WRITES`                 | `false` unless writes are needed | Blocks every mutation — object writes, activation, transport writes, git writes. |
 | `SAP_ALLOW_FREE_SQL`               | `false` on sensitive systems | Blocks arbitrary SQL queries against the database via `SAPQuery`.                               |
 | `SAP_ALLOW_DATA_PREVIEW`           | `false` unless table preview is required | Blocks named table content preview.                                              |
+| `SAP_BLOCKED_DATA_SOURCES`         | Exact sensitive sources when data preview is approved; otherwise empty | Experimental, default-off emergency brake, slower by design (extra SAP metadata calls, no cache). Fails closed on unsupported lineage but leaves every unlisted source eligible. Not an allowlist, not a DCL replacement, and not a remediation for SAP Note 3772411. |
 | `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Prefix wildcards (`Z*`), exact matches, and DEVCLASS subtree rules (`ZFOO/**` — `ZFOO` plus every transitive sub-package) are all supported; subtree resolution is fail-closed on SAP errors. Reads are never package-gated. |
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
-| `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for abapGit/gCTS mutations (`clone`/`pull`/`push`/`commit`).                                 |
+| `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for gated abapGit mutations and SAP-side Git egress. It does not enable gCTS mutations, which remain quarantined before HTTP; accepted abapGit mutations without an authoritative postcondition return incomplete. |
 | `SAP_DENY_ACTIONS`                 | Use for fine-grained blocks | E.g. `SAPWrite.delete,SAPManage.flp_*` — overrides scope + flag checks.                              |
 | `SAP_PP_STRICT`                    | Explicit `true` for production PP | Keeps the PP instance JWT-only. JWT PP failures always fail closed; explicit `true` also rejects API-key / non-JWT requests. |
 
@@ -255,6 +272,7 @@ event; the BTP Audit Log sink forwards the security/data categories described be
 | `tool_call_start` | Tool name and centrally redacted arguments. |
 | `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
 | `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
+| `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
 | `http_csrf_fetch` | CSRF-token fetch success and duration. |
 | `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
 | `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
@@ -442,12 +460,19 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
 | CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
 | Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
-| Trivy container scan — release | `.github/workflows/release.yml` | **gating**: fails the release on `HIGH` / `CRITICAL` |
+| Trivy container scan — scheduled | `.github/workflows/security-scan.yml` | **gating amd64 + arm64 maintenance signal** on `HIGH` / `CRITICAL`; SARIF uploaded |
+| Trivy container scan — release | `.github/workflows/release.yml` | scan and SARIF upload are non-gating; neither can strand the Docker artifact |
 | Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
 | Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
 | npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
 | npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
 | `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
+
+Docker BuildKit does not automatically invalidate a cached `RUN apk upgrade` when Alpine's
+package repository changes. ARC-1 therefore names the final Dockerfile stage `runtime` and every
+CI image build uses `no-cache-filters: runtime` plus `pull: true`. The comparatively expensive
+native-module builder stage stays cached, while the runtime package upgrade is re-executed and can
+pick up newly published OS security fixes.
 
 ### GitHub-native security features (verified enabled)
 

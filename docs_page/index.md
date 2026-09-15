@@ -4,6 +4,10 @@
 
 ARC-1 is a TypeScript MCP server (distributed as an npm package and Docker image) that implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and translates AI tool calls into [SAP ABAP Development Tools (ADT)](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/about-abap-development-tools) REST API requests. It works with Claude, GitHub Copilot, VS Code, and any MCP-compatible client.
 
+!!! tip "Stay current with ARC-1"
+
+    Get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. [Join ARC-1 Updates →](newsletter.md)
+
 ## Why ARC-1?
 
 As an **admin**, you control what the AI can and cannot do via positive-opt-in flags:
@@ -167,13 +171,19 @@ All MCP clients that support stdio work out of the box — just point them at `n
 
 ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot Studio.
 
-For object understanding, start with `SAPContext(action="deps")` instead of raw `SAPRead`: ARC-1 prepends the object's Knowledge Transfer Document (`SKTD`, also accepted as `KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that when you need exact source, a method body, grep output, drafts, revisions, or metadata.
+Choose evidence for the question: targeted `SAPRead` for exact behavior or a known reference.
+For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)`
+for available KTD and dependency contracts, then compare documented requirements with source.
+Without documented requirements, intent is unverified. Neither contracts nor metadata relationships prove runtime behavior.
+Experimental [live relations](live-relations.md) automatically offer bounded repository neighborhoods where available;
+no additional database is required.
 
 Full reference: **[tools.md](tools.md)**
 
 ## Testing & CI
 
-- **3,474 unit tests** run locally without SAP access (`npm test`)
+- **Thousands of unit tests** run locally without SAP access (`npm test`); exact frozen-tree counts belong
+  in release/PR evidence rather than this long-lived landing page.
 - **Default integration + E2E lanes** run against the A4H 2025 SAP target on internal PRs and manual dispatch in GitHub Actions
 - **Manual slow SAP profiles** cover broad where-used, RAP full-stack, and recursive CTS release checks (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **BTP tests** are local-only (`npm run test:integration:btp`, `npm run test:integration:btp:smoke`)
@@ -188,7 +198,10 @@ Every capability is a separate positive opt-in flag:
 - **Nothing**: read / search / navigate / lint / diagnose work out of the box.
 - `SAP_ALLOW_DATA_PREVIEW=true` + `SAP_ALLOW_FREE_SQL=true`: enable named table preview and freestyle SQL.
 - `SAP_ALLOW_WRITES=true` + `SAP_ALLOWED_PACKAGES='$TMP,Z*'`: enable object writes to `$TMP` and `Z*` packages.
-- Add `SAP_ALLOW_TRANSPORT_WRITES=true` for CTS transport mutations, `SAP_ALLOW_GIT_WRITES=true` for abapGit / gCTS pushes.
+- Add `SAP_ALLOW_TRANSPORT_WRITES=true` for CTS transport mutations. Add
+  `SAP_ALLOW_GIT_WRITES=true` for gated abapGit mutations and SAP-side Git egress; gCTS reads are
+  available, but every gCTS mutation remains quarantined before HTTP. Some accepted abapGit actions
+  return error/incomplete when no authoritative postcondition exists—inspect state before retrying.
 
 The three-layer model (server flag + user scope + SAP authorization) is described in [authorization.md](authorization.md). Full flag reference: [configuration-reference.md](configuration-reference.md).
 
@@ -219,7 +232,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [tools.md](tools.md) | Complete tool reference (12 intent-based tools) |
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
-| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
+| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency parsing reuse, and live reverse-dependency lookup |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |

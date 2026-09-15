@@ -6,6 +6,13 @@ import { parse } from 'yaml';
 type DependabotUpdate = {
   'package-ecosystem'?: string;
   directory?: string;
+  groups?: Record<
+    string,
+    {
+      patterns?: string[];
+      'exclude-patterns'?: string[];
+    }
+  >;
 };
 
 type DependabotConfig = {
@@ -21,5 +28,18 @@ describe('Dependabot configuration', () => {
       .map((update) => update.directory);
 
     expect(npmDirectories).toEqual(expect.arrayContaining(['/', '/btp/approuter']));
+  });
+
+  it('keeps Vitest packages in one update group', () => {
+    const source = readFileSync(join(import.meta.dirname, '../../../.github/dependabot.yml'), 'utf8');
+    const config = parse(source) as DependabotConfig;
+    const rootNpm = (config.updates ?? []).find(
+      (update) => update['package-ecosystem'] === 'npm' && update.directory === '/',
+    );
+
+    expect(rootNpm?.groups?.vitest?.patterns).toEqual(['vitest', '@vitest/*']);
+    expect(rootNpm?.groups?.['dev-dependencies']?.['exclude-patterns']).toEqual(
+      expect.arrayContaining(['vitest', '@vitest/*']),
+    );
   });
 });

@@ -57,6 +57,18 @@ describe('ACTION_POLICY matrix', () => {
     expect(policy?.opType).toBe(OperationType.Read);
   });
 
+  it('SAPDiagnose.atc_ci is a workload-producing read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'atc_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Read);
+  });
+
+  it('SAPDiagnose.unittest_ci is a workload-producing test read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'unittest_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Test);
+  });
+
   it('CLASSIFICATION FIX: SAPLint.set_formatter_settings requires write scope', () => {
     const policy = getActionPolicy('SAPLint', 'set_formatter_settings');
     expect(policy?.scope).toBe('write');
@@ -91,22 +103,23 @@ describe('ACTION_POLICY matrix', () => {
   });
 
   it('SAPGit mutations require git scope', () => {
-    for (const action of ['stage', 'clone', 'pull', 'push', 'commit', 'switch_branch', 'create_branch', 'unlink']) {
+    for (const action of [
+      'external_info',
+      'stage',
+      'clone',
+      'pull',
+      'push',
+      'switch_branch',
+      'create_branch',
+      'unlink',
+    ]) {
       expect(getActionPolicy('SAPGit', action)?.scope, `SAPGit.${action}`).toBe('git');
     }
+    expect(getActionPolicy('SAPGit', 'external_info')?.opType).toBe(OperationType.Update);
   });
 
   it('SAPGit read actions require read scope', () => {
-    for (const action of [
-      'list_repos',
-      'whoami',
-      'config',
-      'branches',
-      'external_info',
-      'history',
-      'objects',
-      'check',
-    ]) {
+    for (const action of ['list_repos', 'whoami', 'config', 'branches', 'history', 'objects', 'check']) {
       expect(getActionPolicy('SAPGit', action)?.scope, `SAPGit.${action}`).toBe('read');
     }
   });

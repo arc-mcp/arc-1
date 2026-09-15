@@ -21,6 +21,7 @@ import type {
   AuthPPCreatedEvent,
   AuthScopeDeniedEvent,
   AuthSharedCreatedEvent,
+  DataResponseLimitedEvent,
   McpRateLimitedEvent,
   MultiTargetStageFailedEvent,
   SafetyBlockedEvent,
@@ -65,6 +66,7 @@ function categorize(event: AuditEvent): AuditCategory | null {
     case 'sap_authorization_failed':
     case 'target_policy_denied':
     case 'mcp_rate_limited':
+    case 'data_response_limited':
       return 'security-events';
 
     case 'tool_call_start':
@@ -310,6 +312,16 @@ export class BTPAuditLogSink implements LogSink {
         return {
           ...base,
           data: `MCP rate limit blocked tool "${e.tool}" at ${e.limitPerMinute}/min; retry after ${e.retryAfterMs}ms. User: ${user}.${target}${identity}${agent}`,
+        };
+      }
+
+      case 'data_response_limited': {
+        const e = event as DataResponseLimitedEvent;
+        const target = e.target ? ` Target: ${e.target}.` : '';
+        const identity = e.identity ? ` identity=${e.identity}.` : '';
+        return {
+          ...base,
+          data: `Data response limit blocked tool "${e.tool}" at ${e.limitBytes} bytes after observing ${e.observedBytes} bytes; queue wait ${e.queueWaitMs}ms. User: ${user}.${target}${identity}${agent}`,
         };
       }
 

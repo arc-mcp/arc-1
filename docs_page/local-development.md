@@ -285,6 +285,9 @@ ARC-1 ships read-only. For local development, enable only what you need via posi
 | Writes to any package       | `$TMP` only | `SAP_ALLOWED_PACKAGES='$TMP,Z*'` (or `*` for any) |
 
 Transport reads (list / get / check / history) and Git reads (list_repos / whoami / branches / ...) work without any opt-in flag — only mutations are gated.
+The Git opt-in currently enables gated abapGit workflows and SAP-side Git egress; every gCTS mutation
+is quarantined before HTTP. Accepted abapGit mutations without an authoritative postcondition return
+error/incomplete, so inspect state before retrying.
 
 ### Common local starting points
 

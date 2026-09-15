@@ -154,7 +154,7 @@ MCP client config for developers:
 
 The LLM sees separate tool sets from each server and picks the right one.
 
-> **Name each direct-connect instance:** every ARC-1 advertises the server name `arc-1` in the MCP `initialize` handshake by default. Clients such as VS Code derive tool prefixes from that announced name and add numeric suffixes when several servers announce the same value. Set a unique [`ARC1_SERVER_NAME`](configuration-reference.md#server-runtime) per instance (`arc1-ecc-dev`, `arc1-ecc-prod`, …) in each `.mtaext` so the tool prefix identifies the target system. This is the direct-connect alternative to [native multi-target mode](multi-target-setup.md), which exposes pinned and aggregate routes from one ARC-1 deployment.
+> **Identify each direct-connect instance:** every ARC-1 advertises the server name `arc-1` in the MCP `initialize` handshake by default. Clients such as VS Code derive tool prefixes from that announced name and add numeric suffixes when several servers announce the same value. Set a unique [`ARC1_SERVER_NAME`](configuration-reference.md#server-runtime) per instance (`arc1-ecc-dev`, `arc1-ecc-prod`, …) in each `.mtaext` so the tool prefix identifies the target system. Some remote-connector clients replace that name with an opaque ID; for those, also set [`ARC1_SYSTEM_LABEL`](configuration-reference.md#server-runtime) (for example `ERP production (read-only)`) so the same identity is visible in the model-facing server instructions. This is the direct-connect alternative to [native multi-target mode](multi-target-setup.md), which exposes pinned and aggregate routes from one ARC-1 deployment and ignores the single-target label.
 
 ---
 
@@ -322,12 +322,14 @@ Quick summary:
 ## BTP ABAP Environment Setup
 
 See [BTP ABAP Environment guide](btp-abap-environment.md) for:
-- Provisioning the BTP ABAP instance
-- Running the "Prepare an Account for ABAP Development" booster
-- Creating a service key for local OAuth or destination credentials
+- Configuring deployed ARC-1 with `OAuth2UserTokenExchange` (recommended)
 - Configuring ARC-1 locally with service-key browser OAuth
-- Configuring deployed ARC-1 with `OAuth2UserTokenExchange`
 - System type detection and tool adaptation
+
+See [BTP ABAP Prerequisites](btp-abap-prerequisites.md) for the SAP-side groundwork:
+- Provisioning the BTP ABAP instance
+- Running the "Prepare an Account for ABAP Development" booster and assigning `SAP_BR_DEVELOPER`
+- Creating a service key for local OAuth or destination credentials
 
 See [BTP CF Deployment](btp-cloud-foundry-deployment.md) for:
 - Cloud Foundry deployment with Docker

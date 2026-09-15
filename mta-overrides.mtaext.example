@@ -32,6 +32,10 @@ extends: arc1-mcp
 
 modules:
   - name: arc1-mcp-server
+    # If data-result limits are raised, size this per-process memory together
+    # with them. See docs_page/btp-administration.md#data-preview-ram-sizing.
+    # parameters:
+    #   memory: 1G
     properties:
       # ── Single-target /mcp (optional) ────────────────────────────────
       # BasicAuth destination for startup feature probing
@@ -46,6 +50,11 @@ modules:
       # different SAP systems, so clients can derive a target-specific tool
       # prefix without numeric collision suffixes.
       # ARC1_SERVER_NAME: "arc1-erp-dev"
+
+      # Optional model-facing label for clients that replace the handshake name
+      # with an opaque connector ID. Single line, max 160 characters; ignored by
+      # the target-aware instructions on multi-target endpoints.
+      # ARC1_SYSTEM_LABEL: "ERP development (read-only)"
 
       # ── Principal propagation behaviour ──────────────────────────────
       # The base MTA keeps single-target JWT calls on PP by default. Set false only
@@ -82,6 +91,19 @@ modules:
 
       # Enable freestyle SQL execution
       # SAP_ALLOW_FREE_SQL: "true"
+
+      # Successful data-preview response allowance per complete tool call,
+      # counted after transfer decompression and before string conversion.
+      # Positive integer bytes; default 2097152 (2 MiB). Wide rows can hit it
+      # before the 10,000-row request ceiling.
+      # ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES: "2097152"
+
+      # Process-wide data-result calls admitted through fetch, parse, result
+      # serialization, and terminal audit. Positive integer; default 2.
+      # Raise the byte limit only after benchmarking, and normally lower this
+      # value proportionally so their product remains controlled. Change the
+      # module memory above in the same reviewed deployment when needed.
+      # ARC1_MAX_CONCURRENT_DATA_RESULTS: "2"
 
       # Enable transport mutations (release, create, add to transport).
       # Also requires SAP_ALLOW_WRITES=true.
@@ -211,3 +233,24 @@ modules:
 # resources:
 #   - name: arc1-application-logs
 #     active: true
+
+# ── Reusing a SHARED Destination / Connectivity instance ────────────────
+# The base mta.yaml declares `arc1-destination` / `arc1-connectivity` as
+# `org.cloudfoundry.managed-service`, and a managed instance is named after its
+# resource. If your landscape's instances are named differently, a deploy creates
+# ADDITIONAL instances rather than reusing them. Subaccount-level destinations
+# still resolve through a new instance, so this usually costs `lite` quota (the
+# deploy fails outright on a subaccount at its limit) — but ARC-1 does lose the
+# targets if the shared instance carries instance-level destinations. Check
+# `cf services` first. An extension cannot change a resource's `type` (mbt
+# rejects `type` in mta.ResourceExt) — it can only repoint a managed resource at
+# a named instance (a sibling of `modules:`):
+# resources:
+#   - name: arc1-destination
+#     parameters:
+#       service-name: my-shared-destination
+# That instance then stays MTA-MANAGED: the deploy creates it if absent, and
+# `cf undeploy --delete-services` would delete it. Use it only if this ARC-1
+# deployment is meant to own the instance. Binding one whose lifecycle belongs
+# to someone else needs `org.cloudfoundry.existing-service` in `mta.yaml`, which
+# this descriptor does not offer — that is a reviewed descriptor change.

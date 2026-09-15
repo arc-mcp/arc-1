@@ -215,10 +215,10 @@ Standard mode groups many ADT endpoints into 12 intent-based tools.
 | `SAPQuery` | Freestyle ABAP SQL. | Requires SQL scope and `SAP_ALLOW_FREE_SQL=true`. |
 | `SAPContext` | Dependency context, usages, and CDS impact analysis. | Uses cache for reverse usages. |
 | `SAPLint` | Local abaplint, formatting, formatter settings, pre-write validation helpers. | Formatter settings mutation needs write permission. |
-| `SAPDiagnose` | Syntax, unit tests, ATC, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |
+| `SAPDiagnose` | Syntax, unit tests, ATC, headless CI ATC/AUnit, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |
 | `SAPManage` | Feature probe, cache stats, packages, package moves, FLP catalog/group/tile actions. | Read actions stay visible in read-only mode. |
 | `SAPTransport` | CTS list/get/check/history and mutations. | Write actions require transport write opt-in. |
-| `SAPGit` | gCTS and abapGit read/write operations. | Feature-gated by detected backend support. |
+| `SAPGit` | gCTS/abapGit reads and gated abapGit workflows; gCTS mutations are quarantined, and unverifiable accepted abapGit mutations return incomplete. | Feature-gated by detected backend support. |
 
 Hyperfocused mode maps one `SAP` action to the same underlying handlers:
 

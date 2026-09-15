@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:28:49.655Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/messageclass/%2fbobf%2fcom_gen_model",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "daf692c8519fcdef7a5fbecf776a322be50fd72b6fcda23b27eb9f2f314fffa8",
+    "networkSha256": "9674bf57a157155314587e044e00d0d258d981e4ce7fe9178db939d5f733c46b",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 13,
+    "observedEdges": 12
+  },
+  "type": "MSAG",
+  "native": "MSAG/N",
+  "name": "/BOBF/COM_GEN_MODEL",
+  "uri": "/sap/bc/adt/messageclass/%2fbobf%2fcom_gen_model",
+  "metadataRootQName": "mc:messageClass",
+  "context": "WUL",
+  "metadataXml": "<mc:messageClass adtcore:name=\"/BOBF/COM_GEN_MODEL\" adtcore:type=\"MSAG/N\" adtcore:version=\"active\" xmlns:mc=\"http://www.sap.com/adt/MessageClass\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/%2fbobf%2fconfiguration\" adtcore:type=\"DEVC/K\" adtcore:name=\"/BOBF/CONFIGURATION\"/>\n</mc:messageClass>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>WUL</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/programs/includes/%2fbobf%2fi_com_gen_model_impl_04\" adtcore:type=\"PROG/I\" adtcore:name=\"/BOBF/I_COM_GEN_MODEL_IMPL_04\" adtcore:packageName=\"/BOBF/CONFIGURATION\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/messageclass/%2fbobf%2fcom_gen_model\" adtcore:type=\"MSAG/N\" adtcore:name=\"/BOBF/COM_GEN_MODEL\" adtcore:packageName=\"/BOBF/CONFIGURATION\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/messageclass/%2fbobf%2fcom_gen_model</oro:object1><oro:object2>/sap/bc/adt/programs/includes/%2fbobf%2fi_com_gen_model_impl_04</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

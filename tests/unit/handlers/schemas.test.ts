@@ -26,10 +26,14 @@ import {
 import { getMetadataWriteProperties } from '../../../src/handlers/write-helpers.js';
 
 describe('SAPReadSchema', () => {
-  it('accepts valid on-prem input', () => {
+  it('accepts valid on-prem input without materializing the handler-owned version default', () => {
     const result = SAPReadSchema.safeParse({ type: 'PROG', name: 'ZTEST' });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.version).toBe('active');
+    if (result.success) expect(result.data.version).toBeUndefined();
+
+    const btpResult = SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_TEST' });
+    expect(btpResult.success).toBe(true);
+    if (btpResult.success) expect(btpResult.data.version).toBeUndefined();
   });
 
   it('accepts diff display labels', () => {
@@ -346,6 +350,21 @@ describe('SAPReadSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts a namespaced object URI emitted by VERSIONS', () => {
+    expect(
+      SAPReadSchema.safeParse({
+        type: 'VERSION_SOURCE',
+        versionUri: '/sap/bc/adt/oo/classes/%2FARC%2FCL_DEMO/includes/main/versions/1/00000/content',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects unrelated same-host ADT endpoints for VERSION_SOURCE', () => {
+    expect(SAPReadSchema.safeParse({ type: 'VERSION_SOURCE', versionUri: '/sap/bc/adt/runtime/dumps' }).success).toBe(
+      false,
+    );
+  });
+
   it('rejects VERSION_SOURCE when versionUri is missing', () => {
     const result = SAPReadSchema.safeParse({ type: 'VERSION_SOURCE' });
     expect(result.success).toBe(false);
@@ -360,6 +379,22 @@ describe('SAPReadSchema', () => {
     if (!result.success) {
       expect(result.error.issues[0]?.message).toContain('/sap/bc/adt/');
     }
+  });
+
+  it.each([
+    '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/programs/%2f..%2fadmin',
+    '/sap/bc/adt/programs/%5c..%5cadmin',
+    '/sap/bc/adt\\..\\sap\\opu\\odata',
+    '/sap/bc/adt/programs/source#fragment',
+    '/sap/bc/adt/programs/source\u0000suffix',
+    '//evil.example/sap/bc/adt/source',
+    '/sap/bc/adt/oo/classes/%252FARC%252FCL_DEMO/includes/main/versions/1/00000/content',
+    '/sap/bc/adt/oo/classes/ZCL_DEMO/includes/main/versions/1%2F00000%2Fcontent',
+  ])('rejects ambiguous or traversal-capable VERSION_SOURCE URI %j', (versionUri) => {
+    expect(SAPReadSchema.safeParse({ type: 'VERSION_SOURCE', versionUri }).success).toBe(false);
   });
 
   it('accepts format field with valid values', () => {
@@ -427,6 +462,11 @@ describe('SAPReadSchemaBtp', () => {
 });
 
 describe('SAPSearchSchema', () => {
+  it.each([SAPSearchSchema, SAPSearchSchemaNoSource])('bounds the type filter in both tool variants', (schema) => {
+    expect(schema.safeParse({ query: '*', objectType: 'CLAS/OC' }).success).toBe(true);
+    expect(schema.safeParse({ query: '*', objectType: 'X'.repeat(65) }).success).toBe(false);
+  });
+
   it('accepts valid input with query', () => {
     const result = SAPSearchSchema.safeParse({ query: 'ZCL_*' });
     expect(result.success).toBe(true);
@@ -783,11 +823,60 @@ describe('SAPWriteSchema', () => {
       typeKind: 'domain',
       typeName: 'ZDOMAIN',
       shortLabel: 'Status',
+      shortLength: '10',
+      mediumLength: 20,
+      longLength: 40,
+      headingLength: 55,
+      deactivateInputHistory: 'true',
       changeDocument: 'true',
     });
     expect(dtel.success).toBe(true);
     if (dtel.success) {
       expect(dtel.data.changeDocument).toBe(true);
+      expect(dtel.data.shortLength).toBe(10);
+      expect(dtel.data.deactivateInputHistory).toBe(true);
+    }
+  });
+
+  it('keeps valid DTEL label metadata in every write schema and rejects invalid lengths', () => {
+    const fields = {
+      shortLength: 0,
+      mediumLength: 20,
+      longLength: 40,
+      headingLength: 55,
+      deactivateInputHistory: 'false',
+    };
+    const inputs = [
+      { schema: SAPWriteSchema, value: { action: 'create', type: 'DTEL', name: 'ZDTEL', ...fields } },
+      { schema: SAPWriteSchemaBtp, value: { action: 'create', type: 'DTEL', name: 'ZDTEL', ...fields } },
+      {
+        schema: SAPWriteSchema,
+        value: { action: 'batch_create', objects: [{ type: 'DTEL', name: 'ZDTEL', ...fields }] },
+      },
+      {
+        schema: SAPWriteSchemaBtp,
+        value: { action: 'batch_create', objects: [{ type: 'DTEL', name: 'ZDTEL', ...fields }] },
+      },
+    ];
+
+    for (const { schema, value } of inputs) {
+      const result = schema.safeParse(value);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const parsed = 'objects' in result.data ? result.data.objects?.[0] : result.data;
+        expect(parsed).toMatchObject({ ...fields, deactivateInputHistory: false });
+      }
+    }
+
+    for (const [field, value] of [
+      ['shortLength', 11],
+      ['mediumLength', -1],
+      ['longLength', 40.5],
+      ['headingLength', 56],
+    ] as const) {
+      expect(SAPWriteSchema.safeParse({ action: 'create', type: 'DTEL', name: 'ZDTEL', [field]: value }).success).toBe(
+        false,
+      );
     }
   });
 
@@ -1534,6 +1623,61 @@ describe('SAPLintSchema', () => {
 });
 
 describe('SAPDiagnoseSchema', () => {
+  it.each(['CLAS', 'PROG', 'FUGR', 'DEVC'])('accepts unittest source-audited type %s', (type) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type, timeoutSeconds: '300' }).success).toBe(true);
+  });
+
+  it.each(['INTF', 'FUNC', 'DDLS'])('rejects unittest type %s without source-selection support', (type) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type }).success).toBe(false);
+  });
+
+  it('accepts loose includeSubpackages only for DEVC unittest scope', () => {
+    expect(
+      SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'DEVC', includeSubpackages: 'false' }).data,
+    ).toMatchObject({ includeSubpackages: false });
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', type: 'CLAS', includeSubpackages: false }).success).toBe(
+      false,
+    );
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', type: 'DEVC', includeSubpackages: true }).success).toBe(false);
+  });
+
+  it('restricts unittest and ATC timeout and rejects it for unrelated actions', () => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 1 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 3601 }).success).toBe(false);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', timeoutSeconds: 30 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(
+      true,
+    );
+    expect(SAPDiagnoseSchema.safeParse({ action: 'syntax', timeoutSeconds: 30 }).success).toBe(false);
+  });
+
+  it.each(['legacy', 'structured', 'junit'] as const)('accepts unittest resultFormat=%s', (resultFormat) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', resultFormat }).success).toBe(true);
+  });
+
+  it.each(['legacy', 'structured'] as const)('accepts atc resultFormat=%s', (resultFormat) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc', resultFormat }).success).toBe(true);
+  });
+
+  it('rejects junit for atc with an action-specific diagnostic', () => {
+    const result = SAPDiagnoseSchema.safeParse({ action: 'atc', resultFormat: 'junit' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['resultFormat']);
+      expect(result.error.issues[0]?.message).toContain('only supported for action="unittest"');
+    }
+  });
+
+  it('rejects resultFormat for unrelated diagnostic actions', () => {
+    const result = SAPDiagnoseSchema.safeParse({ action: 'syntax', resultFormat: 'legacy' });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.path).toEqual(['resultFormat']);
+      expect(result.error.issues[0]?.message).toContain('only supported for action="unittest" or action="atc"');
+    }
+  });
+
   it('accepts authorization_trace filters without inverting stringified false', () => {
     const result = SAPDiagnoseSchema.safeParse({
       action: 'authorization_trace',
@@ -1621,6 +1765,20 @@ describe('SAPDiagnoseSchema', () => {
     ).toBe(true);
   });
 
+  it.each([
+    '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+    '/sap/bc/adt/gw/errorlog/%2fadmin',
+    '/sap/bc/adt/gw/errorlog/%5cadmin',
+    '/sap/bc/adt\\..\\sap\\opu\\odata',
+    '/sap/bc/adt/gw/errorlog/ABC#fragment',
+    'https://a4h.example/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+    'adt://A4H/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+  ])('rejects ambiguous or non-host-relative gateway detail URL %j', (detailUrl) => {
+    expect(SAPDiagnoseSchema.safeParse({ action: 'gateway_errors', detailUrl }).success).toBe(false);
+  });
+
   it('accepts quickfix with source position fields', () => {
     const result = SAPDiagnoseSchema.safeParse({
       action: 'quickfix',
@@ -1691,6 +1849,12 @@ describe('SAPDiagnoseSchema', () => {
 });
 
 describe('SAPTransportSchema', () => {
+  it('accepts a bounded release verification timeout', () => {
+    expect(SAPTransportSchema.safeParse({ action: 'release', timeoutSeconds: '300' }).success).toBe(true);
+    expect(SAPTransportSchema.safeParse({ action: 'release', timeoutSeconds: 1801 }).success).toBe(false);
+    expect(SAPTransportSchema.safeParse({ action: 'list', timeoutSeconds: 30 }).success).toBe(false);
+  });
+
   it('accepts list action', () => {
     const result = SAPTransportSchema.safeParse({ action: 'list' });
     expect(result.success).toBe(true);
@@ -1789,6 +1953,11 @@ describe('SAPTransportSchema', () => {
 });
 
 describe('SAPGitSchema', () => {
+  it('does not advertise the unreachable commit action', () => {
+    expect(SAPGitSchema.safeParse({ action: 'commit' }).success).toBe(false);
+    expect(SAPGitSchema.safeParse({ action: 'push', description: 'unused' }).success).toBe(false);
+  });
+
   it('accepts valid read action payload', () => {
     const result = SAPGitSchema.safeParse({ action: 'list_repos', backend: 'gcts' });
     expect(result.success).toBe(true);
@@ -1807,14 +1976,14 @@ describe('SAPGitSchema', () => {
 
   it('validates objects array shape', () => {
     const ok = SAPGitSchema.safeParse({
-      action: 'commit',
+      action: 'push',
       repoId: 'ZARC1',
       objects: [{ type: 'CLAS', name: 'ZCL_ARC1_TEST', operation: 'M' }],
     });
     expect(ok.success).toBe(true);
 
     const invalid = SAPGitSchema.safeParse({
-      action: 'commit',
+      action: 'push',
       repoId: 'ZARC1',
       objects: [{ type: 'CLAS' }],
     });

@@ -174,9 +174,7 @@ describe('classifySapQueryParserError', () => {
 describe('handleSAPQuery parser-error ordering', () => {
   it('classifies a message-004 DESC failure before unknown-column enrichment', async () => {
     const client = {
-      runQueryWithMetrics: vi
-        .fn()
-        .mockRejectedValue(dataPreviewMessage004('"DESC" is not allowed here. "." is expected.')),
+      runQueryBatch: vi.fn().mockRejectedValue(dataPreviewMessage004('"DESC" is not allowed here. "." is expected.')),
       runQuery: vi.fn(),
     } as unknown as AdtClient;
 
@@ -192,7 +190,7 @@ describe('handleSAPQuery parser-error ordering', () => {
 
   it('still enriches a verified unknown column with the table metadata', async () => {
     const client = {
-      runQueryWithMetrics: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
+      runQueryBatch: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
       runQuery: vi.fn().mockResolvedValue({ columns: ['MANDT', 'MTEXT'], rows: [] }),
     } as unknown as AdtClient;
 
@@ -205,7 +203,7 @@ describe('handleSAPQuery parser-error ordering', () => {
 
   it('uses the qualified join alias to enrich an unknown column from the correct table', async () => {
     const client = {
-      runQueryWithMetrics: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
+      runQueryBatch: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
       runQuery: vi.fn().mockResolvedValue({ columns: ['TABNAME', 'DDLANGUAGE', 'DDTEXT'], rows: [] }),
     } as unknown as AdtClient;
 
@@ -223,7 +221,7 @@ describe('handleSAPQuery parser-error ordering', () => {
   it('preserves the SAP error for an unqualified unknown column across multiple sources', async () => {
     const error = dataPreviewMessage004('Unknown column name "BOGUS".');
     const client = {
-      runQueryWithMetrics: vi.fn().mockRejectedValue(error),
+      runQueryBatch: vi.fn().mockRejectedValue(error),
       runQuery: vi.fn(),
     } as unknown as AdtClient;
 
@@ -237,7 +235,7 @@ describe('handleSAPQuery parser-error ordering', () => {
 
   it('keeps an ambiguous message-004 error actionable without querying irrelevant metadata', async () => {
     const client = {
-      runQueryWithMetrics: vi
+      runQueryBatch: vi
         .fn()
         .mockRejectedValue(
           dataPreviewMessage004(

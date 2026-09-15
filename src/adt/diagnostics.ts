@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   DumpChapter,
@@ -278,7 +279,7 @@ export async function listGatewayErrors(
  * section anchors (#HEADER, #SERVICE, #CONTEXT, #SOURCE, #STACK).
  *
  * Supports either:
- * - full/relative ADT detail URL from a feed entry,
+ * - canonical host-relative gateway-error ADT path from a feed entry,
  * - id of the form "{errorType}/{transactionId}" (as emitted by the feed), or
  * - transaction id + errorType parameters.
  */
@@ -1435,7 +1436,7 @@ function extractDumpId(entry: Record<string, unknown>): string {
 }
 
 function extractIdFromPath(rawPath: string, markers: string[]): string {
-  const path = normalizeAdtPath(rawPath, false);
+  const path = normalizeAdtPath(rawPath);
   if (!path) return '';
 
   for (const marker of markers) {
@@ -1451,7 +1452,7 @@ function extractIdFromPath(rawPath: string, markers: string[]): string {
 }
 
 function extractTailId(value: string): string {
-  const normalized = normalizeAdtPath(value, false);
+  const normalized = normalizeAdtPath(value);
   if (!normalized) return value;
   const parts = normalized.split('/').filter(Boolean);
   return parts[parts.length - 1] ?? value;
@@ -1561,9 +1562,9 @@ function parseGatewayExceptions(root: Record<string, unknown>): GatewayException
 }
 
 function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string; errorType?: string }): string {
-  const detailUrl = String(params.detailUrl ?? '').trim();
+  const detailUrl = String(params.detailUrl ?? '');
   if (detailUrl) {
-    return normalizeAdtPath(detailUrl, true);
+    return assertCanonicalHostRelativeAdtPath(detailUrl, '/sap/bc/adt/gw/errorlog/');
   }
 
   const id = String(params.id ?? '').trim();
@@ -1572,7 +1573,7 @@ function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string
   }
 
   if (id.includes('/sap/bc/adt/')) {
-    return normalizeAdtPath(id, true);
+    return assertCanonicalHostRelativeAdtPath(id, '/sap/bc/adt/gw/errorlog/');
   }
 
   // Feed atom:id is emitted as "{errorType}/{transactionId}" — accept that form directly.
@@ -1580,7 +1581,8 @@ function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string
     const [derivedType, ...rest] = id.split('/');
     const derivedId = rest.join('/');
     if (derivedType && derivedId) {
-      return `/sap/bc/adt/gw/errorlog/${encodeURIComponent(decodeUriComponentSafe(derivedType))}/${encodeURIComponent(decodeUriComponentSafe(derivedId))}`;
+      const path = `/sap/bc/adt/gw/errorlog/${encodeURIComponent(decodeUriComponentSafe(derivedType))}/${encodeURIComponent(decodeUriComponentSafe(derivedId))}`;
+      return assertCanonicalHostRelativeAdtPath(path, '/sap/bc/adt/gw/errorlog/');
     }
   }
 
@@ -1594,10 +1596,11 @@ function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string
   // whitespace to allow callers to pass either shape.
   const normalizedType = errorType.replace(/\s+/g, '');
 
-  return `/sap/bc/adt/gw/errorlog/${encodeURIComponent(normalizedType)}/${encodeURIComponent(decodeUriComponentSafe(id))}`;
+  const path = `/sap/bc/adt/gw/errorlog/${encodeURIComponent(normalizedType)}/${encodeURIComponent(decodeUriComponentSafe(id))}`;
+  return assertCanonicalHostRelativeAdtPath(path, '/sap/bc/adt/gw/errorlog/');
 }
 
-function normalizeAdtPath(rawPath: string, requireAdtPrefix: boolean): string {
+function normalizeAdtPath(rawPath: string): string {
   if (!rawPath) return '';
   const trimmed = rawPath.trim();
 
@@ -1620,10 +1623,6 @@ function normalizeAdtPath(rawPath: string, requireAdtPrefix: boolean): string {
 
   if (!normalized.startsWith('/') && normalized.includes('/sap/bc/adt/')) {
     normalized = normalized.slice(normalized.indexOf('/sap/bc/adt/'));
-  }
-
-  if (requireAdtPrefix && !normalized.startsWith('/sap/bc/adt/')) {
-    throw new Error(`Unsupported ADT detail URL: ${rawPath}`);
   }
 
   return normalized;
