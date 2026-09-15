@@ -145,9 +145,12 @@ function createErrorBuilder(
         errorCode: code,
       });
     }
+    // The enforced denial is one public response for unknown, ungranted and
+    // quarantined targets. Keep the requested target only in the audit event.
+    const genericTargetDenial = code === 'TARGET_NOT_AVAILABLE';
     return structuredToolError(code, message, {
-      ...(resolvedTarget ? { target: resolvedTarget } : {}),
-      ...(identity ? { identity } : {}),
+      ...(resolvedTarget && !genericTargetDenial ? { target: resolvedTarget } : {}),
+      ...(identity && !genericTargetDenial ? { identity } : {}),
       requestId,
       retryable: false,
       ...details,

@@ -359,19 +359,25 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
   });
 
   it('does not reveal whether an ungranted target exists, including to Admin', async () => {
-    await start();
+    await start(makeRegistry(3, [], CONFIG, [2]));
     for (const scopes of [['read'], ['read', 'admin']]) {
-      const token = addUser(['A4H/000'], scopes);
+      const token = addUser(['A4H/000', 'A4H/002', 'ZZZ/999'], scopes);
       const known = await rpc(token, 'tools/list', undefined, '/A4H/001/mcp');
       const absent = await rpc(token, 'tools/list', undefined, '/ZZZ/999/mcp');
       expect(known.status).toBe(404);
       expect(absent.status).toBe(404);
       expect(known.body).toEqual(absent.body);
-      for (const target of ['A4H/001', 'ZZZ/999']) {
+      let publicDenial: unknown;
+      for (const target of ['A4H/001', 'A4H/002', 'ZZZ/999']) {
         const denied = await call(token, 'SAPRead', { target, type: 'PROG', name: 'ZTEST' });
         expect(denied.isError).toBe(true);
         expect(payload(denied)).toMatchObject({ error: 'TARGET_NOT_AVAILABLE', message: 'Target not available' });
         expect(payload(denied)).not.toHaveProperty('identity');
+        expect(payload(denied)).not.toHaveProperty('target');
+        const { requestId, ...body } = payload(denied);
+        expect(requestId).toEqual(expect.any(String));
+        if (publicDenial) expect(body).toEqual(publicDenial);
+        publicDenial = body;
       }
     }
   });
