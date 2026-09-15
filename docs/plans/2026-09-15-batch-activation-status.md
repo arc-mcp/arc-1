@@ -31,3 +31,20 @@ absent. [Sanitized evidence](../research/2026-09-15-batch-activation-status-live
 
 This is a standalone follow-up to #788. The shared helper file is byte-identical in
 both PRs so either merge order is supported; combined checks cover their composition.
+
+## Review round 3
+
+The optional flat-message finding is valid: an early return suppressed messages when
+no structured details existed. Further review found that global informational details
+were also filtered out of the flat list and then discarded by the formatter.
+
+Plan and implementation: retain informational details and otherwise-unrepresented flat
+messages, deduplicate them, and render them alongside any error/warning sections. Keep
+per-object attribution and unknown activation states unchanged. Four new regressions
+failed before the fix; they cover success/failure with flat-only messages and mixed
+structured/flat messages, including duplicate text.
+
+All 52 focused activation tests and **6,590 tests in 214 files** passed. Build,
+typecheck, lint, policy and size/schema checks passed. This follow-up changes output
+formatting only; it adds no SAP requests. No additional live run was needed for these
+injected response shapes; the release-specific live evidence above remains applicable.

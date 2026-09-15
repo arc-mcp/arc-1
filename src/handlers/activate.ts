@@ -429,8 +429,6 @@ export async function handleSAPActivate(
 
 /** Format activation result messages with structured detail (line numbers, URIs) when available */
 function formatActivationMessages(result: ActivationResult): string {
-  if (result.details.length === 0) return '';
-
   const errors = result.details.filter((d) => d.severity === 'error');
   const warnings = result.details.filter((d) => d.severity === 'warning');
 
@@ -453,10 +451,15 @@ function formatActivationMessages(result: ActivationResult): string {
     parts.push(`Warnings:\n${formatted.join('\n')}`);
   }
 
-  // Fall back to flat messages if no errors/warnings but info messages exist
-  if (parts.length === 0 && result.messages.length > 0) {
-    return `\nMessages: ${result.messages.join('; ')}`;
-  }
+  // Retain info details and flat-only messages even alongside errors/warnings. Structured
+  // details already rendered above must not be repeated in the flat fallback.
+  const otherMessages = [
+    ...new Set([
+      ...result.details.filter((detail) => detail.severity === 'info').map((detail) => detail.text),
+      ...result.messages.filter((message) => !result.details.some((detail) => detail.text === message)),
+    ]),
+  ];
+  if (otherMessages.length > 0) parts.push(`Messages: ${otherMessages.join('; ')}`);
 
   return parts.length > 0 ? `\n${parts.join('\n')}` : '';
 }
