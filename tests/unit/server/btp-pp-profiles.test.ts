@@ -11,6 +11,7 @@ const base = parse(read('mta.yaml'));
 const app = base.modules.find((module: { name: string }) => module.name === 'arc1-mcp-server');
 const profile = (name: string) => parse(read(`examples/btp/${name}/profile.mtaext`));
 const destination = (name: string, file: string) => JSON.parse(read(`examples/btp/${name}/${file}.destination.json`));
+const PROFILE_NAMES = ['single-basic', 'single-pp', 'multi-pp'] as const;
 
 // Only the property maps of these constrained examples are overlaid here. MBT separately
 // validates the actual descriptors; this helper is not a general MTA merger.
@@ -67,7 +68,7 @@ function assertFixtureFields(raw: Record<string, unknown>) {
   expect(url.username).toBe('');
   expect(url.password).toBe('');
   if (raw.Authentication === 'BasicAuthentication') {
-    expect(raw.User).toBe('<owner-supplied-startup-user>');
+    expect(raw.User).toMatch(/^<owner-supplied-(startup|technical)-user>$/);
     expect(raw.Password).toBe('<owner-supplied-managed-secret>');
   } else {
     expect(raw.Authentication).toBe('PrincipalPropagation');
@@ -77,7 +78,7 @@ function assertFixtureFields(raw: Record<string, unknown>) {
   expect(Object.keys(raw).filter((key) => /secret|token|certificate/i.test(key))).toEqual([]);
 }
 
-describe('actual BTP PP setup examples', () => {
+describe('actual BTP setup examples', () => {
   const savedEnv = { ...process.env };
   beforeEach(() => {
     for (const key of Object.keys(process.env)) {
@@ -90,12 +91,10 @@ describe('actual BTP PP setup examples', () => {
     vi.restoreAllMocks();
   });
 
-  it.each(['single-pp', 'multi-pp'])('resolves %s with the conservative safety ceiling', (name) => {
+  it.each(PROFILE_NAMES)('resolves %s with the conservative safety ceiling', (name) => {
     const config = resolveProfile(name);
     expect(config).toMatchObject({
       transport: 'http-streamable',
-      ppEnabled: true,
-      ppStrict: true,
       ppAllowSharedCookies: false,
       multiTargetAllowBasicAuth: false,
       cacheMode: 'none',
@@ -106,6 +105,9 @@ describe('actual BTP PP setup examples', () => {
       allowFreeSQL: false,
       allowTransportWrites: false,
       allowGitWrites: false,
+      featureGcts: 'off',
+      featureUi5Repo: 'off',
+      featureFlp: 'off',
     });
     expect(config.denyActions).toEqual(['SAPDiagnose.atc', 'SAPDiagnose.unittest']);
     expect(process.env.ARC1_PLUGINS).toBe('');
@@ -114,11 +116,23 @@ describe('actual BTP PP setup examples', () => {
     expect(process.env.ARC1_MULTI_TARGET_AUTHORIZATION).toBeUndefined();
   });
 
+  it('configures one shared Basic destination without PP or multi-target mode', () => {
+    const config = resolveProfile('single-basic');
+    const raw = destination('single-basic', 'basic');
+    expect(config).toMatchObject({ ppEnabled: false, ppStrict: false, multiTargetEndpoints: false });
+    expect(process.env.SAP_BTP_DESTINATION).toBe(raw.Name);
+    expect(process.env.SAP_BTP_PP_DESTINATION).toBeUndefined();
+    assertFixtureFields(raw);
+    expect(raw.Authentication).toBe('BasicAuthentication');
+    expect(raw['sap-client']).toBe('001');
+    expect(Object.keys(raw).filter((key) => key.startsWith('arc1.'))).toEqual([]);
+  });
+
   it('pairs single startup and request destination names/client intent without multi markers', () => {
     const config = resolveProfile('single-pp');
     const startup = destination('single-pp', 'startup');
     const request = destination('single-pp', 'request');
-    expect(config.multiTargetEndpoints).toBe(false);
+    expect(config).toMatchObject({ ppEnabled: true, ppStrict: true, multiTargetEndpoints: false });
     expect(process.env.SAP_BTP_DESTINATION).toBe(startup.Name);
     expect(process.env.SAP_BTP_PP_DESTINATION).toBe(request.Name);
     expect(startup.Name).not.toBe(request.Name);
@@ -135,7 +149,7 @@ describe('actual BTP PP setup examples', () => {
     const config = resolveProfile('multi-pp');
     const raw = ['qas-001', 'qas-100'].map((file) => destination('multi-pp', file));
     raw.forEach(assertFixtureFields);
-    expect(config.multiTargetEndpoints).toBe(true);
+    expect(config).toMatchObject({ ppEnabled: true, ppStrict: true, multiTargetEndpoints: true });
     expect(process.env.SAP_BTP_DESTINATION).toBeUndefined();
     expect(process.env.SAP_BTP_PP_DESTINATION).toBeUndefined();
     const result = registry(raw, config);
@@ -158,16 +172,16 @@ describe('actual BTP PP setup examples', () => {
     expect(registry([raw], config, [raw.Name]).targets).toHaveLength(0);
   });
 
-  it('wires both packs into MBT validation and excludes examples/private files from packaging', () => {
+  it('wires every pack into MBT validation and excludes examples/private files from packaging', () => {
     const command = JSON.parse(read('package.json')).scripts['btp:validate'];
-    for (const name of ['single-pp', 'multi-pp']) {
+    for (const name of PROFILE_NAMES) {
       expect(command).toContain(`mbt validate -e examples/btp/${name}/profile.mtaext`);
     }
     expect(app['build-parameters'].ignore).toEqual(expect.arrayContaining(['examples/', '.arc1/']));
     expect(read('.gitignore').split('\n')).toContain('.arc1/');
   });
 
-  it.each(['single-pp', 'multi-pp'])('documents a non-overwriting copy command for %s', (name) => {
+  it.each(PROFILE_NAMES)('documents a non-overwriting copy command for %s', (name) => {
     const guide = read('docs_page/btp-cloud-foundry-deployment.md');
     const command = guide.split('\n').find((line) => line.startsWith(`cp -n examples/btp/${name}/`));
     expect(command).toBe(`cp -n examples/btp/${name}/profile.mtaext mta-overrides.mtaext`);
@@ -175,7 +189,7 @@ describe('actual BTP PP setup examples', () => {
   });
 
   it('keeps example readers on the canonical procedure and separates SAP identity evidence', () => {
-    for (const name of ['single-pp', 'multi-pp']) {
+    for (const name of PROFILE_NAMES) {
       const example = read(`examples/btp/${name}/README.md`);
       expect(example).toContain('btp-cloud-foundry-deployment.md#4-create-the-landscape-extension');
       expect(example).toContain('principal-propagation-setup.md#verify-the-backend-identity');

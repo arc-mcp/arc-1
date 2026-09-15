@@ -18,6 +18,12 @@ X.509 user-certificate propagation. Adding a destination does not create the SAP
 This profile has no independent `/mcp`: keep `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION`
 absent, including from existing app environment settings. It does not enable shared Basic access.
 
+The initial profile disables gCTS, FLP and UI5 Repository feature probes so Cloud Connector needs
+only `/sap/bc/adt` with all sub-paths. Multi-target v1 excludes `SAPGit` and `SAPManage`, so gCTS
+and FLP actions cannot be enabled through feature toggles. The optional `SAPRead` type
+`BSP_DEPLOY` reads UI5 Repository metadata outside ADT; it is disabled by this initial profile's
+`SAP_FEATURE_UI5REPO=off`. Keep all three probes off for ADT-only acceptance.
+
 After destination changes, restart every ARC-1 process. `SAPTargets` lists configured targets,
 not proven SAP access, and current v1 does not filter that list per user. Verify safe reads and
 [backend identity](../../../docs_page/principal-propagation-setup.md#verify-the-backend-identity)
