@@ -69,3 +69,13 @@ Validation: 130 focused tests and all 6,594 unit tests (213 files) passed; build
 typecheck, lint, policy and size/schema gates passed. Read-only live calls through
 dispatch on SAP_BASIS 758 SP02 and 816 SP01 verified NOSUCH produces the new error
 and CLAS/OC and DDLS/DF each return the requested subtype with maxResults=1.
+
+## Review round 2 (2026-09-15)
+
+No additional code finding. Added the optional release caveat after independently
+running the combined compiled CLI on 7.50: `SAPSearch query="*" objectType="TABL/DS"
+maxResults=8` returns both TABL/DT and TABL/DS. ARC-1 preserves the requested filter;
+this backend ignores its subtype. This was a read-only verification.
+
+Documentation update verification: build, typecheck, lint, policy, file/schema budgets
+and all **6,594 tests in 213 files** passed.
