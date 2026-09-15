@@ -68,6 +68,7 @@ export async function writeUiad(
     metadata: 'notAttempted' | 'unknown' | 'created' | 'existing';
     source: 'notAttempted' | 'unknown' | 'saved';
     phase: string;
+    unlockFailed?: boolean;
   } = {
     type: 'UIAD',
     name,
@@ -130,6 +131,9 @@ export async function writeUiad(
           manifest.source = state === 'attempted' ? 'unknown' : 'saved';
           manifest.phase = state === 'attempted' ? 'source' : 'unlock';
         },
+        onUnlockFailure: () => {
+          manifest.unlockFailed = true;
+        },
       });
     }
     manifest.phase = 'complete';
@@ -163,12 +167,18 @@ export async function writeUiad(
             ? AdtApiError.extractCleanMessage(error.responseBody).slice(0, 1500)
             : `SAP request failed (HTTP ${error.statusCode}).`
           : 'The operation could not be confirmed. Check the server logs for the original failure.';
+    const recovery =
+      manifest.source === 'saved'
+        ? 'SAP confirmed the source save, but cleanup failed. Inspect the object and lock state before further edits.'
+        : manifest.metadata === 'created'
+          ? 'Metadata creation was confirmed. Read the retained UIAD before repairing it with update or explicitly deleting it.'
+          : manifest.metadata === 'unknown'
+            ? 'Metadata creation outcome is unknown. Read the UIAD to establish whether it exists before retrying create.'
+            : 'The update failed. Read the existing UIAD to establish its current source state before retrying.';
     return response(
       true,
       'failed',
-      manifest.source === 'saved'
-        ? 'SAP confirmed the source save, but cleanup failed. Inspect the object and lock state before further edits.'
-        : 'The operation failed. Read the UIAD to establish its current state before retrying. A confirmed metadata create is retained; repair it with update or explicitly delete it.',
+      recovery + (manifest.unlockFailed ? ' Unlock failed; a SAP lock may remain.' : ''),
       {
         failure,
         ...(error instanceof AdtApiError ? { httpStatus: error.statusCode } : {}),

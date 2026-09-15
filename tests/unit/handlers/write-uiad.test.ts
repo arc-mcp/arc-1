@@ -107,6 +107,22 @@ beforeEach(() => {
 });
 
 describe('UIAD write orchestration', () => {
+  it.each(['pattern', 'patternProperties', 'format'])(
+    'does not execute backend %s constraints or claim a schema pass',
+    async (keyword) => {
+      schemaBody = JSON.stringify({
+        type: 'object',
+        properties: {
+          formatVersion: { const: '2' },
+          header: { [keyword]: keyword === 'patternProperties' ? { '(a+)+$': { type: 'string' } } : '(a+)+$' },
+        },
+      });
+      const { data } = await write();
+      expect(data.validation.schema).toBe('unavailable');
+      expect(data.validation.semantic).toBe('passed');
+      expect(data.validation.issues[0]).toContain('pattern/format');
+    },
+  );
   it('bounds diagnostics while retaining errors that occur after many warnings', async () => {
     checkBody = semantic(catalogError.replace('type="E"', 'type="W"').repeat(30) + catalogError);
     const { result, data } = await write();
@@ -250,6 +266,10 @@ describe('UIAD write orchestration', () => {
       expect(result.isError).toBe(true);
       expect(data.phase).toBe(phase === 'create' ? 'metadata' : phase === 'put' ? 'source' : 'unlock');
       expect(data.metadata).toBe(phase === 'create' ? 'unknown' : 'created');
+      expect(data.message).toContain(
+        phase === 'create' ? 'creation outcome is unknown' : phase === 'put' ? 'creation was confirmed' : 'source save',
+      );
+      if (phase === 'create') expect(data.message).not.toMatch(/retained|repairing|deleting/);
       expect(data.source).toBe(phase === 'create' ? 'notAttempted' : phase === 'put' ? 'unknown' : 'saved');
       expect(data.failure).toContain(`${phase} original failure`);
       expect(cache.inactiveLists.invalidate).toHaveBeenCalledWith('issuer:userName:ALICE');
@@ -268,8 +288,17 @@ describe('UIAD write orchestration', () => {
     });
     const { data } = await write();
     expect(data.failure).toContain('put original failure');
+    expect(data.unlockFailed).toBe(true);
+    expect(data.message).toContain('SAP lock may remain');
     expect(data.afterFailure.semantic).toBe('unavailable');
     expect(data.source).toBe('unknown');
+  });
+  it('does not imply that an update created a metadata shell', async () => {
+    statuses.put = 400;
+    const { data } = await write('update');
+    expect(data.metadata).toBe('existing');
+    expect(data.message).toContain('existing UIAD');
+    expect(data.message).not.toMatch(/creation|retained|deleting/);
   });
   it('hides SAP diagnostics and lock tokens in minimal-errors mode', async () => {
     statuses.put = 400;

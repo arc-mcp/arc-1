@@ -23,6 +23,21 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function requiresRegexEvaluation(schema: unknown): boolean {
+  // Conservative detection also covers constraints under $defs/propertyNames. Do not execute
+  // backend regexes on the shared event loop or silently ignore them and call the schema passed.
+  const pending = [schema];
+  while (pending.length) {
+    const value = pending.pop();
+    if (value && typeof value === 'object') {
+      if (!Array.isArray(value) && ('pattern' in value || 'patternProperties' in value || 'format' in value))
+        return true;
+      pending.push(...Object.values(value));
+    }
+  }
+  return false;
+}
+
 /** Bounds protect parsing/compilation, not the HTTP transport's allocation. No remote refs loaded. */
 function boundedJson(source: string, maxBytes: number): unknown {
   if (Buffer.byteLength(source) > maxBytes) throw new Error('JSON exceeds the UIAD validation size limit.');
@@ -130,6 +145,10 @@ export async function validateUiadSource(
     if (differentVersion) {
       result.issues.push(
         'The target schema describes a different AFF format version; SAP candidate and save checks determine validity.',
+      );
+    } else if (requiresRegexEvaluation(schema)) {
+      result.issues.push(
+        'The target schema requires pattern/format evaluation; schema validation is unavailable. SAP candidate and save checks determine validity.',
       );
     } else {
       try {

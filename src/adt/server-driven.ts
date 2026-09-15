@@ -23,6 +23,7 @@
  * the metadata content-type varies (blues v1, EVTO=blues v2, DTDC=ddic.dtdc.v1) — all stored per
  * registry entry, verified live: the blue family on 816, DTDC create→activate on 758 + 816.
  */
+import { logger } from '../server/logger.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError } from './errors.js';
@@ -359,6 +360,7 @@ export interface ServerDrivenWriteOptions {
   transport?: string;
   /** Internal mutation accounting; never a tool input. */
   onSourceWrite?: (state: 'attempted' | 'confirmed') => void;
+  onUnlockFailure?: () => void;
 }
 
 /**
@@ -413,6 +415,11 @@ export async function updateServerDrivenObjectSource(
         await unlockObject(session, objUrl, lock.lockHandle);
       } catch (error) {
         unlockError = error;
+        logger.warn('Server-driven object unlock failed; a SAP lock may remain.', {
+          objectUrl: objUrl,
+          ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
+        });
+        opts.onUnlockFailure?.();
       }
     }
     // Reached only when the PUT succeeded. A failed PUT keeps its original exception.

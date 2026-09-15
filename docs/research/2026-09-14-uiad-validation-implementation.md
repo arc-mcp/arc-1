@@ -139,3 +139,20 @@ to correct the outdated on-prem readonly claim and describe UIAD validation/crea
 or enums changed. The focused tests cover no-mutation
 failures, readonly interpretation, unavailable checks, authorization/package gates, exact source
 bytes, original-error preservation, partial-state reporting, output limits, and cache isolation.
+
+## Review round 2 (2026-09-15)
+
+- Confirmed the suppressed unlock failure and state-independent recovery text. The shared SDO
+  engine now logs the object URL and HTTP status without a lock handle or raw error; UIAD records
+  the failed unlock and warns about a possible remaining lock. The original save exception still wins.
+- Recovery guidance distinguishes confirmed creation, unknown creation outcome, and existing-object
+  update. Tests assert the message as well as the structured state.
+- Softened BTP tool guidance because its save lifecycle has not been verified live.
+- A backend schema containing pattern/format constraints is now explicitly unavailable rather than
+  evaluated on the shared event loop or silently weakened. SAP candidate/save checks remain in force.
+  The verified UIAD schema has none of those constraints; regressions cover this fallback.
+- Clarification to the external review: discovery is a read and can precede the package gate;
+  package authorization does precede candidate validation and every mutation.
+
+Round-2 verification: build, typecheck, lint, policy and size/schema budgets passed; all
+**6,624 tests in 215 files** passed. The BTP description snapshot changed only as described above.
