@@ -179,6 +179,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 
 | Task | Files (+ key gotcha) |
 |------|------|
+| Public docs clarity/navigation | `docs_page/`, `mkdocs.yml`; read `docs/dev-guide.md#public-documentation`. One task per page; keep reference contracts complete and every page in nav. |
 | BTP deployment/docs guidance | `docs_page/btp-overview.md` → one canonical runbook or task reference. Use the deployed artifact's source revision; research/specs are not shipped settings. Maintenance and optional walkthrough checks: `docs/dev-guide.md#btp-documentation`. |
 | Multi-target ADR-0006/0007 work | Read `docs/adr/0006-experimental-read-only-multi-target.md` and `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. Keep the mutation-free boundary and explicit lint/transport action allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
@@ -348,8 +349,8 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
   ADR-0007 permits only an explicit, default-off shared Basic identity under its mutation-free, one-instance
   controls and never as a PP fallback. Follow both normative plans exactly; do not add writes,
   target-specific roles, another discovery/auth model, or a hidden compatibility mode. Route requirements
-  outside those boundaries to the
-  [MCP hub](https://github.com/arc-mcp/mcp-hub) or a new ADR/security review.
+  outside those boundaries to separate ARC-1 instances. Changing the boundary requires a new
+  ADR/security review.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read before the 401 retry, and again on the next request after a persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.

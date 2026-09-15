@@ -1,433 +1,200 @@
-# Docker Guide for arc1
+# Docker
 
-arc1 ships as a Docker image (and npm package) that speaks MCP over **HTTP streamable**
-(the default transport in the Docker image). This makes it easy to run as a
-long-lived, port-accessible container that multiple MCP clients can connect to
-without spawning a new process per session.
+<a id="docker-guide-for-arc1"></a>
+<a id="table-of-contents"></a>
 
-> **stdio mode is still supported.** Pass `-e SAP_TRANSPORT=stdio` and use
-> `docker run -i` to revert to the classic pipe-based transport.
+Run the published ARC-1 image as an authenticated HTTP MCP server, or let a local MCP client start it in stdio mode. Docker is required; the host must reach your SAP HTTPS endpoint.
 
----
+For BTP Cloud Foundry, use the [MTA deployment runbook](btp-cloud-foundry-deployment.md).
 
-## Table of Contents
-
-1. [Quick Start](#quick-start)
-2. [Pre-Built Images (GHCR)](#pre-built-images-ghcr)
-3. [Building the Image](#building-the-image)
-4. [How arc1 Runs in Docker](#how-arc1-runs-in-docker)
-   - [Response-memory sizing](#response-memory-sizing)
-5. [Passing Configuration into Docker](#passing-configuration-into-docker)
-   - [Env vars and env files](#env-vars-and-env-files)
-   - [Cookie files inside the container](#cookie-files-inside-the-container)
-   - [Proxy, TLS, and networking](#proxy-tls-and-networking)
-6. [MCP Client Integration](#mcp-client-integration)
-   - [Claude Desktop](#claude-desktop-stdio-fallback)
-   - [Gemini CLI / Other Agents](#gemini-cli-other-agents)
-7. [Updating the Image](#updating-the-image)
-8. [Security Notes](#security-notes)
-9. [Troubleshooting](#troubleshooting)
-
----
-
-## Quick Start
-
-> **No Docker Hub needed.** Pre-built images are published automatically to
-> [GitHub Container Registry (GHCR)](https://github.com/arc-mcp/arc-1/pkgs/container/arc-1) on every
-> release. Pull them with `docker pull ghcr.io/arc-mcp/arc-1:latest`.
+## Quick start
 
 ### HTTP streamable (default — recommended)
 
-The Docker image defaults to `SAP_TRANSPORT=http-streamable` listening on
-`0.0.0.0:8080`. Start the container, map the port, and connect any MCP client
-to `http://localhost:8080/mcp`.
+1. Create a protected `arc1.env` file outside your repository and fill in your SAP values:
 
-```bash
-# Start arc1 as a persistent HTTP MCP server
-docker run -d --rm \
-  --memory=512m \
-  -p 8080:8080 \
-  -e NODE_OPTIONS=--max-old-space-size=384 \
-  -e SAP_URL=https://host:44300 \
-  -e SAP_USER=developer \
-  -e SAP_PASSWORD=secret \
-  ghcr.io/arc-mcp/arc-1:latest
+   ```dotenv
+   SAP_URL=https://your-sap-host:44300
+   SAP_CLIENT=100
+   SAP_USER=<SAP-user>
+   SAP_PASSWORD=<SAP-password>
+   ARC1_API_KEYS=<random-key>:viewer
+   ```
 
-# Verify it is up
-curl -s http://localhost:8080/mcp   # should return an MCP protocol response
-```
+   Generate the key with `openssl rand -hex 32`, then set `chmod 600 arc1.env` on Unix. Keep the key for the MCP client's bearer-token setting.
 
-The experimental read-only UI is off by default. HTTP mode requires real HTTP auth before it will start, for example `-e ARC1_UI=web -e ARC1_API_KEYS="$ADMIN_KEY:admin"`. All `/ui/*` routes require an `admin`-scoped bearer token, so browser-first use should go through a local or enterprise reverse proxy that performs login and forwards the bearer token. For direct laptop use with Claude-style stdio clients, prefer `ARC1_UI=local`. The UI shows metadata only and does not return cached ABAP source bodies.
+2. Choose an exact version from [GitHub releases](https://github.com/arc-mcp/arc-1/releases). The examples use `1.2.0`; replace that tag consistently when deploying another release. Start the container:
+
+   ```bash
+   docker run -d --name arc1 \
+     --memory=512m \
+     -p 127.0.0.1:8080:8080 \
+     --env-file arc1.env \
+     -e NODE_OPTIONS=--max-old-space-size=384 \
+     ghcr.io/arc-mcp/arc-1:1.2.0
+   ```
+
+3. Check process health, then connect your MCP client to `http://localhost:8080/mcp` with `Authorization: Bearer <random-key>`:
+
+   ```bash
+   curl -fsS http://localhost:8080/health
+   docker logs arc1
+   ```
+
+4. Ask the client to call `SAPRead(type="COMPONENTS")` or search for a known object. A healthy process alone does not prove SAP access.
+
+The example binds only to localhost and starts read-only. For a team endpoint, configure HTTPS at a reverse proxy and [API key](api-key-setup.md) or [OIDC](oauth-jwt-setup.md) authentication before exposing it. HTTP mode requires ARC-1 authentication.
 
 ### stdio mode (classic, pipe-based)
 
+For a client that starts ARC-1 as a subprocess:
+
 ```bash
 docker run -i --rm \
-  -e SAP_URL=https://host:44300 \
-  -e SAP_USER=developer \
-  -e SAP_PASSWORD=secret \
+  --env-file arc1.env \
   -e SAP_TRANSPORT=stdio \
-  ghcr.io/arc-mcp/arc-1:latest
+  ghcr.io/arc-mcp/arc-1:1.2.0
 ```
 
-> **`-i` is required for stdio mode.** MCP communicates over stdin/stdout.
-> Without `-i` the container exits immediately because stdin is closed.
+Use `-i` to keep stdin open; omit `-d` and port mapping. The container exits when the client disconnects.
 
----
+## Pre-built images (GHCR)
 
-## Pre-Built Images (GHCR)
+<a id="image-location"></a>
+<a id="available-tags"></a>
+<a id="pulling"></a>
+<a id="supported-platforms"></a>
 
-Official images are built automatically by GitHub Actions and pushed to
-**GitHub Container Registry** — no Docker Hub account is required for either
-pulling or publishing.
+Images are available from [GitHub Container Registry](https://github.com/arc-mcp/arc-1/pkgs/container/arc-1) for `linux/amd64` and `linux/arm64`. Docker selects the host architecture automatically.
 
-### Image location
-
-```
-ghcr.io/arc-mcp/arc-1
-```
-
-### Available tags
-
-| Tag | Example | Description |
-|---|---|---|
-| `latest` | `ghcr.io/arc-mcp/arc-1:latest` | Updated on every push to main (dev builds) and on every release |
-| `x.y.z` | `ghcr.io/arc-mcp/arc-1:0.9.14` | Exact version (immutable, created on release) |
-| `x.y` | `ghcr.io/arc-mcp/arc-1:0.9` | Latest patch within minor (created on release) |
-
-**`latest`** is rebuilt on every push to `main`, so it always reflects the newest code — even unreleased changes. Use versioned tags for production.
-
-### Pulling
-
-```bash
-# Latest (includes unreleased changes from main)
-docker pull ghcr.io/arc-mcp/arc-1:latest
-
-# Pinned version (recommended for production/team use)
-docker pull ghcr.io/arc-mcp/arc-1:0.9.14
-```
-
-### Supported platforms
-
-Each image is a multi-platform manifest covering:
-
-| Platform | Architecture |
+| Tag | Use |
 |---|---|
-| `linux/amd64` | x86-64 servers, most CI runners |
-| `linux/arm64` | Apple Silicon (via Rosetta or native Linux VM), AWS Graviton |
+| Exact version, such as `1.2.0` | Reproducible team and production deployments |
+| Minor version, such as `1.2` | Latest release in that minor line |
+| `latest` | Updated by releases and development builds; can include unreleased `main` changes |
 
-Docker automatically selects the right variant for your host.
+<a id="github-actions-automated-publishing"></a>
+<a id="manual-re-publish-workflow_dispatch"></a>
+<a id="visibility"></a>
 
-### GitHub Actions: automated publishing
+Versioned images are published by the [release workflow](https://github.com/arc-mcp/arc-1/blob/main/.github/workflows/release.yml). The [Docker (dev) workflow](https://github.com/arc-mcp/arc-1/blob/main/.github/workflows/docker.yml) updates `latest` on pushes to `main`; maintainers can rerun it through **Actions → Docker (dev) → Run workflow**. GHCR package visibility is separate from repository visibility; private packages require `docker login ghcr.io`.
 
-The workflow `.github/workflows/docker.yml` triggers on every `v*` tag push
-(the same event fired at the end of the `release.yml` workflow):
-
-```
-release.yml
-  └─► git tag v0.9.14 + git push tag
-            │
-            └─► docker.yml triggered
-                  ├── docker/setup-qemu-action     (arm64 emulation)
-                  ├── docker/setup-buildx-action   (multi-platform builder)
-                  ├── docker/login-action          (GITHUB_TOKEN → ghcr.io)
-                  ├── docker/metadata-action       (semver tags + OCI labels)
-                  └── docker/build-push-action     (build + push)
-```
-
-**No extra secrets are needed.** The workflow uses the built-in `GITHUB_TOKEN`
-with `packages: write` permission. This token is automatically available in all
-GitHub Actions runs.
-
-```yaml
-permissions:
-  contents: read
-  packages: write
-```
-
-### Manual re-publish (workflow_dispatch)
-
-You can trigger a new Docker build for any existing tag without a full release:
-
-1. Go to **Actions → Docker** in the GitHub UI.
-2. Click **Run workflow**.
-3. Optionally supply an image tag override.
-
-This is useful for republishing after a `Dockerfile` fix without bumping the
-package version.
-
-### Visibility
-
-GHCR container package visibility is configured separately from repository
-visibility. The repository can be public while the package is still private.
-Set the `ghcr.io/arc-mcp/arc-1` package visibility to public when images should
-be pulled anonymously or published as Docker metadata in the MCP Registry;
-otherwise authentication is required (`docker login ghcr.io`).
-
----
-
-## Building the Image
+## Building the image
 
 ### From source
 
-```bash
-# Simple build (version = dev)
-docker build -t arc1 .
+From a checked-out source revision:
 
-# With version metadata (recommended for releases)
-docker build \
-  --build-arg VERSION=0.9.14 \
-  --build-arg COMMIT=$(git rev-parse --short HEAD) \
-  --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
-  -t arc1:0.9.14 .
+```bash
+docker build -t arc1:local .
 ```
+
+The Dockerfile uses a Node.js 22 Alpine build stage and a runtime with production dependencies. The image version comes from the checked-out `package.json`; the Dockerfile has no version build arguments.
 
 ### Multi-platform build (for sharing)
 
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  --build-arg VERSION=0.9.14 \
-  -t ghcr.io/yourorg/arc1:0.9.14 \
+  -t ghcr.io/<your-org>/arc1:<version> \
   --push .
 ```
 
-> **Build note:** The image uses `node:22-alpine` as builder. The runtime image
-> is `node:22-alpine` with only production dependencies installed.
-> `better-sqlite3` requires native compilation during `npm install`.
+## How ARC-1 runs in Docker
 
----
+<a id="http-streamable-default"></a>
+<a id="stdio-mode-classic"></a>
 
-## How arc1 Runs in Docker
-
-### HTTP streamable (default)
-
-The Docker image defaults to the **MCP streamable HTTP transport**, listening on
-`0.0.0.0:8080`. This is the recommended mode for containerised deployments:
-
-```
-MCP Client (Claude Desktop, Cursor, etc.)
-  │
-  │  HTTP POST http://localhost:8080/mcp
-  │
-  ├─► docker container (long-lived, -d)
-  │         │
-  │    JSON-RPC over HTTP (streaming)
-  │         │
-  └─────────┴─► container keeps running; multiple clients can connect
-```
-
-Key differences from stdio mode:
-- **Port 8080 is exposed** — map it with `-p 8080:8080`.
-- **`-d` (detached) mode works** — the container stays alive between sessions.
-- **No `-i` flag needed** — stdin is not used.
-- **Multiple clients** can connect to the same container simultaneously.
-
-### stdio mode (classic)
-
-Set `SAP_TRANSPORT=stdio` to revert to the pipe-based model where an MCP client
-spawns the container as a subprocess:
-
-```
-MCP Client
-  │
-  ├─► docker run -i --rm -e SAP_TRANSPORT=stdio -e SAP_URL=... arc1
-  │         │
-  │    JSON-RPC over stdin/stdout
-  │         │
-  └─────────┴─► container exits when client disconnects
-```
+| Mode | Docker flags | Client connection |
+|---|---|---|
+| HTTP, default | `-d` and port mapping | Shared URL ending in `/mcp` |
+| stdio | `-i --rm -e SAP_TRANSPORT=stdio` | stdin/stdout of a client-started process |
 
 ### Transport / address options
 
-| Env variable | CLI flag | Default in image | Description |
-|---|---|---|---|
-| `SAP_TRANSPORT` | `--transport` | `http-streamable` | `stdio` or `http-streamable` |
-| `SAP_HTTP_ADDR` | `--http-addr` | `0.0.0.0:8080` | Listen address for http-streamable |
-| `ARC1_UI` | `--ui` | `off` | Experimental read-only console. `web` mounts it at `/ui` and requires HTTP auth plus admin scope; `local` starts a loopback sidecar inside the container and is usually not useful unless you forward that port deliberately |
-| `ARC1_UI_ADDR` | `--ui-addr` | `127.0.0.1:8711` | Sidecar bind address for `ARC1_UI=local` |
+| Setting | Default | Purpose |
+|---|---|---|
+| `SAP_TRANSPORT` | `http-streamable` | HTTP or `stdio` |
+| `ARC1_HTTP_ADDR` | `0.0.0.0:8080` in the image | Container listen address; `SAP_HTTP_ADDR` is a legacy alias |
+| `ARC1_UI` | `off` | Experimental console; `web` requires HTTP auth and admin scope |
+| `ARC1_UI_ADDR` | `127.0.0.1:8711` | Local UI sidecar address inside the container |
 
 ### Response-memory sizing
 
-The data-preview byte allowance and data-result concurrency guard also apply in Docker. The image
-starts `node dist/index.js` directly under `tini`; it does not use the Cloud Foundry Node.js
-buildpack, so `OPTIMIZE_MEMORY` and the buildpack-provided `MEMORY_AVAILABLE` policy do not apply.
-Give the container an explicit memory limit and, when predictable V8/native headroom matters, set a
-numeric old-space ceiling in the same deployment definition:
+The quick start pairs a 512 MiB container limit with 384 MiB Node old-space. The remaining memory is needed for native buffers, parsing and serialization.
 
-```bash
-docker run -d --rm \
-  --memory=512m \
-  -e NODE_OPTIONS=--max-old-space-size=384 \
-  -e ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES=2097152 \
-  -e ARC1_MAX_CONCURRENT_DATA_RESULTS=2 \
-  ... \
-  ghcr.io/arc-mcp/arc-1:latest
-```
+Keep these settings together in the deployment definition:
 
-For a different container limit, start with old-space at about 75% of RAM (for example 768 MiB at
-1 GiB) and leave the rest for native HTTP buffers, XML input, and serialization. Use the
-[data-preview RAM sizing model](btp-administration.md#data-preview-ram-sizing) for the two ARC-1
-limits, then load-test the widest approved result at full configured concurrency. Keep
-`--memory`, the numeric `NODE_OPTIONS` value, and the two data-result settings together; unlike the
-shipped MTA buildpack path, the numeric Docker value does not follow a later memory override
-automatically.
+| Setting | Initial value |
+|---|---|
+| Docker `--memory` | `512m` |
+| `NODE_OPTIONS` | `--max-old-space-size=384` |
+| `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` | `2097152` (2 MiB per tool call) |
+| `ARC1_MAX_CONCURRENT_DATA_RESULTS` | `2` process-wide slots |
 
----
+Before increasing data limits, use the [RAM sizing model](btp-administration.md#data-preview-ram-sizing) and measure the widest expected result at full concurrency. A starting old-space allowance is about 75% of container RAM. Docker's numeric `NODE_OPTIONS` does not adjust when the container memory limit changes; the CF buildpack's `OPTIMIZE_MEMORY`/`MEMORY_AVAILABLE` behavior does not apply here.
 
-## Passing Configuration into Docker
-
-All ARC-1 env vars, CLI flags, and safety recipes live in [configuration-reference.md](configuration-reference.md). This page only covers the Docker-specific part: how to pass that config into a container.
+## Passing configuration into Docker
 
 ### Env vars and env files
 
-!!! note "Where do values come from in Docker?"
-    The image does **not** read a `.env` file at startup — `dotenv` would look in the container's CWD, which is empty by design. Pass values explicitly with `-e KEY=VAL` or `--env-file path/to/file.env`. CLI flags appended after the image name (e.g. `… arc1 --allow-writes`) still override env. Full per-mode breakdown: [Configuration Precedence](configuration-precedence.md).
+Pass settings with `--env-file arc1.env` or one `-e KEY=value` per variable. A host `.env` file is not loaded automatically inside the container. To use CLI flags, supply the command too: arguments after the image name replace the image's `CMD`. For example, append `node dist/index.js --transport stdio` after the image name. These ARC-1 flags then override environment values.
 
-Use `-e` for short examples and `--env-file` when the list gets long:
-
-```bash
-# Keep connection/auth settings in .env, add extra safety opt-ins at runtime
-docker run -d --rm \
-  -p 8080:8080 \
-  --env-file .env \
-  -e SAP_ALLOW_WRITES=true -e SAP_ALLOW_TRANSPORT_WRITES=true \
-  ghcr.io/arc-mcp/arc-1:latest
-```
-
-For the "everything on" local-dev path:
+Use the [configuration recipes](configuration-reference.md#recipes) for approved capabilities. Quote shell-sensitive package patterns when passing them directly:
 
 ```bash
-docker run -d --rm \
-  -p 8080:8080 \
-  --env-file .env \
-  -e SAP_ALLOW_WRITES=true SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true SAP_ALLOW_TRANSPORT_WRITES=true \
-  -e SAP_ALLOWED_PACKAGES='*' \
-  ghcr.io/arc-mcp/arc-1:latest
+-e SAP_ALLOW_WRITES=true -e SAP_ALLOWED_PACKAGES='ZARC1_DEV,$TMP'
 ```
 
-Keep credentials and stable connection settings in `.env`; layer temporary overrides with `-e`.
-
-For what `SAP_ALLOW_WRITES`, `SAP_ALLOW_TRANSPORT_WRITES`, `SAP_DENY_ACTIONS`, `SAP_ALLOWED_PACKAGES`, and the rest actually do, use [configuration-reference.md](configuration-reference.md). Ready-made read-only, sandboxed, and developer recipes live in [configuration-reference.md → Recipes](configuration-reference.md#recipes). That page shows raw `ENV=value` values: use them as-is in `.env` and `--env-file`, but quote shell-sensitive package patterns when you pass them via `-e`.
-
-If you pass package patterns like `*` or `$TMP` through `-e SAP_ALLOWED_PACKAGES=...`, use single quotes so the shell does not expand them: `-e SAP_ALLOWED_PACKAGES='*'` or `-e SAP_ALLOWED_PACKAGES='Z*,$TMP'`.
+See [Configuration precedence](configuration-precedence.md) for all layers.
 
 ### Cookie files inside the container
 
-Mount a Netscape-format cookie file into the container and reference it with `SAP_COOKIE_FILE`:
+Mount a Netscape-format cookie file read-only and point ARC-1 at its **container** path:
 
 ```bash
 docker run -i --rm \
-  -e SAP_URL=https://host:44300 \
+  -e SAP_TRANSPORT=stdio \
+  -e SAP_URL=https://your-sap-host:44300 \
   -e SAP_COOKIE_FILE=/cookies/cookies.txt \
-  -v /path/to/local/cookies.txt:/cookies/cookies.txt:ro \
-  ghcr.io/arc-mcp/arc-1:latest
+  -v /absolute/path/cookies.txt:/cookies/cookies.txt:ro \
+  ghcr.io/arc-mcp/arc-1:1.2.0
 ```
 
-The cookie file must use the Netscape format exported by browser extensions like *Edit This Cookie* or *Cookie-Editor*.
-
-> **Never bake credentials into the image** with `ENV` in a downstream Dockerfile. Always pass them at runtime via `-e` or `--env-file`.
 ### Proxy, TLS, and networking
 
 #### Self-signed or internal CA certificates
 
-For SAP systems using self-signed certificates, either skip verification
-(development only) or add your CA to the image:
+Mount the trusted CA and tell Node to load it. Add these flags to your normal container command:
 
 ```bash
-# Option 1: skip verification (NOT for production)
--e SAP_INSECURE=true
-
-# Option 2: mount your CA certificate
-docker run -i --rm \
-  -e SAP_URL=https://internal-sap:44300 \
-  -e SAP_USER=user -e SAP_PASSWORD=pass \
-  -v /etc/ssl/certs/company-ca.crt:/usr/local/share/ca-certificates/company-ca.crt:ro \
-  arc1
+-v /absolute/path/company-ca.crt:/certs/company-ca.crt:ro \
+-e NODE_EXTRA_CA_CERTS=/certs/company-ca.crt
 ```
 
-For a permanent fix, extend the image:
-
-```dockerfile
-FROM ghcr.io/arc-mcp/arc-1:latest
-USER root
-COPY company-ca.crt /usr/local/share/ca-certificates/
-RUN update-ca-certificates
-USER arc1
-```
+Keep `SAP_INSECURE=false`. Setting it to `true` disables SAP certificate verification.
 
 #### HTTP/HTTPS proxy
 
-Direct ADT traffic does **not yet** honor the standard `HTTPS_PROXY` / `HTTP_PROXY` / `NO_PROXY`
-environment variables; setting them on the container does not route ARC-1's SAP requests. Track
-[COMPAT-06](roadmap.md#compat-06) for native support. BTP Destination Service / Cloud Connector is a
-different, platform-managed connectivity path. Until COMPAT-06 lands, provide network routing outside
-ARC-1 (for example through the deployment platform) rather than assuming these environment variables
-are active.
+Direct ADT traffic does not support `HTTPS_PROXY`, `HTTP_PROXY`, or `NO_PROXY` yet. Use platform/network routing, or BTP Destination/Cloud Connector connectivity. Track [COMPAT-06](roadmap.md#compat-06).
 
 #### Connecting to a SAP system on the same Docker host
 
-Use the host network or `host.docker.internal` (Docker Desktop):
-
-```bash
-# Linux — host network mode
-docker run -i --rm --network host \
-  -e SAP_URL=http://localhost:50000 \
-  -e SAP_USER=user -e SAP_PASSWORD=pass \
-  arc1
-
-# Docker Desktop (Mac/Windows)
--e SAP_URL=http://host.docker.internal:50000
-```
+Use `host.docker.internal` as the hostname on Docker Desktop. On Linux, `--network host` lets the container use the host's network. Match the SAP URL to the certificate and reachable HTTPS port.
 
 #### Connecting to a SAP system in another Docker network
 
-```bash
-docker network create sap-net
+Attach both containers to the same Docker network with `--network <network>`, then use the SAP container's network hostname and HTTPS port.
 
-docker run -i --rm \
-  --network sap-net \
-  -e SAP_URL=http://sap-container:50000 \
-  -e SAP_USER=user -e SAP_PASSWORD=pass \
-  arc1
-```
-
----
-
-## MCP Client Integration
+## MCP client integration
 
 ### HTTP streamable (recommended)
 
-Start the container once and point any MCP client at `http://localhost:8080/mcp`:
-
-```bash
-docker run -d --name arc1 \
-  -p 8080:8080 \
-  -e SAP_URL=https://my-sap-system:44300 \
-  -e SAP_USER=developer \
-  -e SAP_PASSWORD=secret \
-  ghcr.io/arc-mcp/arc-1:latest
-```
-
-Then configure your MCP client to use the HTTP URL:
-
-```json
-{
-  "mcpServers": {
-    "arc1": {
-      "url": "http://localhost:8080/mcp"
-    }
-  }
-}
-```
-
-> MCP clients that support the streamable HTTP transport (Claude Desktop ≥ 0.9,
-> Cursor, etc.) can connect directly by URL — no `docker run` subprocess needed.
+Use the URL and bearer token from [Quick Start](#quick-start). Client-specific settings are in [Local development](local-development.md#mcp-client-configuration) and [API key setup](api-key-setup.md).
 
 ### Claude Desktop (stdio fallback)
 
-If your Claude Desktop version does not yet support HTTP MCP endpoints, use the
-stdio mode by overriding the transport:
+Use an absolute env-file path in the client's server configuration:
 
 ```json
 {
@@ -436,193 +203,54 @@ stdio mode by overriding the transport:
       "command": "docker",
       "args": [
         "run", "-i", "--rm",
-        "-e", "SAP_URL=https://my-sap-system:44300",
-        "-e", "SAP_USER=developer",
-        "-e", "SAP_PASSWORD=secret",
+        "--env-file", "/absolute/path/arc1.env",
         "-e", "SAP_TRANSPORT=stdio",
-        "ghcr.io/arc-mcp/arc-1:latest"
+        "ghcr.io/arc-mcp/arc-1:1.2.0"
       ]
     }
   }
 }
 ```
 
-For a production system (read-only is already the default — no extra flags needed):
+### Gemini CLI / other agents
 
-```json
-{
-  "mcpServers": {
-    "arc1-prod": {
-      "command": "docker",
-      "args": [
-        "run", "-i", "--rm",
-        "-e", "SAP_URL=https://prod-sap:44300",
-        "-e", "SAP_USER=readonly_user",
-        "-e", "SAP_PASSWORD=secret",
-        "-e", "SAP_TRANSPORT=stdio",
-        "ghcr.io/arc-mcp/arc-1:latest"
-      ]
-    }
-  }
-}
-```
+Choose HTTP or stdio according to the client's supported transport. See [MCP client configuration](local-development.md#mcp-client-configuration) for examples.
 
-> **Tip:** Use `--env-file` instead of individual `-e` flags to keep credentials
-> out of the config file. Reference the absolute path to the env file:
->
-> ```json
-> "args": ["run", "-i", "--rm", "-e", "SAP_TRANSPORT=stdio", "--env-file", "/Users/me/.arc1-prod.env", "ghcr.io/arc-mcp/arc-1:latest"]
-> ```
+## Updating the image
 
-### Gemini CLI / Other Agents
+<a id="quick-reference"></a>
+<a id="pinning-a-version-recommended"></a>
+<a id="rebuilding-from-source"></a>
+<a id="staying-up-to-date-automatically"></a>
 
-Clients that support HTTP MCP can connect to `http://localhost:8080/mcp` directly
-once the container is running. For stdio-only clients use `docker run -i` with
-`-e SAP_TRANSPORT=stdio`. See [local-development.md → MCP client configuration](local-development.md#mcp-client-configuration) for agent-specific
-configuration examples.
+Follow [Updating](updating.md) to pull the selected version, recreate the container with the **same ports, limits, mounts, and env file**, and verify it. Keep the previous image tag for rollback. For a source build, check out the selected revision and rebuild; changing the running container's filesystem is not an update procedure.
 
----
+## Security notes
 
-## Updating the Image
+- Supply credentials at runtime and protect env files with owner-only permissions.
+- Mount session cookies read-only; never include them or passwords in an image.
+- Keep writes, data and SQL disabled until needed; restrict allowed packages when enabling writes.
+- Keep TLS verification on and protect the public MCP endpoint with HTTPS and authentication.
+- A persistent SQLite cache contains unencrypted SAP source. Use memory/none or an encrypted volume when required.
 
-For a comprehensive update guide covering all deployment modes (Docker, BTP, npm), see **[updating.md](updating.md)**.
-
-### Quick reference
-
-```bash
-# Pull a specific version (recommended for production)
-docker pull ghcr.io/arc-mcp/arc-1:0.9.14
-
-# Pull latest (includes unreleased changes from main)
-docker pull ghcr.io/arc-mcp/arc-1:latest
-
-# Stop, remove, restart with new image
-docker stop arc1 && docker rm arc1
-docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:0.9.14
-
-# Verify version
-docker run --rm ghcr.io/arc-mcp/arc-1:0.9.14 --version
-```
-
-### Pinning a version (recommended)
-
-For production or shared team environments, always pin to a specific version
-tag rather than `latest`:
-
-```
-ghcr.io/arc-mcp/arc-1:0.9.14
-```
-
-This ensures every team member uses the same binary regardless
-of when the image was pulled. Check the
-[GitHub releases page](https://github.com/arc-mcp/arc-1/releases)
-for the latest version.
-
-### Rebuilding from source
-
-```bash
-git pull
-docker build -t arc1:latest .
-```
-
-### Staying up to date automatically
-
-Teams that want automatic image updates can use tools like
-[Renovate](https://docs.renovatebot.com/) or
-[Dependabot](https://docs.github.com/en/code-security/dependabot) to open PRs
-when a new `ghcr.io/arc-mcp/arc-1` image tag is published.
-
----
-
-## Security Notes
-
-1. **Never bake credentials into images.** Always pass `SAP_USER`,
-   `SAP_PASSWORD`, `SAP_COOKIE_FILE` at runtime via `-e` or `--env-file`.
-
-2. **Protect your `.env` file.** If using `--env-file`, ensure the file has
-   restricted permissions (`chmod 600`) and is in `.gitignore`.
-
-3. **Default is already read-only.** Writes, free SQL, table preview, transports,
-   and Git are each off until you opt in (`SAP_ALLOW_WRITES`, `SAP_ALLOW_FREE_SQL`,
-   `SAP_ALLOW_DATA_PREVIEW`, `SAP_ALLOW_TRANSPORT_WRITES`, `SAP_ALLOW_GIT_WRITES`).
-   Enable them only on systems you are comfortable mutating, and pair writes with a
-   tight `SAP_ALLOWED_PACKAGES`. ARC-1 feeds SAP-resident content to the LLM, which
-   then issues tool calls — the package allowlist is the backstop that contains a
-   prompt-injected model writing outside scope.
-
-4. **The container runs as a non-root user** (`arc1:arc1`) inside Alpine. There
-   are no open ports — the attack surface is minimal.
-
-5. **Cookie files contain session tokens.** Mount them read-only (`:ro`) and
-   use short-lived sessions where possible.
-
-6. **Use `SAP_INSECURE=false` (the default).** Only set it to `true` in isolated
-   development environments with no sensitive data — it disables SAP TLS
-   verification entirely (any certificate accepted, MITM masked) with no startup
-   warning. The bundled `manifest.yml` / `mta.yaml` ship `"false"`; keep that
-   default on CA-signed landscapes.
-
-7. **The SQLite cache stores SAP source in cleartext.** The default `auto` cache is
-   in-memory, but explicitly setting `ARC1_CACHE=sqlite` creates `.arc1-cache.db`
-   with full ABAP source, unencrypted, and a mounted volume persists it. ARC-1
-   creates and repairs cache DB and file audit sink files with owner-only permissions
-   (`0600`), but this is not encryption. For IP-sensitive landscapes keep
-   `ARC1_CACHE=auto`/`memory` or `none`, or use an encrypted volume.
-
----
+The runtime uses a non-root user and exposes HTTP port 8080. See the [Security guide](security-guide.md) for deployment controls.
 
 ## Troubleshooting
 
-### Container exits immediately
+<a id="container-exits-immediately"></a>
+<a id="sap-url-is-required-error"></a>
+<a id="tls-certificate-errors"></a>
+<a id="authentication-required-error"></a>
+<a id="enable-verbose-logging"></a>
+<a id="tool-not-appearing-in-the-ai-client"></a>
 
-arc1 exits if stdin is closed. Make sure you are using `-i`:
+| Symptom | Check |
+|---|---|
+| Container exits in stdio mode | Use `-i`, omit `-d`, and verify `SAP_TRANSPORT=stdio` |
+| `HTTP transport requires ARC-1 authentication` | Set `ARC1_API_KEYS`, OIDC, or XSUAA; SAP credentials alone do not authenticate MCP clients |
+| `SAP_URL is not configured — no SAP system connection available` | Check the env-file path and `SAP_URL`; the process can start without a target |
+| Certificate error | Mount the CA and set `NODE_EXTRA_CA_CERTS`; verify hostname and certificate chain |
+| SAP login fails | Inspect SAP credentials/client and the [authentication setup](enterprise-auth.md) |
+| Tool or action missing | Check detected SAP features, user scopes and `SAP_DENY_ACTIONS` |
 
-```bash
-docker run -i --rm ...   # correct
-docker run --rm ...      # wrong — exits immediately
-docker run -d --rm ...   # wrong — detached mode breaks stdio
-```
-
-### `SAP URL is required` error
-
-The `SAP_URL` environment variable is mandatory. Verify it is being passed:
-
-```bash
-docker run -i --rm -e SAP_URL=https://host:44300 ... arc1
-```
-
-### TLS certificate errors
-
-```
-x509: certificate signed by unknown authority
-```
-
-Either add your CA certificate (see [Network / TLS](#proxy-tls-and-networking)) or use
-`SAP_INSECURE=true` in non-production environments.
-
-### `authentication required` error
-
-Only one auth method is accepted. Check you are not accidentally setting both
-`SAP_USER/SAP_PASSWORD` and `SAP_COOKIE_FILE`.
-
-### Enable verbose logging
-
-Add `-e SAP_VERBOSE=true` to see startup decisions including which features were
-detected and which safety rules are active. Logs go to stderr; they will not
-interfere with MCP over stdout.
-
-```bash
-docker run -i --rm \
-  -e SAP_URL=https://host:44300 \
-  -e SAP_USER=user -e SAP_PASSWORD=pass \
-  -e SAP_VERBOSE=true \
-  arc1 2>arc1-debug.log
-```
-
-### Tool not appearing in the AI client
-
-1. Check feature flags — features in `auto` mode may have been turned off because
-   the SAP component was not detected. Force them on with e.g.
-   `SAP_FEATURE_RAP=on`.
-2. Check `SAP_DENY_ACTIONS` — deny rules hide matching actions from tool listings
-   and block them again at call time.
+Use `docker logs arc1`; add `-e SAP_VERBOSE=true` when recreating the container for more diagnostic output. Logs use stderr so stdio protocol output stays separate.

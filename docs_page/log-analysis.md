@@ -1,50 +1,44 @@
-# ARC-1 Log Analysis Guide
+# Log analysis
+
+<a id="arc-1-log-analysis-guide"></a>
+
+Find the failed tool call, trace its `requestId`, then check whether auth, policy or SAP failed. The examples below read JSON-line audit files with `jq`.
 
 ## Enabling File Logging
 
-Set the `ARC1_LOG_FILE` environment variable to enable JSON line audit logging:
+Stderr audit logging is always available. On BTP, use `cf logs arc1-mcp-server --recent` or live `cf logs arc1-mcp-server`.
+To retain JSON lines locally, set:
 
 ```bash
-# Local development
-ARC1_LOG_FILE=/tmp/arc1-audit.jsonl npm run dev
-
-# Docker
-docker run -v /data/logs:/logs -e ARC1_LOG_FILE=/logs/arc1-audit.jsonl ghcr.io/arc-mcp/arc-1
-
-# BTP Cloud Foundry (in manifest.yml)
-env:
-  ARC1_LOG_FILE: /tmp/arc1-audit.jsonl
+ARC1_LOG_FILE="$PWD/arc1-audit.jsonl" arc1
 ```
 
-On BTP Cloud Foundry, ARC-1's stderr logs are always available via `cf logs arc1-mcp-server`
-(live) and `cf logs arc1-mcp-server --recent` (buffer) — no service binding required. The
-deprecated Application Logging Service (Kibana) is **off by default** (SAP Note 3557260); see
-[BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) to opt back in, or use **SAP Cloud
-Logging** for a managed observability stack.
+The service user needs write access. Rotate the file and retain it according to your operational policy.
+In containers, mount a persistent log volume; a CF container's local filesystem is temporary.
 
 ## Log Levels
 
-Control stderr verbosity with `ARC1_LOG_LEVEL`:
+Control the stderr **audit sink** with `ARC1_LOG_LEVEL`:
 
 ```bash
-ARC1_LOG_LEVEL=debug  # Show everything (HTTP requests, CSRF fetches)
+ARC1_LOG_LEVEL=debug  # Include HTTP/CSRF audit events
 ARC1_LOG_LEVEL=info   # Default — tool calls, auth events
 ARC1_LOG_LEVEL=warn   # Only warnings and errors
 ARC1_LOG_LEVEL=error  # Only errors
 ```
 
-The file sink always receives ALL events regardless of stderr level.
+The audit file receives all event levels. Ordinary server messages use a separate logger: set `SAP_VERBOSE=true` to include its debug messages, such as PP diagnostics. This also sets the audit level to `debug`. Neither setting makes the audit file capture ordinary server messages.
 
 ## Event Types
 
 The exact event inventory and field contract is maintained in
-[Security Guide: What Gets Logged](security-guide.md#what-gets-logged). Important operator groups
+[audit event reference](#audit-event-reference). Important operator groups
 include:
 
 | Group | Events |
 |-------|--------|
 | Tool and SAP HTTP lifecycle | `tool_call_start`, `tool_call_end`, `http_request`, `http_csrf_fetch` |
-| Authorization and safety | `auth_scope_denied`, `safety_blocked`, `data_response_limited`, `auth_rate_limited`, `mcp_rate_limited` |
+| Authorization and safety | `auth_scope_denied`, `safety_blocked`, `data_source_policy_decision`, `data_response_limited`, `auth_rate_limited`, `mcp_rate_limited` |
 | Selected identity | `auth_pp_created`, `auth_shared_created` |
 | Multi-target failure stage | `target_resolution_failed`, `pp_exchange_failed`, `shared_auth_failed`, `cloud_connector_access_denied`, `sap_service_unavailable`, `sap_authentication_failed`, `sap_authorization_failed`, `target_policy_denied` |
 | Server/client protocol | `server_start`, OAuth/DCR, and CORS events |
@@ -55,92 +49,38 @@ safe `errorCode`; they do not contain destination credentials or SAP response bo
 
 ## What a Healthy Startup Looks Like
 
-After you deploy (or run locally), the **startup transcript is the fastest way to confirm SAP
-connectivity and authorization are working** — before you ever make a tool call. On BTP Cloud Foundry,
-read it with `cf logs arc1-mcp-server --recent` (or the **Logs** tab of the app in the BTP Cockpit).
-
-A healthy startup at the default `info` level looks like this (real output, S/4HANA 2023 / ABAP
-Platform 2025):
-
-```
-INFO: [server_start] {"version":"0.9.x","transport":"stdio","allowWrites":...,"url":"http://your-sap:50000"}
-INFO: ARC-1 starting {"version":"0.9.x","transport":"...","url":"..."}
-INFO: SAP semaphore {"maxConcurrent":10,"scope":"server-wide"}
-INFO: Object cache enabled {"mode":"auto",...}
-INFO: ARC-1 MCP server running on stdio          # (or: "ARC-1 HTTP server started" on BTP)
-INFO: Startup auth preflight succeeded for shared SAP credentials. {"endpoint":"/sap/bc/adt/core/discovery"}
-INFO: Authorization probe: object search access is available
-INFO: Authorization probe: transport access is available
-```
+Read the startup auth and safety summaries first. They show configured identity modes and server policy.
+`/health` confirms the process is running; it does not prove that a user can reach SAP.
 
 ### The two green-light signals
 
-```
-INFO: Authorization probe: object search access is available
-INFO: Authorization probe: transport access is available
-```
-
-**These two lines mean your SAP authorizations are correct.** If you see them, ARC-1 reached SAP,
-authenticated, and the SAP user can search the repository and read transports — the foundation every
-tool call builds on. (Under principal propagation the preflight is skipped — each user authenticates at
-runtime — so you'll instead see `Skipped startup auth preflight: principal propagation mode is enabled`;
-the per-user authorization probe then runs on that user's first call.)
-
-If instead you see either of:
-
-```
-WARN: Authorization probe: object search access denied — <reason>
-INFO: Authorization probe: transport access is not available — <reason>
+```text
+Authorization probe: object search access is available
+Authorization probe: transport access is available
 ```
 
-…the SAP **user** is missing an authorization (not an ARC-1 bug). Search/read needs `S_DEVELOP` and
-`S_ADT_RES` (read-only users need `S_ADT_RES` with `ACTVT = 01 AND 02` — several ADT reads are POSTs).
-See [Authorization](authorization.md) and [Principal Propagation](principal-propagation-setup.md).
+These confirm search and transport-read access for the identity that was probed. They do not prove
+all SAP permissions. In PP mode, shared startup preflight is skipped; verify the user's first safe read and the SAP-side identity.
+
+An access-denied probe needs investigation with the SAP owner. An unavailable endpoint may instead
+mean that the feature is not supported or its service is inactive.
 
 ### "Feature not available" is normal, not an error
 
-ARC-1 probes optional capabilities at startup (abapGit, AMDP, RAP/CDS, UI5, HANA info, source search,
-…). Any capability your system doesn't have simply returns `404` (not installed / ICF service not
-active) or `400` — **this is expected and is recorded as data, not an error.** These probe misses are
-logged at `debug`, so they do **not** appear at the default `info` level. A clean startup has **no
-`WARN` lines** from probing.
-
-If you run with `ARC1_LOG_LEVEL=debug`, you'll see them — and they're still harmless:
-
-```
-DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/abapgit/repos","statusCode":404,...}
-DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/debugger/amdp","statusCode":404,...}
-DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/ddic/ddl/sources","statusCode":400,...}
-```
-
-These just mean abapGit/AMDP aren't installed and the RAP probe returned its expected `400` — ARC-1
-disables those features gracefully and serves the rest. The resolved feature set is what matters, not
-the individual probe responses.
-
-> A genuine problem looks different: a `WARN`/`error` `auth_scope_denied`, a `401` on the auth
-> preflight, an `Authorization probe: … denied` line, or `Startup auth preflight failed` — those are
-> worth investigating; a `404` probe miss at `debug` is not.
+Optional probes can return `404` or an expected `400`. Check the resolved feature result before treating
+an individual probe response as an incident. Debug logs include these probes; default logs reduce their noise.
 
 ### OAuth scope errors on the MCP client (not SAP)
 
-A different failure class: the MCP client (Claude, Copilot, …) can't complete OAuth and reports an
-`invalid_scope` / scope error even though your user has the right role collection. This is almost always
-a **stale cache**, not a missing authorization:
-
-- Log out of the MCP client's OAuth session and reconnect — or use a fresh/incognito browser window for
-  the consent step. A previous deployment's XSUAA/DCR client registration is often cached.
-- Verify the role collection is assigned under the **correct identity provider**. If your subaccount
-  uses a custom IdP (e.g. SAP IAS), assign the role collection to the user *under that IdP*
-  (`--of-idp <your-idp>`), not the default SAP ID service — otherwise the JWT carries no ARC-1 scopes.
-- After a redeploy that recreated the XSUAA service, give the client one clean re-login; cached
-  `client_id`s from the old service instance produce scope errors until they re-register.
+`invalid_scope` can mean an unknown scope, a missing role, a wrong IdP identity or stale token state.
+Use [XSUAA scope diagnosis](xsuaa-setup.md#insufficient-scope-invalid_scope) before clearing caches or changing roles.
 
 ## Analyzing Logs with jq
 
 ### Recent Errors
 
 ```bash
-# All errors in the last hour
+# All error-level records in the file
 jq 'select(.level == "error")' arc1-audit.jsonl
 
 # Failed tool calls with error details
@@ -171,7 +111,16 @@ destination name. `identity` distinguishes `per-user` Principal Propagation from
 technical user. Correlate the failure-stage event with the same `requestId`'s `tool_call_end`; do not
 expect raw SAP response bodies in these events.
 
-### Bad/Wrong Tool Calls (for improving LLM feedback)
+### Data-source policy decisions
+
+```bash
+# Correlate a blocked-data error with its policy decision
+jq 'select(.event == "data_source_policy_decision" and .decisionId == "REPLACE_WITH_DECISION_ID")' arc1-audit.jsonl
+```
+
+The record identifies direct roots, matched source/path, allow/deny reason and metadata work. It contains no SQL text, literals or result rows. See the [blocklist boundary](authorization.md#experimental-data-source-blocklist).
+
+### Invalid or denied tool calls
 
 ```bash
 # Tool calls that returned client-visible handler errors (unknown tool/action, validation, etc.)
@@ -244,31 +193,75 @@ jq 'select(.event == "tool_call_start" and .user == "john.doe@company.com")' arc
 ## BTP Audit Log Service
 
 When deployed on BTP with the Audit Log Service premium plan bound, ARC-1 automatically forwards
-categorized security and tool-call events to the BTP Audit Log Viewer. Low-level HTTP, startup, and
-elicitation events remain in stderr/file logs. Forwarded events are categorized as:
+categorized security and tool-call events to the BTP Audit Log Viewer. Low-level HTTP, startup, OAuth/CORS events, HTTP rate-limit events and `data_source_policy_decision` remain in stderr/file logs. Forwarded events are categorized as:
 
 - **security-events**: auth/target/service failures, scope denials, safety blocks, shared-identity use
-- **data-accesses**: tool calls that read SAP data (SAPRead, SAPSearch, SAPQuery)
-- **data-modifications**: tool calls that write data (SAPWrite, SAPManage)
-- **configuration-changes**: transport and activation operations (SAPTransport, SAPActivate)
+- **data-accesses**: tool calls other than the four tool families below
+- **data-modifications**: all SAPWrite and SAPManage calls
+- **configuration-changes**: all SAPTransport and SAPActivate calls
+
+Tool-call categories depend on the tool name, not its action; for example, a transport read is still categorized as a configuration change. Successful `auth_pp_created` events stay in stderr/file; failed ones are security events.
 
 View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**.
 
+## Retain Cloud Foundry application logs
+
+For searchable application logs beyond `cf logs --recent`, bind SAP Cloud Logging using its [Cloud Foundry ingestion procedure](https://help.sap.com/docs/cloud-logging/cloud-logging/ingest-via-cloud-foundry-runtime). Keep service bindings in the deployment descriptor.
+
+SAP Application Logging Service (`application-logs`, Kibana) is deprecated; the optional resource in `mta.yaml` is inactive by default. Use [SAP Cloud Logging](https://help.sap.com/docs/cloud-logging) for a new deployment; see [SAP KBA 3557260](https://userapps.support.sap.com/sap/support/knowledge/en/3557260) for the retirement policy. Application logging and the categorized Audit Log Service above serve different purposes.
+
 ## Docker Volume Mount Example
 
-```bash
-# Run with persistent log file
-docker run -d \
-  -v /data/arc1-logs:/logs \
-  -e ARC1_LOG_FILE=/logs/audit.jsonl \
-  -e SAP_URL=http://sap:50000 \
-  -e SAP_USER=admin \
-  -e SAP_PASSWORD=secret \
-  ghcr.io/arc-mcp/arc-1
+Add these options to the [configured Docker deployment](docker.md):
 
-# Tail logs in real-time
-tail -f /data/arc1-logs/audit.jsonl | jq .
-
-# Watch for errors only
-tail -f /data/arc1-logs/audit.jsonl | jq 'select(.level == "error")'
+```text
+-v /data/arc1-logs:/logs -e ARC1_LOG_FILE=/logs/audit.jsonl
 ```
+
+```bash
+tail -f /data/arc1-logs/audit.jsonl | jq .
+```
+
+## Audit event reference
+
+| Event | Description |
+|-------|-------------|
+| `tool_call_start` | Tool name and centrally redacted arguments. |
+| `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
+| `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
+| `data_source_policy_decision` | Exact-name blocklist decision: `decisionId`, allow/deny, `executed`, direct roots, optional matched source/path and failure code, policy fingerprint, metadata/graph counts, duration. No SQL, literals, rows or credentials. |
+| `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
+| `http_csrf_fetch` | CSRF-token fetch success and duration. |
+| `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
+| `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
+| `auth_shared_created` | Successful shared technical-user authentication after the Basic canary. Includes tool and `identity: "shared"`. |
+| `target_resolution_failed` | Multi-target ID/registry resolution failed. Includes tool and safe `errorCode`. |
+| `pp_exchange_failed` | Per-user destination/token exchange failed before the SAP call. Includes tool and safe `errorCode`. |
+| `shared_auth_failed` | Shared Basic credential preparation or canary failed. Includes tool and safe `errorCode`. |
+| `cloud_connector_access_denied` | Cloud Connector did not expose or allow the selected target. Includes tool and safe `errorCode`. |
+| `sap_service_unavailable` | A required SAP/ICF service is inactive or unavailable. Includes tool and safe `errorCode`. |
+| `sap_authentication_failed` | SAP rejected the selected per-user or shared identity. Includes tool and safe `errorCode`. |
+| `sap_authorization_failed` | SAP authenticated the identity but denied the operation. Includes tool and safe `errorCode`. |
+| `target_policy_denied` | Instance/target policy denied a selected-target operation. Includes tool and safe `errorCode`. |
+| `safety_blocked` | Safety ceiling blocked an operation; includes the operation and safe reason. |
+| `server_start` | Server version, transport, write ceiling, configured target URL indicator, and process ID where available. |
+| `activation_preaudit_completed` | Two-phase SAP activation preaudit result, reference count, and phase durations. |
+| `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length and redirect-URI count. |
+| `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
+| `oauth_redirect_uri_registered` | XSUAA only: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. |
+| `oauth_redirect_uri_rejected` | XSUAA only: an unapproved redirect URI was rejected at `/authorize`; useful for detecting interception attempts or bad client configuration. |
+| `cors_rejected` | A browser request was blocked because its `Origin` header is not in `ARC1_ALLOWED_ORIGINS`. Includes origin, method, path. Useful for spotting misconfigured browser clients or probing. |
+| `auth_rate_limited` | **Layer 1** rate-limit denial on OAuth or `/mcp` endpoint (per-IP). Includes endpoint, IP, `limitPerMinute`. See [Rate Limiting Guide](rate-limiting.md). |
+| `mcp_rate_limited` | **Layer 2** rate-limit denial on per-user MCP tool quota. Includes user, tool, `limitPerMinute`, `retryAfterMs`. The MCP client receives a tool error with `retryAfter` (not HTTP 429). |
+
+Every entry has `timestamp`, `level`, and `event`. Events within one MCP tool call share a
+`requestId`; authenticated calls add `user` and `clientId` when available. Selected multi-target
+calls also add `destination`, public `target`, and `identity` (`per-user` or `shared`). Destination
+credentials, bearer tokens, cookies, authorization headers, and other secret values are centrally
+redacted before any sink write.
+
+### Retention
+
+- **File sink**: Retention is the operator's responsibility. Implement log rotation (e.g., logrotate) for long-running deployments.
+- **BTP Audit Log**: Retention is managed by the BTP Audit Log Service per the service plan.
+- **Stderr**: Transient unless captured by a container runtime or log aggregator.

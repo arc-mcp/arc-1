@@ -66,7 +66,7 @@ Copy the whole `skills/<skill-name>/` directory into your tool's skills director
 | Claude Code | `.claude/skills/<name>/` | `~/.claude/skills/<name>/` |
 | Cursor | `.agents/skills/<name>/` | `~/.cursor/skills/<name>/` |
 | GitHub Copilot (VS Code/Eclipse) | `.agents/skills/<name>/` | `~/.copilot/skills/<name>/` |
-| OpenAI Codex (CLI) | `.agents/skills/<name>/` | `~/.codex/skills/<name>/` |
+| OpenAI Codex (CLI) | `.agents/skills/<name>/` | `~/.agents/skills/<name>/` |
 | Gemini CLI | `.agents/skills/<name>/` | `~/.gemini/skills/<name>/` |
 | OpenCode | `.agents/skills/<name>/` | `~/.config/opencode/skills/<name>/` |
 
@@ -254,7 +254,7 @@ Both run against the same V4 RAP service produced by `migrate-segw-to-rap`. The 
 
 | Skill | What it does | When to use |
 |---|---|---|
-| [bootstrap-system-context](bootstrap-system-context/SKILL.md) | Probes SID, release, installed components, feature flags, and lint preset; writes a local `system-info.md` | First step of a session against an unfamiliar system — grounds the assistant in real constraints before any code work |
+| [bootstrap-system-context](bootstrap-system-context/SKILL.md) | Reads discovery, installed components, feature flags, and lint preset; records known connection identity; writes a local `system-info.md` | First step of a session against an unfamiliar system — grounds the assistant in real constraints before any code work |
 | [setup-abap-mirror](setup-abap-mirror/SKILL.md) | Creates a local abapGit-style mirror of a package or object list for IDE context and `git diff` | Onboarding a codebase, pre-migration snapshotting, feeding local context to tools that can't call MCP per-read |
 
 ### Meta / Quality
@@ -269,7 +269,7 @@ Both run against the same V4 RAP service produced by `migrate-segw-to-rap`. The 
 Skills are designed to chain together. A typical RAP development flow:
 
 ```
-1. bootstrap-system-context         →  Capture SID, release, features, lint preset
+1. bootstrap-system-context         →  Capture known identity, component releases, features, lint preset
 2. generate-rap-service-researched  →  Create the service stack (uses system-info.md)
 3. generate-rap-logic               →  Add business logic (validations, determinations)
 4. generate-abap-unit-test          →  Generate tests for the behavior pool

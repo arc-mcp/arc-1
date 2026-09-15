@@ -1,36 +1,43 @@
-# Optional BTP setup worksheet
+# BTP setup worksheet
 
-Use this checklist when several people share a deployment. It is not a prerequisite or another
-runbook; [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) owns the setup steps.
-One person may hold several owner roles.
+<a id="optional-btp-setup-worksheet"></a>
 
-Keep your completed copy in protected project records or the ignored `.arc1/btp/` directory.
-Record secret-storage references, never passwords, tokens, private keys or raw binding dumps.
+Copy this optional worksheet into protected project records or the ignored `.arc1/btp/` directory. Use it with the [deployment runbook](btp-cloud-foundry-deployment.md) to collect connection settings and test results.
+
+Record secret-storage references, never secret values.
 
 ## Before setup
 
-| Input | Agree with |
+| Input | Value / administrator |
 |---|---|
-| Selected source revision and topology: single PP or multi PP | Deployment owner |
-| Subaccount, CF API/org/space and service ownership | CF/IAM owners |
-| Real SAP SID/client, destination names and descriptions | Destination/Basis owners |
-| Cloud Connector virtual/internal mapping, verified HTTPS and location ID if used | Connector owner |
-| Application test identity/IdP origin and expected SAP username in each client | IAM/Basis owners |
-| Least-privilege role collection, secret owners and accepted safety settings | IAM/deployment owners |
+| Source revision; single-PP or multi-PP topology | |
+| Subaccount; CF API, org and space | |
+| CF, Destination, identity, Cloud Connector and SAP Basis administrators | |
+| Real SAP SID/client; destination names and descriptions | |
+| Connector virtual/internal mapping, verified HTTPS and location ID | |
+| Application test identity, IdP origin and expected SAP user per client | |
+| Role collection, safety settings and secret-storage references | |
 
-If a required SAP client or user does not exist, ask Basis to provision it through their normal
-process. A destination task does not authorize client copies or additional SAP roles.
+If a required SAP client or user is missing, ask the SAP Basis administrator to provision it.
 
 ## After deployment
 
-Record the actual route, source revision, MTAR path/digest, selected override and rollback reference.
-For each target, record these checks separately as `pass`, `fail`, or `unverified` with a reason:
+| Deployment record | Value |
+|---|---|
+| Actual route and source revision | |
+| MTAR path/digest and payload inspection result | |
+| Protected override and rollback artifact | |
+| Instance count, concurrency and rate limits | |
+| Contacts for audit, incidents, upgrades and secret rotation | |
 
-- Process health and OAuth login.
-- Safe ADT read and bounded known-object search.
-- [Backend identity verification](principal-propagation-setup.md#verify-the-backend-identity).
-- Approved negative identity/authorization test; no shared-user fallback.
+For each target, record `pass`, `fail` or `unverified`, plus a result reference and the administrator responsible:
 
-Include a nonsecret evidence reference and owner for unresolved checks. A green configuration screen
-or `SYSTEM.user` is not backend identity evidence. Client-isolation checks need separate evidence;
-do not enable data/SQL or create test data just to complete this worksheet.
+| Check | Target | Result / log reference / administrator |
+|---|---|---|
+| Process health and OAuth login | | |
+| Safe ADT read and known-object search | | |
+| [Actual backend SAP identity](principal-propagation-setup.md#verify-the-backend-identity) | | |
+| Approved negative identity/authorization test; PP fails without shared-user fallback | | |
+| Client isolation, if separately required and approved | | |
+
+`SYSTEM.user` and green configuration screens do not prove the identity of a live SAP request. Mark identity or client isolation **unverified** when it has not been checked; do not enable data/SQL or create test data just to complete the worksheet.

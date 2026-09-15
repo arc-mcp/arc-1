@@ -96,10 +96,11 @@ Read `README.md` and `docs_page/index.md`. Check whether:
 
 **Roadmap (`docs_page/roadmap.md`)**
 Read `docs_page/roadmap.md`. Check whether:
-- The feature corresponds to an existing roadmap item (update status to "completed" or "in progress")
-- A new roadmap entry is needed
-- The "Current State" feature matrix at the top needs a new row
-- Any related items should be marked as unblocked or superseded
+- Its issue links still describe open work; remove a row when its issue closes
+- A new user-facing proposal needs an issue link
+- Shipped behavior is covered in the tool reference and release notes
+
+The old FEAT/SEC tables are archived. Do not recreate status rows or a current-state matrix.
 
 **Feature matrix (`docs/compare/00-feature-matrix.md`)**
 Read `docs/compare/00-feature-matrix.md`. Check whether:

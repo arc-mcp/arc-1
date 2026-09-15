@@ -1,71 +1,48 @@
-# Operations Overview
+# Operations
 
-Use this page after ARC-1 has passed its first safe read. It routes service owners to the correct
-operational runbook without mixing platform deployment, target diagnostics, performance controls,
-and incident response in one long page.
+<a id="operations-overview"></a>
+
+Use these runbooks to maintain a working ARC-1 service or investigate a failure.
+For a first deployment, start with [deployment options](deployment.md).
 
 ## Choose the operational task
 
-| Task | Start with |
-|------|------------|
-| Operate an SAP BTP Cloud Foundry deployment | [BTP Administration](btp-administration.md) |
-| Diagnose a multi-target destination, exclusion, identity, or route | [Multi-Target Administration](multi-target-administration.md) |
-| Upgrade, roll back, or pin a version | [Updating](updating.md) |
-| Investigate a failed tool call or correlate request IDs | [Log Analysis](log-analysis.md) |
-| Protect SAP from runaway clients or size concurrency | [Rate Limiting](rate-limiting.md) |
-| Choose or troubleshoot request-driven caching | [Caching](caching.md) |
-| Verify API key, OIDC, XSUAA, roles, or Principal Propagation | [Authentication Test Process](auth-test-process.md) |
-| Review production controls before exposure | [Production Security](security-guide.md) |
+| Task | Runbook |
+|---|---|
+| Operate SAP BTP Cloud Foundry | [BTP Administration](btp-administration.md) |
+| Diagnose a target, identity or route | [Multi-Target Administration](multi-target-administration.md) |
+| Upgrade, roll back or pin a version | [Updating](updating.md) |
+| Investigate a failed tool call | [Log Analysis](log-analysis.md) |
+| Size concurrency or investigate throttling | [Rate Limiting](rate-limiting.md) |
+| Choose or troubleshoot a cache | [Caching](caching.md) |
+| Verify authentication and permissions | [Authentication Test Process](auth-test-process.md) |
+| Review access before exposing a server | [Production Security](security-guide.md) |
 
-## Shared operating model
+## During an incident
 
-Regardless of deployment platform:
+For an incident:
 
-1. identify the exact ARC-1 version, route, target, user, and request ID;
-2. confirm the instance safety ceiling and the caller's scope before investigating SAP;
-3. distinguish ARC-1 authentication from SAP identity and SAP authorization;
-4. make the smallest reversible configuration change;
-5. retest one safe read and the intended negative boundary; and
-6. reconcile emergency runtime changes into the durable deployment configuration.
+1. Capture the ARC-1 version, route, public target, user, timestamp and request ID.
+2. Find the failed gate: MCP sign-in, ARC-1 policy, SAP connectivity or SAP authorization.
+3. Correct the failing configuration with the ARC-1, BTP or SAP administrator responsible for it.
+4. Retest a safe SAP read and a request that should remain denied.
+5. Copy emergency runtime changes into the durable deployment configuration.
 
-ARC-1 health means only that the process is running. It does not prove Destination Service,
-Principal Propagation, SAP authorization, a usable target registry, data/SQL policy, or MCP client
-token freshness.
+`/health` confirms that ARC-1 is running. It does not verify a SAP target, destination, user mapping or permission.
 
 ## Platform-specific ownership
 
-### SAP BTP Cloud Foundry
+<a id="sap-btp-cloud-foundry"></a><a id="docker-or-another-shared-host"></a><a id="local-development"></a>
 
-Use [BTP Administration](btp-administration.md) for configuration ownership, restart/restage/redeploy
-decisions, XSUAA role collections, DCR signing secrets, scaling, upgrades, rollback, and customer
-handover. For initial setup or topology selection, return to
-[SAP BTP: Start Here](btp-overview.md).
+| Platform | Configuration and lifecycle owner |
+|---|---|
+| BTP Cloud Foundry | [BTP Administration](btp-administration.md): descriptors, services, roles, restart/restage and rollback |
+| Docker or shared host | [Docker guide](docker.md): image, secret injection, persistent volumes and TLS proxy |
+| Local development | [Local Development](local-development.md): process environment and local client configuration |
 
-### Docker or another shared host
+## Keep these incident details
 
-Use the [Docker guide](docker.md) for image, volume, networking, and container lifecycle details.
-Then apply the same [updating](updating.md), [logging](log-analysis.md),
-[rate-limiting](rate-limiting.md), [caching](caching.md), and
-[security](security-guide.md) controls. Ensure TLS and Layer A authentication are provided before
-exposing HTTP transport to a network.
+Keep relevant sanitized ARC-1 logs, the last known-good version and the rollback procedure.
+For BTP, record app/service health and ask the Cloud Connector or SAP administrator for the matching error reference.
 
-### Local development
-
-Local stdio and test environments are not production services. Use
-[Local Development](local-development.md) for developer workflows and
-[Authentication Test Process](auth-test-process.md) only when validating an HTTP authentication
-path.
-
-## Incident evidence to preserve
-
-Collect only secret-safe evidence:
-
-- ARC-1 version and configuration source, without credentials or tokens;
-- timestamp, request/correlation ID, public target ID, action, status, and duration;
-- relevant ARC-1 audit/application log records;
-- Cloud Foundry instance and service-binding health where applicable;
-- Cloud Connector and SAP error references owned by the respective administrators; and
-- the last known-good version and rollback procedure.
-
-Never paste unredacted `cf env`, destination exports containing credentials, bearer tokens,
-Principal Propagation assertions, cookie files, or SAP passwords into an issue or support chat.
+Share identifiers and error codes. Keep bearer tokens, passwords, cookies, PP assertions and unredacted `cf env` output out of tickets and chat.

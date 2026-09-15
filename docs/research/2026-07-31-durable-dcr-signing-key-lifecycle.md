@@ -4,7 +4,7 @@
 
 **Date:** 2026-07-31
 
-**Roadmap:** [SEC-15](../../docs_page/roadmap.md#sec-15)
+**Roadmap:** [SEC-15](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#sec-15)
 
 **Trigger:** [PR #607](https://github.com/arc-mcp/arc-1/pull/607), closed pending this broader design decision
 

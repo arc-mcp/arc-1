@@ -114,7 +114,7 @@ must be restricted before SAP is contacted.
 - Writes on any multi-target route require a new security review and ADR. They are not an incremental
   flag or destination property for v1.
 - ADR-0005 continues to govern the default mode, writable access, and deployments requiring stronger
-  isolation. The MCP hub remains the alternative for independently deployed ARC-1 instances.
+  isolation. Use independently deployed ARC-1 instances for those requirements.
 
 ## Rejected alternatives
 

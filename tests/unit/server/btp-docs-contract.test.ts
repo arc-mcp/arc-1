@@ -84,6 +84,19 @@ describe('BTP documentation contracts', () => {
     );
   });
 
+  it('rejects duplicate navigation entries and enables omitted-page validation', () => {
+    const pages: string[] = [];
+    const visit = (node: unknown): void => {
+      if (typeof node === 'string') pages.push(node);
+      else if (Array.isArray(node)) node.forEach(visit);
+      else if (node && typeof node === 'object') Object.values(node).forEach(visit);
+    };
+    const config = parse(read('mkdocs.yml'));
+    visit(config.nav);
+    expect(pages.length).toBe(new Set(pages).size);
+    expect(config.validation.nav.omitted_files).toBe('warn');
+  });
+
   it('makes broken local anchors fail the strict documentation build', () => {
     expect(parseDocument(read('mkdocs.yml')).getIn(['validation', 'links', 'anchors'])).toBe('warn');
   });

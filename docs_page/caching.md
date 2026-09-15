@@ -1,6 +1,8 @@
-# Caching System
+# Caching
 
-ARC-1 uses a request-driven cache to reduce repeated SAP ADT work while keeping SAP authoritative for source freshness. It does not scan or preload the repository at startup.
+<a id="caching-system"></a>
+
+Keep the default memory cache for repeated source reads. Choose SQLite for persistence or `none` to disable caching. SAP normally validates cached source freshness on each read; [recent activations](#after-activation) have a short exception. ARC-1 does not scan the repository at startup.
 
 ## Backends
 
@@ -26,11 +28,11 @@ ARC1_CACHE=none npx arc-1
 
 ## Cached data
 
-ARC-1 stores four kinds of request-derived data:
+Only requested data enters the cache:
 
 | Data | Key | Freshness |
 |---|---|---|
-| Source | Object type, name, and `active`/`inactive` version | Revalidated with SAP `ETag` on every hit when available |
+| Source | Object type, name, and `active`/`inactive` version | Normally revalidated with SAP `ETag`; see the post-activation exception below |
 | Parsed ABAP contracts/dependencies (memory only) | Source content hash, object identity and parser language version | Consulted after source retrieval under the normal cache/auth policy; no aggregate reuse |
 | Released API metadata | Object name and type | Populated on demand |
 | Function-group mapping | Function module name | Populated on demand; mappings rarely change |
@@ -54,7 +56,13 @@ If-None-Match: <etag>
 | `200 OK` without `ETag` | Store the body; the next read performs a normal GET |
 | `404` or `410` | Evict the entry and surface the ADT error |
 
-There is no source TTL. SAP validates freshness on each cached source read.
+Outside the post-activation window below, there is no source TTL: SAP validates freshness on each cached source read.
+
+### After activation
+
+For a shared SAP client, a successful activation can promote the cached draft to active source. ARC-1 serves that promoted body without a conditional GET for **120 seconds**, protecting it from SAP temporarily returning the old active body. A later ARC-1 write or `force_refresh=true` clears the guard.
+
+External changes, including a Git pull, can therefore be hidden during this window. Use `SAPRead(..., force_refresh=true)` when you need to verify external changes immediately. Under PP, activation invalidates entries instead of promoting a shared cached draft.
 
 ### Active and inactive source
 
@@ -70,32 +78,14 @@ Source-bearing `SAPRead` operations accept `version`:
 
 ## Dependency context
 
-`SAPContext(action="deps")` rebuilds its dependency context on each call. An unchanged root
-does not prove that its dependencies or their public contracts stayed unchanged, and different
-`depth`/`maxDeps` options must not reuse an earlier aggregate.
+`SAPContext(action="deps")` rebuilds its dependency result on every call, including when the root source is unchanged.
+Dependency sources can reuse bodies after SAP returns `304`; Principal Propagation dependency calls bypass that payload cache.
 
-Normal dependency-source caching remains: conditional GETs reuse unchanged bodies after SAP
-returns `304`. Under principal propagation the existing dependency-payload cache bypass remains.
-The retired aggregate read/write APIs and in-memory graph store have been removed. Existing SQLite
-aggregate rows/schema remain untouched for compatibility and cache statistics; they never enter
-context results. No cache reset or database migration is required.
-`SAPRead` still uses `[cached:revalidated]` for a source body revalidated by SAP.
+Unchanged ABAP source can reuse parsed contracts and dependency names. This memory-only cache keys results by source hash, object identity and parser language version. It is capped at 128 entries and 4 MiB of serialized keys/results per source-cache owner; oversized results bypass it.
 
-Unchanged ABAP source does not need repeated CPU-heavy parsing. ARC-1 memoizes public contract
-extraction and dependency-name extraction by source content hash, object name/type and ABAP parser
-language version. Each source-cache owner has a memory-only LRU capped at 128 entries and 4 MiB of
-serialized keys/results (not an exact process-memory bound). Oversized results bypass it. The
-installed parser library version is fixed for the process, and nothing is persisted to SQLite.
-Returned contracts are independent copies; the separate full-source working field and ASTs are not
-retained. Public interface contracts can themselves contain the complete interface declaration.
+Parsing reuse still requires normal source retrieval, freshness and authorization checks. `ARC1_CACHE=none` and Principal Propagation dependency calls bypass it. No new flag or migration is required.
 
-This saves parsing, **not SAP authorization or freshness checks**. Existing source-cache behavior,
-including the short post-activation consistency window, is unchanged. Principal-propagation
-dependency calls and `ARC1_CACHE=none` bypass this memoization. Changed content, object identity or
-parser language version uses a new key. No additional setup or flag is required.
-
-[Experimental live relations](live-relations.md) are independent: they query metadata on demand,
-retain no shared relationship results, and require no cache or graph database.
+[Live relations](live-relations.md) query SAP metadata on demand and retain no shared relationship results.
 
 ## Live usage lookup
 
@@ -107,7 +97,7 @@ For CDS blast-radius analysis, prefer `SAPContext(action="impact", type="DDLS", 
 
 ## Invalidation
 
-`SAPWrite` and `SAPActivate` invalidate active and inactive source entries for affected objects and refresh the inactive-object state. Edits made outside ARC-1 are detected by the next conditional GET.
+`SAPWrite` invalidates affected source entries and inactive-object state. `SAPActivate` invalidates or promotes entries as described above. Edits made outside ARC-1 are detected by the next conditional GET; during the activation guard, use `force_refresh=true` to force that request.
 
 ## Security
 

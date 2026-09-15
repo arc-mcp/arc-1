@@ -246,7 +246,7 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 | Lua scripting engine | ❌ | ❌ | ✅ (50+ bindings) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | WASM-to-ABAP compiler | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | MCP client configurator | ❌ | N/A (IDE-embedded) | ❌ | ❌ | ❌ | ❌ | ✅ (11 clients) | ❌ | ❌ | ❌ |
-| CLI mode (non-MCP) | ⚠️ (generic `call`/`tools` entry points + 6 ergonomic shortcuts; 9 of 12 MCP tools lack shortcuts or expose fewer knobs than the Zod schema — tracked as [FEAT-60](../../docs_page/roadmap.md#feat-60-cliserver-alignment-shortcut-parity-with-mcp-tool-schemas) + PR [#179](https://github.com/arc-mcp/arc-1/pull/179)) | ❌ (VS Code only) | ✅ (28 commands) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (28+ commands, primary mode) |
+| CLI mode (non-MCP) | ⚠️ (generic `call`/`tools` entry points + 6 ergonomic shortcuts; 9 of 12 MCP tools lack shortcuts or expose fewer knobs than the Zod schema — tracked as [FEAT-60](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-60-cliserver-alignment-shortcut-parity-with-mcp-tool-schemas) + PR [#179](https://github.com/arc-mcp/arc-1/pull/179)) | ❌ (VS Code only) | ✅ (28 commands) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (28+ commands, primary mode) |
 | Health endpoint | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ (v4.3.0) | ❌ | ✅ | ❌ |
 | RFC connectivity | ❌ | ✅ (bundles JCo) | ❌ | ❌ | ❌ | ❌ | ✅ (sap-rfc-lite) | ❌ | ❌ | ✅ (PyRFC, optional) |
 | MCPB one-click install | ❌ | ❌ (VSIX marketplace) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
@@ -280,7 +280,7 @@ The npm-graph CycloneDX quick win is now shipped. Remaining Tier 2 work (image/M
 
 ## Priority Action Items
 
-> All prioritized items with evaluation details are maintained in the [roadmap](../../docs_page/roadmap.md#prioritized-execution-order). The feature matrix tables above are the source of truth for _what exists_; the roadmap is the source of truth for _what to build next and why_.
+> All prioritized items with evaluation details are maintained in the [roadmap](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#prioritized-execution-order). These tables and the archived roadmap record the comparison and priorities at the time. Use current tool documentation, release notes, and open issues for present behavior and planned work.
 
 ---
 

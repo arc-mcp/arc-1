@@ -1,511 +1,257 @@
-# Security Best Practices Guide
+# Production security
 
-A consolidated security reference for ARC-1 operators. This guide covers hardening, authentication, authorization, and incident response. It references detailed setup guides where appropriate rather than duplicating their content.
+<a id="security-best-practices-guide"></a>
 
----
+Review this page before exposing an ARC-1 HTTP server and after changing its access policy.
+For initial configuration, use [Authentication](enterprise-auth.md) and [Authorization](authorization.md).
 
-## 1. Security Architecture Overview
+## Review access
 
-ARC-1 enforces authorization at three stacked gates. All relevant gates must allow an operation for it to succeed.
+<a id="1-security-architecture-overview"></a>
 
-| Layer | What it checks | Controlled by |
-|-------|---------------|---------------|
-| **Server ceiling** | Positive opt-in flags such as `SAP_ALLOW_WRITES`, `SAP_ALLOW_FREE_SQL`, `SAP_DENY_ACTIONS` | ARC-1 administrator |
-| **User permission** | Scopes from XSUAA/OIDC JWTs or API-key profiles | BTP/IdP/ARC-1 administrator |
-| **SAP authorization** | SAP authorization objects (`S_DEVELOP`, `S_ADT_RES`, package auth, etc.) | SAP Basis / role admin |
+### Confirm the three permission gates
 
-Checks are additive: server ceiling AND user scope/profile AND SAP authorization must all pass. If any layer blocks, the operation fails. The server safety config acts as a hard ceiling - user scopes can only restrict further, never expand beyond server config.
+A request must pass the server ceiling, the caller's scopes/profile and SAP authorization.
+Enable only required capabilities; no user role can widen the server ceiling.
 
-For the full model, scope definitions, API-key profiles, and BTP role mapping, see [Authorization & Roles](authorization.md).
+<a id="2-authentication-methods-and-when-to-use-each"></a>
 
----
+### Choose the identity model
 
-## 2. Authentication Methods and When to Use Each
+Use XSUAA on BTP, OIDC for an external identity provider, or API keys for a shared technical SAP identity.
+The [authentication chooser](enterprise-auth.md#choosing-your-setup) links each setup.
 
-| Scenario | Transport | MCP Client Auth | Recommended Guide |
-|----------|-----------|----------------|-------------------|
-| Local development (single user) | stdio | None | [Local Development](local-development.md) |
-| Shared server (single access level) | HTTP | One `ARC1_API_KEYS` entry | [API Key Setup](api-key-setup.md) |
-| Team server (role-based access) | HTTP | Multiple API keys with profiles | [API Key Setup](api-key-setup.md) |
-| Enterprise (per-user identity) | HTTP | OIDC / JWT | [OAuth / JWT Setup](oauth-jwt-setup.md) |
-| Enterprise + SAP audit trail | HTTP | OIDC / JWT + Principal Propagation | [OAuth / JWT](oauth-jwt-setup.md) + [PP Setup](principal-propagation-setup.md) |
-| BTP Cloud Foundry | HTTP | XSUAA OAuth | [XSUAA Setup](xsuaa-setup.md) |
+With PP enabled, set `SAP_PP_STRICT=true` explicitly to reject API-key/non-JWT tool calls.
+If unset or `false`, API-key calls use the configured shared SAP client and startup warns about mixed identities.
+JWT PP failures always return an error; they never fall back to the shared user.
 
-When XSUAA is enabled, the verifier can chain XSUAA, OIDC, and configured API keys. Separate strict
-PP and API-key instances are the recommended topology. A single mixed instance is also supported:
-set `SAP_PP_STRICT=false` explicitly, so JWT calls use PP and API-key calls use the shared SAP identity.
+<a id="3-oidcjwt-configuration-checklist"></a>
 
-For the full decision guide and common combinations, see [Authentication Overview](enterprise-auth.md).
+### Verify OIDC tokens
 
----
+- Match `SAP_OIDC_ISSUER` to the token's `iss` and `SAP_OIDC_AUDIENCE` to its `aud`; both are required.
+- Make the issuer's discovery document and its `jwks_uri` reachable from ARC-1 over trusted HTTPS.
+- Verify intended scopes in `scope` or `scp`. ARC-1 grants fallback `read` when a verified token has no accepted ARC-1 scope.
+- Check token expiry and server time. Use `SAP_OIDC_CLOCK_TOLERANCE` only for the required clock skew.
 
-## 3. OIDC/JWT Configuration Checklist
+Inspect claims locally; decoding a JWT does not validate its signature. See [OIDC setup](oauth-jwt-setup.md).
 
-When using an external identity provider (Entra ID, Okta, Keycloak, etc.), configure these environment variables or CLI flags:
+<a id="4-api-key-security"></a>
 
-| Variable / Flag | Required | Description |
-|----------------|----------|-------------|
-| `SAP_OIDC_ISSUER` / `--oidc-issuer` | **Yes** | OIDC issuer URL. Must match the `iss` claim in tokens. |
-| `SAP_OIDC_AUDIENCE` / `--oidc-audience` | **Yes** | Expected `aud` claim value. For Entra ID v2.0, this is the raw client ID GUID. For v1.0, it is `api://{client-id}`. |
-| `SAP_OIDC_CLOCK_TOLERANCE` / `--oidc-clock-tolerance` | No | Clock skew tolerance in seconds for `exp`/`nbf` validation. Default: 0. Useful when server and IdP clocks drift. |
+### Protect API keys
 
-Verification checklist:
+<a id="key-generation"></a><a id="per-key-profiles"></a><a id="key-rotation"></a><a id="limitations"></a><a id="api-key-profiles-non-btp-multi-user"></a>
 
-- [ ] `SAP_OIDC_ISSUER` matches the `iss` claim in your tokens exactly (trailing slashes matter).
-- [ ] `SAP_OIDC_AUDIENCE` matches the `aud` claim in your tokens (decode a token at jwt.ms to verify).
-- [ ] The OIDC provider includes ARC-1 scopes (`read`, `write`, `data`, `sql`, `transports`, `git`, `admin`) in the `scope` or `scp` claim. Tokens without scope claims default to read-only access.
-- [ ] The JWKS endpoint at `{issuer}/.well-known/openid-configuration` is reachable from the ARC-1 server.
-- [ ] TLS certificates on the issuer URL are valid (no self-signed certs without `--insecure`).
+Use random keys (`openssl rand -base64 32`) and the least-privileged [profile](authorization.md#api-key-profiles-non-btp).
+`developer*` keys are capped to `$TMP`. Keep keys out of tracked files and rotate compromised keys immediately.
+For routine rotation, add the replacement, restart, update clients, then remove the old key and restart again.
+Audit identifies API keys by profile, so it cannot distinguish people sharing that profile.
 
-ARC-1 validates tokens per the OAuth 2.0 Protected Resource model (RFC 9700): signature verification via JWKS, issuer match, audience match, and expiration check.
+<a id="5-safety-configuration-best-practices"></a>
 
----
+### Set the server ceiling
 
-## 4. API Key Security
+<a id="recommended-production-defaults"></a>
 
-### Key Generation
+| Control | Production choice |
+|---|---|
+| `SAP_ALLOW_WRITES` | Keep `false` unless mutations are required |
+| `SAP_ALLOWED_PACKAGES` | Restrict enabled writes to owned packages, preferably a subtree such as `ZTEAM/**` |
+| `SAP_ALLOW_DATA_PREVIEW` | Keep `false` unless table access is required |
+| `SAP_ALLOW_FREE_SQL` | Keep `false` unless caller-authored SQL is required |
+| `SAP_ALLOW_TRANSPORT_WRITES` / `SAP_ALLOW_GIT_WRITES` | Enable only required families; both also need general writes |
+| `SAP_DENY_ACTIONS` | Deny individual operations, for example `SAPWrite.delete` |
+| `SAP_PP_STRICT` | Explicit `true` for a per-user-only instance |
 
-Always use cryptographically random keys with sufficient entropy:
+Package rules restrict writes, not reads. SAP roles remain responsible for read restrictions.
+SAP-resident source, comments and errors are untrusted model input; package restrictions also limit the impact of a steered agent.
 
-```bash
-openssl rand -base64 32
-```
+#### SAP API Policy and data-access gates
 
-### Per-Key Profiles
+Review productive data access against [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md).
+If structured preview is sufficient, enable `SAP_ALLOW_DATA_PREVIEW` and leave free SQL disabled.
 
-Use `--api-keys` to assign each key a profile with specific scopes and safety restrictions. The old single `--api-key` mode was removed because it made the access level ambiguous.
+`SAP_BLOCKED_DATA_SOURCES` adds an experimental exact-name blocklist with live dependency checks.
+It does not enable data access, protect every output or replace SAP DCL. Unlisted sources remain eligible.
+See the [full boundary and limitations](authorization.md#experimental-data-source-blocklist).
+Apply SAP fixes independently; this default-off control is not remediation for SAP Note 3772411.
 
-```bash
-arc1 --api-keys "$VIEWER_KEY:viewer,$DEV_KEY:developer,$SQL_KEY:developer-sql"
-```
+Git opt-in does not enable quarantined gCTS mutations. An accepted abapGit mutation may return
+incomplete when its postcondition cannot be verified; inspect repository state before retrying.
 
-### Key Rotation
+<a id="6-scope-implications"></a>
 
-- Rotate keys on a regular schedule (quarterly recommended) and immediately upon suspected compromise.
-- Multi-key mode allows rolling rotation: add the new key, distribute it, then remove the old key.
-- Audit logs include the profile name (e.g., `api-key:viewer`) to identify which key was used, aiding in compromise investigation.
-- API key rotation requires updating all clients that use the affected key.
+### Match scopes to enabled actions
 
-### Limitations
+`write` implies `read`; `sql` implies `data`; `admin` implies all scopes.
+Transport/Git mutations also need `write`. Use the [capability matrix](authorization.md#capability-requirements) to match scopes and flags.
 
-API keys identify roles, not individuals. They do not support per-user SAP audit trails. For user-level identity, use OIDC or XSUAA.
+## Configure network access
 
-For full setup instructions, see [API Key Setup](api-key-setup.md).
+<a id="7-reverse-proxy-requirements"></a>
 
----
+### Configure the reverse proxy
 
-## 5. Safety Configuration Best Practices
+ARC-1's HTTP listener does not terminate TLS. Configure the proxy to:
 
-All safety flags are **positive opt-ins** (default: `false` / restrictive). Enable only what you need.
+1. Terminate HTTPS and restrict direct access to the ARC-1 port.
+2. Replace untrusted `Forwarded` / `X-Forwarded-*` headers with the proxy's own values. ARC-1 trusts one proxy hop.
+3. Forward the selected MCP paths and OAuth metadata/callback paths, including host-root well-known routes when using a base path.
+4. Support streaming. Start proxy read/write timeouts at 120 seconds for activation and Unit tests; increase them to cover longer ATC/CI deadlines, then test the expected workload.
+5. Use unauthenticated `/health` for process probes, then verify an authenticated SAP read separately.
 
-### SAP API Policy and data-access gates
+Set `ARC1_PUBLIC_URL` to the external URL. ARC-1 currently uses the Express JSON-body default of
+**100 KiB (102,400 bytes)** for the complete JSON request body, including JSON overhead. Larger writes
+can receive HTTP `413` before tool dispatch. Raising a proxy limit does not raise this application
+limit; there is no ARC-1 setting for it. See [Express JSON parsing](https://expressjs.com/en/api/express/).
 
-SAP's API Policy restricts large-scale extraction and ungoverned autonomous AI call patterns, which is part of why these two capabilities are gated. See **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** for the clause-by-clause treatment and ARC-1's position; validate your productive setup against SAP documentation, your SAP agreement, and internal governance.
-
-Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and require explicit env vars before they are reachable:
-
-| Capability | Env var | Default | Policy note |
-| ---------- | ------- | ------- | ----------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
-| Exact table/CDS blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Defense-in-depth denial with live CDS/replacement lineage; unresolved requests fail closed. Not an allowlist or SAP authorization replacement. |
-
-**Recommended security-focused profile.** Keep structured data access and remove caller-authored SQL,
-which is the largest parser and SQL-Console surface:
-
-```bash
-SAP_ALLOW_DATA_PREVIEW=true
-SAP_ALLOW_FREE_SQL=false
-SAP_BLOCKED_DATA_SOURCES=USR02,PA0002
-```
-
-Blocklist + free SQL remains a supported *advanced* profile for installations that genuinely need
-`SAPQuery`; it is the less restrictive choice and subjects callers to the strict static-SQL subset.
-Either way, apply **SAP Note 3772411** independently — this feature is default-off and remediates
-nothing, and `SAP_ALLOW_WRITES=false` does not neutralize a database-side mutation reached through a
-vulnerable SQL Console host expression.
-
-**Recommendation for productive systems:** keep both flags at their defaults unless there is an approved use case. ARC-1 still covers the core developer-tooling surface — read source/metadata, search, navigate, lint, write/activate ABAP objects, manage transports, drive Git workflows. Turning either flag on can be appropriate, but should be a deliberate operator decision against the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules.
-
-### Recommended production defaults
-
-| Setting                            | Recommended | Rationale                                                                                      |
-|------------------------------------|-------------|------------------------------------------------------------------------------------------------|
-| `SAP_ALLOW_WRITES`                 | `false` unless writes are needed | Blocks every mutation — object writes, activation, transport writes, git writes. |
-| `SAP_ALLOW_FREE_SQL`               | `false` on sensitive systems | Blocks arbitrary SQL queries against the database via `SAPQuery`.                               |
-| `SAP_ALLOW_DATA_PREVIEW`           | `false` unless table preview is required | Blocks named table content preview.                                              |
-| `SAP_BLOCKED_DATA_SOURCES`         | Exact sensitive sources when data preview is approved; otherwise empty | Experimental, default-off emergency brake, slower by design (extra SAP metadata calls, no cache). Fails closed on unsupported lineage but leaves every unlisted source eligible. Not an allowlist, not a DCL replacement, and not a remediation for SAP Note 3772411. |
-| `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Prefix wildcards (`Z*`), exact matches, and DEVCLASS subtree rules (`ZFOO/**` — `ZFOO` plus every transitive sub-package) are all supported; subtree resolution is fail-closed on SAP errors. Reads are never package-gated. |
-| `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
-| `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for gated abapGit mutations and SAP-side Git egress. It does not enable gCTS mutations, which remain quarantined before HTTP; accepted abapGit mutations without an authoritative postcondition return incomplete. |
-| `SAP_DENY_ACTIONS`                 | Use for fine-grained blocks | E.g. `SAPWrite.delete,SAPManage.flp_*` — overrides scope + flag checks.                              |
-| `SAP_PP_STRICT`                    | Explicit `true` for production PP | Keeps the PP instance JWT-only. JWT PP failures always fail closed; explicit `true` also rejects API-key / non-JWT requests. |
-
-### API-key profiles (non-BTP multi-user)
-
-For HTTP-streamable deployments without XSUAA/OIDC, use `ARC1_API_KEYS` with per-key profile names. Each profile maps to a scope set AND a partial SafetyConfig intersected with the server ceiling.
-
-| Profile           | Scopes                                                  | Default `allowedPackages` |
-|-------------------|---------------------------------------------------------|---------------------------|
-| `viewer`          | `[read]`                                                | —                         |
-| `viewer-data`     | `[read, data]`                                          | —                         |
-| `viewer-sql`      | `[read, data, sql]`                                     | —                         |
-| `developer`       | `[read, write, transports, git]`                        | `$TMP`                    |
-| `developer-data`  | `[read, write, data, transports, git]`                  | `$TMP`                    |
-| `developer-sql`   | `[read, write, data, sql, transports, git]`             | `$TMP`                    |
-| `admin`           | all 7 scopes (implies everything)                       | (unrestricted)            |
-
-A user's effective safety is always the intersection of (1) the server ceiling, (2) their profile's partial safety, and (3) their JWT scopes. Per-user config can only tighten, never widen.
-
-Important: API-key `developer*` profiles are sandboxed to `$TMP` by design. If a key must write to transportable packages, use a tightly scoped `admin` key with a narrow server-side `SAP_ALLOWED_PACKAGES`, or use OIDC/XSUAA for per-user authorization.
-
-Full authorization model: [authorization.md](authorization.md).
-
----
-
-## 6. Scope Implications
-
-ARC-1 scopes have transitive grants that operators should understand:
-
-| Scope assigned | Scopes effectively granted | Reason |
-|---------------|---------------------------|--------|
-| `write` | `write` + `read` | A developer who can write can also read |
-| `sql` | `sql` + `data` | A user who can run freestyle SQL can also preview tables |
-| `admin` | all 7 scopes | Emergency/operator profile, still limited by server flags |
-| `read` | `read` only | No transitive grants |
-| `data` | `data` only | No transitive grants |
-| `transports` | `transports` only | Specialized CTS scope; mutations also need `write` |
-| `git` | `git` only | Specialized Git scope; mutations also need `write` |
-
-This means:
-
-- Assigning `write` without `read` is unnecessary -- `write` already includes `read`.
-- Assigning `sql` without `data` is unnecessary -- `sql` already includes `data`.
-- Assigning `data` does NOT grant `read` (source code access) -- these are independent dimensions.
-- Assigning only `transports` or only `git` is not enough for mutations -- grant `write` as well.
-
-The scope model separates several dimensions: **objects** (source code: `read`/`write`), **data** (table contents: `data`/`sql`), and **shared infrastructure** (CTS and Git: `transports`/`git`). A developer may need full source code access without being able to query production data, and vice versa.
-
----
-
-## 7. Reverse Proxy Requirements
-
-When deploying ARC-1 behind a reverse proxy (nginx, HAProxy, Traefik, etc.) outside of Cloud Foundry:
-
-| Requirement | Details |
-|-------------|---------|
-| **TLS termination** | Terminate TLS at the proxy. ARC-1's HTTP listener does not handle TLS natively. |
-| **Header sanitization** | Strip or overwrite `X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Forwarded-Host` from incoming requests to prevent spoofing. Only the proxy should set these. |
-| **Proxy headers** | Forward `Host`, `X-Real-IP`, and `X-Forwarded-For` to ARC-1 for accurate logging. |
-| **Health check** | Expose `/health` without authentication for load balancer probes. |
-| **Timeouts** | Set proxy read/write timeouts to at least 120 seconds. Some ADT operations (activation, unit tests) can take 30-60 seconds. |
-| **Request size** | Allow request bodies up to at least 10 MB for large source code writes. |
-
-Example nginx configuration is provided in the [API Key Setup](api-key-setup.md#behind-a-reverse-proxy-nginx) guide.
-
----
-
-## 8. BTP-Specific Security
-
-### XSUAA Role Collections
-
-Scopes are assigned to BTP users via role templates and role collections in the BTP Cockpit. The seven scopes (`read`, `write`, `data`, `sql`, `transports`, `git`, `admin`) map to role templates (`MCPViewer`, `MCPDeveloper`, `MCPDataViewer`, `MCPSqlUser`, `MCPAdmin`) that are combined into role collections for assignment.
-
-### Principal Propagation
-
-When `SAP_PP_ENABLED=true`, each MCP user's JWT identity flows through to SAP via BTP Destination Service. For on-premise systems this routes through Connectivity Service + Cloud Connector principal propagation; for BTP ABAP Environment it uses a cloud-to-cloud destination such as `OAuth2UserTokenExchange`. SAP sees the real user identity for authorization checks and audit logging. JWT PP failures always fail closed. Separate strict PP and API-key instances are recommended. With explicit `SAP_PP_STRICT=false`, one supported instance can accept both: JWT calls use PP and API-key calls use the shared technical SAP identity.
-
-Experimental multi-target v1 recommends strict Principal Propagation per destination. It also has a
-separate, default-off `BasicAuthentication` exception for mutation-free on-premise targets. That
-exception requires `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`, an XSUAA-authenticated caller, one
-non-rolling CF process, a least-privileged technical SAP user, and a principal-type-None Cloud
-Connector mapping with internal HTTPS. SAP then sees only the shared technical user, so human
-attribution comes from ARC-1 audit records rather than SAP. It is never PP fallback and must not be
-used when per-user SAP authorization or horizontal scaling is required. See
-[ADR-0007](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md)
-and [Multi-System Setup](multi-target-setup.md).
-
-### Destination Service
-
-BTP Destination Service centralizes SAP connection details and credentials. ARC-1 resolves the destination at runtime. Use `SAP_BTP_DESTINATION` for shared-user destinations or the BTP ABAP `OAuth2UserTokenExchange` per-user destination. Use `SAP_BTP_PP_DESTINATION` when an on-premise shared startup destination and PrincipalPropagation destination must be separate.
-
-If Cloud Connector uses path-level allowlists, include non-ADT OData routes needed by ARC-1 features, especially:
-- `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` for FLP launchpad management (`SAPManage` FLP actions)
-- `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` for UI5 ABAP Repository metadata reads
-
-For detailed setup instructions:
-
-- [XSUAA Setup](xsuaa-setup.md) -- role templates, role collections, xs-security.json
-- [Principal Propagation Setup](principal-propagation-setup.md) -- Cloud Connector, CERTRULE, per-user destinations
-- [BTP Destination Setup](btp-destination-setup.md) -- Destination Service configuration
-- [Authorization & Roles: BTP XSUAA role templates](authorization.md#btp-xsuaa-role-templates) -- role-to-scope mapping
-
----
-
-## 8a. Layered rate limiting
-
-ARC-1 ships three independent rate-limiting layers, each addressing a distinct threat:
-
-- **Layer 1 — HTTP edge** (per-IP, `express-rate-limit`). OAuth endpoints use `ARC1_AUTH_RATE_LIMIT` (default `20/min/IP`). All MCP route styles share the MCP HTTP value: unset derives `max(OAuth × 30, 600)`, while `ARC1_MCP_HTTP_RATE_LIMIT` can replace it or explicitly disable it with `0`. Middleware runs before bearer auth and returns HTTP `429` with `Retry-After` + RFC 9331 headers.
-- **Layer 2 — Per-user MCP quota** (per-user token bucket, `rate-limiter-flexible`). Applied at the top of `handleToolCall`. Prevents one developer's runaway LLM from monopolizing the shared semaphore. Returns an MCP tool error with structured `retryAfter` (not HTTP 429) so the agent loop backs off correctly. Single env var: `ARC1_RATE_LIMIT` — **off by default**, multi-user deployments opt in (typical: `60/min/user`).
-- **Layer 3 — SAP-bound shared semaphore** (server-wide FIFO queue). One `Semaphore` for the whole process, shared across all `AdtClient` instances including per-user PP clients. Caps concurrent SAP HTTP requests at `ARC1_MAX_CONCURRENT` (default `10`) — true server-wide, not per-user. Honors `Retry-After` on `429`/`503` from SAP / BTP gateways (single retry, clamped to 60 s). Excess requests wait in queue; no rejection.
-
-All three layers are per-instance and in-memory. Multi-instance attackers cost `N × limit` for Layers 1 + 2 — acceptable trade-off for the stateless-deployment property.
-
-For the full operator picture (threat model, sizing math against `rdisp/wp_no_dia`, troubleshooting decision tree, opt-out per layer), see the [Rate Limiting Guide](rate-limiting.md). Design rationale: [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
-
-## 9. Audit Logging
-
-ARC-1 emits structured audit events through three sink types. Stderr and file sinks receive every
-event; the BTP Audit Log sink forwards the security/data categories described below.
-
-| Sink | Activation | Output |
-|------|-----------|--------|
-| **Stderr** | Always active | JSON lines to stderr |
-| **File** | Set `--log-file` / `ARC1_LOG_FILE` | JSON lines appended to a file |
-| **BTP Audit Log** | Auto-detected from `VCAP_SERVICES` (requires `auditlog` premium plan) | Categorized security and data events sent to BTP Audit Log Service v2 API |
-
-### What Gets Logged
-
-| Event | Description |
-|-------|-------------|
-| `tool_call_start` | Tool name and centrally redacted arguments. |
-| `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
-| `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
-| `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
-| `http_csrf_fetch` | CSRF-token fetch success and duration. |
-| `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
-| `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
-| `auth_shared_created` | Successful shared technical-user authentication after the Basic canary. Includes tool and `identity: "shared"`. |
-| `target_resolution_failed` | Multi-target ID/registry resolution failed. Includes tool and safe `errorCode`. |
-| `pp_exchange_failed` | Per-user destination/token exchange failed before the SAP call. Includes tool and safe `errorCode`. |
-| `shared_auth_failed` | Shared Basic credential preparation or canary failed. Includes tool and safe `errorCode`. |
-| `cloud_connector_access_denied` | Cloud Connector did not expose or allow the selected target. Includes tool and safe `errorCode`. |
-| `sap_service_unavailable` | A required SAP/ICF service is inactive or unavailable. Includes tool and safe `errorCode`. |
-| `sap_authentication_failed` | SAP rejected the selected per-user or shared identity. Includes tool and safe `errorCode`. |
-| `sap_authorization_failed` | SAP authenticated the identity but denied the operation. Includes tool and safe `errorCode`. |
-| `target_policy_denied` | Instance/target policy denied a selected-target operation. Includes tool and safe `errorCode`. |
-| `safety_blocked` | Safety ceiling blocked an operation; includes the operation and safe reason. |
-| `server_start` | Server version, transport, write ceiling, configured target URL indicator, and process ID where available. |
-| `activation_preaudit_completed` | Two-phase SAP activation preaudit result, reference count, and phase durations. |
-| `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length and redirect-URI count. |
-| `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
-| `oauth_redirect_uri_registered` | XSUAA only: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. |
-| `oauth_redirect_uri_rejected` | XSUAA only: an unapproved redirect URI was rejected at `/authorize`; useful for detecting interception attempts or bad client configuration. |
-| `cors_rejected` | A browser request was blocked because its `Origin` header is not in `ARC1_ALLOWED_ORIGINS`. Includes origin, method, path. Useful for spotting misconfigured browser clients or probing. |
-| `auth_rate_limited` | **Layer 1** rate-limit denial on OAuth or `/mcp` endpoint (per-IP). Includes endpoint, IP, `limitPerMinute`. See [Rate Limiting Guide](rate-limiting.md). |
-| `mcp_rate_limited` | **Layer 2** rate-limit denial on per-user MCP tool quota. Includes user, tool, `limitPerMinute`, `retryAfterMs`. The MCP client receives a tool error with `retryAfter` (not HTTP 429). |
-
-Every entry has `timestamp`, `level`, and `event`. Events within one MCP tool call share a
-`requestId`; authenticated calls add `user` and `clientId` when available. Selected multi-target
-calls also add `destination`, public `target`, and `identity` (`per-user` or `shared`). Destination
-credentials, bearer tokens, cookies, authorization headers, and other secret values are centrally
-redacted before any sink write.
-
-### Retention
-
-- **File sink**: Retention is the operator's responsibility. Implement log rotation (e.g., logrotate) for long-running deployments.
-- **BTP Audit Log**: Retention is managed by the BTP Audit Log Service per the service plan.
-- **Stderr**: Transient unless captured by a container runtime or log aggregator.
-
----
-
-## 10. Secrets Management
-
-The following files and values must never be committed to version control:
-
-| Secret | Storage Recommendation |
-|--------|----------------------|
-| `.env` files | Listed in `.gitignore`. Use environment variables or mounted files in production. |
-| SAP passwords (`SAP_PASSWORD`) | Inject via environment variable, secrets manager, or `cf set-env`. |
-| API keys (`ARC1_API_KEYS`) | Store in a secrets manager (Vault, AWS Secrets Manager, Azure Key Vault). |
-| BTP service keys (`SAP_BTP_SERVICE_KEY`) | Use only for local BTP ABAP service-key OAuth or for creating BTP destinations. Prefer mounted files over inline JSON when local automation needs it. |
-| Cookie files (`cookies.txt`) | Listed in `.gitignore`. Ephemeral by nature. |
-| XSUAA/Destination service credentials (`VCAP_SERVICES`) | Inject through BTP service bindings or a secrets manager; never commit copied service credentials. |
-
-In containerized deployments, prefer mounted secrets (Kubernetes Secrets, CF user-provided services) over environment variables, as environment variables may appear in process listings or crash dumps.
-
----
-
-## 11. Network Security
+<a id="11-network-security"></a>
 
 ### OAuth Callback Server
 
-The OAuth callback server (used for BTP ABAP browser login) binds exclusively to `127.0.0.1`. It is not reachable from the network. This prevents network-adjacent attackers from intercepting the OAuth authorization code.
+Local BTP ABAP browser OAuth binds its callback to `127.0.0.1`.
 
 ### HTTP Streamable Transport
 
-When ARC-1 runs with `--transport http-streamable`, the default bind address is `0.0.0.0:8080`. In production:
-
-- Always place ARC-1 behind a TLS-terminating reverse proxy or load balancer.
-- Restrict network access using firewall rules, security groups, or VPN.
-- ARC-1 refuses to start HTTP transport without `--api-keys`, `--oidc-issuer`, or `--xsuaa-auth`
-  unless `ARC1_ALLOW_HTTP_NO_AUTH=true` / `--allow-http-no-auth true` is set explicitly for local/dev use.
+The HTTP listener defaults to `0.0.0.0:8080`. Use loopback for local tests and a TLS proxy for network access.
+HTTP without authentication requires explicit `ARC1_ALLOW_HTTP_NO_AUTH=true` for local development.
 
 ### HTTP Security Headers (helmet)
 
-When `--transport http-streamable` is active, every HTTP response (including `/health`, `/mcp`, OAuth endpoints) carries a curated set of browser security headers via [helmet](https://helmetjs.github.io/). These are always-on; there's no flag to disable them. Native MCP clients ignore these — they exist to harden the server when a browser ever reaches it.
-
-| Header | Default value | Purpose |
-|---|---|---|
-| `Strict-Transport-Security` | `max-age=15552000; includeSubDomains` | Force HTTPS for the host and its subdomains (180 days). |
-| `Content-Security-Policy` | `default-src 'self'; script-src 'self'; style-src 'self' https: 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; upgrade-insecure-requests; …` | Helmet's standard CSP. When CORS is enabled, only `style-src` is widened to allow inline styles for browser UIs; every other directive is preserved via `useDefaults: true`. |
-| `Cross-Origin-Opener-Policy` | (not set) | **Disabled.** Microsoft Copilot Studio uses popup-based OAuth and relies on `window.open()` / `postMessage` to receive the redirect result. Any non-default COOP on `/authorize` (including `same-origin-allow-popups`) puts the popup in a separate browsing context group, severs the parent's window reference, and surfaces as "consent pop-up window has been closed unexpectedly". Helmet's stock `same-origin` has the same effect. ARC-1 renders no JS UI that would benefit from cross-origin isolation, so dropping COOP costs nothing. |
-| `Cross-Origin-Resource-Policy` | `same-origin` (default) / `cross-origin` (when CORS is enabled) | Auto-relaxed when `ARC1_ALLOWED_ORIGINS` is set so browser clients can read responses cross-origin. |
-| `X-Content-Type-Options` | `nosniff` | Prevents MIME-type confusion attacks. |
-| `X-Frame-Options` | `SAMEORIGIN` | Clickjacking guard for older browsers without CSP support. |
-| `Referrer-Policy` | `no-referrer` | Strips Referer on outbound navigations. |
-| `Origin-Agent-Cluster` | `?1` | Asks browsers to isolate this origin's agent cluster. |
-| `X-DNS-Prefetch-Control`, `X-Download-Options`, `X-Permitted-Cross-Domain-Policies`, `X-XSS-Protection` | (helmet defaults) | Legacy / browser-quirk hardening. |
-
-To verify the headers on a running deployment:
+ARC-1 adds browser security headers to HTTP responses, including HSTS, CSP, `nosniff`, same-origin framing
+and `no-referrer`. Cross-Origin-Opener-Policy is deliberately absent to support Copilot Studio OAuth popups.
+Cross-Origin-Resource-Policy changes from `same-origin` to `cross-origin` when CORS is enabled.
 
 ```bash
-curl -sI https://<your-app-url>/health | \
-  grep -iE 'strict-transport|content-security|cross-origin|x-content-type|x-frame|referrer'
+curl -sSI https://arc1.example.com/health
 ```
 
 ### Read-only UI surface
 
-`ARC1_UI` is experimental and off by default. When enabled, ARC-1 serves static UI assets at `/ui` and read-only JSON endpoints under `/ui/api/*`. The endpoints expose sanitized config, safety/auth state, feature status, cache counts/source metadata, and recent sanitized audit events. They do not expose mutation controls, cached ABAP source bodies, request/response bodies, OAuth client IDs, or secrets.
-
-In HTTP mode, ARC-1 refuses `ARC1_UI=web` unless an admin API key, OIDC, or XSUAA auth is configured, and the whole `/ui/*` subtree is mounted behind bearer auth with the `admin` scope. When `ARC1_UI=off`, no UI routes are mounted. On BTP CF, browser users should enter through the optional `arc1-ui-router` AppRouter (`mta-ui-approuter.mtaext`), which performs interactive XSUAA login and forwards the user JWT to ARC-1. In stdio mode, `ARC1_UI=local` binds only to loopback (`127.0.0.1`/`localhost`) and rejects non-loopback addresses.
+`ARC1_UI` is experimental and off by default. Web UI routes require bearer authentication and `admin` scope;
+local UI binds only to loopback. The UI shows sanitized state and metadata, not mutation controls, cached source bodies or secrets.
+For BTP browser login, use the optional AppRouter. See [UI settings](configuration-reference.md).
 
 ### CORS for browser-based MCP clients (opt-in)
 
-CORS is **off by default**. The four MCP clients shipped with the project — Claude Desktop, Cursor, VS Code Copilot, Copilot Studio — use native HTTP, not the browser fetch API, and never trigger CORS. Only enable CORS when a browser UI (custom playground, embedded client, internal dashboard) calls `/mcp` directly:
+Enable CORS only for browser applications calling ARC-1 across origins. Native HTTP clients do not need it.
+Set exact origins in the deployment configuration, then restart:
 
-```bash
-cf set-env arc1-mcp-server ARC1_ALLOWED_ORIGINS "https://your-ui.example.com,https://other.example.com"
-cf restage arc1-mcp-server
+```text
+ARC1_ALLOWED_ORIGINS=https://your-ui.example.com,https://other.example.com
 ```
 
-Configuration rules:
-
-- **Comma-separated, exact match.** No wildcards (`*`, `https://*.example.com`) — they are silently rejected.
-- **Pairs with `credentials: true`.** ARC-1 sends `Access-Control-Allow-Origin: <reflected origin>` (never `*`) and `Access-Control-Allow-Credentials: true`. The wildcard form is incompatible with credentialed requests by browser policy.
-- **Allowed methods:** `GET`, `POST`, `DELETE`, `OPTIONS`. Allowed request headers: `Content-Type`, `Authorization`, `mcp-session-id`, `mcp-protocol-version`, `last-event-id`. Exposed response headers: `mcp-session-id`. The 2026-07-28 modern-era headers (`Mcp-Method`/`Mcp-Name`/`Mcp-Param-*`) are deliberately absent — see [ADR-0006](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0006-mcp-legacy-era-until-triggers.md).
-- **Disallowed origins are silently dropped** by the browser, but ARC-1 emits a `cors_rejected` audit event server-side so misconfigured browser clients are observable. See [§9 Audit Logging](#what-gets-logged).
-- **Browser-based DCR clients** (rare) hitting `POST /register` or `POST /authorize` from a foreign origin must be in the allowlist for the same reason native browser fetches are. See [Stateless DCR](xsuaa-setup.md#stateless-dcr) for the OAuth flow.
-
-To verify CORS on a running deployment:
+Origins are compared literally: `*` and wildcard hostnames do not match browser origins. Allowed origins receive credentialed responses with their exact origin reflected.
+Allowed methods are `GET`, `POST`, `DELETE`, `OPTIONS`; request headers are `Content-Type`, `Authorization`,
+`mcp-session-id`, `mcp-protocol-version`, `last-event-id`. The exposed response header is `mcp-session-id`.
+Disallowed browser origins receive no CORS permission and produce `cors_rejected` events; CORS is not authentication.
 
 ```bash
-# Allowed origin → 204 + Allow-Origin reflected
-curl -sI -X OPTIONS \
-  -H "Origin: https://your-ui.example.com" \
-  -H "Access-Control-Request-Method: POST" \
-  https://<your-app-url>/mcp | \
-  grep -i 'access-control\|vary'
-
-# Disallowed origin → no CORS headers (and a cors_rejected audit event)
-curl -sI -X OPTIONS \
-  -H "Origin: https://evil.example.com" \
-  -H "Access-Control-Request-Method: POST" \
-  https://<your-app-url>/mcp | \
-  grep -i 'access-control'   # expect: empty
+curl -si -X OPTIONS https://arc1.example.com/mcp \
+  -H 'Origin: https://your-ui.example.com' \
+  -H 'Access-Control-Request-Method: POST'
 ```
+
+Expect `204` and the matching `Access-Control-Allow-Origin`. Repeat with an unlisted origin; it must not receive that header.
 
 ### SAP Connection
 
-- Use HTTPS for the SAP connection (`SAP_URL=https://...`) whenever possible.
-- Avoid `--insecure` / `SAP_INSECURE=true` in production. If SAP uses an internal CA, configure it at the OS/Node.js level (`NODE_EXTRA_CA_CERTS` environment variable).
-- BTP on-premise deployments route through Cloud Connector; BTP ABAP Environment deployments use HTTPS directly to the ABAP Environment endpoint through the Destination service.
+Use HTTPS and trusted certificates. For an internal CA, set `NODE_EXTRA_CA_CERTS=/path/to/ca.crt`.
+Keep `SAP_INSECURE=false` in production.
 
----
+## Check the BTP deployment
 
-## 12. Incident Response
+<a id="xsuaa-role-collections"></a><a id="principal-propagation"></a><a id="destination-service"></a>
 
-### API Key Compromise
+<a id="8-btp-specific-security"></a>
 
-1. **Rotate immediately**: Remove the compromised key from `ARC1_API_KEYS` and restart ARC-1.
-2. **Review audit logs**: Search for events with the compromised key's profile to assess the blast radius. Look for `tool_call_start` and `tool_call_end` events.
-3. **Generate a new key**: `openssl rand -base64 32`. Distribute to legitimate users.
-4. **Check for damage**: If the key had write access, review recent transport requests and object modifications in the SAP system (SM21, STMS).
+Use the [BTP runbook](btp-cloud-foundry-deployment.md) for service ownership, roles and connectivity.
+Keep DCR registrations stable with a dedicated [signing secret](xsuaa-setup.md#stable-dcr-signing-key-recommended).
 
-### BTP Service Key Compromise
+For PP, verify the human identity in SAP after a safe read. For BTP ABAP, use `OAuth2UserTokenExchange`;
+local browser service-key OAuth is not the deployed-server path.
 
-1. **Regenerate in BTP Cockpit**: Delete the compromised service key and create a new one.
-2. **Update dependent config**: If the key is used locally, replace the service-key file and restart. If it was used to create an `OAuth2UserTokenExchange` destination, update that destination's client ID/secret.
-3. **Review BTP audit logs**: Check for unauthorized access via the compromised credentials.
+Experimental multi-target Basic requires explicit enablement, a least-privileged shared SAP user,
+exactly one CF instance and no overlapping rolling/blue-green deployment. Human attribution then comes from ARC-1 audit records.
+See [Multi-system setup](multi-target-setup.md).
 
-### JWT / OIDC Token Compromise
+## Monitor the service
 
-1. **Revoke at the IdP**: Disable the compromised user account or rotate the signing keys at the identity provider.
-2. **Short-lived tokens limit exposure**: JWT tokens typically expire in minutes to hours. Verify your IdP's token lifetime configuration.
-3. **Check ARC-1 audit logs**: Correlate the user's identity across `tool_call_start` events.
-4. **If PP was active**: The attacker may have acted as the user in SAP. Check SAP security audit log (SM20) for the user's actions.
+<a id="8a-layered-rate-limiting"></a>
 
-### Cloud Connector PP Trust Compromise
+### Control request load
 
-This is the most critical on-premise PP compromise scenario -- a compromised Cloud Connector principal-propagation trust chain can assert SAP users.
+Keep HTTP-edge abuse protection enabled. Size SAP concurrency against backend capacity and enable
+per-user quotas when needed for shared access. Limits are per process; scaling multiplies them.
+Use the [rate-limiting guide](rate-limiting.md) for defaults, sizing and failure signals.
 
-1. **Revoke the CA immediately**: Remove the CA certificate from SAP STRUST.
-2. **Generate a new CA**: Create a new key pair and import the new certificate into STRUST.
-3. **Update Cloud Connector**: Rotate the Cloud Connector PP certificates and verify subject-pattern rules.
-4. **Audit all SAP activity**: Review SM20 for all users during the compromise window.
+<a id="9-audit-logging"></a>
 
----
+### Retain and correlate audit logs
 
-## 13. Dependency & Supply-Chain Security
+<a id="retention"></a>
 
-ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Docker image](https://github.com/arc-mcp/arc-1/pkgs/container/arc-1) consumed by enterprise customers running on regulated landscapes (banks, government, defense, pharma). Customers will run their own image scanners (Aqua, Prisma Cloud, Microsoft Defender) against the published image and reject vulnerable artifacts. ARC-1 layers its own supply-chain controls on top of GitHub-native primitives so issues are caught upstream of those scanners.
+Stderr receives audit events by default; `ARC1_LOG_FILE` adds a JSON-line file.
+A bound BTP Audit Log premium service receives supported security/data categories.
+See [Log Analysis](log-analysis.md) for queries and retention setup.
+
+<a id="what-gets-logged"></a>
+
+The [audit event reference](log-analysis.md#audit-event-reference) defines event names, fields and retention.
+Events for one tool call share `requestId`; selected-target calls also carry public `target` and `identity`.
+Secrets and response bodies are redacted before sink writes.
+
+## Protect secrets and respond to incidents
+
+<a id="10-secrets-management"></a>
+
+### Store secrets
+
+Inject SAP passwords, API keys, service credentials and DCR signing secrets through your deployment's secret handling.
+Keep `.env`, cookie files, service keys and copied `VCAP_SERVICES` out of source control.
+Use mounted files where supported; limit access to environment dumps, crash reports and backups.
+
+<a id="12-incident-response"></a>
+
+### Contain a compromise
+
+<a id="api-key-compromise"></a><a id="btp-service-key-compromise"></a><a id="jwt-oidc-token-compromise"></a><a id="cloud-connector-pp-trust-compromise"></a>
+
+| Compromised item | Immediate action | Evidence to review |
+|---|---|---|
+| API key | Remove it, restart ARC-1 and distribute a new key | Profile's tool calls; for write-enabled keys, recent transports/object changes in STMS and system messages in SM21. A shared profile limits attribution. |
+| BTP service key | Revoke/replace it with its owner; update local files or destinations using it | BTP audit and affected consumers |
+| JWT / OIDC token | Contain access with IAM/network owners and revoke affected sessions where supported | Token lifetime, user's ARC-1 calls and SAP actions if PP was enabled |
+| Cloud Connector PP trust | Basis removes the compromised Connector CA from SAP STRUST, generates a new CA/key pair, rotates Connector PP certificates, then restores trust and checks subject-mapping rules | Review SM20 for all users during the compromise window |
+
+Already-issued JWTs can remain valid until expiry; sign-out or role removal alone does not prove immediate revocation.
+Preserve sanitized timestamps and request IDs before making recovery changes.
+
+## Verify the release
+
+<a id="github-native-security-features-verified-enabled"></a><a id="roadmap"></a>
+
+<a id="13-dependency-supply-chain-security"></a>
+
+Use pinned artifacts and inspect the checks for the release you deploy.
+The repository includes npm dependency/audit checks, container scans, npm provenance and a production npm SBOM.
+Release container scans and SBOM publication are non-gating; a published artifact is not proof of a clean scan.
 
 ### What runs in CI
 
-| Control | Workflow | Severity gate |
-|---|---|---|
-| Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
-| `npm audit` PR gates | `.github/workflows/test.yml` (root + `btp/approuter`) | fail on `high` / `critical` |
-| GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
-| CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
-| Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
-| Trivy container scan — scheduled | `.github/workflows/security-scan.yml` | **gating amd64 + arm64 maintenance signal** on `HIGH` / `CRITICAL`; SARIF uploaded |
-| Trivy container scan — release | `.github/workflows/release.yml` | scan and SARIF upload are non-gating; neither can strand the Docker artifact |
-| Workflow-level `permissions: contents: read` | all workflows | minimum `GITHUB_TOKEN` scope |
-| Third-party action SHA pinning | `googleapis/release-please-action`, `docker/*`, `aquasecurity/trivy-action` | mitigates the `tj-actions/changed-files` 2024 supply-chain compromise class |
-| npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
-| npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
-| `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
-
-Docker BuildKit does not automatically invalidate a cached `RUN apk upgrade` when Alpine's
-package repository changes. ARC-1 therefore names the final Dockerfile stage `runtime` and every
-CI image build uses `no-cache-filters: runtime` plus `pull: true`. The comparatively expensive
-native-module builder stage stays cached, while the runtime package upgrade is re-executed and can
-pick up newly published OS security fixes.
-
-### GitHub-native security features (verified enabled)
-
-These toggles live on the repo's Settings → Code security page and are checked here so a cold reader can confirm what's on without leaving the docs. Last verified: **2026-05-08**.
-
-| Feature | API verification | Status |
-|---|---|---|
-| Dependabot alerts | `gh api repos/arc-mcp/arc-1/vulnerability-alerts -i \| head -1` → `HTTP/2.0 204` | ✅ enabled |
-| Dependabot security updates | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.dependabot_security_updates.status'` → `"enabled"` | ✅ enabled |
-| Dependabot version updates | reads `.github/dependabot.yml` (in repo root) — toggled on at the same time as security updates; verify activity in [Insights → Dependency graph → Dependabot](https://github.com/arc-mcp/arc-1/network/updates) | ✅ enabled |
-| Dependabot grouped security updates | toggled on in Settings → Code security; no public REST field — verify by inspecting any auto-opened security PR (groups multiple advisories per ecosystem into one PR) | ✅ enabled |
-| Dependabot malware alerts | toggled on in Settings → Code security; no public REST field — verify only via the Security tab when an alert fires | ✅ enabled |
-| Secret scanning | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.secret_scanning.status'` → `"enabled"` | ✅ enabled |
-| Push protection | `gh api repos/arc-mcp/arc-1 --jq '.security_and_analysis.secret_scanning_push_protection.status'` → `"enabled"` | ✅ enabled |
-| Private vulnerability reporting | `gh api repos/arc-mcp/arc-1/private-vulnerability-reporting --jq .enabled` → `true` | ✅ enabled |
-
-Optional toggles **not** enabled (deliberate — listed here so the absence is documented, not silent):
-
-- `secret_scanning_non_provider_patterns` — custom regex patterns. Off by default; only worth turning on if we need to scan for project-specific secret formats (we don't).
-- `secret_scanning_validity_checks` — asks the upstream provider whether a leaked token is still valid. Off because the noise/value tradeoff doesn't justify it for a project our size; revisit if the validity API stabilizes and a customer asks.
-
-User-account-level recommendation (cannot be enforced via repo settings): the project maintainer should also enable push protection at [user level](https://github.com/settings/security_analysis), which catches secrets pushed to *any* repo the maintainer commits to (including private forks of `arc-1`).
+See the [security workflows](https://github.com/arc-mcp/arc-1/tree/main/.github/workflows) and release results for the exact checks.
+Runtime image rebuilds refresh Alpine packages; previously pulled images do not acquire fixes automatically.
 
 ### Verifying the chain as an operator
 
 ```bash
 # 1. npm package — verify the published tarball was built from this repo
-npm install arc-1
-npm audit signatures arc-1
-# Expected: "audited <N> packages — verified <N> packages with Sigstore"
+npm install arc-1@<version>
+npm audit signatures
+# Inspect signature/provenance verification results
 
 # 2. npm package — download and inspect the production dependency SBOM
-VERSION=<version>
+VERSION=REPLACE_WITH_VERSION
 gh release download "v${VERSION}" \
   --repo arc-mcp/arc-1 \
   --pattern "arc-1-${VERSION}-sbom.cdx.json"
@@ -519,13 +265,13 @@ jq -e --arg version "$VERSION" '
 
 # 3. npm package — confirm no known vulnerabilities at install time
 npm audit --audit-level=high
-# Expected: "found 0 vulnerabilities"
+# Review reported vulnerabilities at or above the threshold
 
 # 4. Docker image — scan locally with the same scanner CI uses
 trivy image ghcr.io/arc-mcp/arc-1:<version> \
   --severity HIGH,CRITICAL \
   --exit-code 1
-# Expected: exit 0, "No vulnerabilities found"
+# Exit 1 means the configured severity threshold was met
 
 # 5. View the full advisory history for the project
 open https://github.com/arc-mcp/arc-1/security/advisories
@@ -536,18 +282,9 @@ It does not inventory Alpine packages in the Docker image, the assembled MCPB co
 dynamically loaded extensions. Those artifacts need their own build-output SBOMs; do not use the
 npm SBOM as evidence for their full contents.
 
-SBOM publication is deliberately **non-gating**. A generation, validation, or GitHub upload error
-remains visible in the `publish-npm-sbom` job, but `continue-on-error: true` prevents it from failing
-or blocking the npm, Docker, MCPB, or MCP Registry release. Maintainers can regenerate and attach a
-missing asset later.
+SBOM publication is best-effort. If the asset is absent, inspect the release's `publish-npm-sbom` job; release success alone does not prove an SBOM was attached.
 
 ### Reporting a vulnerability
 
-See [`SECURITY.md`](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md). Preferred channel is GitHub [Private Vulnerability Reporting](https://github.com/arc-mcp/arc-1/security/advisories/new); fallback is email. Do **not** open a public issue or post on the SAP Community before the maintainers acknowledge the report — that bypasses coordinated disclosure and can put deployed instances at risk.
-
-### Roadmap
-
-This section corresponds to roadmap entry **SEC-11 (Tier 1: Foundation)**. Future tiers extend the chain:
-
-- **Tier 2 (Attestation)** — the production npm CycloneDX release asset is complete. Image/MCPB SBOM coverage, Cosign keyless image signing, and OpenSSF Scorecard remain in [`docs/plans/2026-05-08-dependency-security-tier2-attestation.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier2-attestation.md).
-- **Tier 3 (Active Defense)** — Socket.dev PR review, vulnerability triage runbook, formal non-adoption decisions for Renovate / Snyk / SLSA L3. Plan in [`docs/plans/2026-05-08-dependency-security-tier3-defense.md`](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-dependency-security-tier3-defense.md).
+Follow [SECURITY.md](https://github.com/arc-mcp/arc-1/blob/main/SECURITY.md) and use
+[private vulnerability reporting](https://github.com/arc-mcp/arc-1/security/advisories/new).

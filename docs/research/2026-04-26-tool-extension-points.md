@@ -7,7 +7,7 @@
 > `switch (toolName)` router + `tool_call_*` audit wrapper now live in `src/handlers/dispatch.ts`
 > (`handleToolCall`); per-tool logic is in `read.ts`/`write.ts`/etc. The clickable table/step links
 > point at the current locations; remaining prose that says "intent.ts" means today's `dispatch.ts`.
-**Related roadmap:** [FEAT-61: Tool Extension Points (Custom Tools)](../../docs_page/roadmap.md#feat-61)
+**Related roadmap:** [FEAT-61: Tool Extension Points (Custom Tools)](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-61)
 **Related (deferred):** FEAT-29g (Embeddable server mode), FEAT-59 (Multi-tenant per-instance config), FEAT-26 (MCP Client Config Snippets)
 
 ---
@@ -23,7 +23,7 @@ The user-stated goals, restated as design constraints:
 3. **Stable, clearly-labelled public API** — what is exported from `arc-1` and considered stable vs. internal must be unambiguous; everything else stays internal so the core can keep evolving.
 4. **Start simple, then grow** — pick the smallest extension surface that solves the 80% case first, so we do not freeze the wrong API and have to break it later. No new transports, no new auth providers, no background daemons in v1.
 
-This document is **research and design only.** It does not propose code changes. The roadmap entry [FEAT-61](../../docs_page/roadmap.md#feat-61) is the implementation tracker.
+This document is **research and design only.** It does not propose code changes. The roadmap entry [FEAT-61](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-61) is the implementation tracker.
 
 ---
 
@@ -410,7 +410,7 @@ Listed so the next implementer does not rediscover them.
 
 ## 10. Anti-patterns / explicit non-goals
 
-* **Embedded ARC-1 ("ARC-1 as a library inside another app").** Already deferred as [FEAT-29g](../../docs_page/roadmap.md#feat-29) — embedding contradicts the centralized-gateway model. This research is the *opposite*: tools are added *to* an ARC-1 instance, not the other way around.
+* **Embedded ARC-1 ("ARC-1 as a library inside another app").** Already deferred as [FEAT-29g](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-29) — embedding contradicts the centralized-gateway model. This research is the *opposite*: tools are added *to* an ARC-1 instance, not the other way around.
 * **Plugin marketplace / registry hosted by upstream.** Out of scope. If an ecosystem emerges, it is community-driven.
 * **Hot-reload of plugins.** Plugins load at startup. A reload requires a restart. Hot-reload tempts plugin authors to rely on it for state, which complicates audit and PP. (And BTP CF restarts are cheap.)
 * **Plugins that change MCP transport.** Transport ownership stays in core (`stdio`, `http-streamable`).
@@ -526,7 +526,7 @@ export async function listDumps(http, safety, options, abapRelease) {
 2. **Deployment story breaks.** "Install ARC-1 in BTP/Docker, point at SAP, done" becomes "install ARC-1 *and* transport `ZCL_ARC1_DUMP_HANDLER`." This is the deployment surface FEAT-29b explicitly rejected ("requires ABAP-side deployment, violates 'no ABAP installation required' principle").
 3. **Failure modes get worse, not better.** A customer without the class installed currently sees a clean "endpoint not available on this release" error. With this commit they'll see `useCustomDumpEndpoint(abapRelease)` route to a URL that returns 404, then fall through to the ADT path that *also* returns 404. Two failures, one user-visible message.
 4. **Slippery-slope precedent.** Once we accept one custom ICF, the next request is inevitable: custom RFC reader, custom ATC variant runner, custom user-info endpoint, custom STMS bridge. Each one a permanent maintenance burden. The line stays bright only if it's at zero.
-5. **Centralised-gateway pitch erodes.** ARC-1's differentiator (per the [Vision](../../docs_page/roadmap.md#vision)) is "one instance per SAP system, no SAP-side install, no shared service accounts." Adding even one custom ICF dilutes that pitch.
+5. **Centralised-gateway pitch erodes.** ARC-1's differentiator (per the [Vision](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#vision)) is "one instance per SAP system, no SAP-side install, no shared service accounts." Adding even one custom ICF dilutes that pitch.
 
 But the underlying need — letting one customer fill an NW 7.50 hole with their own ABAP code — is real and reasonable. It just doesn't belong in upstream.
 
@@ -714,14 +714,14 @@ Most dassian-adt tools have a one-to-one ARC-1 equivalent — they just live as 
 | `abap_create_test_include` | None | Convenience for testclass scaffolding. Sits naturally in `SAPWrite`. |
 | `traces_create_config` / `traces_set_parameters` / `traces_delete_config` | Partial — `SAPDiagnose(action="traces")` reads only | Trace lifecycle (create config → run → analyze → delete) is more granular in dassian-adt. |
 | `abap_atc_variants` (list available variants) | None | ARC-1 takes a single variant param. Listing available variants is a small read tool that fits `SAPDiagnose`. |
-| `transport_add_user` | None — `SAPTransport` has `reassign` | dassian-adt's transport tools cover a few actions ARC-1 marked as "deferred" in [FEAT-39](../../docs_page/roadmap.md#feat-39). |
-| `abap_get_function_group` (parallel-fetch) | Open in [FEAT-18](../../docs_page/roadmap.md#feat-18) | Same idea, not yet built. |
+| `transport_add_user` | None — `SAPTransport` has `reassign` | dassian-adt's transport tools cover a few actions ARC-1 marked as "deferred" in [FEAT-39](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-39). |
+| `abap_get_function_group` (parallel-fetch) | Open in [FEAT-18](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-18) | Same idea, not yet built. |
 | `abap_set_class_include` (per-include surgical write) | Partial — `SAPWrite type=CLAS include=...` exists for read but not write | Real gap — class includes can only be written via full source today. |
 | MCP **prompts** (slash-command templates served via MCP) | None — ARC-1 ships [skills/](../../skills/) as files | dassian-adt registers `fix-atc`, `transport-review`, `class-overview`, `release-transport` as MCP `prompts`. ARC-1 ships the same idea as documentation files copied into client config — different distribution model. |
 | Sampling integration (`askClaude(systemPrompt, userMessage)` inside handlers) | None | Lets a handler ask the LLM a sub-question without breaking out to the user. |
 | Elicitation as a first-class flow control | Used sparingly via [src/server/elicit.ts](../../src/server/elicit.ts) | dassian-adt prompts for missing transport/package interactively; ARC-1 returns structured errors with hints. |
 | OAuth-mediated HTTP login form (HTML + cookie + PKCE) | Not in core — XSUAA on BTP only | dassian-adt embeds its own OAuth provider so users can self-supply SAP credentials per session. Conflicts with ARC-1's "admin controls everything" model. |
-| Multi-system with `sap_system_id` auto-injection | Deferred in [FEAT-59](../../docs_page/roadmap.md#feat-59) | dassian-adt does this today by mutating every tool's input schema at startup. |
+| Multi-system with `sap_system_id` auto-injection | Deferred in [FEAT-59](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-59) | dassian-adt does this today by mutating every tool's input schema at startup. |
 
 Things ARC-1 has and dassian-adt does **not**:
 
@@ -822,7 +822,7 @@ These three are the entire reason §7's current `ToolContext` is *not yet* suffi
 | Feature | Why it's not a plugin concern | Where it belongs |
 |---------|-------------------------------|------------------|
 | MCP `prompts` capability (`fix-atc`, `transport-review`, `class-overview`, `release-transport` slash templates) | Prompts are registered against the MCP `Server` once at startup. They are not tied to a specific tool. Letting plugins contribute prompts is possible but adds a second registration concept; better to let core ARC-1 own prompts. | Core ARC-1 (separate roadmap item, possibly a new `DOC-XX` for the four templates). The plugin API can extend later (Phase 5+) if customers ask. |
-| Multi-system `sap_system_id` injection (mutate every tool's input schema at startup) | Touches the registry's `tools/list` response, not any single plugin tool. Should auto-apply to plugin tools too. | Core ARC-1 — [FEAT-59](../../docs_page/roadmap.md#feat-59). When/if FEAT-59 ships, the registry should auto-inject `sap_system_id` into plugin tools the same way it does for built-ins. |
+| Multi-system `sap_system_id` injection (mutate every tool's input schema at startup) | Touches the registry's `tools/list` response, not any single plugin tool. Should auto-apply to plugin tools too. | Core ARC-1 — [FEAT-59](https://github.com/arc-mcp/arc-1/blob/f23765f0/docs_page/roadmap.md#feat-59). When/if FEAT-59 ships, the registry should auto-inject `sap_system_id` into plugin tools the same way it does for built-ins. |
 | `validateAndHandle` required-field check from JSON schema | ARC-1 already validates via Zod in `handleToolCall`. Plugins ship Zod schemas (per §7). Same code path. | Already in core. |
 | Auth providers (basic / OAuth / Entra / built-in HTML login form) | Auth is core-only per §10 (centralized control invariant). | Core ARC-1, never plugins. |
 

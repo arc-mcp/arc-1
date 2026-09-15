@@ -5,7 +5,16 @@ import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-rela
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { features, fullConfig } from './handler-test-config.js';
 
-const TOOLS_DOC = readFileSync(new URL('../../../docs_page/tools.md', import.meta.url), 'utf8');
+const TOOL_DOCS = getToolDefinitions(fullConfig(false), true, features()).map(({ name }) => {
+  const path = `tools/sap-${name.slice(3).toLowerCase()}.md`;
+  const markdown = readFileSync(new URL(`../../../docs_page/${path}`, import.meta.url), 'utf8');
+  // Keep each page as one tool section for the parameter/action completeness checks.
+  return { name, path, markdown };
+});
+const TOOLS_DOC = TOOL_DOCS.map(({ markdown }) => markdown.replace(/^# /, '## ').replace(/^## (?!SAP)/gm, '### ')).join(
+  '\n',
+);
+const TOOLS_INDEX = readFileSync(new URL('../../../docs_page/tools.md', import.meta.url), 'utf8');
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -32,7 +41,12 @@ function normalizeTableCell(cell: string): string {
 
 function parameterRows(section: string, label = 'Parameters'): Map<string, string> | undefined {
   const lines = section.split(/\r?\n/);
-  const marker = lines.findIndex((line) => normalizeTableCell(line).replace(/:$/, '') === label);
+  const marker = lines.findIndex(
+    (line) =>
+      normalizeTableCell(line)
+        .replace(/^#+\s+/, '')
+        .replace(/:$/, '') === label,
+  );
   if (marker === -1) return undefined;
 
   const header = lines.findIndex((line, index) => {
@@ -114,10 +128,14 @@ function documentationGaps(markdown: string, relationsAllowed: boolean): string[
   return gaps;
 }
 
-describe('docs_page/tools.md public-schema parity', () => {
+describe('tool reference public-schema parity', () => {
+  it.each(TOOL_DOCS)('links the $name reference from the tool index', ({ name, path, markdown }) => {
+    expect(TOOLS_INDEX).toContain(`](${path})`);
+    expect(markdown.startsWith(`# ${name}\n`)).toBe(true);
+  });
   it.each([false, true])('documents every parameter and action with relationsAllowed=%s', (relationsAllowed) => {
     const gaps = documentationGaps(TOOLS_DOC, relationsAllowed);
-    expect(gaps, `docs_page/tools.md drifted from the full on-prem public schema:\n${gaps.join('\n')}`).toEqual([]);
+    expect(gaps, `Tool reference drifted from the full on-prem public schema:\n${gaps.join('\n')}`).toEqual([]);
   });
 
   it.each(['direction', 'depth', 'expandPackages'])(

@@ -1,5 +1,5 @@
 site_name: ARC-1 — SAP ADT MCP Server
-site_description: Enterprise-ready MCP proxy for SAP ABAP Development Tools. npm package + Docker image, admin safety controls, works with Claude, Copilot, and all MCP clients.
+site_description: Connect AI assistants to SAP ABAP. Set up ARC-1, choose permissions, and find tool, deployment, and operations guides.
 site_url: https://docs.arc-1-mcp.com/
 repo_url: https://github.com/arc-mcp/arc-1
 repo_name: arc-mcp/arc-1
@@ -8,6 +8,8 @@ edit_uri: edit/main/docs_page/
 docs_dir: docs_page
 
 validation:
+  nav:
+    omitted_files: warn
   links:
     anchors: warn
 
@@ -46,63 +48,82 @@ theme:
 
 nav:
   - Home: index.md
-  - Newsletter: newsletter.md
-  - Quickstart: quickstart.md
-  - Agent Plugin: agent-plugin.md
-  - Install in Claude: install-in-claude.md
-  - Deployment:
-      - Overview: deployment.md
-      - SAP BTP - Start Here: btp-overview.md
-      - BTP Cloud Foundry: btp-cloud-foundry-deployment.md
-      - Docker: docker.md
-      - Multi-System Setup (Multi-Target): multi-target-setup.md
-      - Other SAP Environments:
-          - BTP ABAP Environment: btp-abap-environment.md
-          - BTP ABAP Prerequisites (SAP side): btp-abap-prerequisites.md
-          - S/4HANA Public Cloud: s4hana-public-cloud.md
-      - Administration & Alternatives:
-          - BTP Administration: btp-administration.md
-          - Optional Setup Worksheet: btp-setup-worksheet.md
-          - Multi-Target Administration: multi-target-administration.md
-          - Best Practices: deployment-best-practices.md
-  - Auth & Permissions:
-      - Overview: enterprise-auth.md
-      - Authorization & Roles: authorization.md
-      - XSUAA Setup: xsuaa-setup.md
-      - Principal Propagation: principal-propagation-setup.md
-      - BTP Destination Setup: btp-destination-setup.md
-      - Other Authentication Methods:
-          - API Key: api-key-setup.md
-          - OAuth / JWT: oauth-jwt-setup.md
-  - Using ARC-1:
-      - Tools Reference: tools.md
-      - Extensions (Custom Tools): extensions.md
-      - MCP Usage Guide: mcp-usage.md
-      - Skills: skills.md
-      - More:
-          - Blog Series: blog-series.md
+  - Get started:
+      - quickstart.md
+      - install-in-claude.md
+      - agent-plugin.md
+  - Use ARC-1:
+      - mcp-usage.md
+      - Skills:
+          - skills.md
+          - skills-vscode.md
+          - skills-eclipse.md
+      - cli-guide.md
+      - live-relations.md
+  - Deploy:
+      - deployment.md
+      - docker.md
+      - SAP BTP:
+          - btp-overview.md
+          - btp-cloud-foundry-deployment.md
+          - btp-archive-inspection.md
+          - btp-setup-worksheet.md
+          - btp-abap-environment.md
+          - btp-abap-prerequisites.md
+          - s4hana-public-cloud.md
+          - multi-target-setup.md
+      - deployment-best-practices.md
+  - Access and security:
+      - enterprise-auth.md
+      - authorization.md
+      - xsuaa-setup.md
+      - principal-propagation-setup.md
+      - btp-destination-setup.md
+      - api-key-setup.md
+      - oauth-jwt-setup.md
+      - security-guide.md
+      - sap-api-policy-and-architecture.md
+  - Operate:
+      - operations.md
+      - btp-administration.md
+      - multi-target-administration.md
+      - updating.md
+      - log-analysis.md
+      - rate-limiting.md
+      - caching.md
+      - auth-test-process.md
   - Reference:
-      - Release Notes: release-notes.md
-      - Configuration: configuration-reference.md
-      - Configuration Precedence: configuration-precedence.md
-      - SAP API Policy & Architecture: sap-api-policy-and-architecture.md
-      - vs SAP ABAP MCP Server: arc-1-vs-sap-abap-mcp-server.md
-      - Security: security-guide.md
-      - Operations:
-          - Overview: operations.md
-          - Log Analysis: log-analysis.md
-          - Updating: updating.md
-          - Caching: caching.md
-          - Live Relations (Experimental): live-relations.md
-          - Rate Limiting: rate-limiting.md
-  - Development:
-      - Local Development: local-development.md
-      - Architecture: architecture.md
-      - More:
-          - CLI Guide: cli-guide.md
-          - SAP Trial Setup: sap-trial-setup.md
-          - Authentication Test Process: auth-test-process.md
-          - Roadmap: roadmap.md
+      - configuration-reference.md
+      - configuration-precedence.md
+      - Tools:
+          - tools.md
+          - tools/sap-read.md
+          - tools/sap-search.md
+          - tools/sap-write.md
+          - tools/sap-activate.md
+          - tools/sap-navigate.md
+          - tools/sap-query.md
+          - tools/sap-transport.md
+          - tools/sap-git.md
+          - tools/sap-context.md
+          - tools/sap-lint.md
+          - tools/sap-diagnose.md
+          - tools/sap-manage.md
+          - tools/sap-targets.md
+          - tools/write-function-modules.md
+          - tools/write-class-members.md
+          - tools/write-text-elements.md
+      - extensions.md
+  - Develop:
+      - local-development.md
+      - architecture.md
+      - sap-trial-setup.md
+  - Project:
+      - release-notes.md
+      - roadmap.md
+      - arc-1-vs-sap-abap-mcp-server.md
+      - blog-series.md
+      - newsletter.md
 
 markdown_extensions:
   - admonition
@@ -125,7 +146,6 @@ plugins:
   - redirects:
       redirect_maps:
         multi-destination.md: multi-target-setup.md
-        multi-system-hub.md: btp-overview.md
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 
 extra_javascript:
