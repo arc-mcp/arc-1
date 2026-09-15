@@ -98,6 +98,10 @@ Admin-machine fixture. The default omits `scope` to observe the service client's
 ## What configured scenarios check
 
 - Real SAP SDK validation precedes all reported scope, attribute and classifier summaries.
+- A valid user without `read` expects HTTP 403 `insufficient_scope`; an unsupported machine
+  principal expects 403 `forbidden`. `expect.aggregateErrorCode` also checks compatibility and
+  pinned routes, including the `read` challenge for insufficient scope. A denied token issuance
+  is not a valid-user-without-read runtime test.
 - Network/JWKS/configuration failures are unavailable verification, not a passing invalid-token
   test. Wrong-application scenarios require the SDK's specific wrong-audience rejection.
 - MCP responses must match the request's JSON-RPC ID and version. SSE requests finish when their

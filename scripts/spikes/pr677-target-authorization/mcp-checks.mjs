@@ -156,7 +156,10 @@ export function validateScenario(scenario) {
     throw new HarnessError('INVALID_VERIFICATION_FAILURE_EXPECTATION');
   if (expected.authorizationMode !== undefined && expected.authorizationMode !== 'xsuaa-attribute')
     throw new HarnessError('INVALID_AUTHORIZATION_MODE_EXPECTATION');
-  if (expected.aggregateErrorCode !== undefined && !['forbidden'].includes(expected.aggregateErrorCode))
+  if (
+    expected.aggregateErrorCode !== undefined &&
+    !['forbidden', 'insufficient_scope'].includes(expected.aggregateErrorCode)
+  )
     throw new HarnessError('INVALID_HTTP_ERROR_EXPECTATION');
   if (
     expected.catalogGranted !== undefined &&
@@ -195,6 +198,17 @@ export async function runMcpChecks({ baseUrl, accessToken, scenario, record }) {
   const expected = validateScenario(scenario).expect ?? {};
   const session = (path, prefix, token = accessToken) =>
     new McpSession(new URL(path, baseUrl), token, record, prefix, expected.privateResponses !== false);
+  const checkAuthenticationDenial = (response, prefix) => {
+    if (expected.aggregateErrorCode === undefined) return;
+    record(`${prefix}.error_code`, response.json?.error === expected.aggregateErrorCode);
+    if (expected.aggregateErrorCode === 'insufficient_scope') {
+      const challenge = response.headers.get('www-authenticate') ?? '';
+      record(
+        `${prefix}.read_scope_challenge`,
+        challenge.includes('error="insufficient_scope"') && challenge.includes('scope="read"'),
+      );
+    }
+  };
   // Authentication and cache headers precede inventory lookup, including the compatibility alias.
   for (const [index, path] of [
     '/multi/mcp',
@@ -208,17 +222,18 @@ export async function runMcpChecks({ baseUrl, accessToken, scenario, record }) {
   const initialized = await aggregate.initialize();
   const aggregateStatus = expected.aggregateHttpStatus ?? 200;
   record('aggregate.initialize.http', initialized.status === aggregateStatus, { httpStatus: initialized.status });
-  if (expected.aggregateErrorCode !== undefined)
-    record('aggregate.initialize.error_code', initialized.json?.error === expected.aggregateErrorCode);
+  checkAuthenticationDenial(initialized, 'aggregate.initialize');
   const alias = session('/authorize', 'alias');
   const aliasInit = await alias.initialize();
   record('alias.initialize.http', aliasInit.status === aggregateStatus, { httpStatus: aliasInit.status });
+  checkAuthenticationDenial(aliasInit, 'alias.initialize');
   if (aggregateStatus !== 200) {
     for (const [index, target] of (expected.deniedTargets ?? ['ZZZ/999']).entries()) {
       const blocked = await session(`/${target}/mcp`, `pinned.authentication_${index}`).initialize();
       record(`pinned.authentication_${index}.status`, blocked.status === aggregateStatus, {
         httpStatus: blocked.status,
       });
+      checkAuthenticationDenial(blocked, `pinned.authentication_${index}`);
     }
     return;
   }
