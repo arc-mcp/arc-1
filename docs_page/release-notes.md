@@ -18,6 +18,25 @@ currently [multi-target mode](multi-target-setup.md), may still change in a mino
 `1.0.0` onward and every `0.9` release are listed individually. `0.1`–`0.8` are summarized, with the
 important `0.7.0` authorization migration retained below.
 
+## 1.3.0 — package CI and clearer write outcomes (unreleased)
+
+This release adds package CI checks and improves search, package listings, and write diagnostics.
+Automation should inspect completeness and saved-state evidence before retrying an operation.
+
+| Change | Impact | Action |
+|---|---|---|
+| Package CI ([#779](https://github.com/arc-mcp/arc-1/pull/779)) | `SAPDiagnose.atc_ci` and `unittest_ci` check explicit packages, with optional subpackages and bounded reports. Unit tests remain harmless-only; incomplete evidence cannot pass. | See [CLI guide](cli-guide.md). Software-component selection is deferred. |
+| Batch creation and activation ([#788](https://github.com/arc-mcp/arc-1/pull/788), [#790](https://github.com/arc-mcp/arc-1/pull/790)) | Invalid later entries stop the batch before creation. Partial results distinguish saved objects from unknown activation and attribute errors to the affected objects. | Inspect results before retrying; authentication, authorization, and safety failures stop the batch. |
+| UIAD diagnostics ([#789](https://github.com/arc-mcp/arc-1/pull/789)) | Create/update checks candidate JSON and reports field errors, unavailable checks, and confirmed or uncertain saves. Read-only generated descriptors direct users to manifest redeployment. | Read the retained descriptor before retrying a failed save. This does not generate the UI application. |
+| Search and package listings ([#786](https://github.com/arc-mcp/arc-1/pull/786), [#787](https://github.com/arc-mcp/arc-1/pull/787)) | Normal search honors `objectType`. Package reads report limits and unknown completeness; structured format offers one JSON envelope. | Do not treat package search as a full inventory. SAP 7.50 ignores slash subtypes. |
+| ATC object batches ([#772](https://github.com/arc-mcp/arc-1/pull/772)) | Checks up to 20 explicit objects with per-object coverage; missing objects remain unknown. | Require `complete:true` before interpreting clean results. |
+| Live relations and dependency context ([#769](https://github.com/arc-mcp/arc-1/pull/769)) | Adds experimental bounded live relations and refreshes dependency context from authorized source. | See [Live relations](live-relations.md) for availability and bounds. |
+| KTD node editing ([#749](https://github.com/arc-mcp/arc-1/pull/749), [#750](https://github.com/arc-mcp/arc-1/pull/750), [#766](https://github.com/arc-mcp/arc-1/pull/766)) | Updates addressed nodes and short texts without replacing other nodes; supports `dryRun`. | Copy node names from `SAPRead`; preview ambiguous edits. |
+| Text pools and data elements ([#768](https://github.com/arc-mcp/arc-1/pull/768), [#774](https://github.com/arc-mcp/arc-1/pull/774)) | Adds program/function-group text-pool writes and preserves DTEL metadata during partial updates. | Text-pool writes replace the selected part: read it first. |
+
+**Verification limits:** BTP UIAD saving, package CI communication arrangements, and successful on-premises
+ATC CI completion still need end-to-end verification. Incomplete results remain failures.
+
 ## 1.2.0 — bounded data access and deployment hardening (2026-09-03)
 
 This release bounds data-preview memory, adds an optional data-source blocklist, identifies direct-connect
