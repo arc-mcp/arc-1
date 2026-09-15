@@ -97,6 +97,16 @@
       "deniedTargets": ["A4H/001", "ZZZ/999"]
     }
   },
+  "user-without-read": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": [],
+      "grantStatus": "missing",
+      "aggregateHttpStatus": 403,
+      "aggregateErrorCode": "insufficient_scope",
+      "deniedTargets": ["A4H/001", "ZZZ/999"]
+    }
+  },
   "wrong-application-token": {
     "expect": { "verification": "invalid", "verificationFailure": "wrong_audience", "aggregateHttpStatus": 401 }
   }

@@ -255,6 +255,51 @@ test('missing private cache headers fail on rejection responses instead of being
   assert.ok(records.some((value) => value.name === 'aggregate.initialize.http' && value.pass));
 });
 
+test('authentication denial reasons are checked on aggregate, compatibility and pinned routes', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const expectedCode of ['forbidden', 'insufficient_scope']) {
+      for (const actualCode of [expectedCode, 'unexpected_denial']) {
+        const records = [];
+        globalThis.fetch = async (_url, init) =>
+          Response.json(
+            { error: init.headers.Authorization ? actualCode : 'invalid_token' },
+            {
+              status: init.headers.Authorization ? 403 : 401,
+              headers: {
+                'cache-control': 'private, no-store',
+                'www-authenticate': `Bearer error="${actualCode}", scope="read"`,
+              },
+            },
+          );
+        await guardedMcpChecks({
+          baseUrl: new URL('https://example.invalid'),
+          accessToken: 'memory-only-token',
+          scenario: {
+            expect: {
+              aggregateHttpStatus: 403,
+              aggregateErrorCode: expectedCode,
+              deniedTargets: ['A4H/100', 'ZZZ/999'],
+            },
+          },
+          record: (name, pass) => records.push({ name, pass }),
+        });
+        for (const prefix of ['aggregate.initialize', 'alias.initialize', 'pinned.authentication_0', 'pinned.authentication_1']) {
+          assert.ok(
+            records.some((value) => value.name === `${prefix}.error_code` && value.pass === (actualCode === expectedCode)),
+            JSON.stringify(records),
+          );
+        }
+        if (actualCode === expectedCode) assert.ok(records.every((value) => value.pass));
+        if (expectedCode === 'insufficient_scope')
+          assert.equal(records.filter((value) => value.name.endsWith('.read_scope_challenge')).length, 4);
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('mismatched JSON-RPC IDs cannot produce a successful MCP scenario', async () => {
   const originalFetch = globalThis.fetch;
   const records = [];
