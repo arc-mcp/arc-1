@@ -39,8 +39,13 @@ const SOURCE_ALIAS_STOP_WORDS = new Set([
   'WITH',
 ]);
 
+/** ADT truncates a freestyle statement beyond this length before it parses it. */
+export const ADT_FREESTYLE_SQL_MAX_LENGTH = 255;
+
+const HINT_SEPARATOR = '\n\nHint: ';
+
 function withHint(err: AdtApiError, hint: string): string {
-  return `${err.message}\n\nHint: ${hint}`;
+  return `${err.message}${HINT_SEPARATOR}${hint}`;
 }
 
 export function maskSqlStringLiterals(sql: string): string {
@@ -117,11 +122,7 @@ function findRowLimit(maskedSql: string): { syntax: string; rows?: string } | un
   return undefined;
 }
 
-export function classifySapQueryParserError(
-  err: AdtApiError,
-  sql: string,
-  chunkingAttempted = false,
-): string | undefined {
+function classifyParserHint(err: AdtApiError, sql: string, chunkingAttempted: boolean): string | undefined {
   const maskedSql = maskSqlStringLiterals(sql);
   const fullJoin = /\bFULL(?:\s+OUTER)?\s+JOIN\b/i.test(maskedSql);
 
@@ -298,6 +299,20 @@ export function classifySapQueryParserError(
 
   if (!hasSqlParserSignature(combined)) return undefined;
 
+  // Past ADT's statement-length ceiling the endpoint truncates before it parses, so SAP's grammar
+  // complaint describes the fragment rather than the query: a valid single SELECT is rejected with
+  // "Only one SELECT statement is allowed", and the token SAP names is nowhere near the real problem.
+  // The generic hint below then sends the caller off rewriting SQL that was never wrong. Measured
+  // identically on two ECC EHP 8 systems (SAP_BASIS 7.50 SP23), development and production: 255
+  // characters run, 256 fail. Only that release is verified, so this stays a post-hoc explanation of
+  // a rejection SAP already issued — never a pre-flight limit that could block a laxer backend.
+  if (!chunkingAttempted && sql.length > ADT_FREESTYLE_SQL_MAX_LENGTH) {
+    return withHint(
+      err,
+      `This statement is ${sql.length} characters and ADT's freestyle endpoint parses at most ${ADT_FREESTYLE_SQL_MAX_LENGTH}, so the SAP message above describes a truncated fragment — the query itself may be valid. Shorten the statement text: single-character table aliases and a short column alias, JOIN instead of INNER JOIN, fewer or shorter predicates, or split it and combine the results client-side.`,
+    );
+  }
+
   const hints = [
     'ADT freestyle SQL parser rejected this query on this backend/version.',
     'Submit one SELECT without comments or a semicolon.',
@@ -307,4 +322,29 @@ export function classifySapQueryParserError(
     ? ' ARC-1 already split the longest literal IN-list; reduce the query or batches further.'
     : '';
   return withHint(err, `${hints.join(' ')}${chunkRetry}`);
+}
+
+/**
+ * Classify a freestyle-SQL failure into an actionable hint.
+ *
+ * `minimalErrors` is the same client-disclosure control dispatch applies to every other ADT error:
+ * the SAP diagnostic and the ADT path are withheld, the ARC-1-authored hint is kept. SAPQuery has to
+ * apply it here because it returns classified failures as tool results, which never reach the
+ * redaction in buildBaseErrorMessage.
+ */
+export function classifySapQueryParserError(
+  err: AdtApiError,
+  sql: string,
+  chunkingAttempted = false,
+  minimalErrors = false,
+): string | undefined {
+  const classified = classifyParserHint(err, sql, chunkingAttempted);
+  if (classified === undefined || !minimalErrors) return classified;
+
+  // Every branch above formats through withHint, so the separator is present; lastIndexOf keeps a SAP
+  // message that happened to contain it on the redacted side, and a missing separator fails closed.
+  const hintStart = classified.lastIndexOf(HINT_SEPARATOR);
+  const minimal = `ADT API error: status ${err.statusCode}.`;
+  if (hintStart < 0) return minimal;
+  return `${minimal}${HINT_SEPARATOR}${classified.slice(hintStart + HINT_SEPARATOR.length)}`;
 }
