@@ -13,9 +13,10 @@ remain incomplete. Do not merge/deploy to a customer yet.**
   `1.0.2` does not provide it. A local candidate is used for tests; release/portable dependency
   integration must be resolved before this PR is merge-ready.
 
-The companion candidate is preserved on local branch `codex/verified-xsuaa-user-attributes`,
-commit `32d32b4338f787a0f541421d3fbeb4c23aafb0ab`, in the `arc-mcp/xsuaa-auth` repository. It is not
-published or pushed. ARC-1's committed manifest/lockfile still select the published dependency:
+The companion candidate is in [xsuaa-auth PR #70](https://github.com/arc-mcp/xsuaa-auth/pull/70),
+branch `codex/verified-xsuaa-user-attributes`, implementation commit
+`32d32b4338f787a0f541421d3fbeb4c23aafb0ab`. Its Node 22/24, peer-floor/matrix, CodeQL and Socket
+checks passed. It is not merged or published. ARC-1's committed manifest/lockfile still select the published dependency:
 **a clean `npm ci` is not yet a reproducer for this implementation**. Tests and the isolated CF
 bundle explicitly used the local candidate without adding a machine-specific dependency to the
 repository. Publish/integrate the companion and repeat clean-install CI before removing this gate.
@@ -96,47 +97,166 @@ not used as an in-place experimental authorization target.
   Broker update succeeded; the existing assignment remained. Read-back confirmed the all-target
   default is exactly `*` and the exact-target template did not create a default role. Created two
   isolated exact roles for `A4H/001` and `A4H/100`; creating them does not prove token issuance.
-- Staged `arc1-ta-677-test` with the local auth candidate. It started as one 384 MiB instance and
-  discovered four active targets plus one quarantined entry. It has **no mapped route**. The
-  explicit HTTPS `ARC1_PUBLIC_URL` permits OAuth initialization but is not an allocated endpoint.
-  Rebuilt and repushed the final runtime source through `101c1427`; CF reported one running
-  instance on Node 24.18.0. The private manifest now retains the required explicit public URL.
-- Obtained an actual XSUAA client-credentials token from the isolated service, validated its
-  signature through the candidate SAP SDK verifier, and confirmed the user-only verifier rejected
-  it as a machine principal. The token had zero ARC capability scopes and was 1,385 bytes. This
-  proves neither the Admin-machine fixture nor HTTP/gorouter denial. The isolated descriptor
-  temporarily allowed that grant for this check; the original three grant types were restored and
-  the broker reported update success. No token was printed or saved.
-- The organization currently has all ten permitted routes allocated. A spare route is unmapped;
-  temporary use requires the owner's confirmation. Do not delete/reassign unrelated routes or
-  stop unrelated applications to obtain quota.
-- The IAS administrator browser session expired during inspection. Actual application-user login
-  is still needed in a fresh incognito window; CF/BTP CLI logins cannot replace it.
+- Staged `arc1-ta-677-test` with the local auth candidate: one 384 MiB instance on CF Node 24.18.0,
+  four active PP targets and one quarantined Basic target. After explicit owner approval, mapped
+  the previously unused `mcp-sap-docs.cfapps.us10-001.hana.ondemand.com` route and aligned
+  `ARC1_PUBLIC_URL`. No extra route quota or unrelated app changes were required.
+- Read the Destination service's configuration independently of ARC-1's catalog to establish the
+  complete expected active set: `A4H/001`, `A4H/100`, `A4H-2025/001`, `NPL/001`. Only safe fields
+  were retained. All positive SAP tests below use A4H clients 001/100; listing the other targets
+  is not proof of their backend connectivity in this run.
+- Temporarily enabled client credentials and explicit `read`/`admin` client authorities on the
+  isolated service. Real plain and Admin machine tokens were SAP-SDK verified and then rejected
+  by the deployed aggregate, compatibility and pinned HTTP routes. Restored the original three
+  grant types with no client authorities; the broker update succeeded and another machine-token
+  request was rejected. Restoration is not token revocation.
+- Created a second isolated XSUAA application, `arc1-ta-677-other-xsuaa`, with no app binding or
+  SAP access. Its real token verified against its own service, failed with `wrong_audience`
+  against the ARC test service, and received HTTP 401 at the deployed ARC routes. This is a real
+  wrong-application **machine** test, not yet a two-human/same-attribute isolation test.
+- Used actual primary-user browser authorization-code logins, a refresh and user JWT-bearer
+  exchanges. Only isolated role collections were assigned or edited. Primary Admin was removed
+  before Viewer/Data/SQL and denial cases; existing unrelated assignments were preserved.
+- IAS administration was accessible. The existing subaccount application exposes `groups` from
+  **All Groups**, but has no dedicated `arc1_targets` mapping. No shared IAS app was edited and
+  raw groups were not substituted for the dedicated attribute. Optional IAS-only/union recipes
+  remain unverified. Browser tooling did not expose the fresh incognito window, so secondary-user
+  login was not counted as tested; enabling extension incognito access or a manual login is needed.
 
 All generated secrets, callbacks and fixture credentials belong outside the repository with
 owner-only permissions. Record cleanup of test app/service/roles/temporary mappings when finished.
-The isolated app, service/key, collection and exact roles are retained for the pending live matrix.
-The app was stopped after its successful final startup check to release the remaining 384 MiB of
-org capacity while route/login approval is pending; its staged droplet remains available to start.
-No shared application binding, existing destination, unrelated role assignment or SAP data was
-changed. No temporary route mapping exists to remove.
+Only the isolated app, its approved temporary route mapping, XSUAA services/keys and `ARC1 PR677`
+collections/custom roles were changed.
+No existing destination, unrelated role assignment, shared app binding, IAS mapping or SAP data
+was changed. Temporary route/app/key/assignment cleanup is recorded below; do not infer cleanup
+from a stopped browser or from forgetting a token in the harness.
+
+### Cleanup and retained fixtures
+
+The acceptance run paused on 2026-09-15 with these verified outcomes:
+
+- Removed all `ARC1 PR677` collection assignments from the primary account. Read-back showed
+  none remaining; unrelated assignments were preserved. The secondary account's pre-existing
+  isolated Viewer assignment is retained for its pending incognito test.
+- `ARC1 PR677 Matrix Targets` and `ARC1 PR677 Capabilities` are empty. Custom scale/malformed/
+  exact roles remain unassigned fixtures; no temporary broad grant remains assigned to the primary.
+- Restored the primary isolated XSUAA descriptor's original user grant types and removed temporary
+  machine authorities. Deleted the second application's test key and unbound XSUAA service, then
+  removed its private credential file.
+- Stopped only `arc1-ta-677-test` to release its 384 MiB and unmapped the approved spare hostname,
+  returning it to its initially unmapped state. Its staged build, three bindings, primary isolated
+  XSUAA service/key and owner-only local fixtures remain available for the next acceptance run.
+- Stopped the in-memory harness at 16:38 UTC; it reported no persisted tokens. This clears local
+  snapshots, not issued-token validity. Existing bearer tokens are not revoked by these cleanup
+  actions and remain subject to their original expiry/issuer behavior.
+
+Resume only this isolated fixture, restore its approved mapping and use a new harness/login.
+Do not reuse expired callback URLs or treat a previously displayed browser success page as a token.
 
 ## Validation results
 
 | Check | Result | Limitation |
 |---|---|---|
-| ARC-1 unit/HTTP suite | 6,936 tests in 226 files passed in three consecutive final runs, plus a Node 24.11.1 run | Local candidate dependency; external identity decisions mocked where documented |
+| ARC-1 unit/HTTP suite | Initial 6,936 tests / 226 files passed repeatedly; after the live audit fix, **6,941 tests / 227 files passed**, including a full Node 24.11.1 run | Local candidate dependency; external identity decisions mocked where documented |
 | HTTP enforcement stress | All 29 cases passed with 50 repeats (1,479 executions) after listener correction | Real local HTTP/MCP SDK, not CF gorouter |
-| Companion auth suite | 301 tests in 15 files passed, including real SAP SDK/JWKS fixtures | Fixtures are not IAS-issued user tokens |
-| Harness self-tests | 19 passed | Harness parsing/assertion/redaction/schema logic only |
+| Companion auth suite/CI | 301 tests in 15 files passed; PR #70 CI green on Node 22/24 and peer matrix | Unit fixtures are not live user-token evidence; see separate table below |
+| Harness self-tests | 20 passed after adding distinct machine/missing-scope denial checks | Harness parsing/assertion/redaction/schema logic only |
 | Typecheck, Biome, build, file/schema budgets | Passed | Existing unrelated Biome informational notices remain |
 | Strict MkDocs and deployment descriptor checks | Passed | No customer deployment implied |
 | Security diff review | No reportable vulnerability found in `96b3f381..c73d56c5`; all 24 selected production/deployment surfaces reviewed | Single source-backed scan, not absence proof; dependency/live gates explicit |
-| Baseline-to-additive XSUAA service update | Passed with pre-existing isolated Viewer assignment preserved | Real user claims/role unions not yet measured |
-| Real technical-token signature and user-only rejection | Passed | No ARC scopes; verifier boundary only |
-| CF startup and registry discovery | Passed | No routed MCP/IAS/SAP end-to-end call yet |
-| User-token, IAS, revocation, origin/application isolation and live size matrix | **Pending** | Usable route, application-user login and IAS admin session needed |
+| Baseline-to-additive XSUAA service update | Passed with pre-existing isolated Viewer assignment preserved | Existing customer IAM still needs its own rollout acceptance |
+| Real machine tokens, including Admin, and wrong-application rejection | Passed through SDK verification and CF HTTP | Wrong-application human and cross-origin tests remain open |
+| CF startup, registry and primary-user PP calls | Passed; real `SAPRead(SYSTEM)` through aggregate and pinned client 001/100 routes | Not a client-marker/data/SQL or second-SAP-user proof |
+| Audit diagnostic regression | Fixed, redeployed and rechecked through real CF logs; six adjacent scenario replays passed 421 assertions | Recent CF logs, not durable BTP Audit Log service retrieval |
+| Primary-user static grants, role unions, capability matrix and issued-token sizes | Passed as detailed below | No dedicated IAS mapping, 17+ active destination fixture or installed-client coverage |
+| Refresh/reused-session/revocation behavior | Measured; stale claims observed and preserved as failed new-permission expectations | Fresh incognito recovery and second-user/origin isolation remain open |
 | LLM-driven and installed-client acceptance | **Pending** | Run after deterministic live gates, not inferred from unit tests |
+
+### Real BTP matrix (2026-09-15)
+
+All tokens in this table were issued by XSUAA and verified by `@sap/xssec` before inspecting
+claims. `JWT bearer` means a real user-token exchange, **not a new interactive IAS login**.
+Sizes are complete access-token bytes, not a promised size for other customers. Positive cases
+include private/no-store headers, exact independently specified schemas, explicit target
+selection, catalog/denial checks and bounded PP `SYSTEM` reads where configured. Assertion counts
+refer to each recorded run; they are not counts of distinct security properties.
+
+| Scenario | Flow / token bytes | Result |
+|---|---|---|
+| Machine, no ARC scopes | Client credentials / 1,385 | 18 assertions passed; HTTP 403 before catalog/execution |
+| Machine with `read` + `admin` | Client credentials / 1,533 | 19 passed; still HTTP 403 |
+| Valid user with all isolated app roles removed | JWT bearer / 2,350 | 20 boundary assertions passed; no local scopes, HTTP 403 on aggregate, alias and known/unknown pinned routes; see fixture correction below |
+| Other application | Client credentials / 1,522 | 16 passed; own verification succeeds, ARC SDK rejects `wrong_audience`, HTTP 401 |
+| Admin, no target grant | Authorization code / 2,522 | 58 passed; only diagnostic `SAPTargets`, no operational tools |
+| Admin, exact client 100 | Authorization code / 2,584 | 132 passed; client 100 works, client 001 denied despite Admin |
+| Admin, two separately assigned exact roles | Authorization code / 2,608 | 130 passed; union contains exactly clients 001/100 |
+| Admin, exact grant by user exchange | JWT bearer / 2,726 | 132 passed; extra assigned write-family scopes do not add mutation tools |
+| Viewer / two targets | JWT bearer / 2,536 | 130 passed; exactly `read`, no `SAPQuery`, filtered two-target catalog |
+| Data Viewer / two targets | JWT bearer / 2,572 | 123 passed; `read,data`, no `SAPQuery` |
+| SQL / two targets | JWT bearer / 2,606 | 131 passed; `read,data,sql`, `SAPQuery` listed; no SQL execution in this harness |
+| Explicit all-target role | JWT bearer / 2,514 | 130 passed; four active targets; quarantined Basic/unknown IDs still denied |
+| `*` plus invalid `A4H/*` | JWT bearer / 2,525 | 52 passed; complete grant rejected, zero operational tools |
+| 50 exact issued values | JWT bearer / 3,473 | 115 passed; all 50 arrive, one active granted target works |
+| 100 exact issued values | JWT bearer / 4,406 | 115 passed; all 100 arrive, one active granted target works |
+| 256 exact issued values | JWT bearer / 7,318 | 115 passed; all 256 arrive, one active granted target works |
+| 257 exact issued values | JWT bearer / 7,301 | 53 passed; ARC rejects entire over-limit set; no truncation-to-access |
+| One 129-byte attribute value | JWT bearer / 2,685 | 52 passed; ARC rejects it before normalization |
+| Lowercase and padded duplicate IDs | JWT bearer / 2,538 | 116 passed; two issued strings project to only canonical `A4H/100` |
+| All target roles removed, Viewer retained | JWT bearer / 2,488 | 52 passed; missing attribute, zero operational tools |
+| Concurrent old Admin token and new no-grant token | Existing snapshots | 130 + 52 passed; each retains its own projection in one process |
+
+The 257-value token is smaller than the 256-value token because its capability/collection
+context differs; sizes are measurements, not a monotonic per-value formula. Scale roles contain
+one active ID and otherwise valid unknown IDs. They establish claim delivery/header passage and
+unknown-ID intersection, **not** 17+ active schemas or 256 connected systems. SAP's attribute
+accessor reports these string arrays as `valid`; ARC separately rejects target syntax/128-byte/
+256-unique violations. Do not confuse the auth library's shape status with an accepted target grant.
+
+The CLI rejected an invented `attributeValueOrigin=unrestricted` (only IDP/SAML/STATIC accepted),
+and rejected an empty attribute list for the required template. No Unrestricted token was issued;
+these are provisioning observations, **not a passed runtime Unrestricted test**. The required
+attribute and explicit `*` recipe remain unchanged.
+
+After the audit-field fix was deployed at 16:24:51 UTC, six adjacent live regressions passed
+421 assertions: malformed mixed wildcard, two exact Admin targets, revoked target grants,
+257-value denial, Admin-machine denial and 256-value success. The bounded recent-log sample
+contained 18 grant-denial events (5 missing, 5 malformed, 5 over-limit and 3 not granted); all
+retained `targetAccessMode` and none contained a grant-array key or JWT-like value. This sample
+does not establish long-term retention or successful ingestion/retrieval by the BTP Audit Log
+service. The real Logger-to-BTP-sink path is separately unit-tested with only its HTTP transport
+mocked.
+
+### Session and refresh observations
+
+- Refresh before changing assignments succeeded and retained an `authorization_code` grant type;
+  the candidate classifier accepted the verified user shape. After adding an exact target role,
+  refreshing the old token still had no target attribute: the new-grant scenario recorded **7
+  failed expectations**. A subsequent authorization-code login obtained the exact grant.
+- A later authorization-code login through the reused browser session retained Admin scopes after
+  removing Admin. The Viewer scenario recorded **3 failed expectations** (scopes, `SAPQuery`,
+  catalog size). A user JWT-bearer exchange reflected the current Viewer/Data/SQL assignments.
+  This is evidence that those flows differed; the exact SSO/cache propagation cause is not yet
+  isolated by a completed fresh-incognito control.
+- The documented XSUAA `/logout.do` flow reached ARC-1's **Access refreshed** landing page, and
+  the next login required IAS credentials. That landing page alone does not prove new claims.
+  Existing token replay still succeeded until expiry; logout is not bearer-token revocation.
+- An early exchange was deliberately rerun with the corrected fixture after a role-assignment
+  race: the first expectation still described no grants while XSUAA already issued client 100.
+  Its mismatch is not a product defect and is not included as a passing scenario.
+- The valid-user/no-`read` fixture initially reused the machine-token expectation `forbidden`:
+  HTTP 403 and all 20 other assertions passed, but that error-code assertion failed. Source/HTTP
+  regression review confirms this branch intentionally returns `insufficient_scope` with a
+  `read` challenge. A boundary-only replay passed 20/20; the harness now has an explicit
+  missing-scope fixture and tests reason/challenge checks on aggregate, alias and pinned routes.
+  Those strengthened assertions were added after the running harness had loaded its module;
+  replay them with the next live harness process. No production scope behavior was changed.
+- Chrome blocked rendering some loopback callback pages even though the harness had consumed
+  the authorization code and completed its assertions. OAuth/MCP success is separately verified;
+  callback-page UX and installed-client compatibility remain unproven.
+
+Before customer rollout, verify the actual new token and reload the MCP catalog. Do not prescribe
+JWT-bearer exchange as a user-facing recovery workaround or silently loop refresh. Use the existing
+documented sign-out/new-sign-in workflow and measure the customer's revocation window.
 
 The source scan used the existing security review workflow and preserved its architecture model.
 It did not identify a source-backed candidate requiring a vulnerability write-up. The generic
@@ -151,13 +271,30 @@ actual HTTP initialize/list/call routes, and records assertion summaries rather 
 payloads. Rebuild/redeploy if the runtime source changes again before testing; a startup result
 alone is not evidence of end-to-end behavior.
 
-Resume in this order: missing grants; one exact target; two exact targets/role union; Admin without
-grants; explicit `*`; scope/ceiling combinations; IAS-only and static+IAS unions; old token versus
-refresh versus fresh login after removal; concurrent callers and wrong application/origin;
-50/100/256 issued-value measurements; then the bounded LLM/client scenarios above. Keep each
-result explicitly passed, failed or not run. Stop on a failed boundary, fix it, rerun the failing
-case and its adjacent regression cases, then continue. Do not count a rejected token request or
-unavailable network connection as an authorization pass.
+The static-grant, primary-user capability, issued-value scale and machine/wrong-app cases above
+are already measured. The remaining work, in order, is:
+
+1. Review/release the companion candidate, integrate a registry dependency and lockfile in ARC,
+   then repeat a clean install and CI. Do not merge either candidate merely to make CI appear green.
+2. Enable the approved browser extension in incognito or complete a manual secondary-user login.
+   Repeat the critical matrix with the second human and concurrent disjoint grants; verify the
+   actual mapped SAP user/client through an independently observed backend identity/marker.
+3. With explicit owner approval for the shared IAS application, configure a dedicated
+   `arc1_targets` mapping, not raw All Groups. Verify IAS-only, static+IAS and unrelated-group
+   exclusion using real issued tokens. Keep the optional IAS recipe gated until proven.
+4. Finish fresh-incognito recovery after removal, old token versus refresh/new login, distinct
+   origins/tenants where available, and two human application tokens with the same attribute name.
+   Run the strengthened no-`read` denial-reason/challenge fixture in the restarted harness.
+5. Exercise 17+ **active** destinations and full catalog payload limits in a separate authorized
+   registry fixture; the existing 50/100/256-value tokens are not a substitute. Test wildcard
+   admission after an approved inventory reload, and capability/destination/instance ceilings
+   using bounded positive data/SQL markers. Verify the live BTP Audit Log service if advertised.
+6. Run the bounded LLM-driven and installed-client scenarios above (including callback UX), then
+   repeat the critical matrix against the final deployed candidate and record exact versions.
+
+Keep every result explicitly passed, failed or not run. Stop on a failed boundary, fix it, rerun
+that case and its adjacent regressions, then continue. A rejected token request or unavailable
+network connection is not an authorization pass.
 
 ## Findings during implementation
 
@@ -184,6 +321,11 @@ unavailable network connection as an authorization pass.
    fixture. Aggregate and compatibility-route checks enforce a required string target, exact
    enums through 16 values, the canonical pattern without an enum above 16, and zero operational
    tools for no targets. Seven additional adversarial self-tests guard this acceptance logic.
+7. Actual CF logs showed the central secret redactor removed the credential-like key
+   `authorizationMode`, losing intended grant diagnostics. Commit `c49ae9b7` renames only this
+   audit field to the fixed enum `targetAccessMode`; the redactor and authorization decision are
+   unchanged. Four Logger/redactor tests failed before the fix and passed afterward, with an
+   additional Logger-to-BTP-sink regression. The deployed recheck is recorded above.
 
 ## SAP guidance checked
 
@@ -196,7 +338,11 @@ unavailable network connection as an authorization pass.
   do not confuse an unrelated group list with a dedicated target attribute.
 - [Protecting your application](https://help.sap.com/docs/btp/sap-business-technology-platform/protecting-your-application?locale=en-us):
   application authorization artifacts and operator role management remain outside runtime routing.
+- [BTP CLI role creation](https://help.sap.com/docs/btp/btp-cli-command-reference/btp-create-security-role?version=Cloud)
+  and [specifying role attributes](https://help.sap.com/docs/btp/sap-business-technology-platform/specify-attributes-in-new-role):
+  distinguish supported provisioning inputs and cockpit attribute semantics; an invented CLI
+  enum is not an Unrestricted-token test.
 
-Open live gates remain those in the accepted specification until measured and recorded below. A
+Open live gates remain those in the accepted specification until measured and recorded here. A
 CLI platform login, broker acceptance, mock token or successful Admin smoke test cannot close the
 application-token, revocation, isolation, IAS-union or client-compatibility gates.
