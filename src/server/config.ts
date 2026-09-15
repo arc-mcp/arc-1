@@ -131,6 +131,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'btp-oauth-callback-port', valueName: 'port', description: 'BTP OAuth callback port' },
   { name: 'multi-target-endpoints', valueName: 'boolean', description: 'Enable multi-target endpoints (true/false)' },
   {
+    name: 'multi-target-authorization',
+    valueName: 'mode',
+    description: 'Multi-target authorization: legacy (default) or xsuaa-attribute',
+  },
+  {
     name: 'multi-target-allow-basic-auth',
     valueName: 'boolean',
     description: 'Allow shared Basic multi-target identity (true/false)',
@@ -810,6 +815,26 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     false,
     'multiTargetEndpoints',
   );
+  const targetAuthorizationFlag = getFlag('multi-target-authorization');
+  if (targetAuthorizationFlag === undefined && args.includes('--multi-target-authorization')) {
+    throw new Error('--multi-target-authorization requires legacy or xsuaa-attribute.');
+  }
+  const targetAuthorizationEnv = process.env.ARC1_MULTI_TARGET_AUTHORIZATION;
+  const targetAuthorizationRaw = targetAuthorizationFlag ?? targetAuthorizationEnv;
+  if (targetAuthorizationRaw === undefined) {
+    // Unlike resolveStr, an explicit empty value must never disable enforcement.
+    sources.multiTargetAuthorization = 'default';
+  } else {
+    const mode = targetAuthorizationRaw.trim();
+    if (mode !== 'legacy' && mode !== 'xsuaa-attribute') {
+      throw new Error('ARC1_MULTI_TARGET_AUTHORIZATION must be legacy or xsuaa-attribute; empty values are invalid.');
+    }
+    config.multiTargetAuthorization = mode;
+    sources.multiTargetAuthorization =
+      targetAuthorizationFlag !== undefined
+        ? { flag: '--multi-target-authorization' }
+        : { env: 'ARC1_MULTI_TARGET_AUTHORIZATION' };
+  }
   config.multiTargetAllowBasicAuth = resolveBool(
     'multi-target-allow-basic-auth',
     'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH',
@@ -1014,6 +1039,12 @@ export function parseArgs(args: string[]): ServerConfig {
  * Fails fast at startup for invalid or dangerous config combinations.
  */
 export function validateConfig(config: ServerConfig): void {
+  if (config.multiTargetAuthorization !== 'legacy' && config.multiTargetAuthorization !== 'xsuaa-attribute') {
+    throw new Error('ARC1_MULTI_TARGET_AUTHORIZATION must be legacy or xsuaa-attribute.');
+  }
+  if (config.multiTargetAuthorization === 'xsuaa-attribute' && !config.multiTargetEndpoints) {
+    throw new Error('ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute requires ARC1_MULTI_TARGET_ENDPOINTS=true.');
+  }
   // SAP client (MANDT) is a canonical 3-digit value (CHAR 3, range 000-999). SAP
   // does NOT zero-pad the sap-client URL parameter, so a 1-2 digit value like '10'
   // authenticates against a different (or non-existent) client and surfaces as a

@@ -128,6 +128,9 @@ export interface MultiTargetStageFailedEvent extends AuditEventBase {
     | 'target_policy_denied';
   tool: string;
   errorCode: string;
+  authorizationMode?: 'xsuaa-attribute';
+  grantMode?: 'none' | 'exact' | 'all';
+  exactGrantCount?: number;
 }
 
 /** Safety system blocked an operation */

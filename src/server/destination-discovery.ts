@@ -9,7 +9,11 @@ import {
   listDestinationsAtLevel,
 } from '@arc-mcp/xsuaa-auth/btp';
 import { authLibLogger } from './logger.js';
-import { isSupportedMultiTargetArcProperty } from './multi-target-destination-config.js';
+import { isSupportedMultiTargetArcProperty, isWriteRelatedArcProperty } from './multi-target-destination-config.js';
+
+export interface DestinationAuthorizationOptions {
+  readonly authorizationMode?: 'legacy' | 'xsuaa-attribute';
+}
 
 export interface DiscoveredDestination {
   readonly name: string;
@@ -27,6 +31,8 @@ export interface DiscoveredDestination {
   readonly hasCloudConnectorLocationId: boolean;
   readonly cloudConnectorLocationIdFingerprint?: string;
   readonly arcProperties: Readonly<Record<string, string>>;
+  /** Bounded validation facts replace unknown property names in enforced mode. */
+  readonly arcValidation?: Readonly<{ unknownPropertyCount: number; hasWriteProperty: boolean }>;
 }
 
 export interface DestinationDiscoveryResult {
@@ -35,6 +41,7 @@ export interface DestinationDiscoveryResult {
   readonly scannedCount: number;
   readonly unrelatedCount: number;
   readonly arcAdjacentWithoutMarkerCount: number;
+  readonly arcRelatedAtLeast?: number;
 }
 
 export class DestinationDiscoveryError extends Error {
@@ -79,12 +86,22 @@ export function canonicalDestinationUrl(value: string): string | undefined {
   }
 }
 
-export function projectMultiTargetDestination(destination: Destination): DiscoveredDestination | undefined {
+export function projectMultiTargetDestination(
+  destination: Destination,
+  options: DestinationAuthorizationOptions = {},
+): DiscoveredDestination | undefined {
   const properties = destination.originalProperties;
   if (!properties) return undefined;
   const arcProperties: Record<string, string> = {};
+  let unknownPropertyCount = 0;
+  let hasWriteProperty = false;
   for (const [key, value] of Object.entries(properties)) {
     if (!key.toLowerCase().startsWith('arc1.')) continue;
+    if (options.authorizationMode === 'xsuaa-attribute' && !isSupportedMultiTargetArcProperty(key)) {
+      unknownPropertyCount += 1;
+      hasWriteProperty ||= isWriteRelatedArcProperty(key);
+      continue;
+    }
     // Supported values are needed by the validator. Unknown/wrong-case keys are
     // retained for fail-closed diagnostics, but their untrusted values are discarded.
     arcProperties[key] = isSupportedMultiTargetArcProperty(key)
@@ -93,7 +110,7 @@ export function projectMultiTargetDestination(destination: Destination): Discove
         : String(value ?? '')
       : '';
   }
-  if (Object.keys(arcProperties).length === 0) return undefined;
+  if (Object.keys(arcProperties).length === 0 && unknownPropertyCount === 0) return undefined;
   const rawUrl = destination.URL ?? stringProperty(properties, 'URL') ?? '';
   const canonicalUrl = rawUrl ? canonicalDestinationUrl(rawUrl) : undefined;
   const locationId = destination.CloudConnectorLocationId ?? stringProperty(properties, 'CloudConnectorLocationId');
@@ -113,6 +130,9 @@ export function projectMultiTargetDestination(destination: Destination): Discove
     hasCloudConnectorLocationId: !!locationId,
     cloudConnectorLocationIdFingerprint: locationId ? opaqueDestinationValue(locationId) : undefined,
     arcProperties: Object.freeze(arcProperties),
+    ...(options.authorizationMode === 'xsuaa-attribute'
+      ? { arcValidation: Object.freeze({ unknownPropertyCount, hasWriteProperty }) }
+      : {}),
   });
 }
 
@@ -143,15 +163,32 @@ function classifyError(error: unknown): DestinationDiscoveryError {
 }
 
 /** Fetch one immutable startup snapshot. Raw Destination Service objects do not escape this function. */
-export async function discoverDestinations(btpConfig: BTPConfig): Promise<DestinationDiscoveryResult> {
+export async function discoverDestinations(
+  btpConfig: BTPConfig,
+  options: DestinationAuthorizationOptions = {},
+): Promise<DestinationDiscoveryResult> {
   try {
     const [subaccountRaw, instanceRaw] = await Promise.all([
       listDestinationsAtLevel(btpConfig, 'subaccount', authLibLogger),
       listDestinationsAtLevel(btpConfig, 'instance', authLibLogger),
     ]);
-    const subaccount = subaccountRaw
-      .map(projectMultiTargetDestination)
-      .filter((entry): entry is DiscoveredDestination => !!entry);
+    const subaccount: DiscoveredDestination[] = [];
+    for (const destination of subaccountRaw) {
+      const projected = projectMultiTargetDestination(destination, options);
+      if (!projected) continue;
+      if (options.authorizationMode === 'xsuaa-attribute' && subaccount.length === 256) {
+        // No first-page inventory survives a failed complete-snapshot bound.
+        return Object.freeze({
+          subaccount: Object.freeze([]),
+          instanceNames: Object.freeze([]),
+          scannedCount: 0,
+          unrelatedCount: 0,
+          arcAdjacentWithoutMarkerCount: 0,
+          arcRelatedAtLeast: 257,
+        });
+      }
+      subaccount.push(projected);
+    }
     const instanceNames = instanceRaw.map((entry) => entry.Name);
     const arcAdjacentWithoutMarkerCount = subaccountRaw.filter(adjacentWithoutMarker).length;
     const scannedCount = subaccountRaw.length;

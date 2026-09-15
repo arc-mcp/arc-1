@@ -78,6 +78,19 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
 }
 
 describe('multi-target runtime isolation', () => {
+  it.each(['legacy', 'xsuaa-attribute'] as const)(
+    'preserves %s authorization in selected and aggregate runtime construction',
+    (multiTargetAuthorization) => {
+      const base = { ...DEFAULT_CONFIG, multiTargetAuthorization };
+      const target = registryTarget();
+      for (const config of [buildMultiTargetConfig(base, target), buildAggregateToolSurfaceConfig(base, [target])]) {
+        expect(config.multiTargetAuthorization).toBe(multiTargetAuthorization);
+        expect(config.multiTargetEndpoints).toBe(true);
+        expect(config.allowWrites).toBe(false);
+      }
+    },
+  );
+
   it('builds from safe defaults without inheriting single-target credentials or write capability', () => {
     const config = buildMultiTargetConfig(
       {
