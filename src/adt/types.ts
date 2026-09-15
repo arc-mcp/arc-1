@@ -424,6 +424,8 @@ export interface SyntaxMessage {
   line: number;
   column: number;
   uri?: string;
+  code?: string;
+  t100?: { id: string; number: string };
 }
 
 /** Transport request */

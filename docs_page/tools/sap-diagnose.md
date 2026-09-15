@@ -19,7 +19,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `syntax`, `unittest`, `atc`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_start`, `trace_requests`, `trace_cancel`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `apply_quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, `sql_trace_directory`, or `authorization_trace` |
+| `action` | string | Yes | `syntax`, `unittest`, `unittest_ci`, `atc`, `atc_ci`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_start`, `trace_requests`, `trace_cancel`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `apply_quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, `sql_trace_directory`, or `authorization_trace` |
 | `name` | string | No | Object or package name (required for syntax/unittest/object_state/quickfix/apply_quickfix, and atc without objects; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
 | `objects` | array | No | ATC only: 1–20 `{type,name}` entries instead of top-level `name`, `type`, or `url`. Supported: `CLAS`, `INTF`, `PROG`, `FUGR`, `DDLS`, `DCLS`, `BDEF`, `DDLX`, `SRVD`, `SRVB`, `TABL`, `DTEL`, `DOMA`. `TABL` includes tables and structures (`TABL/DT` and `TABL/DS` aliases). Names and type aliases are normalized; duplicates execute once. No package expansion or per-item system selection. `PROG` is on-premises only. |
 | `url` | string | No | For `odata_perf`: the host-relative OData path to probe (from the Fiori app's Network tab), e.g. `/sap/opu/odata4/sap/.../Entity?$filter=...`. Must be a path on the SAP system ARC-1 connects to — absolute URLs are rejected. |
@@ -29,7 +29,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 | `coverage` | boolean | No | For `unittest`: also return statement/branch/procedure coverage for the object, plus `methodsBelowFull` (methods under 100% statement coverage, worst first), in one extra round-trip. Default false. |
 | `includeSubpackages` | boolean | No | For `unittest` with `type="DEVC"`: include the package subtree. Default false selects only objects whose actual package is `name`. Rejected for other types/actions. |
 | `resultFormat` | string | No | For `unittest`: `legacy` (default), `structured`, or `junit`; JUnit uses SAP's public asynchronous AUnit endpoint when available and otherwise generates JUnit from the legacy result. For `atc`: `legacy` or `structured`; `junit` is rejected because ATC JUnit output is not implemented. Other actions reject this parameter. Dedicated CLI checks choose their required format automatically. |
-| `timeoutSeconds` | number | No | For `unittest` or `atc`: execution and verification budget; default `300`, range `1..3600`. Timeout is incomplete evidence, never a pass. |
+| `timeoutSeconds` | number | No | Overall execution/verification budget, `1..3600` seconds. Default `300` for `unittest`/`atc`, `600` for `unittest_ci`/`atc_ci`. Timeout cannot pass. |
 | `source` | string | No | Current source code (required for `quickfix` and `apply_quickfix`) |
 | `line` | number | No | Source line number (required for `quickfix` and `apply_quickfix`) |
 | `column` | number | No | Source column number (optional for `quickfix` and `apply_quickfix`, default `0`) |
@@ -47,7 +47,12 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 | `maxResults` | number | No | Maximum results (default 50 for dumps/feeds, 100 for `authorization_trace`; safely capped) |
 | `sections` | array | No | Dump chapter IDs for detail mode, e.g. `["kap0","kap3","kap8"]`; omit for focused defaults. |
 | `includeFullText` | boolean | No | Dump detail only: include the full formatted text blob. Default false to limit tokens. |
-| `variant` | string | No | ATC check variant name |
+| `variant` | string | No | Check variant for `atc`/`atc_ci`; name filter for `atc_variants`. CI names: 1–128 characters; default `ABAP_CLOUD_DEVELOPMENT_DEFAULT`. |
+| `packages` | array | No | CI exact packages. Names: 1–40 characters matching `[A-Za-z0-9_/$]+`. Require 1–50 total entries across `packages` and `packageTrees`, before deduplication. |
+| `packageTrees` | array | No | CI packages including subpackages; same name and combined-count limits as `packages`. |
+| `configuration` | string | No | `atc_ci`: optional ATC configuration name, 1–128 characters. |
+| `includeReportXml` | boolean | No | CI actions: include XML reports within a combined 256 KiB cap. Default false. |
+| `failOnSeverity` | string | No | `atc_ci`: fail at `error` (default), `warning`, or `info`, including all higher severities. |
 | `sqlOn` | boolean | No | For `set_sql_trace_state`: `true` arms the ST05 SQL trace, `false` disarms it (combine with `user` to filter to one SAP user) |
 | `analysis` | string | No | For trace detail: `hitlist`, `statements`, or `dbAccesses` |
 | `traceUser` | string | No | For `trace_start`/`trace_requests`: SAP user whose matching execution is traced/listed; defaults to the connected user. |
@@ -164,6 +169,75 @@ parentage. Unassigned, unowned, or contradictory evidence also remains incomplet
 Keep source stable while checking: two runs are separate observations, not an atomic snapshot.
 Default/legacy incomplete batches return a tool error. The generic CLI accepts the same input:
 `arc1 call SAPDiagnose --json batch.json`.
+
+### CI package checks
+
+Use `atc_ci` or `unittest_ci` for explicit package selections on a **single target**. Both verify
+package access before execution and share one overall deadline. Names are uppercased and
+deduplicated; `packageTrees` takes precedence when the same name appears in both lists.
+Software-component selection and multi-target mode are unsupported.
+
+Require a successful tool response with `status="completed"` and `fail=false`. A tool error,
+`status="incomplete"`, or `fail=true` cannot pass. The [CLI](../cli-guide.md#output-and-exit-codes)
+applies this rule automatically to these two actions.
+
+`includeReportXml=true` adds `reportXml` for ATC or `results[].reportXml` for Unit, up to **256 KiB
+combined**. Larger reports carry `reportXmlOmitted`; available result paths remain in the response.
+Without this option, XML is omitted.
+
+These actions use the configured SAP identity and normal authentication, discovery and CSRF.
+They require their CI API plus ordinary ADT package/source access. BTP may require `SAP_COM_0901`
+for ATC or `SAP_COM_0735` for Unit; communication-arrangement completion has not been verified for
+this implementation. API reachability alone does not prove a background job can start.
+
+### `unittest_ci`
+
+Run harmless-only package tests across all duration categories through native AUnit, with legacy
+and active-source reconciliation:
+
+```text
+SAPDiagnose(action="unittest_ci", packages=["ZORDER"], includeReportXml=true)
+```
+
+Empty, all-skipped, omitted-test or otherwise incomplete evidence returns `status="incomplete"`
+and `fail=true`. Test failures also set `fail=true`. There are no risky-test or failure-bypass
+options. After a package execution/protocol failure, earlier evidence is retained and remaining
+packages are marked unattempted.
+
+| Result field | Meaning |
+|---|---|
+| `status`, `fail` | Overall completion and quality-gate outcome |
+| `summary` | Totals: `tests`, `failures`, `errors`, `skipped` |
+| `selectedPackages`, `processedPackages` | Counts of normalized selections and packages with result counters |
+| `durationMs` | Overall elapsed time |
+| `results[]` | Per-package `name`, `includeSubpackages`, `outcome` (`passed`, `failed`, `incomplete`), and available `summary`, `incompleteReason`, `runPath`, `resultPath` |
+| `results[].sourceSelection` | Reconciliation `status` and count of `omittedTestClasses`, when available |
+| `results[].attempted` | Present on execution errors or unattempted packages |
+
+### `atc_ci`
+
+Run the package ATC CI API (`/sap/bc/adt/api/atc/runs`):
+
+```text
+SAPDiagnose(action="atc_ci", packages=["ZORDER"], failOnSeverity="error", timeoutSeconds=600)
+```
+
+The default variant is `ABAP_CLOUD_DEVELOPMENT_DEFAULT`; choose one available on the target.
+Every selection must be verified and nonempty before the run starts. A completed, valid empty
+Checkstyle report can then pass. All findings count toward `failOnSeverity`, even when the returned
+list is truncated. Reports above the 2 MiB parsing limit are incomplete.
+
+| Result field | Meaning |
+|---|---|
+| `status`, `fail` | Overall completion and quality-gate outcome |
+| `durationMs`, `runPath`, `resultPath` | Elapsed time and available SAP run/report paths |
+| `summary` | `findingCount`, `errorCount`, `warningCount`, `infoCount` across the full report |
+| `findings` | Up to 200 rows with `file`, `message`, `source`, `severity`, and optional `line` |
+| `truncated` | More than 200 findings exist; the full set still determines the gate |
+| `incompleteReason`, `lastStatus`, `progress` | Available evidence for an incomplete run |
+
+A local deadline or cancellation may leave a SAP job running. Inspect the returned `runPath` and
+last status/progress before starting another run.
 
 ### `atc_variants`
 

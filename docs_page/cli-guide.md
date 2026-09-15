@@ -77,16 +77,29 @@ need no SAP connection; `lint` never performs SAP I/O even when `SAP_URL` is con
 
 The generic `call` command preserves MCP semantics. Its `--output json` value is the outer MCP
 `ToolResult` envelope (`content`, optional `isError`); handler JSON may itself be a string in
-`content[0].text`. A successful tool call exits `0` even if its domain payload contains test failures,
-ATC findings, or a non-empty diff.
+`content[0].text`. Ordinary successful tool calls exit `0` even if their domain payload
+contains test failures, ATC findings, or a non-empty diff.
 
-Use the dedicated `unittest`, `atc`, `diff`, and `lint` commands in CI. They still invoke the normal MCP
-dispatcher, but interpret the structured result and apply domain-aware exit rules.
+For `call SAPDiagnose` with `action="atc_ci"` or `action="unittest_ci"`, only
+`status="completed"` with `fail=false` exits `0`. Tool errors, failed gates, and missing, malformed
+or incomplete outcomes exit `1`. Output retains the report; MCP `isError` is unchanged.
+
+These [package CI actions](tools/sap-diagnose.md#ci-package-checks) require explicit `packages` or
+`packageTrees` and single-target ADT access. ATC applies a severity threshold; Unit runs harmless
+tests and rejects empty/incomplete evidence. `includeReportXml=true` requests bounded XML reports.
+
+```bash
+arc1 call SAPDiagnose --json '{"action":"atc_ci","packages":["ZORDER"]}' --output json
+arc1 call SAPDiagnose --json '{"action":"unittest_ci","packages":["ZORDER"]}' --output json
+```
+
+The dedicated `unittest`, `atc`, `diff`, and `lint` commands also interpret domain results, with the
+exit rules below. They invoke the normal MCP dispatcher.
 
 | Exit | Meaning |
 |---:|---|
 | `0` | Invocation and domain check succeeded. |
-| `1` | SAP/tool/transport failure, report-write failure, or a completed domain check failed its gate. |
+| `1` | SAP/tool/transport failure, report-write failure, failed gate, or incomplete `atc_ci`/`unittest_ci` outcome. |
 | `2` | CLI/configuration/option usage error, including an unknown tool or unsupported direct auth mode. |
 | `3` | Dedicated check is incomplete or non-evaluable; never treat this as green. |
 

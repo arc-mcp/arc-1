@@ -57,6 +57,18 @@ describe('ACTION_POLICY matrix', () => {
     expect(policy?.opType).toBe(OperationType.Read);
   });
 
+  it('SAPDiagnose.atc_ci is a workload-producing read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'atc_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Read);
+  });
+
+  it('SAPDiagnose.unittest_ci is a workload-producing test read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'unittest_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Test);
+  });
+
   it('CLASSIFICATION FIX: SAPLint.set_formatter_settings requires write scope', () => {
     const policy = getActionPolicy('SAPLint', 'set_formatter_settings');
     expect(policy?.scope).toBe('write');

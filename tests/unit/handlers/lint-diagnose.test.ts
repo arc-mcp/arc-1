@@ -1642,7 +1642,8 @@ ENDCLASS.`;
     });
 
     it('junit format returns SAP-native JUnit from the public API through the dispatcher', async () => {
-      const junit = '<testsuites tests="4" failures="0" errors="0" skipped="0"/>';
+      const junit =
+        '<testsuites tests="4" failures="0" errors="0" skipped="0"><testsuite><testcase name="a"/><testcase name="b"/><testcase name="c"/><testcase name="d"/></testsuite></testsuites>';
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
         const method = opts?.method ?? 'GET';

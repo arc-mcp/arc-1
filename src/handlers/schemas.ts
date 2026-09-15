@@ -24,6 +24,7 @@ import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
+import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
@@ -913,7 +914,9 @@ export const SAPDiagnoseSchema = z
     action: z.enum([
       'syntax',
       'unittest',
+      'unittest_ci',
       'atc',
+      'atc_ci',
       'atc_variants',
       'cds_testcases',
       'dumps',
@@ -972,9 +975,42 @@ export const SAPDiagnoseSchema = z
     sqlTrace: looseOptionalBoolean,
     aggregate: looseOptionalBoolean,
     description: z.string().optional(),
+    packages: CI_PACKAGES_SCHEMA.optional(),
+    packageTrees: CI_PACKAGES_SCHEMA.optional(),
+    configuration: z.string().min(1).max(128).optional(),
+    failOnSeverity: z.enum(['error', 'warning', 'info']).optional(),
+    includeReportXml: looseOptionalBoolean,
   })
   .strict()
   .superRefine((input, ctx) => {
+    const ci = input.action === 'atc_ci' || input.action === 'unittest_ci';
+    if (ci) {
+      const count = (input.packages?.length ?? 0) + (input.packageTrees?.length ?? 0);
+      if (count < 1 || count > 50)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['packages'],
+          message: 'CI actions require 1..50 packages or packageTrees in total.',
+        });
+      const allowed = new Set([
+        'action',
+        'packages',
+        'packageTrees',
+        'timeoutSeconds',
+        'includeReportXml',
+        ...(input.action === 'atc_ci' ? ['variant', 'configuration', 'failOnSeverity'] : []),
+      ]);
+      for (const [key, value] of Object.entries(input))
+        if (value !== undefined && !allowed.has(key))
+          ctx.addIssue({ code: 'custom', path: [key], message: `${key} is not supported for ${input.action}.` });
+      if (input.variant !== undefined && (input.variant.length === 0 || input.variant.length > 128))
+        ctx.addIssue({ code: 'custom', path: ['variant'], message: 'CI variant must contain 1..128 characters.' });
+    } else {
+      for (const key of ['packages', 'packageTrees', 'configuration', 'failOnSeverity', 'includeReportXml'] as const)
+        if (input[key] !== undefined)
+          ctx.addIssue({ code: 'custom', path: [key], message: `${key} is only supported for CI actions.` });
+    }
+
     if (
       input.objects !== undefined &&
       (input.action !== 'atc' || input.name !== undefined || input.type !== undefined || input.url !== undefined)
@@ -1005,11 +1041,18 @@ export const SAPDiagnoseSchema = z
         message: 'SAPDiagnose includeSubpackages is only supported for action="unittest" with type="DEVC".',
       });
     }
-    if (input.timeoutSeconds !== undefined && input.action !== 'unittest' && input.action !== 'atc') {
+    if (
+      input.timeoutSeconds !== undefined &&
+      input.action !== 'unittest' &&
+      input.action !== 'atc' &&
+      input.action !== 'unittest_ci' &&
+      input.action !== 'atc_ci'
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['timeoutSeconds'],
-        message: 'SAPDiagnose timeoutSeconds is only supported for action="unittest" or action="atc".',
+        message:
+          'SAPDiagnose timeoutSeconds is only supported for action="unittest", "atc", "unittest_ci", or "atc_ci".',
       });
     }
     if (input.resultFormat !== undefined) {

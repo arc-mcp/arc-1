@@ -393,7 +393,7 @@
   },
   {
     "name": "SAPDiagnose",
-    "description": "Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n- \"atc\": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). \"atc_variants\": list variants + that default (variant = name filter; read-only).\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n- \"quickfix\": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n- \"apply_quickfix\": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly).\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path); returns the sap-statistics timing split (DB/ABAP/framework/auth). Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
+    "description": "ABAP diagnostics and runtime analysis. Actions:\n- \"syntax\": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n- \"unittest\": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n- \"unittest_ci\": harmless package tests with source reconciliation; empty/incomplete runs fail.\n- \"atc\": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). \"atc_variants\": list variants + that default (variant = name filter; read-only).\n- \"atc_ci\": package ATC CI; requires available API and verified selection.\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n- \"quickfix\": proposals at name+type+source+line (optional column/sourceUri).\n- \"apply_quickfix\": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n- \"dumps\": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n- \"traces\": list profiler traces; id+analysis analyzes one.\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path); returns the sap-statistics timing split (DB/ABAP/framework/auth). Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -402,7 +402,9 @@
           "enum": [
             "syntax",
             "unittest",
+            "unittest_ci",
             "atc",
+            "atc_ci",
             "atc_variants",
             "cds_testcases",
             "dumps",
@@ -425,11 +427,11 @@
         },
         "name": {
           "type": "string",
-          "description": "Object name (for syntax/unittest/atc/object_state); the CDS entity / DDLS source name for cds_testcases and cds_sql"
+          "description": "syntax/unittest/atc/object_state object name; cds_testcases/cds_sql CDS entity or DDLS name."
         },
         "url": {
           "type": "string",
-          "description": "For odata_perf: the host-relative OData path to probe, from the Fiori app's Network tab (e.g. \"/sap/opu/odata4/sap/.../Entity?$filter=…\"). Must be a path on the connected system — absolute URLs are rejected."
+          "description": "odata_perf: host-relative OData path from the app network request (e.g. /sap/opu/odata4/sap/.../Entity?$filter=…). Absolute URLs rejected."
         },
         "type": {
           "type": "string",
@@ -481,15 +483,15 @@
         },
         "sourceUri": {
           "type": "string",
-          "description": "Exact ADT source URI for quickfix/apply_quickfix. Defaults to the type/name main source; use this for class includes such as /includes/definitions."
+          "description": "quickfix/apply_quickfix source URI; default type/name main source. Set for includes, e.g. /includes/definitions."
         },
         "line": {
           "type": "number",
-          "description": "Source line number for quickfix evaluation (required for quickfix/apply_quickfix)."
+          "description": "Required quickfix/apply_quickfix source line."
         },
         "column": {
           "type": "number",
-          "description": "Source column number for quickfix evaluation (default 0 for quickfix actions)."
+          "description": "Quickfix source column (default 0)."
         },
         "version": {
           "type": "string",
@@ -497,7 +499,7 @@
             "active",
             "inactive"
           ],
-          "description": "Source version for syntax check (default \"active\"). Use \"inactive\" to validate pending changes."
+          "description": "syntax source version (default active); inactive checks pending changes."
         },
         "proposalUri": {
           "type": "string",
@@ -509,7 +511,7 @@
         },
         "proposalAffectedObjects": {
           "type": "array",
-          "description": "Optional affectedObjects array from quickfix action. Include content for each affected source unit when applying multi-object quickfixes.",
+          "description": "quickfix affectedObjects; provide current content for each source unit when applying multi-object fixes.",
           "items": {
             "type": "object",
             "required": [
@@ -539,21 +541,17 @@
             }
           }
         },
-        "variant": {
-          "type": "string",
-          "description": "atc: check variant; atc_variants: name filter (*=all)"
-        },
         "id": {
           "type": "string",
           "description": "Dump or trace ID (for dumps/traces actions); also the trace-request id to cancel (for trace_cancel). Omit to list, provide to get details."
         },
         "detailUrl": {
           "type": "string",
-          "description": "Canonical host-relative /sap/bc/adt/gw/errorlog/... path for detail mode; absolute URLs are rejected."
+          "description": "Detail path: canonical /sap/bc/adt/gw/errorlog/...; no absolute URLs."
         },
         "errorType": {
           "type": "string",
-          "description": "Gateway error type for gateway_errors detail by id (for example \"Frontend Error\"). Required when using id without detailUrl."
+          "description": "gateway_errors: required with id instead of detailUrl, e.g. \"Frontend Error\"."
         },
         "user": {
           "type": "string",
@@ -565,26 +563,26 @@
         },
         "from": {
           "type": "string",
-          "description": "Optional lower time boundary for feed-based diagnostics actions (system_messages/gateway_errors)."
+          "description": "system_messages/gateway_errors lower time bound."
         },
         "to": {
           "type": "string",
-          "description": "Optional upper time boundary for feed-based diagnostics actions (system_messages/gateway_errors)."
+          "description": "system_messages/gateway_errors upper time bound."
         },
         "maxResults": {
           "type": "number",
-          "description": "Maximum results for dumps/system_messages/gateway_errors (default 50) or authorization_trace (default 100); bounded to a safe cap."
+          "description": "Result limit: dumps/system_messages/gateway_errors default 50; authorization_trace 100. Capped."
         },
         "sections": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Dump chapter IDs to include for dumps detail mode (for example [\"kap0\",\"kap3\",\"kap8\"]). Omit to use focused defaults."
+          "description": "dumps detail chapter IDs, e.g. [\"kap0\",\"kap3\",\"kap8\"]; omit for focused defaults."
         },
         "includeFullText": {
           "type": "boolean",
-          "description": "For dumps detail mode only: include full formattedText blob. Default false to reduce token usage."
+          "description": "dumps detail: include full formattedText (default false)."
         },
         "coverage": {
           "type": "boolean",
@@ -603,17 +601,13 @@
           ],
           "description": "unittest: legacy|structured|junit; atc: legacy|structured; other actions reject it."
         },
-        "timeoutSeconds": {
-          "type": "number",
-          "description": "unittest/atc timeout: 1-3600s; default 300."
-        },
         "sqlOn": {
           "type": "boolean",
-          "description": "For action=\"set_sql_trace_state\": true to arm the ST05 SQL trace, false to disarm. Combine with user to filter the trace to one SAP user."
+          "description": "set_sql_trace_state: true arms ST05 SQL trace, false disarms; user filters the SAP user."
         },
         "onlyFailures": {
           "type": "boolean",
-          "description": "For authorization_trace: return only denied checks (RC<>0), similar to the SU53 failure view."
+          "description": "authorization_trace: only denied checks (RC<>0), like SU53."
         },
         "analysis": {
           "type": "string",
@@ -622,11 +616,11 @@
             "statements",
             "dbAccesses"
           ],
-          "description": "Trace analysis type (for traces action with id). hitlist = execution hot spots, statements = call tree, dbAccesses = database access stats."
+          "description": "traces with id: hitlist=hot spots, statements=call tree, dbAccesses=DB access stats."
         },
         "traceUser": {
           "type": "string",
-          "description": "For trace_start/trace_requests: the SAP user whose matching execution is traced/listed. Defaults to the connected user."
+          "description": "trace_start/trace_requests SAP user (default connected user)."
         },
         "processType": {
           "type": "string",
@@ -637,7 +631,7 @@
             "batch",
             "rfc"
           ],
-          "description": "For trace_start: the kind of work process to capture. Default \"http\" (OData/Gateway). dialog = SAP GUI transaction, batch = background job, rfc = RFC call."
+          "description": "trace_start work process (default http/OData): dialog=SAP GUI, batch=background job, rfc=RFC."
         },
         "objectType": {
           "type": "string",
@@ -648,27 +642,76 @@
             "report",
             "functionModule"
           ],
-          "description": "For trace_start: what to match within the process. Defaults to the valid type for the process type (http→url, dialog→transaction, batch→report, rfc→functionModule)."
+          "description": "trace_start match type; defaults: http→url, dialog→transaction, batch→report, rfc→functionModule."
         },
         "maxExecutions": {
           "type": "number",
-          "description": "For trace_start: how many matching executions to capture before the request is consumed (default 1)."
+          "description": "trace_start executions to capture (default 1)."
         },
         "expiresHours": {
           "type": "number",
-          "description": "For trace_start: hours until the armed request auto-expires (default 24)."
+          "description": "trace_start expiry in hours (default 24)."
         },
         "sqlTrace": {
           "type": "boolean",
-          "description": "For trace_start: capture SQL/DB accesses (default true — required for analysis=\"dbAccesses\")."
+          "description": "trace_start SQL capture (default true; required for analysis=\"dbAccesses\")."
         },
         "aggregate": {
           "type": "boolean",
-          "description": "For trace_start: aggregate the trace (default true)."
+          "description": "trace_start aggregation (default true)."
         },
         "description": {
           "type": "string",
-          "description": "For trace_start: optional label for the trace request."
+          "description": "trace_start label."
+        },
+        "variant": {
+          "type": "string",
+          "description": "atc/atc_ci variant; atc_variants name filter (*=all)"
+        },
+        "timeoutSeconds": {
+          "type": "number",
+          "description": "Timeout 1–3600s: unittest/atc default 300; CI overall default 600."
+        },
+        "packages": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[A-Za-z0-9_/$]+$"
+          },
+          "description": "CI exact packages; 1–50 total with packageTrees."
+        },
+        "packageTrees": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "pattern": "^[A-Za-z0-9_/$]+$"
+          },
+          "description": "CI packages including subpackages."
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "atc_ci: optional configuration."
+        },
+        "failOnSeverity": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "info"
+          ],
+          "description": "atc_ci failure threshold (default error)."
+        },
+        "includeReportXml": {
+          "type": "boolean",
+          "description": "CI XML reports (default false; 256 KiB total cap)."
         }
       },
       "required": [

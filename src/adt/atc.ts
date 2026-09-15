@@ -98,7 +98,7 @@ const DEFAULT_ATC_TIMEOUT_MS = 300_000;
 const DEFAULT_ATC_POLL_DELAY_MS = 250;
 const DEFAULT_ATC_MAX_POLL_DELAY_MS = 2_000;
 const ATC_RUN_STATUS_PREFIX = '/sap/bc/adt/atc/runs/';
-const ATC_RUN_STATUS_MEDIA_TYPE = 'application/vnd.sap.atc.run.v1+xml';
+export const ATC_RUN_STATUS_MEDIA_TYPE = 'application/vnd.sap.atc.run.v1+xml';
 /**
  * Fallback quiet interval when SAP returns a synchronous run without a status location.
  *
@@ -579,7 +579,7 @@ function isAtcRunCompleted(status: string): boolean {
   return ['completed', 'finished'].includes(normalizedAtcRunStatus(status));
 }
 
-function isAtcRunFailure(status: string): boolean {
+export function isAtcRunFailure(status: string): boolean {
   return ['not created', 'failed', 'cancelled', 'canceled', 'aborted', 'error'].includes(
     normalizedAtcRunStatus(status),
   );

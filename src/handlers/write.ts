@@ -41,6 +41,7 @@ import {
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
+import { writeUiad } from './write/uiad.js';
 import { writeActionEditUnit } from './write/unit-surgery.js';
 import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
 import {
@@ -103,6 +104,9 @@ export async function handleSAPWrite(
   // objectBasePath(<sdo>) throws, so this MUST come before the objectUrl computation. Mirrors the
   // server-driven branch in handleSAPRead.
   if (isServerDrivenObjectType(type)) {
+    if (type === 'UIAD' && (action === 'create' || action === 'update')) {
+      return writeUiad(client, action, name, args, config, cachingLayer, cacheSecurity);
+    }
     return handleServerDrivenObjectWrite(client, action, type, name, args, cachingLayer, cacheSecurity);
   }
 

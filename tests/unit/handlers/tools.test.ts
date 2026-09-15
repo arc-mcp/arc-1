@@ -737,7 +737,9 @@ describe('Tool Definitions', () => {
 
     expect(actionEnum).toContain('syntax');
     expect(actionEnum).toContain('unittest');
+    expect(actionEnum).toContain('unittest_ci');
     expect(actionEnum).toContain('atc');
+    expect(actionEnum).toContain('atc_ci');
     expect(actionEnum).toContain('atc_variants');
     expect(actionEnum).toContain('cds_testcases');
     expect(actionEnum).toContain('quickfix');

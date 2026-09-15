@@ -181,14 +181,17 @@ describe('dedicated unittest command', () => {
       passingAunit({
         outcome: 'failed',
         summary: { tests: 2, passed: 1, failures: 1, errors: 0, skipped: 0, warnings: 0 },
-        junit: '<testsuites tests="2" failures="1" errors="0" skipped="0"/>',
+        junit:
+          '<testsuites tests="2" failures="1" errors="0" skipped="0"><testsuite><testcase/><testcase><failure/></testcase></testsuite></testsuites>',
       }),
     );
 
     const code = await main(['unittest', 'CLAS', 'ZCL_TEST', '--format', 'junit', '--report-file', report], deps);
 
     expect(code).toBe(1);
-    expect(await readFile(report, 'utf8')).toBe('<testsuites tests="2" failures="1" errors="0" skipped="0"/>\n');
+    expect(await readFile(report, 'utf8')).toBe(
+      '<testsuites tests="2" failures="1" errors="0" skipped="0"><testsuite><testcase/><testcase><failure/></testcase></testsuite></testsuites>\n',
+    );
     expect(deps.dispatchToolCall).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),

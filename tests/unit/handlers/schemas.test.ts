@@ -1645,6 +1645,10 @@ describe('SAPDiagnoseSchema', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 1 }).success).toBe(true);
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 3601 }).success).toBe(false);
     expect(SAPDiagnoseSchema.safeParse({ action: 'atc', timeoutSeconds: 30 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(
+      true,
+    );
     expect(SAPDiagnoseSchema.safeParse({ action: 'syntax', timeoutSeconds: 30 }).success).toBe(false);
   });
 

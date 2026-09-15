@@ -40,7 +40,7 @@ const BUDGETS = {
   // +5 for the optional relations projection hook; its implementation stays in relation-tool.ts.
   // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
-  'src/handlers/tools.ts': 1795,
+  'src/handlers/tools.ts': 1782,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

@@ -20,15 +20,15 @@ These principles informed editorial choices; passing checks or reducing words do
 
 ## Size
 
-Baseline: `f23765f03b152a663f7f17e94fd588ea62dd83a8` (the working tree's `HEAD` when measured). Counts use whitespace-separated tokens from Markdown, including code and tables, rather than rendered prose. All added pages are included so extraction does not appear as deletion.
+Baseline: `f23765f03b152a663f7f17e94fd588ea62dd83a8` (the revision at the start of the review). Counts use whitespace-separated tokens from Markdown, including code and tables, rather than rendered prose. All added pages are included so extraction does not appear as deletion.
 
 | Measure | Whitespace words |
 |---|---:|
 | Original 47 pages at baseline | 172,330 |
-| Current contents of those same 47 paths | 64,833 |
-| 19 added Markdown pages | 21,544 |
-| Current published Markdown total (66 pages) | 86,377 |
-| Reduction including added pages | 85,953 (49.9%) |
+| Current contents of those same 47 paths | 65,280 |
+| 19 added Markdown pages | 22,433 |
+| Current published Markdown total (66 pages) | 87,713 |
+| Reduction including added pages | 84,617 (49.1%) |
 
 Historical roadmap/comparison material is linked at immutable revisions; it is no longer included in the current-docs word count. `CNAME`, JavaScript, images and `llms.txt` are not Markdown pages and are excluded from these totals. `llms.txt` was reviewed separately for useful entry links.
 
@@ -41,7 +41,7 @@ Word counts use the same method as above. A short page may grow when it needs us
 | [agent-plugin.md](../../docs_page/agent-plugin.md) | 1,083 → 683 | Install, credentials and a real SAP read lead; retained lifecycle and local-checkout testing. | A visible plugin is not SAP access; clarified that checkout metadata still launches the published package. |
 | [api-key-setup.md](../../docs_page/api-key-setup.md) | 1,179 → 661 | One read-only example, canonical deploy links and a valid MCP Accept header replace duplicated starts. | Separate MCP authentication from SAP access; applied to authentication tests. |
 | [arc-1-vs-sap-abap-mcp-server.md](../../docs_page/arc-1-vs-sap-abap-mcp-server.md) | 6,097 → 623 | Deployment/capability decisions replace ratings, snapshot counts and universal claims. | Link volatile capability facts to primary sources; preserve dated comparison history separately. |
-| [architecture.md](../../docs_page/architecture.md) | 2,845 → 875 | One request flow and code map replace repeated diagrams and policy tables. | Diagrams must preserve identity branches; revisited PP/cache behavior and source paths. |
+| [architecture.md](../../docs_page/architecture.md) | 2,845 → 900 | One request flow and code map replace repeated diagrams and policy tables. | Diagrams must preserve identity branches; revisited PP/cache behavior and source paths. |
 | [auth-test-process.md](../../docs_page/auth-test-process.md) | 1,327 → 872 | Shared credential tests and distinct backend-identity checks replace repeated build/setup blocks. | Organize acceptance by evidence; removed weak hardcoded keys and password-grant examples. |
 | [authorization.md](../../docs_page/authorization.md) | 5,030 → 3,651 | Retained exact scope/profile/capability tables and blocklist contract; corrected stale errors. | Keep reference data complete and delegate recovery; revisited the auth overview. |
 | [blog-series.md](../../docs_page/blog-series.md) | 156 → 167 | Kept the article catalog with a specific first article and current-setup route. | Separate dated articles from current instructions. |
@@ -53,7 +53,7 @@ Word counts use the same method as above. A short page may grow when it needs us
 | [btp-overview.md](../../docs_page/btp-overview.md) | 963 → 484 | One setup choice and compact ownership/task maps replace repeated acceptance lists. | Entry pages route; revisited acronym expansion and deployment handoffs. |
 | [btp-setup-worksheet.md](../../docs_page/btp-setup-worksheet.md) | 283 → 282 | Fillable input/result tables replace a prose checklist. | Templates collect outputs and owners; checked against runbook/admin acceptance. |
 | [caching.md](../../docs_page/caching.md) | 1,168 → 1,018 | Current cache behavior and operator choices replace implementation/migration narrative. | Move history after the current task; retained startup-relevant migration rules. |
-| [cli-guide.md](../../docs_page/cli-guide.md) | 3,157 → 2,705 | Added command lookup and delegated repeated mutation details; retained options and exit rules. | Automation exits are essential; corrected ATC completion-by-count claims and retained retry limits. |
+| [cli-guide.md](../../docs_page/cli-guide.md) | 3,157 → 2,778 | Added command lookup and delegated repeated mutation details; retained options and exit rules. | Automation exits are essential; corrected ATC completion-by-count claims and retained retry limits. |
 | [configuration-precedence.md](../../docs_page/configuration-precedence.md) | 1,188 → 755 | Shorter precedence examples and durable BTP-change guidance replace repeated warnings. | Small accurate examples beat repetition; rechecked earlier shell/env examples. |
 | [configuration-reference.md](../../docs_page/configuration-reference.md) | 6,406 → 5,189 | Removed duplicate contents/internal operation table; shortened setting cells and grouped exceptions. | Keep exact contracts; corrected nonblocking syntax checks, nonexistent system_info and PP defaults. |
 | [deployment-best-practices.md](../../docs_page/deployment-best-practices.md) | 2,559 → 871 | Deployment decisions and capacity effects replace duplicate runbooks and schema copies. | Explain each tradeoff once; removed unsupported cache ratios and shared-SQLite scale advice. |
@@ -75,7 +75,7 @@ Word counts use the same method as above. A short page may grow when it needs us
 | [principal-propagation-setup.md](../../docs_page/principal-propagation-setup.md) | 3,414 → 2,323 | One infrastructure procedure replaces parallel fast/full paths; trust and identity checks retained. | Put completion evidence beside setup; revisited durable config and cloud/on-prem handoffs. |
 | [quickstart.md](../../docs_page/quickstart.md) | 1,030 → 536 | One read-first connection path, a real object search and a symptom table; removed insecure/write-enabled defaults. | Startup is not SAP-read evidence; applied to local and trial setup. |
 | [rate-limiting.md](../../docs_page/rate-limiting.md) | 3,112 → 1,245 | Kept exact defaults/buckets; removed speculative workload multipliers and repeated tuning recipes. | Numeric advice needs assumptions; revisited process/SAP/memory capacity guidance. |
-| [release-notes.md](../../docs_page/release-notes.md) | 2,812 → 2,670 | Upgrade actions lead current notes; retained historical release records and removed internal CI mechanics. | Compress the presentation, preserve operational history; rechecked PP defaults and XSUAA repair advice. |
+| [release-notes.md](../../docs_page/release-notes.md) | 2,812 → 3,019 | Upgrade actions lead current notes; retained historical release records and removed internal CI mechanics. | Compress the presentation, preserve operational history; rechecked PP defaults and XSUAA repair advice. |
 | [roadmap.md](../../docs_page/roadmap.md) | 32,761 → 312 | Current open work and an immutable historical link replace a stale implementation diary. | Archive history by revision; restored the direct-proxy limitation for incoming links. |
 | [s4hana-public-cloud.md](../../docs_page/s4hana-public-cloud.md) | 1,319 → 985 | Cloud-specific trust/destination fields use the canonical deployment flow. | Show only the distinct cloud setup; removed unsupported SM20 verification assumptions. |
 | [sap-api-policy-and-architecture.md](../../docs_page/sap-api-policy-and-architecture.md) | 2,876 → 436 | Three operator questions and current primary-source pointers replace argumentative history and self-scoring. | Architecture controls do not establish contractual permission; revisited comparison claims. |
@@ -115,10 +115,18 @@ All 66 public pages appear exactly once in navigation. A recursive contract test
 
 BTP cross-review additionally identified hidden-file handling in the PowerShell archive scan (`Get-ChildItem -Force`) and the MTA/MTAR terminology distinction; these were handed to the integration owner. The final review must record their disposition and any later findings.
 
+## Integration with current main
+
+During final integration, `main` advanced to `5bc5310b`. The review preserves its unreleased 1.3.0 notes,
+package CI actions and CLI exit rules, UIAD candidate-validation and save-state contract, and batch
+activation's `unknown` outcomes. The affected references were reread against the merged implementation.
+No application-source changes are introduced by this PR relative to that base.
+
 ## Validation
 
 - `npm run docs:build`: passed. Strict MkDocs checks include omitted navigation pages and local file/anchor targets.
 - Documentation-related unit tests: **329 passed across 8 files** (`docs-tools-parity`, `btp-docs-contract`, `btp-pp-profiles`, `mta-descriptor`, `approuter-config`, `release-notes`, `ui`, `config`). Tool parameter/action parity checks and their negative controls remain intact after the split.
+- After integrating current main, 95 focused UIAD/activation tests also passed (`write-uiad`, `uiad-check`, `activate`).
 - `npm run typecheck`: passed for source, scripts and tests.
 - `npm run lint`: passed; existing Biome schema/deprecation/style informational messages remain outside this change.
 - `git diff --check`: passed. All 47 original Markdown files changed; all 19 added pages are included in the navigation and word counts.

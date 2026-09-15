@@ -4,6 +4,7 @@ import type { AunitOutcome, AunitSourceSelectionEvidence, AunitSummary } from '.
 import type { AtcRunResult } from './adt/devtools.js';
 import type { CoverageMetric, CoverageSummary } from './adt/types.js';
 import { escapeXmlAttr } from './adt/xml-parser.js';
+import type { ToolResult } from './handlers/shared.js';
 import type { LintResult } from './lint/lint.js';
 
 export type CiExitCode = 0 | 1 | 3;
@@ -470,4 +471,18 @@ export function assertAtcPriority(value: string): number {
     throw new Error('--max-priority must be an integer from 1 (error) to 3 (info).');
   }
   return parsed;
+}
+
+/** Only an explicit completed, passing CI quality report may make the CLI green. */
+export function diagnoseCiQualityFailed(args: Record<string, unknown>, result: ToolResult): boolean {
+  const action = String(args.action ?? '');
+  if (action !== 'atc_ci' && action !== 'unittest_ci') return false;
+  if (result.isError) return true;
+  const text = result.content.find((block) => block.type === 'text')?.text;
+  try {
+    const report = JSON.parse(text ?? '') as { status?: unknown; fail?: unknown } | null;
+    return report?.status !== 'completed' || report?.fail !== false;
+  } catch {
+    return true;
+  }
 }

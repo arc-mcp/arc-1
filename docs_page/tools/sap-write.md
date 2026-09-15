@@ -1,6 +1,6 @@
 # SAPWrite
 
-Create, update, or delete ABAP objects. ARC-1 handles locking and unlocking. Requires `SAP_ALLOW_WRITES=true`, the appropriate user scope, and an allowed package.
+Create, update, or delete ABAP objects. ARC-1 handles locking and unlocking. Requires `SAP_ALLOW_WRITES=true`, the [`write` user scope](../authorization.md), and an allowed package.
 
 ```text
 SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER",
@@ -19,6 +19,7 @@ SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER",
 - [Text symbols, selection texts, and headings](write-text-elements.md)
 - [Procedural units](#procedural-unit-surgery)
 - [Batch creation](#batch-creation)
+- [Launchpad descriptors (UIAD)](#uiad-create-and-update)
 
 ## Parameters
 | Parameter | Type | Required | Description |
@@ -97,28 +98,66 @@ SAPWrite(action="edit_method", type="CLAS", name="ZCL_ORDER",
 
 Keep edits above the read-only metadata marker in a complete SAPRead result. For a root-only H2 edit, keep that context so the root heading is distinguishable from a visible Markdown title. When only the root has documentation, a bare body without its routing H2 also works. Ordinary unmatched headings remain prose and are reported; a node-shaped typo aborts the update. Prefix a reserved prose heading with one backslash (`\## …`) to keep it inside the current node.
 
-### Server-driven object writes
+## Server-driven object writes
 
-`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, and `UIAD` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) using SAP's generic object APIs. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+These types support `create`, `update`, and `delete`. Availability depends on the target's ADT
+support; discovery controls access. An unavailable type returns an ADT-support error.
 
-- **`create`** posts the type's metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. The object is left **inactive**; follow with `SAPActivate(type=..., name=...)`.
-- **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC`, `DSFD`, and `DTDC` instead take **DDL text** (`define static cache …`, `define scalar function …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
-- **`update`** requires `source` (AFF JSON or DDL text, per the type); **`delete`** uses the standard lock → delete flow. Both honor the `allowedPackages` ceiling against the object's real package.
-- **Availability is discovery-gated and per-type.** On systems that don't expose a type, write returns a clean `requires SAP_BASIS 8.16+` error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition) and `DTDC` (CDS Dynamic Cache) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). NetWeaver 7.50 exposes none of them.
+| Type | Object | Source and availability |
+| --- | --- | --- |
+| `DESD` | CDS Logical External Schema | AFF JSON; 8.16+ |
+| `EVTB` | RAP Event Binding | AFF JSON; also on 758 |
+| `EVTO` | RAP Event Object | AFF JSON; 8.16+; metadata uses blues v2 |
+| `DTSC` | CDS Static Cache | DDL text (`define static cache …`); 8.16+ |
+| `CSNM` | Core Schema Notation Model | AFF JSON; 8.16+ |
+| `COTA` | Communication Target | AFF JSON; 8.16+ |
+| `DSFD` | CDS Scalar Function Definition | DDL text (`define scalar function …`); also on 758 |
+| `UIAD` | Launchpad App Descriptor Item (LADI) | AFF JSON; 8.16 and supported 758 backports; see below |
+| `DTDC` | CDS Dynamic Cache | DDL text (`define dynamic cache …`); also on 758; uses its own DTDC metadata format |
 
-| Type | Object | Notes |
-|------|--------|-------|
-| `DESD` | CDS Logical External Schema | Creates standalone — the reference round-trip type. |
-| `EVTB` | RAP Event Binding | Also on 758. |
-| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type (the others use v1). |
-| `DTSC` | CDS Static Cache (table-entity buffer) | Source is **DDL text**, not JSON. |
-| `CSNM` | Core Schema Notation Model (CSN) | |
-| `COTA` | Communication Target | |
-| `DSFD` | CDS Scalar Function Definition | Source is **DDL text**, not JSON. Also on 758. |
-| `UIAD` | Launchpad App Descriptor Item (LADI) | Registered, but **writes are refused by SAP outside ABAP Cloud**: `400 Editing of LADIs with ALV "Standard" not allowed in workbench tools` — LADI edits require the ABAP Cloud language version. Read-only in practice on-prem. |
-| `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
+`create` posts metadata, then writes `source` if supplied. Most types remain inactive until
+[SAPActivate](sap-activate.md); UIAD has different save behavior. `update` requires complete source.
+`update` and `delete` check the object's real package before locking it.
 
-Other actions (`edit_method`, surgery, `batch_create`, RAP scaffolding) are not supported for server-driven types and return a clear error.
+ARC-1 sends the format listed above with the matching content type: JSON as `application/json`,
+DDL as `text/plain`. Malformed JSON is rejected before writing. ABAP lint, RAP preflight, and CDS
+source guards do not apply to these types. Other actions, including `batch_create`, surgery, and
+RAP scaffolding, are unsupported.
+
+### UIAD create and update
+
+Use `type="UIAD"` to maintain a manually created launchpad descriptor. Supply complete AFF JSON
+in `source` for create/update. On create, ARC-1 honors an explicit `header.abapLanguageVersion`;
+manual `cloudDevelopment` items are editable, including on-premises SAP_BASIS 816. This does not
+change an existing object's language version. Creating metadata without `source` is also supported;
+read the resulting object and supply its complete source to finish it.
+
+With `source` supplied, ARC-1 runs these checks before metadata creation or locking:
+
+1. Parses the candidate JSON (maximum 1 MiB, with bounded nesting).
+2. For updates, checks the object's root `sap.adt.readonly` configuration. A root read-only flag
+   blocks the update; nested field flags do not make the whole object read-only.
+3. Validates against the target's matching full-source schema, then sends the exact candidate
+   to SAP's semantic checker. Schema or semantic errors block mutation; warnings remain warnings.
+
+Unsupported checks are reported as `unavailable`. A different schema format version, such as an
+AFF v1 candidate against a v2 schema, leaves validity to SAP's candidate and save checks.
+Authorization and transient preflight failures stop the operation. SAP's save remains authoritative.
+
+**UIAD source saves are active immediately on the verified SAP_BASIS 816 system.** Review the
+candidate before writing; there is no inactive-source review step after a successful save.
+
+Deployment-generated descriptors follow the app's lifecycle: edit `manifest.json` and redeploy.
+Use a separate editable descriptor for an independently maintained item. See
+[SAP's descriptor lifecycle](https://help.sap.com/docs/BTP/65de2977205c403bbc107264b8eccf4b/1d9deef79d7d4936850b2d6343206ec8.html).
+Saving a descriptor does not provision app access or prove the app can launch.
+
+Results track `metadata` (`notAttempted`, `unknown`, `created`, or `existing`) and `source`
+(`notAttempted`, `unknown`, or `saved`). A source failure can leave a created metadata shell.
+Read the object before retrying. If source was saved but unlock failed, inspect its lock state.
+If both saving and unlocking fail, the result preserves the original save failure and reports `unlockFailed`.
+Validation shows at most 20 messages, errors first, plus total `messageCount`.
+`ARC1_MINIMAL_ERRORS=true` hides SAP diagnostic details.
 
 <span id="sapwrite-for-func-create-update-with-structured-parameters"></span>
 

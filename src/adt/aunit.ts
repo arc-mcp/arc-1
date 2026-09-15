@@ -1,7 +1,9 @@
 /** ABAP Unit result semantics and the public async/JUnit API. */
 
+import { reportRoot } from './ci-quality-xml.js';
 import { AdtApiError, AdtNetworkError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
+import { sleepWithinRequestBudget } from './http-deadline.js';
 import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { CoverageSummary } from './types.js';
@@ -995,17 +997,51 @@ function requiredCountAttr(node: Record<string, unknown>, name: string): number 
 }
 
 export function parseNativeJunitSummary(xml: string): NativeJunitSummary {
-  const root = parseXml(xml).testsuites;
-  if (!root || typeof root !== 'object' || Array.isArray(root)) {
-    throw new Error('ABAP Unit public API returned a non-JUnit result.');
-  }
-  const node = root as Record<string, unknown>;
+  const node = reportRoot(xml, 'testsuites', 'JUnit');
   const tests = requiredCountAttr(node, 'tests');
   const failures = requiredCountAttr(node, 'failures');
   const errors = requiredCountAttr(node, 'errors');
   const skipped = requiredCountAttr(node, 'skipped');
   if (failures + errors + skipped > tests) {
     throw new Error('ABAP Unit public API returned inconsistent JUnit counters.');
+  }
+  const actual = { tests: 0, failures: 0, errors: 0, skipped: 0 };
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 64) throw new Error('JUnit suite nesting exceeds the supported limit.');
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    const suite = value as Record<string, unknown>;
+    const before = { ...actual };
+    if (suite.testcase !== undefined) {
+      for (const item of Array.isArray(suite.testcase) ? suite.testcase : [suite.testcase]) {
+        if (item !== '' && (!item || typeof item !== 'object' || Array.isArray(item)))
+          throw new Error('Invalid JUnit testcase.');
+        const test = (item || {}) as Record<string, unknown>;
+        const statuses = ['failure', 'error', 'skipped'].filter((key) => test[key] !== undefined);
+        if (statuses.length > 1) throw new Error('JUnit testcase has contradictory outcomes.');
+        actual.tests += 1;
+        if (test.failure !== undefined) actual.failures += 1;
+        if (test.error !== undefined) actual.errors += 1;
+        if (test.skipped !== undefined) actual.skipped += 1;
+      }
+    }
+    for (const key of ['testsuite', 'testsuites']) if (suite[key] !== undefined) walk(suite[key], depth + 1);
+    for (const key of Object.keys(actual) as (keyof typeof actual)[]) {
+      if (suite[`@_${key}`] !== undefined && requiredCountAttr(suite, key) !== actual[key] - before[key])
+        throw new Error('ABAP Unit public API returned JUnit counters inconsistent with its testcases.');
+    }
+  };
+  walk(node, 0);
+  if (
+    actual.tests !== tests ||
+    actual.failures !== failures ||
+    actual.errors !== errors ||
+    actual.skipped !== skipped
+  ) {
+    throw new Error('ABAP Unit public API returned JUnit counters inconsistent with its testcases.');
   }
   const outcome: AunitOutcome =
     failures > 0 || errors > 0 ? 'failed' : tests === 0 || skipped === tests ? 'incomplete' : 'passed';
@@ -1143,7 +1179,7 @@ export async function runPublicAunit(
 ): Promise<PublicAunitResult> {
   checkOperation(safety, OperationType.Test, 'RunPublicAunit');
   const now = options.now ?? Date.now;
-  const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const sleep = options.sleep ?? ((ms: number) => sleepWithinRequestBudget(ms, { signal: options.signal, deadline }));
   const started = now();
   const relativeDeadline = started + (options.timeoutMs ?? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS);
   const deadline = options.deadline === undefined ? relativeDeadline : Math.min(relativeDeadline, options.deadline);
@@ -1200,7 +1236,7 @@ export async function runPublicAunit(
     resultPath = state.resultPath;
     terminal = /^(completed|finished)$/i.test(status);
     if (terminal && resultPath) break;
-    if (!status || /not created|failed|cancelled/i.test(status)) {
+    if (!status || /not created|failed|error|aborted|cancelled|canceled/i.test(status)) {
       throw new Error(`ABAP Unit public run did not complete: ${status || 'empty status'}`);
     }
     const remaining = deadline - now();

@@ -42,6 +42,9 @@ The full capability rules are in [Authorization](authorization.md).
 Standard mode groups operations into 12 intent tools. `ARC1_TOOL_MODE=hyperfocused` routes the same
 operations through one `SAP` tool. The [tool reference](tools.md) documents their inputs.
 
+[SAPDiagnose](tools/sap-diagnose.md) includes package ATC and harmless AUnit checks for CI.
+These actions execute backend workloads and require complete evidence to pass; they are single-target only.
+
 `tools/list` uses configuration, caller permissions, and available SAP discovery evidence. It does
 not wait for a SAP probe. Before discovery completes, a capability can appear that the backend later
 proves unsupported; an attempted call then returns an error. Stdio clients receive

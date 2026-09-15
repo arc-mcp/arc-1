@@ -67,6 +67,7 @@ import type {
   UnitTestResult,
 } from '../adt/types.js';
 import { getCurrentContext } from '../server/context.js';
+import { handleCiQuality } from './diagnose-ci.js';
 import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -79,6 +80,7 @@ const AUNIT_SOURCE_REQUEST_LIMIT = 500;
 interface AunitEvidenceBudget {
   deadline: number;
   remainingSourceRequests: number;
+  signal?: AbortSignal;
 }
 
 class AunitSourceBudgetError extends Error {
@@ -91,7 +93,7 @@ class AunitSourceBudgetError extends Error {
 function reserveAunitSourceRequests(budget: AunitEvidenceBudget, count = 1): SourceReadOptions {
   if (budget.remainingSourceRequests < count) throw new AunitSourceBudgetError();
   budget.remainingSourceRequests -= count;
-  return { deadline: budget.deadline };
+  return { deadline: budget.deadline, signal: budget.signal };
 }
 
 function isAunitDeadlineFailure(error: unknown): boolean {
@@ -549,7 +551,7 @@ async function runLegacyAunitForSelection(
   try {
     return await runUnitTests(client.http, client.safety, objectUrls, {
       coverage,
-      requestOptions: { deadline: budget.deadline },
+      requestOptions: { deadline: budget.deadline, signal: budget.signal },
     });
   } catch (error) {
     if (isAunitDeadlineFailure(error)) {
@@ -634,7 +636,11 @@ export function toLegacyAunitResults(result: AunitRunResult): UnitTestResult[] {
   return rows;
 }
 
-export async function handleSAPDiagnose(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+export async function handleSAPDiagnose(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  options: { deadline?: number; signal?: AbortSignal } = {},
+): Promise<ToolResult> {
   const action = String(args.action ?? '');
   const name = String(args.name ?? '');
   const type = normalizeObjectType(String(args.type ?? ''));
@@ -680,7 +686,8 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
       const timeoutMs =
         args.timeoutSeconds === undefined ? DEFAULT_PUBLIC_AUNIT_TIMEOUT_MS : Number(args.timeoutSeconds) * 1000;
       const evidenceBudget: AunitEvidenceBudget = {
-        deadline: Date.now() + timeoutMs,
+        deadline: Math.min(Date.now() + timeoutMs, options.deadline ?? Infinity),
+        signal: options.signal ?? getCurrentContext()?.signal,
         remainingSourceRequests: AUNIT_SOURCE_REQUEST_LIMIT,
       };
 
@@ -689,6 +696,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
         try {
           publicAvailable = await probePublicAunit(client.http, client.safety, {
             deadline: evidenceBudget.deadline,
+            signal: evidenceBudget.signal,
           });
         } catch (error) {
           if (!isAunitDeadlineFailure(error)) throw error;
@@ -720,6 +728,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
               includeSubpackages,
               timeoutMs,
               deadline: evidenceBudget.deadline,
+              signal: evidenceBudget.signal,
             });
           } catch (error) {
             if (!(error instanceof AunitIncompleteError)) throw error;
@@ -869,6 +878,9 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
           'Coverage unavailable on this system (the coverage-measurement endpoint or measurement result was not available).';
       return textResult(toolJson(out));
     }
+    case 'unittest_ci':
+    case 'atc_ci':
+      return handleCiQuality(client, args, handleSAPDiagnose);
     case 'atc': {
       if (args.objects !== undefined) {
         const objects = (args.objects as { type: AtcBatchObject['type']; name: string }[]).map((object) => ({
@@ -1230,7 +1242,7 @@ export async function handleSAPDiagnose(client: AdtClient, args: Record<string, 
     }
     default:
       return errorResult(
-        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, atc, atc_variants, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
+        `Unknown SAPDiagnose action: ${action}. Supported: syntax, unittest, unittest_ci, atc, atc_ci, atc_variants, cds_testcases, object_state, quickfix, apply_quickfix, dumps, traces, trace_start, trace_requests, trace_cancel, system_messages, gateway_errors, odata_perf, cds_sql, sql_trace_state, set_sql_trace_state, sql_trace_directory, authorization_trace`,
       );
   }
 }

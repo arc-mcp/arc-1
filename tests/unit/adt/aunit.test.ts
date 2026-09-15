@@ -391,22 +391,30 @@ ENDCLASS.`;
   });
 
   it('summarizes native JUnit pass, fail, and zero-test outcomes', () => {
-    expect(parseNativeJunitSummary('<testsuites tests="4" failures="0" errors="0" skipped="1"/>')).toEqual({
+    expect(
+      parseNativeJunitSummary(
+        '<testsuites tests="4" failures="0" errors="0" skipped="1"><testsuite><testcase/><testcase/><testcase/><testcase><skipped/></testcase></testsuite></testsuites>',
+      ),
+    ).toEqual({
       tests: 4,
       failures: 0,
       errors: 0,
       skipped: 1,
       outcome: 'passed',
     });
-    expect(parseNativeJunitSummary('<testsuites tests="4" failures="1" errors="0" skipped="0"/>').outcome).toBe(
-      'failed',
-    );
+    expect(
+      parseNativeJunitSummary(
+        '<testsuites tests="4" failures="1" errors="0" skipped="0"><testsuite><testcase/><testcase/><testcase/><testcase><failure/></testcase></testsuite></testsuites>',
+      ).outcome,
+    ).toBe('failed');
     expect(parseNativeJunitSummary('<testsuites tests="0" failures="0" errors="0" skipped="0"/>').outcome).toBe(
       'incomplete',
     );
-    expect(parseNativeJunitSummary('<testsuites tests="2" failures="0" errors="0" skipped="2"/>').outcome).toBe(
-      'incomplete',
-    );
+    expect(
+      parseNativeJunitSummary(
+        '<testsuites tests="2" failures="0" errors="0" skipped="2"><testsuite><testcase><skipped/></testcase><testcase><skipped/></testcase></testsuite></testsuites>',
+      ).outcome,
+    ).toBe('incomplete');
     expect(() => parseNativeJunitSummary('<not-junit/>')).toThrow(/non-JUnit/);
   });
 
@@ -477,7 +485,8 @@ describe('public ABAP Unit API', () => {
   });
 
   it('submits harmless-only options, polls the safe run path, and returns SAP-native JUnit', async () => {
-    const junit = '<testsuites tests="3" failures="1" errors="0" skipped="0"/>';
+    const junit =
+      '<testsuites tests="3" failures="1" errors="0" skipped="0"><testsuite><testcase/><testcase/><testcase><failure/></testcase></testsuite></testsuites>';
     const get = vi
       .fn()
       .mockResolvedValueOnce({

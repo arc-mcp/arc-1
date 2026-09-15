@@ -27,6 +27,7 @@ import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
 import * as DtelFields from './data-element-fields.js';
+import { SAPDIAGNOSE_ADDITIONAL_INPUTS } from './diagnose-fields.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
@@ -630,8 +631,8 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate.'
-              : 'Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. UIAD is read-only outside ABAP Cloud.',
+              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
+              : 'Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
           },
           name: {
             type: 'string',
@@ -1129,16 +1130,18 @@ export function getToolDefinitions(
     {
       name: 'SAPDiagnose',
       description:
-        'Run diagnostics on ABAP objects and analyze runtime errors. Actions:\n' +
+        'ABAP diagnostics and runtime analysis. Actions:\n' +
         '- "syntax": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
+        '- "unittest_ci": harmless package tests with source reconciliation; empty/incomplete runs fail.\n' +
         '- "atc": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
+        '- "atc_ci": package ATC CI; requires available API and verified selection.\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
         '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
-        '- "quickfix": get quick-fix proposals at a position (name+type+source+line; optional column, sourceUri).\n' +
-        '- "apply_quickfix": apply one proposal, return text deltas, no write (name+type+source+line+proposalUri+proposalUserContent; pass proposalUserContent through exactly).\n' +
+        '- "quickfix": proposals at name+type+source+line (optional column/sourceUri).\n' +
+        '- "apply_quickfix": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n' +
         '- "dumps": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n' +
-        '- "traces": list/analyze profiler traces (id+analysis: hitlist=hot spots, statements=call tree, dbAccesses=DB stats).\n' +
+        '- "traces": list profiler traces; id+analysis analyzes one.\n' +
         '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on).\n' +
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
         '- "system_messages": list SM02 messages. "gateway_errors": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n' +
@@ -1155,7 +1158,9 @@ export function getToolDefinitions(
             enum: [
               'syntax',
               'unittest',
+              'unittest_ci',
               'atc',
+              'atc_ci',
               'atc_variants',
               'cds_testcases',
               'dumps',
@@ -1178,13 +1183,12 @@ export function getToolDefinitions(
           },
           name: {
             type: 'string',
-            description:
-              'Object name (for syntax/unittest/atc/object_state); the CDS entity / DDLS source name for cds_testcases and cds_sql',
+            description: 'syntax/unittest/atc/object_state object name; cds_testcases/cds_sql CDS entity or DDLS name.',
           },
           url: {
             type: 'string',
             description:
-              'For odata_perf: the host-relative OData path to probe, from the Fiori app\'s Network tab (e.g. "/sap/opu/odata4/sap/.../Entity?$filter=…"). Must be a path on the connected system — absolute URLs are rejected.',
+              'odata_perf: host-relative OData path from the app network request (e.g. /sap/opu/odata4/sap/.../Entity?$filter=…). Absolute URLs rejected.',
           },
           type: {
             type: 'string',
@@ -1218,21 +1222,20 @@ export function getToolDefinitions(
           sourceUri: {
             type: 'string',
             description:
-              'Exact ADT source URI for quickfix/apply_quickfix. Defaults to the type/name main source; use this for class includes such as /includes/definitions.',
+              'quickfix/apply_quickfix source URI; default type/name main source. Set for includes, e.g. /includes/definitions.',
           },
           line: {
             type: 'number',
-            description: 'Source line number for quickfix evaluation (required for quickfix/apply_quickfix).',
+            description: 'Required quickfix/apply_quickfix source line.',
           },
           column: {
             type: 'number',
-            description: 'Source column number for quickfix evaluation (default 0 for quickfix actions).',
+            description: 'Quickfix source column (default 0).',
           },
           version: {
             type: 'string',
             enum: ['active', 'inactive'],
-            description:
-              'Source version for syntax check (default "active"). Use "inactive" to validate pending changes.',
+            description: 'syntax source version (default active); inactive checks pending changes.',
           },
           proposalUri: {
             type: 'string',
@@ -1246,7 +1249,7 @@ export function getToolDefinitions(
           proposalAffectedObjects: {
             type: 'array',
             description:
-              'Optional affectedObjects array from quickfix action. Include content for each affected source unit when applying multi-object quickfixes.',
+              'quickfix affectedObjects; provide current content for each source unit when applying multi-object fixes.',
             items: {
               type: 'object',
               required: ['uri'],
@@ -1259,7 +1262,6 @@ export function getToolDefinitions(
               },
             },
           },
-          variant: { type: 'string', description: 'atc: check variant; atc_variants: name filter (*=all)' },
           id: {
             type: 'string',
             description:
@@ -1267,41 +1269,35 @@ export function getToolDefinitions(
           },
           detailUrl: {
             type: 'string',
-            description:
-              'Canonical host-relative /sap/bc/adt/gw/errorlog/... path for detail mode; absolute URLs are rejected.',
+            description: 'Detail path: canonical /sap/bc/adt/gw/errorlog/...; no absolute URLs.',
           },
           errorType: {
             type: 'string',
-            description:
-              'Gateway error type for gateway_errors detail by id (for example "Frontend Error"). Required when using id without detailUrl.',
+            description: 'gateway_errors: required with id instead of detailUrl, e.g. "Frontend Error".',
           },
           user: { type: 'string', description: 'SAP-user filter for dumps, feeds, or authorization_trace.' },
           authObject: { type: 'string', description: 'Authorization object filter, e.g. S_TCODE.' },
           from: {
             type: 'string',
-            description:
-              'Optional lower time boundary for feed-based diagnostics actions (system_messages/gateway_errors).',
+            description: 'system_messages/gateway_errors lower time bound.',
           },
           to: {
             type: 'string',
-            description:
-              'Optional upper time boundary for feed-based diagnostics actions (system_messages/gateway_errors).',
+            description: 'system_messages/gateway_errors upper time bound.',
           },
           maxResults: {
             type: 'number',
             description:
-              'Maximum results for dumps/system_messages/gateway_errors (default 50) or authorization_trace (default 100); bounded to a safe cap.',
+              'Result limit: dumps/system_messages/gateway_errors default 50; authorization_trace 100. Capped.',
           },
           sections: {
             type: 'array',
             items: { type: 'string' },
-            description:
-              'Dump chapter IDs to include for dumps detail mode (for example ["kap0","kap3","kap8"]). Omit to use focused defaults.',
+            description: 'dumps detail chapter IDs, e.g. ["kap0","kap3","kap8"]; omit for focused defaults.',
           },
           includeFullText: {
             type: 'boolean',
-            description:
-              'For dumps detail mode only: include full formattedText blob. Default false to reduce token usage.',
+            description: 'dumps detail: include full formattedText (default false).',
           },
           coverage: {
             type: 'boolean',
@@ -1314,65 +1310,56 @@ export function getToolDefinitions(
             enum: ['legacy', 'structured', 'junit'],
             description: 'unittest: legacy|structured|junit; atc: legacy|structured; other actions reject it.',
           },
-          timeoutSeconds: {
-            type: 'number',
-            description: 'unittest/atc timeout: 1-3600s; default 300.',
-          },
           sqlOn: {
             type: 'boolean',
-            description:
-              'For action="set_sql_trace_state": true to arm the ST05 SQL trace, false to disarm. Combine with user to filter the trace to one SAP user.',
+            description: 'set_sql_trace_state: true arms ST05 SQL trace, false disarms; user filters the SAP user.',
           },
           onlyFailures: {
             type: 'boolean',
-            description:
-              'For authorization_trace: return only denied checks (RC<>0), similar to the SU53 failure view.',
+            description: 'authorization_trace: only denied checks (RC<>0), like SU53.',
           },
           analysis: {
             type: 'string',
             enum: ['hitlist', 'statements', 'dbAccesses'],
-            description:
-              'Trace analysis type (for traces action with id). hitlist = execution hot spots, statements = call tree, dbAccesses = database access stats.',
+            description: 'traces with id: hitlist=hot spots, statements=call tree, dbAccesses=DB access stats.',
           },
           traceUser: {
             type: 'string',
-            description:
-              'For trace_start/trace_requests: the SAP user whose matching execution is traced/listed. Defaults to the connected user.',
+            description: 'trace_start/trace_requests SAP user (default connected user).',
           },
           processType: {
             type: 'string',
             enum: ['any', 'http', 'dialog', 'batch', 'rfc'],
             description:
-              'For trace_start: the kind of work process to capture. Default "http" (OData/Gateway). dialog = SAP GUI transaction, batch = background job, rfc = RFC call.',
+              'trace_start work process (default http/OData): dialog=SAP GUI, batch=background job, rfc=RFC.',
           },
           objectType: {
             type: 'string',
             enum: ['any', 'url', 'transaction', 'report', 'functionModule'],
             description:
-              'For trace_start: what to match within the process. Defaults to the valid type for the process type (http→url, dialog→transaction, batch→report, rfc→functionModule).',
+              'trace_start match type; defaults: http→url, dialog→transaction, batch→report, rfc→functionModule.',
           },
           maxExecutions: {
             type: 'number',
-            description:
-              'For trace_start: how many matching executions to capture before the request is consumed (default 1).',
+            description: 'trace_start executions to capture (default 1).',
           },
           expiresHours: {
             type: 'number',
-            description: 'For trace_start: hours until the armed request auto-expires (default 24).',
+            description: 'trace_start expiry in hours (default 24).',
           },
           sqlTrace: {
             type: 'boolean',
-            description:
-              'For trace_start: capture SQL/DB accesses (default true — required for analysis="dbAccesses").',
+            description: 'trace_start SQL capture (default true; required for analysis="dbAccesses").',
           },
           aggregate: {
             type: 'boolean',
-            description: 'For trace_start: aggregate the trace (default true).',
+            description: 'trace_start aggregation (default true).',
           },
           description: {
             type: 'string',
-            description: 'For trace_start: optional label for the trace request.',
+            description: 'trace_start label.',
           },
+          ...SAPDIAGNOSE_ADDITIONAL_INPUTS,
         },
         required: ['action'],
       },
