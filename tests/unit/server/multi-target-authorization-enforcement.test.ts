@@ -432,7 +432,7 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
       expect.objectContaining({
         event: 'target_resolution_failed',
         errorCode: 'TARGET_GRANT_MALFORMED',
-        authorizationMode: 'xsuaa-attribute',
+        targetAccessMode: 'xsuaa-attribute',
         grantMode: 'none',
       }),
     );
@@ -442,7 +442,7 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
       expect.objectContaining({
         event: 'target_resolution_failed',
         errorCode: 'TARGET_NOT_GRANTED',
-        authorizationMode: 'xsuaa-attribute',
+        targetAccessMode: 'xsuaa-attribute',
         grantMode: 'exact',
         exactGrantCount: 1,
       }),
