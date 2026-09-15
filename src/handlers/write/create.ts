@@ -62,7 +62,6 @@ import {
   vendorContentTypeForType,
 } from '../write-helpers.js';
 import {
-  BATCH_CREATE_MAX_OBJECTS,
   type BatchFailurePhase,
   batchCreateResult,
   batchEntryResult,
@@ -478,13 +477,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
 
   let effectiveTransport = transport;
   if (!transport) {
-    try {
-      const resolved = await resolveCreateTransport(client, objectUrl, pkg, config.minimalErrors);
-      if (resolved.error) return errorResult(resolved.error);
-      effectiveTransport = resolved.transport;
-    } catch (error) {
-      return errorResult(batchFailureMessage(error, config.minimalErrors));
-    }
+    const resolved = await resolveCreateTransport(client, objectUrl, pkg, config.minimalErrors);
+    if (resolved.error) return errorResult(resolved.error);
+    effectiveTransport = resolved.transport;
   }
 
   // MSAG transport-vs-task guard. Some SAP releases silently drop message inserts when
@@ -806,9 +801,6 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
   if (!objects || !Array.isArray(objects) || objects.length === 0) {
     return errorResult('"objects" array is required and must be non-empty for batch_create action.');
   }
-  if (objects.length > BATCH_CREATE_MAX_OBJECTS) {
-    return errorResult(`batch_create accepts at most ${BATCH_CREATE_MAX_OBJECTS} objects per call.`);
-  }
   checkOperation(client.safety, OperationType.Create, 'CreateObject');
   const activateAtEnd = args.activateAtEnd === true || String(args.activateAtEnd) === 'true';
   const defaultPackage = normalizePackageOverride(args.package, '$TMP');
@@ -923,8 +915,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
     } catch (err) {
       errors.push(batchFailureMessage(err, false));
     }
-    if (errors.length)
-      failBatchEntry(plan.result, 'preflight', errors.map((error) => batchFailureMessage(error, false)).join('\n'));
+    if (errors.length) failBatchEntry(plan.result, 'preflight', errors.join('\n'));
   }
   if (results.some((entry) => entry.status === 'failed')) return report(true);
 

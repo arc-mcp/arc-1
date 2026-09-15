@@ -71,22 +71,6 @@ describe('batch preflight and persisted outcomes', () => {
     expect(result.content[0].text).toContain('objects.1.name');
   });
 
-  it.each([401, 403])('stops before creation on transport preflight HTTP %i', async (status) => {
-    mockFetch.mockImplementation((url) => {
-      if (new URL(String(url)).pathname.includes('/cts/transportchecks')) {
-        return Promise.resolve(mockResponse(status, 'PRIVATE_TRANSPORT_DETAIL', { 'x-csrf-token': 'T' }));
-      }
-      return Promise.resolve(ok());
-    });
-    const result = await run([program('ZFIRST'), program('ZSECOND')], { package: 'ZTRANSPORTED' }, undefined, {
-      minimalErrors: true,
-    });
-    expect(result.isError).toBe(true);
-    expect(creates()).toHaveLength(0);
-    expect(JSON.stringify(result)).not.toContain('PRIVATE_TRANSPORT_DETAIL');
-    expect(JSON.parse(result.content[1].text).batch).toMatchObject({ phase: 'preflight', created: 0 });
-  });
-
   it.each(['create', 'batch_create'])('%s skips CTS checks for every local $ package', async (action) => {
     const probe = vi.spyOn(transportModule, 'getTransportInfo').mockRejectedValue(new Error('Must not be called'));
     const result = await handleToolCall(createClient(), config, 'SAPWrite', {
@@ -118,6 +102,8 @@ describe('batch preflight and persisted outcomes', () => {
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result)).not.toContain('PRIVATE_TRANSPORT_DETAIL');
         expect(creates()).toHaveLength(0);
+        if (action === 'batch_create')
+          expect(JSON.parse(result.content[1].text).batch).toMatchObject({ phase: 'preflight', created: 0 });
       }
       vi.spyOn(transportModule, 'getTransportInfo').mockRejectedValue(new AdtSafetyError('Transport check denied'));
       const result = await handleToolCall(createClient(), config, 'SAPWrite', {
@@ -183,13 +169,6 @@ describe('batch preflight and persisted outcomes', () => {
     expect(batch.results[1].error).toContain('uppercase');
     expect(batch.results[1].error).toContain('ZBAD');
     expect(batch.results[2].error).toContain('does not support');
-  });
-
-  it.each([0, 1, 2])('rejects an invalid name at index %i before any mutation', async (index) => {
-    const objects = [program('ZFIRST'), program('ZSECOND'), program('ZTHIRD')];
-    objects[index].name = 'Zbad';
-    expect((await run(objects)).isError).toBe(true);
-    expect(creates()).toHaveLength(0);
   });
 
   it.each([

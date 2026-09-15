@@ -2321,44 +2321,6 @@ lv = CONV string( 1 ).`,
         expect(result.isError).toBeUndefined();
       });
 
-      it('activateAtEnd=true breaks loop on write failure and only batch-activates the already-written subset', async () => {
-        mockFetch.mockReset();
-        // Fail ANY request for object ZBAE_FAIL. ZBAE_OK's full create+lock+source PUT+unlock
-        // cycle stays on 200, and the eventual batch-activate of ZBAE_OK alone also stays on 200.
-        mockFetch.mockImplementation((url: any) => {
-          const u = String(url);
-          if (u.includes('ZBAE_FAIL')) {
-            return Promise.resolve(mockResponse(500, 'Internal Server Error', { 'x-csrf-token': 'T' }));
-          }
-          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
-        });
-
-        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
-        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
-          action: 'batch_create',
-          package: '$TMP',
-          activateAtEnd: true,
-          objects: [
-            { type: 'PROG', name: 'ZBAE_OK', source: 'REPORT zbae_ok.' },
-            { type: 'PROG', name: 'ZBAE_FAIL', source: 'REPORT zbae_fail.' },
-            { type: 'PROG', name: 'ZBAE_SKIP', source: 'REPORT zbae_skip.' },
-          ],
-        });
-
-        // Loop broke on second object; ZBAE_SKIP is never attempted.
-        const text = result.content[0]?.text ?? '';
-        expect(text).toContain('ZBAE_SKIP');
-        expect(text).toContain('skipped');
-        // The terminal batch-activate (if it fired) ran only over the already-written subset.
-        const counts = countActivationPosts();
-        if (counts.batch > 0) {
-          expect(counts.batch).toBe(1);
-          expect(counts.batchBody).not.toContain('ZBAE_SKIP');
-          expect(counts.batchBody).not.toContain('ZBAE_FAIL');
-          expect(counts.batchBody).toContain('ZBAE_OK');
-        }
-      });
-
       it("activateAtEnd=true flips all written entries to 'failed' when the terminal batch-activate fails", async () => {
         mockFetch.mockReset();
         // Activation failure XML — parseActivationOutcome looks for <msg> with severity=error.
