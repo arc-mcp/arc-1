@@ -84,6 +84,7 @@ function buildReadOnlyRuntimeConfig(
     minimalErrors: base.minimalErrors,
     verbose: base.verbose,
     multiTargetEndpoints: true,
+    multiTargetAuthorization: base.multiTargetAuthorization,
     destinationName: target?.destinationName,
     targetId: target?.target,
   };

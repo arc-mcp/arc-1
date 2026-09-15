@@ -37,17 +37,22 @@ import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId, requestContext } from './context.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
 import { authLibLogger, logger } from './logger.js';
+import { isTargetGranted, type MultiTargetAuthorizationMode } from './multi-target-authorization.js';
+import { auditTargetGrantDenial } from './multi-target-authorization-audit.js';
+import { requireXsuaaUserBearerAuth } from './multi-target-bearer-auth.js';
 import {
   PINNED_MCP_PATH_PATTERN,
   PINNED_RESOURCE_METADATA_PATH_PATTERN,
   targetFromPinnedMcpPath,
 } from './multi-target-identity.js';
+import { type MultiTargetRequestProjection, projectMultiTargetRequest } from './multi-target-request-projection.js';
 import {
   buildXsuaaSessionRefreshUrl,
   createOAuthLoggedOutHandler,
   OAUTH_LOGGED_OUT_PATH,
   withInvalidScopeSessionRecovery,
 } from './oauth-session-recovery.js';
+import { protectPrivateMcpResponse } from './private-mcp-response.js';
 import { VERSION } from './server.js';
 import { sanitizeClientAgent, validateTraceparent, validateTracestate } from './trace-context.js';
 import type { ServerConfig } from './types.js';
@@ -232,20 +237,36 @@ export function createMcpHandler(serverFactory: () => McpServer) {
 
 export interface MultiTargetRouting {
   registry: DestinationRegistry;
-  aggregateFactory: () => McpServer;
-  createPinnedServer: (target: TargetDescriptor) => McpServer;
+  authorizationMode?: MultiTargetAuthorizationMode;
+  aggregateFactory: (projection?: MultiTargetRequestProjection) => McpServer;
+  createPinnedServer: (target: TargetDescriptor, projection?: MultiTargetRequestProjection) => McpServer;
 }
 
 export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
   return async (req: Request, res: Response) => {
+    const enforced = multi.authorizationMode === 'xsuaa-attribute';
+    const projection = enforced ? projectMultiTargetRequest(multi.registry, req.auth) : undefined;
+    const targetId = targetFromPinnedMcpPath(req.path);
+    if (enforced) {
+      protectPrivateMcpResponse(res);
+      if (!projection?.read) {
+        res.status(403).json({ error: 'forbidden' });
+        return;
+      }
+      // Membership and registry state are deliberately inspected only after the caller's grant.
+      if (!targetId || !isTargetGranted(projection.grant, targetId)) {
+        auditTargetGrantDenial(projection.grant, req.auth, generateRequestId(), 'pinned-mcp', targetId);
+        res.status(404).json({ error: 'Target not available' });
+        return;
+      }
+    }
     if (!multi.registry.available) {
       res.status(503).json({ error: 'Multi-target registry unavailable' });
       return;
     }
-    const targetId = targetFromPinnedMcpPath(req.path);
     const target = targetId ? multi.registry.get(targetId) : undefined;
     if (!target) {
-      res.status(404).json({ error: 'Not found' });
+      res.status(404).json({ error: enforced ? 'Target not available' : 'Not found' });
       return;
     }
     logger.debug('MCP handler invoked (pinned target)', {
@@ -254,7 +275,11 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
       bodyMethod: req.body?.method,
       bodyId: req.body?.id,
     });
-    await serveMcpRequest(() => multi.createPinnedServer(target), req, res);
+    await serveMcpRequest(
+      () => (projection ? multi.createPinnedServer(target, projection) : multi.createPinnedServer(target)),
+      req,
+      res,
+    );
   };
 }
 
@@ -263,7 +288,16 @@ export function createAggregateMcpHandler(multi: MultiTargetRouting) {
     // Keep the aggregate MCP transport reachable when discovery fails so an
     // administrator can call SAPTargets and inspect secret-safe diagnostics.
     // Other tool calls return a structured registry-unavailable result.
-    await serveMcpRequest(multi.aggregateFactory, req, res);
+    const projection =
+      multi.authorizationMode === 'xsuaa-attribute' ? projectMultiTargetRequest(multi.registry, req.auth) : undefined;
+    if (projection) {
+      protectPrivateMcpResponse(res);
+      if (!projection.read) {
+        res.status(403).json({ error: 'forbidden' });
+        return;
+      }
+    }
+    await serveMcpRequest(() => (projection ? multi.aggregateFactory(projection) : multi.aggregateFactory()), req, res);
   };
 }
 
@@ -293,6 +327,9 @@ export async function startHttpServer(
   uiDeps?: UiServerDeps,
   multiTargets?: MultiTargetRouting,
 ): Promise<void> {
+  if (multiTargets && config.multiTargetAuthorization === 'xsuaa-attribute') {
+    multiTargets = { ...multiTargets, authorizationMode: 'xsuaa-attribute' };
+  }
   const [host, portStr] = config.httpAddr.split(':');
   const port = Number.parseInt(portStr || '8080', 10);
   const bindHost = host || '0.0.0.0';
@@ -427,6 +464,15 @@ export async function startHttpServer(
     // Inject ARC-1's scope-expansion policy + logger so the verifier emits the
     // same expanded AuthInfo.scopes ARC-1 produced before the extraction.
     const xsuaaVerifier = createXsuaaTokenVerifier(xsuaaCredentials, { expandScopes, logger: authLibLogger });
+    const enforcedTargets = config.multiTargetAuthorization === 'xsuaa-attribute';
+    const multiXsuaaVerifier = enforcedTargets
+      ? createXsuaaTokenVerifier(xsuaaCredentials, {
+          expandScopes,
+          logger: authLibLogger,
+          userAttributeNames: ['arc1_targets'],
+          requireUserToken: true,
+        })
+      : xsuaaVerifier;
     // OIDC verifier comes from the package (hardened: pinned `algorithms`
     // allowlist, no `sub` in debug logs). `buildPackageOidcVerifier` threads
     // ARC-1's historical contract (accepted scopes, `expandScopes`, the
@@ -460,10 +506,13 @@ export async function startHttpServer(
             const lowerPath = originalPath.toLowerCase();
             const resourcePath = lowerPath === '/authorize' ? '/multi/mcp' : originalPath;
             const multiResourceMetadataUrl = `${oauthFullBase}/.well-known/oauth-protected-resource${resourcePath}`;
-            const authenticate = requireBearerAuth({
-              verifier: { verifyAccessToken: xsuaaVerifier },
-              resourceMetadataUrl: multiResourceMetadataUrl,
-            });
+            if (enforcedTargets) protectPrivateMcpResponse(res);
+            const authenticate = enforcedTargets
+              ? requireXsuaaUserBearerAuth(multiXsuaaVerifier, multiResourceMetadataUrl)
+              : requireBearerAuth({
+                  verifier: { verifyAccessToken: multiXsuaaVerifier },
+                  resourceMetadataUrl: multiResourceMetadataUrl,
+                });
             authenticate(req, res, (error) => {
               if (error) {
                 next(error);

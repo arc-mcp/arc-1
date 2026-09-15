@@ -128,6 +128,10 @@ export interface MultiTargetStageFailedEvent extends AuditEventBase {
     | 'target_policy_denied';
   tool: string;
   errorCode: string;
+  /** Avoid credential-like field names so the central secret redactor preserves this enum. */
+  targetAccessMode?: 'xsuaa-attribute';
+  grantMode?: 'none' | 'exact' | 'all';
+  exactGrantCount?: number;
 }
 
 /** Safety system blocked an operation */

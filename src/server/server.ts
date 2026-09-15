@@ -20,9 +20,7 @@ import { shouldWarnPreStatefulRelease } from '../adt/release.js';
 import { deriveUserSafety, deriveUserSafetyFromProfile } from '../adt/safety.js';
 import { Semaphore } from '../adt/semaphore.js';
 import { hasRequiredScope } from '../authz/policy.js';
-import type { Cache } from '../cache/cache.js';
-import { CachingLayer } from '../cache/caching-layer.js';
-import { MemoryCache } from '../cache/memory.js';
+import type { CachingLayer } from '../cache/caching-layer.js';
 import { getToolRegistry, handleToolCall } from '../handlers/dispatch.js';
 import {
   getCachedDiscovery,
@@ -38,7 +36,7 @@ import { generateRequestId } from './context.js';
 import { isActionDenied } from './deny-actions.js';
 import { canonicalDestinationUrl, opaqueDestinationValue } from './destination-discovery.js';
 import {
-  DestinationRegistry,
+  type DestinationRegistry,
   duplicateSingleTargetIds,
   sharedBasicSingleTargetConflicts,
   type TargetDescriptor,
@@ -46,12 +44,17 @@ import {
 } from './destination-registry.js';
 import { authLibLogger, initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
+import {
+  assertMultiTargetAuthorizationStartup,
+  discoverMultiTargetRegistry,
+} from './multi-target-authorization-startup.js';
 import { handleSharedBasicCall } from './multi-target-basic-auth.js';
 import {
   RuntimeDestinationLevelError,
   resolveRuntimeSubaccountPpDestination,
 } from './multi-target-destination-runtime.js';
 import { ensureMultiTargetFeatureProbe, hasAuthorizationLimitedFeatureEvidence } from './multi-target-feature-state.js';
+import type { MultiTargetRequestProjection } from './multi-target-request-projection.js';
 import {
   buildAggregateToolSurfaceConfig,
   buildMultiTargetConfig,
@@ -69,6 +72,7 @@ import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js'
 import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
+import { createCachingLayer } from './server-cache.js';
 import { buildServerInstructions } from './server-instructions.js';
 import { FileSink } from './sinks/file.js';
 import { filterToolsByAuthScope } from './tool-auth.js';
@@ -78,6 +82,8 @@ import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
 export const VERSION = '1.2.0'; // x-release-please-version
+export { assertMultiTargetAuthorizationStartup } from './multi-target-authorization-startup.js';
+export { createCachingLayer } from './server-cache.js';
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's
@@ -681,6 +687,14 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     mcpRateLimiter,
     multiTarget,
   } = options;
+  const enforced = multiTarget?.instanceConfig.multiTargetAuthorization === 'xsuaa-attribute';
+  const projection = enforced ? multiTarget.authorization : undefined;
+  const visibleTargets = enforced ? (projection?.targets ?? []) : (multiTarget?.registry.targets ?? []);
+  if (enforced && multiTarget.mode === 'aggregate') {
+    // Compute the capability union from this caller before instructions and schemas exist.
+    // The no-auth bootstrap server has an empty surface and cannot dispatch target calls.
+    config = buildAggregateToolSurfaceConfig(multiTarget.instanceConfig, visibleTargets);
+  }
   const server = new Server(
     { name: config.serverName, version: VERSION },
     {
@@ -735,18 +749,25 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     if (multiTarget) {
       tools =
         !multiTarget.registry.available ||
-        (multiTarget.mode === 'aggregate' && multiTarget.registry.targets.length === 0)
+        (enforced && !projection?.read) ||
+        (multiTarget.mode === 'aggregate' && visibleTargets.length === 0)
           ? []
           : multiTargetToolDefinitions(tools, config);
       if (multiTarget.mode === 'aggregate') {
-        if (tools.length > 0) tools = tools.map((tool) => injectTargetSchema(tool, multiTarget.registry.targets));
-        const isAdmin = extra.authInfo ? hasRequiredScope(extra.authInfo.scopes, 'admin') : false;
-        if (multiTarget.registry.targets.length > 1 || isAdmin) tools.push(sapTargetsDefinition());
+        if (tools.length > 0) tools = tools.map((tool) => injectTargetSchema(tool, visibleTargets));
+        const isAdmin = enforced
+          ? projection?.admin
+          : extra.authInfo
+            ? hasRequiredScope(extra.authInfo.scopes, 'admin')
+            : false;
+        if (visibleTargets.length > 1 || isAdmin) tools.push(sapTargetsDefinition(enforced));
       }
     }
 
     // When authenticated, only show tools the user has scopes for
-    if (extra.authInfo) {
+    if (enforced) {
+      tools = filterToolsByAuthScope(tools, [...(projection?.scopes ?? [])], config.denyActions);
+    } else if (extra.authInfo) {
       tools = filterToolsByAuthScope(tools, extra.authInfo.scopes, config.denyActions);
     }
 
@@ -1047,51 +1068,12 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   return server;
 }
 
-/**
- * Create a CachingLayer based on config.
- * Returns undefined if caching is disabled.
- *
- * SqliteCache is loaded dynamically so that better-sqlite3 (a native module)
- * is only required when actually used. This allows the server to start in
- * memory-cache or no-cache mode even when better-sqlite3 is not installed
- * (e.g. cross-platform deploys where native binaries were compiled elsewhere).
- */
-export async function createCachingLayer(config: ServerConfig): Promise<CachingLayer | undefined> {
-  const mode = config.cacheMode;
-
-  if (mode === 'none') return undefined;
-
-  let cache: Cache;
-  if (mode === 'sqlite') {
-    logger.warn(
-      'ARC1_CACHE=sqlite stores SAP source in plaintext at rest; use ARC1_CACHE=memory/none or encrypted storage for IP-sensitive landscapes.',
-    );
-    // Persistent cache is explicit opt-in because SQLite stores full source bodies.
-    try {
-      const { SqliteCache } = await import('../cache/sqlite.js');
-      cache = new SqliteCache(config.cacheFile);
-    } catch (err) {
-      logger.warn('SQLite cache unavailable (better-sqlite3 not loaded) — falling back to memory cache', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      cache = new MemoryCache();
-    }
-  } else {
-    // Memory cache for auto/default and explicit memory mode. Avoids source-at-rest by default.
-    cache = new MemoryCache();
-  }
-
-  const maxActivityEntries = config.uiMode === 'off' ? 0 : undefined;
-  return new CachingLayer(cache, maxActivityEntries);
-}
-
-/**
- * Create and start the MCP server.
- */
+/** Create and start the MCP server. */
 export async function createAndStartServer(
   config: ServerConfig,
   sources?: Record<string, import('./types.js').ConfigSource>,
 ): Promise<Server> {
+  assertMultiTargetAuthorizationStartup(config);
   initLogger(config.logFormat, config.verbose);
   const startedAt = new Date().toISOString();
   const uiLogBuffer = config.uiMode !== 'off' ? new UiLogBufferSink() : undefined;
@@ -1251,14 +1233,7 @@ export async function createAndStartServer(
         'ARC1_MULTI_TARGET_ENDPOINTS=true requires Destination and Connectivity service bindings in VCAP_SERVICES.',
       );
     }
-    try {
-      const { discoverDestinations } = await import('./destination-discovery.js');
-      registry = DestinationRegistry.fromDiscovery(await discoverDestinations(btpConfig), config);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Destination discovery failed.';
-      registry = DestinationRegistry.unavailable({ code: 'REGISTRY_DISCOVERY_ERROR', message });
-      logger.error('Multi-target destination discovery failed', { error: message });
-    }
+    registry = await discoverMultiTargetRegistry(config, btpConfig);
     logger.info('Multi-target registry loaded', {
       available: registry.available,
       targets: registry.targets.length,
@@ -1295,7 +1270,10 @@ export async function createAndStartServer(
     if (config.multiTargetAllowBasicAuth) {
       logger.warn(
         'Experimental multi-target Basic authentication is enabled: Basic targets use a shared SAP identity, ' +
-          'are visible to all read-scoped users, remain mutation-free, and require exactly one CF app instance.',
+          (config.multiTargetAuthorization === 'xsuaa-attribute'
+            ? 'require target grants, '
+            : 'are visible to all read-scoped users, ') +
+          'remain mutation-free, and require exactly one CF app instance.',
       );
     }
   }
@@ -1371,16 +1349,21 @@ export async function createAndStartServer(
       dataResultSemaphore,
       mcpRateLimiter,
     });
-  const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
+  const aggregateConfig = registry
+    ? buildAggregateToolSurfaceConfig(
+        config,
+        config.multiTargetAuthorization === 'xsuaa-attribute' ? [] : registry.targets,
+      )
+    : undefined;
   const buildAggregateServer =
     registry && aggregateConfig && btpConfig
-      ? () =>
+      ? (authorization?: MultiTargetRequestProjection) =>
           createServer(aggregateConfig, {
             btpConfig,
             adtSemaphore,
             dataResultSemaphore,
             mcpRateLimiter,
-            multiTarget: { mode: 'aggregate', registry, instanceConfig: config, sharedAuthState },
+            multiTarget: { mode: 'aggregate', registry, instanceConfig: config, sharedAuthState, authorization },
           })
       : undefined;
   const serveSingleTargetEndpoint = shouldStartSingleTarget;
@@ -1478,15 +1461,23 @@ export async function createAndStartServer(
       registry && btpConfig && buildAggregateServer
         ? {
             registry,
+            authorizationMode: config.multiTargetAuthorization,
             aggregateFactory: buildAggregateServer,
-            createPinnedServer: (target: TargetDescriptor) => {
+            createPinnedServer: (target: TargetDescriptor, authorization?: MultiTargetRequestProjection) => {
               const targetConfig = buildMultiTargetConfig(config, target);
               return createServer(targetConfig, {
                 btpConfig,
                 adtSemaphore,
                 dataResultSemaphore,
                 mcpRateLimiter,
-                multiTarget: { mode: 'pinned', registry, instanceConfig: config, target, sharedAuthState },
+                multiTarget: {
+                  mode: 'pinned',
+                  registry,
+                  instanceConfig: config,
+                  target,
+                  sharedAuthState,
+                  authorization,
+                },
               });
             },
           }

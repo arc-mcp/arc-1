@@ -1,6 +1,14 @@
 /** Secret-safe reader and administrator views for the SAPTargets MCP tool. */
 
+import { type ToolResult, textResult, toolJson } from '../handlers/shared.js';
 import type { DestinationRegistry, TargetDescriptor, TargetDiagnostic } from './destination-registry.js';
+import {
+  buildEnforcedTargetCatalog,
+  buildEnforcedTargetCatalogResult,
+  type TargetCatalogEnforcement,
+} from './multi-target-catalog-enforced.js';
+
+export { TARGET_CATALOG_MAX_RESULT_BYTES, type TargetCatalogEnforcement } from './multi-target-catalog-enforced.js';
 
 export const TARGET_CATALOG_DIAGNOSTIC_LIMIT = 50;
 export const TARGET_CATALOG_SHARED_AUTH_EXCEPTION_LIMIT = 8;
@@ -24,6 +32,8 @@ export interface TargetCatalogOptions {
   offset?: number;
   /** Passive process-local health only; this callback must never probe SAP. */
   runtimeAuth?: (target: string) => { status: string; checkedAt?: string };
+  /** Supplied only for explicit xsuaa-attribute mode, from the verified request projection. */
+  enforcement?: TargetCatalogEnforcement;
 }
 
 // `checking` is an ordinary in-flight canary, not an operator exception. Completed failures such
@@ -71,6 +81,11 @@ export function buildTargetCatalog(
   registry: DestinationRegistry,
   options: TargetCatalogOptions,
 ): Record<string, unknown> | Array<{ target: string; description: string; identity: TargetDescriptor['identity'] }> {
+  if (options.enforcement) {
+    return buildEnforcedTargetCatalog(registry, { ...options, enforcement: options.enforcement }) as ReturnType<
+      typeof buildTargetCatalog
+    >;
+  }
   const query = options.query?.trim().toLowerCase() ?? '';
   const targets = registry.targets.filter((target) => targetMatches(target, query));
   if (!options.admin) {
@@ -156,4 +171,11 @@ export function buildTargetCatalog(
       destinations: diagnostics,
     },
   };
+}
+
+/** Serialize the complete result with enforced-mode failure and wire-size semantics. */
+export function buildTargetCatalogResult(registry: DestinationRegistry, options: TargetCatalogOptions): ToolResult {
+  return options.enforcement
+    ? buildEnforcedTargetCatalogResult(registry, { ...options, enforcement: options.enforcement })
+    : textResult(toolJson(buildTargetCatalog(registry, options)));
 }
