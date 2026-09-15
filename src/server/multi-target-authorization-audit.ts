@@ -20,7 +20,7 @@ export function auditTargetGrantDenial(
     tool,
     target,
     errorCode: grant.mode === 'none' ? grant.status : 'TARGET_NOT_GRANTED',
-    authorizationMode: 'xsuaa-attribute',
+    targetAccessMode: 'xsuaa-attribute',
     grantMode: grant.mode,
     ...(grant.mode === 'exact' ? { exactGrantCount: grant.exactGrantCount } : {}),
   });

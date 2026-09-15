@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuditEvent } from '../../../../src/server/audit.js';
+import { Logger } from '../../../../src/server/logger.js';
 import { BTPAuditLogSink, parseBTPAuditLogConfig } from '../../../../src/server/sinks/btp-auditlog.js';
 
 describe('BTP Audit Log Sink', () => {
@@ -261,6 +262,33 @@ describe('BTP Audit Log Sink', () => {
         expect(String(auditCall[1]?.body)).toContain('A4H/100');
         expect(String(auditCall[1]?.body)).toContain('VALIDATION_ERROR');
       }
+    });
+
+    it('retains target grant diagnostics through the real logger redactor', async () => {
+      const sink = new BTPAuditLogSink(config);
+      const logger = new Logger('json', true);
+      logger.addSink(sink);
+      logger.emitAudit({
+        timestamp: '',
+        level: 'warn',
+        event: 'target_resolution_failed',
+        target: 'A4H/100',
+        tool: 'SAPRead',
+        errorCode: 'TARGET_NOT_GRANTED',
+        targetAccessMode: 'xsuaa-attribute',
+        grantMode: 'exact',
+        exactGrantCount: 2,
+      });
+      await sink.flush();
+
+      const auditCall = fetchSpy.mock.calls.find((call) => String(call[0]).includes('/security-events'));
+      expect(auditCall).toBeDefined();
+      const body = String(auditCall?.[1]?.body);
+      expect(body).toContain('TARGET_NOT_GRANTED');
+      expect(body).toContain('targetAccessMode=xsuaa-attribute');
+      expect(body).toContain('grantMode=exact');
+      expect(body).toContain('exactGrantCount=2');
+      expect(body).not.toContain('[REDACTED');
     });
 
     it('preserves target attribution across forwarded multi-target event families', async () => {

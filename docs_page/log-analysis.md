@@ -49,6 +49,11 @@ include:
 | Multi-target failure stage | `target_resolution_failed`, `pp_exchange_failed`, `shared_auth_failed`, `cloud_connector_access_denied`, `sap_service_unavailable`, `sap_authentication_failed`, `sap_authorization_failed`, `target_policy_denied` |
 | Server/client protocol | `server_start`, OAuth/DCR, and CORS events |
 
+In the opt-in target-authorization mode, grant denials include `targetAccessMode`, `grantMode`,
+the stable `errorCode`, and `exactGrantCount` for exact grants. These are bounded operator
+diagnostics, not the raw grant list. `targetAccessMode` is deliberately distinct from an
+`Authorization` header; central credential redaction remains unchanged for every sink.
+
 Within a selected multi-target call, use `requestId` to correlate events and `target`, `destination`,
 and `identity` to identify the selected route and identity model. Failure-stage events also carry a
 safe `errorCode`; they do not contain destination credentials or SAP response bodies.

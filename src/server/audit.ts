@@ -128,7 +128,8 @@ export interface MultiTargetStageFailedEvent extends AuditEventBase {
     | 'target_policy_denied';
   tool: string;
   errorCode: string;
-  authorizationMode?: 'xsuaa-attribute';
+  /** Avoid credential-like field names so the central secret redactor preserves this enum. */
+  targetAccessMode?: 'xsuaa-attribute';
   grantMode?: 'none' | 'exact' | 'all';
   exactGrantCount?: number;
 }
