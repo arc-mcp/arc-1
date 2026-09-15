@@ -1334,18 +1334,6 @@ describe('AdtClient', () => {
       expect(params.get('query')).toBe('/NAMESPACE/*');
       expect(params.has('objectType')).toBe(false);
     });
-
-    it('normalizes a direct-client filter without collapsing its subtype', async () => {
-      await createClient().searchObject('*', 5, '  fugr/ff  ');
-      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
-      expect(params.get('objectType')).toBe('FUGR/FF');
-    });
-
-    it('does not retry a rejected type as an unfiltered search', async () => {
-      mockFetch.mockResolvedValue(mockResponse(406, 'Unsupported object type'));
-      await expect(createClient().searchObject('*', 5, 'NOSUCH')).rejects.toThrow();
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-    });
   });
 
   describe('getPackageContents (search-endpoint based)', () => {

@@ -315,16 +315,6 @@ export function normalizeTypeArgsForValidation(
             )
           : cleaned.objects,
       };
-    case 'SAPSearch':
-      return {
-        ...cleaned,
-        objectType:
-          cleaned.objectType === undefined
-            ? undefined
-            : cleaned.searchType === 'source_code' || cleaned.searchType === 'tadir_lookup'
-              ? normalizeObjectType(String(cleaned.objectType ?? ''))
-              : normalizeSearchObjectType(String(cleaned.objectType ?? '')),
-      };
     case 'SAPNavigate':
       // Strict-schema clients fill in optional fields for unrelated actions (#360).
       // Relations-only controls must not break ordinary navigation or reach its handler.

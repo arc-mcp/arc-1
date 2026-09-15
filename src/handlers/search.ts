@@ -240,11 +240,10 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
       '[]' +
       '\n\n' +
       transliterationNote +
-      (objectType
-        ? `No objects found for query="${query}" with objectType="${objectType}". Verify the query and ADT type supported by this system, or explicitly omit objectType to search without a type filter.`
-        : 'No objects found. If searching for custom objects, try Z* or Y* prefixes (e.g., "Z*ESTIM*"). ' +
-          'If you already found objects in a package, use SAPRead with type=DEVC to list all package contents instead of more searches.');
-    if (!objectType && looksLikeFieldName(query)) {
+      'No objects found. If searching for custom objects, try Z* or Y* prefixes (e.g., "Z*ESTIM*"). ' +
+      'If you already found objects in a package, use SAPRead with type=DEVC to list all package contents instead of more searches.';
+    if (objectType) hint += `\nobjectType="${objectType}" was applied; omit it to search all types.`;
+    if (looksLikeFieldName(query)) {
       const stripped = query.replace(/\*/g, '');
       hint += `\nThis looks like a field/column name. Use SAPQuery("SELECT fieldname, rollname, domname FROM dd03l WHERE fieldname = '${stripped}'") or SAPRead(type='DDLS', include='elements') to find fields.`;
     }

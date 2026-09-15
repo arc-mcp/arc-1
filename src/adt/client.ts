@@ -1074,8 +1074,7 @@ export class AdtClient {
   async searchObject(query: string, maxResults = 100, objectType?: string): Promise<AdtSearchResult[]> {
     checkOperation(this.safety, OperationType.Search, 'SearchObject');
     const limit = clampSearchResults(maxResults, 100);
-    const type = objectType?.trim().toUpperCase();
-    const typeFilter = type ? `&objectType=${encodeURIComponent(type)}` : '';
+    const typeFilter = objectType ? `&objectType=${encodeURIComponent(objectType)}` : '';
     const resp = await this.http.get(
       `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=${encodeURIComponent(query)}&maxResults=${limit}${typeFilter}`,
     );

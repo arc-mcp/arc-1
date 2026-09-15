@@ -24,58 +24,17 @@ using the reported `searchObjectType` parameter returned HTTP 400. The customer
 parameter name is therefore not a portable contract. Existing exact lookup in
 ARC-1 independently uses `objectType`. No customer-system reproduction is claimed.
 
-## Implementation plan and review
+## Decision and release behavior
 
-1. Add an optional third `searchObject` argument, trim/uppercase it, preserve ADT
-   slash subtypes, and URL-encode it as `objectType`. Forward the normal handler
-   argument. Keep unfiltered calls and the source/exact-lookup branches unchanged.
-2. Describe the supported filter in both tool variants. Bound the existing string
-   to 64 characters in both runtime schemas and the advertised JSON schema.
-3. Add regressions through real handler dispatch for default/explicit object mode,
-   slash values and encoding, plus direct-client compatibility and schema bounds.
-4. Run focused tests, review deliberate schema snapshots, and run repository gates.
+The handler owns type normalization: normal searches preserve slash subtypes and
+translate friendly aliases; source-code and exact lookup keep their existing rules.
+The client URL-encodes the filter before SAP applies the result limit. No local
+post-filter or automatic retry without the requested type is used.
 
-Plan review: no extra SAP calls, local filtering, fallback to unfiltered results,
-new write capability, or allowlist changes. The search gate remains before HTTP.
-Unknown types remain SAP errors; no guessed type enum. Preserving slash types is
-necessary to retain subtype precision. The public client argument is optional.
+Only a filtered HTTP 406 receives the type-specific hint; authorization and other
+failures propagate. The hint never copies backend text, including in minimal mode.
+Empty results retain generic search guidance and identify any applied type filter.
 
-## Verification and implementation review
-
-The five new handler/schema regressions failed before implementation and passed
-afterward. Full unit suite: 6,586 tests across 213 files passed. Typecheck, Biome,
-action-policy validation, build, file-size and tool-schema budgets passed. Reviewed
-all seven snapshot changes: only the type-filter description and maximum length
-changed. Direct-client tests cover omitted filters, subtype preservation, and a
-rejected type propagating without an unfiltered retry. Security review: the new
-value is bounded at dispatch and encoded at the URL sink; the existing search
-permission check still runs first. No mutation, identity or caching changes.
-
-## Follow-up review of Claude's findings
-
-Accepted the missing normal-search documentation and contextual guidance for a
-filtered 406 or empty result. Only a filtered 406 is translated; authorization
-and other failures propagate, with no automatic unfiltered retry. Empty results
-on older systems mention the requested filter. The guidance does not copy SAP
-response details, including under minimalErrors.
-
-Additional inspection found that dispatch collapsed recognized slash types before
-calling the handler. The earlier encoding test used an unrecognized slash string,
-so it did not catch this. Object search now preserves real CLAS/OC and DDLS/DF
-subtypes while translating the existing friendly KTD alias to SKTD. Source-code
-and exact-lookup normalization retain their prior behavior.
-
-Validation: 130 focused tests and all 6,594 unit tests (213 files) passed; build,
-typecheck, lint, policy and size/schema gates passed. Read-only live calls through
-dispatch on SAP_BASIS 758 SP02 and 816 SP01 verified NOSUCH produces the new error
-and CLAS/OC and DDLS/DF each return the requested subtype with maxResults=1.
-
-## Review round 2 (2026-09-15)
-
-No additional code finding. Added the optional release caveat after independently
-running the combined compiled CLI on 7.50: `SAPSearch query="*" objectType="TABL/DS"
-maxResults=8` returns both TABL/DT and TABL/DS. ARC-1 preserves the requested filter;
-this backend ignores its subtype. This was a read-only verification.
-
-Documentation update verification: build, typecheck, lint, policy, file/schema budgets
-and all **6,594 tests in 213 files** passed.
+Read-only dispatch checks on 7.58 and 8.16 confirmed CLAS/OC and DDLS/DF filters
+with maxResults=1, plus the NOSUCH refusal. On 7.50, TABL/DS returned both TABL/DT
+and TABL/DS: ARC-1 preserves the filter, but that backend ignores its subtype.

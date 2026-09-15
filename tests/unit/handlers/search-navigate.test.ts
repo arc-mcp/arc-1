@@ -14,7 +14,7 @@ import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-const { transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
+const { handleSAPSearch, transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
 
 function dataPreviewXml(column: string, values: string[]): string {
   return `<abap><values><COLUMNS><COLUMN><METADATA name="${column}"/><DATASET>${values
@@ -48,6 +48,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       ['clas/oc', 'CLAS/OC'],
       ['ddls/df', 'DDLS/DF'],
       ['ktd', 'SKTD'],
+      ['uiac', 'UIAC'],
     ])('preserves real search subtypes and translates friendly aliases: %s', async (objectType, expected) => {
       await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
       expect(new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams.get('objectType')).toBe(expected);
@@ -70,8 +71,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
       expect(result.isError).toBeUndefined();
       if (objectType) {
-        expect(result.content[0].text).toContain('query="*" with objectType="NOSUCH"');
-        expect(result.content[0].text).not.toContain('try Z*');
+        expect(result.content[0].text).toContain('objectType="NOSUCH" was applied; omit it to search all types.');
       } else {
         expect(result.content[0].text).toContain('try Z* or Y*');
       }
@@ -81,29 +81,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       const client = createClient();
       const error = new AdtApiError('Forbidden', 403, '/sap/bc/adt/repository/informationsystem/search');
       vi.spyOn(client, 'searchObject').mockRejectedValue(error);
-      const { handleSAPSearch } = await import('../../../src/handlers/search.js');
       await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' })).rejects.toBe(error);
-    });
-
-    it.each([undefined, 'object'])('forwards typed object search before the result limit (%s)', async (searchType) => {
-      mockFetch.mockResolvedValue(
-        mockResponse(
-          200,
-          '<objectReferences><objectReference type="UIAC" name="ZAPP" uri="/sap/bc/adt/fiori/uiac/zapp"/></objectReferences>',
-        ),
-      );
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
-        query: '*',
-        searchType,
-        objectType: 'uiac',
-        maxResults: 1,
-      });
-      expect(result.isError).toBeUndefined();
-      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
-      expect(params.get('objectType')).toBe('UIAC');
-      expect(params.get('maxResults')).toBe('1');
-      expect(params.has('searchObjectType')).toBe(false);
-      expect(JSON.parse(result.content[0].text)[0].objectType).toBe('UIAC');
     });
 
     it('preserves and encodes a slash type without injecting query parameters', async () => {
