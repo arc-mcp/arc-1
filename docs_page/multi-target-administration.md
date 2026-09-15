@@ -37,8 +37,7 @@ Admin diagnostics may expose internal target names and policy. Use trusted opera
 
 ### When separate instances are safer
 
-Use one ARC-1 instance per target, optionally behind an external router such as
-[`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub), when you need:
+Use one ARC-1 instance per target, with a separate MCP connection for each, when you need:
 
 - writes, activation, transport mutation, or Git mutation;
 - target-specific visibility or authorization before SAP is contacted;

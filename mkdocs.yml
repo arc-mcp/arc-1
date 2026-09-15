@@ -146,7 +146,6 @@ plugins:
   - redirects:
       redirect_maps:
         multi-destination.md: multi-target-setup.md
-        multi-system-hub.md: btp-overview.md
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 
 extra_javascript:

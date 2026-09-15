@@ -349,8 +349,8 @@ Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
   ADR-0007 permits only an explicit, default-off shared Basic identity under its mutation-free, one-instance
   controls and never as a PP fallback. Follow both normative plans exactly; do not add writes,
   target-specific roles, another discovery/auth model, or a hidden compatibility mode. Route requirements
-  outside those boundaries to the
-  [MCP hub](https://github.com/arc-mcp/mcp-hub) or a new ADR/security review.
+  outside those boundaries to separate ARC-1 instances. Changing the boundary requires a new
+  ADR/security review.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read before the 401 retry, and again on the next request after a persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.

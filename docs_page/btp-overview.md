@@ -16,7 +16,7 @@ For most on-premise teams, use **read-only access with XSUAA (SAP's OAuth servic
 | Several on-premise systems or clients | [Cloud Foundry deployment](btp-cloud-foundry-deployment.md), multi-PP profile |
 | BTP ABAP Environment | [BTP ABAP Environment setup](btp-abap-environment.md) |
 | S/4HANA Public Cloud developer extensibility | [S/4HANA Public Cloud setup](s4hana-public-cloud.md) |
-| Several systems that need write access | One ARC-1 instance per target; see the external [mcp-hub project](https://github.com/arc-mcp/mcp-hub) |
+| Several systems that need write access | [One ARC-1 instance per target](multi-target-administration.md#when-separate-instances-are-safer), with a separate MCP connection for each |
 
 Single-target access uses `/mcp`. Experimental multi-target access uses pinned `/<SYSTEM>/<CLIENT>/mcp` routes and `/multi/mcp`. Multi-target routes are **mutation-free**: no object writes, activation, transport/Git mutation, or plugins. Principal Propagation is recommended; shared Basic is a separately enabled exception.
 
