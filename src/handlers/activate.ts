@@ -25,6 +25,7 @@ import { type CacheSecurityContext, invalidateInactiveList } from './cache-secur
 import { buildCdsActivationDependencyHint } from './cds-hints.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
+import { recoverServiceBindingPublish } from './publish-recovery.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 import {
   enforceAllowedPackageForObjectUrl,
@@ -135,6 +136,8 @@ export async function handleSAPActivate(
     const serviceType = await resolveServiceType();
     const result = await publishServiceBinding(client.http, client.safety, name, version, serviceType);
     if (result.severity === 'ERROR') {
+      const recovered = await recoverServiceBindingPublish(client, name, version, serviceType, result);
+      if (recovered) return recovered;
       return errorResult(
         `Failed to publish service binding ${name}: ${result.shortText}${result.longText ? ` — ${result.longText}` : ''}`,
       );

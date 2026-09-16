@@ -1082,6 +1082,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
+        undefined,
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('published locally');
@@ -1095,6 +1096,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        undefined,
       );
     });
 
@@ -1106,6 +1108,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        undefined,
       );
     });
 
@@ -1140,6 +1143,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
+        undefined,
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('un-published locally');
@@ -1153,6 +1157,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        undefined,
       );
     });
 
@@ -1206,6 +1211,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         'application/xml',
         { Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' },
+        undefined,
       );
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.publishjob';
@@ -1215,6 +1221,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         asXmlType,
         { Accept: asXmlType },
+        undefined,
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('ZSSI_UI_S_ORD_O4 published locally');
@@ -1235,7 +1242,14 @@ describe('DevTools', () => {
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.unpublishjob';
       expect(http.post).toHaveBeenCalledTimes(2);
-      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+      expect(http.post).toHaveBeenNthCalledWith(
+        2,
+        path,
+        expect.any(String),
+        asXmlType,
+        { Accept: asXmlType },
+        undefined,
+      );
       expect(result.severity).toBe('OK');
     });
 
@@ -1246,7 +1260,14 @@ describe('DevTools', () => {
 
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav2.publishjob';
-      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+      expect(http.post).toHaveBeenNthCalledWith(
+        2,
+        path,
+        expect.any(String),
+        asXmlType,
+        { Accept: asXmlType },
+        undefined,
+      );
     });
 
     it('does not retry a 406 that does not name application/vnd.sap.as+xml', async () => {

@@ -1698,7 +1698,7 @@ export class AdtClient {
    * surfaces the package as a denormalised attribute. Both shapes resolve
    * to the same package; we accept either.
    */
-  async resolveObjectPackage(objectUrl: string, accept?: string): Promise<string> {
+  async resolveObjectPackage(objectUrl: string, accept?: string, options?: AdtRequestOptions): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'ResolveObjectPackage');
     // Server-driven objects (8.16+) only render their <blue:blueSource> metadata (with the
     // adtcore:packageRef) under the blues.vN+xml Accept — callers pass it so the allowedPackages
@@ -1708,7 +1708,7 @@ export class AdtClient {
     // bindings resource), and that 406 body names no accepted type, so the generic negotiation
     // retry cannot recover. Parameters select nothing on these metadata reads.
     const bareAccept = accept?.split(';')[0]?.trim();
-    const resp = await this.http.get(objectUrl, bareAccept ? { Accept: bareAccept } : undefined);
+    const resp = await this.http.get(objectUrl, bareAccept ? { Accept: bareAccept } : undefined, options);
     const packageRefMatch = resp.body.match(/adtcore:packageRef[^>]*adtcore:name="([^"]*)"/);
     if (packageRefMatch?.[1]) return packageRefMatch[1];
     const containerRefMatch = resp.body.match(/adtcore:containerRef[^>]*adtcore:packageName="([^"]*)"/);

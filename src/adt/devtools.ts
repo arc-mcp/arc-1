@@ -521,16 +521,17 @@ async function postPublishJob(
   job: 'publishjob' | 'unpublishjob',
   name: string,
   version: string,
+  options?: AdtRequestOptions,
 ): Promise<PublishResult> {
   const path = `/sap/bc/adt/businessservices/${serviceType}/${job}s?servicename=${encodeURIComponent(name)}&serviceversion=${encodeURIComponent(version)}`;
   try {
-    const resp = await http.post(path, publishBody(name), 'application/xml', { Accept: PUBLISH_JOB_ACCEPT });
+    const resp = await http.post(path, publishBody(name), 'application/xml', { Accept: PUBLISH_JOB_ACCEPT }, options);
     return parsePublishResponse(resp.body);
   } catch (err) {
     if (!isAsXmlOnlyNegotiationError(err)) throw err;
     const asXmlType = publishJobAsXmlType(serviceType, job);
     logger.debug(`Publish job content negotiation rejected — retrying with ${asXmlType}`, { path });
-    const resp = await http.post(path, publishBody(name), asXmlType, { Accept: asXmlType });
+    const resp = await http.post(path, publishBody(name), asXmlType, { Accept: asXmlType }, options);
     return parsePublishResponse(resp.body);
   }
 }
@@ -542,9 +543,10 @@ export async function publishServiceBinding(
   name: string,
   version = '0001',
   serviceType: 'odatav2' | 'odatav4' = 'odatav2',
+  options?: AdtRequestOptions,
 ): Promise<PublishResult> {
   checkOperation(safety, OperationType.Activate, 'PublishServiceBinding');
-  return postPublishJob(http, serviceType, 'publishjob', name, version);
+  return postPublishJob(http, serviceType, 'publishjob', name, version, options);
 }
 
 /** Unpublish an OData service binding (removes the service from consumption) */
