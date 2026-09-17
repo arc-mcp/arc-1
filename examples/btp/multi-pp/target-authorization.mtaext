@@ -1,10 +1,10 @@
 # Optional overlay AFTER the conservative multi-PP profile, not a standalone profile.
-# Prepare and test XSUAA target roles first; the descriptor alone assigns nobody.
+# Prepare roles unassigned; activate/verify enforcement before assigning restricted users.
 # Existing deployments remain legacy unless their operator explicitly applies this setting.
 # No independent single-target /mcp may coexist when enforcement is enabled.
 _schema-version: "3.1"
 ID: arc1-multi-pp-target-authorization-example
-extends: arc1-mcp
+extends: arc1-multi-pp-example
 modules:
   - name: arc1-mcp-server
     properties:

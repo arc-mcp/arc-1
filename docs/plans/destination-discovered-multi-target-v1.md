@@ -16,6 +16,10 @@ This document is the normative v1 specification together with accepted ADR-0006 
 a code comment, the PR #543 prototype, ADR-0005, or older documentation disagrees with this narrow
 experimental exception, this document and those ADRs win.
 
+For the optional `xsuaa-attribute` mode only, [ADR-0008](../adr/0008-opt-in-xsuaa-target-authorization.md)
+and the [target authorization contract](xsuaa-target-authorization.md) supersede this v1 document's
+no-target-role and paged-catalog rules. They do not change the legacy default or mutation boundary.
+
 ## Outcome
 
 One ARC-1 CF application can discover explicitly marked BTP subaccount destinations at startup and

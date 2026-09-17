@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { TARGET_CATALOG_MAX_RESULT_BYTES } from '../../../src/server/multi-target-catalog-enforced.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
-const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
+// Prose assertions must not require incidental Markdown line wrapping.
+const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
 const setup = read('docs_page/multi-target-setup.md');
 const admin = read('docs_page/multi-target-administration.md');
 const auth = read('docs_page/authorization.md');
@@ -57,7 +58,7 @@ describe('target authorization operator documentation', () => {
     expect(admin).toContain('countsComplete:false');
     expect(admin).toContain('query filters displayed rows, not registry totals');
     expect(admin).toContain('Immediate revocation');
-    expect(admin).toContain('private,\nno-store');
+    expect(admin).toContain('private, no-store');
     expect(admin).toContain('private browser window');
   });
 

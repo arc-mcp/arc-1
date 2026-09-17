@@ -10,6 +10,12 @@ No access/refresh token, authorization code, binding credential, or SAP response
 Tokens stay in process memory. Stopping the process forgets them but **does not revoke** them.
 Runtime HTTP/TLS debug, inspector, and TLS key logging options are rejected before loading
 private input; provider `DEBUG` logging is disabled. Run this only in a trusted local Node runtime.
+These checks reduce accidental disclosure; they are not a sandbox against a malicious runtime or
+operator. Session labels remain reserved during pending login and callback token exchange.
+
+Offline oracles run with `npm run test:target-auth:harness` in CI on Node 22 and 24. They cover
+schema projection, safe diagnostics and label reservations; Biome and the file-size ratchet also
+include this directory. This JavaScript harness is not covered by the TypeScript compiler.
 
 ## Start
 
@@ -28,6 +34,8 @@ private input; provider `DEBUG` logging is disabled. Run this only in a trusted 
    Set `expect.schemaTargets` to the **complete granted-active target projection** from the
    operator-maintained destination fixture and expected grants. Successful strict scenarios
    require it, including `[]` for no granted active targets. Do not copy it from a server result.
+   A nonempty expectation requires at least one operational tool; an empty/catalog-only response
+   cannot satisfy that positive schema-projection scenario.
 4. Start in a persistent PTY so JSON commands can be sent through stdin:
 
    ```bash

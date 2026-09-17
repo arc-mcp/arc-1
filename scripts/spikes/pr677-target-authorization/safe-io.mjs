@@ -18,7 +18,7 @@ export function safeFailure(error) {
 }
 
 export function assertSafeDiagnosticEnvironment(env = process.env, execArgv = process.execArgv) {
-  const diagnosticOptions = /(^|\s)--(?:inspect(?:-brk|-wait)?|trace-tls|tls-keylog)(?:=|\s|$)/;
+  const diagnosticOptions = /(^|[\s"'])--(?:inspect(?:[-_]brk|[-_]wait)?|trace[-_]tls|tls[-_]keylog)(?:=|[\s"']|$)/;
   if (
     ['NODE_DEBUG', 'NODE_DEBUG_NATIVE', 'SSLKEYLOGFILE'].some((name) => env[name]?.trim()) ||
     diagnosticOptions.test(env.NODE_OPTIONS ?? '') ||
