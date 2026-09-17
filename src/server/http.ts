@@ -292,7 +292,7 @@ export async function startHttpServer(
   xsuaaCredentials?: XsuaaCredentials,
   uiDeps?: UiServerDeps,
   multiTargets?: MultiTargetRouting,
-): Promise<void> {
+): Promise<import('node:http').Server> {
   const [host, portStr] = config.httpAddr.split(':');
   const port = Number.parseInt(portStr || '8080', 10);
   const bindHost = host || '0.0.0.0';
@@ -804,6 +804,7 @@ export async function startHttpServer(
     }
     process.exit(1);
   });
+  return httpServer;
 }
 
 // ─── OIDC Verifier (package-backed) ─────────────────────────────────

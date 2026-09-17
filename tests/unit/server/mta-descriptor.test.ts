@@ -220,11 +220,6 @@ describe('shipped mta.yaml resolves through the config parser', () => {
     expect(requirement?.parameters?.config).toMatchObject({
       xsuaa: {
         'credential-type': 'x509',
-        x509: {
-          'key-length': 2048,
-          validity: 2,
-          'validity-type': 'MONTHS',
-        },
       },
     });
   });

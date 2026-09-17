@@ -265,15 +265,10 @@ event; the BTP Audit Log sink forwards the security/data categories described be
 | **File** | Set `--log-file` / `ARC1_LOG_FILE` | JSON lines appended to a file |
 | **BTP Audit Log** | Auto-detected from a complete X.509 `auditlog` premium binding | Categorized security and data events sent to BTP Audit Log Service v2 API |
 
-The premium Audit Log Write API requires X.509 parameters on both the service instance and the
-application binding. ARC-1 rejects a selected binding that lacks its API URL, client ID, certificate
-token URL, certificate, or private key; it logs an `ERROR` and keeps the stderr/file sinks active.
-Later token, certificate-expiry, network, or API failures produce a structured `WARN` at most once
-per minute and do not fail the SAP tool call. Data-access messages identify the affected SAP system
-with the required `data_subject`; data-modification messages include the same attribution. Security
-and configuration messages retain their category-specific schema. See
-[BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md#optional-btp-audit-log-sink) for the
-MTA/direct-CF configuration and certificate-rotation procedure.
+Audit Log requires X.509 on both the service instance and binding. Incomplete bindings log an
+`ERROR` and are skipped; delivery failures log a `WARN` at most once a minute without failing the
+tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-sink) and
+[certificate rotation](btp-administration.md#audit-log-certificate-rotation).
 
 ### What Gets Logged
 

@@ -73,7 +73,7 @@ const BUDGETS = {
   // Relation parsing/traversal and response controls live outside this file; no feature algorithm here.
   'src/adt/http.ts': 1510,
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
-  'src/server/server.ts': 1504,
+  'src/server/server.ts': 1484,
 };
 
 const DEFAULT_SRC = 1500;

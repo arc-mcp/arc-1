@@ -242,9 +242,6 @@ modules:
 # resources:
 #   - name: arc1-auditlog
 #     active: true
-# The binding certificate is valid for two months. Rebind and restage before it
-# expires; an expired certificate produces a rate-limited runtime warning and
-# leaves stderr/file audit sinks active.
 
 # ── Reusing a SHARED Destination / Connectivity instance ────────────────
 # The base mta.yaml declares `arc1-destination` / `arc1-connectivity` as

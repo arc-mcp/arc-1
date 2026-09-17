@@ -28,7 +28,6 @@ describe('BTP Audit Log Sink', () => {
     const credentials = {
       url: 'https://api.auditlog.cf.example.com:6081',
       uaa: {
-        url: 'https://sub.auth.example.com',
         certurl: 'https://sub.auth.cert.example.com',
         clientid: 'my-client-id',
         certificate: '-----BEGIN CERT-----',
@@ -64,7 +63,6 @@ describe('BTP Audit Log Sink', () => {
             credentials: {
               url: 'https://api.auditlog.cf.example.com:6081',
               uaa: {
-                url: 'https://sub.auth.example.com',
                 clientid: 'my-client-id',
                 clientsecret: 'must-not-appear-in-error',
               },
@@ -73,17 +71,10 @@ describe('BTP Audit Log Sink', () => {
         ],
       });
 
-      let thrown: unknown;
-      try {
-        parseBTPAuditLogConfig();
-      } catch (error) {
-        thrown = error;
-      }
-      expect(thrown).toBeInstanceOf(Error);
-      expect((thrown as Error).message).toContain(
+      expect(() => parseBTPAuditLogConfig()).toThrow(
         'BTP Audit Log binding is missing required X.509 fields: uaa.certurl, uaa.certificate, uaa.key',
       );
-      expect((thrown as Error).message).not.toContain('must-not-appear-in-error');
+      expect(() => parseBTPAuditLogConfig()).not.toThrow(/must-not-appear-in-error/);
     });
 
     it('returns undefined for invalid JSON', () => {
@@ -124,7 +115,6 @@ describe('BTP Audit Log Sink', () => {
     const config = {
       url: 'https://api.auditlog.test:6081',
       uaa: {
-        url: 'https://sub.auth.test',
         certurl: 'https://sub.auth.cert.test',
         clientid: 'test-client',
         certificate: 'cert',
@@ -235,7 +225,6 @@ describe('BTP Audit Log Sink', () => {
         event: 'tool_call_end',
         tool: 'SAPRead',
         target: 'A4H/001',
-        destination: 'A4H_PP',
         durationMs: 100,
         status: 'success',
       };
@@ -258,7 +247,6 @@ describe('BTP Audit Log Sink', () => {
         level: 'info',
         event: 'tool_call_end',
         tool: 'SAPWrite',
-        destination: 'A4H_PP',
         durationMs: 200,
         status: 'success',
       };
@@ -270,23 +258,8 @@ describe('BTP Audit Log Sink', () => {
       expect(JSON.parse(auditCall[1]!.body as string).data_subject).toEqual({
         type: 'sap-system',
         role: 'data-owner',
-        id: { system: 'A4H_PP' },
+        id: { system: 'configured-target' },
       });
-    });
-
-    it('uses a stable data subject fallback for single-target tool calls', async () => {
-      const sink = new BTPAuditLogSink(config);
-      sink.write({
-        timestamp: '',
-        level: 'info',
-        event: 'tool_call_start',
-        tool: 'SAPSearch',
-        args: {},
-      });
-      await sink.flush();
-
-      const body = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string);
-      expect(body.data_subject.id).toEqual({ system: 'configured-target' });
     });
 
     it('sends configuration-changes for transport tool calls', async () => {

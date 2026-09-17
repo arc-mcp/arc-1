@@ -240,75 +240,18 @@ The base descriptor then supplies both required halves:
 - module `requires.parameters.config` with `xsuaa.credential-type: x509` and a two-month
   certificate.
 
-For a reviewed direct-`cf push` deployment that does not use the MTA, create and bind the service
-with both parameter sets explicitly:
+For a reviewed direct-`cf push` deployment, use SAP's instance and binding commands in
+[Audit Log Write API for Customers](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers),
+then restage `arc1-mcp-server`.
 
-```bash
-cf create-service auditlog premium arc1-auditlog -c '{
-  "xs-security": {
-    "xsappname": "<unique-xsappname-in-this-subaccount>",
-    "oauth2-configuration": {
-      "credential-types": ["x509"],
-      "grant-types": ["client_credentials"]
-    }
-  }
-}'
+`cf bind-service` can return `OK` yet produce a `binding-secret` binding. After deployment, check
+`cf logs arc1-mcp-server --recent`: `BTP Audit Log sink enabled` confirms the required fields are
+present; an `ERROR` names missing X.509 fields. Do not print `cf env` or binding credentials into
+tickets — they contain the private key. Confirm actual delivery with a known audit event; startup
+validation alone does not prove authentication or delivery.
 
-cf bind-service arc1-mcp-server arc1-auditlog -c '{
-  "xsuaa": {
-    "credential-type": "x509",
-    "x509": {
-      "key-length": 2048,
-      "validity": 2,
-      "validity-type": "MONTHS"
-    }
-  }
-}'
-cf restage arc1-mcp-server
-```
-
-Do not treat `cf bind-service` returning `OK` as proof that X.509 was materialized. Verify the
-result after every bind or rotation, printing only the credential type and field presence:
-
-```bash
-audit_app_guid=$(cf app arc1-mcp-server --guid)
-audit_binding_guid=$(
-  cf curl "/v3/service_credential_bindings?app_guids=$audit_app_guid&service_instance_names=arc1-auditlog" |
-    jq -er '.resources | if length == 1 then .[0].guid else error("expected one Audit Log binding") end'
-)
-cf curl "/v3/service_credential_bindings/$audit_binding_guid/details" |
-  jq '{
-    credential_type: .credentials.uaa["credential-type"],
-    has_certurl: (.credentials.uaa.certurl | type == "string"),
-    has_certificate: (.credentials.uaa.certificate | type == "string"),
-    has_key: (.credentials.uaa.key | type == "string")
-  }'
-```
-
-Expected: `credential_type` is `x509` and all three booleans are `true`. If CF produced
-`binding-secret` or any field is absent, unbind and repeat the X.509 bind; do not start acceptance
-testing with that binding.
-
-Do not print or copy `cf env`/binding credentials into tickets: they contain the private key. On
-startup, a usable binding produces `BTP Audit Log sink enabled`. A selected binding missing any
-X.509 field produces an `ERROR` and is not registered. Token, certificate-expiry, network, and API
-failures after startup produce a structured `WARN` at most once per minute while stderr and the
-optional file sink continue to receive events.
-
-The binding certificate does not renew inside a running process. Schedule rotation before its
-configured validity ends. For the MTA-managed service, unbind it during the maintenance window and
-redeploy the same reviewed MTAR with the same extension so the binding is recreated, then verify the
-startup log and a known audit event:
-
-```bash
-cf unbind-service arc1-mcp-server arc1-auditlog
-npm run btp:deploy-ext
-cf logs arc1-mcp-server --recent
-```
-
-For direct `cf push`, repeat `cf bind-service ... -c <the-x509-parameters-above>` after unbinding,
-then restage. Rotation changes only the Audit Log binding; it does not replace ARC-1's XSUAA binding
-or the stable DCR signing key.
+For expiry and rebinding, see
+[Audit Log certificate rotation](btp-administration.md#audit-log-certificate-rotation).
 
 ## 5. Validate, build, and inspect the MTAR
 

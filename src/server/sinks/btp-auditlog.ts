@@ -35,7 +35,6 @@ import type { LogSink } from './types.js';
 export interface BTPAuditLogConfig {
   url: string;
   uaa: {
-    url: string;
     certurl: string;
     clientid: string;
     certificate: string;
@@ -120,7 +119,6 @@ export function parseBTPAuditLogConfig(): BTPAuditLogConfig | undefined {
   const uaa = isRecord(credentials.uaa) ? credentials.uaa : {};
   const requiredFields = [
     ['url', credentials.url],
-    ['uaa.url', uaa.url],
     ['uaa.certurl', uaa.certurl],
     ['uaa.clientid', uaa.clientid],
     ['uaa.certificate', uaa.certificate],
@@ -139,7 +137,6 @@ export function parseBTPAuditLogConfig(): BTPAuditLogConfig | undefined {
   return {
     url: credentials.url as string,
     uaa: {
-      url: uaa.url as string,
       certurl: uaa.certurl as string,
       clientid: uaa.clientid as string,
       certificate: uaa.certificate as string,
@@ -229,7 +226,7 @@ export class BTPAuditLogSink implements LogSink {
       base.data_subject = {
         type: 'sap-system',
         role: 'data-owner',
-        id: { system: event.target ?? event.destination ?? 'configured-target' },
+        id: { system: event.target ?? 'configured-target' },
       };
     }
 

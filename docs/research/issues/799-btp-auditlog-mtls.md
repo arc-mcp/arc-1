@@ -86,7 +86,7 @@ same `XsuaaService` mechanism.
 
 The Write API's data-access schema also requires either `data_subject` or `data_subjects`. ARC-1
 uses one `data_subject` whose type is `sap-system`, role is `data-owner`, and system identifier is
-the resolved public target, destination name, or a stable single-target fallback. It includes the
+the resolved public target or a stable single-target fallback. It includes the
 same attribution on data modifications, although the author's live probe accepted that category
 without a subject.
 
@@ -134,19 +134,9 @@ event posted to `/audit-log/oauth2/v2/security-events` returned **HTTP 201**. Th
 service instance were deleted after the probe, and their credentials were never printed or saved in
 the repository.
 
-The initial post-fix smoke exercised `parseBTPAuditLogConfig()` and `BTPAuditLogSink`: the sink
-obtained its token, flushed a synthetic `safety_blocked` event successfully, and invoked the error
-reporter zero times. That proved authentication and the security-event schema, but not the data-event
-schema. An MTA build with a temporary `active: true` extension also preserved both X.509 parameter
-sets in the generated `mtad.yaml`. The temporary extension, service keys, and service instance were
-removed afterward.
-
-In [PR feedback](https://github.com/arc-mcp/arc-1/pull/802#issuecomment-5709908171), the issue author
-then tested all four categories against a real eu10 binding. Security, configuration, and
-data-modification events returned HTTP 201, while `data-accesses` returned HTTP 400 because both
-`data_subject` and `data_subjects` were empty. The author independently live-tested the exact
-`sap-system`/`data-owner` subject shape adopted here: all four categories returned HTTP 201 and the
-data-access record was available through the Retrieval API.
+The [reporter's eu10 rerun on `8f41a670`](https://github.com/arc-mcp/arc-1/pull/802#issuecomment-5710239435)
+returned HTTP 201 for all four categories. Two records were already visible in the Retrieval API;
+the other two were still ingesting when the comment was posted.
 
 This behavior is BTP service-contract behavior and is independent of the target ABAP release.
 
@@ -163,24 +153,17 @@ There are five related defects:
 5. Delivery failures bypass the configured logger and occur once per event without rate limiting;
    the pending-promise cleanup does not actually remove settled promises.
 
-## Fix scope
+## Shutdown follow-up
 
-- `src/server/sinks/btp-auditlog.ts`
-  - reject a selected binding that lacks any required X.509 field;
-  - use `XsuaaService.getClientCredentialsToken()`;
-  - add the SAP-system `data_subject` only to data-access and data-modification payloads;
-  - rate-limit delivery reports and track in-flight promises with a `Set`.
-- `src/server/server.ts`
-  - report invalid binding initialization at `error` level;
-  - pass a structured warning reporter to the sink.
-- `tests/unit/server/sinks/btp-auditlog.test.ts`
-  - cover invalid bindings, SAP token-service use, warning suppression, and promise cleanup behavior.
-- `mta.yaml`, `mta-overrides.mtaext.example`, and descriptor tests
-  - add an inactive-by-default premium Audit Log resource with correct instance/binding X.509
-    parameters.
-- `docs_page/btp-cloud-foundry-deployment.md` and `docs_page/security-guide.md`
-  - document enablement, secret-safe post-bind verification, startup/runtime signals, expiry, and
-    rebinding.
+The existing SIGTERM/SIGINT handlers called `process.exit(0)` without `logger.flush()`, abandoning
+in-flight Audit Log posts and buffered file records. The shared shutdown handler now stops incoming
+requests, waits for audit sinks, closes the cache, and exits; a five-second deadline prevents an
+unreachable sink or unfinished request from hanging a restart. Repeated signals do not bypass the
+flush. Logger flush waits for healthy sinks even if another fails, and FileSink waits for appends
+already started by its periodic timer. Forced termination can still lose pending records.
+
+Real-process SIGTERM/SIGINT tests hold a BTP sink post across the signal, then allow it to complete
+before exit. Removing the shutdown flush makes these regressions fail by exiting before delivery.
 
 ## Out of scope
 
@@ -192,47 +175,3 @@ There are five related defects:
   entitlement or desire for the paid/optional service do not change.
 - No Audit Log Retrieval API client or startup write probe. Binding validation is deterministic;
   runtime authorization, expiry, and network failures are surfaced by the rate-limited warning.
-
-## Paste-able GitHub reply
-
-```markdown
-Confirmed on v1.2.0/current `main`, and thank you for the unusually precise binding details.
-
-The missing-field diagnosis is correct, but the live validation found a second root cause: even a
-correct X.509 binding cannot work today because ARC-1's token `fetch` never attaches
-`uaa.certificate`/`uaa.key`. `NODE_EXTRA_CA_CERTS` only changes server trust; it does not provide a
-client identity. Subsequent all-category validation found a third masked defect: data events omit
-SAP's required `data_subject`.
-
-Validation established all three relevant cases:
-
-- a plain `auditlog/premium` key is `credential-type: binding-secret` and lacks
-  `certurl`/`certificate`/`key`;
-- an X.509 key contains those fields;
-- `@sap/xssec` with the X.509 credentials obtained a token and the real Audit Log Write API accepted
-  a synthetic security event with HTTP 201;
-- your live probe showed that the API rejected a data-access record without `data_subject` with
-  HTTP 400, while the same record with the SAP-system subject returned HTTP 201 and was retrievable.
-
-Your follow-up `fetch failed`/connection-reset evidence matches the same transport defect. It also
-identified an important operator check: because CF can report a successful bind while the resulting
-credential type is still `binding-secret`, the deployment guide will verify the materialized
-credential type and certificate-field presence after each bind.
-
-One small correction to the report: current HEAD does print a raw
-`[BTPAuditLogSink] Failed ...` stderr line per attempted event. That does not make the current state
-acceptable—the startup `enabled` line is false, the warning is not structured/rate-limited, and no
-event is delivered.
-
-The focused fix is to validate the binding before registration, reuse ARC-1's existing
-`@sap/xssec` dependency for the mTLS token flow, add the required subject to the two data categories,
-rate-limit structured delivery warnings, and add the documented X.509 instance/binding form as an
-inactive-by-default MTA option. Certificate expiry and rebinding will be documented as part of the
-same change.
-```
-
-## Recommendation
-
-Fix it. Use this dossier as the source of truth for the implementation and keep the change confined
-to binding validation, token transport, the required data-event subject, failure visibility,
-optional MTA wiring, and operator docs.
