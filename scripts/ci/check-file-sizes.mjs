@@ -71,10 +71,7 @@ const BUDGETS = {
   'tests/integration/adt.integration.test.ts': 3100,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1570,
-  // Stateful-session lifecycle tests share the HTTP transport's fetch/cookie harness. Keeping the
-  // six teardown cases here is clearer than duplicating that harness in a one-feature test file.
-  'tests/unit/adt/http.test.ts': 3070,
+  'src/adt/http.ts': 1550,
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
   'src/server/server.ts': 1504,
 };

@@ -206,15 +206,16 @@ The dedicated request remains the primary path. If and only if it returns 404, A
 stateless `HEAD /sap/bc/adt/core/discovery` through the same client. SAP_BASIS 750 returns 400 after
 resetting the context cookie, so `sap-contextid=0` is treated as successful teardown. Other fallback
 errors are logged once and remain best-effort. This narrowly preserves the oldest supported live
-system without weakening the verified 757/758+ contract.
+system while keeping the primary exchange verified on 758. The reporter's exact 757 SP03 system
+was not available for direct testing.
 
 ## Expected compatibility and failure semantics
 
 - Existing lock/modify/unlock requests remain stateful and keep their current cookies, CSRF token,
   discovery map, semaphore, authentication, proxy, and retry behavior.
-- The close request uses the same isolated client's authentication and cookies and therefore works
-  for Basic, bearer, cookie, and principal-propagation configurations through existing transport
-  code.
+- The close request reuses the isolated client's authentication and cookies. Basic, bearer, cookie,
+  and principal-propagation configurations follow their existing transport code; the live checks
+  here do not independently certify every authentication mode.
 - If no stateful request established a `sap-contextid`, no close call is sent, matching Eclipse.
 - SAP_BASIS 750 receives the stateless discovery transition only after the modern close endpoint
   proves absent with 404.
@@ -225,12 +226,16 @@ system without weakening the verified 757/758+ contract.
 
 ## Regression and live-validation results
 
-The maintained HTTP-client suite now pins the exact successful request, direct stateless header
-emission, callback-error cleanup, close-error isolation, no-context skip, and the 750 fallback's
-404→400/reset sequence. The focused file passes 197 tests; the complete suite passes 219 files and
-6,793 tests. Typecheck, build, lint, size checks, strict documentation build, touched-file Biome,
-and diff checks pass. The reviewed size-budget increase keeps the lifecycle beside the transport
-state it owns and avoids a one-feature adapter abstraction or a duplicated HTTP test harness.
+The focused `http-session.test.ts` suite pins the close request, stateless headers, parent isolation,
+callback/cleanup error preservation, missing/reset contexts, the 750 fallback, and log redaction.
+After the follow-up review, all 220 test files and 6,797 tests pass, including 15 focused lifecycle
+cases. Typecheck, build, lint, file/schema size checks, documentation build, and diff checks pass.
+
+The follow-up review found that the new context header was not covered by HTTP debug redaction and
+the cleanup warning included response-derived error text. Both were reproduced with regression
+tests and fixed at the existing logging call sites. The close method now has one final error handler and
+no mutable error accumulator. The focused tests use the existing response helper, so the earlier
+test-file size-budget exception was removed and the production-file budget was reduced.
 
 Live validation covered public create/update/activate/delete and absence checks on 750 and 758. SM04
 before the 758 fix showed one new retained HTTPS row per established context; the fixed success,
@@ -262,7 +267,7 @@ The fix adds that best-effort close centrally in withStatefulSession(), includin
 without changing write/lock semantics or public schemas. SAP_BASIS 750 lacks the modern close
 resource, so a 404-only stateless discovery fallback handles that release.
 
-Verified live: public create/update/activate/delete on 758 left no HTTPS session in SM04, including
+Verified live: public update/activate/delete on 758 left no HTTPS session in SM04, including
 an intentionally failing update; 750 reset the context through its fallback. Both disposable test
 classes were deleted and verified absent.
 ```

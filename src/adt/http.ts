@@ -63,12 +63,12 @@ export type { AdtRequestOptions } from './http-deadline.js';
  * activation preaudit response sizes — not for production.
  */
 const HTTP_DEBUG_BODY_LIMIT = 65536;
-const ADT_HTTP_SESSIONS_PATH = '/sap/bc/adt/core/http/sessions';
 const HTTP_DEBUG_REDACT_HEADERS = new Set([
   'authorization',
   'cookie',
   'set-cookie',
   'x-csrf-token',
+  'sap-contextid',
   'sap-connectivity-authentication',
   'proxy-authorization',
   'password', // abapGit bridge credential header (base64 is not encryption)
@@ -319,35 +319,25 @@ export class AdtHttpClient {
     // This client belongs only to withStatefulSession(), so it is not reused after the transition.
     this.config.sessionType = 'stateless';
     try {
-      await this.get(
-        ADT_HTTP_SESSIONS_PATH,
-        {
-          Accept: '*/*',
-          'sap-adt-purpose': 'close-session',
-          'sap-contextid': contextId,
-        },
-        {
-          probe: true,
-        },
-      );
-    } catch (error) {
-      let closeError = error;
-      // NW 7.50 predates the dedicated close resource. Its back-ported stateful-header enhancement
-      // still honors a stateless transition on discovery, but returns 400 after resetting the
-      // context. The reset cookie is authoritative; use this only for the endpoint's 404.
-      if (error instanceof AdtApiError && error.statusCode === 404) {
-        try {
-          await this.head('/sap/bc/adt/core/discovery', { Accept: '*/*' }, { probe: true });
-          return;
-        } catch (fallbackError) {
-          if (this.cookieJar.get('sap-contextid') === '0') return;
-          closeError = fallbackError;
-        }
+      try {
+        await this.get(
+          '/sap/bc/adt/core/http/sessions',
+          { Accept: '*/*', 'sap-adt-purpose': 'close-session', 'sap-contextid': contextId },
+          { probe: true },
+        );
+        return;
+      } catch (error) {
+        if (!(error instanceof AdtApiError && error.statusCode === 404)) throw error;
       }
-      // The write may already be persisted. Cleanup must not turn success into failure or replace
-      // the original callback error; SAP's reference client treats close as best-effort too.
+
+      // NW 7.50 lacks the close resource; its stateful-header backport closes on discovery instead.
+      await this.head('/sap/bc/adt/core/discovery', { Accept: '*/*' }, { probe: true });
+    } catch (error) {
+      // NW 7.50 can return 400 after closing. The reset cookie confirms that cleanup succeeded.
+      if (this.cookieJar.get('sap-contextid') === '0') return;
+      // Preserve the write result/error and keep SAP response text out of cleanup warnings.
       logger.warn('Failed to close stateful ADT session.', {
-        error: closeError instanceof Error ? closeError.message : String(closeError),
+        statusCode: error instanceof AdtApiError ? error.statusCode : undefined,
       });
     }
   }

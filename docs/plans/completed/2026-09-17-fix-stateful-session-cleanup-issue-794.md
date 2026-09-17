@@ -22,7 +22,7 @@ replace the original exception.
 
 ## Task 1: Pin the lifecycle with regression tests
 
-**File:** `tests/unit/adt/http.test.ts`
+**File:** `tests/unit/adt/http-session.test.ts`
 
 - [x] Assert that a configured `stateless` session emits `X-sap-adt-sessiontype: stateless`.
 - [x] Assert the exact close URI, GET method, purpose header, context header, stateless header, and
@@ -49,7 +49,7 @@ replace the original exception.
 **Files:** implementation, tests, and issue dossier
 
 - [x] Run the complete unit suite plus build, typecheck, lint, size checks, and diff checks.
-- [x] On SAP_BASIS 758, execute public create/update/activate operations and prove with SM04 that no
+- [x] On SAP_BASIS 758, execute public update/activate/delete operations and prove with SM04 that no
       new HTTPS application session remains.
 - [x] On SAP_BASIS 750, run a stateful lock/unlock/close cycle to verify release compatibility.
 - [x] Delete the disposable 758 class and verify it is absent.
@@ -72,7 +72,7 @@ replace the original exception.
 ## Validation commands
 
 ```bash
-npx vitest run tests/unit/adt/http.test.ts
+npx vitest run tests/unit/adt/http.test.ts tests/unit/adt/http-session.test.ts
 npm run typecheck
 npm run lint
 npm run build
@@ -83,15 +83,27 @@ git diff --check
 
 ## Validation result
 
-- `npm test`: 219 files and 6,793 tests passed.
+- `npm test` after the follow-up review: 220 files and 6,797 tests passed.
 - `npm run typecheck`, `npm run build`, `npm run lint`, `npm run check:sizes`,
   `npm run docs:build`, touched-file Biome, and `git diff --check`: passed.
-- The HTTP transport and its shared test harness deliberately received small, reviewed file-size
-  budget increases. Keeping the lifecycle and its tests beside the existing cookie/fetch machinery
-  is easier to review than introducing one-feature adapter modules or duplicating the test harness.
+- The lifecycle remains in the transport that owns its state. The follow-up review shortened the
+  cleanup method and lowered its size budget. The focused session tests reuse `mockResponse` and
+  need no test-file budget exception.
 - SAP_BASIS 758: success, failure, activation, and delete paths retained no HTTPS row in SM04.
 - SAP_BASIS 750 SP02: the 404-only fallback reset `sap-contextid` to `0`; public CRUD passed.
 - Disposable objects on both systems were deleted and confirmed absent.
+
+## Follow-up maintainability review
+
+- [x] Remove the mutable cleanup-error accumulator: the primary request returns on success, only
+  404 reaches the legacy fallback, and one outer handler checks the reset cookie or logs failure.
+- [x] Redact `sap-contextid` in HTTP debug headers and log only the cleanup HTTP status, never the
+  SAP error body. Regression tests reproduced both logging gaps before the fix.
+- [x] Replace private-field test access and the assertion-free isolation test with observable
+  requests that verify inherited authentication, CSRF, cookies, and parent isolation.
+- [x] Cover simultaneous callback/cleanup failure, 403/500 without fallback, a fallback 400 without
+  a reset cookie, an already-reset context, and debug redaction on both success and failure.
+- [x] Move the lifecycle tests to `http-session.test.ts` and remove the HTTP test budget exception.
 
 ## Acceptance criteria
 
