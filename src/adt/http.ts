@@ -194,6 +194,8 @@ export class AdtHttpClient {
   private csrfToken = '';
   private dispatcher: Dispatcher | undefined;
   private longOperationDispatcher: Dispatcher | undefined;
+  private statefulProxyClient: Client | undefined;
+  private reuseStatefulProxyClient = false;
   private config: AdtHttpConfig;
   /**
    * Cookie jar — stores Set-Cookie headers from responses and sends them back.
@@ -303,10 +305,24 @@ export class AdtHttpClient {
     sessionClient.cookieJar = new Map(this.cookieJar);
     sessionClient.discoveryMap = this.discoveryMap;
     sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
+    sessionClient.reuseStatefulProxyClient = true;
+
     try {
       return await fn(sessionClient);
     } finally {
-      await sessionClient.closeStatefulSession();
+      try {
+        await sessionClient.closeStatefulSession();
+      } finally {
+        const proxyClient = sessionClient.statefulProxyClient;
+        sessionClient.statefulProxyClient = undefined;
+        if (proxyClient) {
+          try {
+            await proxyClient.close();
+          } catch {
+            logger.warn('Failed to close stateful Connectivity proxy client.');
+          }
+        }
+      }
     }
   }
 
@@ -1439,7 +1455,13 @@ export class AdtHttpClient {
     }
 
     const clientOptions = options?.fetchTimeoutMs === undefined ? undefined : { headersTimeout: 0, bodyTimeout: 0 };
-    const client = new Client(proxyOrigin, clientOptions);
+    const reuseProxyClient =
+      this.reuseStatefulProxyClient &&
+      options?.responseBudget === undefined &&
+      !options?.discardResponseBody;
+    const client = reuseProxyClient
+      ? (this.statefulProxyClient ??= new Client(proxyOrigin, clientOptions))
+      : new Client(proxyOrigin, clientOptions);
     let responseOwnsClient = false;
     try {
       const signal = requestSignal(options);
@@ -1464,7 +1486,7 @@ export class AdtHttpClient {
         options?.discardResponseBody,
       );
     } finally {
-      if (!responseOwnsClient) await client.close();
+      if (!reuseProxyClient && !responseOwnsClient) await client.close();
     }
   }
 }
