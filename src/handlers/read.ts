@@ -144,12 +144,12 @@ function sourceVersionWarning(effectiveVersion: SourceVersion, draft?: InactiveO
  * SWOTLV is a declared internal source and BOR method resolution has no alternative in ARC-1, so a
  * policy denial must name the affected feature rather than surfacing a bare policy error.
  */
-async function swotlv<T>(run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
+async function swotlv<T>(minimalErrors: boolean, run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
   try {
     return await run();
   } catch (error) {
     if (error instanceof DataSourcePolicyError) {
-      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error.message)) };
+      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error, minimalErrors)) };
     }
     throw error;
   }
@@ -160,6 +160,7 @@ export async function handleSAPRead(
   args: Record<string, unknown>,
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
+  minimalErrors: boolean,
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -778,7 +779,7 @@ export async function handleSAPRead(
       }
       if (safeMethod) {
         // Read specific BOR method implementation via SWOTLV lookup
-        const data = await swotlv(() =>
+        const data = await swotlv(minimalErrors, () =>
           client.runQuery(
             `SELECT PROGNAME, FORMNAME FROM SWOTLV WHERE LOBJTYPE = '${safeName}' AND VERB = '${safeMethod}'`,
             1,
@@ -800,7 +801,7 @@ export async function handleSAPRead(
         );
       }
       // List all methods for this BOR object
-      const methods = await swotlv(() =>
+      const methods = await swotlv(minimalErrors, () =>
         client.runQuery(`SELECT VERB, PROGNAME, FORMNAME, DESCRIPT FROM SWOTLV WHERE LOBJTYPE = '${safeName}'`, 100),
       );
       if ('policyDenial' in methods) return methods.policyDenial;

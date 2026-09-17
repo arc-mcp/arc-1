@@ -81,7 +81,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       const client = createClient();
       const error = new AdtApiError('Forbidden', 403, '/sap/bc/adt/repository/informationsystem/search');
       vi.spyOn(client, 'searchObject').mockRejectedValue(error);
-      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' })).rejects.toBe(error);
+      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' }, false)).rejects.toBe(error);
     });
 
     it('preserves and encodes a slash type without injecting query parameters', async () => {

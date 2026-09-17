@@ -555,6 +555,35 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(text).not.toMatch(/SCARR|USR02|SAP_BLOCKED_DATA_SOURCES|\/ddic\/tables/i);
     });
 
+    it('keeps internal data-operation denials minimal while preserving the feature guidance', async () => {
+      mockFetch.mockReset();
+      const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['TADIR'] };
+      const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+
+      const result = await handleToolCall(
+        client,
+        {
+          ...DEFAULT_CONFIG,
+          allowDataPreview: true,
+          allowFreeSQL: true,
+          blockedDataSources: ['TADIR'],
+          minimalErrors: true,
+        },
+        'SAPSearch',
+        { searchType: 'tadir_lookup', names: ['ZFOO'], source: 'db' },
+      );
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toContain('DATA_SOURCE_BLOCKED');
+      expect(text).toContain('executed=false');
+      // Registry guidance may name the operation's documented source, never the rule or the variable.
+      expect(text).toContain('Affected: SAPSearch(searchType="tadir_lookup"');
+      expect(text).toContain('Retry with source="adt"');
+      expect(text).not.toContain('Source path');
+      expect(text).not.toContain('SAP_BLOCKED_DATA_SOURCES');
+    });
+
     it('minimal mode redacts the client message but never the audit record', async () => {
       const auditSpy = vi.spyOn(logger, 'emitAudit');
       try {

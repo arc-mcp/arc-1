@@ -15,7 +15,11 @@ import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPNavigate Handler ─────────────────────────────────────────────
 
-export async function handleSAPNavigate(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+export async function handleSAPNavigate(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  minimalErrors: boolean,
+): Promise<ToolResult> {
   const action = String(args.action ?? '');
   let uri = String(args.uri ?? '');
   const line = Number(args.line ?? 1);
@@ -163,7 +167,7 @@ export async function handleSAPNavigate(client: AdtClient, args: Record<string, 
         // Core dependency: name the affected feature and the alternative rather than letting a bare
         // policy error reach the model without context.
         if (err instanceof DataSourcePolicyError) {
-          return errorResult(internalOperationDenial('class_hierarchy', err.message));
+          return errorResult(internalOperationDenial('class_hierarchy', err, minimalErrors));
         }
         if (err instanceof AdtApiError && err.statusCode === 404) {
           return errorResult('Cannot query SEOMETAREL — table may not be accessible on this system.');
