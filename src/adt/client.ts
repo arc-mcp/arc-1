@@ -22,11 +22,7 @@ import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
 import { canonicalDataSourceName } from './data-source-name.js';
-import {
-  CDS_DEPENDENCY_GRAPH_PATH,
-  createDataSourceBlocklistGuard,
-  type DataSourceBlocklistGuard,
-} from './data-source-policy.js';
+import { CDS_DEPENDENCY_GRAPH_PATH, DataSourceBlocklistGuard } from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
@@ -1343,8 +1339,7 @@ export class AdtClient {
 
   /** A fresh guard per logical request; instrumentation never leaks between decisions. */
   private dataSourceBlocklistGuard(): DataSourceBlocklistGuard {
-    return createDataSourceBlocklistGuard({
-      blockedDataSources: this.safety.blockedDataSources,
+    return new DataSourceBlocklistGuard(this.safety.blockedDataSources, {
       searchObject: (name, maxResults) => this.searchObject(name, maxResults),
       canonicalTableSourceAvailable: this.http.hasDiscoveryData()
         ? this.http.discoveryAcceptFor('/sap/bc/adt/ddic/tables') !== undefined

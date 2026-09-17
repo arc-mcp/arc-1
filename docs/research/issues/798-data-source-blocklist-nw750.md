@@ -184,8 +184,8 @@ At `replacementAt()`, consult a tri-state resolver capability backed by the alre
 discovery map:
 
 - `true`: read canonical table source exactly as today;
-- `false`: return `DATA_POLICY_UNAVAILABLE` with a safe 7.52+/empty-blocklist operator action before
-  calling `/ddic/tables`;
+- `false`: return `DATA_POLICY_UNAVAILABLE` before calling `/ddic/tables`, with guidance to use a
+  capable target (normally 7.52+) or keep data access disabled;
 - `undefined`: discovery was not loaded (direct library/tests), preserve the current request-and-fail
   behavior rather than inventing absence.
 
@@ -257,8 +257,8 @@ would create a blocklist bypass.
 
 I’m taking the release-gate direction, but at the precise point where replacement metadata is needed:
 when loaded ADT discovery does not advertise `/sap/bc/adt/ddic/tables`, ARC-1 will deny with a dedicated
-`DATA_POLICY_UNAVAILABLE` result and an actionable 7.52+/disable-the-blocklist hint, without making the
-known-missing HTTP request. Direct blocks, SQL-parser denials, and graph-visible transitive blocks keep
+`DATA_POLICY_UNAVAILABLE` result and guidance to use a capable target or keep data access disabled,
+without making the known-missing HTTP request. Direct blocks, SQL-parser denials, and graph-visible transitive blocks keep
 their stronger existing outcomes. This also remains correct for mixed-release multi-target deployments.
 
 The validated dossier is in

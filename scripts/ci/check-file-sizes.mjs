@@ -62,9 +62,10 @@ const BUDGETS = {
   // +10 on top of that for runQueryBatch, the single freestyle-SQL entry point that authorizes a
   // whole logical request once and then executes its statements inside one response-memory scope.
   // Authorization and the POSTs must stay inside one private client operation, so this genuinely
-  // belongs on the facade; the two parts that did not were extracted first (guard wiring to
+  // belongs on the facade; the two parts that did not were extracted first (lineage evaluation to
   // data-source-policy.ts, the statement-execution loop to table-query.ts).
-  'src/adt/client.ts': 1739,
+  // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
+  'src/adt/client.ts': 1734,
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.

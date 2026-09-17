@@ -110,6 +110,13 @@ stopped 816 target is not required to establish the 7.52 boundary.
   decision, and aligned the earlier design reassessment with the fourth stable code.
 - A second maintainability review replaced the zero-argument capability callback with an immutable,
   explicitly named tri-state value and aligned the live test with discovery rather than release parsing.
+- A further review removed the forwarding-only guard factory, combined overlapping graph tests while
+  covering all three discovery states, and clarified that missing metadata means keeping data access
+  disabled rather than clearing the blocklist.
+- After that cleanup, all 411 focused tests and 6,793 tests across 219 unit files passed, along with
+  typecheck, lint, policy validation, build, strict docs build, size/schema checks and `git diff --check`.
+  Earlier cross-release live results remain the live evidence; shared SAP CI jobs were excluded from
+  the merge recommendation at the user's request.
 
 ### Task 1: Add release-boundary regression tests
 
@@ -130,16 +137,16 @@ behavior reproduced live.
       search, then denies before table-source and data-preview HTTP calls.
 - [x] Add a minimal-error dispatch assertion proving the new code explains the 7.52 boundary without
       leaking the source, configured names, or raw backend diagnostics.
-- [x] Change the live unrelated-table test: on `<752`, assert `DATA_POLICY_UNAVAILABLE` and no
-      `/ddic/tables` request; on newer releases, retain the successful data-preview assertion.
+- [x] Change the live unrelated-table test: when discovery lacks the table-source resource, assert
+      `DATA_POLICY_UNAVAILABLE` and no `/ddic/tables` request; when advertised, retain the successful
+      data-preview assertion.
 - [x] Run the focused unit suites and confirm the new expectations fail before implementation.
 
 ### Task 2: Implement the discovery-gated policy outcome
 
 **Files:**
 - Modify: `src/adt/data-source-policy.ts` (`DataSourcePolicyErrorCode`,
-  `DataSourcePolicyResolver`, `DataSourcePolicyBackend`, `replacementAt()`,
-  `createDataSourceBlocklistGuard()`)
+  `DataSourcePolicyResolver`, `DataSourcePolicyBackend`, `replacementAt()`)
 - Modify: `src/adt/client.ts` (`dataSourceBlocklistGuard()`)
 - Modify: `src/server/audit.ts` (`DataSourcePolicyDecisionEvent.code`)
 

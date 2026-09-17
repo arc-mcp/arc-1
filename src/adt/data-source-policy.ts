@@ -168,7 +168,7 @@ export type ResolvedDirectDataSource =
 
 export interface DataSourcePolicyResolver {
   resolveDirectSource(name: string): Promise<ResolvedDirectDataSource>;
-  /** False only when loaded discovery proves the canonical table-source resource is absent. */
+  /** True = advertised, false = absent from loaded discovery, undefined = discovery unknown. */
   canonicalTableSourceAvailable?: boolean;
   readTableSource(name: string): Promise<string>;
   readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode>;
@@ -432,23 +432,6 @@ export class DataSourceBlocklistGuard {
 
 /** Endpoint the SQL dependency graph is served from. */
 export const CDS_DEPENDENCY_GRAPH_PATH = '/sap/bc/adt/ddic/ddl/dependencies/graphdata';
-
-/**
- * Wire a request-scoped guard from the ADT primitives it needs.
- *
- * Lives here rather than on the client so the ADT facade stays a facade: this is policy wiring, and
- * a new guard is built per logical request so its instrumentation can never leak between decisions.
- */
-export function createDataSourceBlocklistGuard(deps: {
-  blockedDataSources: string[];
-  searchObject: DataSourcePolicyBackend['searchObject'];
-  canonicalTableSourceAvailable: DataSourcePolicyBackend['canonicalTableSourceAvailable'];
-  readTableSource: DataSourcePolicyBackend['readTableSource'];
-  dependencyGraphAccept: DataSourcePolicyBackend['dependencyGraphAccept'];
-  readDependencyGraph: DataSourcePolicyBackend['readDependencyGraph'];
-}): DataSourceBlocklistGuard {
-  return new DataSourceBlocklistGuard(deps.blockedDataSources, deps);
-}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;

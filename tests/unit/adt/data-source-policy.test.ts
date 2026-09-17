@@ -186,12 +186,15 @@ describe('enforceBlockedDataSources', () => {
     expect(r.readTableSource).not.toHaveBeenCalled();
   });
 
-  it('allows an unrelated transparent table after checking replacement metadata', async () => {
-    const r = resolver();
-    await enforceBlockedDataSources(['SCARR'], ['USR02'], r);
-    expect(r.resolveDirectSource).toHaveBeenCalledWith('SCARR');
-    expect(r.readTableSource).toHaveBeenCalledWith('SCARR');
-  });
+  it.each([true, undefined])(
+    'checks replacement metadata before allowing a table when table-source availability is %s',
+    async (canonicalTableSourceAvailable) => {
+      const r = resolver({ canonicalTableSourceAvailable });
+      await enforceBlockedDataSources(['SCARR'], ['USR02'], r);
+      expect(r.resolveDirectSource).toHaveBeenCalledWith('SCARR');
+      expect(r.readTableSource).toHaveBeenCalledWith('SCARR');
+    },
+  );
 
   it('reports unavailable policy metadata before reading an undiscovered table source', async () => {
     const r = resolver({
@@ -205,54 +208,53 @@ describe('enforceBlockedDataSources', () => {
     expect(r.readTableSource).not.toHaveBeenCalled();
   });
 
-  it('denies a blocked transitive CDS source with a dependency path', async () => {
-    const r = resolver({
-      resolveDirectSource: vi.fn(async () => ({
-        kind: 'cds' as const,
-        name: 'DEMO_CDS_SUMDIST',
-        ddlSource: 'DEMO_CDS_SUMDIST',
-      })),
-    });
-    await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['SPFLI'], r)).rejects.toMatchObject({
-      code: 'DATA_SOURCE_BLOCKED',
-      sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
-    });
-  });
+  it.each([true, false, undefined])(
+    'denies a blocked graph alias before replacement inspection when table-source availability is %s',
+    async (canonicalTableSourceAvailable) => {
+      const r = resolver({
+        resolveDirectSource: vi.fn(async () => ({
+          kind: 'cds' as const,
+          name: 'DEMO_CDS_SUMDIST',
+          ddlSource: 'DEMO_CDS_SUMDIST',
+        })),
+        canonicalTableSourceAvailable,
+        readTableSource: vi.fn(async () => {
+          throw new Error('canonical table source unavailable');
+        }),
+      });
+      await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['SPFLI'], r)).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
+      });
+      expect(r.readTableSource).not.toHaveBeenCalled();
+    },
+  );
 
-  it('scans all graph aliases before rejecting unavailable replacement metadata', async () => {
-    const readTableSource = vi.fn(async () => 'must not be read');
-    const r = resolver({
-      resolveDirectSource: vi.fn(async () => ({
-        kind: 'cds' as const,
-        name: 'DEMO_CDS_SUMDIST',
-        ddlSource: 'DEMO_CDS_SUMDIST',
-      })),
-      canonicalTableSourceAvailable: false,
-      readTableSource,
-    });
-    await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['SPFLI'], r)).rejects.toMatchObject({
-      code: 'DATA_SOURCE_BLOCKED',
-      sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
-    });
-    expect(readTableSource).not.toHaveBeenCalled();
-  });
-
-  it('preserves the graph path when canonical replacement metadata cannot be read', async () => {
-    const r = resolver({
-      resolveDirectSource: vi.fn(async () => ({
-        kind: 'cds' as const,
-        name: 'DEMO_CDS_SUMDIST',
-        ddlSource: 'DEMO_CDS_SUMDIST',
-      })),
-      readTableSource: vi.fn(async () => {
-        throw new Error('canonical table source unavailable');
-      }),
-    });
-    await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_LINEAGE_UNRESOLVED',
-      sourcePath: ['DEMO_CDS_SUMDIST', 'SCARR'],
-    });
-  });
+  it.each([
+    [true, 'DATA_LINEAGE_UNRESOLVED'],
+    [false, 'DATA_POLICY_UNAVAILABLE'],
+    [undefined, 'DATA_LINEAGE_UNRESOLVED'],
+  ] as const)(
+    'preserves the graph path when table-source availability is %s',
+    async (canonicalTableSourceAvailable, code) => {
+      const r = resolver({
+        resolveDirectSource: vi.fn(async () => ({
+          kind: 'cds' as const,
+          name: 'DEMO_CDS_SUMDIST',
+          ddlSource: 'DEMO_CDS_SUMDIST',
+        })),
+        canonicalTableSourceAvailable,
+        readTableSource: vi.fn(async () => {
+          throw new Error('canonical table source unavailable');
+        }),
+      });
+      await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['USR02'], r)).rejects.toMatchObject({
+        code,
+        sourcePath: ['DEMO_CDS_SUMDIST', 'SCARR'],
+      });
+      expect(r.readTableSource).toHaveBeenCalledTimes(canonicalTableSourceAvailable === false ? 0 : 1);
+    },
+  );
 
   it('expands a transparent-table replacement object', async () => {
     const resolveDirectSource = vi.fn(async (name: string) =>
