@@ -222,6 +222,18 @@ modules:
       # Bound only when the (deprecated) application-logs resource is active —
       # off by default; skipped automatically while inactive. See resource below.
       - name: arc1-application-logs
+      # Optional compliance audit sink. The resource is inactive by default;
+      # when enabled, these binding parameters create the X.509 credentials
+      # required by the premium Audit Log Write API.
+      - name: arc1-auditlog
+        parameters:
+          config:
+            xsuaa:
+              credential-type: x509
+              x509:
+                key-length: 2048
+                validity: 2
+                validity-type: MONTHS
 
   # Optional browser entry point for the experimental read-only UI. It is
   # excluded by default so the base SAP MTA still deploys one CF app. Include it
@@ -312,6 +324,26 @@ resources:
     parameters:
       service: connectivity
       service-plan: lite
+
+  # SAP BTP Audit Log Service — OFF by default (`active: false`). Enable it in
+  # the landscape extension only when the subaccount has premium-plan quota and
+  # an owner for certificate rotation. Both the instance and binding must opt in
+  # to X.509; a plain binding contains a client secret and cannot call the
+  # customer Write API.
+  - name: arc1-auditlog
+    type: org.cloudfoundry.managed-service
+    active: false
+    parameters:
+      service: auditlog
+      service-plan: premium
+      config:
+        xs-security:
+          xsappname: arc1-auditlog-${space}
+          oauth2-configuration:
+            credential-types:
+              - x509
+            grant-types:
+              - client_credentials
 
   # SAP Application Logging Service — OFF by default (`active: false`).
   # The service is DEPRECATED: SAP removed it from the list of Eligible Cloud

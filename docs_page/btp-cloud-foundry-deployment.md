@@ -216,6 +216,100 @@ Use a separate principal-type-None Cloud Connector mapping with internal HTTPS a
 least-privileged technical SAP user. See
 [Shared Basic controls](multi-target-administration.md#basic-shared-identity-controls).
 
+### Optional: BTP Audit Log sink
+
+ARC-1 always writes audit events to stderr. To also send the supported security/data categories to
+SAP BTP Audit Log Service, first assign `auditlog` **premium** quota and an owner for certificate
+rotation. The service uses X.509 client authentication; a plain service instance and binding create
+a client secret that the Audit Log Write API cannot use.
+
+The base `mta.yaml` contains the complete service-instance and binding configuration but keeps the
+resource inactive. Add this to the real landscape extension, merging it into an existing
+`resources:` block when necessary:
+
+```yaml
+resources:
+  - name: arc1-auditlog
+    active: true
+```
+
+The base descriptor then supplies both required halves:
+
+- service-instance configuration with a unique `xsappname`, X.509 credential type, and
+  `client_credentials` grant; and
+- module `requires.parameters.config` with `xsuaa.credential-type: x509` and a two-month
+  certificate.
+
+For a reviewed direct-`cf push` deployment that does not use the MTA, create and bind the service
+with both parameter sets explicitly:
+
+```bash
+cf create-service auditlog premium arc1-auditlog -c '{
+  "xs-security": {
+    "xsappname": "<unique-xsappname-in-this-subaccount>",
+    "oauth2-configuration": {
+      "credential-types": ["x509"],
+      "grant-types": ["client_credentials"]
+    }
+  }
+}'
+
+cf bind-service arc1-mcp-server arc1-auditlog -c '{
+  "xsuaa": {
+    "credential-type": "x509",
+    "x509": {
+      "key-length": 2048,
+      "validity": 2,
+      "validity-type": "MONTHS"
+    }
+  }
+}'
+cf restage arc1-mcp-server
+```
+
+Do not treat `cf bind-service` returning `OK` as proof that X.509 was materialized. Verify the
+result after every bind or rotation, printing only the credential type and field presence:
+
+```bash
+audit_app_guid=$(cf app arc1-mcp-server --guid)
+audit_binding_guid=$(
+  cf curl "/v3/service_credential_bindings?app_guids=$audit_app_guid&service_instance_names=arc1-auditlog" |
+    jq -er '.resources | if length == 1 then .[0].guid else error("expected one Audit Log binding") end'
+)
+cf curl "/v3/service_credential_bindings/$audit_binding_guid/details" |
+  jq '{
+    credential_type: .credentials.uaa["credential-type"],
+    has_certurl: (.credentials.uaa.certurl | type == "string"),
+    has_certificate: (.credentials.uaa.certificate | type == "string"),
+    has_key: (.credentials.uaa.key | type == "string")
+  }'
+```
+
+Expected: `credential_type` is `x509` and all three booleans are `true`. If CF produced
+`binding-secret` or any field is absent, unbind and repeat the X.509 bind; do not start acceptance
+testing with that binding.
+
+Do not print or copy `cf env`/binding credentials into tickets: they contain the private key. On
+startup, a usable binding produces `BTP Audit Log sink enabled`. A selected binding missing any
+X.509 field produces an `ERROR` and is not registered. Token, certificate-expiry, network, and API
+failures after startup produce a structured `WARN` at most once per minute while stderr and the
+optional file sink continue to receive events.
+
+The binding certificate does not renew inside a running process. Schedule rotation before its
+configured validity ends. For the MTA-managed service, unbind it during the maintenance window and
+redeploy the same reviewed MTAR with the same extension so the binding is recreated, then verify the
+startup log and a known audit event:
+
+```bash
+cf unbind-service arc1-mcp-server arc1-auditlog
+npm run btp:deploy-ext
+cf logs arc1-mcp-server --recent
+```
+
+For direct `cf push`, repeat `cf bind-service ... -c <the-x509-parameters-above>` after unbinding,
+then restage. Rotation changes only the Audit Log binding; it does not replace ARC-1's XSUAA binding
+or the stable DCR signing key.
+
 ## 5. Validate, build, and inspect the MTAR
 
 ```bash
@@ -361,7 +455,8 @@ The deployment creates/updates:
 
 - `arc1-mcp-server`, one 512 MB process by default;
 - XSUAA with ARC-1 scopes, templates, and seven space-qualified role collections;
-- Destination and Connectivity service instances and bindings; and
+- Destination and Connectivity service instances and bindings;
+- the Audit Log premium instance and X.509 binding only when `arc1-auditlog` is activated; and
 - a health check on `/health`.
 
 The unconfigured base application and multi-target mode can start with no SAP targets. The
@@ -582,6 +677,8 @@ buildpack push does not create the seven MTA role collections for you.
 | SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |
 | SAP `403` after PP login | Check the actual propagated user's SAP authorizations |
 | Destination change appears ignored | Restart every ARC-1 instance; only discovered multi-target Basic username/password fields are hot |
+| `BTP Audit Log sink disabled` at startup | The selected premium binding is incomplete; recreate/rebind it with the X.509 instance and binding parameters from step 4 |
+| Repeated `BTP Audit Log delivery failed` warning | Check certificate validity, token/API reachability, and service health; rotate the binding before retrying |
 
 ## Official references
 
@@ -589,4 +686,5 @@ buildpack push does not create the seven MTA role collections for you.
 - [SAP: Defining MTA Extension Descriptors](https://help.sap.com/docs/btp/sap-business-technology-platform/defining-mta-extension-descriptors)
 - [SAP: Destination Service](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/destination-service)
 - [SAP: Working with Role Collections](https://help.sap.com/docs/btp/sap-business-technology-platform/working-with-role-collections)
+- [SAP: Audit Log Write API for Customers](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers)
 - [Cloud Foundry: Start, Restart, and Restage](https://docs.cloudfoundry.org/devguide/deploy-apps/start-restart-restage.html)

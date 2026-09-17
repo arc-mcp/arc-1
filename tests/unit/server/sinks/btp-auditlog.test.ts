@@ -1,3 +1,4 @@
+import { XsuaaService } from '@sap/xssec';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuditEvent } from '../../../../src/server/audit.js';
 import { BTPAuditLogSink, parseBTPAuditLogConfig } from '../../../../src/server/sinks/btp-auditlog.js';
@@ -49,30 +50,69 @@ describe('BTP Audit Log Sink', () => {
       expect(config!.uaa.clientid).toBe('my-client-id');
     });
 
+    it('rejects a selected binding without X.509 credentials', () => {
+      process.env.VCAP_SERVICES = JSON.stringify({
+        auditlog: [
+          {
+            plan: 'premium',
+            credentials: {
+              url: 'https://api.auditlog.cf.example.com:6081',
+              uaa: {
+                url: 'https://sub.auth.example.com',
+                clientid: 'my-client-id',
+                clientsecret: 'must-not-appear-in-error',
+              },
+            },
+          },
+        ],
+      });
+
+      let thrown: unknown;
+      try {
+        parseBTPAuditLogConfig();
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toContain(
+        'BTP Audit Log binding is missing required X.509 fields: uaa.certurl, uaa.certificate, uaa.key',
+      );
+      expect((thrown as Error).message).not.toContain('must-not-appear-in-error');
+    });
+
     it('returns undefined for invalid JSON', () => {
       process.env.VCAP_SERVICES = 'not-json';
+      expect(parseBTPAuditLogConfig()).toBeUndefined();
+    });
+
+    it('returns undefined when VCAP_SERVICES is not an object', () => {
+      process.env.VCAP_SERVICES = 'null';
       expect(parseBTPAuditLogConfig()).toBeUndefined();
     });
   });
 
   describe('Event categorization', () => {
-    let stderrSpy: ReturnType<typeof vi.spyOn>;
     let fetchSpy: ReturnType<typeof vi.fn>;
+    let tokenSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-      stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
       // Mock global fetch
       fetchSpy = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ access_token: 'test-token', expires_in: 3600 }),
         text: () => Promise.resolve(''),
       });
       vi.stubGlobal('fetch', fetchSpy);
+      tokenSpy = vi.spyOn(XsuaaService.prototype, 'getClientCredentialsToken').mockResolvedValue({
+        access_token: 'test-token',
+        expires_in: 3600,
+        token_type: 'bearer',
+      });
     });
 
     afterEach(() => {
-      stderrSpy.mockRestore();
+      tokenSpy.mockRestore();
       vi.unstubAllGlobals();
+      vi.useRealTimers();
     });
 
     const config = {
@@ -99,10 +139,11 @@ describe('BTP Audit Log Sink', () => {
       sink.write(event);
       await sink.flush();
 
-      // First call is token fetch, second is audit log write
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      const auditCall = fetchSpy.mock.calls[1]!;
+      expect(tokenSpy).toHaveBeenCalledOnce();
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/security-events');
+      expect(auditCall[1]?.headers).toMatchObject({ Authorization: 'Bearer test-token' });
     });
 
     it('sends bounded data-response events without response or SQL bodies', async () => {
@@ -120,8 +161,8 @@ describe('BTP Audit Log Sink', () => {
       });
       await sink.flush();
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      const auditCall = fetchSpy.mock.calls[1]!;
+      expect(fetchSpy).toHaveBeenCalledOnce();
+      const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/security-events');
       const body = String(auditCall[1]?.body);
       expect(body).toContain('2097152 bytes');
@@ -142,7 +183,7 @@ describe('BTP Audit Log Sink', () => {
       });
       await sink.flush();
 
-      const body = JSON.parse(fetchSpy.mock.calls[1]![1]!.body as string);
+      const body = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string);
       expect(body.attributes).toContainEqual({ name: 'clientAgent', new: 'claude-code/1.2.3' });
     });
 
@@ -159,7 +200,7 @@ describe('BTP Audit Log Sink', () => {
       });
       await sink.flush();
 
-      const body = JSON.parse(fetchSpy.mock.calls[1]![1]!.body as string);
+      const body = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string);
       expect(body.data).toContain('Agent: cursor/0.44.1.');
     });
 
@@ -175,7 +216,7 @@ describe('BTP Audit Log Sink', () => {
       });
       await sink.flush();
 
-      const body = JSON.parse(fetchSpy.mock.calls[1]![1]!.body as string);
+      const body = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string);
       expect(body.data).not.toContain('Agent:');
     });
 
@@ -192,7 +233,7 @@ describe('BTP Audit Log Sink', () => {
       sink.write(event);
       await sink.flush();
 
-      const auditCall = fetchSpy.mock.calls[1]!;
+      const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/data-accesses');
     });
 
@@ -209,7 +250,7 @@ describe('BTP Audit Log Sink', () => {
       sink.write(event);
       await sink.flush();
 
-      const auditCall = fetchSpy.mock.calls[1]!;
+      const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/data-modifications');
     });
 
@@ -226,7 +267,7 @@ describe('BTP Audit Log Sink', () => {
       sink.write(event);
       await sink.flush();
 
-      const auditCall = fetchSpy.mock.calls[1]!;
+      const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/configuration-changes');
     });
 
@@ -362,7 +403,7 @@ describe('BTP Audit Log Sink', () => {
       sink.write(event);
       await sink.flush();
 
-      // Only token fetch should happen, no audit log write
+      expect(tokenSpy).not.toHaveBeenCalled();
       expect(fetchSpy).toHaveBeenCalledTimes(0);
     });
 
@@ -380,12 +421,16 @@ describe('BTP Audit Log Sink', () => {
       sink.write(event);
       await sink.flush();
 
+      expect(tokenSpy).not.toHaveBeenCalled();
       expect(fetchSpy).toHaveBeenCalledTimes(0);
     });
 
-    it('handles fetch errors gracefully (fire-and-forget)', async () => {
+    it('rate-limits delivery warnings without throwing into the tool call', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-17T08:00:00Z'));
       fetchSpy.mockRejectedValue(new Error('Network error'));
-      const sink = new BTPAuditLogSink(config);
+      const reportError = vi.fn();
+      const sink = new BTPAuditLogSink(config, reportError);
       const event: AuditEvent = {
         timestamp: '',
         level: 'warn',
@@ -394,11 +439,31 @@ describe('BTP Audit Log Sink', () => {
         reason: 'allowWrites=false',
       };
       sink.write(event);
+      sink.write(event);
 
-      // Should not throw
       await sink.flush();
-      // Error should be logged to stderr
-      expect(stderrSpy).toHaveBeenCalled();
+      expect(reportError).toHaveBeenCalledTimes(1);
+      expect(reportError).toHaveBeenCalledWith('Network error');
+
+      vi.advanceTimersByTime(60_000);
+      sink.write(event);
+      await sink.flush();
+      expect(reportError).toHaveBeenCalledTimes(2);
+    });
+
+    it('removes settled writes from the pending set', async () => {
+      const sink = new BTPAuditLogSink(config);
+      sink.write({
+        timestamp: '',
+        level: 'info',
+        event: 'tool_call_start',
+        tool: 'SAPRead',
+        args: {},
+      });
+      await sink.flush();
+
+      const pending = (sink as unknown as { pendingWrites: Set<Promise<void>> }).pendingWrites;
+      expect(pending.size).toBe(0);
     });
   });
 });

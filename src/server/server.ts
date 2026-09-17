@@ -1119,17 +1119,17 @@ export async function createAndStartServer(
     logger.addSink(new FileSink(config.logFile));
     logger.info('File logging enabled', { logFile: config.logFile });
   }
-
-  // Add BTP Audit Log sink if auditlog service is bound (auto-detected from VCAP_SERVICES)
   try {
     const { BTPAuditLogSink, parseBTPAuditLogConfig } = await import('./sinks/btp-auditlog.js');
     const auditLogConfig = parseBTPAuditLogConfig();
     if (auditLogConfig) {
-      logger.addSink(new BTPAuditLogSink(auditLogConfig));
+      const reportDeliveryError = (error: string) =>
+        logger.warn('BTP Audit Log delivery failed; suppressing repeats for 60 seconds', { error });
+      logger.addSink(new BTPAuditLogSink(auditLogConfig, reportDeliveryError));
       logger.info('BTP Audit Log sink enabled', { url: auditLogConfig.url });
     }
   } catch (err) {
-    logger.warn('BTP Audit Log sink initialization failed (optional)', {
+    logger.error('BTP Audit Log sink disabled; audit events will remain on stderr and the optional file sink', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
