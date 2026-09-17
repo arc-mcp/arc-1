@@ -269,7 +269,9 @@ The premium Audit Log Write API requires X.509 parameters on both the service in
 application binding. ARC-1 rejects a selected binding that lacks its API URL, client ID, certificate
 token URL, certificate, or private key; it logs an `ERROR` and keeps the stderr/file sinks active.
 Later token, certificate-expiry, network, or API failures produce a structured `WARN` at most once
-per minute and do not fail the SAP tool call. See
+per minute and do not fail the SAP tool call. Data-access and data-modification messages identify the
+affected SAP system with the Write API's required `data_subject`; security and configuration
+messages retain their category-specific schema. See
 [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md#optional-btp-audit-log-sink) for the
 MTA/direct-CF configuration and certificate-rotation procedure.
 

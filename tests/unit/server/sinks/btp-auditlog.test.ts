@@ -144,6 +144,7 @@ describe('BTP Audit Log Sink', () => {
       const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/security-events');
       expect(auditCall[1]?.headers).toMatchObject({ Authorization: 'Bearer test-token' });
+      expect(JSON.parse(auditCall[1]!.body as string)).not.toHaveProperty('data_subject');
     });
 
     it('sends bounded data-response events without response or SQL bodies', async () => {
@@ -227,6 +228,7 @@ describe('BTP Audit Log Sink', () => {
         level: 'info',
         event: 'tool_call_end',
         tool: 'SAPRead',
+        target: 'A4H/001',
         durationMs: 100,
         status: 'success',
       };
@@ -235,6 +237,11 @@ describe('BTP Audit Log Sink', () => {
 
       const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/data-accesses');
+      expect(JSON.parse(auditCall[1]!.body as string).data_subject).toEqual({
+        type: 'sap-system',
+        role: 'data-owner',
+        id: { system: 'A4H/001' },
+      });
     });
 
     it('sends data-modifications for write tool calls', async () => {
@@ -244,6 +251,7 @@ describe('BTP Audit Log Sink', () => {
         level: 'info',
         event: 'tool_call_end',
         tool: 'SAPWrite',
+        destination: 'A4H_PP',
         durationMs: 200,
         status: 'success',
       };
@@ -252,6 +260,26 @@ describe('BTP Audit Log Sink', () => {
 
       const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/data-modifications');
+      expect(JSON.parse(auditCall[1]!.body as string).data_subject).toEqual({
+        type: 'sap-system',
+        role: 'data-owner',
+        id: { system: 'A4H_PP' },
+      });
+    });
+
+    it('uses a stable data subject fallback for single-target tool calls', async () => {
+      const sink = new BTPAuditLogSink(config);
+      sink.write({
+        timestamp: '',
+        level: 'info',
+        event: 'tool_call_start',
+        tool: 'SAPSearch',
+        args: {},
+      });
+      await sink.flush();
+
+      const body = JSON.parse(fetchSpy.mock.calls[0]![1]!.body as string);
+      expect(body.data_subject.id).toEqual({ system: 'configured-target' });
     });
 
     it('sends configuration-changes for transport tool calls', async () => {
@@ -269,6 +297,7 @@ describe('BTP Audit Log Sink', () => {
 
       const auditCall = fetchSpy.mock.calls[0]!;
       expect(auditCall[0]).toContain('/configuration-changes');
+      expect(JSON.parse(auditCall[1]!.body as string)).not.toHaveProperty('data_subject');
     });
 
     it('sends every multi-target failure stage with direct target attribution', async () => {

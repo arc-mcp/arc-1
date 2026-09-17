@@ -14,6 +14,10 @@ ordinary `fetch` and never attaches the binding's certificate or private key. A 
 X.509 binding therefore also cannot work. `NODE_EXTRA_CA_CERTS` adds trusted certificate
 authorities; it does not present a client certificate.
 
+Live PR validation exposed one more masked defect: after mTLS succeeds, SAP rejects ordinary
+`data-accesses` records because the payload omits the required `data_subject`. The same field belongs
+on `data-modifications`; it does not belong on security or configuration records.
+
 Current HEAD does write one raw stderr line for every failed event, so the failure is not completely
 silent in the implementation. The observable defects are still serious: startup reports a dark
 sink as enabled, the failure is not emitted through ARC-1's structured logger, and repeated tool
@@ -21,8 +25,9 @@ calls can flood stderr.
 
 The narrow fix is to validate the selected binding, obtain tokens through ARC-1's existing
 `@sap/xssec` dependency (which implements X.509 client authentication and token caching), emit a
-rate-limited structured warning on delivery failure, and ship an optional inactive MTA resource
-whose instance and binding parameters are correct by construction.
+rate-limited structured warning on delivery failure, add the SAP-system data subject to the two data
+categories, and ship an optional inactive MTA resource whose instance and binding parameters are
+correct by construction.
 
 ## Reported behavior
 
@@ -79,6 +84,10 @@ depends on `@sap/xssec`; no dependency or custom TLS implementation is needed. S
 `@sap/audit-logging` package independently delegates client-credential token acquisition to the
 same `XsuaaService` mechanism.
 
+The Write API's data-event schema also requires either `data_subject` or `data_subjects`. ARC-1 uses
+one `data_subject` whose type is `sap-system`, role is `data-owner`, and system identifier is the
+resolved public target, destination name, or a stable single-target fallback.
+
 ## Reproduction and live validation
 
 ### Current parser and sink, locally
@@ -123,24 +132,33 @@ event posted to `/audit-log/oauth2/v2/security-events` returned **HTTP 201**. Th
 service instance were deleted after the probe, and their credentials were never printed or saved in
 the repository.
 
-After implementing the fix, the same live path was exercised through `parseBTPAuditLogConfig()` and
-`BTPAuditLogSink` rather than a standalone request: the sink obtained its token, flushed a synthetic
-`safety_blocked` event successfully, and invoked the error reporter zero times. An MTA build with a
-temporary `active: true` extension also preserved both X.509 parameter sets in the generated
-`mtad.yaml`. The temporary extension, service keys, and service instance were removed afterward.
+The initial post-fix smoke exercised `parseBTPAuditLogConfig()` and `BTPAuditLogSink`: the sink
+obtained its token, flushed a synthetic `safety_blocked` event successfully, and invoked the error
+reporter zero times. That proved authentication and the security-event schema, but not the data-event
+schema. An MTA build with a temporary `active: true` extension also preserved both X.509 parameter
+sets in the generated `mtad.yaml`. The temporary extension, service keys, and service instance were
+removed afterward.
+
+In [PR feedback](https://github.com/arc-mcp/arc-1/pull/802#issuecomment-5709908171), the issue author
+then tested all four categories against a real eu10 binding. Security, configuration, and
+data-modification events returned HTTP 201, while `data-accesses` returned HTTP 400 because both
+`data_subject` and `data_subjects` were empty. The author independently live-tested the exact
+`sap-system`/`data-owner` subject shape adopted here: all four categories returned HTTP 201 and the
+data-access record was available through the Retrieval API.
 
 This behavior is BTP service-contract behavior and is independent of the target ABAP release.
 
 ## Root cause
 
-There are four related defects:
+There are five related defects:
 
 1. Runtime JSON is assigned to `BTPAuditLogConfig` without checking the required strings, defeating
    the interface's compile-time guarantee.
 2. The token request does not use the certificate or key at all. The source comment incorrectly
    treats `NODE_EXTRA_CA_CERTS`/the CF buildpack as outbound client identity.
-3. Startup logs `enabled` before the first usable authentication path has even been established.
-4. Delivery failures bypass the configured logger and occur once per event without rate limiting;
+3. Tool-call payloads sent to the data endpoints omit SAP's required data subject.
+4. Startup logs `enabled` before the first usable authentication path has even been established.
+5. Delivery failures bypass the configured logger and occur once per event without rate limiting;
    the pending-promise cleanup does not actually remove settled promises.
 
 ## Fix scope
@@ -148,6 +166,7 @@ There are four related defects:
 - `src/server/sinks/btp-auditlog.ts`
   - reject a selected binding that lacks any required X.509 field;
   - use `XsuaaService.getClientCredentialsToken()`;
+  - add the SAP-system `data_subject` only to data-access and data-modification payloads;
   - rate-limit delivery reports and track in-flight promises with a `Set`.
 - `src/server/server.ts`
   - report invalid binding initialization at `error` level;
@@ -165,8 +184,8 @@ There are four related defects:
 
 - No `SAP_AUDIT_REQUIRED`/strict-startup configuration flag. A new policy surface is unnecessary to
   correct the broken optional sink and would need a separate operational design.
-- No switch to `@sap/audit-logging`. ARC-1 already owns its stable payload mapping; only the broken
-  token transport needs SAP's supported XSUAA client.
+- No switch to `@sap/audit-logging`. ARC-1 keeps its existing payload mapping and adds only the
+  required data subject; the token transport alone needs SAP's supported XSUAA client.
 - No default premium-service creation. The MTA resource remains inactive so deployments without the
   entitlement or desire for the paid/optional service do not change.
 - No Audit Log Retrieval API client or startup write probe. Binding validation is deterministic;
@@ -180,7 +199,8 @@ Confirmed on v1.2.0/current `main`, and thank you for the unusually precise bind
 The missing-field diagnosis is correct, but the live validation found a second root cause: even a
 correct X.509 binding cannot work today because ARC-1's token `fetch` never attaches
 `uaa.certificate`/`uaa.key`. `NODE_EXTRA_CA_CERTS` only changes server trust; it does not provide a
-client identity.
+client identity. Subsequent all-category validation found a third masked defect: data events omit
+SAP's required `data_subject`.
 
 I reproduced all three relevant cases:
 
@@ -188,7 +208,9 @@ I reproduced all three relevant cases:
   `certurl`/`certificate`/`key`;
 - an X.509 key contains those fields;
 - `@sap/xssec` with the X.509 credentials obtained a token and the real Audit Log Write API accepted
-  a synthetic security event with HTTP 201.
+  a synthetic security event with HTTP 201;
+- the API rejected a data-access record without `data_subject` with HTTP 400, while the same record
+  with the SAP-system subject returned HTTP 201 and was retrievable.
 
 Your follow-up `fetch failed`/connection-reset evidence matches the same transport defect. It also
 identified an important operator check: because CF can report a successful bind while the resulting
@@ -201,12 +223,14 @@ acceptable—the startup `enabled` line is false, the warning is not structured/
 event is delivered.
 
 The focused fix is to validate the binding before registration, reuse ARC-1's existing
-`@sap/xssec` dependency for the mTLS token flow, rate-limit structured delivery warnings, and add
-the documented X.509 instance/binding form as an inactive-by-default MTA option. Certificate expiry
-and rebinding will be documented as part of the same change.
+`@sap/xssec` dependency for the mTLS token flow, add the required subject to the two data categories,
+rate-limit structured delivery warnings, and add the documented X.509 instance/binding form as an
+inactive-by-default MTA option. Certificate expiry and rebinding will be documented as part of the
+same change.
 ```
 
 ## Recommendation
 
 Fix it. Use this dossier as the source of truth for the implementation and keep the change confined
-to binding validation, token transport, failure visibility, optional MTA wiring, and operator docs.
+to binding validation, token transport, the required data-event subject, failure visibility,
+optional MTA wiring, and operator docs.

@@ -5,8 +5,8 @@
 ## Goal
 
 Make ARC-1 enable the BTP Audit Log sink only for a complete X.509 binding, perform the token
-exchange with actual mTLS, and make later delivery failures visible without flooding application
-logs.
+exchange with actual mTLS, send schema-valid data events, and make later delivery failures visible
+without flooding application logs.
 
 Verified evidence and the root-cause analysis are in
 [`docs/research/issues/799-btp-auditlog-mtls.md`](../../research/issues/799-btp-auditlog-mtls.md).
@@ -18,7 +18,8 @@ Verified evidence and the root-cause analysis are in
   tool call.
 - Keep the premium BTP service optional and inactive in the shipped MTA.
 - Do not add a new strict-mode environment variable in this fix.
-- Keep ARC-1's existing audit-event payload mapping unchanged.
+- Preserve the existing audit-event payload mapping except for fields required by SAP's endpoint
+  schema.
 
 ## Plan
 
@@ -33,13 +34,18 @@ Verified evidence and the root-cause analysis are in
    - In server startup, route that reporter through the structured logger at `warn` level.
    - Log invalid selected bindings at `error` and never print `sink enabled` for them.
 
-3. Provide correct optional deployment wiring.
+3. Complete the data-event payload contract.
+   - Add one `data_subject` to data-access and data-modification records only.
+   - Identify the SAP system by public target, destination name, or a stable single-target fallback.
+   - Keep security and configuration payloads unchanged.
+
+4. Provide correct optional deployment wiring.
    - Add an inactive `arc1-auditlog` premium resource to `mta.yaml`.
    - Put SAP's X.509 parameters on both the service instance and module binding.
    - Show the single `active: true` override in `mta-overrides.mtaext.example`.
    - Add descriptor assertions so later edits cannot silently remove either half.
 
-4. Update operator documentation.
+5. Update operator documentation.
    - Add MTA and manual CF setup examples to the canonical BTP runbook.
    - Verify the materialized binding type/field presence without printing credentials; do not trust
      `cf bind-service` returning `OK` by itself.
@@ -47,7 +53,7 @@ Verified evidence and the root-cause analysis are in
      runtime warnings.
    - Correct the security guide's activation description.
 
-5. Verify and review.
+6. Verify and review.
    - Run the focused sink and descriptor tests first.
    - Run typecheck, lint, all unit tests, strict docs build, and MTA validation/build.
    - Review the complete diff for secret exposure, accidental default service activation, payload
@@ -65,18 +71,21 @@ resource but cannot add a new one; leaving it inactive preserves every existing 
 
 - A selected non-X.509 binding produces one actionable startup error and no enabled message.
 - A valid binding reaches the Audit Log API using an X.509-authenticated token.
+- Data-access and data-modification records carry the required SAP-system `data_subject`; security
+  and configuration records do not.
 - Repeated delivery failures produce at most one structured warning per minute.
 - The base MTA does not create Audit Log Service; the documented override creates and binds it with
   X.509 parameters.
-- Existing event categories and payloads remain unchanged.
+- Existing event categories and payload fields remain unchanged except for the required data subject.
 - Focused and full validation gates pass.
 
 ## Verification result
 
-- 29 focused sink and MTA descriptor tests pass.
-- All 6,790 unit tests, typechecking, lint, file/schema budgets, and strict docs build pass.
+- 30 focused sink and MTA descriptor tests pass.
+- All 6,791 unit tests, typechecking, lint, file/schema budgets, and strict docs build pass.
 - All shipped MTA descriptor variants validate; base and Audit-Log-enabled MTAR builds pass.
-- A live X.509 binding in BTP us10 obtained a token and accepted an event through the fixed sink with
-  HTTP 201 and no reported delivery error.
-- Review found no secret output, default service activation, event-payload change, new dependency,
-  or unnecessary configuration surface.
+- Live X.509 bindings in BTP us10/eu10 obtained tokens through the fixed sink. The exact data-subject
+  shape adopted here was live-tested with HTTP 201 for all four event categories and a retrievable
+  data-access record.
+- Review found no secret output, default service activation, payload change outside the required
+  data subject, new dependency, or unnecessary configuration surface.
