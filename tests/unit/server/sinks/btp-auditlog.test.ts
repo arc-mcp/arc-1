@@ -25,29 +25,35 @@ describe('BTP Audit Log Sink', () => {
       expect(parseBTPAuditLogConfig()).toBeUndefined();
     });
 
-    it('parses premium plan binding', () => {
+    const credentials = {
+      url: 'https://api.auditlog.cf.example.com:6081',
+      uaa: {
+        url: 'https://sub.auth.example.com',
+        certurl: 'https://sub.auth.cert.example.com',
+        clientid: 'my-client-id',
+        certificate: '-----BEGIN CERT-----',
+        key: '-----BEGIN KEY-----',
+      },
+    };
+
+    it.each([
+      ['auditlog', 'premium'],
+      ['auditlog-api', 'oauth2'],
+    ])('parses %s/%s and excludes client secrets from the token client config', (label, plan) => {
       process.env.VCAP_SERVICES = JSON.stringify({
-        auditlog: [
-          {
-            plan: 'premium',
-            credentials: {
-              url: 'https://api.auditlog.cf.example.com:6081',
-              uaa: {
-                url: 'https://sub.auth.example.com',
-                certurl: 'https://sub.auth.cert.example.com',
-                clientid: 'my-client-id',
-                certificate: '-----BEGIN CERT-----',
-                key: '-----BEGIN KEY-----',
-              },
-            },
-          },
-        ],
+        [label]: [{ plan, credentials: { ...credentials, uaa: { ...credentials.uaa, clientsecret: 'ignored' } } }],
       });
 
-      const config = parseBTPAuditLogConfig();
-      expect(config).toBeDefined();
-      expect(config!.url).toBe('https://api.auditlog.cf.example.com:6081');
-      expect(config!.uaa.clientid).toBe('my-client-id');
+      // xssec prefers client secrets when present, so only forward the X.509 credentials.
+      expect(parseBTPAuditLogConfig()).toEqual(credentials);
+    });
+
+    it.each([undefined, '  ', 42])('rejects a missing, blank, or non-string private key (%s)', (key) => {
+      process.env.VCAP_SERVICES = JSON.stringify({
+        auditlog: [{ plan: 'premium', credentials: { ...credentials, uaa: { ...credentials.uaa, key } } }],
+      });
+
+      expect(() => parseBTPAuditLogConfig()).toThrow('missing required X.509 fields: uaa.key.');
     });
 
     it('rejects a selected binding without X.509 credentials', () => {
@@ -229,6 +235,7 @@ describe('BTP Audit Log Sink', () => {
         event: 'tool_call_end',
         tool: 'SAPRead',
         target: 'A4H/001',
+        destination: 'A4H_PP',
         durationMs: 100,
         status: 'success',
       };
@@ -480,8 +487,28 @@ describe('BTP Audit Log Sink', () => {
       expect(reportError).toHaveBeenCalledTimes(2);
     });
 
-    it('removes settled writes from the pending set', async () => {
-      const sink = new BTPAuditLogSink(config);
+    it('reports token failures without attempting an unauthenticated audit write', async () => {
+      tokenSpy.mockRejectedValue(new Error('Token exchange failed'));
+      const reportError = vi.fn();
+      const sink = new BTPAuditLogSink(config, reportError);
+      sink.write({
+        timestamp: '',
+        level: 'warn',
+        event: 'safety_blocked',
+        operation: 'SAPWrite',
+        reason: 'allowWrites=false',
+      });
+
+      await expect(sink.flush()).resolves.toBeUndefined();
+      expect(reportError).toHaveBeenCalledExactlyOnceWith('Token exchange failed');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('reports rejected audit payloads with the HTTP status and a bounded response excerpt', async () => {
+      const body = 'data_subject is required. '.repeat(20);
+      fetchSpy.mockResolvedValue({ ok: false, status: 400, text: async () => body });
+      const reportError = vi.fn();
+      const sink = new BTPAuditLogSink(config, reportError);
       sink.write({
         timestamp: '',
         level: 'info',
@@ -489,10 +516,24 @@ describe('BTP Audit Log Sink', () => {
         tool: 'SAPRead',
         args: {},
       });
-      await sink.flush();
 
+      await expect(sink.flush()).resolves.toBeUndefined();
+      expect(reportError).toHaveBeenCalledExactlyOnceWith(`HTTP 400: ${body.slice(0, 200)}`);
+    });
+
+    it.each(['success', 'failure'])('removes settled writes after %s without needing flush', async (outcome) => {
+      if (outcome === 'failure') fetchSpy.mockRejectedValue(new Error('Network error'));
+      const sink = new BTPAuditLogSink(config, vi.fn());
+      sink.write({
+        timestamp: '',
+        level: 'info',
+        event: 'tool_call_start',
+        tool: 'SAPRead',
+        args: {},
+      });
       const pending = (sink as unknown as { pendingWrites: Set<Promise<void>> }).pendingWrites;
-      expect(pending.size).toBe(0);
+      expect(pending.size).toBe(1);
+      await vi.waitFor(() => expect(pending.size).toBe(0));
     });
   });
 });

@@ -84,9 +84,11 @@ depends on `@sap/xssec`; no dependency or custom TLS implementation is needed. S
 `@sap/audit-logging` package independently delegates client-credential token acquisition to the
 same `XsuaaService` mechanism.
 
-The Write API's data-event schema also requires either `data_subject` or `data_subjects`. ARC-1 uses
-one `data_subject` whose type is `sap-system`, role is `data-owner`, and system identifier is the
-resolved public target, destination name, or a stable single-target fallback.
+The Write API's data-access schema also requires either `data_subject` or `data_subjects`. ARC-1
+uses one `data_subject` whose type is `sap-system`, role is `data-owner`, and system identifier is
+the resolved public target, destination name, or a stable single-target fallback. It includes the
+same attribution on data modifications, although the author's live probe accepted that category
+without a subject.
 
 ## Reproduction and live validation
 
@@ -156,7 +158,7 @@ There are five related defects:
    the interface's compile-time guarantee.
 2. The token request does not use the certificate or key at all. The source comment incorrectly
    treats `NODE_EXTRA_CA_CERTS`/the CF buildpack as outbound client identity.
-3. Tool-call payloads sent to the data endpoints omit SAP's required data subject.
+3. Tool-call payloads omit the subject required by SAP's data-access endpoint.
 4. Startup logs `enabled` before the first usable authentication path has even been established.
 5. Delivery failures bypass the configured logger and occur once per event without rate limiting;
    the pending-promise cleanup does not actually remove settled promises.
@@ -202,15 +204,15 @@ correct X.509 binding cannot work today because ARC-1's token `fetch` never atta
 client identity. Subsequent all-category validation found a third masked defect: data events omit
 SAP's required `data_subject`.
 
-I reproduced all three relevant cases:
+Validation established all three relevant cases:
 
 - a plain `auditlog/premium` key is `credential-type: binding-secret` and lacks
   `certurl`/`certificate`/`key`;
 - an X.509 key contains those fields;
 - `@sap/xssec` with the X.509 credentials obtained a token and the real Audit Log Write API accepted
   a synthetic security event with HTTP 201;
-- the API rejected a data-access record without `data_subject` with HTTP 400, while the same record
-  with the SAP-system subject returned HTTP 201 and was retrievable.
+- your live probe showed that the API rejected a data-access record without `data_subject` with
+  HTTP 400, while the same record with the SAP-system subject returned HTTP 201 and was retrievable.
 
 Your follow-up `fetch failed`/connection-reset evidence matches the same transport defect. It also
 identified an important operator check: because CF can report a successful bind while the resulting

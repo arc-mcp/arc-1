@@ -18,8 +18,8 @@ Verified evidence and the root-cause analysis are in
   tool call.
 - Keep the premium BTP service optional and inactive in the shipped MTA.
 - Do not add a new strict-mode environment variable in this fix.
-- Preserve the existing audit-event payload mapping except for fields required by SAP's endpoint
-  schema.
+- Preserve the existing audit-event payload mapping except for SAP-system subject attribution on
+  data-access and data-modification records.
 
 ## Plan
 
@@ -71,21 +71,35 @@ resource but cannot add a new one; leaving it inactive preserves every existing 
 
 - A selected non-X.509 binding produces one actionable startup error and no enabled message.
 - A valid binding reaches the Audit Log API using an X.509-authenticated token.
-- Data-access and data-modification records carry the required SAP-system `data_subject`; security
-  and configuration records do not.
+- Data-access records carry the required SAP-system `data_subject`; data-modification records use
+  the same attribution. Security and configuration records do not carry it.
 - Repeated delivery failures produce at most one structured warning per minute.
 - The base MTA does not create Audit Log Service; the documented override creates and binds it with
   X.509 parameters.
-- Existing event categories and payload fields remain unchanged except for the required data subject.
+- Existing event categories and payload fields remain unchanged except for data-subject attribution.
 - Focused and full validation gates pass.
 
 ## Verification result
 
-- 30 focused sink and MTA descriptor tests pass.
-- All 6,791 unit tests, typechecking, lint, file/schema budgets, and strict docs build pass.
+- 37 focused sink and MTA descriptor tests pass.
+- All 6,798 unit tests, typechecking, lint, file/schema budgets, and strict docs build pass.
 - All shipped MTA descriptor variants validate; base and Audit-Log-enabled MTAR builds pass.
-- Live X.509 bindings in BTP us10/eu10 obtained tokens through the fixed sink. The exact data-subject
-  shape adopted here was live-tested with HTTP 201 for all four event categories and a retrievable
-  data-access record.
-- Review found no secret output, default service activation, payload change outside the required
-  data subject, new dependency, or unnecessary configuration surface.
+- The us10 smoke verified the fixed sink's token acquisition and security-event delivery. The issue
+  author's eu10 probe verified mTLS on the first PR commit and independently tested the exact
+  data-subject shape adopted here: all four categories returned HTTP 201 and the data-access record
+  was retrievable. The latest PR head has not had a separate live four-category rerun.
+- Review found no secret output, default service activation, payload change outside data-subject
+  attribution, new dependency, or unnecessary configuration surface.
+
+## Final maintainability review
+
+- Removed the redundant token wrapper; the send path now calls SAP's token client directly.
+- Kept the implementation to binding validation, one token client, one pending-write set, and one
+  warning timestamp. No additional auth abstraction, queue, retry layer, or configuration was needed.
+- Strengthened regressions for client-secret exclusion, supported binding aliases, invalid key
+  values, token failures, HTTP rejection, target precedence, and settled-write cleanup without
+  calling `flush()`.
+- Corrected the documentation to distinguish the required data-access subject from consistent
+  attribution on modifications, and to identify whose live probe established each result.
+- No blocking findings remain. Shared CI test jobs are excluded from this assessment as requested;
+  the local validation above is the merge-readiness evidence.

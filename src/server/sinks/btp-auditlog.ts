@@ -194,7 +194,7 @@ export class BTPAuditLogSink implements LogSink {
   }
 
   private async sendEvent(event: AuditEvent, category: AuditCategory): Promise<void> {
-    const token = await this.getToken();
+    const { access_token: token } = await this.authService.getClientCredentialsToken();
     const payload = this.buildPayload(event, category);
 
     const response = await fetch(`${this.config.url}/audit-log/oauth2/v2/${category}`, {
@@ -223,8 +223,8 @@ export class BTPAuditLogSink implements LogSink {
       time: event.timestamp,
       tenant: '$PROVIDER',
     };
-    // SAP requires a data subject for both data endpoints. ARC-1 identifies the SAP system whose
-    // data the tool touched; security and configuration endpoints must keep their own schema.
+    // Data-access records require a subject; use the same system attribution for modifications.
+    // Security and configuration endpoints keep their own schema.
     if (category === 'data-accesses' || category === 'data-modifications') {
       base.data_subject = {
         type: 'sap-system',
@@ -379,10 +379,5 @@ export class BTPAuditLogSink implements LogSink {
           data: `[${event.event}] ${JSON.stringify(event)}`,
         };
     }
-  }
-
-  private async getToken(): Promise<string> {
-    const token = await this.authService.getClientCredentialsToken();
-    return token.access_token;
   }
 }
