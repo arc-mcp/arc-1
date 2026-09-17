@@ -147,12 +147,61 @@ the secondary identity. Its baseline Viewer and unrelated Data Viewer were prese
 the temporary isolated IAS-backed role needed for the next test. On explicit owner approval,
 added only this identity to the existing canonical IAS group `A4H/100` at 09:12 UTC; membership
 readback showed one user. The existing exact-name mapping and every other group remained unchanged.
-The fresh-incognito IAS-positive login is pending; it is not yet counted as a pass. Restored both
+The fresh-incognito IAS-positive login completed in the replay below. Restored both
 unassigned Matrix/Capabilities collections to empty through the cockpit by 09:19 UTC, verifying
-no roles, users, groups or attribute mappings in their saved views. Cleanup of the IAS membership
-and isolated IAS-backed role assignment must be recorded after the pending test. The isolated
-app and in-memory harness remain running. Focused documentation tests (5/5), strict MkDocs and
-`git diff --check` passed for this evidence-only update; deployed runtime source is unchanged.
+no roles, users, groups or attribute mappings in their saved views. Focused documentation tests
+(5/5), strict MkDocs and `git diff --check` passed for that evidence-only update (`9c7087c3`);
+its remote PR checks also passed. Deployed runtime source remains `a25d62c6`.
+
+### Published-build IAS and lifecycle replay
+
+At 09:47 UTC the operator completed the requested new-incognito secondary-user sign-in. Expected
+identity/origin and SAP SDK signature/audience/expiry validation passed. No static target role
+was assigned during this IAS-only login: its exact `A4H/100` claim was supplied through the
+existing dedicated IAS mapping and isolated IdP-backed role.
+
+| Case (UTC) | Token bytes | Result |
+|---|---:|---|
+| IAS-only authorization code (09:47) | 2,162 | 116/116; only client 100 projected, aggregate/pinned SYSTEM reads succeed |
+| IAS-only refresh before any change (09:48) | 2,185 | 116/116; one verified target retained |
+| Static client 001 + IAS client 100, user JWT-bearer exchange (09:52) | 2,240 | 123/123; exact two-value union and unpaged reader catalog |
+| Original IAS token refreshed after adding static client 001 (09:52) | 2,185 | 97 passed, **17 failed union expectations**; still only client 100 |
+| Original positive token replayed after static-role and IAS-membership removal (09:53) | 2,162 | 116/116 positive replay; old signed grant still works |
+| Original IAS token refreshed after group removal (09:54) | 2,185 | 77 passed, **25 failed no-grant expectations**; client 100 remains granted |
+
+The first three successful cases establish IAS delivery, unchanged refresh behavior and static/IAS
+union on the published dependency. The union case uses an exchange, not a second browser login;
+its positive backend execution subset is client 100 only. Client 001 remains an entitlement/schema
+check for this secondary identity, not independently proven SAP access.
+
+The failed expectations are meaningful lifecycle evidence, not fixture repairs or a reason to
+weaken ARC's checks. Refresh did not recalculate the new static grant; after removal it minted
+another access token with the old IAS target and **3,599 seconds remaining**. ARC continued to
+enforce that verified signed grant. Therefore neither refresh nor one-hour access-token validity
+establishes immediate revocation or a one-hour maximum from membership removal. These findings
+reproduce the earlier candidate-build observations on registry auth 1.1.0.
+
+The BTP CLI remained intermittent. The unsuccessful role-add request was followed by a fresh
+cockpit read showing no partial change. Added only existing `PR677 A4H001` from the isolated app
+to the empty Matrix collection and only the secondary **business-user** identity; saved cockpit
+state and CLI `sap.custom` user readback were checked before exchanging a token. Removed the
+Matrix assignment at 09:53 UTC, then its role; CLI user readback excluded Matrix and collection
+readback returned zero items. No group/attribute mapping was added to that collection.
+
+Removed only the approved canonical IAS `A4H/100` membership through the Chrome skill at 09:53
+UTC; the group's saved view showed **zero users**. Other memberships and the existing mapping
+were not changed. Retained the isolated **IAS-backed role assignment** deliberately for the
+pending removal test: unassigning that role first would confound whether a new IAS claim is empty.
+The secondary user currently has that test collection, baseline Viewer and its unrelated Data
+Viewer collection; the latter two remain untouched.
+
+Next control: in the same private browser session, use the existing XSUAA `/logout.do` recovery
+URL built by ARC's actual helper (bound client ID and fixed allowlisted `/oauth/logged-out`
+return), then obtain a new authorization code without clearing cookies. The operator must report
+whether the original window was still open and whether IAS requested credentials. This normal
+recovery result is **pending**, not a fresh-session or revocation pass. Remove the isolated
+IAS-backed role assignment after the control, then verify baseline restoration. The app and
+in-memory harness remain running; no tokens or credential values were persisted or published.
 
 ## Evidence strategy
 
