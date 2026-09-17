@@ -76,7 +76,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
     const decisionId = options.decisionId ?? newDecisionId();
     const operatorAction =
       code === 'DATA_POLICY_UNAVAILABLE'
-        ? 'Ensure ADT discovery is available and the target advertises the canonical table-source resource (normally SAP_BASIS 7.52 or newer), or keep data access disabled. Clearing SAP_BLOCKED_DATA_SOURCES leaves every otherwise authorized source eligible and requires security approval.'
+        ? 'Keep data access disabled until this target can supply the canonical table-source metadata (normally SAP_BASIS 7.52 or newer). Clearing SAP_BLOCKED_DATA_SOURCES leaves every otherwise authorized source eligible and requires security approval.'
         : 'Use a permitted static source, or change SAP_BLOCKED_DATA_SOURCES only after security review.';
     super(
       `${code}: request denied before data execution (executed=false, decisionId=${decisionId}). ` +
@@ -117,7 +117,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
       case 'DATA_SQL_UNSUPPORTED':
         return 'Rewrite the request as one complete static SELECT/WITH without comments, host expressions or dynamic sources, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
       case 'DATA_POLICY_UNAVAILABLE':
-        return 'Ensure ADT discovery is available and the target advertises the required metadata (normally SAP_BASIS 7.52 or newer), or keep data access disabled. Removing the blocklist leaves every otherwise authorized source eligible.';
+        return 'This SAP target did not supply the metadata the policy needs (normally SAP_BASIS 7.52 or newer). Retrying unchanged will be denied; ask an operator.';
       case 'DATA_LINEAGE_UNRESOLVED':
         return 'Query a source whose lineage ARC-1 can resolve, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
       default:

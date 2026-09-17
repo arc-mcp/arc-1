@@ -108,7 +108,7 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | ---------- | ------- | ------- | ----------- |
 | Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
 | Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
-| Exact table/CDS blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Defense-in-depth denial with live CDS/replacement lineage; unresolved requests fail closed. Allowed-table proof needs the ADT table-source resource available from SAP_BASIS 7.52 onward. Not an allowlist or SAP authorization replacement. |
+| Exact table/CDS blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Defense-in-depth denial with live CDS/replacement lineage; unresolved requests fail closed. Not an allowlist or SAP authorization replacement. |
 
 **Recommended security-focused profile.** Keep structured data access and remove caller-authored SQL,
 which is the largest parser and SQL-Console surface:

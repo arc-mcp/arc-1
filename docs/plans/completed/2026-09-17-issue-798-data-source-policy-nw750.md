@@ -97,37 +97,6 @@ stopped 816 target is not required to establish the 7.52 boundary.
 - `npm run typecheck`
 - `npm run lint`
 
-## Completion Evidence
-
-- Red phase: the three new focused unit expectations failed on the missing capability outcome before
-  production changes.
-- Focused unit phase: 407 tests passed after implementation.
-- Full unit phase: 219 files / 6,789 tests passed.
-- Live phase: SAP_BASIS 750 passed 5 applicable cases with 6 release-specific skips; SAP_BASIS 758
-  passed all 11 cases. A separate 750 four-path probe confirmed zero table-source GETs and zero data
-  POSTs for the three unavailable-policy results, and zero HTTP calls for the direct block.
-- Static/build phase: lint, typecheck, file-size/schema budgets, strict docs build, production build,
-  and `git diff --check` passed. Lint emitted only pre-existing informational notices.
-- Final review tightened the operator guidance so removing the blocklist is identified as a security
-  decision, and aligned the earlier design reassessment with the fourth stable code.
-- A second maintainability review replaced the zero-argument capability callback with an immutable,
-  explicitly named tri-state value and aligned the live test with discovery rather than release parsing.
-- A further review removed the forwarding-only guard factory, combined overlapping graph tests while
-  covering all three discovery states, and clarified that missing metadata means keeping data access
-  disabled rather than clearing the blocklist.
-- After that cleanup, all 411 focused tests and 6,793 tests across 219 unit files passed, along with
-  typecheck, lint, policy validation, build, strict docs build, size/schema checks and `git diff --check`.
-  Earlier cross-release live results remain the live evidence; shared SAP CI jobs were excluded from
-  the merge recommendation at the user's request.
-- Contributor validation on ECC EhP8 / SAP_BASIS 7.50 SP23 exposed a principal-propagation case where
-  startup discovery returned `401`, leaving capability unknown. The exact four-path sequence was
-  reproduced locally: direct blocks stayed local, while all three allowed data paths read the canonical
-  source, received `404`, and returned the generic lineage code. A focused follow-up now maps that
-  unknown-capability `404` to `DATA_POLICY_UNAVAILABLE` while preserving the advertised-resource `404`
-  as `DATA_LINEAGE_UNRESOLVED`.
-- Final follow-up verification passed 416 focused tests and all 6,798 unit tests across 220 files,
-  plus typecheck, lint, policy validation, build, strict docs build, size/schema checks and diff checks.
-
 ### Task 1: Add release-boundary regression tests
 
 **Files:**
@@ -151,9 +120,9 @@ behavior reproduced live.
       search, then denies before table-source and data-preview HTTP calls.
 - [x] Add a minimal-error dispatch assertion proving the new code explains the 7.52 boundary without
       leaking the source, configured names, or raw backend diagnostics.
-- [x] Change the live unrelated-table test: when discovery lacks the table-source resource, assert
-      `DATA_POLICY_UNAVAILABLE` and no `/ddic/tables` request; when advertised, retain the successful
-      data-preview assertion.
+- [x] Change the live unrelated-table test to use the independently read SAP_BASIS release for its
+      expected unavailable/allow result, so a failed discovery request is not mistaken for proven
+      capability absence.
 - [x] Run the focused unit suites and confirm the new expectations fail before implementation.
 
 ### Task 2: Implement the discovery-gated policy outcome
@@ -185,19 +154,16 @@ Do not gate the request before direct and graph checks.
 ### Task 3: Document the real compatibility boundary
 
 **Files:**
-- Modify: `.env.example`
-- Modify: `README.md`
-- Modify: `AGENTS.md`
 - Modify: `docs_page/authorization.md`
 - Modify: `docs_page/configuration-reference.md`
 - Modify: `docs_page/security-guide.md`
-- Modify: `docs_page/cli-guide.md`
 - Modify: `docs_page/tools.md`
+- Modify: `docs_page/release-notes.md`
 - Modify: `docs/research/issues/798-data-source-blocklist-nw750.md` only if implementation evidence
   refines its before-fix conclusions
 
-State the shipped capability accurately on every existing operator surface; do not add unrelated
-architecture prose.
+State the shipped capability accurately on the canonical operator surfaces; link to the detailed
+authorization contract instead of repeating release behavior across overview and setup files.
 
 - [x] Explain that usable allow decisions require the discovery-advertised transparent-table source
       resource (normally SAP_BASIS 7.52+), because replacement objects exist on 7.50 and fallbacks omit

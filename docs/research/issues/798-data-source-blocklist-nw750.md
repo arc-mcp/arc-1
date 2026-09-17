@@ -17,7 +17,8 @@ replacement objects on 7.50, the live 7.50 system contains the documented `DEMO_
 example, and the two available fallback representations omit the replacement relationship. The narrow
 fix is to consult already-loaded ADT discovery at the point where replacement metadata is required and
 return a dedicated, actionable `DATA_POLICY_UNAVAILABLE` denial before attempting the absent resource.
-Direct exact matches and graph-visible transitive matches must keep their stronger existing outcomes.
+If discovery is unavailable, the canonical resource's `404` supplies the same evidence after one
+metadata request. Direct exact matches and graph-visible transitive matches keep their stronger outcomes.
 
 ## Issue and duplicate triage
 
@@ -83,13 +84,6 @@ metadataRequests=2
 executed=false
 ```
 
-The same HEAD unit baseline was green before changes:
-
-```text
-npx vitest run tests/unit/adt/data-source-policy.test.ts tests/unit/adt/client.test.ts
-# 269 passed
-```
-
 ### After-fix behavior
 
 The implementation threads one tri-state discovery capability into `replacementAt()`. Loaded
@@ -115,12 +109,6 @@ discovery returned `401` under XSUAA principal propagation, the per-user client 
 map, and all three allowed `T000` paths fell through to a canonical source `404` and generic
 `DATA_LINEAGE_UNRESOLVED`. The exact sequence was reproduced in unit tests before the follow-up fix;
 the three paths now return `DATA_POLICY_UNAVAILABLE` after one table-source GET and before data execution.
-
-Focused live integration results were 5 passed / 6 release-specific skips on 750 and 11 passed on
-758. After the PP follow-up, the focused regression suites passed 416 tests and the complete unit
-suite passed 6,798 tests across 220 files. Typecheck, lint, policy validation, file-size/schema budgets,
-strict documentation build, and production build all passed. The lint command reported only existing
-informational Biome configuration/version notices and an unrelated `package-contents.ts` style hint.
 
 ### The 7.50 fallback is incomplete
 
@@ -233,7 +221,7 @@ request-scoped discovery gate is both narrower and more accurate.
 | `tests/unit/adt/client.test.ts`, `tests/unit/adt/data-source-policy-client.test.ts` | Prove loaded discovery prevents the absent HTTP request, and unknown discovery reclassifies only the canonical `404`; data remains unexecuted. |
 | `tests/unit/handlers/dispatch-misc.test.ts` | Prove minimal-error output remains actionable and backend-safe. |
 | `tests/integration/data-source-blocklist.integration.test.ts` | Turn the hidden 7.50 allowed-table skip into a release-specific assertion. |
-| `.env.example`, `README.md`, `AGENTS.md`, `docs_page/{authorization,configuration-reference,security-guide,cli-guide,tools}.md` | State the discovery/7.52 boundary and the dedicated outcome consistently. |
+| `docs_page/{authorization,configuration-reference,security-guide,tools}.md` | State the compatibility boundary and dedicated outcome without duplicating implementation detail across every setup surface. |
 
 No tool schema, Zod input, CLI flag, config parser, authorization scope, data endpoint, or SAP mutation
 changes. There is no three-file schema work.
@@ -246,31 +234,17 @@ changes. There is no three-file schema work.
 - Starting the intentionally stopped 816 system; 750 versus 758 is the release-sensitive boundary.
 - Posting, labeling, or closing the issue automatically.
 
-## Paste-able GitHub reply
+## Paste-able contributor follow-up
 
 ```markdown
-Confirmed on current `main`, including the full request path on a live SAP_BASIS 750 system.
+Thanks for testing the earlier head. Your principal-propagation setup exposed the missing case:
+startup discovery returned `401`, so the capability remained unknown and the proactive gate could not
+engage. The current PR head now also maps the caller's canonical table-source `404` to
+`DATA_POLICY_UNAVAILABLE` before any data request. Other failures remain unresolved, and a `404` still
+remains unresolved when discovery explicitly advertised the resource.
 
-With `SAP_BLOCKED_DATA_SOURCES=USR02`, all three otherwise allowed `SCARR` paths (`SAPQuery`,
-`TABLE_QUERY`, and `TABLE_CONTENTS`) resolve `SCARR` as `TABL/DT`, then call
-`/sap/bc/adt/ddic/tables/SCARR/source/main`, receive `404`, and return
-`DATA_LINEAGE_UNRESOLVED` before data execution. The same calls succeed on SAP_BASIS 758; direct
-blocked sources on 750 still correctly return `DATA_SOURCE_BLOCKED` with zero SAP calls.
-
-One important correction to the proposed tolerant fallback: replacement objects are possible on 7.50.
-SAP's 7.50 documentation explicitly describes them, and the live 7.50 system contains
-`DEMO_SUMDIST` with a replacement object. Both available fallbacks (`/ddic/structures/.../source/main`
-and the VIT basic-object metadata) omit that relationship, so treating `TRANSP` as “no replacement”
-would create a blocklist bypass.
-
-I’m taking the release-gate direction, but at the precise point where replacement metadata is needed:
-when loaded ADT discovery does not advertise `/sap/bc/adt/ddic/tables`, ARC-1 will deny with a dedicated
-`DATA_POLICY_UNAVAILABLE` result and guidance to use a capable target or keep data access disabled,
-without making the known-missing HTTP request. Direct blocks, SQL-parser denials, and graph-visible transitive blocks keep
-their stronger existing outcomes. This also remains correct for mixed-release multi-target deployments.
-
-The validated dossier is in
-`docs/research/issues/798-data-source-blocklist-nw750.md`.
+The four-path sequence is covered locally for `SAPQuery`, `TABLE_QUERY`, `TABLE_CONTENTS`, and a direct
+blocked source. Could you rerun your scripted probe against the current head?
 ```
 
 ## Recommendation

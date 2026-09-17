@@ -17,7 +17,6 @@ import { getTestClient, requireSapCredentials } from './helpers.js';
 describe('experimental data-source blocklist live contract', () => {
   let client: AdtClient;
   let basisRelease = 0;
-  let canonicalTableSourceAvailable = false;
 
   beforeAll(async () => {
     requireSapCredentials();
@@ -27,7 +26,6 @@ describe('experimental data-source blocklist live contract', () => {
       client.getInstalledComponents(),
     ]);
     client.http.setDiscoveryMap(map);
-    canonicalTableSourceAvailable = client.http.discoveryAcceptFor('/sap/bc/adt/ddic/tables') !== undefined;
     basisRelease = Number.parseInt(components.find((component) => component.name === 'SAP_BASIS')?.release ?? '0', 10);
   });
 
@@ -59,10 +57,10 @@ describe('experimental data-source blocklist live contract', () => {
   });
 
   it('expands the live DDIC replacement object before deciding', async (ctx) => {
-    if (!canonicalTableSourceAvailable) {
+    if (basisRelease < 752) {
       skipTest(
         ctx,
-        `${SkipReason.BACKEND_UNSUPPORTED}: target does not advertise canonical table-source metadata (SAP_BASIS ${basisRelease || 'unknown'})`,
+        `${SkipReason.BACKEND_UNSUPPORTED}: canonical table source omits replacement metadata on SAP_BASIS 750`,
       );
     }
     const strict = withBlocked(['SCARR']);
@@ -73,15 +71,13 @@ describe('experimental data-source blocklist live contract', () => {
     });
   });
 
-  it('handles an unrelated static table according to table-source availability', async () => {
+  it('denies an unrelated table before 7.52 and allows it afterwards', async () => {
     const strict = withBlocked(['USR02']);
-    const getSpy = vi.spyOn(strict.http, 'get');
-    if (!canonicalTableSourceAvailable) {
+    if (basisRelease < 752) {
       await expect(strict.runQuery('SELECT CARRID FROM SCARR')).rejects.toMatchObject({
         code: 'DATA_POLICY_UNAVAILABLE',
         sourcePath: ['SCARR'],
       });
-      expect(getSpy.mock.calls.some(([path]) => String(path).includes('/ddic/tables/'))).toBe(false);
       return;
     }
     const result = await strict.runQuery('SELECT CARRID FROM SCARR');

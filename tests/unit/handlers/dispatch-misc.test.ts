@@ -551,7 +551,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(text).toContain('DATA_POLICY_UNAVAILABLE');
       expect(text).toContain('7.52');
       expect(text).toContain('executed=false');
-      expect(text).toContain('every otherwise authorized source eligible');
+      expect(text).toContain('Retrying unchanged');
       expect(text).not.toMatch(/SCARR|USR02|SAP_BLOCKED_DATA_SOURCES|\/ddic\/tables/i);
     });
 
