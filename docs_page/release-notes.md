@@ -33,6 +33,7 @@ Automation should inspect completeness and saved-state evidence before retrying 
 | Live relations and dependency context ([#769](https://github.com/arc-mcp/arc-1/pull/769)) | Adds experimental bounded live relations and refreshes dependency context from authorized source. | See [Live relations](live-relations.md) for availability and bounds. |
 | KTD node editing ([#749](https://github.com/arc-mcp/arc-1/pull/749), [#750](https://github.com/arc-mcp/arc-1/pull/750), [#766](https://github.com/arc-mcp/arc-1/pull/766)) | Updates addressed nodes and short texts without replacing other nodes; supports `dryRun`. | Copy node names from `SAPRead`; preview ambiguous edits. |
 | Text pools and data elements ([#768](https://github.com/arc-mcp/arc-1/pull/768), [#774](https://github.com/arc-mcp/arc-1/pull/774)) | Adds program/function-group text-pool writes and preserves DTEL metadata during partial updates. | Text-pool writes replace the selected part: read it first. |
+| Stateful session cleanup ([#803](https://github.com/arc-mcp/arc-1/pull/803)) | Closes SAP HTTP application sessions after stateful writes, including failed writes, so they no longer accumulate in SM04 until timeout. | `none` |
 
 **Verification limits:** BTP UIAD saving, package CI communication arrangements, and successful on-premises
 ATC CI completion still need end-to-end verification. Incomplete results remain failures.
