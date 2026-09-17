@@ -1,4 +1,4 @@
-/** Explicit principal-error adapter; the MCP SDK otherwise maps custom verifier errors to 500. */
+/** Principal denials intentionally omit the SDK's insufficient_scope/re-login challenge. */
 import { type Verifier, XsuaaUserTokenRequiredError } from '@arc-mcp/xsuaa-auth';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import type { RequestHandler } from 'express';
@@ -6,7 +6,9 @@ import type { RequestHandler } from 'express';
 export function requireXsuaaUserBearerAuth(verifier: Verifier, resourceMetadataUrl: string): RequestHandler {
   return async (req, res, next) => {
     // Keep the SDK's header parsing and token-expiry checks authoritative. Only valid-looking
-    // headers need preverification so the typed principal rejection can retain HTTP 403.
+    // headers need preverification to distinguish principal rejection from missing scope.
+    // xsuaa-auth 1.1.0 already maps to SDK 403; this adapter preserves ADR-0008's
+    // forbidden response without a WWW-Authenticate challenge inviting futile login retries.
     const [kind, token] = req.headers.authorization?.split(' ') ?? [];
     if (kind?.toLowerCase() !== 'bearer' || !token) {
       await requireBearerAuth({ verifier: { verifyAccessToken: verifier }, resourceMetadataUrl })(req, res, next);

@@ -238,12 +238,13 @@ export function createMcpHandler(serverFactory: () => McpServer) {
 
 export interface MultiTargetRouting {
   registry: DestinationRegistry;
-  authorizationMode?: MultiTargetAuthorizationMode;
+  authorizationMode: MultiTargetAuthorizationMode;
   aggregateFactory: (projection?: MultiTargetRequestProjection) => McpServer;
   createPinnedServer: (target: TargetDescriptor, projection?: MultiTargetRequestProjection) => McpServer;
 }
 
 export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
+  assertRoutingAuthorizationMode(multi);
   return async (req: Request, res: Response) => {
     const enforced = multi.authorizationMode === 'xsuaa-attribute';
     const projection = enforced ? projectMultiTargetRequest(multi.registry, req.auth) : undefined;
@@ -285,6 +286,7 @@ export function createPinnedTargetMcpHandler(multi: MultiTargetRouting) {
 }
 
 export function createAggregateMcpHandler(multi: MultiTargetRouting) {
+  assertRoutingAuthorizationMode(multi);
   return async (req: Request, res: Response) => {
     // Keep the aggregate MCP transport reachable when discovery fails so an
     // administrator can call SAPTargets and inspect secret-safe diagnostics.
@@ -300,6 +302,12 @@ export function createAggregateMcpHandler(multi: MultiTargetRouting) {
     }
     await serveMcpRequest(() => (projection ? multi.aggregateFactory(projection) : multi.aggregateFactory()), req, res);
   };
+}
+
+function assertRoutingAuthorizationMode(multi: MultiTargetRouting): void {
+  if (multi.authorizationMode !== 'legacy' && multi.authorizationMode !== 'xsuaa-attribute') {
+    throw new Error('Multi-target routing requires an explicit authorization mode');
+  }
 }
 
 export function resolveMcpHttpRateLimit(config: Pick<ServerConfig, 'authRateLimit' | 'mcpHttpRateLimit'>): number {
@@ -328,12 +336,15 @@ export async function startHttpServer(
   uiDeps?: UiServerDeps,
   multiTargets?: MultiTargetRouting,
 ): Promise<import('node:http').Server> {
+  if (multiTargets) {
+    assertRoutingAuthorizationMode(multiTargets);
+    if (multiTargets.authorizationMode !== config.multiTargetAuthorization) {
+      throw new Error('Multi-target routing authorization mode must match server configuration');
+    }
+  }
   // Defense in depth: without credentials the XSUAA branch below is skipped and /mcp would be open.
   if (config.xsuaaAuth && !xsuaaCredentials) {
     throw new Error('SAP_XSUAA_AUTH=true requires XSUAA credentials; refusing to start an unauthenticated /mcp.');
-  }
-  if (multiTargets && config.multiTargetAuthorization === 'xsuaa-attribute') {
-    multiTargets = { ...multiTargets, authorizationMode: 'xsuaa-attribute' };
   }
   const [host, portStr] = config.httpAddr.split(':');
   const port = Number.parseInt(portStr || '8080', 10);

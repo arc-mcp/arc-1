@@ -10,6 +10,7 @@ import {
 } from '@arc-mcp/xsuaa-auth/btp';
 import { authLibLogger } from './logger.js';
 import { isSupportedMultiTargetArcProperty, isWriteRelatedArcProperty } from './multi-target-destination-config.js';
+import { MULTI_TARGET_MAX } from './multi-target-identity.js';
 
 export interface DestinationAuthorizationOptions {
   readonly authorizationMode?: 'legacy' | 'xsuaa-attribute';
@@ -176,7 +177,7 @@ export async function discoverDestinations(
     for (const destination of subaccountRaw) {
       const projected = projectMultiTargetDestination(destination, options);
       if (!projected) continue;
-      if (options.authorizationMode === 'xsuaa-attribute' && subaccount.length === 256) {
+      if (options.authorizationMode === 'xsuaa-attribute' && subaccount.length === MULTI_TARGET_MAX) {
         // No first-page inventory survives a failed complete-snapshot bound.
         return Object.freeze({
           subaccount: Object.freeze([]),
@@ -184,7 +185,7 @@ export async function discoverDestinations(
           scannedCount: 0,
           unrelatedCount: 0,
           arcAdjacentWithoutMarkerCount: 0,
-          arcRelatedAtLeast: 257,
+          arcRelatedAtLeast: MULTI_TARGET_MAX + 1,
         });
       }
       subaccount.push(projected);

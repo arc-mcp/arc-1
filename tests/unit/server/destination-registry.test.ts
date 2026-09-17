@@ -36,6 +36,14 @@ function discovery(
 }
 
 describe('DestinationRegistry', () => {
+  it.each(['Prod\u202E label\u200B', 'Prod\u{E0061} label', '\uFEFF\u202E'])(
+    'sanitizes format controls from public descriptions: %j',
+    (description) => {
+      const registry = DestinationRegistry.fromDiscovery(discovery([destination({ description })]), DEFAULT_CONFIG);
+      expect(registry.targets[0].description).toBe(description.startsWith('Prod') ? 'Prod label' : 'A4H/100');
+      expect(JSON.stringify(registry.targets)).not.toMatch(/[\p{Cf}]/u);
+    },
+  );
   it('accepts the minimum config and applies the instance policy ceiling', () => {
     const registry = DestinationRegistry.fromDiscovery(
       discovery([

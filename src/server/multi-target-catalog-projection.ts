@@ -1,17 +1,18 @@
 /** Bounded display-only projection. Never use these fields for connection validation or drift. */
 import type { TargetDiagnostic } from './destination-registry.js';
-import { SAP_SYSID_PATTERN, TARGET_ID_PATTERN, TARGET_SYSTEM_ALIAS_PATTERN } from './multi-target-identity.js';
+import {
+  normalizeTargetDisplayText,
+  SAP_SYSID_PATTERN,
+  TARGET_ID_PATTERN,
+  TARGET_SYSTEM_ALIAS_PATTERN,
+} from './multi-target-identity.js';
 
 const SAFE_NAME = /^[A-Za-z0-9_.-]{1,200}$/;
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,63}$/;
 
 export function boundedCatalogText(value: string | undefined, maximum: number): string | undefined {
   if (typeof value !== 'string' || value.length > maximum * 4) return undefined;
-  const normalized = value
-    .normalize('NFKC')
-    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const normalized = normalizeTargetDisplayText(value);
   return normalized && normalized.length <= maximum ? normalized : undefined;
 }
 

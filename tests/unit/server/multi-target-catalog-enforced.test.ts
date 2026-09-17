@@ -5,12 +5,12 @@ import {
   projectMultiTargetDestination,
 } from '../../../src/server/destination-discovery.js';
 import { DestinationRegistry, evaluateStandaloneTargetDescriptor } from '../../../src/server/destination-registry.js';
+import { buildTargetCatalog } from '../../../src/server/multi-target-catalog.js';
 import {
-  buildTargetCatalog,
-  buildTargetCatalogResult,
+  buildEnforcedTargetCatalogResult as buildTargetCatalogResult,
   TARGET_CATALOG_MAX_RESULT_BYTES,
   type TargetCatalogEnforcement,
-} from '../../../src/server/multi-target-catalog.js';
+} from '../../../src/server/multi-target-catalog-enforced.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const enforced = { authorizationMode: 'xsuaa-attribute' } as const;

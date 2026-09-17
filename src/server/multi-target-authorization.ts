@@ -62,10 +62,14 @@ export function parseTargetGrant(authInfo?: Pick<AuthInfo, 'extra'>): TargetGran
 
   const canonical = new Set<string>();
   for (const value of rawValues as readonly string[]) {
+    // IAM values must be ASCII before normalization: Unicode case folding and
+    // whitespace removal must never manufacture an exact ID or the all-target grant.
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Permit only ASCII whitespace around IAM values.
+    if (!/^[\x09-\x0D\x20-\x7E]*$/.test(value)) return none('TARGET_GRANT_MALFORMED');
     const trimmed = value.trim();
     const slash = trimmed.indexOf('/');
-    // Identical normalization to aggregate normalizeTarget: uppercase only the system
-    // segment, then apply the shared public-ID grammar. Never split CSV or expand globs.
+    // Unlike forgiving tool arguments, grants reject non-ASCII above. Uppercase only
+    // the system segment; never split CSV, Unicode-fold an ID, or expand globs.
     const normalized = slash >= 0 ? `${trimmed.slice(0, slash).toUpperCase()}${trimmed.slice(slash)}` : trimmed;
     if (normalized !== '*' && !TARGET_ID_PATTERN.test(normalized)) return none('TARGET_GRANT_MALFORMED');
     canonical.add(normalized);

@@ -92,6 +92,11 @@ describe('verified XSUAA target grant parsing', () => {
     '__proto__',
     'constructor',
     'Unrestricted',
+    'qaſ/001',
+    '*\uFEFF',
+    '\uFEFF*',
+    'A4H/001\u2003',
+    'A4H/001\u202E',
   ])('rejects unsupported syntax %s even alongside an all-target value', (value) => {
     expect(parseTargetGrant(auth(['A4H/001', value]))).toEqual(invalid);
     expect(parseTargetGrant(auth(['*', value]))).toEqual(invalid);
@@ -119,7 +124,7 @@ describe('verified XSUAA target grant parsing', () => {
   it('enforces the original UTF-8 entry bound before trimming', () => {
     expect(parseTargetGrant(auth(`${' '.repeat(121)}A4H/001`)).mode).toBe('exact');
     expect(parseTargetGrant(auth(`${' '.repeat(122)}A4H/001`))).toEqual(exceeded);
-    expect(parseTargetGrant(auth(`${'\u2003'.repeat(40)} A4H/001`)).mode).toBe('exact');
+    expect(parseTargetGrant(auth(`${'\u2003'.repeat(40)} A4H/001`))).toEqual(invalid);
     expect(parseTargetGrant(auth(`${'\u2003'.repeat(41)}A4H/001`))).toEqual(exceeded);
   });
 

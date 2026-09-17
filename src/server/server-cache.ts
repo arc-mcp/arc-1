@@ -15,6 +15,7 @@ export async function createCachingLayer(config: ServerConfig): Promise<CachingL
       'ARC1_CACHE=sqlite stores SAP source in plaintext at rest; use ARC1_CACHE=memory/none or encrypted storage for IP-sensitive landscapes.',
     );
     try {
+      // Keep the optional native better-sqlite3 dependency out of memory/none startup paths.
       const { SqliteCache } = await import('../cache/sqlite.js');
       cache = new SqliteCache(config.cacheFile);
     } catch (err) {
