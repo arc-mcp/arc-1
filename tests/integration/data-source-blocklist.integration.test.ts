@@ -17,6 +17,7 @@ import { getTestClient, requireSapCredentials } from './helpers.js';
 describe('experimental data-source blocklist live contract', () => {
   let client: AdtClient;
   let basisRelease = 0;
+  let canonicalTableSourceAvailable = false;
 
   beforeAll(async () => {
     requireSapCredentials();
@@ -26,6 +27,7 @@ describe('experimental data-source blocklist live contract', () => {
       client.getInstalledComponents(),
     ]);
     client.http.setDiscoveryMap(map);
+    canonicalTableSourceAvailable = client.http.discoveryAcceptFor('/sap/bc/adt/ddic/tables') !== undefined;
     basisRelease = Number.parseInt(components.find((component) => component.name === 'SAP_BASIS')?.release ?? '0', 10);
   });
 
@@ -57,10 +59,10 @@ describe('experimental data-source blocklist live contract', () => {
   });
 
   it('expands the live DDIC replacement object before deciding', async (ctx) => {
-    if (basisRelease < 752) {
+    if (!canonicalTableSourceAvailable) {
       skipTest(
         ctx,
-        `${SkipReason.BACKEND_UNSUPPORTED}: canonical table source omits replacement metadata on SAP_BASIS 750`,
+        `${SkipReason.BACKEND_UNSUPPORTED}: target does not advertise canonical table-source metadata (SAP_BASIS ${basisRelease || 'unknown'})`,
       );
     }
     const strict = withBlocked(['SCARR']);
@@ -74,7 +76,7 @@ describe('experimental data-source blocklist live contract', () => {
   it('handles an unrelated static table according to table-source availability', async () => {
     const strict = withBlocked(['USR02']);
     const getSpy = vi.spyOn(strict.http, 'get');
-    if (basisRelease < 752) {
+    if (!canonicalTableSourceAvailable) {
       await expect(strict.runQuery('SELECT CARRID FROM SCARR')).rejects.toMatchObject({
         code: 'DATA_POLICY_UNAVAILABLE',
         sourcePath: ['SCARR'],

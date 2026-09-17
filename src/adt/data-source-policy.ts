@@ -169,7 +169,7 @@ export type ResolvedDirectDataSource =
 export interface DataSourcePolicyResolver {
   resolveDirectSource(name: string): Promise<ResolvedDirectDataSource>;
   /** False only when loaded discovery proves the canonical table-source resource is absent. */
-  tableSourceAvailable?(): boolean | undefined;
+  canonicalTableSourceAvailable?: boolean;
   readTableSource(name: string): Promise<string>;
   readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode>;
 }
@@ -179,7 +179,7 @@ export interface DataSourcePolicyBackend {
     name: string,
     maxResults: number,
   ): Promise<Array<{ objectName: string; objectType: string; uri: string }>>;
-  tableSourceAvailable(): boolean | undefined;
+  canonicalTableSourceAvailable: boolean | undefined;
   readTableSource(name: string): Promise<string>;
   dependencyGraphAccept(): string | undefined;
   readDependencyGraph(path: string, accept: string): Promise<string>;
@@ -346,7 +346,7 @@ export class DataSourceBlocklistGuard {
   private async evaluate(directSources: string[]): Promise<void> {
     await enforceBlockedDataSources(directSources, this.blockedSources, {
       resolveDirectSource: (name) => this.resolveDirectSource(name),
-      tableSourceAvailable: () => this.backend.tableSourceAvailable(),
+      canonicalTableSourceAvailable: this.backend.canonicalTableSourceAvailable,
       readTableSource: (name) => {
         this.metadataRequests += 1;
         return this.backend.readTableSource(name);
@@ -442,7 +442,7 @@ export const CDS_DEPENDENCY_GRAPH_PATH = '/sap/bc/adt/ddic/ddl/dependencies/grap
 export function createDataSourceBlocklistGuard(deps: {
   blockedDataSources: string[];
   searchObject: DataSourcePolicyBackend['searchObject'];
-  tableSourceAvailable: DataSourcePolicyBackend['tableSourceAvailable'];
+  canonicalTableSourceAvailable: DataSourcePolicyBackend['canonicalTableSourceAvailable'];
   readTableSource: DataSourcePolicyBackend['readTableSource'];
   dependencyGraphAccept: DataSourcePolicyBackend['dependencyGraphAccept'];
   readDependencyGraph: DataSourcePolicyBackend['readDependencyGraph'];
@@ -794,7 +794,7 @@ export async function enforceBlockedDataSources(
   };
 
   const replacementAt = async (directSource: string, table: string, path: string[]): Promise<string | undefined> => {
-    if (resolver.tableSourceAvailable?.() === false) {
+    if (resolver.canonicalTableSourceAvailable === false) {
       throw new DataSourcePolicyError('DATA_POLICY_UNAVAILABLE', directSource, path, TABLE_SOURCE_UNAVAILABLE_REASON);
     }
     try {

@@ -2084,6 +2084,7 @@ describe('AdtClient', () => {
     it('uses loaded discovery to refuse missing replacement metadata before table source or data preview', async () => {
       mockFetch.mockResolvedValue(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
       const client = createClient({ safety: strictSafety(['USR02']) });
+      // A non-table entry means discovery is loaded while proving the table collection is absent.
       client.http.setDiscoveryMap(new Map([['/sap/bc/adt/ddic/structures', ['text/plain']]]));
 
       await expect(client.runTableQuery('SCARR')).rejects.toMatchObject({

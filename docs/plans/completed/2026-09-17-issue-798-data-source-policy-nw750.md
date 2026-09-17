@@ -108,6 +108,8 @@ stopped 816 target is not required to establish the 7.52 boundary.
   and `git diff --check` passed. Lint emitted only pre-existing informational notices.
 - Final review tightened the operator guidance so removing the blocklist is identified as a security
   decision, and aligned the earlier design reassessment with the fourth stable code.
+- A second maintainability review replaced the zero-argument capability callback with an immutable,
+  explicitly named tri-state value and aligned the live test with discovery rather than release parsing.
 
 ### Task 1: Add release-boundary regression tests
 
@@ -145,11 +147,11 @@ Thread one tri-state capability from the already-loaded HTTP discovery map into 
 Do not gate the request before direct and graph checks.
 
 - [x] Add stable code `DATA_POLICY_UNAVAILABLE` with non-minimal and minimal client guidance that the
-      table-source metadata is absent, this is expected before 7.52, and the operator must use 7.52+
-      or leave the blocklist empty.
-- [x] Add an optional resolver capability and required backend callback returning
+      table-source metadata is absent, this is expected before 7.52, and the operator must use a
+      capable target or keep data access disabled. Removing the blocklist is an explicit security decision.
+- [x] Add an optional tri-state resolver value and required backend value using
       `true | false | undefined`; consult it at `replacementAt()` before the source read.
-- [x] Bind the callback to `hasDiscoveryData()` plus discovery presence for
+- [x] Bind the value to `hasDiscoveryData()` plus discovery presence for
       `/sap/bc/adt/ddic/tables`; return `undefined` when discovery has not been loaded.
 - [x] Keep metadata request accounting truthful: a proactive capability denial must not count the
       skipped table-source HTTP call.

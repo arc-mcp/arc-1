@@ -1346,10 +1346,9 @@ export class AdtClient {
     return createDataSourceBlocklistGuard({
       blockedDataSources: this.safety.blockedDataSources,
       searchObject: (name, maxResults) => this.searchObject(name, maxResults),
-      tableSourceAvailable: () =>
-        this.http.hasDiscoveryData()
-          ? this.http.discoveryAcceptFor('/sap/bc/adt/ddic/tables') !== undefined
-          : undefined,
+      canonicalTableSourceAvailable: this.http.hasDiscoveryData()
+        ? this.http.discoveryAcceptFor('/sap/bc/adt/ddic/tables') !== undefined
+        : undefined,
       // Canonical /tables source only: the NW 7.50 /structures fallback omits
       // replacementObject metadata and therefore cannot prove authorization.
       readTableSource: async (name) => (await this.getTable(name)).source,

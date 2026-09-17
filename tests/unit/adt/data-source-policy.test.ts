@@ -195,7 +195,7 @@ describe('enforceBlockedDataSources', () => {
 
   it('reports unavailable policy metadata before reading an undiscovered table source', async () => {
     const r = resolver({
-      tableSourceAvailable: vi.fn(() => false),
+      canonicalTableSourceAvailable: false,
     });
     await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
       code: 'DATA_POLICY_UNAVAILABLE',
@@ -227,7 +227,7 @@ describe('enforceBlockedDataSources', () => {
         name: 'DEMO_CDS_SUMDIST',
         ddlSource: 'DEMO_CDS_SUMDIST',
       })),
-      tableSourceAvailable: vi.fn(() => false),
+      canonicalTableSourceAvailable: false,
       readTableSource,
     });
     await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['SPFLI'], r)).rejects.toMatchObject({

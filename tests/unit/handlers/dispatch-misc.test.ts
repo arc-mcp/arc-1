@@ -530,6 +530,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       );
       const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
       const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+      // A non-table entry means discovery is loaded while proving the table collection is absent.
       client.http.setDiscoveryMap(new Map([['/sap/bc/adt/ddic/structures', ['text/plain']]]));
 
       const result = await handleToolCall(
