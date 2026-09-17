@@ -168,6 +168,10 @@ existing dedicated IAS mapping and isolated IdP-backed role.
 | Original IAS token refreshed after adding static client 001 (09:52) | 2,185 | 97 passed, **17 failed union expectations**; still only client 100 |
 | Original positive token replayed after static-role and IAS-membership removal (09:53) | 2,162 | 116/116 positive replay; old signed grant still works |
 | Original IAS token refreshed after group removal (09:54) | 2,185 | 77 passed, **25 failed no-grant expectations**; client 100 remains granted |
+| New authorization code after requested recovery (10:44) | 2,105 | 59/59; valid empty IAS array, no target access |
+| Concurrent new empty / original positive token (10:44) | 2,105 / 2,162 | 59/59 + 116/116; separate projections for two snapshots of the same user |
+| New empty session refreshed (10:45) | 2,128 | 59/59; valid empty array remains denied |
+| Original positive token after natural expiry (10:50) | 2,162 | 18/18; SAP SDK classifies expired, aggregate and pinned routes return 401 |
 
 The first three successful cases establish IAS delivery, unchanged refresh behavior and static/IAS
 union on the published dependency. The union case uses an exchange, not a second browser login;
@@ -190,18 +194,35 @@ readback returned zero items. No group/attribute mapping was added to that colle
 
 Removed only the approved canonical IAS `A4H/100` membership through the Chrome skill at 09:53
 UTC; the group's saved view showed **zero users**. Other memberships and the existing mapping
-were not changed. Retained the isolated **IAS-backed role assignment** deliberately for the
-pending removal test: unassigning that role first would confound whether a new IAS claim is empty.
-The secondary user currently has that test collection, baseline Viewer and its unrelated Data
-Viewer collection; the latter two remain untouched.
+were not changed. Retained the isolated **IAS-backed role assignment** through the 10:44 login
+and 10:45 refresh: unassigning that role first would confound whether a new IAS claim is empty.
 
-Next control: in the same private browser session, use the existing XSUAA `/logout.do` recovery
-URL built by ARC's actual helper (bound client ID and fixed allowlisted `/oauth/logged-out`
-return), then obtain a new authorization code without clearing cookies. The operator must report
-whether the original window was still open and whether IAS requested credentials. This normal
-recovery result is **pending**, not a fresh-session or revocation pass. Remove the isolated
-IAS-backed role assignment after the control, then verify baseline restoration. The app and
-in-memory harness remain running; no tokens or credential values were persisted or published.
+The operator was asked to use ARC's existing XSUAA `/logout.do` recovery helper (bound client ID
+and fixed allowlisted `/oauth/logged-out` return), followed by a new sign-in in the same private
+window without clearing cookies. The resulting authorization code arrived at 10:43:56 UTC.
+SAP SDK verification and the private expected-identity/origin checks passed; its valid empty
+`arc1_targets` array denied client 100 and all other tested targets. Refresh of this new session
+also denied access. **The new-token denial is proven; same-window, no-cookie-clearing recovery is
+not yet independently established.** The operator's confirmation of the window used and whether
+IAS requested credentials is still pending, so this is not counted as a completed normal-logout
+workflow or bounded revocation SLA.
+
+Concurrent replay kept the new empty token denied while the old positive token still worked
+with 154 seconds remaining. This tests same-user token-snapshot isolation, not two-human/origin
+isolation. At 10:50 UTC, replaying that original token under an explicit expired-token scenario
+passed SAP SDK expiry classification and the aggregate/pinned HTTP 401 checks. Natural expiry
+is enforced; this does not revoke refresh-issued successors or bound staleness from IAM removal.
+
+At 10:52 UTC removed the secondary user's temporary **IAS-backed role assignment** through the
+Chrome skill after BTP CLI preparation timed out without contacting the backend. The saved
+collection view showed no users, user groups or attribute mappings; its existing role definition
+was preserved. At 10:53 UTC the business-user detail view independently confirmed exactly the
+two original collections: baseline Viewer and unrelated Data Viewer. Neither was edited. No
+shared destination or SAP authorization was changed. Remote PR checks through `9f28741a` passed;
+this follow-up changes evidence only, not deployed runtime source `a25d62c6`.
+Focused documentation tests (5/5), strict MkDocs and whitespace checks passed. At 10:54 UTC
+stopped the harness and its callback listener; its shutdown confirmed no tokens were persisted.
+The isolated CF app remains running for later acceptance cases, which need a new harness/login.
 
 ## Evidence strategy
 
