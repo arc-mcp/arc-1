@@ -52,10 +52,10 @@ Shutdown, audit-sink and data-policy changes from main were not reverted.
 - The restored isolated descriptor still refuses machine-token issuance: HTTP 401 `invalid_client`
   with a grant-type rejection, not bad credentials. The retained key matched a fresh CF key read.
   This is an issuance control, **not** a fresh runtime machine-principal rejection pass.
-- IAS administration is accessible and the canonical `A4H/100` test group remains empty after
-  cleanup. Two BTP role-list attempts timed out before backend execution; a new CLI login was
-  requested. CF SSH readback was unavailable due to authorization, so the deployment evidence is
-  the reviewed bundle/lockfile and successful staging, not a claimed remote `npm ls` result.
+- IAS administration is accessible. BTP security API calls remain intermittent after CLI login;
+  successful mutations/readbacks and cockpit fallback allowed the matrix below. CF SSH readback
+  was unavailable due to authorization, so deployment evidence is the reviewed bundle/lockfile
+  and successful staging, not a claimed remote `npm ls` result.
 
 The harness's positive SYSTEM assertions prove response success only. Independent SAP user and
 client-marker evidence remains required. Remote CI and the authenticated final-build matrix are
@@ -69,10 +69,90 @@ The final full suite after this correction passed again: **7,021 tests / 231 fil
 The packaged CLI/npx smoke test also passed. The follow-up changes are test/docs only; the deployed
 production source remains `a25d62c6`.
 
-Current resume state: the isolated app remains running on its approved spare route for the next
-authenticated replay. The local harness stopped at 08:37 UTC without persisting tokens; no user
-token was obtained in this session. IAS group membership and all role assignments are unchanged.
-Start a new harness and fresh secondary-user incognito flow after BTP administration is available.
+Remote clean-install CI on `d780e174` passed the Node 22 and Node 24 jobs, including their required
+lint, typecheck, action-policy, budget, packaged CLI and unit checks. Docs, MTA validation,
+dependency review and CodeQL also passed. The integration and end-to-end jobs also passed;
+these do not replace the isolated XSUAA/IAS acceptance matrix below.
+
+### Published-build secondary-user baseline
+
+The first local harness stopped at 08:37 UTC without receiving a user token. A new harness started
+at 08:42 UTC, loading the installed registry auth module. The user completed the fresh-incognito
+login for the secondary identity; private expected-email and `sap.custom` origin checks passed.
+No role or IAS membership was changed between these three cases:
+
+| Flow | Token bytes | Result |
+|---|---:|---|
+| Authorization code, 08:43 UTC | 2,049 | 49/49 assertions passed |
+| Refresh, 08:46 UTC | 2,072 | 49/49 assertions passed |
+| User JWT-bearer exchange, 08:47 UTC | 2,076 | 49/49 assertions passed |
+
+All **147 assertions passed**. SAP xssec verified each token before identity/scope/attribute
+assertions. Each contained only the local `read` scope and no `arc1_targets` claim: aggregate
+operational tools/catalog stayed hidden, existing and unknown pinned targets returned equivalent
+generic 404s, aggregate denials were generic, and private/no-store headers were retained. Refresh
+retained the `authorization_code` grant type; exchange used the JWT-bearer grant type and was
+accepted as a supported verified user. No SAP execution was authorized in this baseline.
+
+These are final-dependency **no-grant** replays, not a grant-change freshness result. The following
+cases then changed only the approved isolated test role collections. Tokens remain memory-only.
+
+### Published-build role/target matrix
+
+The following tokens were issued through user JWT-bearer exchange, using the verified secondary
+baseline identity. They are real XSUAA tokens, **not fresh browser-login or refresh-freshness
+proof**. Each scenario asserts the independently specified complete target projection, generic
+denials, cache headers and permitted tool surface against the deployed HTTP service.
+
+| Case (UTC) | Token bytes | Result |
+|---|---:|---|
+| Viewer, exact client 100 (08:51) | 2,137 | 116/116 |
+| Viewer, clients 001 + 100, corrected positive-SAP fixture (08:54) | 2,188 | 123/123 |
+| Data Viewer, clients 001 + 100 (08:54) | 2,258 | 123/123 |
+| SQL, clients 001 + 100, confirmed role readback (08:59) | 2,293 | 131/131 |
+| Admin, clients 001 + 100 (09:00) | 2,472 | 123/123 |
+| Admin, no target grant (09:00) | 2,360 | 58/58 |
+| Invalid `*` + `A4H/*` (09:02) | 2,150 | 52/52; complete grant denied |
+| Explicit `*` (09:02) | 2,140 | 123/123; four active targets projected |
+| 257 values (09:03) | 6,926 | 53/53; complete grant denied |
+| 129-byte value (09:03) | 2,310 | 52/52; complete grant denied |
+| 256 values (09:04) | 6,908 | 115/115; active client 100 projected |
+| IAS-backed role, group empty and no static grant (09:08) | 2,132 | 49/49; valid empty array denied |
+
+These passing replays total **1,118 assertions**, or **1,265 including the three baseline flows**.
+The Admin exchange issued all seven local capability scopes, including write/transport/Git;
+the multi-target surface still exposed no mutation tools. Admin without grants had diagnostics
+but no execution permission. Scale values contain one active target and otherwise unknown exact
+IDs: successful token delivery is not a 17+ active-destination/schema test. Data/SQL cases currently
+prove scope/tool projection, not independent positive query or destination-ceiling execution.
+
+Two unsuccessful runs are retained separately and excluded from that total:
+
+- The first two-target Viewer scenario passed 128 and failed two positive SAP-read expectations
+  for client 001. CF logs showed SAP HTTP 401 / `sap_authentication_failed` after PP preparation.
+  Target grants and schema/catalog projection passed. The secondary account was set up for client
+  100; the exact client-001 mapping/user cause is not independently established. Corrected only
+  the private scenario's positive `allowedTargets` to client 100; it still asserts both grant and
+  schema values, with no production-code or SAP-authorization change. Client-001 positive access
+  for this identity remains unproven.
+- The first SQL scenario passed 121 and failed two expectations because the CLI role-add request
+  was still pending and ultimately timed out before backend execution. The token correctly had
+  only Viewer/Data scopes. Added the SQL role through the cockpit, verified the exact isolated
+  application and collection roles, then obtained a new token: 131/131 passed. Subsequent CLI
+  batches use `set -e -o pipefail`; request completion and actual readback, not an empty successful
+  JSON filter or a submitted asynchronous command, are required before exchanging tokens.
+
+At 09:08 UTC all temporary static/Admin/capability collection assignments had been removed from
+the secondary identity. Its baseline Viewer and unrelated Data Viewer were preserved, alongside
+the temporary isolated IAS-backed role needed for the next test. On explicit owner approval,
+added only this identity to the existing canonical IAS group `A4H/100` at 09:12 UTC; membership
+readback showed one user. The existing exact-name mapping and every other group remained unchanged.
+The fresh-incognito IAS-positive login is pending; it is not yet counted as a pass. Restored both
+unassigned Matrix/Capabilities collections to empty through the cockpit by 09:19 UTC, verifying
+no roles, users, groups or attribute mappings in their saved views. Cleanup of the IAS membership
+and isolated IAS-backed role assignment must be recorded after the pending test. The isolated
+app and in-memory harness remain running. Focused documentation tests (5/5), strict MkDocs and
+`git diff --check` passed for this evidence-only update; deployed runtime source is unchanged.
 
 ## Evidence strategy
 
@@ -435,8 +515,9 @@ alone is not evidence of end-to-end behavior.
 The static-grant, primary-user capability, issued-value scale and machine/wrong-app cases above
 are already measured. The remaining work, in order, is:
 
-1. Published auth 1.1.0 integration and clean local install/tests are complete. Confirm remote CI
-   on the latest PR push and replay the authenticated matrix on the registry-based deployed build.
+1. Published auth 1.1.0 integration, clean local install/tests, remote CI on `d780e174`, and the
+   static secondary-user role/target replays are complete. Finish the remaining authenticated
+   IAS/principal/isolation cases on this registry-based build and recheck CI after evidence updates.
 2. Complete the remaining secondary-user matrix; disjoint two-human concurrency now passed.
    Verify the actual mapped SAP user/client through an independently observed backend identity/marker.
 3. IAS-only, static+IAS, nonmatching-group exclusion and fresh-session group-removal denial now
