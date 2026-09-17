@@ -15,6 +15,8 @@ const MAX_REPLACEMENT_SOURCES = 256;
 const MAX_RESOLUTION_ROOTS = 64;
 const TABLE_SOURCE_UNAVAILABLE_REASON =
   'the connected SAP system does not advertise the transparent-table source metadata required to prove replacement-object lineage; the standard ADT resource is available from SAP_BASIS 7.52 onward';
+const TABLE_SOURCE_UNKNOWN_404_REASON =
+  'ADT discovery was unavailable and the canonical transparent-table source request returned HTTP 404, so replacement-object lineage support could not be established; the standard ADT resource is available from SAP_BASIS 7.52 onward';
 
 const graphParser = new XMLParser({
   ignoreAttributes: false,
@@ -74,7 +76,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
     const decisionId = options.decisionId ?? newDecisionId();
     const operatorAction =
       code === 'DATA_POLICY_UNAVAILABLE'
-        ? 'Use a target that advertises the canonical table-source resource (normally SAP_BASIS 7.52 or newer), or keep data access disabled. Clearing SAP_BLOCKED_DATA_SOURCES leaves every otherwise authorized source eligible and requires security approval.'
+        ? 'Ensure ADT discovery is available and the target advertises the canonical table-source resource (normally SAP_BASIS 7.52 or newer), or keep data access disabled. Clearing SAP_BLOCKED_DATA_SOURCES leaves every otherwise authorized source eligible and requires security approval.'
         : 'Use a permitted static source, or change SAP_BLOCKED_DATA_SOURCES only after security review.';
     super(
       `${code}: request denied before data execution (executed=false, decisionId=${decisionId}). ` +
@@ -115,7 +117,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
       case 'DATA_SQL_UNSUPPORTED':
         return 'Rewrite the request as one complete static SELECT/WITH without comments, host expressions or dynamic sources, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
       case 'DATA_POLICY_UNAVAILABLE':
-        return 'Use a target that advertises the required metadata (normally SAP_BASIS 7.52 or newer), or keep data access disabled. Removing the blocklist leaves every otherwise authorized source eligible.';
+        return 'Ensure ADT discovery is available and the target advertises the required metadata (normally SAP_BASIS 7.52 or newer), or keep data access disabled. Removing the blocklist leaves every otherwise authorized source eligible.';
       case 'DATA_LINEAGE_UNRESOLVED':
         return 'Query a source whose lineage ARC-1 can resolve, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
       default:
@@ -784,6 +786,13 @@ export async function enforceBlockedDataSources(
       return await replacementFor(table);
     } catch (error) {
       if (error instanceof DataSourcePolicyError) throw error;
+      if (
+        resolver.canonicalTableSourceAvailable === undefined &&
+        error instanceof AdtApiError &&
+        error.statusCode === 404
+      ) {
+        throw new DataSourcePolicyError('DATA_POLICY_UNAVAILABLE', directSource, path, TABLE_SOURCE_UNKNOWN_404_REASON);
+      }
       throw unresolved(directSource, path, safeLineageFailureReason(error));
     }
   };

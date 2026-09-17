@@ -94,8 +94,9 @@ npx vitest run tests/unit/adt/data-source-policy.test.ts tests/unit/adt/client.t
 
 The implementation threads one tri-state discovery capability into `replacementAt()`. Loaded
 discovery without `/sap/bc/adt/ddic/tables` now produces `DATA_POLICY_UNAVAILABLE`; discovery that
-advertises the resource follows the existing source-read path; an unloaded discovery map preserves
-the previous behavior for direct library consumers.
+advertises the resource follows the existing source-read path. If discovery is unavailable, a `404`
+from the canonical table-source read also produces `DATA_POLICY_UNAVAILABLE`; other failures retain
+`DATA_LINEAGE_UNRESOLVED`, as does a `404` when discovery advertised the resource.
 
 The production `AdtClient` was re-run on both live systems after implementation:
 
@@ -109,8 +110,15 @@ The production `AdtClient` was re-run on both live systems after implementation:
 | A4H, SAP_BASIS 758 | allowed `SCARR` | allowed and executed as before |
 | A4H, SAP_BASIS 758 | block `SCARR` through `DEMO_SUMDIST` | `DATA_SOURCE_BLOCKED`, path `DEMO_SUMDIST -> DEMO_CDS_SUMDIST -> SCARR` |
 
+An external follow-up on ECC EhP8 / SAP_BASIS 7.50 SP23 exposed the unknown-discovery case: startup
+discovery returned `401` under XSUAA principal propagation, the per-user client inherited an empty
+map, and all three allowed `T000` paths fell through to a canonical source `404` and generic
+`DATA_LINEAGE_UNRESOLVED`. The exact sequence was reproduced in unit tests before the follow-up fix;
+the three paths now return `DATA_POLICY_UNAVAILABLE` after one table-source GET and before data execution.
+
 Focused live integration results were 5 passed / 6 release-specific skips on 750 and 11 passed on
-758. The complete unit suite passed 6,789 tests, and typecheck, lint, file-size/schema budgets,
+758. After the PP follow-up, the focused regression suites passed 416 tests and the complete unit
+suite passed 6,798 tests across 220 files. Typecheck, lint, policy validation, file-size/schema budgets,
 strict documentation build, and production build all passed. The lint command reported only existing
 informational Biome configuration/version notices and an unrelated `package-contents.ts` style hint.
 
@@ -186,8 +194,8 @@ discovery map:
 - `true`: read canonical table source exactly as today;
 - `false`: return `DATA_POLICY_UNAVAILABLE` before calling `/ddic/tables`, with guidance to use a
   capable target (normally 7.52+) or keep data access disabled;
-- `undefined`: discovery was not loaded (direct library/tests), preserve the current request-and-fail
-  behavior rather than inventing absence.
+- `undefined`: attempt the canonical source read. Its `404` is the only evidence that maps to
+  `DATA_POLICY_UNAVAILABLE`; other failures remain `DATA_LINEAGE_UNRESOLVED`.
 
 The check belongs at replacement inspection, not at the start of the request. That preserves:
 
@@ -222,7 +230,7 @@ request-scoped discovery gate is both narrower and more accurate.
 | `src/adt/client.ts` | Bind the capability to `AdtHttpClient.hasDiscoveryData()` plus `/ddic/tables` discovery presence. |
 | `src/server/audit.ts` | Admit the new stable code in the typed policy audit event. |
 | `tests/unit/adt/data-source-policy.test.ts` | Cover unavailable/unknown/available capability semantics and denial precedence. |
-| `tests/unit/adt/client.test.ts` | Prove loaded discovery prevents the absent HTTP request and keeps the data request unexecuted. |
+| `tests/unit/adt/client.test.ts`, `tests/unit/adt/data-source-policy-client.test.ts` | Prove loaded discovery prevents the absent HTTP request, and unknown discovery reclassifies only the canonical `404`; data remains unexecuted. |
 | `tests/unit/handlers/dispatch-misc.test.ts` | Prove minimal-error output remains actionable and backend-safe. |
 | `tests/integration/data-source-blocklist.integration.test.ts` | Turn the hidden 7.50 allowed-table skip into a release-specific assertion. |
 | `.env.example`, `README.md`, `AGENTS.md`, `docs_page/{authorization,configuration-reference,security-guide,cli-guide,tools}.md` | State the discovery/7.52 boundary and the dedicated outcome consistently. |

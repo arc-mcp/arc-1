@@ -127,7 +127,9 @@ With an active list, one logical request is decided exactly once:
   `@AbapCatalog.replacementObject` chains are followed;
 - proving that a transparent table has no replacement object requires the canonical ADT table-source
   resource advertised from SAP_BASIS 7.52 onward. If loaded discovery proves it is absent, ARC-1
-  returns `DATA_POLICY_UNAVAILABLE` before attempting that missing resource or executing data;
+  returns `DATA_POLICY_UNAVAILABLE` before attempting that missing resource or executing data. If
+  discovery is unavailable, a canonical table-source `404` produces the same code after that one
+  metadata request; the SAP data request is still not executed;
 - every repository/entity/database alias of every node is compared against the list;
 - IN-list chunking does **not** re-decide: the union of all chunks is authorized once and the
   already-authorized statements are then executed.
@@ -137,7 +139,7 @@ With an active list, one logical request is decided exactly once:
 | Code | Meaning |
 |---|---|
 | `DATA_SOURCE_BLOCKED` | An exact configured rule matched, directly or transitively. |
-| `DATA_POLICY_UNAVAILABLE` | The target does not advertise the table-source metadata required to enforce replacement lineage safely (normally SAP_BASIS 7.50/7.51). |
+| `DATA_POLICY_UNAVAILABLE` | The target lacks the table-source metadata required to enforce replacement lineage safely, or discovery was unavailable and its canonical table-source request returned `404` (normally SAP_BASIS 7.50/7.51). |
 | `DATA_LINEAGE_UNRESOLVED` | Identity, dependency-graph or replacement lineage could not be proven. |
 | `DATA_SQL_UNSUPPORTED` | The statement is outside the strict accepted SQL grammar. |
 
@@ -189,13 +191,17 @@ transactionally atomic (a TOCTOU window remains).
 The canonical transparent-table source resource needed for replacement-object inspection is
 advertised from SAP_BASIS 7.52 onward. On 7.50/7.51, direct exact matches and blocked aliases already
 visible in a CDS dependency graph still return `DATA_SOURCE_BLOCKED`; otherwise the request returns
-`DATA_POLICY_UNAVAILABLE` before any missing table-source request or data execution. ARC-1 does not
-assume a transparent table has no replacement object: replacement objects already exist on 7.50, so
-that fallback would weaken the blocklist.
+`DATA_POLICY_UNAVAILABLE`. Loaded discovery prevents the known-missing table-source request. When
+discovery cannot be loaded, ARC-1 makes one canonical table-source request and treats its `404` as
+unavailable policy metadata; data is never executed. An advertised table-source resource that returns
+`404` remains `DATA_LINEAGE_UNRESOLVED`, because that indicates an object or authorization problem
+rather than a release capability. ARC-1 does not assume a transparent table has no replacement object:
+replacement objects already exist on 7.50, so that fallback would weaken the blocklist.
 
 Under principal propagation the metadata reads run as the calling SAP user, so a user who lacks read
 authorization on a DDL source can get `DATA_LINEAGE_UNRESOLVED` for a query SAP itself would have
-authorized. That is fail-closed and intended.
+authorized. A startup identity that cannot read ADT discovery leaves capability unknown; a later
+per-user canonical table-source `404` returns `DATA_POLICY_UNAVAILABLE`. Both outcomes are fail-closed.
 
 Out of scope in v1: generic extension `ctx.http.get()` calls are **not** governed by this policy, so a
 plugin can read a blocked source. Object source, dumps and traces are likewise outside the boundary.

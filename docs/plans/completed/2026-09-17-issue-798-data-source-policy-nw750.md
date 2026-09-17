@@ -30,8 +30,9 @@ graph can produce a stronger transitive `DATA_SOURCE_BLOCKED` decision before re
 
 When discovery has been loaded and `/sap/bc/adt/ddic/tables` is absent, replacement inspection returns
 `DATA_POLICY_UNAVAILABLE`, `executed=false`, and a safe operator action explaining the 7.52 boundary.
-No request is sent to the missing table-source or data-preview resource. Unknown discovery state keeps
-the existing behavior for direct library consumers; modern discovered systems are unchanged.
+No request is sent to the missing table-source or data-preview resource. If discovery is unavailable,
+a canonical table-source `404` returns the same typed outcome after that single metadata request;
+other failures remain unresolved. Modern discovered systems are unchanged.
 
 ### Key Files
 
@@ -43,6 +44,7 @@ the existing behavior for direct library consumers; modern discovered systems ar
 | `src/server/audit.ts` | Typed protected audit event for policy decisions. |
 | `tests/unit/adt/data-source-policy.test.ts` | Pure decision and denial-precedence tests. |
 | `tests/unit/adt/client.test.ts` | Shared-client HTTP choke-point behavior. |
+| `tests/unit/adt/data-source-policy-client.test.ts` | PP-style unknown-discovery regression across all three data paths. |
 | `tests/unit/handlers/dispatch-misc.test.ts` | LLM-facing minimal-error and audit formatting. |
 | `tests/integration/data-source-blocklist.integration.test.ts` | Cross-release live contract. |
 | `.env.example`, `README.md`, `AGENTS.md`, `docs_page/*.md` | Operator and maintainer compatibility contract. |
@@ -71,8 +73,8 @@ Full commands, response summaries, references and rejected alternatives are reta
    targets in multi-target mode.
 3. Preserve the existing order of decisions: direct match and SQL grammar first, CDS graph before
    terminal replacement reads, capability denial only when the missing resource is actually required.
-4. Treat discovery as tri-state. `false` gives the proactive result; `undefined` preserves compatibility
-   when a library consumer has not loaded discovery.
+4. Treat discovery as tri-state. `false` gives the proactive result; `undefined` attempts the canonical
+   read and maps only its `404` to unavailable capability; `true` keeps a `404` as unresolved lineage.
 5. Add one public error code rather than special-casing text inside generic lineage failures. This keeps
    minimal-error mode actionable without exposing source names or SAP response details.
 6. No new config, CLI flags, caches, endpoints, schemas, or authorization scopes.
@@ -117,12 +119,21 @@ stopped 816 target is not required to establish the 7.52 boundary.
   typecheck, lint, policy validation, build, strict docs build, size/schema checks and `git diff --check`.
   Earlier cross-release live results remain the live evidence; shared SAP CI jobs were excluded from
   the merge recommendation at the user's request.
+- Contributor validation on ECC EhP8 / SAP_BASIS 7.50 SP23 exposed a principal-propagation case where
+  startup discovery returned `401`, leaving capability unknown. The exact four-path sequence was
+  reproduced locally: direct blocks stayed local, while all three allowed data paths read the canonical
+  source, received `404`, and returned the generic lineage code. A focused follow-up now maps that
+  unknown-capability `404` to `DATA_POLICY_UNAVAILABLE` while preserving the advertised-resource `404`
+  as `DATA_LINEAGE_UNRESOLVED`.
+- Final follow-up verification passed 416 focused tests and all 6,798 unit tests across 220 files,
+  plus typecheck, lint, policy validation, build, strict docs build, size/schema checks and diff checks.
 
 ### Task 1: Add release-boundary regression tests
 
 **Files:**
 - Modify: `tests/unit/adt/data-source-policy.test.ts` (`describe('enforceBlockedDataSources')`)
 - Modify: `tests/unit/adt/client.test.ts` (experimental data-source blocklist tests)
+- Add: `tests/unit/adt/data-source-policy-client.test.ts` (unknown-discovery HTTP regression)
 - Modify: `tests/unit/handlers/dispatch-misc.test.ts` (`describe('error guidance')`)
 - Modify: `tests/integration/data-source-blocklist.integration.test.ts`
 
@@ -133,6 +144,9 @@ behavior reproduced live.
       `DATA_POLICY_UNAVAILABLE`, the original source path, and no `readTableSource()` call.
 - [x] Retain/confirm the existing unknown-capability path calls `readTableSource()` and modern behavior
       remains unchanged.
+- [x] Reproduce the principal-propagation unknown-discovery case across `SAPQuery`, `TABLE_QUERY`, and
+      `TABLE_CONTENTS`; classify only a canonical source `404` as `DATA_POLICY_UNAVAILABLE` and never
+      execute the data request.
 - [x] Add one ADT-client regression proving a loaded discovery map without `/ddic/tables` performs exact
       search, then denies before table-source and data-preview HTTP calls.
 - [x] Add a minimal-error dispatch assertion proving the new code explains the 7.52 boundary without
@@ -162,6 +176,8 @@ Do not gate the request before direct and graph checks.
       `/sap/bc/adt/ddic/tables`; return `undefined` when discovery has not been loaded.
 - [x] Keep metadata request accounting truthful: a proactive capability denial must not count the
       skipped table-source HTTP call.
+- [x] When capability is unknown, count the attempted source request and map only HTTP `404` to
+      `DATA_POLICY_UNAVAILABLE`; advertised-capability `404` and non-404 failures remain unresolved.
 - [x] Add the new code to the typed audit event and keep `executed=false`.
 - [x] Run focused policy/client/dispatch unit suites until green, then run typecheck and the file-size
       check to catch surface drift.

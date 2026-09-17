@@ -208,6 +208,33 @@ describe('enforceBlockedDataSources', () => {
     expect(r.readTableSource).not.toHaveBeenCalled();
   });
 
+  it('reports unavailable policy metadata when discovery is unknown and the canonical source returns 404', async () => {
+    const r = resolver({
+      canonicalTableSourceAvailable: undefined,
+      readTableSource: vi.fn(async () => {
+        throw new AdtApiError('not found', 404, '/sap/bc/adt/ddic/tables/SCARR/source/main');
+      }),
+    });
+    await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
+      code: 'DATA_POLICY_UNAVAILABLE',
+      sourcePath: ['SCARR'],
+    });
+    expect(r.readTableSource).toHaveBeenCalledWith('SCARR');
+  });
+
+  it('keeps a canonical source 404 unresolved when discovery advertised the resource', async () => {
+    const r = resolver({
+      canonicalTableSourceAvailable: true,
+      readTableSource: vi.fn(async () => {
+        throw new AdtApiError('not found', 404, '/sap/bc/adt/ddic/tables/SCARR/source/main');
+      }),
+    });
+    await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      sourcePath: ['SCARR'],
+    });
+  });
+
   it.each([true, false, undefined])(
     'denies a blocked graph alias before replacement inspection when table-source availability is %s',
     async (canonicalTableSourceAvailable) => {
