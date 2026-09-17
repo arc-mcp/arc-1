@@ -1,6 +1,16 @@
 /** Public target-ID and HTTP-route syntax for destination-discovered multi-target mode. */
 
 export const SAP_SYSID_PATTERN = /^[A-Z][A-Z0-9]{2}$/;
+export const MULTI_TARGET_MAX = 256;
+
+/** Display labels only: never use normalization to validate a connection or grant. */
+export function normalizeTargetDisplayText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 // A route alias is useful when separate SAP systems reuse the same SID and client.
 // Keep it URL-friendly, case-sensitive, and bounded: 3-32 characters, with no

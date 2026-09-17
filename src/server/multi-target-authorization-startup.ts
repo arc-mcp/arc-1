@@ -3,6 +3,7 @@
 import type { BTPConfig } from '@arc-mcp/xsuaa-auth/btp';
 import { DestinationRegistry } from './destination-registry.js';
 import { logger } from './logger.js';
+import { MULTI_TARGET_MAX } from './multi-target-identity.js';
 import type { ServerConfig } from './types.js';
 
 /** Registry discovery uses the same mode as request enforcement and its catalog limits. */
@@ -12,7 +13,7 @@ export async function discoverMultiTargetRegistry(
 ): Promise<DestinationRegistry> {
   logger.info(
     config.multiTargetAuthorization === 'xsuaa-attribute'
-      ? 'Multi-target authorization enforced; catalog bounded to 256 ARC-related destinations.'
+      ? `Multi-target authorization enforced; catalog bounded to ${MULTI_TARGET_MAX} ARC-related destinations.`
       : 'Legacy multi-target authorization: per-target grants are not enforced.',
     { mode: config.multiTargetAuthorization ?? 'legacy' },
   );

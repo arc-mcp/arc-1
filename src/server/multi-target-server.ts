@@ -13,10 +13,10 @@ import { isTargetGranted } from './multi-target-authorization.js';
 import { auditTargetGrantDenial } from './multi-target-authorization-audit.js';
 import {
   buildTargetCatalog,
-  buildTargetCatalogResult,
   TARGET_CATALOG_MAX_OFFSET,
   TARGET_CATALOG_MAX_QUERY_LENGTH,
 } from './multi-target-catalog.js';
+import { buildEnforcedTargetCatalogResult } from './multi-target-catalog-enforced.js';
 import type { MultiTargetRequestProjection } from './multi-target-request-projection.js';
 import { buildMultiTargetConfig } from './multi-target-runtime.js';
 import type { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
@@ -45,7 +45,7 @@ export function buildMultiTargetServerInstructions(options: MultiTargetServerOpt
       (options.mode === 'pinned' && (!options.target || !isTargetGranted(projection.grant, options.target.target)))
     ) {
       return (
-        'No SAP targets are available to this account. Ask your identity administrator to review your ARC-1 target grants.' +
+        'No SAP targets are available to this account. Ask your ARC-1 administrator to check target grants and target configuration/availability.' +
         (projection?.admin ? ' SAPTargets provides operator diagnostics but does not grant SAP execution access.' : '')
       );
     }
@@ -237,9 +237,10 @@ async function handleSapTargets(
   }
 
   const sharedAuthState = options.sharedAuthState;
-  if (enforced && options.authorization) {
+  if (enforced) {
+    if (!options.authorization) throw new Error('Enforced catalog requires a verified request projection');
     const grant = options.authorization.grant;
-    const result = buildTargetCatalogResult(options.registry, {
+    const result = buildEnforcedTargetCatalogResult(options.registry, {
       admin: adminView,
       query: parsed.value.query,
       runtimeAuth: adminView && sharedAuthState ? (target) => sharedAuthState.getHealth(target) : undefined,

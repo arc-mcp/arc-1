@@ -1,7 +1,7 @@
 /** Real HTTP bearer middleware + SDK transport + request-local MCP server contracts. */
 import { EventEmitter, once } from 'node:events';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
-import type { XsuaaCredentials } from '@arc-mcp/xsuaa-auth';
+import { createXsuaaTokenVerifier, type XsuaaCredentials } from '@arc-mcp/xsuaa-auth';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import express from 'express';
@@ -27,7 +27,9 @@ vi.mock('@arc-mcp/xsuaa-auth', async (importOriginal) => {
       const auth = verifiedTokens.get(token);
       if (auth === 'machine' && options?.requireUserToken) throw new original.XsuaaUserTokenRequiredError();
       if (!auth || auth === 'machine') throw new InvalidTokenError('Invalid test token');
-      return auth;
+      return options?.userAttributeNames?.includes('arc1_targets')
+        ? auth
+        : { ...auth, extra: { userName: auth.extra?.userName } };
     }),
   };
 });
@@ -53,7 +55,13 @@ const CONFIG: ServerConfig = {
   mcpHttpRateLimit: 0,
 };
 
-function makeRegistry(count = 3, sqlClients: number[] = [], config = CONFIG, quarantine: number[] = []) {
+function makeRegistry(
+  count = 3,
+  sqlClients: number[] = [],
+  config = CONFIG,
+  quarantine: number[] = [],
+  description?: string,
+) {
   const url = canonicalDestinationUrl('http://sap.internal:50000') as string;
   return DestinationRegistry.fromDiscovery(
     {
@@ -66,7 +74,7 @@ function makeRegistry(count = 3, sqlClients: number[] = [], config = CONFIG, qua
         proxyType: 'OnPremise',
         sapSysId: 'A4H',
         sapClient: String(index).padStart(3, '0'),
-        description: `SAP target ${index}`,
+        description: description ?? `SAP target ${index}`,
         hasCloudConnectorLocationId: false,
         arcProperties: {
           'arc1.enabled': quarantine.includes(index) ? 'invalid' : 'true',
@@ -131,6 +139,7 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
 
   beforeEach(() => {
     verifiedTokens.clear();
+    vi.mocked(createXsuaaTokenVerifier).mockClear();
     sequence = 0;
     network = vi.fn(async () => {
       throw new Error('Unexpected network access in authorization test');
@@ -162,6 +171,7 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
   async function start(registry = makeRegistry(), config = CONFIG, omitProjection = false) {
     await startHttpServer(undefined, config, XSUAA, undefined, {
       registry,
+      authorizationMode: config.multiTargetAuthorization,
       aggregateFactory: (authorization) => {
         const server = createServer(buildAggregateToolSurfaceConfig(config, registry.targets), {
           multiTarget: {
@@ -218,6 +228,79 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
   async function call(token: string, name: string, args: Record<string, unknown> = {}, path?: string) {
     return result(await rpc(token, 'tools/call', { name, arguments: args }, path));
   }
+
+  it.each(['legacy', 'xsuaa-attribute'] as const)(
+    'wires the verifier contract for %s without changing single-target auth',
+    async (mode) => {
+      await start(makeRegistry(), { ...CONFIG, multiTargetAuthorization: mode });
+      const calls = vi.mocked(createXsuaaTokenVerifier).mock.calls;
+      expect(calls).toHaveLength(mode === 'legacy' ? 1 : 2);
+      expect(calls[0][1]).not.toHaveProperty('requireUserToken');
+      expect(calls[0][1]).not.toHaveProperty('userAttributeNames');
+      if (mode === 'xsuaa-attribute') {
+        expect(calls[1][0]).toEqual(XSUAA);
+        expect(calls[1][1]).toMatchObject({ requireUserToken: true, userAttributeNames: ['arc1_targets'] });
+      }
+    },
+  );
+
+  it('isolates single-target initialize instructions across interleaved and concurrent users', async () => {
+    await start();
+    const first = addUser(['A4H/000']);
+    const second = addUser(['A4H/001']);
+    for (const pair of [
+      [first, second],
+      [second, first],
+      [first, second],
+    ]) {
+      const replies = await Promise.all(pair.map((token) => initialize(token)));
+      for (const [index, reply] of replies.entries()) {
+        const id = pair[index] === first ? 'A4H/000' : 'A4H/001';
+        const hidden = pair[index] === first ? 'A4H/001' : 'A4H/000';
+        expect(reply.instructions).toContain(`only target available to this account is ${id}`);
+        expect(reply.instructions).not.toContain(hidden);
+      }
+    }
+  });
+
+  it('removes invisible destination-label characters before initialize and catalog serialization', async () => {
+    await start(makeRegistry(2, [], CONFIG, [], 'Prod\u202E label\u200B\u{E0061}'));
+    const reader = addUser(['A4H/000']);
+    const instructions = (await initialize(reader)).instructions;
+    expect(instructions).toContain('Prod label');
+    expect(instructions).not.toMatch(/[\p{Cf}]/u);
+    const admin = addUser(['A4H/000'], ['read', 'admin']);
+    expect(JSON.stringify(payload(await call(admin, 'SAPTargets')))).not.toMatch(/[\p{Cf}]/u);
+  });
+
+  it.each(['unavailable', 'quarantined'] as const)(
+    'does not misdiagnose %s targets as missing IAM grants',
+    async (state) => {
+      const registry =
+        state === 'unavailable'
+          ? DestinationRegistry.unavailable({ code: 'REGISTRY_DISCOVERY_ERROR', message: 'Discovery failed' })
+          : makeRegistry(1, [], CONFIG, [0]);
+      await start(registry);
+      const response = await initialize(addUser(['A4H/000']));
+      expect(response.instructions).toContain('target grants and target configuration/availability');
+      expect(response.instructions).not.toContain('identity administrator');
+      expect(response.instructions).not.toContain('A4H/000');
+    },
+  );
+
+  it('rejects missing or contradictory routing mode before mounting any route', async () => {
+    for (const authorizationMode of [undefined, 'legacy']) {
+      await expect(
+        startHttpServer(undefined, CONFIG, XSUAA, undefined, {
+          registry: makeRegistry(),
+          authorizationMode,
+          aggregateFactory: vi.fn(),
+          createPinnedServer: vi.fn(),
+        } as never),
+      ).rejects.toThrow(/authorization mode/);
+    }
+    expect(express.application.listen).not.toHaveBeenCalled();
+  });
 
   it.each([0, 1, 2, 16, 17, 100, 256])('projects initialize/list/catalog for %i granted targets', async (count) => {
     const registry = makeRegistry(256);

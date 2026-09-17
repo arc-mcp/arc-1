@@ -128,6 +128,7 @@ describe('multi-target HTTP route authentication', () => {
       undefined,
       {
         registry: current,
+        authorizationMode: 'legacy',
         aggregateFactory: aggregateFactory as never,
         createPinnedServer: vi.fn() as never,
       },
@@ -242,6 +243,7 @@ describe('multi-target HTTP route authentication', () => {
       undefined,
       {
         registry: current,
+        authorizationMode: 'legacy',
         aggregateFactory: aggregateFactory as never,
         createPinnedServer: vi.fn() as never,
       },

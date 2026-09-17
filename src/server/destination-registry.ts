@@ -14,11 +14,16 @@ import {
   isWriteRelatedArcProperty,
   parseDestinationBoolean,
 } from './multi-target-destination-config.js';
-import { buildTargetId, SAP_SYSID_PATTERN, TARGET_SYSTEM_ALIAS_PATTERN } from './multi-target-identity.js';
+import {
+  buildTargetId,
+  MULTI_TARGET_MAX,
+  normalizeTargetDisplayText,
+  SAP_SYSID_PATTERN,
+  TARGET_SYSTEM_ALIAS_PATTERN,
+} from './multi-target-identity.js';
 import type { ServerConfig } from './types.js';
 
-export { TARGET_ID_PATTERN } from './multi-target-identity.js';
-export const MULTI_TARGET_MAX = 256;
+export { MULTI_TARGET_MAX, TARGET_ID_PATTERN } from './multi-target-identity.js';
 
 export type TargetExclusionCode =
   | 'ACTIVE'
@@ -124,11 +129,7 @@ export interface RegistryCounts {
 
 export function sanitizeTargetDescription(value: string | undefined, fallback: string): string {
   if (!value) return fallback;
-  const withoutControls = Array.from(value.normalize('NFKC'), (character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f) ? ' ' : character;
-  }).join('');
-  const normalized = withoutControls.replace(/\s+/g, ' ').trim();
+  const normalized = normalizeTargetDisplayText(value);
   return normalized.length > 0 && normalized.length <= 160 ? normalized : fallback;
 }
 
@@ -702,7 +703,7 @@ export class DestinationRegistry {
       return DestinationRegistry.unavailable(
         {
           code: 'TARGET_LIMIT_EXCEEDED',
-          message: 'More than 256 ARC-related destinations; no discovered target is active.',
+          message: `More than ${MULTI_TARGET_MAX} ARC-related destinations; no discovered target is active.`,
         },
         { ...options, arcRelatedAtLeast: MULTI_TARGET_MAX + 1 },
       );
