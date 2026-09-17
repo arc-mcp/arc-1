@@ -58,7 +58,9 @@ The included `xs-security.json` defines 7 scopes:
 | `git`          | Authorize gated abapGit mutation/egress actions; gCTS mutations remain quarantined | `SAPGit.external_info`/`clone`/`pull`/`push`/branch/unlink actions after server gates          |
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
-The MTA additionally defines 7 role collections (assignable in BTP Cockpit). The manual
+The MTA defines the seven existing functional role collections below (assignable in BTP Cockpit).
+The PR #677 target-authorization candidate adds a separate, unassigned All Targets collection;
+it does not change these seven assignments or enable enforcement automatically. The manual
 `create-service` command above reads only `xs-security.json`; it does not apply the collections in
 `mta.yaml`. A manual owner must create the required collections and add the current application
 roles before assigning users.
@@ -98,6 +100,16 @@ roles before assigning users.
 **Want a restricted developer** (can write code but cannot transport or push to Git)? Define your own role template in `xs-security.json` with just `[read, write]` scopes, redeploy, and assign it — or use `SAP_DENY_ACTIONS` on the server.
 
 Role collections are only the user-permission gate. Server flags still have to allow the capability: for example, a user in `ARC-1 Developer` still cannot create transports unless the ARC-1 instance also has `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_TRANSPORT_WRITES=true`.
+
+For optional per-target visibility, follow the
+[static-cohort setup](multi-target-setup.md#optional-target-authorization), not a second XSUAA
+service-creation sequence. It describes the **unreleased PR candidate**, pending dependency/live
+acceptance, the `MCPTargetReadAccess` template (required `arc1_targets`, no default role), and
+`MCPAllTargetReadAccess` (explicit `*` default). A manually managed service still needs an owner to
+create the corresponding collection; MTA owns its additional `ARC-1 All Targets (<space>)` collection.
+Do not put the all-target role into an already assigned functional collection during an update.
+Neither `arc1_targets` nor `user_attributes` is an OAuth scope; keep the existing scope request set.
+IAS-fed target values remain optional and require their own live token/union/refresh validation.
 
 !!! note "Assign the least-privilege collection"
     `ARC-1 Developer` bundles `transports` + `git` — assigning it authorizes CTS mutations and the

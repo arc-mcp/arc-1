@@ -312,6 +312,12 @@ resources:
             description: "Full ARC-1 administrative access (admin implies all scopes)"
             role-template-references:
               - "$XSAPPNAME.MCPAdmin"
+          # Unassigned by default. IAM explicitly grants current AND future targets.
+          # Do not add this template to existing, potentially assigned collections.
+          - name: "ARC-1 All Targets (${space})"
+            description: "Read-only ARC-1 access to all current and future configured SAP targets"
+            role-template-references:
+              - "$XSAPPNAME.MCPAllTargetReadAccess"
 
   - name: arc1-destination
     type: org.cloudfoundry.managed-service

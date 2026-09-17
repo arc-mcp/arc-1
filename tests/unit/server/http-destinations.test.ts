@@ -111,6 +111,7 @@ describe('multi-target HTTP helpers', () => {
     const createPinnedServer = vi.fn();
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
+      authorizationMode: 'legacy',
       aggregateFactory: vi.fn() as never,
       createPinnedServer,
     });
@@ -130,6 +131,7 @@ describe('multi-target HTTP helpers', () => {
     const createPinnedServer = vi.fn(() => serverFactory() as never);
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
+      authorizationMode: 'legacy',
       aggregateFactory: vi.fn() as never,
       createPinnedServer,
     });
@@ -150,6 +152,7 @@ describe('multi-target HTTP helpers', () => {
     );
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
+      authorizationMode: 'legacy',
       aggregateFactory: vi.fn() as never,
       createPinnedServer,
     });
@@ -173,6 +176,7 @@ describe('multi-target HTTP helpers', () => {
     }));
     const multi = {
       registry: unavailable,
+      authorizationMode: 'legacy' as const,
       aggregateFactory: aggregateFactory as never,
       createPinnedServer: vi.fn() as never,
     };

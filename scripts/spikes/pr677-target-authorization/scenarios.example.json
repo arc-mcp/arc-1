@@ -1,0 +1,125 @@
+{
+  "viewer-client100": {
+    "expectedIdentity": { "email": "replace-with-expected-login@example.com" },
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read"],
+      "grantValues": ["A4H/100"],
+      "schemaTargets": ["A4H/100"],
+      "grantStatus": "valid",
+      "requiredTools": ["SAPRead", "SAPSearch"],
+      "forbiddenTools": ["SAPQuery"],
+      "catalogVisible": false,
+      "allowedTargets": ["A4H/100"],
+      "deniedTargets": ["A4H/001", "ZZZ/999"],
+      "missingTargetDenied": true
+    }
+  },
+  "viewer-two-clients": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read"],
+      "grantValues": ["A4H/001", "A4H/100"],
+      "schemaTargets": ["A4H/001", "A4H/100"],
+      "grantStatus": "valid",
+      "requiredTools": ["SAPRead", "SAPSearch", "SAPTargets"],
+      "forbiddenTools": ["SAPQuery"],
+      "catalogVisible": true,
+      "catalogTargets": ["A4H/001", "A4H/100"],
+      "unpaged": true,
+      "allowedTargets": ["A4H/001", "A4H/100"],
+      "deniedTargets": ["NPL/001", "ZZZ/999"],
+      "missingTargetDenied": true
+    }
+  },
+  "viewer-no-targets": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read"],
+      "grantValues": [],
+      "schemaTargets": [],
+      "grantStatus": "missing",
+      "toolCount": 0,
+      "catalogVisible": false,
+      "deniedTargets": ["A4H/001", "ZZZ/999"]
+    }
+  },
+  "viewer-empty-idp-targets": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read"],
+      "grantValues": [],
+      "schemaTargets": [],
+      "grantStatus": "valid",
+      "toolCount": 0,
+      "catalogVisible": false,
+      "deniedTargets": ["A4H/001", "ZZZ/999"]
+    }
+  },
+  "admin-no-targets": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read", "data", "sql", "admin"],
+      "grantValues": [],
+      "schemaTargets": [],
+      "grantStatus": "missing",
+      "catalogVisible": true,
+      "requiredTools": ["SAPTargets"],
+      "authorizationMode": "xsuaa-attribute",
+      "unpaged": true,
+      "catalogGranted": { "A4H/001": false, "A4H/100": false },
+      "deniedTargets": ["A4H/001", "ZZZ/999"]
+    }
+  },
+  "sql-two-clients": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read", "data", "sql"],
+      "grantValues": ["A4H/001", "A4H/100"],
+      "schemaTargets": ["A4H/001", "A4H/100"],
+      "requiredTools": ["SAPQuery", "SAPTargets"],
+      "catalogVisible": true,
+      "catalogTargets": ["A4H/001", "A4H/100"],
+      "unpaged": true,
+      "allowedTargets": ["A4H/100"],
+      "deniedTargets": ["ZZZ/999"]
+    }
+  },
+  "admin-all-targets": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": ["read", "data", "sql", "admin"],
+      "grantValues": ["*"],
+      "schemaTargets": ["A4H/001", "A4H/100"],
+      "requiredTools": ["SAPTargets"],
+      "catalogVisible": true,
+      "authorizationMode": "xsuaa-attribute",
+      "unpaged": true,
+      "catalogGranted": { "A4H/001": true, "A4H/100": true },
+      "allowedTargets": ["A4H/001", "A4H/100"],
+      "deniedTargets": ["ZZZ/999"]
+    }
+  },
+  "machine-token": {
+    "expect": {
+      "userPrincipal": false,
+      "grantStatus": "missing",
+      "aggregateHttpStatus": 403,
+      "aggregateErrorCode": "forbidden",
+      "deniedTargets": ["A4H/001", "ZZZ/999"]
+    }
+  },
+  "user-without-read": {
+    "expect": {
+      "userPrincipal": true,
+      "scopes": [],
+      "grantStatus": "missing",
+      "aggregateHttpStatus": 403,
+      "aggregateErrorCode": "insufficient_scope",
+      "deniedTargets": ["A4H/001", "ZZZ/999"]
+    }
+  },
+  "wrong-application-token": {
+    "expect": { "verification": "invalid", "verificationFailure": "wrong_audience", "aggregateHttpStatus": 401 }
+  }
+}

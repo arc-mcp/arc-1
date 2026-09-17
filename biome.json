@@ -55,6 +55,8 @@
       "bin/**",
       "scripts/smoke-live-relations.ts",
       "scripts/bench-context-parsing.ts",
+      "scripts/spikes/pr677-target-authorization/**",
+      "scripts/ci/check-target-authorization-mta.mjs",
       "!tests/fixtures/tool-definitions"
     ]
   }
