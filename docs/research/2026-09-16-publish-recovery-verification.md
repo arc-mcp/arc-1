@@ -26,7 +26,8 @@ contain no tenant endpoints, users, credentials or SAP implementation source.
 - A fresh direct active metadata read must identify a single V4 UI binding and an explicit
   published boolean. Missing/ambiguous fields remain unknown. `bindingCreated` is not
   considered evidence that the generated inbound service exists.
-- Already published means no repost. Otherwise the ten-second grace period is followed by
+- Already published means confirmed success, with the original failure retained in the
+  response text and no repost. Otherwise the ten-second grace period is followed by
   another state check, a fresh real-package gate and the write ceiling before one retry.
 - Recovery success needs explicit active publication evidence. Repeated SAP errors,
   exceptions and unverifiable completion retain an error with the initial failure and
@@ -59,7 +60,29 @@ with successful live recovery remains unobserved on our system.
   validation, file-size ratchet and tool-schema budgets passed. Lint reported only the
   existing Biome configuration/template informational messages; tool schemas are unchanged.
 
-Changed-build BTP verification is pending renewed personal browser authentication. The
-prepared live checks cover an ordinary one-POST publish and the deliberately missing SCO2
-case, expecting exactly two publish POSTs, an honest error and successful object cleanup.
-This status must be updated before marking the PR ready for merge.
+## Changed-build live verification, 2026-09-17
+
+Personal OAuth authentication was renewed and the existing free-tier system started through
+the Landscape Portal. The tested product revision is `b156f805`, on freshly verified
+SAP_BASIS/SAP_CLOUD 920 SP04, with writes restricted to one disposable test package.
+
+- Nine ordinary first publications succeeded, each with exactly one physical publish POST
+  and an explicit active `published=true` readback: one baseline plus eight variant runs.
+- The eight runs repeat four variants twice: immediate publication, a ten-second pre-wait,
+  an identical SRVD source update before activation, and a fresh HTTP client using the same
+  OAuth identity between SRVB activation and publication. Immediate POSTs started
+  0.614–0.679 seconds after activation completed. A new client does not prove a different
+  SAP application server handled the request.
+- A deliberately removed owned SCO2 produced the exact SAP error on both physical publish
+  POSTs within one tool call. The call took 12.644 seconds, returned an error preserving both
+  failures, and left explicitly unpublished metadata. There was no third publish POST.
+- No natural missing-inbound or `Usage of <SRVD> not permitted` error occurred in these runs.
+- All 50 new focused unit/loopback tests passed again. Every GitHub check on the tested
+  revision passed, including integration and E2E; those generic checks alone do not establish
+  successful recovery from the customer's transient BTP error.
+
+The earlier authentication blocker is resolved. The PR remains draft because a natural
+transient error followed by successful live recovery is still unobserved. The forced missing
+SCO2 case validates bounded failure behavior, not the customer's root cause or retry success.
+See the [feedback investigation](2026-09-17-publish-feedback-investigation.md) for the separate
+create-response-loss control, its limitations, and the final cleanup record.
