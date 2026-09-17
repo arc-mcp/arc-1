@@ -12,8 +12,9 @@ ownership, XSUAA collection lifecycle, DCR secrets, upgrades, scaling, rollback,
 customer handover live in [BTP Administration](btp-administration.md).
 
 This page distinguishes existing **legacy** behavior from the **PR #677 target-authorization
-candidate**. The latter is opt-in and is not customer-ready while its auth-library release and live
-acceptance remain pending; see [setup and validation status](multi-target-setup.md#optional-target-authorization).
+candidate**. The latter is opt-in and is not customer-ready while live acceptance remains pending.
+The published auth-library 1.1.0 dependency is integrated; see
+[setup and validation status](multi-target-setup.md#optional-target-authorization).
 
 <a id="administration-model"></a>
 <a id="4-configure-xsuaa-roles"></a>
