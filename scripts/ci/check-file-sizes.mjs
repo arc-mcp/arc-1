@@ -62,18 +62,19 @@ const BUDGETS = {
   // +10 on top of that for runQueryBatch, the single freestyle-SQL entry point that authorizes a
   // whole logical request once and then executes its statements inside one response-memory scope.
   // Authorization and the POSTs must stay inside one private client operation, so this genuinely
-  // belongs on the facade; the two parts that did not were extracted first (guard wiring to
+  // belongs on the facade; the two parts that did not were extracted first (lineage evaluation to
   // data-source-policy.ts, the statement-execution loop to table-query.ts).
-  'src/adt/client.ts': 1739,
+  // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
+  'src/adt/client.ts': 1734,
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
   'tests/integration/adt.integration.test.ts': 3100,
-  // Typed attempt accounting and scoped response ownership must stay at the transport choke point.
-  // Relation parsing/traversal and response controls live outside this file; no feature algorithm here.
-  'src/adt/http.ts': 1510,
+  // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
+  // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
+  'src/adt/http.ts': 1550,
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
-  'src/server/server.ts': 1504,
+  'src/server/server.ts': 1484,
 };
 
 const DEFAULT_SRC = 1500;

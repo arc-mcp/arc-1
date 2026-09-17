@@ -932,11 +932,11 @@ hierarchy sources, aggregates. Refused: ABAP comments, host expressions, `FOR AL
 sources, `WITH PRIVILEGED ACCESS`, client override, secondary connections, association/column paths,
 `SELECT SINGLE`, caller `INTO` targets, multiple statements and CDS table functions.
 
-Outcomes are three stable codes — `DATA_SOURCE_BLOCKED`, `DATA_LINEAGE_UNRESOLVED` and
-`DATA_SQL_UNSUPPORTED` — each meaning the SAP request was **not executed**, each carrying
-`executed=false` and a `decisionId` that also appears in the server audit log. The empty default keeps
-current behavior and adds no metadata calls; a non-empty list is slower by design. This experimental
-blocklist is not an allowlist and not a replacement for SAP authorization or CDS DCL. See
+Outcomes are four stable codes — `DATA_SOURCE_BLOCKED`, `DATA_POLICY_UNAVAILABLE`,
+`DATA_LINEAGE_UNRESOLVED` and `DATA_SQL_UNSUPPORTED` — each meaning the SAP request was **not
+executed**, each carrying `executed=false` and a `decisionId` that also appears in the server audit log.
+The empty default keeps current behavior and adds no metadata calls; a non-empty list is slower by
+design. This experimental blocklist is not an allowlist and not a replacement for SAP authorization or CDS DCL. See
 [Authorization & Roles](authorization.md#experimental-data-source-blocklist).
 
 Execute ABAP SQL queries against SAP tables.

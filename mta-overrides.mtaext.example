@@ -234,6 +234,15 @@ modules:
 #   - name: arc1-application-logs
 #     active: true
 
+# ── BTP Audit Log (OFF by default — optional premium service) ─────────
+# The base descriptor contains the complete X.509 instance and binding config,
+# but keeps the resource inactive. After assigning Audit Log premium quota and
+# an owner for certificate rotation, enable it by adding this resource override
+# to the real mta-overrides.mtaext (merge with any existing `resources:` block):
+# resources:
+#   - name: arc1-auditlog
+#     active: true
+
 # ── Reusing a SHARED Destination / Connectivity instance ────────────────
 # The base mta.yaml declares `arc1-destination` / `arc1-connectivity` as
 # `org.cloudfoundry.managed-service`, and a managed instance is named after its

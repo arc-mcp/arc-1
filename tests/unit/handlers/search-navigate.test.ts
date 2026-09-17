@@ -699,6 +699,29 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(text).not.toContain('single-table');
     });
 
+    it.each([false, true])(
+      'applies minimalErrors=%s to classified query results through dispatch',
+      async (minimalErrors) => {
+        const diagnostic = 'Private SAP diagnostic\n\nHint: private backend details';
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+        mockFetch.mockResolvedValueOnce(mockResponse(400, diagnostic));
+
+        const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPQuery', {
+          sql: 'SELECT mandt FROM t000 ORDER BY mandt DESC',
+        });
+        const text = result.content[0]?.text ?? '';
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain('ASCENDING or DESCENDING');
+        expect(text.includes('Private SAP diagnostic')).toBe(!minimalErrors);
+        expect(text.includes('private backend details')).toBe(!minimalErrors);
+        expect(text.includes('/sap/bc/adt/datapreview/freestyle')).toBe(!minimalErrors);
+        if (minimalErrors) expect(text).toMatch(/^ADT API error: status 400\.\n\nHint: Use the ABAP SQL/);
+        expect(freestylePostCalls()).toHaveLength(1);
+      },
+    );
+
     it('does not false-flag tilde JOIN with an INTO clause as dot-notation; gives the target-clause hint', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));

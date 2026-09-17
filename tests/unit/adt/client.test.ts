@@ -2081,6 +2081,22 @@ describe('AdtClient', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it('uses loaded discovery to refuse missing replacement metadata before table source or data preview', async () => {
+      mockFetch.mockResolvedValue(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      // A non-table entry means discovery is loaded while proving the table collection is absent.
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/ddic/structures', ['text/plain']]]));
+
+      await expect(client.runTableQuery('SCARR')).rejects.toMatchObject({
+        code: 'DATA_POLICY_UNAVAILABLE',
+        sourcePath: ['SCARR'],
+      });
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(true);
+      expect(urls.some((url) => url.includes('/ddic/tables/SCARR/source/main'))).toBe(false);
+      expect(urls.some((url) => url.includes('/datapreview/'))).toBe(false);
+    });
+
     // Phase 3 invariant: the identifier ARC-1 authorizes is byte-for-byte the identifier it sends.
     // The old builder stripped anything outside [\w/], so `USR02$` was checked as USR02$ and
     // executed as USR02. Identifier handling must not depend on whether the blocklist is active.

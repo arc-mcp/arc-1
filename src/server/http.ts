@@ -326,7 +326,7 @@ export async function startHttpServer(
   xsuaaCredentials?: XsuaaCredentials,
   uiDeps?: UiServerDeps,
   multiTargets?: MultiTargetRouting,
-): Promise<void> {
+): Promise<import('node:http').Server> {
   if (multiTargets && config.multiTargetAuthorization === 'xsuaa-attribute') {
     multiTargets = { ...multiTargets, authorizationMode: 'xsuaa-attribute' };
   }
@@ -853,6 +853,7 @@ export async function startHttpServer(
     }
     process.exit(1);
   });
+  return httpServer;
 }
 
 // ─── OIDC Verifier (package-backed) ─────────────────────────────────

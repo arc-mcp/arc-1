@@ -13,6 +13,10 @@ const MAX_GRAPH_NODES = 1_000;
 const MAX_DIRECT_SOURCES = 64;
 const MAX_REPLACEMENT_SOURCES = 256;
 const MAX_RESOLUTION_ROOTS = 64;
+const TABLE_SOURCE_UNAVAILABLE_REASON =
+  'the connected SAP system does not advertise the transparent-table source metadata required to prove replacement-object lineage; the standard ADT resource is available from SAP_BASIS 7.52 onward';
+const TABLE_SOURCE_UNKNOWN_404_REASON =
+  'ADT discovery was unavailable and the canonical transparent-table source request returned HTTP 404, so replacement-object lineage support could not be established; the standard ADT resource is available from SAP_BASIS 7.52 onward';
 
 const graphParser = new XMLParser({
   ignoreAttributes: false,
@@ -35,6 +39,7 @@ class DataSourceLineageError extends Error {
  * Stable, distinct client-facing outcomes.
  *
  * - `DATA_SOURCE_BLOCKED`      an exact configured rule matched.
+ * - `DATA_POLICY_UNAVAILABLE`  SAP cannot expose metadata required to enforce the policy safely.
  * - `DATA_LINEAGE_UNRESOLVED`  SAP metadata/identity/graph/replacement lineage could not be proven.
  * - `DATA_SQL_UNSUPPORTED`     the caller's SQL is outside the strict accepted grammar.
  *
@@ -42,7 +47,11 @@ class DataSourceLineageError extends Error {
  * supported" cannot self-correct. That does permit coarse membership probing, which is a documented,
  * deliberate trade rather than an oversight.
  */
-export type DataSourcePolicyErrorCode = 'DATA_SOURCE_BLOCKED' | 'DATA_LINEAGE_UNRESOLVED' | 'DATA_SQL_UNSUPPORTED';
+export type DataSourcePolicyErrorCode =
+  | 'DATA_SOURCE_BLOCKED'
+  | 'DATA_POLICY_UNAVAILABLE'
+  | 'DATA_LINEAGE_UNRESOLVED'
+  | 'DATA_SQL_UNSUPPORTED';
 
 /** Opaque, bounded, non-secret correlation id shared by the client error and the audit record. */
 export function newDecisionId(): string {
@@ -65,10 +74,14 @@ export class DataSourcePolicyError extends AdtSafetyError {
   ) {
     const path = sourcePath.length > 0 ? sourcePath.join(' -> ') : directSource;
     const decisionId = options.decisionId ?? newDecisionId();
+    const operatorAction =
+      code === 'DATA_POLICY_UNAVAILABLE'
+        ? 'Keep data access disabled until this target can supply the canonical table-source metadata (normally SAP_BASIS 7.52 or newer). Clearing SAP_BLOCKED_DATA_SOURCES leaves every otherwise authorized source eligible and requires security approval.'
+        : 'Use a permitted static source, or change SAP_BLOCKED_DATA_SOURCES only after security review.';
     super(
       `${code}: request denied before data execution (executed=false, decisionId=${decisionId}). ` +
         `Source path: ${path}. Reason: ${reason}. ` +
-        'Operator action: use a permitted static source, or change SAP_BLOCKED_DATA_SOURCES only after security review.',
+        `Operator action: ${operatorAction}`,
     );
     this.name = 'DataSourcePolicyError';
     this.decisionId = decisionId;
@@ -84,7 +97,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
    * the model to act (stable code, executed=false, decision id, and a safe alternative). It does not
    * change the decision and does not reduce what the audit event records.
    *
-   * The three codes stay distinguishable even in minimal mode, which does permit coarse membership
+   * The four codes stay distinguishable even in minimal mode, which does permit coarse membership
    * probing. That is a deliberate, documented trade: a model that cannot tell "blocked by policy"
    * from "SQL not supported" cannot correct itself.
    */
@@ -103,6 +116,8 @@ export class DataSourcePolicyError extends AdtSafetyError {
     switch (this.code) {
       case 'DATA_SQL_UNSUPPORTED':
         return 'Rewrite the request as one complete static SELECT/WITH without comments, host expressions or dynamic sources, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
+      case 'DATA_POLICY_UNAVAILABLE':
+        return 'This SAP target did not supply the metadata the policy needs (normally SAP_BASIS 7.52 or newer). Retrying unchanged will be denied; ask an operator.';
       case 'DATA_LINEAGE_UNRESOLVED':
         return 'Query a source whose lineage ARC-1 can resolve, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
       default:
@@ -155,6 +170,8 @@ export type ResolvedDirectDataSource =
 
 export interface DataSourcePolicyResolver {
   resolveDirectSource(name: string): Promise<ResolvedDirectDataSource>;
+  /** True = advertised, false = absent from loaded discovery, undefined = discovery unknown. */
+  canonicalTableSourceAvailable?: boolean;
   readTableSource(name: string): Promise<string>;
   readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode>;
 }
@@ -164,6 +181,7 @@ export interface DataSourcePolicyBackend {
     name: string,
     maxResults: number,
   ): Promise<Array<{ objectName: string; objectType: string; uri: string }>>;
+  canonicalTableSourceAvailable: boolean | undefined;
   readTableSource(name: string): Promise<string>;
   dependencyGraphAccept(): string | undefined;
   readDependencyGraph(path: string, accept: string): Promise<string>;
@@ -330,6 +348,7 @@ export class DataSourceBlocklistGuard {
   private async evaluate(directSources: string[]): Promise<void> {
     await enforceBlockedDataSources(directSources, this.blockedSources, {
       resolveDirectSource: (name) => this.resolveDirectSource(name),
+      canonicalTableSourceAvailable: this.backend.canonicalTableSourceAvailable,
       readTableSource: (name) => {
         this.metadataRequests += 1;
         return this.backend.readTableSource(name);
@@ -415,22 +434,6 @@ export class DataSourceBlocklistGuard {
 
 /** Endpoint the SQL dependency graph is served from. */
 export const CDS_DEPENDENCY_GRAPH_PATH = '/sap/bc/adt/ddic/ddl/dependencies/graphdata';
-
-/**
- * Wire a request-scoped guard from the ADT primitives it needs.
- *
- * Lives here rather than on the client so the ADT facade stays a facade: this is policy wiring, and
- * a new guard is built per logical request so its instrumentation can never leak between decisions.
- */
-export function createDataSourceBlocklistGuard(deps: {
-  blockedDataSources: string[];
-  searchObject: DataSourcePolicyBackend['searchObject'];
-  readTableSource: DataSourcePolicyBackend['readTableSource'];
-  dependencyGraphAccept: DataSourcePolicyBackend['dependencyGraphAccept'];
-  readDependencyGraph: DataSourcePolicyBackend['readDependencyGraph'];
-}): DataSourceBlocklistGuard {
-  return new DataSourceBlocklistGuard(deps.blockedDataSources, deps);
-}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
@@ -776,10 +779,20 @@ export async function enforceBlockedDataSources(
   };
 
   const replacementAt = async (directSource: string, table: string, path: string[]): Promise<string | undefined> => {
+    if (resolver.canonicalTableSourceAvailable === false) {
+      throw new DataSourcePolicyError('DATA_POLICY_UNAVAILABLE', directSource, path, TABLE_SOURCE_UNAVAILABLE_REASON);
+    }
     try {
       return await replacementFor(table);
     } catch (error) {
       if (error instanceof DataSourcePolicyError) throw error;
+      if (
+        resolver.canonicalTableSourceAvailable === undefined &&
+        error instanceof AdtApiError &&
+        error.statusCode === 404
+      ) {
+        throw new DataSourcePolicyError('DATA_POLICY_UNAVAILABLE', directSource, path, TABLE_SOURCE_UNKNOWN_404_REASON);
+      }
       throw unresolved(directSource, path, safeLineageFailureReason(error));
     }
   };

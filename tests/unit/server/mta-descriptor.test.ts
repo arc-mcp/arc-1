@@ -41,6 +41,13 @@ function appModuleDescriptor(): Record<string, any> {
   return appModule as Record<string, any>;
 }
 
+function resourceDescriptor(name: string): Record<string, any> {
+  const mta = parse(readFileSync(join(ROOT, 'mta.yaml'), 'utf8')) as Record<string, any>;
+  const resource = (mta.resources as Array<Record<string, any>>).find((entry) => entry.name === name);
+  expect(resource, `${name} resource missing from mta.yaml`).toBeDefined();
+  return resource as Record<string, any>;
+}
+
 /** Base ∪ mtaext, the way multiapps-controller merges it: override wins, nothing is removed. */
 function resolveWithOverrides(overrides: Record<string, string> = {}) {
   for (const [key, value] of Object.entries({ ...baseDescriptorEnv(), ...overrides })) {
@@ -189,6 +196,32 @@ describe('shipped mta.yaml resolves through the config parser', () => {
         'xs-security.json',
       ]),
     );
+  });
+
+  it('keeps Audit Log optional while preconfiguring X.509 on the instance and binding', () => {
+    const resource = resourceDescriptor('arc1-auditlog');
+    const requirement = (appModuleDescriptor().requires as Array<Record<string, any>>).find(
+      (entry) => entry.name === 'arc1-auditlog',
+    );
+
+    expect(resource.active).toBe(false);
+    expect(resource.parameters).toMatchObject({
+      service: 'auditlog',
+      'service-plan': 'premium',
+      config: {
+        'xs-security': {
+          'oauth2-configuration': {
+            'credential-types': ['x509'],
+            'grant-types': ['client_credentials'],
+          },
+        },
+      },
+    });
+    expect(requirement?.parameters?.config).toMatchObject({
+      xsuaa: {
+        'credential-type': 'x509',
+      },
+    });
   });
 
   it('falls back to the basic destination when an override blanks the PP destination', () => {

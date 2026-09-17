@@ -223,7 +223,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
 | Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
 | SAPSearch tadir_lookup source variants | `src/handlers/search.ts`, `src/adt/client.ts`, `src/authz/policy.ts` — `db`/`both` escalate to sql scope |
-| SAPQuery freestyle SQL hints + IN-list chunking | `src/handlers/{query,query-errors}.ts`, `src/adt/table-query.ts` — ABAP Open SQL uses `alias~field` + `ASCENDING`/`DESCENDING`; auto-chunk plain SELECTs only |
+| SAPQuery freestyle SQL lines, hints + IN-list chunking | `src/handlers/{query,query-errors}.ts`, `src/adt/{client,table-query}.ts` — ADT cuts physical SQL lines at 255 characters (7.58/8.16); `fitFreestyleSqlLines` wraps at the shared freestyle POST boundary. |
 | Data-preview response memory boundary (#737) | `src/adt/{data-result-context,bounded-response,http,client}.ts`, `src/server/{context,runtime-memory,server}.ts`, `src/handlers/{dispatch,query}.ts` — the byte budget is cumulative per tool call and the data-result semaphore is process-wide; never infer scope from URL paths |
 | batch_create preflight / `activateAtEnd` | `src/handlers/write/create.ts` + `write/batch-results.ts` — validate the whole batch before creation; preserve confirmed/unknown persistence and invalidate caches on partial failures. |
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
