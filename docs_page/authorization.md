@@ -125,6 +125,9 @@ With an active list, one logical request is decided exactly once:
 - otherwise free SQL is parsed locally, each direct source is resolved through exact ADT search, CDS
   roots are expanded through SAP's active SQL dependency graph, and DDIC
   `@AbapCatalog.replacementObject` chains are followed;
+- proving that a transparent table has no replacement object requires the canonical ADT table-source
+  resource advertised from SAP_BASIS 7.52 onward. If loaded discovery proves it is absent, ARC-1
+  returns `DATA_POLICY_UNAVAILABLE` before attempting that missing resource or executing data;
 - every repository/entity/database alias of every node is compared against the list;
 - IN-list chunking does **not** re-decide: the union of all chunks is authorized once and the
   already-authorized statements are then executed.
@@ -134,10 +137,11 @@ With an active list, one logical request is decided exactly once:
 | Code | Meaning |
 |---|---|
 | `DATA_SOURCE_BLOCKED` | An exact configured rule matched, directly or transitively. |
+| `DATA_POLICY_UNAVAILABLE` | The target does not advertise the table-source metadata required to enforce replacement lineage safely (normally SAP_BASIS 7.50/7.51). |
 | `DATA_LINEAGE_UNRESOLVED` | Identity, dependency-graph or replacement lineage could not be proven. |
 | `DATA_SQL_UNSUPPORTED` | The statement is outside the strict accepted SQL grammar. |
 
-All three mean the SAP data request was **not executed**. Each carries `executed=false` and an opaque
+All four mean the SAP data request was **not executed**. Each carries `executed=false` and an opaque
 `decisionId` that also appears in the audit log.
 
 ### What is deliberately unsupported
@@ -181,6 +185,13 @@ cross-request cache in v1: every request revalidates live lineage, so a policy c
 activation takes effect immediately and no stale decision can be reused. Directly blocked sources
 stay cheap and local. The check and the query are separate SAP requests, so the pair is not
 transactionally atomic (a TOCTOU window remains).
+
+The canonical transparent-table source resource needed for replacement-object inspection is
+advertised from SAP_BASIS 7.52 onward. On 7.50/7.51, direct exact matches and blocked aliases already
+visible in a CDS dependency graph still return `DATA_SOURCE_BLOCKED`; otherwise the request returns
+`DATA_POLICY_UNAVAILABLE` before any missing table-source request or data execution. ARC-1 does not
+assume a transparent table has no replacement object: replacement objects already exist on 7.50, so
+that fallback would weaken the blocklist.
 
 Under principal propagation the metadata reads run as the calling SAP user, so a user who lacks read
 authorization on a DDL source can get `DATA_LINEAGE_UNRESOLVED` for a query SAP itself would have

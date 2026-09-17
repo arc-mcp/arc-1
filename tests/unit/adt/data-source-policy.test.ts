@@ -193,6 +193,18 @@ describe('enforceBlockedDataSources', () => {
     expect(r.readTableSource).toHaveBeenCalledWith('SCARR');
   });
 
+  it('reports unavailable policy metadata before reading an undiscovered table source', async () => {
+    const r = resolver({
+      tableSourceAvailable: vi.fn(() => false),
+    });
+    await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
+      code: 'DATA_POLICY_UNAVAILABLE',
+      sourcePath: ['SCARR'],
+    });
+    expect(r.resolveDirectSource).toHaveBeenCalledWith('SCARR');
+    expect(r.readTableSource).not.toHaveBeenCalled();
+  });
+
   it('denies a blocked transitive CDS source with a dependency path', async () => {
     const r = resolver({
       resolveDirectSource: vi.fn(async () => ({
@@ -207,16 +219,15 @@ describe('enforceBlockedDataSources', () => {
     });
   });
 
-  it('scans all graph aliases before reading replacement metadata for an earlier table', async () => {
-    const readTableSource = vi.fn(async () => {
-      throw new Error('canonical table source unavailable');
-    });
+  it('scans all graph aliases before rejecting unavailable replacement metadata', async () => {
+    const readTableSource = vi.fn(async () => 'must not be read');
     const r = resolver({
       resolveDirectSource: vi.fn(async () => ({
         kind: 'cds' as const,
         name: 'DEMO_CDS_SUMDIST',
         ddlSource: 'DEMO_CDS_SUMDIST',
       })),
+      tableSourceAvailable: vi.fn(() => false),
       readTableSource,
     });
     await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['SPFLI'], r)).rejects.toMatchObject({

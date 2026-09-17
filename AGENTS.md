@@ -79,7 +79,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_SYSTEM_LABEL` / `--system-label` | Optional model-facing single-target label (one normalized line, max 160 characters); prepended to server instructions for clients that hide the handshake name; ignored in multi-target mode |
 | `SAP_ALLOW_WRITES` | Enable mutations (default false); prerequisite for transport/git writes |
 | `SAP_ALLOW_DATA_PREVIEW` / `SAP_ALLOW_FREE_SQL` | TABLE_CONTENTS preview / freestyle SQL (default false) |
-| `SAP_BLOCKED_DATA_SOURCES` | Experimental exact-name data-source blocklist (default empty/off). Narrows, never enables; strict SQL subset + live CDS/replacement lineage; fails closed. Adds SAP metadata calls, no cache |
+| `SAP_BLOCKED_DATA_SOURCES` | Experimental exact-name data-source blocklist (default empty/off). Narrows, never enables; strict SQL subset + live CDS/replacement lineage; fails closed. Allowed-table proof needs the ADT table-source resource available from SAP_BASIS 7.52 onward; older targets return `DATA_POLICY_UNAVAILABLE`. Adds SAP metadata calls, no cache |
 | `SAP_ALLOW_TRANSPORT_WRITES` / `SAP_ALLOW_GIT_WRITES` | Transport / git mutations (each ALSO needs `SAP_ALLOW_WRITES`) |
 | `SAP_ALLOWED_PACKAGES` | Write allowlist (default `$TMP`): exact, `Z*`, `ZFOO/**` subtree, `*`. Enforced fail-closed on every mutation incl. activation, against the object's REAL package |
 | `SAP_DENY_ACTIONS` | Per-action denial: `Tool`, `Tool.action`, `Tool.glob*` — see docs_page/authorization.md |

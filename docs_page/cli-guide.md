@@ -257,7 +257,9 @@ unchanged and SAP rejects it.
 For an approved but security-first deployment, `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` activates the
 experimental exact source blocklist. It performs strict SQL parsing and fresh live CDS/replacement lineage
 checks before execution; unsupported or unresolved requests are denied with a stable code, a decision id
-and a dependency path. This costs metadata round-trips and is slower by design (no cache). It is a
+and a dependency path. Proving an allowed table needs the ADT table-source resource available from
+SAP_BASIS 7.52 onward; older targets return `DATA_POLICY_UNAVAILABLE` before data execution. This costs
+metadata round-trips and is slower by design (no cache). It is a
 blocklist, not a substitute for SAP authorization or a production allowlist.
 
 `arc1 config show` prints the exact normalized entries and their source — it is an explicit local
