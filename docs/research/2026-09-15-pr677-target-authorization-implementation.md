@@ -3,6 +3,10 @@
 Status (2026-09-17): implemented and locally reviewed; **published dependency integration is
 complete, but live acceptance remains incomplete. Do not merge/deploy to a customer yet.**
 
+The [September 17 Claude-review disposition](2026-09-17-pr677-claude-review-disposition.md)
+records subsequent runtime, deployment, harness and rollout fixes. Its local checks do not replace
+the final-build live acceptance below; the older test counts and deployed SHA remain historical.
+
 ## Baseline and scope
 
 - PR: <https://github.com/arc-mcp/arc-1/pull/677>

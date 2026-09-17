@@ -583,9 +583,11 @@ filtered by user target grants.
     feature. The required companion API is published in `@arc-mcp/xsuaa-auth` 1.1.0 and integrated
     in this PR's manifest/lockfile; clean-install tests pass. Live acceptance remains incomplete.
     Use an isolated maintainer test deployment until those gates are closed. See the
-    [accepted specification](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/docs/plans/xsuaa-target-authorization.md),
-    [ADR-0008](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/docs/adr/0008-opt-in-xsuaa-target-authorization.md), and
-    [validation status](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/docs/research/2026-09-15-pr677-target-authorization-implementation.md).
+    [accepted specification](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/docs/plans/xsuaa-target-authorization.md),
+    [ADR-0008](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/docs/adr/0008-opt-in-xsuaa-target-authorization.md), and
+    [validation snapshot](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/docs/research/2026-09-15-pr677-target-authorization-implementation.md).
+    These links pin the reviewed candidate; see [PR #677](https://github.com/arc-mcp/arc-1/pull/677)
+    for subsequent changes and readiness updates.
 
 Keep the first pilot simple: **one static cohort role, one collection, one test user**. No IAS
 change, HANA store, extra runtime service, new OAuth scope, or SAP login sweep is needed.
@@ -617,7 +619,7 @@ users. An isolated pilot needs its own app/XSUAA identity, not a second route to
    ```
 
    It belongs under the app's `modules[].properties`. The optional
-   [`target-authorization.mtaext` overlay](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/examples/btp/multi-pp/target-authorization.mtaext)
+   [`target-authorization.mtaext` overlay](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/examples/btp/multi-pp/target-authorization.mtaext)
    supplies exactly this property after the conservative multi-PP profile. On CF, `.env` is not
    deployed. Verify the effective mode on every serving process after deployment. For an existing
    shared route, quiesce legacy replicas before cutover; do not serve both modes during rollout.
