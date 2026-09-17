@@ -126,7 +126,8 @@ export function internalOperationDenial(
 
 /**
  * Warning appended to a degraded-but-correct result when an optional internal read is denied.
- * `reason` must be a stable code, never policy text: warnings bypass `ARC1_MINIMAL_ERRORS`.
+ * `reason` must be stable caller-authored text (normally an error code), never caught policy or
+ * backend text: warnings bypass `ARC1_MINIMAL_ERRORS`.
  */
 export function internalOperationWarning(id: InternalDataOperationId, reason: string): string {
   const operation = INTERNAL_DATA_OPERATIONS[id];

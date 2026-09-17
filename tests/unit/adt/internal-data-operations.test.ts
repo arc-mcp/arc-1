@@ -71,6 +71,18 @@ describe('internal data-operation registry', () => {
     expect(message).toContain('orphan/ghost TADIR rows');
   });
 
+  it('formats core denials through the minimal client-message contract', () => {
+    const error = new DataSourcePolicyError('DATA_SOURCE_BLOCKED', 'TADIR', ['TADIR'], 'private diagnostic');
+    const message = internalOperationDenial('tadir_lookup_db', error, true);
+
+    expect(message).toContain('DATA_SOURCE_BLOCKED');
+    expect(message).toContain('executed=false');
+    expect(message).toContain('Affected: SAPSearch');
+    expect(message).not.toContain('Source path');
+    expect(message).not.toContain('private diagnostic');
+    expect(message).not.toContain('SAP_BLOCKED_DATA_SOURCES');
+  });
+
   it('gives an optional degradation an explicit incompleteness warning', () => {
     const warning = internalOperationWarning('interface_implementers', 'DATA_SOURCE_BLOCKED');
     expect(warning).toMatch(/^Incomplete result:/);
