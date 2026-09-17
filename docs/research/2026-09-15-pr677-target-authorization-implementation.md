@@ -202,10 +202,12 @@ and fixed allowlisted `/oauth/logged-out` return), followed by a new sign-in in 
 window without clearing cookies. The resulting authorization code arrived at 10:43:56 UTC.
 SAP SDK verification and the private expected-identity/origin checks passed; its valid empty
 `arc1_targets` array denied client 100 and all other tested targets. Refresh of this new session
-also denied access. **The new-token denial is proven; same-window, no-cookie-clearing recovery is
-not yet independently established.** The operator's confirmation of the window used and whether
-IAS requested credentials is still pending, so this is not counted as a completed normal-logout
-workflow or bounded revocation SLA.
+also denied access. The operator subsequently confirmed that the **same incognito window remained
+open, cookies were not cleared, and IAS requested the password**. Combined with the verified
+new-token and refresh results, this completes the normal logout/new-login recovery case for this
+tenant. Browser-session provenance is operator-reported; token contents and HTTP enforcement were
+automatically checked. This does not establish a bounded revocation SLA or guarantee the same
+behavior for every customer's IAS/corporate identity-provider session configuration.
 
 Concurrent replay kept the new empty token denied while the old positive token still worked
 with 154 seconds remaining. This tests same-user token-snapshot isolation, not two-human/origin
@@ -223,6 +225,9 @@ this follow-up changes evidence only, not deployed runtime source `a25d62c6`.
 Focused documentation tests (5/5), strict MkDocs and whitespace checks passed. At 10:54 UTC
 stopped the harness and its callback listener; its shutdown confirmed no tokens were persisted.
 The isolated CF app remains running for later acceptance cases, which need a new harness/login.
+All remote checks on the evidence commit `1a9ab4e6` subsequently passed, including Node 22/24,
+docs, MTA, CodeQL, integration and end-to-end jobs. The operator confirmation changes no runtime
+code, IAM configuration or live-test assertion count.
 
 ## Evidence strategy
 
@@ -591,8 +596,9 @@ are already measured. The remaining work, in order, is:
 2. Complete the remaining secondary-user matrix; disjoint two-human concurrency now passed.
    Verify the actual mapped SAP user/client through an independently observed backend identity/marker.
 3. IAS-only, static+IAS, nonmatching-group exclusion and fresh-session group-removal denial now
-   pass. Agree the customer's acceptable stale-session/refresh window and verify its normal
-   sign-out/re-login workflow; fresh private recovery alone is not an operational revocation SLA.
+   pass. Normal same-window sign-out/re-login without cookie clearing is also confirmed for the
+   test tenant. Agree the customer's acceptable stale-session/refresh window and validate its own
+   IdP/session configuration; successful manual recovery is not an operational revocation SLA.
    Keep the optional IAS recipe gated by the remaining acceptance requirements.
 4. Finish distinct-origin/tenant checks where available and two human application tokens with
    the same attribute name. Old token versus refresh/reused SSO/fresh private login is now
