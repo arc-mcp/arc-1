@@ -3,7 +3,6 @@
 **Status:** Confirmed ARC-1 1.2.0 regression; narrow fix implemented and validated on 2026-09-17.
 **Issue:** [arc-mcp/arc-1#805](https://github.com/arc-mcp/arc-1/issues/805).
 **Baseline:** `cfd399d2480b0d99baf87ccf3b10e1685ae9cd46` (also affected).
-**Plan:** [safe proxy body disposal](../../plans/2026-09-17-issue-805-proxy-body-disposal.md).
 
 ## Summary
 
@@ -103,6 +102,13 @@ Local HTTP controls reproduced the same failure for 204, 205, and bounded encode
 The second-pass early-cancellation case also returned the original cancellation error before
 the unhandled disposal error terminated the isolated process.
 
+The encoding and headers-only regression fixtures must finish their responses while leaving
+the client body unread. With Undici 8.10.2, unfinished responses in these probes instead enter
+`RequestHandler.onResponseError()`, which attaches its own listener and masks the missing adapter
+listener. Removing the helper's listener makes each completed-body test fail with an unhandled
+abort; the unfinished-body versions pass. The separate unfinished-205 test guards immediate
+disposal, not the crash.
+
 ### Candidate comparison
 
 | Candidate | Evaluation |
@@ -133,63 +139,12 @@ bodies through the patched proxy converter. Automated tests separately exercise 
 and `CachingLayer` through a loopback HTTP proxy. Neither is a full deployed CF/XSUAA/principal
 propagation/Cloud Connector smoke. No shared deployment or SAP object was changed.
 
-## Implementation and review
-
-[`src/adt/bounded-response.ts`](../../../src/adt/bounded-response.ts) adds a nine-line private
-`destroyProxyBody()` helper and calls it from null statuses, headers-only disposal, encoding
-rejection, and streaming error/cancellation cleanup. It deliberately does not take ownership of
-the client or replace the error already being returned to the caller.
-
-The review confirmed:
-
-- the listener is installed before destruction and stays on the discarded per-response body;
-- no normal body-read error is converted into a successful result;
-- null statuses remain `Response(null, ...)`, with headers preserved;
-- null-response client closing remains in `AdtHttpClient.doProxyRequest()`;
-- bounded streaming completion/cancellation retains its existing close/destroy ownership;
-- the existing late-data cancellation regression stays covered;
-- no dependency, setting, release gate, schema, or cache-format changes are introduced.
-
-The plan was simplified before implementation: one helper, no drain branch, no new state
-machine, no global error handler, and no changes outside transport cleanup and its evidence.
-
-## Regression tests and validation
-
-[`tests/unit/adt/proxy-response-lifecycle.test.ts`](../../../tests/unit/adt/proxy-response-lifecycle.test.ts)
-uses actual Undici bodies and ephemeral HTTP servers, with no body-error listener supplied by
-the tests. It waits for deferred events and verifies connections close before test cleanup.
-
-Coverage includes 204/205/304 in both modes, ETag preservation, both Set-Cookie values surviving
-into the next request, zero budget use for empty responses, repeated cache revalidation,
-unfinished 205 and headers-only disposal, original encoding/abort errors, cancellation before
-and during reading, consumer cancellation, successful non-empty responses, byte limits, and
-genuine transport errors.
-
-Before the source fix, the initial 13 regression assertions passed but Vitest correctly failed
-with **16 unhandled errors**. After the fix and additional review coverage, all **17 regression
-tests** passed without unhandled errors. Test review corrected two assumptions in the harness:
-the public header record is not a multi-cookie API (cookie round-trip is the meaningful check),
-and Undici's Promise-based `destroy()` delegates to its callback overload (raw spy count is not
-a count of logical cleanup attempts).
-
-Commands used:
-
-```bash
-npx vitest run tests/unit/adt/proxy-response-lifecycle.test.ts tests/unit/adt/bounded-response.test.ts tests/unit/adt/http.test.ts tests/unit/cache
-npm test
-npm run typecheck
-npm run lint
-npm run build
-npm run validate:policy
-npm run check:sizes
-```
-
-Final validation counts and review completion are recorded in the linked implementation plan.
-
 ## Next steps and deployment check
 
-Merge the reviewed PR and prioritize a release/backport for affected 1.2.x deployments. The
-release notes use the existing unreleased heading; versioning remains release-please's job.
+Merge the reviewed PR and prioritize the upcoming 1.3.0 release for affected 1.2.0 deployments.
+The open [release PR #751](https://github.com/arc-mcp/arc-1/pull/751) targets 1.3.0, and the current
+release workflow follows `main`; merging this fix alone does not publish a 1.2.1 hotfix.
+Use the normal release path unless a separate 1.2.x maintenance release is explicitly required.
 Do not restore a workaround-disabled cache until the deployed build contains the fix.
 
 On a canary BTP deployment, read one unchanged source repeatedly with caching enabled. Confirm

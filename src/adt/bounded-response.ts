@@ -118,12 +118,8 @@ export async function capResponseBody(response: Response, budget: DataResponseBu
 }
 
 function destroyProxyBody(body: Readable): void {
-  // Undici can emit UND_ERR_ABORTED asynchronously when an unread body is destroyed.
-  // Observe disposal errors even when no reader (or first iterator.next()) exists yet.
-  body.on('error', () => {
-    /* Intentional body disposal; any original failure is reported separately. */
-  });
-  body.destroy();
+  // Observe disposal errors even before the first read; otherwise UND_ERR_ABORTED can escape (#805).
+  body.on('error', () => {}).destroy();
 }
 
 function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal): ReadableStream<Uint8Array> {
