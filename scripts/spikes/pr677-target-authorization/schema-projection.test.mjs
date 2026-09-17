@@ -14,6 +14,12 @@ function check(tools, expected) {
 }
 const failed = (records, suffix) => records.some((record) => !record.pass && record.name.endsWith(suffix));
 
+test('nonempty expected projection cannot pass vacuously with no operational tools', () => {
+  for (const tools of [[], [{ name: 'SAPTargets', inputSchema: { properties: {} } }]]) {
+    assert.ok(failed(check(tools, targets(1)), '.operational_tools_present'));
+  }
+});
+
 test('schema projection independently accepts exact enums at 1, 2 and 16 targets', () => {
   for (const count of [1, 2, 16]) {
     const expected = targets(count);

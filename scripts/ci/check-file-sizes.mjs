@@ -73,8 +73,8 @@ const BUDGETS = {
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   'src/adt/http.ts': 1550,
-  // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
-  'src/server/server.ts': 1484,
+  // Startup/cache helpers were extracted for target authorization; retain only 3 lines of headroom.
+  'src/server/server.ts': 1478,
 };
 
 const DEFAULT_SRC = 1500;
@@ -96,7 +96,7 @@ function countLines(path) {
 // core.quotePath would wrap "tests/.../zäh.ts" in quotes, and a naive .endsWith('.ts') would
 // then silently skip it — voiding the ratchet for that file).
 // Include the maintained relation-validation entry points, not unrelated research scripts.
-const files = execSync('git ls-files -z src tests bin scripts/smoke-live-relations.ts scripts/bench-context-parsing.ts', {
+const files = execSync('git ls-files -z src tests bin scripts/smoke-live-relations.ts scripts/bench-context-parsing.ts scripts/spikes/pr677-target-authorization scripts/ci/check-target-authorization-mta.mjs', {
   encoding: 'utf8',
 })
   .split('\0')

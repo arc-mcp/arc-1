@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { comparableDenial, guardedMcpChecks, validateScenario } from './mcp-checks.mjs';
 import { clientCredentialsToken } from './oauth-requests.mjs';
 import {
@@ -15,6 +17,14 @@ import {
   safeFailure,
   validateBaseUrl,
 } from './safe-io.mjs';
+import { reserveSessionLabel } from './session-labels.mjs';
+
+test('all maintained harness entry points parse without running live requests', async () => {
+  for (const file of await readdir(new URL('.', import.meta.url))) {
+    if (file.endsWith('.mjs'))
+      execFileSync(process.execPath, ['--check', fileURLToPath(new URL(file, import.meta.url))]);
+  }
+});
 
 test('safe failures never emit arbitrary error messages or tokens', () => {
   assert.deepEqual(safeFailure(new Error('secret-token-user-data')), { code: 'UNEXPECTED_FAILURE' });
@@ -29,6 +39,29 @@ test('runtime diagnostic channels that could disclose credentials are rejected b
   for (const env of [{ NODE_DEBUG: 'http' }, { SSLKEYLOGFILE: '/unprinted/file' }, { NODE_OPTIONS: '--inspect=9229' }])
     assert.throws(() => assertSafeDiagnosticEnvironment(env, []), { code: 'UNSAFE_RUNTIME_DIAGNOSTICS' });
   assert.throws(() => assertSafeDiagnosticEnvironment({}, ['--trace-tls']), { code: 'UNSAFE_RUNTIME_DIAGNOSTICS' });
+  for (const flag of ['--tls_keylog=/private/file', '--trace_tls', '--inspect_brk=9229', '--inspect_wait=9229']) {
+    assert.throws(() => assertSafeDiagnosticEnvironment({}, [flag]), { code: 'UNSAFE_RUNTIME_DIAGNOSTICS' });
+    assert.throws(() => assertSafeDiagnosticEnvironment({ NODE_OPTIONS: `"${flag}"` }, []), {
+      code: 'UNSAFE_RUNTIME_DIAGNOSTICS',
+    });
+  }
+});
+
+test('session labels stay reserved through callback exchange, failure and competing commands', () => {
+  const sessions = new Map();
+  const reserved = new Set();
+  const release = reserveSessionLabel('viewer', sessions, reserved);
+  // Removing a pending OAuth state does not free its label while exchange awaits I/O.
+  for (const phase of ['pending', 'exchanging']) {
+    assert.throws(() => reserveSessionLabel('viewer', sessions, reserved), { code: 'LABEL_ALREADY_IN_USE' }, phase);
+  }
+  release(); // Failure/expiry allows a new login.
+  const releaseNext = reserveSessionLabel('viewer', sessions, reserved);
+  sessions.set('viewer', { token: 'never-output' });
+  releaseNext();
+  assert.throws(() => reserveSessionLabel('viewer', sessions, reserved), { code: 'LABEL_ALREADY_IN_USE' });
+  for (let i = 0; i < 31; i++) reserveSessionLabel(`pending-${i}`, sessions, reserved);
+  assert.throws(() => reserveSessionLabel('overflow', sessions, reserved), { code: 'SESSION_LIMIT_REACHED' });
 });
 
 test('origin/label validation rejects unsafe values', () => {
@@ -297,9 +330,16 @@ test('authentication denial reasons are checked on aggregate, compatibility and 
           },
           record: (name, pass) => records.push({ name, pass }),
         });
-        for (const prefix of ['aggregate.initialize', 'alias.initialize', 'pinned.authentication_0', 'pinned.authentication_1']) {
+        for (const prefix of [
+          'aggregate.initialize',
+          'alias.initialize',
+          'pinned.authentication_0',
+          'pinned.authentication_1',
+        ]) {
           assert.ok(
-            records.some((value) => value.name === `${prefix}.error_code` && value.pass === (actualCode === expectedCode)),
+            records.some(
+              (value) => value.name === `${prefix}.error_code` && value.pass === (actualCode === expectedCode),
+            ),
             JSON.stringify(records),
           );
         }

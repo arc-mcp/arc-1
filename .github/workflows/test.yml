@@ -33,7 +33,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate mta.yaml + mta-overrides.mtaext.example
+      - name: Install descriptor check dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate MTA descriptors and effective target-authorization extension chain
         run: npm run btp:validate
 
   # Gates only the SAP-hitting jobs below based on PR title (conventional
@@ -114,6 +117,9 @@ jobs:
 
       - name: Run unit tests
         run: npm test
+
+      - name: Offline target authorization harness tests
+        run: npm run test:target-auth:harness
 
       - name: Upload unit test results
         if: always()

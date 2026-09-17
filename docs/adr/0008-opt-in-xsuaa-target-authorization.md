@@ -57,12 +57,16 @@ provider protocol.
 
 ## Consequences
 
-- Upgrades do not implicitly activate authorization. Provision target roles and verify fresh
-  application tokens before enabling the setting. Actually unsetting it at runtime or selecting
+- Upgrades do not implicitly activate authorization. Prepare roles unassigned, enable and verify
+  enforcement in an isolated pilot, then assign restricted users and verify fresh application tokens.
+  Target roles also grant global `read`; pre-assignment on a legacy endpoint can broaden access.
+  Actually unsetting it at runtime or selecting
   `legacy` is an IAM/security downgrade requiring the operator's change process; an environment
   administrator remains trusted. On CF, use explicit `ARC1_MULTI_TARGET_AUTHORIZATION: legacy`
   in the owning `.mtaext` for an approved rollback and verify the actual CF environment and logged
   mode. Deleting only the descriptor line may retain the already-deployed environment value.
+  Downgrade also requires reviewing every reader (including target-role recipients) and outstanding
+  tokens/refresh sessions; keep the route closed until all remaining readers are approved for legacy access.
 - Static cohort roles need no IAS changes. Optional IAS mappings feed the same runtime contract;
   they are not a second authorization engine. Publish them as verified only after their live gates.
 - There is no grant database, per-login SAP fan-out, new OAuth scope or target-specific permission

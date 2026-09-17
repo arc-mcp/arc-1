@@ -181,9 +181,9 @@ boundary parser defensively validates that output (and scalar input in isolated 
 1. accepts only scalar string or string-array forms returned through the verified auth-package
    contract; bounds the raw input **before** copying, normalizing, or deduplicating: at most 1,024
    entries, 128 UTF-8 bytes per entry, and 16 KiB summed value bytes;
-2. trims surrounding whitespace;
-3. recognizes the literal `*` before applying the public-target normalization used by request
-   routing to every other value (uppercase the system segment; retain the three client digits);
+2. rejects non-ASCII input before normalization, then trims surrounding ASCII whitespace;
+3. recognizes literal `*`, or uppercases the ASCII system segment while retaining the three client
+   digits. No Unicode case folding, compatibility normalization, or invisible suffix may create a grant;
 4. rejects the complete grant set if any entry has the wrong type or invalid syntax;
 5. deduplicates canonical values without yet collapsing a set containing `*`;
 6. rejects the complete input above 256 unique canonical values, including `*`, before collapsing
@@ -922,19 +922,22 @@ Recommended rollout:
    roles, then apply the compatible artifacts. The ARC-1 release may ship both descriptor and
    runtime changes together with enforcement **off**; a separate descriptor-only release is not
    required. Do not recreate the bound service or rewrite existing collections;
-3. start with one static exact role/collection for a pilot user and inspect the predefined
+3. prepare one static exact role/collection unassigned and inspect the predefined
    all-target role. Reuse cohort roles for the eventual population, not one role per person/target;
-4. before moving the shared route, assign target roles to its intended users/cohorts. Split mixed
-   runtimes if needed; retain separate identities for independent single-target boundaries;
-5. obtain and verify an application user token locally; record only assertion outcomes and byte
-   counts. CLI administration tokens do not prove application grants or PP. Never paste raw tokens
-   or customer entitlement arrays into issues, logs, or online JWT decoders;
-6. enable `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute` explicitly in a test app's durable
-   deployment configuration and run the role/target matrix. A separate test app is a rehearsal
-   environment, not a new production architecture requirement;
+4. split mixed runtimes if needed; retain separate identities for independent single-target
+   boundaries. Target roles carry global `read`: never give a newly restricted user such a role
+   while a legacy endpoint using that XSUAA identity remains reachable;
+5. enable `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute` explicitly in the isolated test app's
+   durable deployment configuration and verify every process's mode **before assigning users**.
+   The pilot uses its own app/XSUAA identity; it is a rehearsal, not a new production requirement;
+6. assign the pilot role, obtain and verify an application user token locally, then run the matrix.
+   Record only assertion outcomes and byte counts. CLI tokens do not prove application grants or
+   PP. Never paste raw tokens or entitlement arrays into issues, logs, or online JWT decoders;
 7. apply that configuration to the intended route. Replace/restart **all** serving processes and
    verify their mode; an old legacy replica must not remain reachable when enforcement is declared
-   active. Use a controlled cutover without old-mode overlap. ADR-0007's one-instance/non-rolling
+   active. Use a controlled cutover without old-mode overlap; assign newly restricted users only
+   after verification. Existing users already approved for all legacy targets may be pre-provisioned
+   without widening their existing access. ADR-0007's one-instance/non-rolling
    constraint still applies whenever shared Basic is enabled;
 8. test Viewer, Data, SQL, Admin, exact, all-target, missing-grant, malformed-grant, and
    revoked-grant users; and
@@ -947,12 +950,20 @@ enforcement still enabled. If inventory confidentiality is required, isolate/sto
 and restore service only under an approved policy; do not recommend bypassing grants to fix an
 outage. For a CF mode rollback, set `ARC1_MULTI_TARGET_AUTHORIZATION: legacy` explicitly in the
 owning `.mtaext`, deploy, and verify the actual CF environment and mode on every serving process;
-deleting the descriptor line may leave the old CF value retained. Keep descriptor templates and
-assignments during emergency rollback; deleting them can break other bound consumers and is
-unnecessary. Assigning `*` is an audited IAM privilege change,
+deleting the descriptor line may leave the old CF value retained. Keep descriptor templates, but
+review **all reader assignments**, including users newly granted `read` through a target role.
+Do not preserve a restricted-only audience while reopening a legacy route. Removing assignments
+alone is insufficient: outstanding tokens and stale refresh/SSO sessions must be covered by the
+customer's verified revocation/cutover procedure. Keep the route closed until every remaining
+reader is approved for legacy all-target access. Assigning `*` is an audited IAM privilege change,
 not a runtime troubleshooting toggle.
 
 ### Customer administration and handover
+
+Target authorization is destination/logon-client authorization, not SQL row isolation. Freestyle
+ABAP SQL may override implicit client handling if the backend permits it; client-independent data
+is shared by definition. Keep SQL off when strict client-row isolation is required, or use separately
+reviewed backend services. See the [operator limitation](../../docs_page/multi-target-administration.md#sql-and-client-isolation).
 
 | Owner | Deliverable / continuing responsibility |
 |---|---|

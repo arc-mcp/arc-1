@@ -14,6 +14,8 @@ export function checkTargetSchemaProjection(tools, expectedTargets, record, pref
     record(`${prefix}.target_schema.zero_operational_tools`, operational.length === 0, {
       actualCount: operational.length,
     });
+  } else {
+    record(`${prefix}.target_schema.operational_tools_present`, operational.length > 0);
   }
   for (const [index, tool] of operational.entries()) {
     const test = `${prefix}.target_schema.tool_${index}`;

@@ -108,7 +108,7 @@ describe('optional target-authorization deployment overlay', () => {
     expect(overlay).toEqual({
       '_schema-version': '3.1',
       ID: 'arc1-multi-pp-target-authorization-example',
-      extends: base.ID,
+      extends: profile.ID,
       modules: [{ name: app.name, properties: { ARC1_MULTI_TARGET_AUTHORIZATION: 'xsuaa-attribute' } }],
     });
     expect(app.properties).not.toHaveProperty('ARC1_MULTI_TARGET_AUTHORIZATION');
@@ -127,6 +127,7 @@ describe('optional target-authorization deployment overlay', () => {
     expect(scripts['btp:validate']).toContain(
       'mbt validate -e examples/btp/multi-pp/profile.mtaext -e examples/btp/multi-pp/target-authorization.mtaext',
     );
+    expect(scripts['btp:validate']).toContain('node scripts/ci/check-target-authorization-mta.mjs');
     const guide = read('examples/btp/multi-pp/README.md');
     expect(guide).toContain('target-authorization.mtaext');
     expect(guide).toContain('multi-target-setup.md');

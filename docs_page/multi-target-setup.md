@@ -590,23 +590,26 @@ filtered by user target grants.
 Keep the first pilot simple: **one static cohort role, one collection, one test user**. No IAS
 change, HANA store, extra runtime service, new OAuth scope, or SAP login sweep is needed.
 
-1. The service owner deploys the additive descriptor through the existing
+**Ordering matters:** target roles also supply global `read`. Assigning them while a reachable
+instance is still `legacy` grants that user access to **all** its configured targets, not just the
+role's cohort. Prepare roles unassigned; activate and verify enforcement before assigning restricted
+users. An isolated pilot needs its own app/XSUAA identity, not a second route to a legacy instance.
+
+1. The service owner prepares the additive descriptor through the existing
    [XSUAA lifecycle owner](xsuaa-setup.md#step-1-identify-the-xsuaa-lifecycle-owner), preserving the
-   application identity, existing functional roles and assignments. Do not enable enforcement yet.
+   application identity, existing functional roles and assignments. For the pilot, use an isolated
+   app/XSUAA identity. Descriptor installation alone does not activate enforcement or assign users.
 2. In BTP Cockpit **Security → Roles**, select the correct application's `MCPTargetReadAccess`
    template and create a role such as `FinanceTargets`. Set `arc1_targets` to **Static**, with
    separate exact values such as `A4H/001` and `A4H/100`; do not enter a comma-separated value.
    Use the public alias/client ID when an alias is configured.
-3. Add that role to one deliberately named role collection and assign it to the pilot user under
-   the actual application IdP origin. The role already supplies `read`. Later, map that collection
-   to an existing corporate group if desired; one role can contain several systems/clients.
-4. Start a fresh application sign-in and verify the effective grants in the isolated pilot. Do not
-   paste the JWT into chat or a public token decoder. Review other apps bound to the same XSUAA
-   identity: another app's unrestricted endpoint is not protected by this app's setting.
-5. Keep the deployment multi-only: remove independently configured `SAP_BTP_DESTINATION` and
+3. Add that role to one deliberately named role collection, **without assigning restricted users
+   yet**. Review other apps bound to the same XSUAA identity: another app's unrestricted endpoint
+   is not protected by this app's setting.
+4. Keep the deployment multi-only: remove independently configured `SAP_BTP_DESTINATION` and
    `SAP_BTP_PP_DESTINATION` through the owning deployment configuration. If a single-target app is
    still required, separate its app, XSUAA identity and role assignments instead of bypassing the guard.
-6. Add **only** this setting to the existing multi-only landscape extension, validate that actual
+5. Add **only** this setting to the existing multi-only landscape extension, validate that actual
    extension, and use the normal [deployment procedure](btp-cloud-foundry-deployment.md):
 
    ```yaml
@@ -616,7 +619,12 @@ change, HANA store, extra runtime service, new OAuth scope, or SAP login sweep i
    It belongs under the app's `modules[].properties`. The optional
    [`target-authorization.mtaext` overlay](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/examples/btp/multi-pp/target-authorization.mtaext)
    supplies exactly this property after the conservative multi-PP profile. On CF, `.env` is not
-   deployed. Verify the effective mode on every serving process after deployment.
+   deployed. Verify the effective mode on every serving process after deployment. For an existing
+   shared route, quiesce legacy replicas before cutover; do not serve both modes during rollout.
+6. Only after enforcement is verified, assign the collection to the pilot user under the actual
+   application IdP origin and start a fresh application sign-in. Verify the effective grants locally;
+   never paste JWTs into chat or a public decoder. Later, map the collection to an existing corporate
+   group if desired; one role can contain several systems/clients.
 7. Reconnect the pilot MCP client and reload its tool catalog. With two granted active targets,
    check `SAPTargets`; with one, check its explicit target enum and absence of `SAPTargets`.
    With zero, expect `tools: []` and a caller-only no-target explanation. Check one permitted
@@ -644,6 +652,9 @@ another role granting B, makes SQL eligible on **both A and B**, where instance/
 policy also permits it. The same applies to data and Admin. Do not label a collection “SQL only on
 A”; use separate applications/XSUAA identities if that per-target capability distinction is needed.
 See [Authorization & Roles](authorization.md#opt-in-multi-target-grants).
+
+Target grants authorize the selected destination/logon client, not a SQL row-isolation policy.
+Before allowing freestyle SQL, review the [client-isolation limitation](multi-target-administration.md#sql-and-client-isolation).
 
 **IAS-fed values are optional and not yet a verified operator recipe.** They use the same verified
 XSUAA `arc1_targets` attribute as static roles, not another ARC-1 mode. Before adopting them, IAM

@@ -8,7 +8,7 @@ the runbook contains the copy command, deployment order and acceptance checks.
 | File | Replace with your landscape values |
 |---|---|
 | [profile.mtaext](profile.mtaext) | No target values; enables multi-only mode with conservative policy |
-| [target-authorization.mtaext](target-authorization.mtaext) | Optional single-setting overlay; enable only after preparing and testing XSUAA target grants |
+| [target-authorization.mtaext](target-authorization.mtaext) | Optional single-setting overlay; prepare unassigned roles, enable/verify enforcement, then assign restricted users |
 | [qas-001.destination.json](qas-001.destination.json) | Name, virtual URL, real SID/client, description; optional connector location |
 | [qas-100.destination.json](qas-100.destination.json) | Name, virtual URL, real SID/client, description; optional connector location |
 
@@ -22,7 +22,9 @@ absent, including from existing app environment settings. It does not enable sha
 The unchanged `profile.mtaext` keeps legacy authorization: global readers see all configured targets.
 For opt-in filtering, use the target-authorization overlay **after** that profile, or add its one
 `ARC1_MULTI_TARGET_AUTHORIZATION: xsuaa-attribute` property to the customer's existing multi-only
-extension. It is not a complete profile by itself and does not assign users or modify destinations.
+extension. Its `extends` references that profile's ID, not the base MTA ID. `npm run btp:validate`
+also generates and checks the effective merged descriptor; schema validation alone is insufficient.
+It is not a complete profile by itself and does not assign users or modify destinations.
 Follow [Multi-Target Setup](../../../docs_page/multi-target-setup.md) for activation and rollback;
 removing enforcement restores broader legacy access, not a security-neutral fallback.
 

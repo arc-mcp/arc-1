@@ -17,6 +17,7 @@ import {
   safeFailure,
   validateBaseUrl,
 } from './safe-io.mjs';
+import { reserveSessionLabel } from './session-labels.mjs';
 
 // Provider debug output can contain user identifiers. Import SDKs only after disabling it.
 process.env.DEBUG = '';
@@ -24,6 +25,7 @@ const emit = (event, details = {}) =>
   process.stdout.write(`${JSON.stringify({ event, at: new Date().toISOString(), ...details })}\n`);
 const sessions = new Map();
 const pending = new Map();
+const reservedLabels = new Set();
 let server;
 let input;
 let stopping = false;
@@ -180,57 +182,62 @@ async function main() {
 
   async function beginLogin(command) {
     const sessionLabel = label(command.label);
-    if (sessions.has(sessionLabel) || [...pending.values()].some((entry) => entry.label === sessionLabel))
-      throw new HarnessError('LABEL_ALREADY_IN_USE');
-    if (sessions.size + pending.size >= 32) throw new HarnessError('SESSION_LIMIT_REACHED');
-    if (command.scenario) validateScenario(await privateJson(command.scenario));
-    const state = randomBytes(32).toString('base64url');
-    const verifier = randomBytes(48).toString('base64url');
-    const challenge = createHash('sha256').update(verifier).digest('base64url');
-    const redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
-    const registered = await boundedFetch(new URL('/register', baseUrl), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_name: 'ARC-1 PR677 live acceptance',
-        redirect_uris: [redirectUri],
-        token_endpoint_auth_method: 'none',
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-      }),
-    });
-    if (registered.status !== 201 || typeof registered.json?.client_id !== 'string')
-      throw new HarnessError('DCR_REGISTRATION_FAILED', registered.status);
-    const entry = {
-      label: sessionLabel,
-      verifier,
-      redirectUri,
-      clientId: registered.json.client_id,
-      scenarioPath: command.scenario,
-      created: Date.now(),
-    };
-    entry.timer = setTimeout(() => {
-      pending.delete(state);
-      emit('login_expired', { label: sessionLabel });
-    }, config.timeoutMs);
-    pending.set(state, entry);
-    const authorize = new URL('/authorize', baseUrl);
-    authorize.search = new URLSearchParams({
-      response_type: 'code',
-      client_id: entry.clientId,
-      redirect_uri: redirectUri,
-      code_challenge: challenge,
-      code_challenge_method: 'S256',
-      state,
-      scope: 'read data sql admin',
-      ...(command.forceLogin === true ? { prompt: 'login', max_age: '0' } : {}),
-    }).toString();
-    emit('authorization_required', {
-      label: sessionLabel,
-      authorizeUrl: authorize.toString(),
-      expiresInMinutes: config.timeoutMs / 60_000,
-      browserAction: 'Open with approved browser tooling; secondary identity must use a new incognito window.',
-    });
+    const release = reserveSessionLabel(sessionLabel, sessions, reservedLabels);
+    try {
+      if (command.scenario) validateScenario(await privateJson(command.scenario));
+      const state = randomBytes(32).toString('base64url');
+      const verifier = randomBytes(48).toString('base64url');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const redirectUri = `http://127.0.0.1:${server.address().port}/callback`;
+      const registered = await boundedFetch(new URL('/register', baseUrl), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: 'ARC-1 PR677 live acceptance',
+          redirect_uris: [redirectUri],
+          token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+        }),
+      });
+      if (registered.status !== 201 || typeof registered.json?.client_id !== 'string')
+        throw new HarnessError('DCR_REGISTRATION_FAILED', registered.status);
+      const entry = {
+        label: sessionLabel,
+        verifier,
+        redirectUri,
+        clientId: registered.json.client_id,
+        scenarioPath: command.scenario,
+        created: Date.now(),
+        release,
+      };
+      entry.timer = setTimeout(() => {
+        pending.delete(state);
+        release();
+        emit('login_expired', { label: sessionLabel });
+      }, config.timeoutMs);
+      pending.set(state, entry);
+      const authorize = new URL('/authorize', baseUrl);
+      authorize.search = new URLSearchParams({
+        response_type: 'code',
+        client_id: entry.clientId,
+        redirect_uri: redirectUri,
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        state,
+        scope: 'read data sql admin',
+        ...(command.forceLogin === true ? { prompt: 'login', max_age: '0' } : {}),
+      }).toString();
+      emit('authorization_required', {
+        label: sessionLabel,
+        authorizeUrl: authorize.toString(),
+        expiresInMinutes: config.timeoutMs / 60_000,
+        browserAction: 'Open with approved browser tooling; secondary identity must use a new incognito window.',
+      });
+    } catch (error) {
+      release();
+      throw error;
+    }
   }
 
   async function callback(request, response) {
@@ -252,6 +259,7 @@ async function main() {
     clearTimeout(entry.timer);
     const code = url.searchParams.get('code');
     if (!code || url.searchParams.has('error')) {
+      entry.release();
       response.writeHead(400).end('Authorization failed. See the sanitized test harness status.');
       emit('login_failed', { label: entry.label, code: 'OAUTH_AUTHORIZATION_FAILED' });
       return;
@@ -264,6 +272,7 @@ async function main() {
         redirect_uri: entry.redirectUri,
         code_verifier: entry.verifier,
       });
+      if (stopping) throw new HarnessError('HARNESS_STOPPED');
       sessions.set(entry.label, {
         token,
         clientId: entry.clientId,
@@ -280,6 +289,8 @@ async function main() {
     } catch (error) {
       if (!response.headersSent) response.writeHead(400).end('Token exchange failed. Request another login.');
       emit('login_failed', { label: entry.label, ...safeFailure(error) });
+    } finally {
+      entry.release();
     }
   }
 
@@ -318,47 +329,55 @@ async function main() {
     }
     if (action.command === 'finish') return stop();
     const nextLabel = label(action.nextLabel ?? action.label);
-    if (sessions.has(nextLabel)) throw new HarnessError('LABEL_ALREADY_IN_USE');
-    if (sessions.size >= 32) throw new HarnessError('SESSION_LIMIT_REACHED');
-    if (action.scenario) validateScenario(await privateJson(action.scenario));
-    if (action.command === 'import-token') {
-      const token = await privateJson(action.file);
-      if (typeof token.access_token !== 'string') throw new HarnessError('INVALID_TOKEN_FILE');
-      sessions.set(nextLabel, { token, clientId: token.client_id, scenarioPath: action.scenario, created: Date.now() });
-    } else if (action.command === 'client-credentials') {
-      const token = await clientCredentialsToken(credentials, action.scopes);
-      sessions.set(nextLabel, { token, scenarioPath: action.scenario, created: Date.now() });
-    } else {
-      const previous = sessions.get(label(action.label));
-      if (!previous) throw new HarnessError('SESSION_NOT_FOUND');
-      let token;
-      if (action.command === 'refresh') {
-        if (typeof previous.token.refresh_token !== 'string' || !previous.clientId)
-          throw new HarnessError('REFRESH_NOT_AVAILABLE');
-        token = await postToken(new URL('/token', baseUrl), {
-          grant_type: 'refresh_token',
-          client_id: previous.clientId,
-          refresh_token: previous.token.refresh_token,
+    const release = reserveSessionLabel(nextLabel, sessions, reservedLabels);
+    try {
+      if (action.scenario) validateScenario(await privateJson(action.scenario));
+      if (action.command === 'import-token') {
+        const token = await privateJson(action.file);
+        if (typeof token.access_token !== 'string') throw new HarnessError('INVALID_TOKEN_FILE');
+        sessions.set(nextLabel, {
+          token,
+          clientId: token.client_id,
+          scenarioPath: action.scenario,
+          created: Date.now(),
         });
-      } else if (action.command === 'exchange-user') {
-        await verifyUser(previous.token.access_token);
-        token = await postToken(
-          new URL('/oauth/token', credentials.url),
-          { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: previous.token.access_token },
-          {
-            Authorization: `Basic ${Buffer.from(`${credentials.clientid}:${credentials.clientsecret}`).toString('base64')}`,
-          },
-        );
-      } else throw new HarnessError('UNKNOWN_COMMAND');
-      sessions.set(nextLabel, {
-        token,
-        clientId: previous.clientId,
-        scenarioPath: action.scenario ?? previous.scenarioPath,
-        created: Date.now(),
-      });
+      } else if (action.command === 'client-credentials') {
+        const token = await clientCredentialsToken(credentials, action.scopes);
+        sessions.set(nextLabel, { token, scenarioPath: action.scenario, created: Date.now() });
+      } else {
+        const previous = sessions.get(label(action.label));
+        if (!previous) throw new HarnessError('SESSION_NOT_FOUND');
+        let token;
+        if (action.command === 'refresh') {
+          if (typeof previous.token.refresh_token !== 'string' || !previous.clientId)
+            throw new HarnessError('REFRESH_NOT_AVAILABLE');
+          token = await postToken(new URL('/token', baseUrl), {
+            grant_type: 'refresh_token',
+            client_id: previous.clientId,
+            refresh_token: previous.token.refresh_token,
+          });
+        } else if (action.command === 'exchange-user') {
+          await verifyUser(previous.token.access_token);
+          token = await postToken(
+            new URL('/oauth/token', credentials.url),
+            { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: previous.token.access_token },
+            {
+              Authorization: `Basic ${Buffer.from(`${credentials.clientid}:${credentials.clientsecret}`).toString('base64')}`,
+            },
+          );
+        } else throw new HarnessError('UNKNOWN_COMMAND');
+        sessions.set(nextLabel, {
+          token,
+          clientId: previous.clientId,
+          scenarioPath: action.scenario ?? previous.scenarioPath,
+          created: Date.now(),
+        });
+      }
+      emit('token_snapshot_available', { label: nextLabel, source: action.command });
+      if (sessions.get(nextLabel).scenarioPath) await run(nextLabel);
+    } finally {
+      release();
     }
-    emit('token_snapshot_available', { label: nextLabel, source: action.command });
-    if (sessions.get(nextLabel).scenarioPath) await run(nextLabel);
   }
 
   server = createServer((request, response) => {

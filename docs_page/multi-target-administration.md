@@ -88,8 +88,25 @@ domains inside one process.
 
 ### Target authorization lifecycle
 
-For the PR candidate, use the [static-cohort setup](multi-target-setup.md#optional-target-authorization)
-before activating `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`. Existing deployments stay
+#### SQL and client isolation
+
+Target grants select an authorized destination and SAP logon client; they are **not a SQL
+row/client-isolation policy**. Freestyle ABAP SQL can override implicit client handling where the
+backend permits it (`USING CLIENT` or release-dependent explicit-client syntax), and client-independent
+tables have no per-client partition. SAP itself advises against explicit client access in ordinary
+business applications; see [SAP's client-handling guideline](https://help.sap.com/doc/abapdocu_816_index_htm/8.16/en-US/ABENCLIENT_HANDLING_GUIDL.html).
+
+Keep freestyle SQL off if the customer requires every returned row to belong to the selected client.
+Use a separately reviewed backend service with explicit data authorization for that requirement;
+do not treat a target grant, PP identity, or a keyword blacklist as proof of row isolation. This
+limitation predates target grants. The feature does not introduce a SQL parser/row-security engine.
+
+#### Activation and rollback
+
+For the PR candidate, follow the [static-cohort setup](multi-target-setup.md#optional-target-authorization):
+prepare roles unassigned, activate and verify `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`,
+then assign restricted users. Target roles include global `read`, so assigning them to a reachable
+legacy instance would expose all its targets. Existing deployments stay
 `legacy` when the property is absent; explicitly setting `legacy` has the same effect. Only trusted
 deployment operators may change this policy. Keep the chosen value in the protected landscape
 extension, not only a temporary `cf set-env` override.
@@ -106,6 +123,13 @@ extension, not only a temporary `cf set-env` override.
 An actually unset runtime setting also selects `legacy`, but deleting the line from an MTA
 extension does not reliably unset an already-deployed CF value. Keep the explicit rollback value
 in the owning extension; see [configuration persistence](configuration-precedence.md#restriction-lists-on-btp-mtaext-is-durable-cf-set-env-is-not).
+
+Before any downgrade, review the entire reader population, including users who gained `read` from
+the new target roles. Keep the route closed until every remaining reader is approved for all
+legacy targets. Removing a collection alone does not invalidate already-issued tokens or stale
+refresh/SSO sessions. Do not reopen based only on an IAM assignment diff or an elapsed hour;
+verify the effective access under the customer's revocation procedure. Prefer fixing forward
+with enforcement enabled rather than widening access to restore service.
 
 An already-issued token retains its old grants until expiry; changing a role, signing out, or
 restarting ARC-1 does not revoke every outstanding token. Do not promise that refresh acquires new
