@@ -110,6 +110,10 @@ map, and all three allowed `T000` paths fell through to a canonical source `404`
 `DATA_LINEAGE_UNRESOLVED`. The exact sequence was reproduced in unit tests before the follow-up fix;
 the three paths now return `DATA_POLICY_UNAVAILABLE` after one table-source GET and before data execution.
 
+The contributor re-tested commit `3ce6d2af` on that same system and confirmed the production behavior:
+all three `T000` paths returned `DATA_POLICY_UNAVAILABLE` after exactly one table-source `404` and no
+data-preview request, while directly blocked `USR02` returned `DATA_SOURCE_BLOCKED` with zero SAP calls.
+
 ### The 7.50 fallback is incomplete
 
 Live NPL has the standard table `DEMO_SUMDIST`; repository search classifies it as `TABL/DT`, and its
@@ -233,19 +237,6 @@ changes. There is no three-file schema work.
 - Changing empty-list behavior or the SQL grammar.
 - Starting the intentionally stopped 816 system; 750 versus 758 is the release-sensitive boundary.
 - Posting, labeling, or closing the issue automatically.
-
-## Paste-able contributor follow-up
-
-```markdown
-Thanks for testing the earlier head. Your principal-propagation setup exposed the missing case:
-startup discovery returned `401`, so the capability remained unknown and the proactive gate could not
-engage. The current PR head now also maps the caller's canonical table-source `404` to
-`DATA_POLICY_UNAVAILABLE` before any data request. Other failures remain unresolved, and a `404` still
-remains unresolved when discovery explicitly advertised the resource.
-
-The four-path sequence is covered locally for `SAPQuery`, `TABLE_QUERY`, `TABLE_CONTENTS`, and a direct
-blocked source. Could you rerun your scripted probe against the current head?
-```
 
 ## Recommendation
 
