@@ -7,6 +7,8 @@
 2026-09-16 and labeled `bug`. The report uses ARC-1 1.2.0, Basic authentication, and SAP_BASIS 757
 SP03. No comments, linked fix, or duplicate issue were present when checked.
 
+**Fix:** [PR #803](https://github.com/arc-mcp/arc-1/pull/803).
+
 **Reviewed base revision:** `5bc5310bbd74cb43b962d4317e7f1a468ce4d472` (ARC-1 1.2.0), which
 matched `origin/main` before the investigation branch was created.
 

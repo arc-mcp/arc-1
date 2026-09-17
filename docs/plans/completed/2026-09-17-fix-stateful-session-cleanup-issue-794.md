@@ -1,6 +1,6 @@
 # Fix stateful ADT session cleanup — issue #794
 
-**Status:** Implementation and validation complete; PR pending.
+**Status:** Completed in [PR #803](https://github.com/arc-mcp/arc-1/pull/803).
 
 **Research:** [Issue #794 dossier](../../research/issues/794-stateful-http-session-leak.md)
 
@@ -66,7 +66,7 @@ replace the original exception.
       `docs/plans/completed/`.
 - [x] Confirm no credentials, disposable artifacts, generated build output, or unrelated changes
       are present.
-- [ ] Commit with a conventional `fix:` subject, push the branch, and create a PR linking issue
+- [x] Commit with a conventional `fix:` subject, push the branch, and create a PR linking issue
       #794 with offline and live validation evidence.
 
 ## Validation commands
