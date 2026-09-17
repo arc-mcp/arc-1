@@ -13,7 +13,9 @@ describe('target authorization operator documentation', () => {
     expect(setup).toContain('### Optional target authorization');
     expect(setup).toContain('one static cohort role, one collection, one test user');
     expect(setup).toContain('not customer-ready yet');
-    expect(setup).toContain('published `1.0.2` dependency is insufficient');
+    expect(setup).toContain('published in `@arc-mcp/xsuaa-auth` 1.1.0');
+    expect(setup).toContain('Live acceptance remains incomplete');
+    expect(setup).not.toContain('published `1.0.2` dependency is insufficient');
     for (const path of [
       'docs/plans/xsuaa-target-authorization.md',
       'docs/adr/0008-opt-in-xsuaa-target-authorization.md',

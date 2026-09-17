@@ -61,6 +61,19 @@ The harness's positive SYSTEM assertions prove response success only. Independen
 client-marker evidence remains required. Remote CI and the authenticated final-build matrix are
 tracked separately; neither is inferred from these local and unauthenticated checks.
 
+The first remote CI run after the documentation update caught a stale documentation assertion:
+it required the removed `1.0.2`-is-insufficient warning. The local full run above preceded that
+documentation edit. Updated the assertion to require the published 1.1.0 statement **and** retain
+the incomplete-live-acceptance warning; no runtime assertion or authorization check was weakened.
+The final full suite after this correction passed again: **7,021 tests / 231 files** on Node 24.11.1.
+The packaged CLI/npx smoke test also passed. The follow-up changes are test/docs only; the deployed
+production source remains `a25d62c6`.
+
+Current resume state: the isolated app remains running on its approved spare route for the next
+authenticated replay. The local harness stopped at 08:37 UTC without persisting tokens; no user
+token was obtained in this session. IAS group membership and all role assignments are unchanged.
+Start a new harness and fresh secondary-user incognito flow after BTP administration is available.
+
 ## Evidence strategy
 
 Use deterministic assertions for security boundaries. LLM-driven exploration supplements them; a
