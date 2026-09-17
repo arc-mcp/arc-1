@@ -18,7 +18,8 @@
  *
  * 3. Stateful sessions use "X-sap-adt-sessiontype: stateful" header.
  *    Lock/modify/unlock must use the same session cookies.
- *    withStatefulSession() ensures session isolation.
+ *    withStatefulSession() ensures session isolation and closes the backend
+ *    context when the operation finishes.
  *
  * 4. sap-client and sap-language are added to every request as query params.
  *    This is an SAP convention, not ADT-specific.
@@ -62,6 +63,7 @@ export type { AdtRequestOptions } from './http-deadline.js';
  * activation preaudit response sizes — not for production.
  */
 const HTTP_DEBUG_BODY_LIMIT = 65536;
+const ADT_HTTP_SESSIONS_PATH = '/sap/bc/adt/core/http/sessions';
 const HTTP_DEBUG_REDACT_HEADERS = new Set([
   'authorization',
   'cookie',
@@ -287,8 +289,8 @@ export class AdtHttpClient {
    * Execute a function within an isolated stateful session.
    * Ensures lock/modify/unlock share the same SAP session cookies.
    *
-   * Creates a new client instance with stateful session header,
-   * shares CSRF token with the main client.
+   * Creates a new client instance with the stateful session header,
+   * shares the main client's request state, and closes the backend context.
    */
   async withStatefulSession<T>(fn: (client: AdtHttpClient) => Promise<T>): Promise<T> {
     const sessionConfig: AdtHttpConfig = {
@@ -301,7 +303,53 @@ export class AdtHttpClient {
     sessionClient.cookieJar = new Map(this.cookieJar);
     sessionClient.discoveryMap = this.discoveryMap;
     sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
-    return fn(sessionClient);
+    try {
+      return await fn(sessionClient);
+    } finally {
+      await sessionClient.closeStatefulSession();
+    }
+  }
+
+  /** Close the SAP application context without changing the completed operation's result. */
+  private async closeStatefulSession(): Promise<void> {
+    const contextId = this.cookieJar.get('sap-contextid');
+    if (!contextId || contextId === '0') return;
+
+    // Eclipse ADT changes the same context to stateless while sending its dedicated close request.
+    // This client belongs only to withStatefulSession(), so it is not reused after the transition.
+    this.config.sessionType = 'stateless';
+    try {
+      await this.get(
+        ADT_HTTP_SESSIONS_PATH,
+        {
+          Accept: '*/*',
+          'sap-adt-purpose': 'close-session',
+          'sap-contextid': contextId,
+        },
+        {
+          probe: true,
+        },
+      );
+    } catch (error) {
+      let closeError = error;
+      // NW 7.50 predates the dedicated close resource. Its back-ported stateful-header enhancement
+      // still honors a stateless transition on discovery, but returns 400 after resetting the
+      // context. The reset cookie is authoritative; use this only for the endpoint's 404.
+      if (error instanceof AdtApiError && error.statusCode === 404) {
+        try {
+          await this.head('/sap/bc/adt/core/discovery', { Accept: '*/*' }, { probe: true });
+          return;
+        } catch (fallbackError) {
+          if (this.cookieJar.get('sap-contextid') === '0') return;
+          closeError = fallbackError;
+        }
+      }
+      // The write may already be persisted. Cleanup must not turn success into failure or replace
+      // the original callback error; SAP's reference client treats close as best-effort too.
+      logger.warn('Failed to close stateful ADT session.', {
+        error: closeError instanceof Error ? closeError.message : String(closeError),
+      });
+    }
   }
 
   /** Core request method — wraps requestInner with optional concurrency limiter */
@@ -419,8 +467,8 @@ export class AdtHttpClient {
       headers['X-SAP-SAML2'] = 'disabled';
     }
 
-    if (this.config.sessionType === 'stateful') {
-      headers['X-sap-adt-sessiontype'] = 'stateful';
+    if (this.config.sessionType) {
+      headers['X-sap-adt-sessiontype'] = this.config.sessionType;
     }
 
     if (contentType) {
@@ -985,8 +1033,8 @@ export class AdtHttpClient {
       Accept: '*/*',
     };
 
-    if (this.config.sessionType === 'stateful') {
-      headers['X-sap-adt-sessiontype'] = 'stateful';
+    if (this.config.sessionType) {
+      headers['X-sap-adt-sessiontype'] = this.config.sessionType;
     }
 
     if (this.config.disableSaml) {
