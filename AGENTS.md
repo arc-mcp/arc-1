@@ -106,7 +106,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
 | `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
 | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
-| `ARC1_MULTI_TARGET_AUTHORIZATION` | PR #677 candidate: default/unset `legacy`; explicit `xsuaa-attribute` adds verified-user target grants, never fallback. Multi-only; Admin diagnostics do not grant execution. Read ADR-0008 + `docs/plans/xsuaa-target-authorization.md`; auth-library release/live acceptance pending. |
+| `ARC1_MULTI_TARGET_AUTHORIZATION` | PR #677 candidate: default/unset `legacy`; explicit `xsuaa-attribute` adds verified-user target grants, never fallback. Multi-only; Admin diagnostics do not grant execution. Read ADR-0008 + `docs/plans/xsuaa-target-authorization.md`; published `xsuaa-auth` 1.1.0 integrated, live acceptance pending. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |

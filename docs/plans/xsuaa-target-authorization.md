@@ -2,9 +2,11 @@
 
 - **Status:** Accepted specification; implementation/live validation in PR #677
 - **Date:** 2026-08-04
-- **Last revised:** 2026-09-15 (latest-main implementation review; accepted opt-in contract unchanged)
-- **Code baseline reviewed:** `origin/main` at `5bc5310b` (ARC-1 1.2.0;
-  `@arc-mcp/xsuaa-auth ^1.0.2`), not the older dependencies installed in this spec worktree
+- **Last revised:** 2026-09-17 (latest-main and published auth integration review; accepted opt-in contract unchanged)
+- **Code baseline reviewed:** `origin/main` at `31690347` (ARC-1 1.2.0), merged by `2814b8f2`;
+  PR #677 now uses published `@arc-mcp/xsuaa-auth ^1.1.0`, locked to `1.1.0` by `a25d62c6`.
+  Clean-install validation passes; remaining live acceptance is tracked in the
+  [implementation record](../research/2026-09-15-pr677-target-authorization-implementation.md).
 - **Applies to:** experimental BTP Cloud Foundry multi-target mode from
   [ADR-0006](../adr/0006-experimental-read-only-multi-target.md)
 - **Scope:** target visibility and routing authorization for mutation-free XSUAA users
@@ -1098,11 +1100,14 @@ Customer-specific transformations and optional token pruning are not core releas
 The 2026-08-04 live spike created a target-aware role, collection, and IAS group mapping successfully
 in the ARC-1 test subaccount. The final token callback timed out before claim inspection. The
 2026-09-05 isolated probe additionally verified broker create/update and static/IdP role creation,
-not user-token claims. All token, runtime, scale, and MCP-client gates remain open. A previous
+not user-token claims. At that point all token, runtime, scale, and MCP-client gates remained open.
+The September 15 implementation runs subsequently measured several of them; the
+[current validation record](../research/2026-09-15-pr677-target-authorization-implementation.md)
+distinguishes completed evidence from remaining final-build acceptance. A previous
 attempt proved that requesting `user_attributes` as a scope is incorrect for this design because
 XSUAA rejected it as an invalid application scope.
 
-## Final Spec Review and Remaining Evidence
+## Final Spec Review and Remaining Evidence (2026-09-06)
 
 The 2026-09-06 review resolves the product choices for the minimal release: one opt-in; unchanged
 legacy deployments; static roles first; optional IAS provisioning through the same verified claim;
@@ -1114,13 +1119,16 @@ rollout policy; the earlier live-test record remains historical evidence, not a 
 No further product decision is required for the static path. **This is not runtime sign-off.**
 Token classification, grant union and cross-application isolation must be proven before freezing
 the auth-package contract; the rest of the deployed acceptance matrix follows implementation.
-No runtime code, service binding, role assignment or deployed mode is changed by this spec review.
+No runtime code, service binding, role assignment or deployed mode was changed by that spec review.
+Implementation and the published auth-library integration now exist in PR #677; this historical
+review does not supersede the dated implementation evidence above.
 
 ## Open Questions
 
 The opt-in decision is settled; these remaining items require evidence, not more runtime switches.
-Do not freeze the auth-package release or claim customer readiness before the corresponding gate
-passes. No implementation is started by this document update:
+These questions were recorded before implementation. Auth-library 1.1.0 is now published and
+integrated; measured answers and outstanding acceptance gates are maintained in the implementation
+record rather than redefining the contract here. Do not claim customer readiness from publication:
 
 1. **XSUAA union semantics:** confirm the exact scalar/array form when multiple static and IAS-fed
    roles contribute the same attribute and whether refresh tokens immediately reflect changed role

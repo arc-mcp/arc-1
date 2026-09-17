@@ -580,9 +580,9 @@ filtered by user target grants.
 !!! warning "PR #677 implementation candidate — not customer-ready yet"
 
     This section describes the accepted opt-in design and current PR implementation, not a released
-    feature. The companion `@arc-mcp/xsuaa-auth` API release and live acceptance are still pending;
-    the published `1.0.2` dependency is insufficient. Use an isolated maintainer test deployment
-    until the acceptance gates are closed. See the
+    feature. The required companion API is published in `@arc-mcp/xsuaa-auth` 1.1.0 and integrated
+    in this PR's manifest/lockfile; clean-install tests pass. Live acceptance remains incomplete.
+    Use an isolated maintainer test deployment until those gates are closed. See the
     [accepted specification](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/docs/plans/xsuaa-target-authorization.md),
     [ADR-0008](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/docs/adr/0008-opt-in-xsuaa-target-authorization.md), and
     [validation status](https://github.com/arc-mcp/arc-1/blob/codex/xsuaa-target-authorization-spec/docs/research/2026-09-15-pr677-target-authorization-implementation.md).

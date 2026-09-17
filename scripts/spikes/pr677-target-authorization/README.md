@@ -13,7 +13,8 @@ private input; provider `DEBUG` logging is disabled. Run this only in a trusted 
 
 ## Start
 
-1. Build the candidate auth package and ARC-1 deployment. Select an isolated test endpoint with
+1. Run `npm ci` and build ARC-1 with its locked, published `@arc-mcp/xsuaa-auth` 1.1.0 dependency.
+   Select an isolated test endpoint with
    the expected mode and test destinations; do not point destructive role-edit testing at a
    production service.
 2. Put the matching XSUAA binding credentials in an owner-only (`0600`) JSON file **outside the
@@ -33,7 +34,7 @@ private input; provider `DEBUG` logging is disabled. Run this only in a trusted 
    node scripts/spikes/pr677-target-authorization/live-harness.mjs \
      --base-url https://YOUR-ISOLATED-APP.cfapps.YOUR-REGION.hana.ondemand.com/ \
      --credentials-file /private/tmp/arc1-test/credentials.json \
-     --auth-module /tmp/arc1-pr677-xsuaa-auth/dist/index.js
+     --auth-module "$PWD/node_modules/@arc-mcp/xsuaa-auth/dist/index.js"
    ```
 
 To capture an **already-created** service key without displaying its content, use:
@@ -144,7 +145,10 @@ Admin-machine fixture. The default omits `scope` to observe the service client's
   `viewer-no-targets` and `viewer-empty-idp-targets` fixtures to avoid mistaking this distinction
   for an authorization failure.
 - When `allowedTargets` is supplied, `SAPRead(SYSTEM)` runs through aggregate and pinned routes.
-  No application data, SQL, ATC, unit tests, writes or transports are run by this harness.
+  These checks assert response success, **not** independent SAP user/client identity. Correlate
+  with backend identity evidence and a separately approved tiny client-marker query before
+  claiming routing/PP identity acceptance. No application data, SQL, ATC, unit tests, writes or
+  transports are run by this harness.
 - Hidden existing and nonexistent targets are directly called: generic aggregate errors and
   pinned 404 bodies are compared. These tests demonstrate observable behavior; proving that a
   denied call made **zero outbound SAP/destination calls** additionally requires server-side

@@ -1,30 +1,65 @@
 # PR #677 — Target Authorization Implementation and Validation
 
-Status: implemented and locally reviewed; **live acceptance and portable dependency integration
-remain incomplete. Do not merge/deploy to a customer yet.**
+Status (2026-09-17): implemented and locally reviewed; **published dependency integration is
+complete, but live acceptance remains incomplete. Do not merge/deploy to a customer yet.**
 
 ## Baseline and scope
 
 - PR: <https://github.com/arc-mcp/arc-1/pull/677>
-- Latest main reviewed and merged: `5bc5310b` (2026-09-15); merge `96b3f381`.
+- Latest main reviewed and merged: `31690347` (2026-09-17); merge `2814b8f2`.
 - Accepted contract: [XSUAA target authorization](../plans/xsuaa-target-authorization.md).
 - Architectural qualification: [ADR-0008](../adr/0008-opt-in-xsuaa-target-authorization.md).
-- Runtime dependency: additive `@arc-mcp/xsuaa-auth` verified-attribute/principal API. The published
-  `1.0.2` does not provide it. A local candidate is used for tests; release/portable dependency
-  integration must be resolved before this PR is merge-ready.
+- Runtime dependency: published `@arc-mcp/xsuaa-auth ^1.1.0`, locked to `1.1.0` by `a25d62c6`.
+  This provides the additive verified-attribute/principal API; the former `1.0.2` did not.
 
-The companion candidate is in [xsuaa-auth PR #70](https://github.com/arc-mcp/xsuaa-auth/pull/70),
-branch `codex/verified-xsuaa-user-attributes`, implementation commit
-`32d32b4338f787a0f541421d3fbeb4c23aafb0ab`. Its Node 22/24, peer-floor/matrix, CodeQL and Socket
-checks passed. It is not merged or published. ARC-1's committed manifest/lockfile still select the published dependency:
-**a clean `npm ci` is not yet a reproducer for this implementation**. Tests and the isolated CF
-bundle explicitly used the local candidate without adding a machine-specific dependency to the
-repository. Publish/integrate the companion and repeat clean-install CI before removing this gate.
+The companion [xsuaa-auth PR #70](https://github.com/arc-mcp/xsuaa-auth/pull/70) is merged and
+published as 1.1.0 (npm `gitHead` `1e92a059a3b80341907eece82826c997eb64a1d3`). Registry metadata,
+tarball integrity and the installed API were checked. **A clean `npm ci` now reproduces the
+implementation without a local tarball or package override.** The September 15 live results below
+remain historical candidate-build evidence; they are not silently relabeled as final 1.1.0 runs.
 
 Main's newer instruction builder, tool-discovery filtering and runtime startup paths were reviewed.
 Caller authorization must precede construction, selected configs must preserve the opt-in, and the
 mixed-route guard must run before any startup network operation. Existing relation/tool-family
 restrictions remain in force.
+
+## Published-dependency integration — 2026-09-17
+
+Source candidate: `a25d62c680982fa4769f21ac8701ca161366f3c8`, based on main `31690347`.
+The only merge conflict was the HTTP startup return signature: main's returned `http.Server`
+for graceful shutdown was retained together with the feature's authorization-mode initialization.
+Shutdown, audit-sink and data-policy changes from main were not reverted.
+
+- Clean `npm ci` on Node 24.11.1 resolved registry auth 1.1.0; audit reported zero vulnerabilities.
+- **7,021 unit/HTTP tests in 231 files passed**. Typecheck, build, size/schema budgets, action-policy
+  validation, all six BTP descriptor profiles and strict MkDocs build passed.
+- **21 harness self-tests passed**. Lint exited successfully with three existing informational
+  notices; unrelated formatting/configuration changes were not included.
+- A frozen security diff review of `31690347..a25d62c6` covered all **33 changed source/config/harness
+  inventory entries**, using the supplied security model and independent catalog/runtime and
+  harness/descriptor reviews. No reportable candidate was found. This is source-review coverage,
+  not proof of live IAM freshness, SAP identity or customer rollout readiness.
+- Rebuilt an explicit runtime-only staging directory from the reviewed `dist`, `bin`, manifest and
+  lockfile. No local auth tarball, vendor override, `.env`, private fixture or credential file was
+  included. Only the isolated app `arc1-ta-677-test` and its previously approved spare route were
+  redeployed; no shared XSUAA service, destination, IAS membership or other app was changed.
+- CF staged successfully with Node **24.19.0**, Node buildpack **1.9.4**, one 384 MiB instance,
+  registry dependencies and zero reported npm vulnerabilities. Startup logs confirmed enforced
+  mode and a complete available registry: **four active, one quarantined, zero disabled**.
+- **44 unauthenticated live assertions passed**: health; missing/invalid bearer rejection on
+  aggregate, pinned existing/unknown and `/authorize` compatibility paths; final private/no-store
+  cache headers; and exactly the four mutation-free advertised OAuth scopes. A repeat also passed.
+- The restored isolated descriptor still refuses machine-token issuance: HTTP 401 `invalid_client`
+  with a grant-type rejection, not bad credentials. The retained key matched a fresh CF key read.
+  This is an issuance control, **not** a fresh runtime machine-principal rejection pass.
+- IAS administration is accessible and the canonical `A4H/100` test group remains empty after
+  cleanup. Two BTP role-list attempts timed out before backend execution; a new CLI login was
+  requested. CF SSH readback was unavailable due to authorization, so the deployment evidence is
+  the reviewed bundle/lockfile and successful staging, not a claimed remote `npm ls` result.
+
+The harness's positive SYSTEM assertions prove response success only. Independent SAP user and
+client-marker evidence remains required. Remote CI and the authenticated final-build matrix are
+tracked separately; neither is inferred from these local and unauthenticated checks.
 
 ## Evidence strategy
 
@@ -387,8 +422,8 @@ alone is not evidence of end-to-end behavior.
 The static-grant, primary-user capability, issued-value scale and machine/wrong-app cases above
 are already measured. The remaining work, in order, is:
 
-1. Review/release the companion candidate, integrate a registry dependency and lockfile in ARC,
-   then repeat a clean install and CI. Do not merge either candidate merely to make CI appear green.
+1. Published auth 1.1.0 integration and clean local install/tests are complete. Confirm remote CI
+   on the latest PR push and replay the authenticated matrix on the registry-based deployed build.
 2. Complete the remaining secondary-user matrix; disjoint two-human concurrency now passed.
    Verify the actual mapped SAP user/client through an independently observed backend identity/marker.
 3. IAS-only, static+IAS, nonmatching-group exclusion and fresh-session group-removal denial now
