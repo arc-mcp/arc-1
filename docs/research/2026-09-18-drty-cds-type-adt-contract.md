@@ -180,8 +180,15 @@ Afterwards: TADIR row gone, metadata GET still **200** with `version="active"` a
 removed through ADT at all: DELETE → 409 `CTS_WBO_API018 "Object R3TR DRTY … cannot be created
 without a package"` (CTS cannot record a deletion for an object with no directory entry), and
 create → 400 `does already exist`. Deleting CHILD afterwards does not unblock it. `SAPSearch` no
-longer finds it (TADIR-based); `SAPRead` still does. Recovery needs SAP GUI: restore the directory
-entry (SE03 → Object Directory Entry, or `RS_TADIR_INTERFACE`), then delete.
+longer finds it (TADIR-based); `SAPRead` still does.
+
+Recovery, verified: restore the directory entry with function module `TR_TADIR_INTERFACE` in SE37
+(`WI_TADIR_PGMID=R3TR`, `WI_TADIR_OBJECT=DRTY`, `WI_TADIR_OBJ_NAME`, `WI_TADIR_DEVCLASS=$TMP`,
+`WI_TADIR_AUTHOR`, `WI_TADIR_SRCSYSTEM`, `WI_TADIR_MASTERLANG=E`) and **clear `WI_TEST_MODUS`** — its
+signature says `DEFAULT 'X'`, so a run with the default validates and writes nothing. Once the row is
+back the metadata carries `packageRef` again and a normal `SAPWrite delete` succeeds (read → 404).
+Neither SE03 nor `RS_TADIR_INTERFACE` (absent on 816; `TR_TADIR_INTERFACE` in `SAPLSTRD` is the one
+that exists) worked on this trial.
 
 This is SAP-side behaviour — a type without dependents deletes cleanly and reads 404 afterwards, as
 the same matrix shows — but ARC-1's SDO delete does no readback, so the partial deletion surfaces as
@@ -189,7 +196,7 @@ a plain success. The existing `resourceExistenceAfterDelete` follow-up probe in
 `src/handlers/write/update-delete.ts` only runs when DELETE *fails* with 404. Not fixed here: it is
 engine-level (every SDO type, plausibly every DDIC type) and needs a decision between a pre-delete
 where-used refusal (Eclipse's approach; prevents the orphan) and a post-delete existence check
-(reports it). Left as a follow-up. The orphan `ZARC1_DRTY_BASE` remains on the trial.
+(reports it). Left as a follow-up.
 
 **3. Package gate wording.** With `SAP_ALLOWED_PACKAGES=*` the gate still refuses an object whose
 metadata carries no `packageRef`, with "Fail-closed because allowedPackages is restricted". The
@@ -198,6 +205,7 @@ refusal is right (the package cannot be verified); the wording is misleading whe
 
 ### Test-object hygiene
 
-All `ZARC1_DRTY_*` objects created by the matrix were deleted and confirmed absent, except
-`ZARC1_DRTY_BASE` (orphan, see finding 2) and the TADIR row of `ZARC1_DRTY_B3` with `DELFLAG=X`,
+All `ZARC1_DRTY_*` objects created by the matrix were deleted and confirmed absent — including
+`ZARC1_DRTY_BASE` after the TADIR repair described in finding 2. The only remaining trace is the
+TADIR row of `ZARC1_DRTY_B3` with `DELFLAG=X`,
 which is the normal state of a deletion recorded in an unreleased transport (`A4HK900162`).
