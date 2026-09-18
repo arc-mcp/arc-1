@@ -397,7 +397,8 @@ npm run btp:build-deploy-ext
 The deployment creates/updates:
 
 - `arc1-mcp-server`, one 512 MB process by default;
-- XSUAA with ARC-1 scopes, templates, and seven space-qualified role collections;
+- XSUAA with ARC-1 scopes, templates, and eight space-qualified role collections (seven functional
+  collections plus the unassigned `ARC-1 All Targets` collection in the PR #677 candidate);
 - Destination and Connectivity service instances and bindings;
 - the Audit Log premium instance and X.509 binding only when `arc1-auditlog` is activated; and
 - a health check on `/health`.
@@ -438,11 +439,16 @@ See [BTP Administration](btp-administration.md#dcr-signing-secret) for lifecycle
 As User and Role Administrator:
 
 1. Open **BTP Cockpit → Security → Role Collections**.
-2. Find all seven collections for the CF space, for example `ARC-1 Viewer (dev)` through
-   `ARC-1 Admin (dev)`.
+2. Find the seven functional collections for the CF space, for example `ARC-1 Viewer (dev)` through
+   `ARC-1 Admin (dev)`. This candidate also defines an eighth, `ARC-1 All Targets (dev)`.
 3. Open each collection and confirm its **Roles** tab contains the expected current
    `arc1-mcp-<space>!t...` application role.
 4. Assign `ARC-1 Viewer (<space>)` to the initial test user before their first login.
+
+Leave `ARC-1 All Targets (<space>)` unassigned unless explicitly approved: it grants `read` and
+literal `*`, including future targets. It is not a harmless catalog-viewer role. For restricted
+target users, follow the [opt-in setup order](multi-target-setup.md#optional-target-authorization)
+instead of step 4: verify enforcement before assigning any role that supplies `read`.
 
 Do not stop after seeing the role templates under **Roles**. Older/recreated XSUAA deployments can
 have missing or orphaned collections. A collection with an empty **Roles** tab grants nothing. See
@@ -604,7 +610,8 @@ cf push -f <reviewed-customer-manifest.yml>
 
 This is an advanced alternative. Validate it against `mta.yaml`, `xs-security.json`, the selected
 single/multi startup contract, the MTAR secret exclusions, and the acceptance checklist. A raw
-buildpack push does not create the seven MTA role collections for you.
+buildpack push does not create the MTA role collections for you (seven functional plus the
+candidate's unassigned All Targets collection).
 
 ## Troubleshooting deployment
 

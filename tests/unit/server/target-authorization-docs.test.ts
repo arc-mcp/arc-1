@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { TARGET_CATALOG_MAX_RESULT_BYTES } from '../../../src/server/multi-target-catalog-enforced.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
-// Prose assertions must not require incidental Markdown line wrapping.
-const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8').replace(/\s+/g, ' ');
+// Presence/link checks are smoke tests, not a semantic review of arbitrary prose.
+// Preserve paragraph boundaries; pin complete normative paragraphs/rows below.
+const paragraphs = (text: string) => text.split(/\r?\n\s*\r?\n/).map((part) => part.replace(/\s+/g, ' ').trim());
+const read = (path: string) =>
+  paragraphs(readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8')).join('\n\n');
+const hasParagraph = (text: string, expected: string) => paragraphs(text).includes(expected);
 const setup = read('docs_page/multi-target-setup.md');
 const admin = read('docs_page/multi-target-administration.md');
 const auth = read('docs_page/authorization.md');
@@ -30,7 +34,12 @@ describe('target authorization operator documentation', () => {
 
   it('documents the unchanged default and deliberate multi-only opt-in rather than automatic migration', () => {
     expect(DEFAULT_CONFIG.multiTargetAuthorization).toBe('legacy');
-    expect(setup).toContain('Unset or explicit `legacy` leaves existing behavior unchanged');
+    expect(
+      hasParagraph(
+        setup,
+        'Unset or explicit `legacy` leaves existing authorization, paging and tool visibility unchanged. Display-label sanitization applies in both modes; see the [compatibility note](multi-target-administration.md#enforced-catalog-differences).',
+      ),
+    ).toBe(true);
     expect(setup).toContain('ARC1_MULTI_TARGET_AUTHORIZATION: xsuaa-attribute');
     expect(setup).toContain('SAP_BTP_PP_DESTINATION');
     expect(admin).toContain('before startup destination lookups or SAP probes');
@@ -48,6 +57,12 @@ describe('target authorization operator documentation', () => {
     expect(setup).toContain('deployment assigns it to');
     expect(setup).toContain('nobody. Combine it with Data, SQL or Admin collections');
     expect(auth).toContain('do not create SAP users, prove PP access, or enable multi-target writes');
+    expect(
+      hasParagraph(
+        setup,
+        '**All targets is an explicit IAM assignment.** The separate `ARC-1 All Targets (<space>)` collection contributes literal `*`, including future configured targets, and `read`; deployment assigns it to nobody. Combine it with Data, SQL or Admin collections only when needed. Do not use `A4H/*`, regular expressions, or XSUAA **Unrestricted**. Existing functional collections do not acquire target grants; Admin sees operator diagnostics but cannot execute on an ungranted target.',
+      ),
+    ).toBe(true);
   });
 
   it('documents actual bounded unpaged catalog and token/client refresh limitations', () => {
@@ -70,11 +85,34 @@ describe('target authorization operator documentation', () => {
     expect(admin).toContain('Available only with more than one granted active target');
     expect(admin).toContain('Calling the unlisted catalog directly returns `UNKNOWN_TOOL`');
     expect(admin).toContain('Available at zero/one/many grants');
+    expect(
+      hasParagraph(
+        admin,
+        'At zero granted active targets, a reader receives `tools: []` and only a caller-specific no-target explanation. At one, SAP tool schemas contain the one exact target, still required on each call, but no `SAPTargets`. Calling the unlisted catalog directly returns `UNKNOWN_TOOL`; it cannot reveal whether another user has more targets. Existing deny-actions also apply, including to Admin.',
+      ),
+    ).toBe(true);
     expect(developerGuide).toContain('Enforced readers get the tool only with more than one granted active target');
     for (const page of [setup, admin, developerGuide]) {
       expect(page).not.toMatch(
         /Enforced readers always|always provides aggregate `SAPTargets`|including zero\/one grants/,
       );
     }
+  });
+
+  it('does not let negation or cross-paragraph joining satisfy a normative paragraph', () => {
+    const contract = 'Readers see only granted targets.';
+    expect(hasParagraph('Readers see only\ngranted targets.', contract)).toBe(true);
+    expect(hasParagraph(`It is not true that ${contract}`, contract)).toBe(false);
+    expect(hasParagraph('Readers see only\n\ngranted targets.', contract)).toBe(false);
+    expect(hasParagraph(`${contract} This rule does not apply.`, contract)).toBe(false);
+  });
+
+  it('points operators to the extra unassigned collection and audit-only grant diagnostics', () => {
+    const runbook = read('docs_page/btp-cloud-foundry-deployment.md');
+    expect(runbook).toContain('eight space-qualified role collections');
+    expect(runbook).toContain('Leave `ARC-1 All Targets (<space>)` unassigned unless explicitly approved');
+    expect(read('docs_page/xsuaa-setup.md')).toContain('**eight collections in total**');
+    expect(admin).toContain('`TARGET_NOT_GRANTED` | Operator audit only');
+    expect(admin).toContain('One invalid value rejects the **whole** grant set');
   });
 });

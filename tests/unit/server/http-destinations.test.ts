@@ -69,6 +69,20 @@ function mockRes() {
 }
 
 describe('multi-target HTTP helpers', () => {
+  it.each([undefined, '', 'unknown', null])('both factories reject invalid mode %s before use', (mode) => {
+    const routing = {
+      registry: registry(),
+      authorizationMode: mode,
+      aggregateFactory: vi.fn(),
+      createPinnedServer: vi.fn(),
+    };
+    for (const factory of [createPinnedTargetMcpHandler, createAggregateMcpHandler]) {
+      expect(() => factory(routing as never)).toThrow('requires an explicit authorization mode');
+    }
+    expect(routing.aggregateFactory).not.toHaveBeenCalled();
+    expect(routing.createPinnedServer).not.toHaveBeenCalled();
+  });
+
   it('advertises only the scopes usable on read-only multi-target routes', () => {
     expect(MULTI_TARGET_SCOPES_SUPPORTED).toEqual(['read', 'data', 'sql', 'admin']);
     expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('write');

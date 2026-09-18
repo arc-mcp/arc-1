@@ -2,7 +2,7 @@
 
 - **Status:** Accepted specification; implementation/live validation in PR #677
 - **Date:** 2026-08-04
-- **Last revised:** 2026-09-17 (latest-main and published auth integration review; accepted opt-in contract unchanged)
+- **Last revised:** 2026-09-18 (review follow-up: rollout ordering, diagnostics and display compatibility)
 - **Code baseline reviewed:** `origin/main` at `31690347` (ARC-1 1.2.0), merged by `2814b8f2`;
   PR #677 now uses published `@arc-mcp/xsuaa-auth ^1.1.0`, locked to `1.1.0` by `a25d62c6`.
   Clean-install validation passes; remaining live acceptance is tracked in the
@@ -18,7 +18,7 @@
 Add **opt-in target authorization**, leaving existing deployments unchanged on upgrade:
 
 ```dotenv
-# Explicit opt-in, only after provisioning and testing target roles.
+# Prepare roles unassigned; enable and verify before assigning restricted users.
 ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute
 ```
 
@@ -43,7 +43,9 @@ existing functional scope (read, data, sql, admin)
 
 Target grants restrict where an existing functional capability may be used. They do not expand
 `data`, `sql`, or `admin`, and they must never be reused as authorization for future writes. The
-feature is additive: single-target deployments and legacy multi-target deployments remain unchanged.
+feature is additive: single-target behavior and legacy multi-target authorization remain unchanged.
+Shared display-label hardening strips Unicode format controls in both modes; affected descriptions
+and snapshot fingerprints/revisions can change. No grant or routing semantics change in legacy mode.
 Throughout the remaining target-grant sections, requirements apply to `xsuaa-attribute` mode unless
 explicitly stated otherwise. Existing safety controls still apply in both modes.
 
@@ -72,8 +74,10 @@ behavior. The two-template choice replaces the previous draft's unsafe default-`
 ### Simple first release, optional complexity later
 
 The minimum deployment uses the **existing CF app, existing XSUAA service, one exact-target role
-and one collection**, directly assigned to a pilot user. Static values need no IAS change. Add the
-descriptor artifacts, verify a fresh application token, then enable the one setting. Existing
+and one collection**. Static values need no IAS change. Prepare the descriptor and roles unassigned,
+enable and verify enforcement on every serving process, then assign the restricted pilot user and
+verify a fresh application token. Target roles supply global `read`, so pre-assignment on a legacy
+endpoint can expose every target. An isolated pilot needs its own app/XSUAA identity. Existing
 multi-only deployments do not need a second app, database, additional service, or new OAuth scope.
 
 | First release: required | Optional adoption / deliberately excluded complexity |
@@ -916,7 +920,8 @@ or authorized with these mutation-free grants; they require their separate revie
 
 Recommended rollout:
 
-1. upgrade in legacy mode and verify unchanged behavior. Inventory bound consumers, existing role
+1. upgrade in legacy mode and verify unchanged authorization behavior. Review the display-label
+   compatibility note above. Inventory bound consumers, existing role
    assignments, IdP origins, token lifetime, mixed routes and total ARC-related candidates;
 2. rehearse the additive descriptor update on an isolated XSUAA instance with existing assigned
    roles, then apply the compatible artifacts. The ARC-1 release may ship both descriptor and
@@ -1095,7 +1100,7 @@ Customer-specific transformations and optional token pruning are not core releas
    separate later spike may test `oauth2-configuration.system-attributes: []` if redundant groups/
    collections dominate token size; do not change that configuration in this feature;
 8. unrelated IAS groups do not enter the dedicated `arc1_targets` application attribute;
-9. Viewer, Data, SQL, and Admin behavior, opt-in schema refresh and unchanged legacy behavior are
+9. Viewer, Data, SQL, and Admin behavior, opt-in schema refresh and unchanged legacy authorization are
    verified in MCP Inspector, VS Code/Copilot, Cursor, and one additional supported client;
 10. the exact sign-out/reconnect procedure is verified for a revoked and newly granted user;
 11. explicit `*` plus exact/static/IAS roles stays all-target, while missing, empty, malformed,

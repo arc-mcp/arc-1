@@ -244,6 +244,49 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
     },
   );
 
+  it.each([
+    [undefined, 'missing', 'TARGET_GRANT_MISSING'],
+    [['A4H/000', 'A4H/001\u00a0'], 'valid', 'TARGET_GRANT_MALFORMED'],
+    [undefined, 'limit_exceeded', 'TARGET_GRANT_LIMIT_EXCEEDED'],
+  ])('audits empty grant projections during discovery without revealing values: %s', async (values, status, code) => {
+    await start();
+    const token = addUser(values, ['read'], status as string);
+    const audit = vi.mocked(logger.emitAudit);
+    audit.mockClear();
+    for (const path of ['/multi/mcp', '/authorize']) {
+      audit.mockClear();
+      const handshake = await initialize(token, path);
+      expect(audit.mock.calls.filter(([event]) => event.event === 'target_resolution_failed')).toHaveLength(1);
+      expect(await list(token, path)).toEqual([]);
+      const entries = audit.mock.calls
+        .map(([event]) => event)
+        .filter((event) => event.event === 'target_resolution_failed' && event.errorCode === code);
+      expect(entries).toHaveLength(2);
+      for (const event of entries) {
+        expect(event).toMatchObject({ event: 'target_resolution_failed', tool: 'aggregate-mcp', grantMode: 'none' });
+        expect(event.target).toBeUndefined();
+        expect(event.requestId).toBeTruthy();
+        expect(JSON.stringify(event)).not.toContain('A4H/');
+        expect(JSON.stringify(event)).not.toContain(token);
+      }
+      expect(handshake.instructions).not.toContain(code);
+    }
+  });
+
+  it.each(['legacy', 'xsuaa-attribute'] as const)(
+    'does not audit valid discovery as a grant denial in %s',
+    async (mode) => {
+      await start(makeRegistry(), { ...CONFIG, multiTargetAuthorization: mode });
+      vi.mocked(logger.emitAudit).mockClear();
+      const token = addUser(['A4H/000']);
+      await initialize(token);
+      expect((await list(token)).length).toBeGreaterThan(0);
+      expect(vi.mocked(logger.emitAudit).mock.calls.some(([event]) => event.event === 'target_resolution_failed')).toBe(
+        false,
+      );
+    },
+  );
+
   it('isolates single-target initialize instructions across interleaved and concurrent users', async () => {
     await start();
     const first = addUser(['A4H/000']);
@@ -537,6 +580,7 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
     const token = addUser('*', ['read', 'admin']);
     expect(await list(token)).toEqual([]);
     expect((await initialize(token)).instructions).not.toContain('A4H/');
+    expect(payload(await call(token, 'SAPTargets')).error).toBe('INSUFFICIENT_SCOPE');
     expect(payload(await call(token, 'SAPRead', { target: 'A4H/000', type: 'PROG', name: 'ZTEST' })).error).toBe(
       'INSUFFICIENT_SCOPE',
     );

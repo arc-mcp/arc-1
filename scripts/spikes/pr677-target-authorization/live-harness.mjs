@@ -17,7 +17,7 @@ import {
   safeFailure,
   validateBaseUrl,
 } from './safe-io.mjs';
-import { reserveSessionLabel } from './session-labels.mjs';
+import { forgetSessionLabel, reserveSessionLabel } from './session-labels.mjs';
 
 // Provider debug output can contain user identifiers. Import SDKs only after disabling it.
 process.env.DEBUG = '';
@@ -25,7 +25,7 @@ const emit = (event, details = {}) =>
   process.stdout.write(`${JSON.stringify({ event, at: new Date().toISOString(), ...details })}\n`);
 const sessions = new Map();
 const pending = new Map();
-const reservedLabels = new Set();
+const reservedLabels = new Map();
 let server;
 let input;
 let stopping = false;
@@ -202,6 +202,7 @@ async function main() {
       });
       if (registered.status !== 201 || typeof registered.json?.client_id !== 'string')
         throw new HarnessError('DCR_REGISTRATION_FAILED', registered.status);
+      if (stopping) throw new HarnessError('HARNESS_STOPPED');
       const entry = {
         label: sessionLabel,
         verifier,
@@ -273,7 +274,7 @@ async function main() {
         code_verifier: entry.verifier,
       });
       if (stopping) throw new HarnessError('HARNESS_STOPPED');
-      sessions.set(entry.label, {
+      entry.release.commit({
         token,
         clientId: entry.clientId,
         scenarioPath: entry.scenarioPath,
@@ -320,10 +321,11 @@ async function main() {
       return;
     }
     if (action.command === 'forget') {
-      sessions.delete(label(action.label));
+      forgetSessionLabel(action.label, sessions, reservedLabels, pending);
       emit('session_forgotten', {
         label: action.label,
-        warning: 'Memory cleared only; this does not revoke an issued token.',
+        warning:
+          'Stored session and pending login cancelled; issued tokens and already-running requests are not revoked.',
       });
       return;
     }
@@ -335,7 +337,7 @@ async function main() {
       if (action.command === 'import-token') {
         const token = await privateJson(action.file);
         if (typeof token.access_token !== 'string') throw new HarnessError('INVALID_TOKEN_FILE');
-        sessions.set(nextLabel, {
+        release.commit({
           token,
           clientId: token.client_id,
           scenarioPath: action.scenario,
@@ -343,7 +345,7 @@ async function main() {
         });
       } else if (action.command === 'client-credentials') {
         const token = await clientCredentialsToken(credentials, action.scopes);
-        sessions.set(nextLabel, { token, scenarioPath: action.scenario, created: Date.now() });
+        release.commit({ token, scenarioPath: action.scenario, created: Date.now() });
       } else {
         const previous = sessions.get(label(action.label));
         if (!previous) throw new HarnessError('SESSION_NOT_FOUND');
@@ -366,7 +368,7 @@ async function main() {
             },
           );
         } else throw new HarnessError('UNKNOWN_COMMAND');
-        sessions.set(nextLabel, {
+        release.commit({
           token,
           clientId: previous.clientId,
           scenarioPath: action.scenario ?? previous.scenarioPath,
@@ -422,6 +424,7 @@ function stop() {
   stopping = true;
   for (const entry of pending.values()) clearTimeout(entry.timer);
   pending.clear();
+  reservedLabels.clear();
   sessions.clear();
   input?.close();
   server?.close();

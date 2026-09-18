@@ -298,6 +298,15 @@ export function createAggregateMcpHandler(multi: MultiTargetRouting) {
         res.status(403).json({ error: 'forbidden' });
         return;
       }
+      // Zero-grant readers have no tool with which to trigger a targeted denial.
+      // Diagnose their own grant during discovery without exposing claims or inventory.
+      if (
+        projection.grant.mode === 'none' &&
+        req.method === 'POST' &&
+        (req.body?.method === 'initialize' || req.body?.method === 'tools/list')
+      ) {
+        auditTargetGrantDenial(projection.grant, req.auth, generateRequestId(), 'aggregate-mcp');
+      }
     }
     await serveMcpRequest(() => (projection ? multi.aggregateFactory(projection) : multi.aggregateFactory()), req, res);
   };

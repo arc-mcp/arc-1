@@ -59,8 +59,10 @@ The included `xs-security.json` defines 7 scopes:
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
 The MTA defines the seven existing functional role collections below (assignable in BTP Cockpit).
-The PR #677 target-authorization candidate adds a separate, unassigned All Targets collection;
-it does not change these seven assignments or enable enforcement automatically. The manual
+The PR #677 target-authorization candidate defines **eight collections in total**, adding a
+separate, unassigned All Targets collection. It grants `read` and literal `*`, including future
+targets; leave it unassigned unless explicitly approved. It does not change the seven functional
+assignments or enable enforcement automatically. The manual
 `create-service` command above reads only `xs-security.json`; it does not apply the collections in
 `mta.yaml`. A manual owner must create the required collections and add the current application
 roles before assigning users.
@@ -92,8 +94,9 @@ roles before assigning users.
 > `cf update-service arc1-xsuaa -c xs-security.json` updates the scopes and role
 > templates only. It does **not** create role collections declared in
 > `mta.yaml`. Agree on lifecycle ownership before adopting the MTA, then
-> verify in **Security → Role Collections** that all seven collections exist and
-> contain the expected roles. This matters especially for older deployments:
+> verify in **Security → Role Collections** that all seven functional collections exist and
+> contain the expected roles. With this candidate, also verify the eighth All Targets collection
+> and leave it unassigned by default. This matters especially for older deployments:
 > seeing `MCPViewer`, `MCPDataViewer`, or `MCPSqlUser` under **Roles** does not
 > mean the corresponding assignable role collections already exist.
 

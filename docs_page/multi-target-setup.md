@@ -634,7 +634,10 @@ users. An isolated pilot needs its own app/XSUAA identity, not a second route to
    The latter must be denied without a SAP call. Repeat with a second, disjoint user; verify PP/SAP
    identity separately. A grant is not proof of backend access.
 
-Unset or explicit `legacy` leaves existing behavior unchanged. Empty/unknown mode values fail
+Unset or explicit `legacy` leaves existing authorization, paging and tool visibility unchanged.
+Display-label sanitization applies in both modes; see the [compatibility note](multi-target-administration.md#enforced-catalog-differences).
+
+Empty/unknown mode values fail
 configuration; a missing or malformed grant in `xsuaa-attribute` mode never falls back to legacy.
 Here, unset means absent from the effective runtime configuration, not merely deleted from an
 MTA extension. For an approved CF rollback, write `ARC1_MULTI_TARGET_AUTHORIZATION: legacy`
