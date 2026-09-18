@@ -583,9 +583,9 @@ filtered by user target grants.
     feature. The required companion API is published in `@arc-mcp/xsuaa-auth` 1.1.0 and integrated
     in this PR's manifest/lockfile; clean-install tests pass. Live acceptance remains incomplete.
     Use an isolated maintainer test deployment until those gates are closed. See the
-    [accepted specification](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/docs/plans/xsuaa-target-authorization.md),
-    [ADR-0008](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/docs/adr/0008-opt-in-xsuaa-target-authorization.md), and
-    [validation snapshot](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/docs/research/2026-09-15-pr677-target-authorization-implementation.md).
+    [accepted specification](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/docs/plans/xsuaa-target-authorization.md),
+    [ADR-0008](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/docs/adr/0008-opt-in-xsuaa-target-authorization.md), and
+    [validation snapshot](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/docs/research/2026-09-15-pr677-target-authorization-implementation.md).
     These links pin the reviewed candidate; see [PR #677](https://github.com/arc-mcp/arc-1/pull/677)
     for subsequent changes and readiness updates.
 
@@ -619,7 +619,7 @@ users. An isolated pilot needs its own app/XSUAA identity, not a second route to
    ```
 
    It belongs under the app's `modules[].properties`. The optional
-   [`target-authorization.mtaext` overlay](https://github.com/arc-mcp/arc-1/blob/58265f2ee66e177225dcc6d53ce9aad6f59fa38f/examples/btp/multi-pp/target-authorization.mtaext)
+   [`target-authorization.mtaext` overlay](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/examples/btp/multi-pp/target-authorization.mtaext)
    supplies exactly this property after the conservative multi-PP profile. On CF, `.env` is not
    deployed. Verify the effective mode on every serving process after deployment. For an existing
    shared route, quiesce legacy replicas before cutover; do not serve both modes during rollout.
