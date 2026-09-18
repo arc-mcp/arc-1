@@ -502,6 +502,12 @@ support tickets.
 
 Only the opt-in candidate changes this contract; legacy paging and tool visibility stay unchanged.
 
+**Display compatibility note (both modes):** destination labels remove Unicode control/format
+characters before display. Ordinary labels are unchanged. A previously accepted label containing
+invisible format characters can therefore change its normalized description, target fingerprint
+and published `registry.revision` on upgrade. This is intentional display hardening, not an IAM
+grant or routing-policy change; revision strings are snapshot identifiers, not stable target IDs.
+
 | Audience | `SAPTargets` in enforced mode |
 |---|---|
 | Reader | Available only with more than one granted active target on the aggregate route. Returns only those targets' IDs, descriptions and identity labels. No hidden counts or rejected inventory. |
@@ -569,6 +575,7 @@ ARC-1 reports the proven failure stage without exposing raw SAP responses:
 |---|---|
 | Generic target unavailable/denied | Enforced mode intentionally does not distinguish an unknown ID from an ungranted ID. Use a trusted Admin session and the request ID to diagnose; never probe other IDs as a workaround. |
 | `TARGET_GRANT_MISSING` / `TARGET_GRANT_MALFORMED` / `TARGET_GRANT_LIMIT_EXCEEDED` | Safe Admin/audit decision: check the correct application's role source/values, missing versus Unrestricted attribute, exact ID format and the 256 unique-grant bound. Fresh sign-in after IAM repair; no fallback to legacy. |
+| `TARGET_NOT_GRANTED` | Operator audit only: the user's valid grant set does not include the requested target. The caller still gets a generic unavailable/denied response; this code does not prove the target exists. Distinguish this ARC-1 decision from downstream PP/SAP failures. |
 | `BASIC_CREDENTIALS_MISSING` | The authoritative request-time Find result has no usable `User`/`Password`. Repair the destination and retry without restart. |
 | `BASIC_CREDENTIALS_INVALID` | The Basic username contains `:` or surrounding whitespace. Correct the destination and retry without restart. |
 | `DESTINATION_AUTH_SETUP_FAILED` | Destination Find or Basic request-client preparation failed safely before ADT. Check the request ID and Destination/Connectivity health; retry only when transient or after repair. |
@@ -582,6 +589,14 @@ ARC-1 reports the proven failure stage without exposing raw SAP responses:
 | `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary had a network, timeout, 429, SAP 5xx, or unrecognized non-login 2xx response. The credential generation is not poisoned; check SAP/intermediary health, then retry. |
 | `TARGET_POLICY_DENIED` | Data/SQL is not enabled at every ARC-1 policy layer. |
 | `TARGET_CONFIG_CHANGED` | A non-secret destination field no longer matches the startup snapshot. Review it and restart. Basic `User`/`Password` rotation alone does not cause this error. |
+
+For empty reader tool lists, inspect `target_resolution_failed` audit events with
+`tool: "aggregate-mcp"` during `initialize` or `tools/list` (including the Copilot alias).
+The safe `errorCode` distinguishes missing, malformed and over-limit grants without logging raw
+attribute values. An unrelated valid grant naming an inactive/unknown target is not malformed.
+One invalid value rejects the **whole** grant set, even alongside `*`; a trailing non-breaking
+space is invalid, not silently trimmed. Re-enter exact ASCII IDs in IAM, obtain a fresh token and
+retry. Admin catalog summaries describe the calling Admin's grants, not another user's token.
 
 PP setup success is not proof of SAP login. PP/per-user access failures are deliberately not
 cached: after Basis fixes mapping or authorization, the user can say “try again now” in the same

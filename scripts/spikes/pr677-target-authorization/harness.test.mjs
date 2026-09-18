@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +19,7 @@ import {
   safeFailure,
   validateBaseUrl,
 } from './safe-io.mjs';
-import { reserveSessionLabel } from './session-labels.mjs';
+import { forgetSessionLabel, reserveSessionLabel } from './session-labels.mjs';
 
 test('all maintained harness entry points parse without running live requests', async () => {
   for (const file of await readdir(new URL('.', import.meta.url))) {
@@ -45,11 +47,28 @@ test('runtime diagnostic channels that could disclose credentials are rejected b
       code: 'UNSAFE_RUNTIME_DIAGNOSTICS',
     });
   }
+  for (const flag of [
+    '--heapsnapshot-signal=SIGUSR2',
+    '--heapsnapshot_near_heap_limit=1',
+    '--heap-snapshot-on-oom',
+    '--heap_snapshot_on_gc=1',
+    '--heap-prof',
+    '--cpu_prof',
+    '--prof',
+    '--report-on-signal',
+    '--report_uncaught_exception',
+    '--report-on-fatalerror',
+  ]) {
+    assert.throws(() => assertSafeDiagnosticEnvironment({}, [flag]), { code: 'UNSAFE_RUNTIME_DIAGNOSTICS' });
+    assert.throws(() => assertSafeDiagnosticEnvironment({ NODE_OPTIONS: flag }, []), {
+      code: 'UNSAFE_RUNTIME_DIAGNOSTICS',
+    });
+  }
 });
 
 test('session labels stay reserved through callback exchange, failure and competing commands', () => {
   const sessions = new Map();
-  const reserved = new Set();
+  const reserved = new Map();
   const release = reserveSessionLabel('viewer', sessions, reserved);
   // Removing a pending OAuth state does not free its label while exchange awaits I/O.
   for (const phase of ['pending', 'exchanging']) {
@@ -57,11 +76,93 @@ test('session labels stay reserved through callback exchange, failure and compet
   }
   release(); // Failure/expiry allows a new login.
   const releaseNext = reserveSessionLabel('viewer', sessions, reserved);
-  sessions.set('viewer', { token: 'never-output' });
+  releaseNext.commit({ token: 'never-output' });
   releaseNext();
   assert.throws(() => reserveSessionLabel('viewer', sessions, reserved), { code: 'LABEL_ALREADY_IN_USE' });
   for (let i = 0; i < 31; i++) reserveSessionLabel(`pending-${i}`, sessions, reserved);
   assert.throws(() => reserveSessionLabel('overflow', sessions, reserved), { code: 'SESSION_LIMIT_REACHED' });
+});
+
+test('real child processes reject artifact flags before opening private input', () => {
+  const directory = mkdtempSync(resolve(tmpdir(), 'arc1-harness-flags-'));
+  try {
+    const entry = fileURLToPath(new URL('./live-harness.mjs', import.meta.url));
+    for (const flag of [
+      '--heapsnapshot-signal=SIGUSR2',
+      '--heap-snapshot-on-oom',
+      '--heap_snapshot_on_gc=1',
+      '--heap-prof',
+      '--cpu-prof',
+      '--report-on-signal',
+    ]) {
+      const child = spawnSync(process.execPath, [flag, entry], {
+        cwd: directory,
+        env: { ...process.env, NODE_OPTIONS: '', NODE_DEBUG: '', NODE_DEBUG_NATIVE: '', SSLKEYLOGFILE: '' },
+        encoding: 'utf8',
+        timeout: 10_000,
+      });
+      assert.ifError(child.error);
+      assert.equal(child.status, 1);
+      const events = child.stdout
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      assert.equal(events[0].event, 'startup_failed');
+      assert.equal(events[0].code, 'UNSAFE_RUNTIME_DIAGNOSTICS');
+      assert.equal(
+        events.some((event) => event.event === 'ready'),
+        false,
+      );
+    }
+  } finally {
+    // Profilers can produce an artifact at process exit, but no credentials were loaded.
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('forget cancels pending state and exchanging commits without releasing a newer login', async () => {
+  const sessions = new Map();
+  const reserved = new Map();
+  const release = reserveSessionLabel('viewer', sessions, reserved);
+  const pending = new Map([['old-state', { label: 'viewer', release, timer: setTimeout(() => {}, 60_000) }]]);
+  forgetSessionLabel('viewer', sessions, reserved, pending);
+  assert.equal(pending.size, 0);
+  assert.equal(reserved.size, 0);
+  assert.throws(() => release.commit({ token: 'cancelled' }), { code: 'SESSION_CANCELLED' });
+
+  const exchanging = reserveSessionLabel('viewer', sessions, reserved);
+  let completeExchange;
+  const exchange = new Promise((resolve) => {
+    completeExchange = resolve;
+  })
+    .then((token) => exchanging.commit({ token }))
+    .finally(exchanging);
+  // The callback already removed its state; forget must invalidate the lease too.
+  forgetSessionLabel('viewer', sessions, reserved, pending);
+  const current = reserveSessionLabel('viewer', sessions, reserved);
+  completeExchange('stale-token');
+  await assert.rejects(exchange, { code: 'SESSION_CANCELLED' });
+  release();
+  exchanging();
+  assert.equal(reserved.get('viewer'), current);
+  assert.equal(sessions.size, 0);
+  current.commit({ token: 'new-token' });
+  current();
+  assert.equal(sessions.get('viewer').token, 'new-token');
+  forgetSessionLabel('viewer', sessions, reserved, pending);
+  assert.equal(sessions.size, 0);
+});
+
+test('committed-but-reserved labels count once; shutdown invalidates pending commits', () => {
+  const sessions = new Map();
+  const reserved = new Map();
+  const releases = Array.from({ length: 32 }, (_, i) => reserveSessionLabel(`user-${i}`, sessions, reserved));
+  releases[0].commit({ token: 'test-only' });
+  releases[1]();
+  assert.doesNotThrow(() => reserveSessionLabel('replacement', sessions, reserved));
+  assert.throws(() => reserveSessionLabel('overflow', sessions, reserved), { code: 'SESSION_LIMIT_REACHED' });
+  reserved.clear(); // stop() invalidates all outstanding operations.
+  assert.throws(() => releases[2].commit({ token: 'late-result' }), { code: 'SESSION_CANCELLED' });
 });
 
 test('origin/label validation rejects unsafe values', () => {

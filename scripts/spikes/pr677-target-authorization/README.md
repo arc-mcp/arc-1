@@ -8,10 +8,15 @@ It never opens a browser. The operator/LLM uses the approved browser tools to op
 authorization URL. Always start a fresh incognito window for the secondary test identity.
 No access/refresh token, authorization code, binding credential, or SAP response body is printed.
 Tokens stay in process memory. Stopping the process forgets them but **does not revoke** them.
-Runtime HTTP/TLS debug, inspector, and TLS key logging options are rejected before loading
+Runtime HTTP/TLS debug, inspector, TLS key logging, heap snapshot, profiling and diagnostic-report
+options are rejected before loading
 private input; provider `DEBUG` logging is disabled. Run this only in a trusted local Node runtime.
 These checks reduce accidental disclosure; they are not a sandbox against a malicious runtime or
 operator. Session labels remain reserved during pending login and callback token exchange.
+`forget` clears the saved session, cancels pending login state and prevents an already-exchanging
+callback from restoring it. The label can be reused safely. It does not revoke issued tokens or
+cancel requests already running with a local token reference. Startup guards do not stop diagnostics
+enabled later by trusted code or operating-system debugging; see the [Node CLI reference](https://nodejs.org/api/cli.html).
 
 Offline oracles run with `npm run test:target-auth:harness` in CI on Node 22 and 24. They cover
 schema projection, safe diagnostics and label reservations; Biome and the file-size ratchet also

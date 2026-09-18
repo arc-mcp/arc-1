@@ -64,8 +64,7 @@ export function parseTargetGrant(authInfo?: Pick<AuthInfo, 'extra'>): TargetGran
   for (const value of rawValues as readonly string[]) {
     // IAM values must be ASCII before normalization: Unicode case folding and
     // whitespace removal must never manufacture an exact ID or the all-target grant.
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: Permit only ASCII whitespace around IAM values.
-    if (!/^[\x09-\x0D\x20-\x7E]*$/.test(value)) return none('TARGET_GRANT_MALFORMED');
+    if (!/^[\t\n\v\f\r -~]*$/.test(value)) return none('TARGET_GRANT_MALFORMED');
     const trimmed = value.trim();
     const slash = trimmed.indexOf('/');
     // Unlike forgiving tool arguments, grants reject non-ASCII above. Uppercase only

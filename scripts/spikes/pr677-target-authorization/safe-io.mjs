@@ -18,7 +18,8 @@ export function safeFailure(error) {
 }
 
 export function assertSafeDiagnosticEnvironment(env = process.env, execArgv = process.execArgv) {
-  const diagnosticOptions = /(^|[\s"'])--(?:inspect(?:[-_]brk|[-_]wait)?|trace[-_]tls|tls[-_]keylog)(?:=|[\s"']|$)/;
+  const diagnosticOptions =
+    /(^|[\s"'])--(?:inspect(?:[-_]brk|[-_]wait)?|trace[-_]tls|tls[-_]keylog|heapsnapshot[-_](?:signal|near[-_]heap[-_]limit)|heap[-_]snapshot[-_]on[-_](?:oom|gc)|heap[-_]prof|cpu[-_]prof|prof|report[-_](?:on[-_]signal|on[-_]fatalerror|uncaught[-_]exception))(?:=|[\s"']|$)/;
   if (
     ['NODE_DEBUG', 'NODE_DEBUG_NATIVE', 'SSLKEYLOGFILE'].some((name) => env[name]?.trim()) ||
     diagnosticOptions.test(env.NODE_OPTIONS ?? '') ||

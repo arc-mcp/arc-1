@@ -36,6 +36,23 @@ function discovery(
 }
 
 describe('DestinationRegistry', () => {
+  it('keeps sanitized descriptions and their revisions stable in both modes without changing routing', () => {
+    const plain = DestinationRegistry.fromDiscovery(
+      discovery([destination({ description: 'Prod label' })]),
+      DEFAULT_CONFIG,
+    );
+    for (const authorizationMode of ['legacy', 'xsuaa-attribute'] as const) {
+      const normalized = DestinationRegistry.fromDiscovery(
+        discovery([destination({ description: 'Prod\u202E label\u200B' })]),
+        DEFAULT_CONFIG,
+        { authorizationMode },
+      );
+      expect(normalized.targets[0].description).toBe('Prod label');
+      expect(normalized.targets[0].fingerprint).toBe(plain.targets[0].fingerprint);
+      expect(normalized.revision).toBe(plain.revision);
+      expect(normalized.get('A4H/100')?.destinationName).toBe(plain.get('A4H/100')?.destinationName);
+    }
+  });
   it.each(['Prod\u202E label\u200B', 'Prod\u{E0061} label', '\uFEFF\u202E'])(
     'sanitizes format controls from public descriptions: %j',
     (description) => {

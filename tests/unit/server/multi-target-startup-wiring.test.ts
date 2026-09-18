@@ -1,6 +1,8 @@
 /** Exercise real startup orchestration, not only its exported authorization helpers. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { logger } from '../../../src/server/logger.js';
+import { discoverDestinations } from '../../../src/server/destination-discovery.js';
+import { DestinationRegistry } from '../../../src/server/destination-registry.js';
+import { Logger } from '../../../src/server/logger.js';
 import { createAndStartServer } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -34,6 +36,10 @@ vi.mock('@sap/xsenv', () => ({
 }));
 vi.mock('../../../src/server/http.js', () => ({ startHttpServer: boundary.http }));
 vi.mock('../../../src/server/shutdown.js', () => ({ registerShutdownHandlers: vi.fn(), closeHttpServer: vi.fn() }));
+vi.mock('../../../src/server/destination-discovery.js', async (original) => {
+  const actual = await original<typeof import('../../../src/server/destination-discovery.js')>();
+  return { ...actual, discoverDestinations: vi.fn(actual.discoverDestinations) };
+});
 
 const config = {
   ...DEFAULT_CONFIG,
@@ -53,7 +59,8 @@ describe('target-authorization startup wiring', () => {
       }),
     );
     for (const method of ['info', 'warn', 'error', 'emitAudit'] as const)
-      vi.spyOn(logger, method).mockImplementation(() => {});
+      vi.spyOn(Logger.prototype, method).mockImplementation(() => {});
+    vi.mocked(discoverDestinations).mockClear();
     boundary.list.mockReset();
     boundary.resolveSingle.mockReset();
     boundary.http.mockReset();
@@ -67,7 +74,7 @@ describe('target-authorization startup wiring', () => {
   });
 
   it.each(['legacy', 'xsuaa-attribute'] as const)(
-    'passes %s through discovery, registry and HTTP routing',
+    'passes %s through real discovery and registry into the HTTP bootstrap arguments',
     async (multiTargetAuthorization) => {
       // Marker-missing candidates count only under the stricter enforced-mode bound.
       boundary.list.mockImplementation(async (_config, level) =>
@@ -81,6 +88,15 @@ describe('target-authorization startup wiring', () => {
       const server = await createAndStartServer({ ...config, multiTargetAuthorization });
       try {
         expect(boundary.list).toHaveBeenCalledTimes(2);
+        expect(discoverDestinations).toHaveBeenCalledExactlyOnceWith(expect.anything(), {
+          authorizationMode: multiTargetAuthorization,
+        });
+        const discovered = await vi.mocked(discoverDestinations).mock.results[0].value;
+        // Unlike the final registry limit, this proves discovery itself bounds its snapshot.
+        expect(discovered.subaccount).toHaveLength(multiTargetAuthorization === 'xsuaa-attribute' ? 0 : 257);
+        expect(Logger.prototype.info).toHaveBeenCalledWith(expect.stringContaining('authorization'), {
+          mode: multiTargetAuthorization,
+        });
         expect(boundary.resolveSingle).not.toHaveBeenCalled();
         expect(boundary.http).toHaveBeenCalledOnce();
         const [single, , , , routing] = boundary.http.mock.calls[0];
@@ -99,6 +115,24 @@ describe('target-authorization startup wiring', () => {
       }
     },
   );
+
+  it.each(['legacy', 'xsuaa-attribute'] as const)('retains %s options when discovery fails', async (mode) => {
+    boundary.list.mockRejectedValue(new Error('fixture discovery unavailable'));
+    const unavailable = vi.spyOn(DestinationRegistry, 'unavailable');
+    const server = await createAndStartServer({ ...config, multiTargetAuthorization: mode });
+    try {
+      expect(unavailable).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ code: 'REGISTRY_DISCOVERY_ERROR' }),
+        { authorizationMode: mode },
+      );
+      const routing = boundary.http.mock.calls[0][4];
+      expect(routing.registry.available).toBe(false);
+      expect(routing.registry.countsComplete).toBe(mode === 'legacy');
+      expect(routing.authorizationMode).toBe(mode);
+    } finally {
+      await server.close();
+    }
+  });
 
   it.each(['SAP_BTP_DESTINATION', 'SAP_BTP_PP_DESTINATION'])('refuses %s before any destination API', async (name) => {
     vi.stubEnv(name, 'SINGLE_DESTINATION');
