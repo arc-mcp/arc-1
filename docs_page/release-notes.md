@@ -18,28 +18,24 @@ currently [multi-target mode](multi-target-setup.md), may still change in a mino
 `1.0.0` onward and every `0.9` release are listed individually. `0.1`–`0.8` are summarized, with the
 important `0.7.0` authorization migration retained below.
 
-## 1.3.0 — package CI and clearer outcomes (unreleased)
+## 1.3.0 — CI, safer writes, and runtime fixes (unreleased)
 
-This release adds package CI checks and improves data-policy, search, package-listing, and write diagnostics.
-Automation should inspect completeness and saved-state evidence before retrying an operation.
+Adds quality gates, bounded relations, safer authoring, and clearer partial-result evidence. Defaults need
+no configuration change.
 
 | Change | Impact | Action |
 |---|---|---|
-| Proxy response cleanup ([#806](https://github.com/arc-mcp/arc-1/pull/806)) | Fixes a 1.2.0 regression: through BTP Connectivity / Cloud Connector, re-reading an unchanged cached object (HTTP 304) could terminate the process. | Remove an `ARC1_CACHE=none` workaround after deploying a release containing this fix. |
-| SAP 7.50 data-source policy ([#800](https://github.com/arc-mcp/arc-1/pull/800)) | A non-empty `SAP_BLOCKED_DATA_SOURCES` now reports `DATA_POLICY_UNAVAILABLE` when the target cannot supply transparent-table replacement metadata; data remains unexecuted. | Add `DATA_POLICY_UNAVAILABLE` to audit/SIEM rules that enumerate policy-denial codes. Keep data access disabled on targets without the required metadata. |
-| Package CI ([#779](https://github.com/arc-mcp/arc-1/pull/779)) | `SAPDiagnose.atc_ci` and `unittest_ci` check explicit packages, with optional subpackages and bounded reports. Unit tests remain harmless-only; incomplete evidence cannot pass. | See [CLI guide](cli-guide.md). Software-component selection is deferred. |
-| Batch creation and activation ([#788](https://github.com/arc-mcp/arc-1/pull/788), [#790](https://github.com/arc-mcp/arc-1/pull/790)) | Invalid later entries stop the batch before creation. Partial results distinguish saved objects from unknown activation and attribute errors to the affected objects. | Inspect results before retrying; authentication, authorization, and safety failures stop the batch. |
-| UIAD diagnostics ([#789](https://github.com/arc-mcp/arc-1/pull/789)) | Create/update checks candidate JSON and reports field errors, unavailable checks, and confirmed or uncertain saves. Read-only generated descriptors direct users to manifest redeployment. | Read the retained descriptor before retrying a failed save. This does not generate the UI application. |
-| Search and package listings ([#786](https://github.com/arc-mcp/arc-1/pull/786), [#787](https://github.com/arc-mcp/arc-1/pull/787)) | Normal search honors `objectType`. Package reads report limits and unknown completeness; structured format offers one JSON envelope. | Do not treat package search as a full inventory. SAP 7.50 ignores slash subtypes. |
-| ATC object batches ([#772](https://github.com/arc-mcp/arc-1/pull/772)) | Checks up to 20 explicit objects with per-object coverage; missing objects remain unknown. | Require `complete:true` before interpreting clean results. |
-| Live relations and dependency context ([#769](https://github.com/arc-mcp/arc-1/pull/769)) | Adds experimental bounded live relations and refreshes dependency context from authorized source. | See [Live relations](live-relations.md) for availability and bounds. |
-| KTD node editing ([#749](https://github.com/arc-mcp/arc-1/pull/749), [#750](https://github.com/arc-mcp/arc-1/pull/750), [#766](https://github.com/arc-mcp/arc-1/pull/766)) | Updates addressed nodes and short texts without replacing other nodes; supports `dryRun`. | Copy node names from `SAPRead`; preview ambiguous edits. |
-| Text pools and data elements ([#768](https://github.com/arc-mcp/arc-1/pull/768), [#774](https://github.com/arc-mcp/arc-1/pull/774)) | Adds program/function-group text-pool writes and preserves DTEL metadata during partial updates. | Text-pool writes replace the selected part: read it first. |
-| Stateful session cleanup ([#803](https://github.com/arc-mcp/arc-1/pull/803)) | Closes SAP HTTP application sessions after stateful writes, including failed writes, so they no longer accumulate in SM04 until timeout. | `none` |
-| Minimal errors for internal data reads ([#804](https://github.com/arc-mcp/arc-1/pull/804)) | With `ARC1_MINIMAL_ERRORS`, blocklist denials of ARC-1's own reads (DB `tadir_lookup`, class hierarchy, BOR methods, authorization trace) no longer show the source path, matched rule, or `SAP_BLOCKED_DATA_SOURCES`. The affected-feature guidance remains. | `none` |
+| BTP Audit Log ([#802](https://github.com/arc-mcp/arc-1/pull/802)) | Restores mTLS delivery and flushes pending records during graceful shutdown. | If enabled, verify the [X.509 binding](btp-cloud-foundry-deployment.md#optional-btp-audit-log-sink) and delivery. |
+| Runtime cleanup ([#803](https://github.com/arc-mcp/arc-1/pull/803), [#806](https://github.com/arc-mcp/arc-1/pull/806)) | Stateful writes close SAP sessions. Cached BTP HTTP 304 responses no longer terminate the server. | After upgrading, remove any `ARC1_CACHE=none` workaround. |
+| SAP 7.50 data policy ([#800](https://github.com/arc-mcp/arc-1/pull/800)) | With `SAP_BLOCKED_DATA_SOURCES`, targets lacking required lineage metadata deny the read as `DATA_POLICY_UNAVAILABLE`; the query is not executed. | Update rules that enumerate denial codes; never clear the blocklist as a workaround. |
+| ATC and package CI ([#772](https://github.com/arc-mcp/arc-1/pull/772), [#779](https://github.com/arc-mcp/arc-1/pull/779)) | ATC accepts up to 20 objects with explicit coverage. `atc_ci` and harmless `unittest_ci` gate package sets; missing or incomplete evidence cannot pass. | Require `complete:true` for object batches; see the [CLI guide](cli-guide.md) for CI. |
+| Safer writes ([#788](https://github.com/arc-mcp/arc-1/pull/788), [#789](https://github.com/arc-mcp/arc-1/pull/789), [#790](https://github.com/arc-mcp/arc-1/pull/790)) | Batches validate all input before creation. Batch activation and UIAD writes distinguish confirmed saves from unknown outcomes and attach errors to affected objects. | Inspect outcomes before retrying; for UIAD, read the retained descriptor first. |
+| Repository discovery ([#769](https://github.com/arc-mcp/arc-1/pull/769), [#786](https://github.com/arc-mcp/arc-1/pull/786), [#787](https://github.com/arc-mcp/arc-1/pull/787)) | Search honors `objectType`; package reads report limits and unknown completeness. Experimental `SAPNavigate.relations` adds bounded live relationships. | Do not treat results as a complete inventory; check [relations limits](live-relations.md). |
+| KTD, text pools, and DTEL ([#749](https://github.com/arc-mcp/arc-1/pull/749), [#750](https://github.com/arc-mcp/arc-1/pull/750), [#766](https://github.com/arc-mcp/arc-1/pull/766), [#768](https://github.com/arc-mcp/arc-1/pull/768), [#774](https://github.com/arc-mcp/arc-1/pull/774)) | KTD updates merge addressed nodes and short texts, with `dryRun` preview. Program/function-group text pools are writable, and partial DTEL updates preserve stored metadata. | Copy KTD node names from `SAPRead`; read a text-pool part before replacing it. |
+| SQL and error privacy ([#785](https://github.com/arc-mcp/arc-1/pull/785), [#804](https://github.com/arc-mcp/arc-1/pull/804)) | Long freestyle SQL is safely line-wrapped. `ARC1_MINIMAL_ERRORS` also redacts classified SQL failures and internal blocklist denials. | `none` |
 
-**Verification limits:** BTP UIAD saving, package CI communication arrangements, and successful on-premises
-ATC CI completion still need end-to-end verification. Incomplete results remain failures.
+**Verification limits:** BTP UIAD writes, BTP package CI, and successful on-premises ATC CI remain unverified
+end to end. Incomplete results remain failures.
 
 ## 1.2.0 — bounded data access and deployment hardening (2026-09-03)
 

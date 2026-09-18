@@ -5,6 +5,35 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.3.0](https://github.com/arc-mcp/arc-1/compare/v1.2.0...v1.3.0) (2026-09-17)
+
+
+### Features
+
+* add bounded live repository relations and refresh dependency context ([#769](https://github.com/arc-mcp/arc-1/issues/769)) ([81baa51](https://github.com/arc-mcp/arc-1/commit/81baa517533d150ec22eca745e83f1a9d1efd68b))
+* batch ATC checks with explicit object coverage ([#772](https://github.com/arc-mcp/arc-1/issues/772)) ([0440bea](https://github.com/arc-mcp/arc-1/commit/0440bea4bf04abf4fb6a99092bd84b0413d3d8d3))
+* **diagnose:** add package CI gates for ATC and harmless AUnit ([#779](https://github.com/arc-mcp/arc-1/issues/779)) ([556d503](https://github.com/arc-mcp/arc-1/commit/556d50331a5443c502cbd71148bf507bbdc27453))
+* support per-node KTD short texts ([#750](https://github.com/arc-mcp/arc-1/issues/750)) ([5c36f2a](https://github.com/arc-mcp/arc-1/commit/5c36f2a734870081780a5d4be734f605b1036318))
+* **textelements:** write program and function-group text pools ([#768](https://github.com/arc-mcp/arc-1/issues/768)) ([c55adcb](https://github.com/arc-mcp/arc-1/commit/c55adcb8ca9481421d8f7598e7233e22280d59a3))
+
+
+### Bug Fixes
+
+* **activate:** preserve uncertain batch outcomes and correct error attribution ([#790](https://github.com/arc-mcp/arc-1/issues/790)) ([7931245](https://github.com/arc-mcp/arc-1/commit/793124539859a0b58a10e99ae0038915d460844c))
+* close stateful ADT sessions after writes ([#803](https://github.com/arc-mcp/arc-1/issues/803)) ([2c7d01a](https://github.com/arc-mcp/arc-1/commit/2c7d01a5b919aa897503d65c30dbe162d1719054))
+* gate unsupported data-source lineage metadata on SAP 7.50 ([#800](https://github.com/arc-mcp/arc-1/issues/800)) ([3169034](https://github.com/arc-mcp/arc-1/commit/316903472e3b9236b7d0ec4e4984431a3f07dd17))
+* honour minimal errors in internal data-read denials ([#804](https://github.com/arc-mcp/arc-1/issues/804)) ([cfd399d](https://github.com/arc-mcp/arc-1/commit/cfd399d2480b0d99baf87ccf3b10e1685ae9cd46))
+* **ktd:** address KTD nodes by the name SAPRead prints, abort on unknown routes, add dryRun ([#766](https://github.com/arc-mcp/arc-1/issues/766)) ([3180037](https://github.com/arc-mcp/arc-1/commit/3180037312b6e7072e72be8562dea9dc2fde0ebc))
+* preserve DTEL metadata across writes and reads ([#774](https://github.com/arc-mcp/arc-1/issues/774)) ([ecb7c5e](https://github.com/arc-mcp/arc-1/commit/ecb7c5e7f99342f887a0d5113376c02514de7120))
+* prevent proxy response disposal from terminating the server ([#806](https://github.com/arc-mcp/arc-1/issues/806)) ([112af34](https://github.com/arc-mcp/arc-1/commit/112af34a0532fe6a5e11fe7bfc4696e477b66995))
+* **query:** fit freestyle SQL lines and honor minimal errors ([#785](https://github.com/arc-mcp/arc-1/issues/785)) ([63c07d2](https://github.com/arc-mcp/arc-1/commit/63c07d2c45511bc55802a7ffe15af26a14a259ed))
+* **read:** expose package listing limits and unknown completeness ([#787](https://github.com/arc-mcp/arc-1/issues/787)) ([23796e5](https://github.com/arc-mcp/arc-1/commit/23796e56b5931ca48928467b80325335f160739c))
+* restore BTP Audit Log mTLS delivery ([#802](https://github.com/arc-mcp/arc-1/issues/802)) ([c5102a5](https://github.com/arc-mcp/arc-1/commit/c5102a502a91eed8bd5d97ef14478613b7ed45c9))
+* safely update multi-node Knowledge Transfer Documents ([#749](https://github.com/arc-mcp/arc-1/issues/749)) ([347d83f](https://github.com/arc-mcp/arc-1/commit/347d83f37dc8eec1bb14938ddaa1d9f3849e5cfd))
+* **search:** honor object type filters in normal searches ([#786](https://github.com/arc-mcp/arc-1/issues/786)) ([1942341](https://github.com/arc-mcp/arc-1/commit/194234148cc083b425e89fd59a62d9eb428d5acc))
+* **write:** preflight complete batches and preserve partial outcomes ([#788](https://github.com/arc-mcp/arc-1/issues/788)) ([9b188a4](https://github.com/arc-mcp/arc-1/commit/9b188a42856a1ab14b965bc9ef183ebcd604edbb))
+* **write:** validate UIAD candidates and report partial saves ([#789](https://github.com/arc-mcp/arc-1/issues/789)) ([48baeb6](https://github.com/arc-mcp/arc-1/commit/48baeb658694e742baad366abdf02af50e03dd48))
+
 ## [1.2.0](https://github.com/arc-mcp/arc-1/compare/v1.1.2...v1.2.0) (2026-09-03)
 
 
