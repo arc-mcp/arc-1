@@ -1,7 +1,8 @@
 # DRTY (CDS Type) — ADT wire contract
 
 **Status:** live-verified, 2026-09-18
-**System:** local ABAP trial (`abap-trial-local`), SAP_BASIS **816** SP0001, on-prem, client 001
+**System:** ABAP Cloud Developer Trial (`abap-cloud-developer-trial:2025`), SAP_BASIS **816** SP0001,
+on-prem, client 001
 **Conclusion:** `DRTY` is a plain "blue" server-driven object — a structural sibling of `DSFD`. It
 needs **one registry entry** in `src/adt/server-driven.ts`, not a bespoke code path.
 
