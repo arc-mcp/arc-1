@@ -121,7 +121,7 @@ export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
  * here is the ONLY step needed to expose it — `btp: true` by construction (runtime availability is
  * discovery-gated per system, so a type absent on a release degrades cleanly).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD'] as const;
+export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD', 'DRTY'] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
@@ -205,6 +205,18 @@ export const SDO_REGISTRY = {
     metadataContentType: BLUES_V2,
     ...BLUE_METADATA,
     sourceFormat: 'json',
+  },
+  // CDS Type (`define type …`) — scalar types AND enumerated types. A plain blue sibling of DSFD.
+  // SAP models both flavors with the SINGLE subtype DRTY/STY, so create needs no subtype routing
+  // (unlike TABL /DT vs /DS, #285). Source is DDL text: a PUT with application/json under a valid
+  // lock returns 415. Live-verified 816: docs/research/2026-09-18-drty-cds-type-adt-contract.md.
+  DRTY: {
+    href: '/sap/bc/adt/ddic/drty/sources',
+    label: 'CDS Type (scalar type / enum)',
+    createType: 'DRTY/STY',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'text',
   },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
