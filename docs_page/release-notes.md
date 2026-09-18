@@ -18,6 +18,12 @@ currently [multi-target mode](multi-target-setup.md), may still change in a mino
 `1.0.0` onward and every `0.9` release are listed individually. `0.1`–`0.8` are summarized, with the
 important `0.7.0` authorization migration retained below.
 
+## Unreleased
+
+| Change | Impact | Action |
+|---|---|---|
+| Stateful BTP Connectivity writes ([#807](https://github.com/arc-mcp/arc-1/pull/807)) | Reuses the proxy client through each lock/write/unlock operation and SAP session cleanup, addressing reported HTTP 400 failures on this route. | Upgrade when released; no new settings or tool arguments. If the error persists, verify SAP session routing and per-request authentication. |
+
 ## 1.3.0 — CI, safer writes, and runtime fixes (unreleased)
 
 Adds quality gates, bounded relations, safer authoring, and clearer partial-result evidence. Defaults need

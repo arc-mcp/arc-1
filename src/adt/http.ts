@@ -195,6 +195,7 @@ export class AdtHttpClient {
   private dispatcher: Dispatcher | undefined;
   private longOperationDispatcher: Dispatcher | undefined;
   private statefulProxyClient: Client | undefined;
+  // Owned only by a withStatefulSession clone, including its final stateless close request.
   private reuseStatefulProxyClient = false;
   private config: AdtHttpConfig;
   /**
@@ -1454,14 +1455,10 @@ export class AdtHttpClient {
       proxyHeaders['SAP-Connectivity-SCC-Location_ID'] = proxy.locationId;
     }
 
-    const clientOptions = options?.fetchTimeoutMs === undefined ? undefined : { headersTimeout: 0, bodyTimeout: 0 };
+    // Streaming/discard adapters own their client and may close or destroy it.
     const reuseProxyClient =
-      this.reuseStatefulProxyClient &&
-      options?.responseBudget === undefined &&
-      !options?.discardResponseBody;
-    const client = reuseProxyClient
-      ? (this.statefulProxyClient ??= new Client(proxyOrigin, clientOptions))
-      : new Client(proxyOrigin, clientOptions);
+      this.reuseStatefulProxyClient && options?.responseBudget === undefined && !options?.discardResponseBody;
+    const client = reuseProxyClient ? (this.statefulProxyClient ??= new Client(proxyOrigin)) : new Client(proxyOrigin);
     let responseOwnsClient = false;
     try {
       const signal = requestSignal(options);
@@ -1473,6 +1470,9 @@ export class AdtHttpClient {
         headers: proxyHeaders,
         body: body ?? undefined,
         signal,
+        // A reused client's first request must not determine later requests' parser timeouts.
+        // The per-request abort signal still enforces fetchTimeoutMs and the caller deadline.
+        ...(options?.fetchTimeoutMs === undefined ? {} : { headersTimeout: 0, bodyTimeout: 0 }),
       });
 
       const isNullBodyStatus = resp.statusCode === 204 || resp.statusCode === 205 || resp.statusCode === 304;
