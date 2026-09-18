@@ -33,7 +33,8 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 | **Team server** (role-based access) | API Keys (multi) | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Enterprise** (per-user identity) | OIDC / JWT | Basic Auth (shared user) | [OAuth / JWT Setup](oauth-jwt-setup.md) |
 | **Enterprise + SAP audit trail** | OIDC / JWT | Principal Propagation | [OAuth / JWT](oauth-jwt-setup.md) + [PP Setup](principal-propagation-setup.md) |
-| **BTP Cloud Foundry + on-prem SAP** | XSUAA OAuth | Principal Propagation via Destination Service / Cloud Connector | [XSUAA Setup](xsuaa-setup.md) + [Destination Setup](btp-destination-setup.md) |
+| **BTP Cloud Foundry + on-prem SAP, per-user identity** | XSUAA OAuth | Principal Propagation via Destination Service / Cloud Connector | [BTP deployment](btp-cloud-foundry-deployment.md) — single-PP profile |
+| **BTP Cloud Foundry + on-prem SAP, shared identity** | XSUAA OAuth | Basic destination via Cloud Connector | [BTP deployment](btp-cloud-foundry-deployment.md) — single-Basic profile |
 | **BTP CF multi-target read gateway** | XSUAA OAuth | Principal Propagation (recommended), with explicit shared Basic destinations where PP is unavailable | [Multi-System Setup](multi-target-setup.md) |
 | **BTP Cloud Foundry + BTP ABAP Environment** | XSUAA OAuth | Per-user destination (`OAuth2UserTokenExchange`) | [BTP ABAP Setup](btp-abap-environment.md) |
 | **BTP ABAP Environment** (local) | None (stdio) | Service-key browser OAuth | [BTP ABAP Setup](btp-abap-environment.md) |
@@ -135,9 +136,12 @@ These methods control how ARC-1 proves its identity to the SAP system.
 
 Username and password sent with every HTTP request to SAP. The simplest SAP auth method.
 
-**Upsides:** Zero SAP-side setup. Works with any SAP system.
+**Upsides:** Simple ARC-1 configuration. Works with on-premise systems whose ADT ICF service accepts
+HTTP Basic for the selected client and user.
 **Downsides:** Credentials stored in config. Single SAP user for all MCP users. No per-user audit trail.
-**When to use:** Local dev, shared servers where SAP identity doesn't matter.
+**When to use:** Local dev or an explicitly accepted shared-user server. On BTP CF, keep credentials
+in a Basic destination rather than application configuration. Basic is not a fallback for
+Principal Propagation and is not the normal BTP ABAP Environment path.
 **Prerequisites:** A SAP user with appropriate authorization (see [Authorization & Roles](authorization.md#the-model-in-one-picture)).
 
 ```bash

@@ -11,7 +11,7 @@ Record secret-storage references, never passwords, tokens, private keys or raw b
 
 | Input | Agree with |
 |---|---|
-| Selected source revision and topology: single PP or multi PP | Deployment owner |
+| Selected source revision and topology: single Basic, single PP, or multi PP | Deployment owner |
 | Subaccount, CF API/org/space and service ownership | CF/IAM owners |
 | Real SAP SID/client, destination names and descriptions | Destination/Basis owners |
 | Cloud Connector virtual/internal mapping, verified HTTPS and location ID if used | Connector owner |
