@@ -327,6 +327,11 @@ await http.withStatefulSession(async (session) => {
 
 Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
 
+For SAP-facing/runtime changes, test on a real authorized SAP test system when possible and record
+the tested build, release, deployment/auth route, observed result, and gaps in the
+[PR template](.github/pull_request_template.md). If unavailable, state why and the remaining scenario;
+never present mocks or skipped tests as live coverage. Documentation-only changes may use N/A.
+
 | Level | Command | Needs |
 |-------|---------|-------|
 | Unit | `npm test` | — |
