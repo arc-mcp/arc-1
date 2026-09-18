@@ -26,6 +26,21 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
    default-off shared Basic identity only under its one-instance/lockout controls. Do not broaden
    either exception to writes or another discovery/auth model without a new ADR/security review.
 
+## Roadmap Discipline
+
+- Check [docs_page/roadmap.md](docs_page/roadmap.md) at the start and before finishing every change
+  (features, fixes, refactors, documentation, or research); use its evidence and avoid duplicate ideas.
+- The roadmap is an idea parking lot, not an execution queue or changelog. An entry is not
+  authorization or a commitment to implement it.
+- Update it in the same PR when the change affects an idea: add useful deferred work, narrow partial
+  completions to the remaining gap, and remove fully implemented/verified, rejected, or subsumed
+  items from both the overview and details. Keep closed-PR links for unfinished ideas; do not add
+  strikethroughs or a completed section.
+- Ground decisions in current code, tests, docs, issues/PRs, and relevant specifications. Keep
+  priority, effort, category, status, and resume trigger consistent in the overview and details.
+- State the roadmap impact in the PR description (item IDs and changes, or "No roadmap impact"
+  after checking). Unrelated changes need no artificial roadmap edit.
+
 ## Build & Test
 
 ```bash

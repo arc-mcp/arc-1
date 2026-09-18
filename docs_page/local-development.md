@@ -48,6 +48,11 @@ For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP c
 
 ### git clone (contributing or running from source)
 
+For every contribution, check the [idea roadmap](roadmap.md) before starting and before opening or
+updating the PR. Record useful deferred work, narrow partially completed ideas, and remove completed
+items from both the overview and details in the same PR. State the affected IDs or "No roadmap
+impact" in the PR description. This also applies to fixes, documentation, refactors, and research.
+
 ```bash
 git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
