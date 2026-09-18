@@ -111,3 +111,93 @@ object.
    dependency walking of types referenced by CDS entities.
 3. Availability on 7.58 — the collection was verified present on 816 only; the discovery gate makes a
    missing collection degrade cleanly, but the release floor should be recorded once probed.
+
+## End-to-end matrix through ARC-1 (2026-09-18, SAP_BASIS 816)
+
+Run through `bin/arc1-cli.js` — the same code path as the MCP server — after the registry entry
+landed. Every case below was executed against the live trial; nothing is inferred.
+
+### Reads
+
+| Case | Result |
+|------|--------|
+| Scalar over builtin, over data element, over another CDS type; enums int1 / char / numc | metadata + DDL source, `type: DRTY/STY`, annotations preserved verbatim |
+| Standard-language SAP object (`DD_DRTY_ST_ENUM_LENGTHS`) | `abapLanguageVersion: standard` — DRTY is not Cloud-only |
+| Lower-case name, lower-case type (`drty`) | normalised, same result |
+| Non-existent object | clean 404 with a `SAPSearch` hint |
+| `type=DRTY/STY` (the form `SAPSearch` returns) | validation error listing accepted types — pre-existing gap shared by every SDO type, out of scope |
+| `SAPSearch` | `objectType: DRTY/STY` + collection URI |
+| `SAPRead type=DEVC SD_CDS_TYPES` | 8 `DRTY/STY` entries listed |
+| Hyperfocused mode (`SAP action=read`) | works |
+| `SAPRead type=VERSIONS objectType=DRTY` | clean "Unsupported object type DRTY for revisions" — no revision URL builder, expected |
+| `SAPContext action=usages` | resolves `DRTY/STY` via search, 6 usages |
+| `SAPNavigate action=references type=DRTY` | **was `total: 0` — wrong.** See "Findings" |
+
+### Writes
+
+| Case | Result |
+|------|--------|
+| create with inline source (3 `@EndUserText` annotations) → activate → read | active, annotations intact |
+| create without source → read → update (enum) → read → activate → read | `inactive`/empty → `inactive`/new source → `active` |
+| transportable package (`ZMCP_TESTING`) with `transport=` | created, **E071 row recorded**; update and delete propagate the lock's `corrNr` |
+| transportable package without `transport=` | SAP 400 `Parameter corrNr could not be found` + ARC-1 hint to supply `transport` |
+| structure package (`ZLOCAL`) | SAP 409 `Structure packages cannot contain development objects`, clean |
+| two types, child inherits from base, **batch** `SAPActivate objects=[…]` | both active in one call |
+| persistent SQLite cache: read → update → read | fresh source (SDO path bypasses the source cache) |
+| `SAP_CHECK_BEFORE_WRITE=true` + `SAP_LINT_BEFORE_WRITE=true` | update unaffected (SDO path skips ABAP pre-write steps) |
+| CRLF source | stored and returned byte-identical |
+
+### Safety and negatives
+
+| Case | Result |
+|------|--------|
+| `SAP_ALLOW_WRITES=false` | `CreateServerDrivenObject` blocked by safety |
+| `SAP_ALLOWED_PACKAGES=$TMP`, create in `ZLOCAL` | blocked before any SAP call |
+| `SAP_ALLOWED_PACKAGES=$TMP`, update/delete of a SAP object | blocked against the **real** package (`SABAP_DEMOS_ABAP_CDS_CLOUD`), fail-closed |
+| `SAP_DENY_ACTIONS=SAPWrite.create` | denied by policy |
+| duplicate create | SAP 400 `does already exist`, clean |
+| update / delete / activate of a non-existent object | clean 404 |
+| invalid DDL (`abap.notatype`), unknown data element | stored (SAP does not validate on PUT), activation fails with line-anchored SAP diagnostics, object stays `inactive` |
+| `batch_create` with DRTY | preflight refusal: "create it with a single SAPWrite call" |
+| name with hyphen / 31 characters | SAP 422 / 404 with the exact rule, clean |
+| JSON string as source | stored verbatim as text (no client-side JSON parse for text types), activation fails |
+| **delete a type that another type inherits from** | **false success — see "Findings"** |
+
+### Findings
+
+**1. `SAPNavigate(references, type=<SDO>)` returned a silent, wrong `0` — fixed in this PR.**
+`resolveWhereUsedUri` built the URI through `objectUrlForType`, whose default branch falls back to
+`/sap/bc/adt/programs/programs/` for types it does not know. SAP was asked for the usages of a
+non-existent program and answered with an empty list. The fix routes server-driven types through
+`serverDrivenObjectUrl`. Live: `DEMO_CDS_ENUM_WEEKDAY` 0 → 6, `CALENDAR_OPERATION` (DSFD) 0 → 5.
+The bug predates DRTY and affected every SDO type; DRTY merely made it visible.
+
+**2. Deleting a DDIC type that another object still references leaves an orphan, and ARC-1
+reports success.** Sequence on 816: `ZARC1_DRTY_BASE` active, `ZARC1_DRTY_CHILD : zarc1_drty_base`
+active. `SAPWrite delete BASE` → SAP answers **200** → ARC-1 prints `Deleted DRTY ZARC1_DRTY_BASE`.
+Afterwards: TADIR row gone, metadata GET still **200** with `version="active"` and **no
+`packageRef`**, where-used still lists CHILD, CHILD still active. From then on the object cannot be
+removed through ADT at all: DELETE → 409 `CTS_WBO_API018 "Object R3TR DRTY … cannot be created
+without a package"` (CTS cannot record a deletion for an object with no directory entry), and
+create → 400 `does already exist`. Deleting CHILD afterwards does not unblock it. `SAPSearch` no
+longer finds it (TADIR-based); `SAPRead` still does. Recovery needs SAP GUI: restore the directory
+entry (SE03 → Object Directory Entry, or `RS_TADIR_INTERFACE`), then delete.
+
+This is SAP-side behaviour — a type without dependents deletes cleanly and reads 404 afterwards, as
+the same matrix shows — but ARC-1's SDO delete does no readback, so the partial deletion surfaces as
+a plain success. The existing `resourceExistenceAfterDelete` follow-up probe in
+`src/handlers/write/update-delete.ts` only runs when DELETE *fails* with 404. Not fixed here: it is
+engine-level (every SDO type, plausibly every DDIC type) and needs a decision between a pre-delete
+where-used refusal (Eclipse's approach; prevents the orphan) and a post-delete existence check
+(reports it). Left as a follow-up. The orphan `ZARC1_DRTY_BASE` remains on the trial.
+
+**3. Package gate wording.** With `SAP_ALLOWED_PACKAGES=*` the gate still refuses an object whose
+metadata carries no `packageRef`, with "Fail-closed because allowedPackages is restricted". The
+refusal is right (the package cannot be verified); the wording is misleading when the allowlist is
+`*`. Cosmetic, noted only.
+
+### Test-object hygiene
+
+All `ZARC1_DRTY_*` objects created by the matrix were deleted and confirmed absent, except
+`ZARC1_DRTY_BASE` (orphan, see finding 2) and the TADIR row of `ZARC1_DRTY_B3` with `DELFLAG=X`,
+which is the normal state of a deletion recorded in an unreleased transport (`A4HK900162`).
