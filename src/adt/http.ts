@@ -311,18 +311,11 @@ export class AdtHttpClient {
     try {
       return await fn(sessionClient);
     } finally {
+      await sessionClient.closeStatefulSession();
       try {
-        await sessionClient.closeStatefulSession();
-      } finally {
-        const proxyClient = sessionClient.statefulProxyClient;
-        sessionClient.statefulProxyClient = undefined;
-        if (proxyClient) {
-          try {
-            await proxyClient.close();
-          } catch {
-            logger.warn('Failed to close stateful Connectivity proxy client.');
-          }
-        }
+        await sessionClient.statefulProxyClient?.close();
+      } catch {
+        logger.warn('Failed to close stateful Connectivity proxy client.');
       }
     }
   }

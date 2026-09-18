@@ -150,8 +150,10 @@ describe('stateful Connectivity proxy ownership', () => {
     const { server, client } = await setup((req, res) => {
       const path = new URL(req.url!).pathname;
       requests.push({ path, socket: req.socket, headers: req.headers });
-      if (req.method === 'HEAD') res.setHeader('x-csrf-token', 'T');
-      if (path === '/lock') res.setHeader('set-cookie', 'sap-contextid=CONTEXT; Path=/');
+      if (req.method === 'HEAD') {
+        res.setHeader('x-csrf-token', 'T');
+        res.setHeader('set-cookie', 'sap-contextid=CONTEXT; Path=/');
+      }
       res.end('ok');
     });
 
@@ -171,9 +173,11 @@ describe('stateful Connectivity proxy ownership', () => {
       '/unlock',
       '/sap/bc/adt/core/http/sessions',
     ]);
-    // HEAD bootstrap may close its socket; the actual stateful exchange must reuse one.
+    // SAP can open the context during CSRF HEAD. Undici closes that socket, then reconnects for LOCK.
+    expect(requests[0]!.headers.connection).toBe('close');
+    expect(requests[0]!.socket).not.toBe(requests[1]!.socket);
     expect(new Set(requests.slice(1).map(({ socket }) => socket)).size).toBe(1);
-    for (const request of requests.slice(2, 4)) {
+    for (const request of requests.slice(1, 4)) {
       expect(request.headers).toMatchObject({ cookie: 'sap-contextid=CONTEXT', 'x-sap-adt-sessiontype': 'stateful' });
     }
     expect(requests[4]!.headers).toMatchObject({
@@ -291,7 +295,7 @@ describe('stateful Connectivity proxy ownership', () => {
     expect(warn).toHaveBeenCalledExactlyOnceWith('Failed to close stateful Connectivity proxy client.');
   });
 
-  it('closes the SAP context after an aborted body without losing the operation error', async () => {
+  it.each([200, 500])('attempts SAP cleanup and closes the proxy after an abort (cleanup HTTP %i)', async (status) => {
     const paths: string[] = [];
     const { server, client } = await setup((req, res) => {
       const path = new URL(req.url!).pathname;
@@ -301,6 +305,7 @@ describe('stateful Connectivity proxy ownership', () => {
         res.write('unfinished');
         return;
       }
+      if (path === '/sap/bc/adt/core/http/sessions') res.writeHead(status);
       res.end('ok');
     });
     await expect(
