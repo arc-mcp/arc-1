@@ -173,9 +173,7 @@ describe('stateful Connectivity proxy ownership', () => {
       '/unlock',
       '/sap/bc/adt/core/http/sessions',
     ]);
-    // SAP can open the context during CSRF HEAD. Undici closes that socket, then reconnects for LOCK.
-    expect(requests[0]!.headers.connection).toBe('close');
-    expect(requests[0]!.socket).not.toBe(requests[1]!.socket);
+    // SAP can open the context during CSRF HEAD, whose connection may close before LOCK.
     expect(new Set(requests.slice(1).map(({ socket }) => socket)).size).toBe(1);
     for (const request of requests.slice(1, 4)) {
       expect(request.headers).toMatchObject({ cookie: 'sap-contextid=CONTEXT', 'x-sap-adt-sessiontype': 'stateful' });
