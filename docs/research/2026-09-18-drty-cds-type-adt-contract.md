@@ -166,12 +166,15 @@ landed. Every case below was executed against the live trial; nothing is inferre
 
 ### Findings
 
-**1. `SAPNavigate(references, type=<SDO>)` returned a silent, wrong `0` — fixed in this PR.**
+**1. `SAPNavigate(references, type=<SDO>)` returned a silent, wrong `0` — fixed separately.**
 `resolveWhereUsedUri` built the URI through `objectUrlForType`, whose default branch falls back to
 `/sap/bc/adt/programs/programs/` for types it does not know. SAP was asked for the usages of a
 non-existent program and answered with an empty list. The fix routes server-driven types through
 `serverDrivenObjectUrl`. Live: `DEMO_CDS_ENUM_WEEKDAY` 0 → 6, `CALENDAR_OPERATION` (DSFD) 0 → 5.
-The bug predates DRTY and affected every SDO type; DRTY merely made it visible.
+The bug predates DRTY and affected every SDO type; DRTY merely made it visible — which is why it
+shipped as its own change (upstream [arc-mcp/arc-1#809](https://github.com/arc-mcp/arc-1/pull/809))
+rather than riding along with the new type. Its regression test is parameterised over `SDO_TYPES`,
+so registering DRTY extends the coverage automatically.
 
 **2. Deleting a DDIC type that another object still references leaves an orphan, and ARC-1
 reports success.** Sequence on 816: `ZARC1_DRTY_BASE` active, `ZARC1_DRTY_CHILD : zarc1_drty_base`
