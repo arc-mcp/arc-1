@@ -198,6 +198,23 @@ describe('shipped mta.yaml resolves through the config parser', () => {
     );
   });
 
+  it('registers only deployment-owned OAuth paths and keeps the optional UI out of the base requirements', () => {
+    const xsuaa = resourceDescriptor('arc1-xsuaa');
+    const file = JSON.parse(readFileSync(join(ROOT, 'xs-security.json'), 'utf8'));
+    expect(xsuaa.requires).toEqual([{ name: 'arc1-mcp-api' }]);
+    expect(xsuaa.parameters.config['oauth2-configuration']['redirect-uris']).toEqual([
+      '~{arc1-mcp-api/url}/oauth/callback',
+      '~{arc1-mcp-api/url}/oauth/logged-out',
+    ]);
+    expect(file['oauth2-configuration']['redirect-uris']).toEqual([
+      'http://localhost:*/oauth/callback',
+      'http://localhost:*/oauth/logged-out',
+    ]);
+    const { 'redirect-uris': _redirects, ...baseOauth } = xsuaa.parameters.config['oauth2-configuration'];
+    const { 'redirect-uris': _localRedirects, ...localOauth } = file['oauth2-configuration'];
+    expect(baseOauth).toEqual(localOauth);
+  });
+
   it('keeps Audit Log optional while preconfiguring X.509 on the instance and binding', () => {
     const resource = resourceDescriptor('arc1-auditlog');
     const requirement = (appModuleDescriptor().requires as Array<Record<string, any>>).find(

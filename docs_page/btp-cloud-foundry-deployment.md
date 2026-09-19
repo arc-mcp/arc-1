@@ -397,10 +397,17 @@ npm run btp:build-deploy-ext
 The deployment creates/updates:
 
 - `arc1-mcp-server`, one 512 MB process by default;
-- XSUAA with ARC-1 scopes, templates, and seven space-qualified role collections;
+- XSUAA with ARC-1 scopes, templates, seven space-qualified role collections, and exact backend
+  `/oauth/callback` and `/oauth/logged-out` URLs;
 - Destination and Connectivity service instances and bindings;
 - the Audit Log premium instance and X.509 binding only when `arc1-auditlog` is activated; and
 - a health check on `/health`.
+
+The default backend route needs no callback setting. For a custom public URL or explicit backend
+`routes:`, follow [Custom public URL](xsuaa-setup.md#custom-public-url) before deployment.
+When updating an existing installation, first check the
+[callback upgrade table](xsuaa-setup.md#upgrading-an-existing-deployment), including preservation
+of an existing optional UI URL.
 
 The unconfigured base application and multi-target mode can start with no SAP targets. The
 single-PP profile is different: its startup destination must already exist, as checked in step 4.

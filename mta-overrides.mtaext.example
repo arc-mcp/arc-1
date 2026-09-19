@@ -127,6 +127,10 @@ modules:
       # through a reverse proxy on a different hostname or under a base-path
       # prefix than the bound CF route.
       # ARC1_PUBLIC_URL: "https://gateway.example.com/arc1"
+      # IMPORTANT: XSUAA must also accept ARC-1's proxy callback on that exact
+      # public URL. Add an arc1-xsuaa resource override like the example near
+      # the bottom of this file. Never use a shared *.hana.ondemand.com or
+      # *.applicationstudio.cloud.sap wildcard.
 
       # ── OAuth Dynamic Client Registration (DCR) ──────────────────────
       # Lifetime of an OAuth DCR `client_id` in seconds. Default: "0" (never
@@ -221,6 +225,15 @@ modules:
     #           parameters:
     #             config:
     #               xsappname: arc1-mcp-prod
+    #
+    # If ARC1_PUBLIC_URL points at a gateway/custom domain, the same resource
+    # override must replace XSUAA's upstream callback list with that exact URL.
+    # Extension maps merge recursively; this list replaces the base list while
+    # preserving the grants and token lifetimes from mta.yaml:
+    #               oauth2-configuration:
+    #                 redirect-uris:
+    #                   - https://gateway.example.com/arc1/oauth/callback
+    #                   - https://gateway.example.com/arc1/oauth/logged-out
 
 # ── Application logging (OFF by default — deprecated service) ───────────
 # SAP Application Logging Service is deprecated (SAP Note 3557260; removed from

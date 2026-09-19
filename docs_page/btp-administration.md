@@ -47,6 +47,10 @@ shared SAP user.
 
 ## Configuration ownership
 
+For the OAuth callback-policy upgrade, follow
+[XSUAA upgrade guidance](xsuaa-setup.md#upgrading-an-existing-deployment). It requires a full MTA
+deployment; an app restart alone does not update the XSUAA service policy.
+
 Use one source of truth for each kind of value:
 
 | Location | Put here | Avoid here |
