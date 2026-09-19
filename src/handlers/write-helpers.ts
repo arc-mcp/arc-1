@@ -23,6 +23,7 @@ import {
 } from '../adt/ddic-xml.js';
 import { syntaxCheck } from '../adt/devtools.js';
 import { AdtSafetyError } from '../adt/errors.js';
+import type { AdtRequestOptions } from '../adt/http-deadline.js';
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
 import { checkPackage } from '../adt/safety.js';
 import {
@@ -789,9 +790,10 @@ export async function enforceAllowedPackageForObjectUrl(
   objectUrl: string,
   label: string,
   accept?: string,
+  options?: AdtRequestOptions,
 ): Promise<string | undefined> {
   if (client.safety.allowedPackages.length === 0) return undefined;
-  const pkg = await client.resolveObjectPackage(objectUrl, accept);
+  const pkg = await client.resolveObjectPackage(objectUrl, accept, options);
   if (!pkg) {
     throw new AdtSafetyError(
       `${label} blocked: ARC-1 could not determine the object's package from ADT metadata ` +
