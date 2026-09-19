@@ -5,6 +5,13 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.3.1](https://github.com/arc-mcp/arc-1/compare/v1.3.0...v1.3.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* reuse Connectivity proxy client for stateful sessions ([#807](https://github.com/arc-mcp/arc-1/issues/807)) ([2940971](https://github.com/arc-mcp/arc-1/commit/2940971f1330f7c8a52cbe011d782c0a6971a8f0))
+
 ## [1.3.0](https://github.com/arc-mcp/arc-1/compare/v1.2.0...v1.3.0) (2026-09-17)
 
 
