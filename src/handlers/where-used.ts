@@ -10,6 +10,7 @@ import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
 import { internalOperationWarning } from '../adt/internal-data-operations.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
+import { isServerDrivenObjectType, serverDrivenObjectUrl } from '../adt/server-driven.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
 
 export type LiveUsageResult = WhereUsedResult | ReferenceResult;
@@ -53,6 +54,14 @@ export async function resolveWhereUsedUri(
   }
   if (type === 'TABL') {
     return client.resolveTablObjectUrl(name);
+  }
+  // Server-driven objects (DRTY, DSFD, …) live under their own collections. `objectUrlForType`
+  // does not know them and falls back to /programs/programs/, which made SAPNavigate(references)
+  // ask SAP about a non-existent program and return an honest-looking but wrong `total: 0`
+  // while SAPContext(usages) — which resolves the URI via search — found the real usages.
+  // Live-verified on 816 with DEMO_CDS_ENUM_WEEKDAY (0 → 6).
+  if (isServerDrivenObjectType(type)) {
+    return serverDrivenObjectUrl(type, name);
   }
   return objectUrlForType(type, name);
 }
