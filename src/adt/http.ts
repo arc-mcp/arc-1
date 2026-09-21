@@ -1064,6 +1064,12 @@ export class AdtHttpClient {
       this.reloadCookiesFromSource();
     }
 
+    // A token only counts as proof when the response itself succeeded: SAP returns one on
+    // failures too, and the old code accepted a token from a 401 — masking the auth error.
+    const usableToken = (response: Response): string | undefined => {
+      const token = response.headers.get('x-csrf-token')?.trim();
+      return response.ok && token && token.toLowerCase() !== 'required' ? token : undefined;
+    };
     // Every probe keeps the same identity, current cookies and caller's request budget.
     const probe = async (method: string): Promise<Response> => {
       const cookieHeader = this.composeCookieHeader();
@@ -1078,10 +1084,6 @@ export class AdtHttpClient {
       // Only headers are needed; release GET bodies before a fallback or return.
       if (!response.bodyUsed) await response.body?.cancel();
       return response;
-    };
-    const usableToken = (response: Response): string | undefined => {
-      const token = response.headers.get('x-csrf-token')?.trim();
-      return response.ok && token && token.toLowerCase() !== 'required' ? token : undefined;
     };
 
     try {
@@ -1104,7 +1106,9 @@ export class AdtHttpClient {
         response = await probe('HEAD');
       }
 
-      // HEAD is refused on some systems or succeeds without returning a token.
+      // HEAD is refused on some systems or succeeds without a token. 7.50/7.58/8.16 all answer
+      // 400 and still send a token, so the GET below is the normal second request there, not an
+      // exception — GET is the broadly supported bootstrap and the only one that proves success.
       if ([400, 403, 405].includes(response.status) || (response.ok && !usableToken(response))) {
         response = await probe('GET');
       }

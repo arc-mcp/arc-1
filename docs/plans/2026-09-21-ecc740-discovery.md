@@ -45,7 +45,7 @@ fix does not implement general endpoint routing or a deep health endpoint.
 
 - Kept the existing HTTP client and CTS parser boundaries. Bootstrap now returns
   its successful endpoint, allowing startup to reuse it without another probe or
-  an endpoint cache. The HTTP client is 14 lines shorter; its size budget was lowered.
+  an endpoint cache. The HTTP client stays shorter than on main; its size budget was lowered.
 - The initial loopback regression suite failed nine cases before the fix. The
   final 17 cases use a real HTTP server and production client, including positive
   and inconclusive startup, authentication refusals, session continuity and aborts.
@@ -64,3 +64,32 @@ fix does not implement general endpoint routing or a deep health endpoint.
   classification, caller cancellation, valid empty CTS documents and missing-ID
   matching. Updated the one BDEF mock that incorrectly supplied its CSRF token on
   a failed HTTP 400 response. No change to tool schemas, write gates or defaults.
+
+## Independent revalidation (second reviewer, 2026-09-21)
+
+Probed `/sap/bc/adt/core/discovery`, `/sap/bc/adt/discovery` and the CTS endpoints directly on all
+three authorized test systems, then ran the built client against each:
+
+| System | `HEAD` core | `GET` core | `GET` legacy | bogus ADT path | CTS list root |
+|---|---|---|---|---|---|
+| 7.50 (NPL, client 001) | 400 + token | 200 + token, 132 B | 200 + token, 79 KB | 404 | `<tm:root>` |
+| 7.58 SP02 (a4h, client 001) | 400 + token | 200 + token, 132 B | 200 + token, 293 KB | 404 | `<tm:root>` |
+| 8.16 (a4h-2025, client 001) | 400 + token | 200 + token, 1.3 KB | 200 + token, 389 KB | 404 | `<tm:root>` |
+
+- **The HEAD-400-with-token case is the rule on every supported on-prem release, not an
+  exception.** Requiring `response.ok` therefore costs exactly one extra 132 B `GET` per CSRF
+  bootstrap (once per client, only on the first token-bearing request). That is accepted here: the
+  old code accepted a token from *any* status, including a 401, which masked the authentication
+  failure behind a later CSRF error. The comment in `fetchCsrfToken` records both facts so the
+  retry is not mistaken for dead code.
+- **The CTS root guard holds on every release.** `tm:root` is the list root on 7.50/7.58/8.16.
+  A missing request answers 404 with `<exc:exception>` on 7.58/8.16 and HTTP 200 with the caller's
+  full `tm:root` list on 7.50 — the existing missing-ID match still returns "not found" there.
+- Built client, end to end: `SAPTransport list` returns 1,017 / 14 / 7 requests on 7.58 / 8.16 /
+  7.50; `SAPTransport get` returns the matching request on 7.58 and the expected refusals for a
+  bogus ID on the others; the CSRF-dependent `SAPNavigate references` POST returns 6,646 / 7,492 /
+  26 entries. Startup logs `endpoint: /sap/bc/adt/core/discovery` on all three.
+- BTP Steampunk could not be probed — the ABAP instance answers HTTP 503 with an HTML page for
+  every path, including discovery. The HEAD-first order is preserved, so its bootstrap is unchanged.
+- The reported ECC 740 SP04 system remains unavailable; its sequence is only reproduced against a
+  local HTTP server. Reporter confirmation on that backend is still the missing evidence.
