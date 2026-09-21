@@ -10,8 +10,8 @@ import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/fe
 import { requestContext } from '../../../src/server/context.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
-const xml = readFileSync(new URL('../../fixtures/xml/publish-recovery/active.xml', import.meta.url), 'utf8');
-const failure = readFileSync(new URL('../../fixtures/xml/publish-recovery/error.xml', import.meta.url), 'utf8');
+const xml = readFileSync(new URL('../../fixtures/xml/publish-failure/active.xml', import.meta.url), 'utf8');
+const failure = readFileSync(new URL('../../fixtures/xml/publish-failure/error.xml', import.meta.url), 'utf8');
 const ok =
   '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>OK</SEVERITY></DATA></asx:values></asx:abap>';
 interface Send {

@@ -31,7 +31,6 @@ export async function inspectServiceBindingPublishFailure(
   const original = `Initial publish failed: ${result.shortText} — ${result.longText}`;
   const options = { signal: getCurrentContext()?.signal };
   try {
-    throwIfRequestCancelled(options);
     checkOperation(client.safety, OperationType.Read, 'GetSRVB');
     const response = await client.http.get(
       `/sap/bc/adt/businessservices/bindings/${encodeURIComponent(name)}?version=active`,

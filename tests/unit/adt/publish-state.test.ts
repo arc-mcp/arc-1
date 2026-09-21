@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { readPublishState } from '../../../src/adt/publish-state.js';
 
-const xml = readFileSync(new URL('../../fixtures/xml/publish-recovery/active.xml', import.meta.url), 'utf8');
+const xml = readFileSync(new URL('../../fixtures/xml/publish-failure/active.xml', import.meta.url), 'utf8');
 const name = 'ZARC1_PUBLISH';
 describe('strict active V4 UI publication state', () => {
   it('distinguishes explicit true and false without treating bindingCreated as readiness', () => {

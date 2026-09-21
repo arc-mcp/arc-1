@@ -4,7 +4,6 @@
 > after independent review. See [the final design](../plans/2026-09-16-publish-recovery.md)
 > for current behavior; retain the live evidence and separate create/retry findings below.
 
-
 Reviewed 2026-09-17 against PR #795 revision `b156f805`.
 
 ## Findings and scope
@@ -23,24 +22,6 @@ write never occurred. This supports investigating the customer's create-shell re
 does not prove that a 503 occurred there. The live control returned HTTP **400**, not the
 customer's reported **409**, and a malformed-definition activation error, not the reported
 missing-inactive-version error.
-
-## Corrections to the supplied PR review
-
-- An explicit fresh published state produces success, includes the original error as context,
-  and avoids another POST. It does not return the original failure as an error result.
-- The 150-second deadline starts after the initial publish error. It does not cap the entire
-  first publish plus recovery operation.
-- One logical recovery retry can include existing HTTP/auth/MIME fallbacks within its
-  20-send budget; it is not an unconditional maximum of two physical publish POSTs.
-- The supplied timed customer example has 10.011 seconds between the first error response
-  and the next tool invocation. It does not measure a zero-delay HTTP retry or prove a
-  universal ten-second synchronization interval.
-- SCO2 is the inbound service in the investigated backend path; SIA6 is the derived IAM app.
-- ARC-1 sends its configured language as `sap-language`. Changing only browser logon language
-  need not change the ADT response language. Non-English configured responses remain outside
-  the narrow error match, as do later service versions.
-- Changed-build live verification is now available. Successful natural transient recovery
-  is still missing. Generic green CI cannot substitute for that evidence.
 
 The existing manual SRVD-activation and create-shell workarounds are unaffected by #795.
 No automatic reactivation, recreation, broader error matching, or transport-policy change
@@ -63,6 +44,12 @@ source and network topology were not available. Both reports identify release 92
 | Identical SRVD update, then activate and publish | 2 | One POST each; explicitly published |
 | Fresh HTTP client after activation, same OAuth identity | 2 | One POST each; explicitly published |
 | Delete own generated SCO2 before first publish | 1 | Exact missing-inbound error twice; explicitly unpublished; no third POST |
+
+The supplied customer example has 10.011 seconds between the first error response and the
+next tool invocation; this does not establish a universal synchronization interval. In the
+investigated backend path, SCO2 is the inbound service and SIA6 is the derived IAM app.
+ARC-1 sends its configured language as `sap-language`; browser logon language alone does
+not determine the ADT response language.
 
 The eight variant tool durations were 45.058–52.308 seconds. The forced missing-SCO2 tool
 call took 12.644 seconds. A new HTTP client neither proves a different SAP application server
