@@ -320,58 +320,12 @@ describe('SDO registry write metadata', () => {
       expect(serverDrivenSourceContentType(code)).toBe('text/plain');
     }
   });
-});
 
-// DRTY (CDS Type — `define type …`, scalar types AND enums) is a plain blue type, structurally a
-// sibling of DSFD. Every value below was read off the live 816 trial, not inferred from the family:
-// docs/research/2026-09-18-drty-cds-type-adt-contract.md.
-describe('DRTY (CDS Type)', () => {
-  it('is a registered server-driven type', () => {
-    expect(isServerDrivenObjectType('DRTY')).toBe(true);
-  });
-
-  it('uses the ddic/drty/sources collection', () => {
+  // Read off the live 816 trial, not inferred from the family: SAP reports DRTY/STY for scalar types
+  // and enums alike, so create needs no subtype routing (unlike TABL /DT vs /DS, #285).
+  it('DRTY is pinned to the collection and subtype read live (816)', () => {
     expect(SDO_REGISTRY.DRTY.href).toBe('/sap/bc/adt/ddic/drty/sources');
-    expect(serverDrivenObjectUrl('DRTY', 'DEMO_CDS_ENUM_WEEKDAY')).toBe(
-      '/sap/bc/adt/ddic/drty/sources/DEMO_CDS_ENUM_WEEKDAY',
-    );
-  });
-
-  // Live metadata GETs and the 201 create response both report adtcore:type="DRTY/STY" — for scalar
-  // types AND enums alike, so create needs no subtype routing (unlike TABL /DT vs /DS, #285).
-  it('creates with the DRTY/STY subtype, which also covers enums', () => {
     expect(SDO_REGISTRY.DRTY.createType).toBe('DRTY/STY');
-  });
-
-  // Not inferred from the blue family: a source PUT with application/json under a valid lock returns
-  // 415 ExceptionUnsupportedMediaType, and the collection's $formatter advertises text/plain.
-  it('writes its source as DDL text, not AFF JSON', () => {
-    expect(serverDrivenSourceContentType('DRTY')).toBe('text/plain');
-  });
-
-  it('supportsServerDrivenObject: true when the DRTY collection advertises blues', () => {
-    const http = {
-      hasDiscoveryData: () => true,
-      discoveryAcceptFor: (p: string) =>
-        p === '/sap/bc/adt/ddic/drty/sources' ? 'application/vnd.sap.adt.blues.v1+xml, text/html' : undefined,
-    } as unknown as AdtHttpClient;
-    expect(supportsServerDrivenObject(http, 'DRTY')).toBe(true);
-  });
-
-  it('supportsServerDrivenObject: false on a system without the collection', () => {
-    const http = {
-      hasDiscoveryData: () => true,
-      discoveryAcceptFor: () => undefined,
-    } as unknown as AdtHttpClient;
-    expect(supportsServerDrivenObject(http, 'DRTY')).toBe(false);
-  });
-
-  it('builds a blue:blueSource create body carrying DRTY/STY and the package', () => {
-    const xml = buildServerDrivenMetadataXml('DRTY', 'ZARC1_DRTY_PROBE', '$TMP', 'CDS type');
-    expect(xml).toContain('<blue:blueSource');
-    expect(xml).toContain('adtcore:type="DRTY/STY"');
-    expect(xml).toContain('adtcore:name="ZARC1_DRTY_PROBE"');
-    expect(xml).toContain('adtcore:name="$TMP"');
   });
 });
 
@@ -472,7 +426,7 @@ describe('buildServerDrivenMetadataXml', () => {
     // The create body deliberately omits masterLanguage: a4h-2025 (816) silently ignores it
     // (create with "DE" → object read back as the session language). Master language comes from
     // the sap-language request param (session = config.language), as with other source objects.
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD']) {
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD', 'DRTY']) {
       expect(buildServerDrivenMetadataXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
     }
   });

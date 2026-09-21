@@ -92,10 +92,12 @@ accepted types, so a model recovers on the next call.
 
 ## Verification
 
-Unit coverage mirrors the existing DTDC and DSFD blocks in `tests/unit/adt/server-driven.test.ts`:
-type recognition, object URL construction, `createType`, metadata content type, and
-`serverDrivenSourceContentType('DRTY') === 'text/plain'`. `tests/unit/handlers/registry-sync.test.ts`
-needs no change; it validates the derivation itself.
+Unit coverage goes into the parameterized lists in `tests/unit/adt/server-driven.test.ts`, the way
+DSFD and every other plain blue type is covered — blues marker, `text/plain` source, cloud-safe
+create body, absolute href. A dedicated block is reserved for a type that breaks the family contract
+(DTDC, the only non-blue one); DRTY does not. Two things still need a hand: one `it` pinning the
+collection and `DRTY/STY` as read live, and the hardcoded list in the `masterLanguage` assertion.
+`tests/unit/handlers/registry-sync.test.ts` needs no change; it validates the derivation itself.
 
 Adding a type changes the frozen LLM surface in `tests/fixtures/tool-definitions/` (7 of the 11
 files, locked by `tool-definitions-snapshot.test.ts`; the hyperfocused and live-relations-navigate
@@ -105,9 +107,10 @@ contain the DRTY enum members and the prose additions and nothing else.
 Then run the full round trip through ARC-1's own code path against the live trial — create, update,
 activate, read, delete — not only the by-hand HTTP probe already recorded in the research document.
 
-Documentation to update: `docs_page/tools.md` (type tables and the server-driven writes section,
-where DRTY joins the DDL-text list), `docs_page/btp-abap-environment.md` (SAPRead type inventory),
-and the roadmap entry above.
+Documentation to update: `AGENTS.md` and `docs/dev-guide.md` (the server-driven rows enumerate the
+`sourceFormat: 'text'` types, so both go stale the moment one is added), `docs_page/tools.md` (type
+tables and the server-driven writes section, where DRTY joins the DDL-text list),
+`docs_page/btp-abap-environment.md` (SAPRead type inventory), and the roadmap entry above.
 
 ## Live facts
 

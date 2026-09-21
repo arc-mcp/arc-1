@@ -206,10 +206,8 @@ export const SDO_REGISTRY = {
     ...BLUE_METADATA,
     sourceFormat: 'json',
   },
-  // CDS Type (`define type …`) — scalar types AND enumerated types. A plain blue sibling of DSFD.
-  // SAP models both flavors with the SINGLE subtype DRTY/STY, so create needs no subtype routing
-  // (unlike TABL /DT vs /DS, #285). Source is DDL text: a PUT with application/json under a valid
-  // lock returns 415. Live-verified 816: docs/research/2026-09-18-drty-cds-type-adt-contract.md.
+  // Plain blue sibling of DSFD. DRTY/STY covers scalar types AND enums, so create needs no subtype
+  // routing. DDL-text source (JSON PUT = 415). Verified 816: docs/research/2026-09-18-drty-cds-type-adt-contract.md
   DRTY: {
     href: '/sap/bc/adt/ddic/drty/sources',
     label: 'CDS Type (scalar type / enum)',
