@@ -86,3 +86,25 @@ transient error followed by successful live recovery is still unobserved. The fo
 SCO2 case validates bounded failure behavior, not the customer's root cause or retry success.
 See the [feedback investigation](2026-09-17-publish-feedback-investigation.md) for the separate
 create-response-loss control, its limitations, and the final cleanup record.
+
+## Review validation, 2026-09-21
+
+The tested implementation is `c9fe4de981e876432559278f07fb9f178d20a2c7`, including current
+main `ef9f61bf`. Recovery now requires the target-scoped resolved BTP type; bearer-only
+inference was removed. Every publication disables transient HTTP replay, while preserving
+rejection-based authentication/CSRF/MIME handling. Unpublish and other mutations retain their
+existing policies; this is not the general create/retry fix.
+
+Seven new/changed regression cases failed before the fixes. The real transport against a
+loopback SAP substitute now preserves a job committed before a replaced 429/500/502/503/504
+response or dropped connection, without resending it. This covers both initial/recovery
+attempts and both error-disclosure modes: completion stays unconfirmed, the tool recommends
+reading publication state, and the substitute's readback proves the committed state remains.
+These are controlled simulations, not live SAP failures or proof of the customer's cause.
+
+All **7,017 tests in 229 files** pass. Typecheck, lint, build, policy, file/schema budgets and
+strict MkDocs pass; lint has two existing informational notices. No size budget was raised.
+Fresh live publication testing was unavailable: the configured BTP ADT endpoint returned
+HTTP 503 to an unauthenticated discovery HEAD before login. No new BTP objects were created.
+The 920 SP04 results above belong to the earlier build; the natural transient failure followed
+by successful recovery remains unverified, so the PR stays draft. GitHub CI was not waited on.
