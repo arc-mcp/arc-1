@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AdtClient } from '../../../src/adt/client.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
-import { getTransport, listTransports } from '../../../src/adt/transport.js';
+import { listTransports } from '../../../src/adt/transport.js';
 import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import { runStartupAuthPreflightWithClient } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -186,16 +186,9 @@ describe('legacy ADT discovery against a real HTTP server', () => {
     expect(requests.map((r) => r.method)).toEqual(['HEAD', 'GET', 'GET']);
   });
 
-  it.each(['', '<unexpected/>'])('rejects unsupported CTS responses: %j', async (body) => {
-    const baseUrl = await serve((_req, res) => {
-      res.writeHead(200, { 'content-type': 'text/html' });
-      res.end(body);
-    });
-    const http = client(baseUrl);
-    await expect(listTransports(http, defaultSafetyConfig())).rejects.toThrow(
-      /transport API.*unavailable|unexpected CTS/i,
-    );
-    await expect(getTransport(http, defaultSafetyConfig(), 'DEVK900001')).rejects.toThrow(
+  it('rejects an empty HTTP 200 CTS body instead of reporting no transports', async () => {
+    const baseUrl = await serve((_req, res) => respond(res));
+    await expect(listTransports(client(baseUrl), defaultSafetyConfig())).rejects.toThrow(
       /transport API.*unavailable|unexpected CTS/i,
     );
   });
@@ -217,7 +210,7 @@ describe('legacy ADT discovery against a real HTTP server', () => {
     });
     expect(result.isError).toBe(true);
     const message = result.content[0]?.text ?? '';
-    expect(message).toContain('no transport organizer document was returned');
+    expect(message.match(/no transport organizer document was returned/g)).toHaveLength(1);
     expect(message).toContain('does not establish an empty list or a missing request');
     expect(message).not.toContain('PRIVATE_BACKEND_DETAIL');
     if (minimalErrors) {

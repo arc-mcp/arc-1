@@ -1440,7 +1440,7 @@ function parseTransportList(xml: string, path: string): TransportRequest[] {
     const explanation =
       'Transport API unavailable or unexpected CTS response: no transport organizer document was returned. This response does not establish an empty list or a missing request.';
     const error = new AdtApiError(explanation, 200, path);
-    // This fixed ARC-1 explanation is safe in minimal mode; never attach SAP response text here.
+    // Minimal mode hides the message; extraHint preserves this fixed explanation, never SAP response text.
     error.extraHint = explanation;
     throw error;
   }
