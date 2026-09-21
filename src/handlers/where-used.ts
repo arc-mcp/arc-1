@@ -55,11 +55,7 @@ export async function resolveWhereUsedUri(
   if (type === 'TABL') {
     return client.resolveTablObjectUrl(name);
   }
-  // Server-driven objects (DRTY, DSFD, …) live under their own collections. `objectUrlForType`
-  // does not know them and falls back to /programs/programs/, which made SAPNavigate(references)
-  // ask SAP about a non-existent program and return an honest-looking but wrong `total: 0`
-  // while SAPContext(usages) — which resolves the URI via search — found the real usages.
-  // Live-verified on 816 with DEMO_CDS_ENUM_WEEKDAY (0 → 6).
+  // These objects have registered collections; the generic resolver would treat them as programs.
   if (isServerDrivenObjectType(type)) {
     return serverDrivenObjectUrl(type, name);
   }
