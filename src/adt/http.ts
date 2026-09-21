@@ -1106,9 +1106,9 @@ export class AdtHttpClient {
         response = await probe('HEAD');
       }
 
-      // HEAD is refused on some systems or succeeds without a token. 7.50/7.58/8.16 all answer
-      // 400 and still send a token, so the GET below is the normal second request there, not an
-      // exception — GET is the broadly supported bootstrap and the only one that proves success.
+      // The tested 7.50/7.58/8.16 systems returned HEAD 400 with a token; GET returned 200.
+      // Retry these HEAD refusals or a successful response without a token on the same path.
+      // A successful HEAD with a usable token remains the one-request fast path.
       if ([400, 403, 405].includes(response.status) || (response.ok && !usableToken(response))) {
         response = await probe('GET');
       }

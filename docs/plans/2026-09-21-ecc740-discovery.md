@@ -76,13 +76,15 @@ three authorized test systems, then ran the built client against each:
 | 7.58 SP02 (a4h, client 001) | 400 + token | 200 + token, 132 B | 200 + token, 293 KB | 404 | `<tm:root>` |
 | 8.16 (a4h-2025, client 001) | 400 + token | 200 + token, 1.3 KB | 200 + token, 389 KB | 404 | `<tm:root>` |
 
-- **The HEAD-400-with-token case is the rule on every supported on-prem release, not an
-  exception.** Requiring `response.ok` therefore costs exactly one extra 132 B `GET` per CSRF
-  bootstrap (once per client, only on the first token-bearing request). That is accepted here: the
+- **All three tested on-premise systems returned HEAD 400 with a token.** This does not establish
+  behavior for every installation of those releases. Requiring `response.ok` adds one GET on
+  that bootstrap path (132 B response body on 7.50/7.58, 1.3 KB on 8.16, plus headers). Bootstrap
+  can run again after token/session refresh; it is not limited to once per client. The tradeoff
+  is accepted here: the
   old code accepted a token from *any* status, including a 401, which masked the authentication
   failure behind a later CSRF error. The comment in `fetchCsrfToken` records both facts so the
   retry is not mistaken for dead code.
-- **The CTS root guard holds on every release.** `tm:root` is the list root on 7.50/7.58/8.16.
+- **The CTS root guard holds on the three tested systems.** `tm:root` is the list root on 7.50/7.58/8.16.
   A missing request answers 404 with `<exc:exception>` on 7.58/8.16 and HTTP 200 with the caller's
   full `tm:root` list on 7.50 — the existing missing-ID match still returns "not found" there.
 - Built client, end to end: `SAPTransport list` returns 1,017 / 14 / 7 requests on 7.58 / 8.16 /
@@ -90,12 +92,38 @@ three authorized test systems, then ran the built client against each:
   bogus ID on the others; the CSRF-dependent `SAPNavigate references` POST returns 6,646 / 7,492 /
   26 entries. Startup logs `endpoint: /sap/bc/adt/core/discovery` on all three.
 - BTP Steampunk could not be probed — the ABAP instance answers HTTP 503 with an HTML page for
-  every path, including discovery. The HEAD-first order is preserved, so its bootstrap is unchanged.
-- **Known limitation of the CTS guard:** it throws `AdtApiError(..., 200, path)`, and
+  every path, including discovery. HEAD-first order is preserved, but this does not validate the
+  stricter token/status behavior on that unavailable target.
+- **Initial limitation of the CTS guard, corrected below:** it throws `AdtApiError(..., 200, path)`, and
   `ARC1_MINIMAL_ERRORS` (the HTTP default) replaces every `AdtApiError` message with
   `ADT API error: status 200.` plus the request-ID hint. The false negative is gone in every mode —
   the call fails instead of returning an empty list — but the explanation only reaches stdio and
   trusted-debug deployments. Preserving an ARC-1-authored message through minimal mode needs a
-  dispatch-level rule (the data-preview WAF hint is the existing precedent) and is left out here.
+  disclosure decision. The follow-up below addresses it through the existing safe-hint path.
 - The reported ECC 740 SP04 system remains unavailable; its sequence is only reproduced against a
   local HTTP server. Reporter confirmation on that backend is still the missing evidence.
+
+## Follow-up plan after review
+
+1. Reproduce the lost CTS explanation through the production tool dispatcher and real loopback
+   HTTP responses for both list/get and minimal/detailed error modes. Assert that unexpected
+   response content and the private request path never become the client-facing hint.
+2. Attach an ARC-1-authored constant explanation with the existing `AdtApiError.extraHint` field.
+   Keep raw SAP response text suppressed in minimal mode. No new exception class, generic
+   disclosure flag or dispatch special case is needed.
+3. Keep the cookie fixture's flags and the existing token/status checks. Qualify the measured
+   HEAD behavior in comments; retain successful HEAD as the fast path.
+4. Run the regression before/after, the full local unit suite, static checks and live read-only
+   controls. Recheck the roadmap; this remains a bounded #817 fix, separate from ARCH-01/OPS-02.
+
+## Follow-up results
+
+The two new minimal-mode list/get cases failed before the correction; all 21 loopback cases now
+pass, including detailed-mode controls and assertions against private body/path disclosure.
+The focused suites passed 301 tests; all 6,914 unit tests across 225 files passed. Typecheck,
+build, lint (two existing informational notices), policy, file/schema budgets and docs build pass.
+
+Live read-only controls on a4h/758 SP02, client 001, HTTPS/Basic passed again with the changed
+source: startup at core discovery, five DSFD where-used entries without fallback, and 68 own
+transports with matching get read-back. No new multi-release or installed-client coverage is
+claimed. GitHub CI runs were intentionally excluded from this follow-up review.

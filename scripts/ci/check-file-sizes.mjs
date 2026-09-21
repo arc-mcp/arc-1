@@ -74,7 +74,7 @@ const BUDGETS = {
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   'src/adt/http.ts': 1553, // #817: smaller shared probe retains the #807 session-owned proxy lifecycle.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
-  'src/adt/transport.ts': 1506,
+  'src/adt/transport.ts': 1507, // Keep the safe CTS explanation in minimal-error mode.
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
   'src/server/server.ts': 1485, // #817: preserve the actual bootstrap endpoint in diagnostics.
 };

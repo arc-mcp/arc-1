@@ -1437,11 +1437,12 @@ function findDeepValue(obj: unknown, key: string): unknown {
 function parseTransportList(xml: string, path: string): TransportRequest[] {
   const parsed = parseXml(xml);
   if (!Object.hasOwn(parsed, 'root')) {
-    throw new AdtApiError(
-      'Transport API unavailable or unexpected CTS response: no transport organizer document was returned. This response does not establish an empty list or a missing request.',
-      200,
-      path,
-    );
+    const explanation =
+      'Transport API unavailable or unexpected CTS response: no transport organizer document was returned. This response does not establish an empty list or a missing request.';
+    const error = new AdtApiError(explanation, 200, path);
+    // This fixed ARC-1 explanation is safe in minimal mode; never attach SAP response text here.
+    error.extraHint = explanation;
+    throw error;
   }
   const requests = findDeepNodes(parsed, 'request');
 

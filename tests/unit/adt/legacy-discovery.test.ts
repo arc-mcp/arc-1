@@ -4,6 +4,7 @@ import { AdtClient } from '../../../src/adt/client.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { getTransport, listTransports } from '../../../src/adt/transport.js';
+import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import { runStartupAuthPreflightWithClient } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -197,5 +198,32 @@ describe('legacy ADT discovery against a real HTTP server', () => {
     await expect(getTransport(http, defaultSafetyConfig(), 'DEVK900001')).rejects.toThrow(
       /transport API.*unavailable|unexpected CTS/i,
     );
+  });
+
+  it.each([
+    ['list', true],
+    ['get', true],
+    ['list', false],
+    ['get', false],
+  ] as const)('explains invalid CTS %s responses with minimalErrors=%s', async (action, minimalErrors) => {
+    const baseUrl = await serve((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/xml' });
+      res.end('<unexpected>PRIVATE_BACKEND_DETAIL</unexpected>');
+    });
+    const adt = new AdtClient({ baseUrl });
+    const result = await handleToolCall(adt, { ...DEFAULT_CONFIG, minimalErrors }, 'SAPTransport', {
+      action,
+      ...(action === 'get' ? { id: 'PRIVATE_REQUEST_ID' } : { user: 'PRIVATE_USER' }),
+    });
+    expect(result.isError).toBe(true);
+    const message = result.content[0]?.text ?? '';
+    expect(message).toContain('no transport organizer document was returned');
+    expect(message).toContain('does not establish an empty list or a missing request');
+    expect(message).not.toContain('PRIVATE_BACKEND_DETAIL');
+    if (minimalErrors) {
+      expect(message).not.toContain('PRIVATE_REQUEST_ID');
+      expect(message).not.toContain('PRIVATE_USER');
+      expect(message).not.toContain('/sap/bc/adt/');
+    }
   });
 });
