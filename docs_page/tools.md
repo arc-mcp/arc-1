@@ -1469,7 +1469,7 @@ Use `SAPLint(action="list_rules")` to inspect the effective configuration:
 - `syntaxVersion`: the actual parser setting after custom configuration, such as `v758` or
   `{ "release": "Newest", "language": "Cloud" }`. This is distinct from the SAP release.
 - `warnings`: explains unknown-release findings using that effective syntax. Without a detected or
-  configured release, on-prem defaults to v702; Cloud and custom syntax settings can differ.
+  configured release, standalone on-prem lint defaults to v702; Cloud and custom syntax settings can differ.
 
 Cached probe settings take precedence over lint's configuration fallback. The probe itself honors
 an explicit `SAP_SYSTEM_TYPE` override and preserves its `config` origin. A custom
@@ -1479,10 +1479,14 @@ an explicit `SAP_SYSTEM_TYPE` override and preserves its `config` origin. A cust
 
 When `--lint-before-write` is enabled (default: true), SAPWrite automatically runs a strict subset of lint rules before writing to SAP. Parser errors and cloud violations block the write. Style issues (keyword case, indentation) never block writes.
 
-`edit_unit` validates the resulting whole source, including unchanged FORMs. If SAP accepts a
-statement that local lint rejects, check `list_rules` and verify the target release before changing
-valid source. If detection is unavailable, configure `SAP_ABAP_RELEASE` to the verified release;
-also check any custom syntax override. Keep lint enabled while diagnosing the mismatch.
+`edit_unit` validates the resulting whole source, including unchanged FORMs. When neither probe
+nor configuration supplies a release, this action uses the on-prem parser ceiling (currently v758)
+for unit lookup and pre-write validation. This is an operation-specific grammar fallback, not a
+detected SAP release; standalone `SAPLint list_rules` still reports its own v702 fallback in that
+case. Known probe/config releases and custom lint syntax overrides retain precedence. Configure
+`SAP_ABAP_RELEASE` to the verified target release when detection is unavailable. If SAP accepts a
+statement that local lint rejects, verify these settings before changing valid source; malformed
+replacements still block, and lint should stay enabled while diagnosing the mismatch.
 
 **Execution mode note:**
 

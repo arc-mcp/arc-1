@@ -19,20 +19,38 @@
    release warnings name the actual syntax; keep their wording short and actionable. Preserve
    an explicit system-type override's origin when the probe caches it.
 3. Point pre-write failures to `SAPLint list_rules` and version/configuration checks before
-   suggesting source changes. Preserve validation, severity, override and write behavior.
+   suggesting source changes. Preserve rule severity, custom overrides and whole-source validation.
 4. Cover default, explicit, probed, Cloud and custom syntax configurations through dispatch.
    Reproduce #775 through `edit_unit`, proving the untouched source survives at release 758
-   and that rejected edits issue no PUT. Keep malformed replacement coverage.
+   and that rejected edits issue no PUT. Align the unknown-release `edit_unit` fallback with
+   unit lookup using the shared on-prem ceiling; leave standalone lint defaults unchanged.
 5. Update the existing tool documentation, run focused and full local checks, review the final
    diff, then update #597. Keep #775 open unless its complete reported failure is resolved.
 
 ## Validation
 
-- Regression tests failed before the diagnostic changes; 6,976 unit tests now pass. Typecheck,
-  lint, build, policy, size/schema budgets and strict documentation build pass.
-- Current code, direct Basic over HTTPS to a4h SAP_BASIS 758: live feature probe followed by
-  local `SAPLint list_rules` reports onprem/probe, release 758/probe, v758 syntax and no warning.
-  This checks metadata and diagnostics, not live source mutation, syntax checking or activation.
-- #775 remains open: the complete customer source and effective configuration are unavailable.
+- The original diagnostics regressions and the new no-release `edit_unit` regression failed
+  before their respective fixes. **6,980 tests** pass; typecheck, lint, build, policy,
+  file/schema budgets and strict MkDocs pass. Known older probe/config releases, probe
+  precedence, a custom v750 config and malformed replacements remain blocking controls.
+- Live a4h SAP_BASIS 758, direct HTTPS Basic, this PR's built implementation: created an
+  owned disposable `$TMP` program with modern `SELECT FROM ... FIELDS ...` in an untouched
+  FORM. Cleared the probe cache and omitted the configured release for `edit_unit`.
+  The edit succeeded, preserved the untouched source and passed SAP's inactive syntax check.
+  A malformed replacement was blocked and readback proved the source stayed unchanged.
+  No program was executed or activated. Deleted the test program and verified HTTP 404.
+- The first live harness run used the wrong syntax-result property (`success` instead of
+  `checked`/`hasErrors`); cleanup succeeded. The corrected harness passed all assertions
+  on a fresh object, which was also deleted and verified absent.
+- Earlier read-only live diagnostics correctly reported onprem/probe, 758/probe, v758.
+  The exact customer `DELETE ... UP TO` example remains a local regression: #775 stays
+  open because its complete source/effective configuration is unavailable.
 
-No roadmap impact: this explains existing configuration and preserves lint policy.
+## Review decisions
+
+Accepted F1 narrowly: unit lookup and validation shared no-release grammar after previously
+using v758/v702 respectively. Both now use the existing `ABAPLINT_MAX_RELEASE` constant.
+Known releases/custom lint syntax still win. Rejected the broader global-default change:
+it would also alter standalone `lint_and_fix` output. F2 is clarified in the tool docs:
+`list_rules` reports standalone lint, while `edit_unit` has an explicit local fallback.
+No roadmap impact; this fixes an existing operation and explains its configuration.

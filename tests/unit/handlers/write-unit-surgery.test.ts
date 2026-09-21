@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
@@ -84,54 +87,74 @@ function mockEditUnitFlow(opts: {
 }
 
 describe('SAPWrite edit_unit', () => {
+  const configDirectory = mkdtempSync(join(tmpdir(), 'arc1-unit-lint-'));
+  const customConfig = join(configDirectory, 'abaplint.json');
+  beforeAll(() => writeFileSync(customConfig, JSON.stringify({ syntax: { version: 'v750' } })));
+  afterAll(() => rmSync(configDirectory, { recursive: true, force: true }));
   beforeEach(() => {
     vi.resetAllMocks();
     resetCachedFeatures();
   });
 
-  it.each(['default', 'configured', 'probed', 'malformed'] as const)(
-    'checks the #775 unchanged DELETE statement with %s configuration',
-    async (mode) => {
-      const name = 'ZARC1_LINT';
-      const surrounding = `FORM untouched.
+  it.each([
+    'default',
+    'configured',
+    'probed',
+    'configured-old',
+    'probed-old',
+    'custom-old',
+    'malformed-default',
+    'malformed',
+  ] as const)('checks the #775 unchanged DELETE statement with %s configuration', async (mode) => {
+    const name = 'ZARC1_LINT';
+    const surrounding = `FORM untouched.
   DO.
     DELETE FROM ztable WHERE some_field IN @lr_range AND key_field IN @s_key UP TO 20000 ROWS.
     IF sy-subrc IS NOT INITIAL. EXIT. ENDIF.
     COMMIT WORK.
   ENDDO.
 ENDFORM.`;
-      const calls = mockEditUnitFlow({
-        type: 'PROG',
-        name,
-        objectPath: `/sap/bc/adt/programs/programs/${name}`,
-        activeSource: `REPORT zarc1_lint.\n${surrounding}\nFORM target.\n WRITE 'old'.\nENDFORM.`,
-      });
-      if (mode === 'probed') setCachedFeatures({ ...featuresOff(), systemType: 'onprem', abapRelease: '758' });
-      const config =
-        mode === 'configured' || mode === 'malformed' ? { ...DEFAULT_CONFIG, abapRelease: '758' } : DEFAULT_CONFIG;
-      const result = await handleToolCall(createClient(), config, 'SAPWrite', {
-        action: 'edit_unit',
-        type: 'PROG',
-        name,
-        unit: 'target',
-        source:
-          mode === 'malformed'
-            ? 'FORM target.\n not_an_abap_statement.\nENDFORM.'
-            : "FORM target.\n WRITE 'new'.\nENDFORM.",
-      });
-      if (mode === 'default' || mode === 'malformed') {
-        expect(result.isError).toBe(true);
-        expect(result.content[0]!.text).toContain('parser_error');
-        expect(result.content[0]!.text).toContain('list_rules');
-        expect(calls.some((call) => call.method === 'PUT')).toBe(false);
-      } else {
-        expect(result.isError).toBeUndefined();
-        const put = calls.find((call) => call.method === 'PUT');
-        expect(put?.body).toContain(surrounding);
-        expect(put?.body).toContain("WRITE 'new'.");
-      }
-    },
-  );
+    const calls = mockEditUnitFlow({
+      type: 'PROG',
+      name,
+      objectPath: `/sap/bc/adt/programs/programs/${name}`,
+      activeSource: `REPORT zarc1_lint.\n${surrounding}\nFORM target.\n WRITE 'old'.\nENDFORM.`,
+    });
+    if (mode === 'probed' || mode === 'probed-old') {
+      setCachedFeatures({ ...featuresOff(), systemType: 'onprem', abapRelease: mode === 'probed' ? '758' : '750' });
+    }
+    const config = {
+      ...DEFAULT_CONFIG,
+      abaplintConfig: mode === 'custom-old' ? customConfig : undefined,
+      abapRelease:
+        mode === 'configured-old' || mode === 'probed'
+          ? '750'
+          : ['configured', 'malformed', 'probed-old'].includes(mode)
+            ? '758'
+            : undefined,
+    };
+    const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+      action: 'edit_unit',
+      type: 'PROG',
+      name,
+      unit: 'target',
+      source: mode.startsWith('malformed')
+        ? 'FORM target.\n not_an_abap_statement.\nENDFORM.'
+        : "FORM target.\n WRITE 'new'.\nENDFORM.",
+    });
+    if (mode.endsWith('-old') || mode.startsWith('malformed')) {
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('parser_error');
+      expect(result.content[0]!.text).toContain('list_rules');
+      if (mode.startsWith('malformed')) expect(result.content[0]!.text).not.toContain('"DELETE"');
+      expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+    } else {
+      expect(result.isError).toBeUndefined();
+      const put = calls.find((call) => call.method === 'PUT');
+      expect(put?.body).toContain(surrounding);
+      expect(put?.body).toContain("WRITE 'new'.");
+    }
+  });
 
   it('validates unit, source, and supported object type before I/O', async () => {
     for (const args of [

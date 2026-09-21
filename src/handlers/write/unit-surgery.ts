@@ -1,7 +1,7 @@
 /** SAPWrite action for surgical FORM/MODULE replacement in PROG and INCL sources. */
 
 import { safeUpdateSource } from '../../adt/crud.js';
-import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
+import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { spliceUnit } from '../../context/unit-surgery.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { resolveVersionAndDraftInfo } from '../read.js';
@@ -49,13 +49,14 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
   );
   const currentSource = (await client.getSourceAtObjectUrl(objectUrl, { version: effectiveVersion })).source;
   const cachedFeatures = getCachedFeatures();
-  const abaplintVersion = cachedFeatures?.abapRelease
-    ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-    : undefined;
+  // Match unit lookup's on-prem ceiling only when the target release is unknown.
+  // Keep this fallback local: standalone lint and other write actions still use their defaults.
+  const lintConfig = { ...config, abapRelease: config.abapRelease ?? String(ABAPLINT_MAX_RELEASE) };
+  const abaplintVersion = mapSapReleaseToAbaplintVersion(cachedFeatures?.abapRelease ?? lintConfig.abapRelease);
   const spliced = spliceUnit(currentSource, name, unit, source, abaplintVersion);
   if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 
-  const lint = runPreWriteLint(spliced.newSource, type, name, config, lintOverride);
+  const lint = runPreWriteLint(spliced.newSource, type, name, lintConfig, lintOverride);
   if (lint.blocked) return lint.result!;
   const checkNotes = await runPreWriteSyntaxCheck(client, type, spliced.newSource, objectUrl, config, checkOverride);
 
