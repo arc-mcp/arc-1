@@ -558,7 +558,8 @@ Use the Viewer identity. After OAuth:
 These calls establish safe-read access, not the backend login identity: `SYSTEM.user` can come from
 configuration or token claims. Follow [backend identity verification](principal-propagation-setup.md#verify-the-backend-identity)
 with Basis and record that result separately. For shared Basic, verify the intended technical user
-in the backend evidence; Admin `SAPTargets` labels that target `identity: "shared"`.
+in the backend evidence. For discovered multi-target Basic destinations, Admin `SAPTargets` also
+labels the identity as `shared`; single-target `/mcp` has no `SAPTargets` tool.
 
 For the multi-only example, verify that `/mcp` is unavailable and pinned routes do not expose
 `SAPTargets`. The aggregate catalog is configuration inventory, not proof of the user's SAP access.

@@ -244,7 +244,7 @@ Use restrictive resource mappings:
 
 | URL path | Policy | Needed for |
 |---|---|---|
-| `/sap/bc/adt` | Path and all sub-paths | ARC-1 core ADT operations and all multi-target v1 routes |
+| `/sap/bc/adt` | Path and all sub-paths | Core ADT operations in single-target and multi-target modes |
 | `/sap/bc/cts_abapvcs` | Path and all sub-paths | Optional single-target gCTS operations and the `SAP_FEATURE_GCTS=auto` probe |
 | `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` | Path and all sub-paths | Optional single-target FLP management and the `SAP_FEATURE_FLP=auto` probe |
 | `/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV` | Path and all sub-paths | Optional UI5 Repository metadata reads (`SAPRead` type `BSP_DEPLOY`) and the `SAP_FEATURE_UI5REPO=auto` probe |
@@ -260,9 +260,11 @@ path and change the associated flag to `auto` or `on` after approval. Multi-targ
 `BSP_DEPLOY` uses the UI5 Repository path and is outside this initial ADT-only profile.
 
 A single-target optional probe returning 401/403/404 marks that feature unavailable; it does not
-by itself establish why the MCP connection failed. A 401/403 at the single-Basic startup preflight
-path `/sap/bc/adt/core/discovery` blocks shared SAP tool calls and requires repair followed by a
-restart. Discovered Basic targets have a separate [authentication guard](multi-target-administration.md#basic-shared-identity-controls)
+by itself establish why the MCP connection failed. A 401/403 during single-Basic startup
+authentication/CSRF bootstrap blocks shared SAP tool calls and requires repair followed by a
+restart. Check the endpoint reported in the error: bootstrap starts at `/sap/bc/adt/core/discovery`
+and can use `/sap/bc/adt/discovery` on older systems. Discovered Basic targets have a separate
+[authentication guard](multi-target-administration.md#basic-shared-identity-controls)
 that can block the shared credentials after any SAP 401, including a feature probe. Diagnose the
 exact failed request path and layer before treating an error as an expected optional-feature miss.
 
