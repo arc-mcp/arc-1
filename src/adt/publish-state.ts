@@ -1,4 +1,4 @@
-/** Conservative recovery evidence; the general SRVB parser defaults absent flags to false. */
+/** Conservative publication evidence; the general SRVB parser defaults absent flags to false. */
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
 const SRVB = 'http://www.sap.com/adt/ddic/ServiceBindings';
@@ -12,7 +12,7 @@ const parser = new XMLParser({
 });
 export type PublishState = 'published' | 'unpublished' | 'unknown';
 
-/** Only the live-verified, single-version active V4 UI shape authorizes recovery. */
+/** Only report a known state for the live-verified, single-version active V4 UI shape. */
 export function readPublishState(xml: string, name: string, version: string): PublishState {
   if (Buffer.byteLength(xml) > 256 * 1024 || /<!DOCTYPE/i.test(xml) || XMLValidator.validate(xml) !== true)
     return 'unknown';

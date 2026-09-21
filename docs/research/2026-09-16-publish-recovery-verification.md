@@ -1,110 +1,61 @@
-# BTP V4 publish recovery: verification and limits
+# Publication failure handling: verification and limits
 
-## Scope and evidence
+## Current behavior after independent review
 
-This change handles one observed BTP OData V4 UI publish error for service version `0001`:
-`Local Publish of <binding> failed` / `Inbound service <binding>_0001_G4BA does not exist`.
-It does not fix or identify the SAP backend root cause. The customer observed successful
-repetition; the timed example included approximately ten seconds before the next attempt.
+PR #795 now prevents transient publication replay and reads state after the exact BTP V4 UI
+missing-inbound error. It no longer automatically publishes a second time. Explicit active
+published state confirms success; unpublished/unknown state preserves the SAP error and
+returns guidance. The strict XML fixtures retain the relevant live wire shape with identities
+sanitized. No SAP implementation source or credentials are included.
 
-Research on SAP_BASIS/SAP_CLOUD 920 SP04, before this patch, found six normal first-publish
-successes. Deleting only an owned, unpublished test binding's generated SCO2 deliberately
-produced the exact error twice, including after a ten-second wait. Its active SRVB metadata
-still reported `bindingCreated=true`. Re-activation and a save/activation did not recreate
-that missing dependency. All test bindings and source objects were subsequently removed;
-a pre-existing package-removal problem is separate from publish recovery.
+The 2026-09-21 review removed the ten-second delay, 150-second recovery deadline, 20-send
+allowance, second state read, retry and package-revalidation plumbing. The original publish's
+package/write gates remain. State inspection uses caller cancellation and existing HTTP limits.
+The former budget did not include subtree package BFS; there is no total-send cap claim now.
 
-The two XML fixtures in `tests/fixtures/xml/publish-recovery/` preserve the relevant live
-wire shape, with object/package identities replaced and unrelated metadata omitted. They
-contain no tenant endpoints, users, credentials or SAP implementation source.
+Publication opts out of availability/database-session replay. Existing protocol behavior is
+retained, including one token-refresh replay after any 403. Minimal mode now keeps standard
+HTTP status and request-correlation guidance. Unpublish and other writes are unchanged;
+the broader create/retry gap in the feedback investigation is still separate.
 
-## Behavior and review
+## Historical live SAP evidence — earlier implementation
 
-- Eligibility uses structured SAP fields, confirmed BTP type and V4 routing. It requires
-  exact binding-specific English text and version `0001`. Unknown targets, V2, other
-  service versions and unrelated errors keep their original path.
-- A fresh direct active metadata read must identify a single V4 UI binding and an explicit
-  published boolean. Missing/ambiguous fields remain unknown. `bindingCreated` is not
-  considered evidence that the generated inbound service exists.
-- Already published means confirmed success, with the original failure retained in the
-  response text and no repost. Otherwise the ten-second grace period is followed by
-  another state check, a fresh real-package gate and the write ceiling before one retry.
-- Recovery success needs explicit active publication evidence. Repeated SAP errors,
-  exceptions and unverifiable completion retain an error with the initial failure and
-  recovery outcome. Different retry failures do not receive a misleading missing-object hint.
-- All state is local to the call and uses the original SAP client. No per-user data cache,
-  background task, object repair, schema addition, release bump or unpublish change.
-- Recovery has one 150-second deadline and a 20-send HTTP budget, including existing
-  authentication/CSRF/content-negotiation sends. The original initial attempt retains its
-  existing timeouts. Existing subtree package resolution retains its own bounded traversal
-  and cache; waiting on it is deadline/cancellation bounded and a late result cannot publish.
-- URL components are encoded at the sink. Reads and the retry retain operation safety;
-  package resolution remains fail-closed. No new secret-bearing logging fields.
+Personal OAuth authentication and the existing free-tier system were renewed for the
+2026-09-17 run. Build `b156f805`, SAP_BASIS/SAP_CLOUD 920 SP04, used an owned disposable package.
+These are historical tests of the former automatic-retry implementation, not current-build
+verification or proof of a successful natural transient recovery.
 
-The ten seconds are an operational grace period, not a measured backend synchronization
-SLA. A single retry cannot repair a permanently absent SCO2. A natural transient failure
-with successful live recovery remains unobserved on our system.
+- Nine ordinary publications succeeded, each with one physical publish POST and explicit
+  active `published=true`: one baseline plus eight variants.
+- Four variants ran twice: immediate publication, a ten-second pre-wait, identical SRVD
+  source update before activation, and a fresh HTTP client with the same OAuth identity.
+  Immediate POSTs started 0.614–0.679 seconds after activation. A new client does not prove
+  a different SAP application server. The eight variants took 45.058–52.308 seconds.
+- Deleting one owned unpublished binding's generated SCO2 reproduced the exact error on
+  both publication attempts. The former retrying call took 12.644 seconds, returned an error
+  and left explicit unpublished state. `bindingCreated=true` did not establish readiness;
+  retry, reactivation and save/activation did not recreate that missing dependency.
+- No natural missing-inbound or `Usage of <SRVD> not permitted` error occurred.
+- All created source/binding objects and generated objects were cleaned up and returned 404.
+  A pre-existing package deletion problem remained; no forced package cleanup was attempted.
 
-## Validation
+The customer's reported successful repetition remains plausible but unreproduced. The final
+implementation therefore provides state evidence without assuming an automatic repair.
+The [feedback investigation](2026-09-17-publish-feedback-investigation.md) preserves the full
+variant table, controlled create-response-loss experiment and cleanup inventory.
 
-- Tests were added before implementation and failed against the original behavior.
-- Strict reader tests cover true/false, inactive and malformed XML, namespaces/rebinding,
-  wrong object/service/version/category, absent flags, multiple versions and input size.
-- Dispatcher tests cover recovery success, persistent failure, state becoming published
-  before/after waiting, unknown evidence, target/error exclusions, package changes and
-  missing package metadata, write ceiling, deadline and cancellation.
-- Actual loopback HTTP tests cover concurrent identities, physical requests through
-  generic MIME and AS-XML fallback, denied state reads and cancellation of the real timer.
-- A cancelled package-hierarchy lookup can resolve later without triggering a publish.
-- Full unit suite: **6,836 passed in 222 files**. Build, typecheck, lint, action-policy
-  validation, file-size ratchet and tool-schema budgets passed. Lint reported only the
-  existing Biome configuration/template informational messages; tool schemas are unchanged.
+## Current local validation
 
-## Changed-build live verification, 2026-09-17
+The no-republish and minimal HTTP disclosure regressions failed before the review changes.
+Tests cover published/unpublished/unknown state, strict XML identity/namespaces, target/error
+exclusions, concurrent identities, cancellation during a real pending state read, safe-read
+503 retry, MIME handling and the retained 403 replay. Real-HTTP loopback cases commit a job
+before 429/500/502/503/504 response replacement or connection loss: only one publication POST,
+completion reported unconfirmed in both modes, and explicit committed-state readback.
+These are simulations, not live SAP availability errors or customer-root-cause proof.
 
-Personal OAuth authentication was renewed and the existing free-tier system started through
-the Landscape Portal. The tested product revision is `b156f805`, on freshly verified
-SAP_BASIS/SAP_CLOUD 920 SP04, with writes restricted to one disposable test package.
-
-- Nine ordinary first publications succeeded, each with exactly one physical publish POST
-  and an explicit active `published=true` readback: one baseline plus eight variant runs.
-- The eight runs repeat four variants twice: immediate publication, a ten-second pre-wait,
-  an identical SRVD source update before activation, and a fresh HTTP client using the same
-  OAuth identity between SRVB activation and publication. Immediate POSTs started
-  0.614–0.679 seconds after activation completed. A new client does not prove a different
-  SAP application server handled the request.
-- A deliberately removed owned SCO2 produced the exact SAP error on both physical publish
-  POSTs within one tool call. The call took 12.644 seconds, returned an error preserving both
-  failures, and left explicitly unpublished metadata. There was no third publish POST.
-- No natural missing-inbound or `Usage of <SRVD> not permitted` error occurred in these runs.
-- All 50 new focused unit/loopback tests passed again. Every GitHub check on the tested
-  revision passed, including integration and E2E; those generic checks alone do not establish
-  successful recovery from the customer's transient BTP error.
-
-The earlier authentication blocker is resolved. The PR remains draft because a natural
-transient error followed by successful live recovery is still unobserved. The forced missing
-SCO2 case validates bounded failure behavior, not the customer's root cause or retry success.
-See the [feedback investigation](2026-09-17-publish-feedback-investigation.md) for the separate
-create-response-loss control, its limitations, and the final cleanup record.
-
-## Review validation, 2026-09-21
-
-The tested implementation is `c9fe4de981e876432559278f07fb9f178d20a2c7`, including current
-main `ef9f61bf`. Recovery now requires the target-scoped resolved BTP type; bearer-only
-inference was removed. Every publication disables transient HTTP replay, while preserving
-rejection-based authentication/CSRF/MIME handling. Unpublish and other mutations retain their
-existing policies; this is not the general create/retry fix.
-
-Seven new/changed regression cases failed before the fixes. The real transport against a
-loopback SAP substitute now preserves a job committed before a replaced 429/500/502/503/504
-response or dropped connection, without resending it. This covers both initial/recovery
-attempts and both error-disclosure modes: completion stays unconfirmed, the tool recommends
-reading publication state, and the substitute's readback proves the committed state remains.
-These are controlled simulations, not live SAP failures or proof of the customer's cause.
-
-All **7,017 tests in 229 files** pass. Typecheck, lint, build, policy, file/schema budgets and
-strict MkDocs pass; lint has two existing informational notices. No size budget was raised.
-Fresh live publication testing was unavailable: the configured BTP ADT endpoint returned
-HTTP 503 to an unauthenticated discovery HEAD before login. No new BTP objects were created.
-The 920 SP04 results above belong to the earlier build; the natural transient failure followed
-by successful recovery remains unverified, so the PR stays draft. GitHub CI was not waited on.
+All **7,010 tests in 229 files** pass on the simplified implementation. Typecheck, lint,
+build, policy, file/schema budgets and strict MkDocs pass; no budget was raised. A fresh
+unauthenticated HEAD to the configured BTP ADT discovery endpoint still returned 503,
+so no current-build BTP publication test was performed. No BTP objects were created during
+this review. GitHub CI was not waited on. Historical live results above remain distinct.

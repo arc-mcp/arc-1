@@ -543,12 +543,10 @@ export async function publishServiceBinding(
   name: string,
   version = '0001',
   serviceType: 'odatav2' | 'odatav4' = 'odatav2',
-  options?: AdtRequestOptions,
 ): Promise<PublishResult> {
   checkOperation(safety, OperationType.Activate, 'PublishServiceBinding');
   // A lost/replaced response does not prove that SAP rejected the publish job.
   return postPublishJob(http, serviceType, 'publishjob', name, version, {
-    ...options,
     retryTransientErrors: false,
   });
 }

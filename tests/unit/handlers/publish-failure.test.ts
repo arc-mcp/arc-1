@@ -19,7 +19,6 @@ const args = { action: 'publish_srvb', name, service_type: 'odatav4' };
 let jobs = 0;
 let reads = 0;
 let responseForRead: (n: number) => string;
-let retryBody: string;
 let firstBody: string;
 function call(client = createClient(), overrides = {}) {
   return handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', { ...args, ...overrides });
@@ -32,14 +31,13 @@ beforeEach(() => {
   vi.spyOn(deadline, 'sleepWithinRequestBudget').mockResolvedValue();
   jobs = 0;
   reads = 0;
-  retryBody = ok;
   firstBody = failure;
-  responseForRead = () => (jobs >= 2 ? xml.replace('published="false"', 'published="true"') : xml);
+  responseForRead = () => xml;
   mockFetch.mockReset();
   mockFetch.mockImplementation(async (url, init) => {
     if (String(url).includes('/publishjobs')) {
       jobs++;
-      return mockResponse(200, jobs === 1 ? firstBody : retryBody);
+      return mockResponse(200, firstBody);
     }
     if (init?.method === 'HEAD') return mockResponse(200, '', { 'x-csrf-token': 'T' });
     if (String(url).includes('version=active')) return mockResponse(200, responseForRead(++reads));
@@ -52,34 +50,24 @@ afterEach(() => {
   features.resetCachedFeatures();
 });
 
-describe('publish recovery through the dispatcher', () => {
-  it('retries once after fresh state checks and verifies success, preserving the first failure', async () => {
-    const r = await call();
-    expect(r.isError).toBeUndefined();
-    expect(text(r)).toContain('after one retry');
-    expect(text(r)).toContain('Inbound service ZARC1_PUBLISH_0001_G4BA does not exist');
-    expect(jobs).toBe(2);
-    expect(reads).toBeGreaterThanOrEqual(3);
-    expect(deadline.sleepWithinRequestBudget).toHaveBeenCalledWith(
-      10000,
-      expect.objectContaining({ deadline: expect.any(Number) }),
-    );
-  });
-  it('stops after the same permanent failure without reporting success', async () => {
-    retryBody = failure;
+describe('publish failure inspection through the dispatcher', () => {
+  it('returns explicit unpublished state without automatically publishing again', async () => {
     const r = await call();
     expect(r.isError).toBe(true);
-    expect(text(r)).toContain('Retry failed');
-    expect(text(r)).toContain('Inbound service');
-    expect(jobs).toBe(2);
+    expect(text(r)).toContain('unpublished');
+    expect(text(r)).toContain('Inbound service ZARC1_PUBLISH_0001_G4BA does not exist');
+    expect(jobs).toBe(1);
+    expect(reads).toBe(1);
+    expect(deadline.sleepWithinRequestBudget).not.toHaveBeenCalled();
   });
-  it.each([1, 2])('does not repost when state is published at check %i', async (n) => {
-    responseForRead = (i) => (i >= n ? xml.replace('published="false"', 'published="true"') : xml);
+  it('reports confirmed published state without sending another publish', async () => {
+    responseForRead = () => xml.replace('published="false"', 'published="true"');
     const r = await call();
     expect(r.isError).toBeUndefined();
     expect(text(r)).toContain('already published');
+    expect(text(r)).toContain('Inbound service');
     expect(jobs).toBe(1);
-    expect(deadline.sleepWithinRequestBudget).toHaveBeenCalledTimes(n - 1);
+    expect(reads).toBe(1);
   });
   it.each([
     ['inactive', xml.replace('adtcore:version="active"', 'adtcore:version="inactive"')],
@@ -94,18 +82,6 @@ describe('publish recovery through the dispatcher', () => {
     expect(text(r)).toContain('unknown');
     expect(jobs).toBe(1);
     expect(deadline.sleepWithinRequestBudget).not.toHaveBeenCalled();
-  });
-  it('stops if metadata becomes unknown during the grace period', async () => {
-    responseForRead = (i) => (i === 1 ? xml : xml.replace('srvb:published="false"', ''));
-    expect((await call()).isError).toBe(true);
-    expect(jobs).toBe(1);
-  });
-  it('requires a published readback even after an OK retry response', async () => {
-    responseForRead = () => xml;
-    const r = await call();
-    expect(r.isError).toBe(true);
-    expect(text(r)).toContain('not confirmed');
-    expect(jobs).toBe(2);
   });
   it.each(['onprem', undefined])('does not retry for system type %s', async (systemType) => {
     features.setCachedFeatures(systemType ? ({ systemType } as ResolvedFeatures) : undefined);
@@ -153,43 +129,15 @@ describe('publish recovery through the dispatcher', () => {
     expect(deadline.sleepWithinRequestBudget).not.toHaveBeenCalled();
     expect(mockFetch.mock.calls.some(([url]) => String(url).includes('version=active'))).toBe(false);
   });
-  it('revalidates a changed package before retrying', async () => {
-    const client = new AdtClient({
-      baseUrl: 'http://sap:8000',
-      username: 'own-user',
-      password: 'own-pass',
-      safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['ZARC1_TEST'] },
-    });
-    responseForRead = () => xml.replace('adtcore:name="ZARC1_TEST"', 'adtcore:name="ZFORBIDDEN"');
-    const r = await call(client);
-    expect(r.isError).toBe(true);
-    expect(jobs).toBe(1);
-  });
-  it('checks the write ceiling again after waiting', async () => {
-    const client = createClient();
-    vi.mocked(deadline.sleepWithinRequestBudget).mockImplementation(async () => {
-      client.safety.allowWrites = false;
-    });
-    expect((await call(client)).isError).toBe(true);
-    expect(jobs).toBe(1);
-  });
-  it('honors request cancellation after the wait before another publish', async () => {
+  it('does not report success if cancelled while reading active state', async () => {
     const controller = new AbortController();
-    vi.mocked(deadline.sleepWithinRequestBudget).mockImplementation(async () => {
+    responseForRead = () => {
       controller.abort();
-    });
-    const r = await requestContext.run({ requestId: 'cancel-publish', signal: controller.signal }, () => call());
+      return xml.replace('published="false"', 'published="true"');
+    };
+    const r = await requestContext.run({ requestId: 'cancel-publish-state', signal: controller.signal }, () => call());
     expect(r.isError).toBe(true);
-    expect(text(r)).toContain('cancel');
-    expect(jobs).toBe(1);
-  });
-  it('shares the recovery deadline across the wait and the next request', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.mocked(deadline.sleepWithinRequestBudget).mockImplementation(async () => {
-      vi.setSystemTime(Date.now() + 150001);
-    });
-    const r = await call();
-    expect(r.isError).toBe(true);
+    expect(text(r)).toContain('cancelled');
     expect(jobs).toBe(1);
   });
   it('preserves a failed state read and never proceeds to publish', async () => {
@@ -199,59 +147,6 @@ describe('publish recovery through the dispatcher', () => {
     const r = await call();
     expect(r.isError).toBe(true);
     expect(text(r)).toContain('Inbound service');
-    expect(jobs).toBe(1);
-  });
-});
-
-describe('recovery review regressions', () => {
-  it('does not suggest missing dependencies for a different retry error', async () => {
-    retryBody = failure.replace('Inbound service ZARC1_PUBLISH_0001_G4BA does not exist', 'Authorization missing');
-    const r = await call();
-    expect(r.isError).toBe(true);
-    expect(text(r)).toContain('Authorization missing');
-    expect(text(r)).not.toContain('may still be missing');
-    expect(jobs).toBe(2);
-  });
-  it('requires a resolvable package again before the retry', async () => {
-    const client = new AdtClient({
-      baseUrl: 'http://sap:8000',
-      username: 'own-user',
-      password: 'own-pass',
-      safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['ZARC1_TEST'] },
-    });
-    responseForRead = () => xml.replace('adtcore:name="ZARC1_TEST"', '');
-    const r = await call(client);
-    expect(r.isError).toBe(true);
-    expect(text(r)).toContain('could not determine');
-    expect(jobs).toBe(1);
-  });
-  it('never starts a late mutation after a cancelled subtree lookup resolves', async () => {
-    const controller = new AbortController();
-    const client = new AdtClient({
-      baseUrl: 'http://sap:8000',
-      username: 'own-user',
-      password: 'own-pass',
-      safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['ZARC1_TEST', 'ZROOT/**'] },
-    });
-    responseForRead = () => xml.replace('adtcore:name="ZARC1_TEST"', 'adtcore:name="ZROOT_CHILD"');
-    let finish: (value: boolean) => void = () => {
-      throw Error('Lookup never started');
-    };
-    vi.spyOn(client, 'getPackageHierarchyResolver').mockReturnValue({
-      invalidate: () => {},
-      isDescendantOrSelf: () =>
-        new Promise<boolean>((resolve) => {
-          finish = resolve;
-          controller.abort();
-        }),
-    });
-    const r = await requestContext.run({ requestId: 'cancel-package', signal: controller.signal }, () => call(client));
-    expect(r.isError).toBe(true);
-    expect(text(r)).toContain('cancelled');
-    expect(text(r)).toContain('No retry sent');
-    finish(true);
-    await Promise.resolve();
-    await Promise.resolve();
     expect(jobs).toBe(1);
   });
 });

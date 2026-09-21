@@ -1,5 +1,10 @@
 # Publish feedback: live reproduction and separate create retry risk
 
+> Historical investigation (2026-09-17): the automatic retry discussed here was removed
+> after independent review. See [the final design](../plans/2026-09-16-publish-recovery.md)
+> for current behavior; retain the live evidence and separate create/retry findings below.
+
+
 Reviewed 2026-09-17 against PR #795 revision `b156f805`.
 
 ## Findings and scope
