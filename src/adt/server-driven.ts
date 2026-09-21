@@ -24,6 +24,7 @@
  * registry entry, verified live: the blue family on 816, DTDC create→activate on 758 + 816.
  */
 import { logger } from '../server/logger.js';
+import { postCreate } from './create-request.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError } from './errors.js';
@@ -379,7 +380,7 @@ export async function createServerDrivenObject(
   const entry = sdoEntry(code);
   const body = buildServerDrivenMetadataXml(code, name, opts.package, opts.description, opts.uiadLanguageVersion);
   const url = opts.transport ? `${entry.href}?corrNr=${encodeURIComponent(opts.transport)}` : entry.href;
-  const resp = await http.post(url, body, entry.metadataContentType);
+  const resp = await postCreate(http, url, body, entry.metadataContentType);
   return resp.body;
 }
 

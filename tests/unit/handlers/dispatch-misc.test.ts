@@ -911,7 +911,8 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZA_TEST' });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('already exists');
-      expect(result.content[0]?.text).toContain('action="update"');
+      expect(result.content[0]?.text).toContain('Inspect its identity, package and source');
+      expect(result.content[0]?.text).toContain('Do not blindly repeat create or overwrite');
     });
 
     it('400 activation dependency message returns activation hint', async () => {

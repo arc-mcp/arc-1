@@ -11,6 +11,7 @@ import type { AdtClient } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import {
   AdtApiError,
+  AdtError,
   AdtNetworkError,
   AdtResponseLimitError,
   AdtSafetyError,
@@ -40,7 +41,7 @@ import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate
 import { formatClientInfo } from '../server/trace-context.js';
 import type { ServerConfig } from '../server/types.js';
 import { handleSAPActivate } from './activate.js';
-import { buildCacheSecurityContext } from './cache-security.js';
+import { buildCacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { handleSAPContext } from './context.js';
 import { handleSAPDiagnose } from './diagnose.js';
 import { getCachedFeatures } from './feature-cache.js';
@@ -168,6 +169,16 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtError && err.creationOutcome === 'unknown') {
+    const detail = config.minimalErrors
+      ? `${err instanceof AdtApiError ? `ADT API error: status ${err.statusCode}.` : 'Create request failed.'} Use the request ID to correlate server-side logs.`
+      : message;
+    const inspection =
+      tool === 'SAPTransport'
+        ? 'Use SAPTransport to list requests and inspect their owner, description and contents.'
+        : 'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version.';
+    return `${detail}\nCreate completion is unconfirmed. ${inspection} Do not blindly repeat create or overwrite an existing object.`;
+  }
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
     return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
   }
@@ -1019,6 +1030,13 @@ export async function handleToolCall(
 
         return result;
       } catch (err) {
+        if (err instanceof AdtError && err.creationOutcome === 'unknown') {
+          if (toolName === 'SAPWrite' && args.type && args.name) {
+            cachingLayer?.invalidate(canonicalTablType(String(args.type)), String(args.name), 'all');
+            invalidateInactiveList(cachingLayer, client, buildCacheSecurityContext(authInfo, isPerUserClient));
+          }
+          if (toolName === 'SAPManage' && args.action === 'create_package') client.invalidatePackageHierarchy();
+        }
         const message = err instanceof Error ? err.message : String(err);
         const auditErrorMessage =
           err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)
