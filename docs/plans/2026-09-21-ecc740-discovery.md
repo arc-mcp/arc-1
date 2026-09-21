@@ -91,5 +91,11 @@ three authorized test systems, then ran the built client against each:
   26 entries. Startup logs `endpoint: /sap/bc/adt/core/discovery` on all three.
 - BTP Steampunk could not be probed — the ABAP instance answers HTTP 503 with an HTML page for
   every path, including discovery. The HEAD-first order is preserved, so its bootstrap is unchanged.
+- **Known limitation of the CTS guard:** it throws `AdtApiError(..., 200, path)`, and
+  `ARC1_MINIMAL_ERRORS` (the HTTP default) replaces every `AdtApiError` message with
+  `ADT API error: status 200.` plus the request-ID hint. The false negative is gone in every mode —
+  the call fails instead of returning an empty list — but the explanation only reaches stdio and
+  trusted-debug deployments. Preserving an ARC-1-authored message through minimal mode needs a
+  dispatch-level rule (the data-preview WAF hint is the existing precedent) and is left out here.
 - The reported ECC 740 SP04 system remains unavailable; its sequence is only reproduced against a
   local HTTP server. Reporter confirmation on that backend is still the missing evidence.
