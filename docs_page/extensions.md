@@ -229,7 +229,7 @@ Classic report example (on-premise systems):
 ```ts
 export default defineTool({
   name: 'Custom_RunReport',
-  description: 'Execute an active classic ABAP report and return its list output.',
+  description: 'Execute an active classic ABAP report and return SAP list or error text.',
   schema: z.object({ reportName: z.string().min(1).max(40) }),
   policy: { scope: 'write', opType: OperationType.Workflow },
   availableOn: 'onprem',
@@ -242,9 +242,9 @@ export default defineTool({
 
 `programRun` is intentionally name-in/text-out. SAP's endpoint does not accept selection-screen
 parameters or a variant, and ARC-1 does not emulate them. Reports that need runtime input should use a
-small purpose-built class implementing `IF_OO_ADT_CLASSRUN` instead. SAP can also report conditions
-such as a missing program in the returned text while responding HTTP 200, so ARC-1 returns that text
-verbatim for the extension to display.
+small purpose-built class implementing `IF_OO_ADT_CLASSRUN` instead. As with `classRun`, SAP can also
+report conditions such as a missing object in the returned text while responding HTTP 200, so ARC-1
+returns that text verbatim for the extension to display.
 
 Executing arbitrary ABAP can mutate anything, so this is the **strictest-gated** capability in the
 framework — **all** of the following must hold, or the call is refused with an `AdtSafetyError`:

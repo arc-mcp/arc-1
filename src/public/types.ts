@@ -35,7 +35,8 @@ export type ReadOnlyAdtClient = Omit<
 
 /**
  * Named, privileged operations a plugin can invoke (e.g. executing a class or report). Each op is
- * gated server-side; calling one when its gate is closed throws `AdtSafetyError`.
+ * gated server-side; calling one when its gate is closed throws `AdtSafetyError`. SAP may represent
+ * execution errors as text in an HTTP 200 response; these operations return that text verbatim.
  */
 export interface PluginRunOps {
   /**

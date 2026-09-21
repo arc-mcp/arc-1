@@ -242,9 +242,6 @@ export function createPluginRunOps(
       }
       const res = await underlying.post(
         `/sap/bc/adt/programs/programrun/${encodeURIComponent(programName.toLowerCase())}`,
-        undefined,
-        undefined,
-        { Accept: 'text/plain' },
       );
       return res.body;
     },
