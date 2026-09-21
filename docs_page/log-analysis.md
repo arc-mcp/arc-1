@@ -68,10 +68,14 @@ INFO: ARC-1 starting {"version":"0.9.x","transport":"...","url":"..."}
 INFO: SAP semaphore {"maxConcurrent":10,"scope":"server-wide"}
 INFO: Object cache enabled {"mode":"auto",...}
 INFO: ARC-1 MCP server running on stdio          # (or: "ARC-1 HTTP server started" on BTP)
-INFO: Startup auth preflight succeeded for shared SAP credentials. {"endpoint":"/sap/bc/adt/core/discovery"}
+INFO: Startup authentication/CSRF bootstrap succeeded; each tool still checks authorization. {"endpoint":"/sap/bc/adt/core/discovery"}
 INFO: Authorization probe: object search access is available
 INFO: Authorization probe: transport access is available
 ```
+
+An empty HTTP 200 discovery response does not count as a successful bootstrap. Older backends
+may use `/sap/bc/adt/discovery`; the log records the endpoint that supplied the token.
+If neither path supplies a token, startup reports an inconclusive result and keeps GET reads available.
 
 ### The two green-light signals
 

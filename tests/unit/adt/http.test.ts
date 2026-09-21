@@ -885,6 +885,7 @@ describe('AdtHttpClient', () => {
     it('throws AdtApiError when CSRF token is missing from response', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
       mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
 
       const client = new AdtHttpClient(getDefaultConfig());
       await expect(client.fetchCsrfToken()).rejects.toThrow(AdtApiError);

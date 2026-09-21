@@ -608,14 +608,15 @@ export async function runStartupAuthPreflightWithClient(
   const skipped = skippedStartupAuthPreflight(config);
   if (skipped) return skipped;
   const checkedAt = new Date().toISOString();
-  const endpoint = STARTUP_AUTH_ENDPOINT;
+  let endpoint = STARTUP_AUTH_ENDPOINT;
 
   try {
-    await client.http.get(endpoint);
-    const reason = 'Startup auth preflight succeeded for shared SAP credentials.';
+    endpoint = await client.http.fetchCsrfToken();
+    const reason = 'Startup authentication/CSRF bootstrap succeeded; each tool still checks authorization.';
     logger.info(reason, { endpoint });
     return { status: 'ok', blocking: false, endpoint, checkedAt, reason };
   } catch (err) {
+    if (err instanceof AdtApiError) endpoint = err.path;
     if (err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)) {
       const reason = buildStartupAuthFailureReason(err.statusCode, config);
       // Non-blocking downgrade only applies to cookieFile mode — that's the path
@@ -639,7 +640,7 @@ export async function runStartupAuthPreflightWithClient(
 
     const detail = err instanceof Error ? err.message : String(err);
     const reason =
-      'Startup auth preflight was inconclusive (non-auth failure). ' +
+      'Startup authentication/CSRF bootstrap was inconclusive (non-auth failure). ' +
       'Continuing and letting runtime requests handle connectivity diagnostics.';
     logger.warn(reason, { endpoint, error: detail });
     return { status: 'inconclusive', blocking: false, endpoint, checkedAt, reason };

@@ -1608,6 +1608,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
 
     it('adds a BDEF base-extensible hint for behavior extension create failures', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       mockFetch.mockResolvedValue(
         mockResponse(
           400,
