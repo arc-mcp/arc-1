@@ -129,8 +129,10 @@ paths that special-case them today.
 **Why it remains.** `objectBasePath()` has no case for these types, so its deliberate unknown-type
 arm maps them to `/sap/bc/adt/programs/programs/`. Reads, writes, activation and — since
 [#809](https://github.com/arc-mcp/arc-1/pull/809) — where-used each carry their own guard, but
-`SAPTransport` (`check`, `history`), `SAPDiagnose` (`syntax`, `atc`, `aunit`) and the ATC batch
-resolver do not. Live on SAP_BASIS 758 SP02, `SAPTransport(history, DSFD, CALENDAR_OPERATION)`
+`SAPTransport` (`check`, `history`) and single-object `SAPDiagnose` (`syntax`, `atc`, `unittest`)
+do not. ATC batches share the helper but their `ATC_BATCH_TYPES` schema currently rejects all
+server-driven types, so that route is not an exposed instance of this defect.
+Live on SAP_BASIS 758 SP02, `SAPTransport(history, DSFD, CALENDAR_OPERATION)`
 returns an empty result whose echoed `uri` is the program path, and
 `SAPDiagnose(syntax, DSFD, CALENDAR_OPERATION)` reports "The REPORT/PROGRAM statement is missing".
 Both read as facts about the object rather than a routing error.

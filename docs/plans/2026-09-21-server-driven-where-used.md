@@ -51,7 +51,10 @@ every `SDO_TYPES` entry and one mixed-case namespaced name (encoding + normaliza
 ## Roadmap
 
 Adds **ARCH-02** (P2 / S / Ready): the same fallback still mis-routes server-driven types in
-`SAPTransport` (`check`, `history`), `SAPDiagnose` (`syntax`, `atc`, `aunit`) and the ATC batch
-resolver. Confirmed live on 758 — `SAPTransport(history, DSFD, CALENDAR_OPERATION)` returns an
+`SAPTransport` (`check`, `history`) and single-object `SAPDiagnose` (`syntax`, `atc`, `unittest`).
+The ATC batch resolver uses the same helper, but the public `ATC_BATCH_TYPES` allowlist rejects
+server-driven types before dispatch; a direct `SAPDiagnoseSchema.safeParse` check with a DSFD
+batch confirms rejection. It is not a currently exposed batch-routing defect.
+Confirmed live on 758 — `SAPTransport(history, DSFD, CALENDAR_OPERATION)` returns an
 empty result whose echoed `uri` is the program path, and `SAPDiagnose(syntax, DSFD, …)` reports
 "The REPORT/PROGRAM statement is missing". Does not implement ARCH-01's general discovery resolver.
