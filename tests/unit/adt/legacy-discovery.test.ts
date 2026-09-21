@@ -52,10 +52,10 @@ describe('legacy ADT discovery against a real HTTP server', () => {
     const baseUrl = await serve((req, res) => {
       const path = new URL(req.url!, 'http://localhost').pathname;
       if (path === CORE) {
-        res.setHeader('set-cookie', 'SAP_SESSIONID=core-session; Path=/');
+        res.setHeader('set-cookie', 'SAP_SESSIONID=core-session; Path=/; Secure; HttpOnly');
         respond(res);
       } else if (path === LEGACY) {
-        res.setHeader('set-cookie', 'SAP_SESSIONID=legacy-session; Path=/');
+        res.setHeader('set-cookie', 'SAP_SESSIONID=legacy-session; Path=/; Secure; HttpOnly');
         respond(res, 200, 'LEGACY-TOKEN');
       } else {
         respond(
