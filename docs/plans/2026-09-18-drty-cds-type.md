@@ -33,15 +33,20 @@ The real collection is `/sap/bc/adt/ddic/drty/sources`, advertised in ADT discov
 for "DRTY" or "CDS type" does not surface it. The sibling sub-resources (`$metadata`, `$formatter`,
 `$elementinfo`, …) name DRTY explicitly and confirm the identity.
 
-## The roadmap blocker is stale
+## What kept the roadmap entry blocked
 
-`docs_page/roadmap.md` records DRTY as blocked on the tool-schema budget, with `WRITE_WIRE_WALL` at
-68 000 bytes and the surface at 67 986 — 14 bytes of headroom. That ceiling is now 74 000 in
-`scripts/ci/check-tool-schema-budget.ts`, and the worst write scenario measures 72 525 bytes
-(`standard-full-git`, `SAPWrite` 22 021 against a per-tool wall of 23 000). That leaves 1 475 bytes
-of total headroom and 979 for `SAPWrite`, against an expected DRTY cost of roughly 150–200 bytes.
-Correct the entry in the same change: left alone it will cause the next reader to discard the
-feature again.
+FEAT-73 holds DRTY, DRAS and DSFI as blocked on two grounds: incomplete live create/update evidence,
+and the model-facing schema budget every added type consumes. DRTY clears both. The wire contract is
+verified end to end (see the research document), and the cost is measured, not estimated: with DRTY
+registered the worst write scenario `standard-full-git` sits at 72 573 bytes against a
+`WRITE_WIRE_WALL` of 74 000, and `SAPWrite` at 22 040 against a per-tool wall of 23 000 — 1 427 and
+960 bytes of headroom, for a DRTY cost of 48 bytes. Narrow the entry to DRAS and DSFI in the same
+change: left alone it will cause the next reader to discard the feature again.
+
+An earlier revision of this plan argued against a specific 68 000-byte ceiling quoted in the old
+roadmap. That prose is gone — the roadmap was rewritten as an idea inventory in
+[#808](https://github.com/arc-mcp/arc-1/pull/808) — and the ceiling is now 74 000. The measurement
+above replaces it.
 
 ## Source format is the one place a slip breaks runtime
 
@@ -75,7 +80,8 @@ source while the object was still inactive.
 No minimum release is pinned. The SDO engine is discovery-gated per type, so a system that does not
 expose `/sap/bc/adt/ddic/drty/sources` degrades with a clean unavailable error. This matches the
 module's documented posture of gating on discovery rather than a hardcoded release. The full write
-round trip is verified on 8.16; `docs_page/roadmap.md` additionally records a 758 read probe.
+round trip is verified on 8.16 only; 7.58 is untested and stays that way deliberately — the gate,
+not a release check, is what protects a system that lacks the collection.
 
 ## Slash alias stays out of scope
 
@@ -91,8 +97,9 @@ type recognition, object URL construction, `createType`, metadata content type, 
 `serverDrivenSourceContentType('DRTY') === 'text/plain'`. `tests/unit/handlers/registry-sync.test.ts`
 needs no change; it validates the derivation itself.
 
-Adding a type changes the frozen LLM surface in `tests/fixtures/tool-definitions/` (9 files, locked
-by `tool-definitions-snapshot.test.ts`). Regenerate with `vitest -u` and review the diff: it must
+Adding a type changes the frozen LLM surface in `tests/fixtures/tool-definitions/` (7 of the 11
+files, locked by `tool-definitions-snapshot.test.ts`; the hyperfocused and live-relations-navigate
+variants do not carry the type enums). Regenerate with `vitest -u` and review the diff: it must
 contain the DRTY enum members and the prose additions and nothing else.
 
 Then run the full round trip through ARC-1's own code path against the live trial — create, update,

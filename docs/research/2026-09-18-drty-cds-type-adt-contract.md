@@ -174,7 +174,10 @@ non-existent program and answered with an empty list. The fix routes server-driv
 The bug predates DRTY and affected every SDO type; DRTY merely made it visible — which is why it
 shipped as its own change (upstream [arc-mcp/arc-1#809](https://github.com/arc-mcp/arc-1/pull/809))
 rather than riding along with the new type. Its regression test is parameterised over `SDO_TYPES`,
-so registering DRTY extends the coverage automatically.
+so registering DRTY extends the coverage automatically. `resolveWhereUsedUri` was the only caller
+fixed; the same fallback still affects `SAPTransport` (`check`, `history`) and single-object
+`SAPDiagnose`, tracked as [ARCH-02](../../docs_page/roadmap.md#arch-02). DRTY inherits that gap like
+every other registered server-driven type.
 
 **2. Deleting a DDIC type that another object still references leaves an orphan, and ARC-1
 reports success.** Sequence on 816: `ZARC1_DRTY_BASE` active, `ZARC1_DRTY_CHILD : zarc1_drty_base`
