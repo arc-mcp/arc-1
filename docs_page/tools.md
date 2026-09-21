@@ -1724,6 +1724,13 @@ classic FLP lifecycle operations, and set an object's API release contract.
 - `flp_add_tile_to_group` — Assign a catalog tile instance into a group.
 - `flp_delete_catalog` — Delete an FLP designer catalog.
 
+**Unconfirmed FLP creation:** Catalog/group/tile creation and tile assignment do not
+replay after HTTP 429/5xx or response loss. SAP may already have created the entry;
+inspect it before another create. Use `flp_list_catalogs`, `flp_list_groups` and
+`flp_list_tiles` for catalogs, groups and catalog tiles. These actions do not list
+group membership; inspect a group's tiles in SAP Fiori Launchpad Designer. Existing
+authentication/CSRF and MIME-rejection recovery remains.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |

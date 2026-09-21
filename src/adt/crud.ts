@@ -115,9 +115,10 @@ export async function createObject(
     const resp = await postCreate(http, url, body, contentType);
     return resp.body;
   } catch (err) {
+    // Preserve uncertain 429/5xx outcomes instead of reclassifying them as definitive 4xx rejections.
+    if (err instanceof AdtApiError && err.creationOutcome === 'unknown') throw err;
     // Reclassify lock/exists conflicts that arrive as HTML or via structured
     // exception type — same precedence as the lockObject path.
-    if (err instanceof AdtApiError && err.creationOutcome === 'unknown') throw err;
     const conv = convertHtmlConflictToProperError(err, objectUrl, {
       abapRelease,
       systemType,

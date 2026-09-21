@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AdtClient } from '../../../src/adt/client.js';
 import { createObject, initClassInclude } from '../../../src/adt/crud.js';
+import { addTileToGroup, createCatalog, createGroup, createTile } from '../../../src/adt/flp.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { createServerDrivenObject } from '../../../src/adt/server-driven.js';
@@ -11,6 +12,7 @@ import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { handleToolCall } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures } from '../../../src/handlers/feature-cache.js';
+import { logger } from '../../../src/server/logger.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const safety = unrestrictedSafetyConfig();
@@ -29,6 +31,19 @@ const operations = [
     run: (http: AdtHttpClient) =>
       initClassInclude(http, safety, '/sap/bc/adt/oo/classes/ztest/includes/testclasses', 'LOCK'),
   },
+  { name: 'FLP catalog', run: (http: AdtHttpClient) => createCatalog(http, safety, 'ZTEST', 'Test') },
+  { name: 'FLP group', run: (http: AdtHttpClient) => createGroup(http, safety, 'ZTEST', 'Test') },
+  {
+    name: 'FLP catalog tile',
+    run: (http: AdtHttpClient) =>
+      createTile(http, safety, 'ZTEST', {
+        id: 'test',
+        title: 'Test',
+        semanticObject: 'Test',
+        semanticAction: 'display',
+      }),
+  },
+  { name: 'FLP group tile', run: (http: AdtHttpClient) => addTileToGroup(http, safety, 'ZGROUP', 'ZTEST', '1') },
   { name: 'transport', run: (http: AdtHttpClient) => createTransport(http, safety, 'test') },
   {
     name: 'transport with target',
@@ -82,7 +97,10 @@ async function withSap(
   }
 }
 
-afterEach(() => resetCachedFeatures());
+afterEach(() => {
+  resetCachedFeatures();
+  vi.restoreAllMocks();
+});
 
 describe('create replay over the real HTTP transport', () => {
   it.each(operations)('does not repeat a committed $name after a lost success response', async ({ run }) => {
@@ -221,22 +239,33 @@ describe('rejection and read controls', () => {
   });
 });
 
-it('invalidates source and inactive-list caches after uncertain creation', async () => {
-  await withSap(503, true, async (_http, state, baseUrl) => {
-    const client = new AdtClient({ baseUrl, username: 'test', safety });
-    const cache = new CachingLayer(new MemoryCache());
-    const invalidateSource = vi.spyOn(cache, 'invalidate');
-    const inactive = vi.spyOn(client, 'getInactiveObjects').mockResolvedValue([]);
-    await cache.inactiveLists.getOrFetch(client);
-    inactive.mockRestore();
-    expect(cache.inactiveLists.getCached('test')).toEqual([]);
-    const result = await handleToolCall(client, config, 'SAPWrite', createArgs, undefined, undefined, cache);
-    expect(result.isError).toBe(true);
-    expect(invalidateSource).toHaveBeenCalledWith('PROG', 'ZTEST', 'all');
-    expect(cache.inactiveLists.getCached('test')).toBeNull();
-    expect(state.posts).toBe(1);
-  });
-});
+it.each(['PROG', 'PROG/P'])(
+  'invalidates canonical source and inactive-list caches after uncertain %s creation',
+  async (type) => {
+    await withSap(503, true, async (_http, state, baseUrl) => {
+      const client = new AdtClient({ baseUrl, username: 'test', safety });
+      const cache = new CachingLayer(new MemoryCache());
+      const invalidateSource = vi.spyOn(cache, 'invalidate');
+      const inactive = vi.spyOn(client, 'getInactiveObjects').mockResolvedValue([]);
+      await cache.inactiveLists.getOrFetch(client);
+      inactive.mockRestore();
+      expect(cache.inactiveLists.getCached('test')).toEqual([]);
+      const result = await handleToolCall(
+        client,
+        config,
+        'SAPWrite',
+        { ...createArgs, type },
+        undefined,
+        undefined,
+        cache,
+      );
+      expect(result.isError).toBe(true);
+      expect(invalidateSource).toHaveBeenCalledWith('PROG', 'ZTEST', 'all');
+      expect(cache.inactiveLists.getCached('test')).toBeNull();
+      expect(state.posts).toBe(1);
+    });
+  },
+);
 
 it('keeps an ordinary rejected create distinct from unknown completion', async () => {
   await withSap(400, false, async (http, state) => {
@@ -267,4 +296,61 @@ it('directs uncertain transport creation to request inspection', async () => {
     expect(result.content[0]?.text).toContain('Use SAPTransport to list requests');
     expect(state.posts).toBe(1);
   });
+});
+
+it('preserves uncertain-create guidance and the final audit when source-cache cleanup throws', async () => {
+  await withSap(503, true, async (_http, state, baseUrl) => {
+    const client = new AdtClient({ baseUrl, username: 'test', safety });
+    const cache = new CachingLayer(new MemoryCache());
+    vi.spyOn(cache, 'invalidate').mockImplementation(() => {
+      throw new Error('SQLITE_BUSY: database is locked');
+    });
+    const inactive = vi.spyOn(client, 'getInactiveObjects').mockResolvedValue([]);
+    await cache.inactiveLists.getOrFetch(client);
+    inactive.mockRestore();
+    const audit = vi.spyOn(logger, 'emitAudit');
+    const result = await handleToolCall(client, config, 'SAPWrite', createArgs, undefined, undefined, cache);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('Create completion is unconfirmed');
+    expect(result.content[0]?.text).not.toContain('SQLITE_BUSY');
+    expect(cache.inactiveLists.getCached('test')).toBeNull();
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ event: 'tool_call_end', status: 'error' }));
+    expect(state.posts).toBe(1);
+  });
+});
+
+it.each([
+  { action: 'flp_create_catalog', domainId: 'ZTEST', title: 'Test' },
+  { action: 'flp_create_group', groupId: 'ZTEST', title: 'Test' },
+  {
+    action: 'flp_create_tile',
+    catalogId: 'ZTEST',
+    tile: { id: 'test', title: 'Test', semanticObject: 'Test', semanticAction: 'display' },
+  },
+  { action: 'flp_add_tile_to_group', groupId: 'ZGROUP', catalogId: 'ZTEST', tileInstanceId: '1' },
+])('reports uncertain $action with FLP inspection guidance', async (args) => {
+  for (const minimalErrors of [false, true]) {
+    await withSap(503, true, async (_http, state, baseUrl) => {
+      const result = await handleToolCall(
+        new AdtClient({ baseUrl, safety }),
+        { ...config, minimalErrors },
+        'SAPManage',
+        args,
+      );
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('Create completion is unconfirmed');
+      expect(text).toContain('flp_list_tiles');
+      expect(text).toContain('group membership');
+      expect(text).not.toContain('SAPRead/SAPSearch');
+      expect(text).not.toContain('overwrite');
+      expect(text).not.toContain('retry in a trusted');
+      if (minimalErrors) {
+        expect(text).toContain('status 503');
+        expect(text).toContain('ARC1_MINIMAL_ERRORS=true');
+        expect(text).not.toContain('database connection');
+      }
+      expect(state.posts).toBe(1);
+    });
+  }
 });

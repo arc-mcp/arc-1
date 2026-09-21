@@ -171,13 +171,19 @@ function buildBaseErrorMessage(
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
   if (err instanceof AdtError && err.creationOutcome === 'unknown') {
     const detail = config.minimalErrors
-      ? `${err instanceof AdtApiError ? `ADT API error: status ${err.statusCode}.` : 'Create request failed.'} Use the request ID to correlate server-side logs.`
+      ? err instanceof AdtApiError
+        ? formatMinimalAdtError(err)
+        : 'Create request failed. Use the request ID to correlate server-side logs.'
       : message;
-    const inspection =
-      tool === 'SAPTransport'
-        ? 'Use SAPTransport to list requests and inspect their owner, description and contents.'
-        : 'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version.';
-    return `${detail}\nCreate completion is unconfirmed. ${inspection} Do not blindly repeat create or overwrite an existing object.`;
+    let inspection =
+      'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version. Do not overwrite an existing object blindly.';
+    if (tool === 'SAPTransport') {
+      inspection = 'Use SAPTransport to list requests and inspect their owner, description and contents.';
+    } else if (tool === 'SAPManage' && String(args.action).startsWith('flp_')) {
+      inspection =
+        'Use SAPManage flp_list_catalogs/flp_list_groups/flp_list_tiles to inspect catalogs, groups and catalog tiles. Inspect group membership in SAP Fiori Launchpad Designer.';
+    }
+    return `${detail}\nCreate completion is unconfirmed. ${inspection} Do not blindly repeat create.`;
   }
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
     return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
@@ -368,7 +374,7 @@ function formatMinimalAdtError(err: AdtApiError): string {
   return (
     `ADT API error: status ${err.statusCode}.${category}\n\n` +
     'Hint: Detailed SAP error text is hidden because ARC1_MINIMAL_ERRORS=true. ' +
-    'Use the request ID to correlate server-side audit and SAP-native logs, or retry in a trusted admin session with minimal errors disabled.'
+    'Use the request ID to correlate server-side audit and SAP-native logs.'
   );
 }
 
@@ -969,9 +975,8 @@ export async function handleToolCall(
       tracestate: inherited?.tracestate,
     },
     async () => {
+      const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
       try {
-        const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
-
         // FEAT-61: inner dispatch is owned by the ToolRegistry (built-ins + plugin Custom_* tools).
         // The shared pipeline above (rate-limit, scope, deny, Zod, audit) is unchanged; the registry
         // only replaces the former `switch (toolName)`. See extension-framework-spec.md §4.
@@ -1031,11 +1036,15 @@ export async function handleToolCall(
         return result;
       } catch (err) {
         if (err instanceof AdtError && err.creationOutcome === 'unknown') {
-          if (toolName === 'SAPWrite' && args.type && args.name) {
-            cachingLayer?.invalidate(canonicalTablType(String(args.type)), String(args.name), 'all');
-            invalidateInactiveList(cachingLayer, client, buildCacheSecurityContext(authInfo, isPerUserClient));
+          try {
+            if (toolName === 'SAPWrite' && args.type && args.name) {
+              invalidateInactiveList(cachingLayer, client, cacheSecurity);
+              cachingLayer?.invalidate(canonicalTablType(String(args.type)), String(args.name), 'all');
+            }
+            if (toolName === 'SAPManage' && args.action === 'create_package') client.invalidatePackageHierarchy();
+          } catch {
+            // Best-effort cleanup must not replace the creation error or prevent its audit event.
           }
-          if (toolName === 'SAPManage' && args.action === 'create_package') client.invalidatePackageHierarchy();
         }
         const message = err instanceof Error ? err.message : String(err);
         const auditErrorMessage =
