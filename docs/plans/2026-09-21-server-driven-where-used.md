@@ -1,57 +1,57 @@
 # Server-driven where-used routing — #809
 
-## Root cause and alternatives
+## Root cause
 
-`SAPNavigate(references, type, name)` resolves the object URI before calling the common
-where-used engine. Server-driven objects are registered in `server-driven.ts`, while
-`objectUrlForType` has no case for them and retains a legacy unknown-type program fallback.
-The wrong program URI is syntactically valid, so a successful empty SAP response masks the
-routing error. Explicit `uri` navigation and search-resolved context usages avoid that path.
-
-SAP describes scalar function definitions as their own CDS development objects in its
-[ADT guide](https://help.sap.com/docs/ABAP_PLATFORM_NEW/4726775c8bfc483abb210252604515b2/8a109ffd0c9947bf841a7a951dc34d4a.html).
-The exact ARC-1 endpoints and subtype contracts are already live-verified in the SDO registry
-and developer guide; do not infer URLs from SAP's user documentation.
+`SAPNavigate(references, type, name)` resolves the object URI in `resolveWhereUsedUri` before
+calling the shared where-used engine. Server-driven objects are registered in
+`src/adt/server-driven.ts`, but `objectBasePath()` has no case for them, so its deliberate
+unknown-type arm maps them to `/sap/bc/adt/programs/programs/<name>`. That URI is syntactically
+valid, so SAP answers HTTP 200 with an empty reference list and the routing error reads as "this
+object has no references". Explicit `uri` navigation and search-resolved `SAPContext` usages do not
+take that path.
 
 Options considered:
 
-- Search every symbolic object before navigation: additional SAP calls and ambiguity where
-  the registered object collection is already known.
-- Expand the generic object URL resolver: affects unrelated read/write callers and the
-  deliberate generic fallback contract.
-- Use the existing SDO registry in `resolveWhereUsedUri`: one guard and one return, the
-  same encoded URL builder already used by server-driven reads and writes. Keep this option.
+- Search the object before navigating — extra SAP round trips and ambiguity when the registered
+  collection is already known.
+- Teach `objectBasePath()` the registry hrefs — the right long-term shape, but it changes URL
+  resolution for `SAPTransport`, `SAPDiagnose` and the ATC batch resolver too, each of which needs
+  its own live verification. Deferred as roadmap **ARCH-02**; this PR stays on the reported defect.
+- Dispatch on the existing registry inside `resolveWhereUsedUri` — one guard, one return, the same
+  encoded URL builder that server-driven reads, writes and activation already use. Chosen; it
+  mirrors the guards already present in `write.ts` and `activate.ts`.
 
-## Plan
+## Change
 
-1. Keep the existing narrow registry dispatch. Shorten its comment and remove the reference
-   to unsupported DRTY and the unrelated example from the runtime source.
-2. Retain the nine-type regression, add a namespaced mixed-case input to verify normalization
-   and one-time path encoding, and prove the tests fail against the old resolver.
-3. Compare old program-URI lookup with the corrected URI and the actual tool handler on
-   existing SAP scalar functions. Use read-only direct ADT access, client 001, verified TLS;
-   create no objects and change no SAP configuration.
-4. Run focused navigation, context and SDO tests plus the normal static/build gates. Review
-   for explicit-URI precedence, authorization, fallback behavior and schema stability.
-5. Push additive commits and document exact live evidence and any untested releases in #809.
+Four lines in `src/handlers/where-used.ts`, plus a registry-derived regression in
+`tests/unit/handlers/search-navigate.test.ts` that drives the public `SAPNavigate` dispatch for
+every `SDO_TYPES` entry and one mixed-case namespaced name (encoding + normalization).
 
 ## Validation
 
-- Independently reproduced on SAP S/4HANA 2023, SAP_BASIS 758 SP02, client 001,
-  direct Basic ADT over verified HTTPS. Both CALENDAR_OPERATION and RATIO_OF returned zero
-  references through the original program URI and five through the registered DSFD URI.
-  Neither lookup used the old-endpoint fallback. The actual `handleToolCall(SAPNavigate,
-  {action:"references", type:"DSFD", name, maxResults:20})` also returned all five.
-  These are reference entries (including package nodes), not five distinct code callers.
-- The ten public-dispatch regression cases fail with the original resolver; all pass after
-  the correction. All 257 tests across navigation, where-used output, context and SDO pass.
-- Typecheck, build, lint, policy validation and file/tool-schema budgets pass. Lint reports
-  two pre-existing informational notices. No schema snapshots or public inputs changed.
-- Reviewed explicit-URI precedence, existing FUNC/TABL resolution, fallback handling,
-  name encoding and existing safety gates. No additional resolver or discovery request is needed.
-- The contributor's earlier 816 verification remains useful; this turn tested 758 only.
-  No SAP objects were created or edited. This is live handler/ADT evidence, not an installed
-  MCP client's end-to-end session.
+- **Live, SAP S/4HANA 2023, SAP_BASIS 758 SP02, client 001, Basic over HTTPS, read-only.**
+  `findWhereUsed` on the two existing scalar functions:
 
-No roadmap impact: this repairs existing registered types, without adding a type or
-implementing ARCH-01's general discovery resolver.
+  | Object | `/programs/programs/<name>` | `/ddic/dsfd/sources/<name>` |
+  |---|---|---|
+  | `CALENDAR_OPERATION` | 0 entries | 5 entries |
+  | `RATIO_OF` | 0 entries | 5 entries |
+
+  Neither lookup used the old-endpoint fallback. The real handler
+  (`SAPNavigate {action: references, type: DSFD, name: CALENDAR_OPERATION}`, built CLI) returns the
+  same five. Those five are **reference entries**, not five code callers: one `DSFI/SFI`
+  implementation, one `SKTD/TYP` documentation node and three `DEVC/K` package nodes.
+  The earlier contributor evidence on 816 remains valid for that release; this turn tested 758.
+- The ten regression cases fail against `origin/main`'s resolver and pass with the fix. Full
+  `npm test`, typecheck, build, lint (two pre-existing informational notices), `validate:policy`,
+  `check:sizes` and strict MkDocs pass.
+- No SAP object was created or modified. This is live handler/ADT evidence, not an installed MCP
+  client session.
+
+## Roadmap
+
+Adds **ARCH-02** (P2 / S / Ready): the same fallback still mis-routes server-driven types in
+`SAPTransport` (`check`, `history`), `SAPDiagnose` (`syntax`, `atc`, `aunit`) and the ATC batch
+resolver. Confirmed live on 758 — `SAPTransport(history, DSFD, CALENDAR_OPERATION)` returns an
+empty result whose echoed `uri` is the program path, and `SAPDiagnose(syntax, DSFD, …)` reports
+"The REPORT/PROGRAM statement is missing". Does not implement ARCH-01's general discovery resolver.

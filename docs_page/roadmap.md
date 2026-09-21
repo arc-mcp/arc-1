@@ -66,6 +66,7 @@ sequence.
 | ID | Idea | Priority | Effort | Status | Category |
 |---|---|---:|---:|---|---|
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
+| [ARCH-02](#arch-02) | Server-driven types in generic object-URL callers | P2 | S | Ready | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
@@ -114,6 +115,30 @@ useful part of the former "remove static release gates" proposal; it should not 
 [the implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-discovery-driven-endpoint-routing.md).
 Preserve known-good fallbacks, cache discovery per target, and prove behavior on at least two SAP
 releases.
+
+<a id="arch-02"></a>
+### ARCH-02 — Server-driven types in generic object-URL callers
+
+- **Priority / effort / status:** P2 / S / Ready
+- **Category:** Architecture
+
+**Idea.** Resolve server-driven object types (`SDO_REGISTRY` — DESD, DTSC, CSNM, EVTB, EVTO, COTA,
+DSFD, DTDC, UIAD) to their registered collection in every generic object-URL caller, not only in the
+paths that special-case them today.
+
+**Why it remains.** `objectBasePath()` has no case for these types, so its deliberate unknown-type
+arm maps them to `/sap/bc/adt/programs/programs/`. Reads, writes, activation and — since
+[#809](https://github.com/arc-mcp/arc-1/pull/809) — where-used each carry their own guard, but
+`SAPTransport` (`check`, `history`), `SAPDiagnose` (`syntax`, `atc`, `aunit`) and the ATC batch
+resolver do not. Live on SAP_BASIS 758 SP02, `SAPTransport(history, DSFD, CALENDAR_OPERATION)`
+returns an empty result whose echoed `uri` is the program path, and
+`SAPDiagnose(syntax, DSFD, CALENDAR_OPERATION)` reports "The REPORT/PROGRAM statement is missing".
+Both read as facts about the object rather than a routing error.
+
+**Resume with.** Teach `objectBasePath()` the registry hrefs (derived from `SDO_REGISTRY`, never
+copied), then delete the per-caller guards that only exist to work around the fallback — keeping
+`SAPActivate`'s, which also carries the discovery gate. Verify each affected tool on a real system
+before and after; a generic URL is not proof that SAP supports the operation for that type.
 
 <a id="feat-59"></a>
 ### FEAT-59 — Embeddable multi-tenant server API
