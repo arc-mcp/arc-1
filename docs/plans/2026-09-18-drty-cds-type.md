@@ -80,8 +80,10 @@ source while the object was still inactive.
 No minimum release is pinned. The SDO engine is discovery-gated per type, so a system that does not
 expose `/sap/bc/adt/ddic/drty/sources` degrades with a clean unavailable error. This matches the
 module's documented posture of gating on discovery rather than a hardcoded release. The full write
-round trip is verified on 8.16 only; 7.58 is untested and stays that way deliberately — the gate,
-not a release check, is what protects a system that lacks the collection.
+round trip is verified on 8.16 only. 7.58 is untested because no such system was reachable here,
+not because it was ruled out — see open question 3 in the research document. Nothing in the entry
+claims a floor either way: the discovery gate, not a release check, is what protects a system that
+lacks the collection, so a 7.58 probe would confirm the floor rather than change the code.
 
 ## Slash alias stays out of scope
 
