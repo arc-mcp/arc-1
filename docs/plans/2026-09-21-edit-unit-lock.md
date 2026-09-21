@@ -4,7 +4,9 @@
 
 `edit_unit` reads and splices source before `safeUpdateSource` acquires the SAP
 lock. Another writer can finish between those operations; the subsequent PUT
-silently restores stale surrounding source. This predates #597's lint correction.
+silently restores stale surrounding source. Independently, a missing/stale/failed
+inactive worklist can select active source over an existing draft. Both defects
+predate #597's lint correction.
 The dispatcher reproduction confirms success while losing another FORM's edit.
 
 #586 puts source reads inside a lock, but also adds a generic transform API,
@@ -50,7 +52,8 @@ The original dispatcher race test failed before the fix. Local regressions cover
 concurrent source drift, stale caches, source/read/lock/write/unlock failures,
 removed units, malformed source, package/write gates, transport propagation,
 optional syntax-check session identity and cache exceptions during cleanup.
-The existing #597 release-aware lint cases remain passing.
+The existing #597 release-aware lint cases remain passing. `SAPRead` now directly
+tests the `INCL` → `FUGR/I` worklist alias; removing that branch fails the regression.
 
 Live a4h/758, client 001, direct HTTPS Basic: two clients using the same test user;
 the second client completed a draft change immediately before the first acquired
@@ -61,4 +64,9 @@ Standalone and function-group INCL create→activate→draft→edit→read check
 preserved surrounding draft text. All disposable objects were deleted, with include/
 program metadata 404 confirmed. Other releases/auth routes remain untested live.
 
-The change is local to `edit_unit`; class-method/definition surgery is unchanged.
+Follow-up: class-method/definition surgery still selects a version and reads source
+before locking (`write.ts:fetchClassStructureAndMain`, `write/class-surgery.ts`).
+The same stale-worklist/concurrent-edit risk needs a separate fix that also keeps
+class-structure ranges consistent with the locked source. This PR is limited to
+`edit_unit`. Failed unlocks remain visible errors with session-cleanup guidance;
+silencing them would hide a potentially retained SAP lock.
