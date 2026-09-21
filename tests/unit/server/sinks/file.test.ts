@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AuditEvent } from '../../../../src/server/audit.js';
 import { FileSink } from '../../../../src/server/sinks/file.js';
 
@@ -9,6 +9,8 @@ describe('FileSink', () => {
   const tmpFile = join(tmpdir(), `arc1-test-${Date.now()}.jsonl`);
 
   afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
     if (existsSync(tmpFile)) {
       unlinkSync(tmpFile);
     }
@@ -26,6 +28,30 @@ describe('FileSink', () => {
     }) as AuditEvent;
 
   const fileMode = () => statSync(tmpFile).mode & 0o777;
+
+  it('flush waits for an append already started by the interval', async () => {
+    vi.useFakeTimers();
+    const sink = new FileSink(tmpFile);
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => (finish = resolve));
+    const append = vi
+      .spyOn(sink as unknown as { appendPrivate(data: string): Promise<void> }, 'appendPrivate')
+      .mockReturnValue(pending);
+    sink.write(makeEvent());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(append).toHaveBeenCalledOnce();
+
+    let settled = false;
+    const flushing = sink.flush().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    finish();
+    await flushing;
+    expect(settled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 
   it('writes JSON lines to file', async () => {
     const sink = new FileSink(tmpFile);

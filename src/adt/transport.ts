@@ -153,7 +153,7 @@ export async function listTransports(
   const url = `/sap/bc/adt/cts/transportrequests?${params.toString()}`;
 
   const resp = await http.get(url, { Accept: CTS_ACCEPT_TREE });
-  let transports = parseTransportList(resp.body);
+  let transports = parseTransportList(resp.body, url);
 
   // Client-side status filter as fallback (some systems ignore requestStatus)
   if (status && status !== '*') {
@@ -171,11 +171,10 @@ export async function getTransport(
 ): Promise<TransportRequest | null> {
   checkTransport(safety, transportId, 'GetTransport', false);
 
-  const resp = await http.get(`/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}`, {
-    Accept: CTS_CONTENT_TYPE_ORGANIZER,
-  });
+  const url = `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}`;
+  const resp = await http.get(url, { Accept: CTS_CONTENT_TYPE_ORGANIZER });
 
-  const transports = parseTransportList(resp.body);
+  const transports = parseTransportList(resp.body, url);
   // NW 7.50 returns HTTP 200 with the caller's full transport list when the
   // requested ID doesn't exist, instead of 404. Verify the parsed id matches.
   const match = transports.find((t) => t.id === transportId);
@@ -1435,8 +1434,16 @@ function findDeepValue(obj: unknown, key: string): unknown {
 
 // ─── Parsers ────────────────────────────────────────────────────────
 
-function parseTransportList(xml: string): TransportRequest[] {
+function parseTransportList(xml: string, path: string): TransportRequest[] {
   const parsed = parseXml(xml);
+  if (!Object.hasOwn(parsed, 'root')) {
+    const explanation =
+      'Transport API unavailable or unexpected CTS response: no transport organizer document was returned. This response does not establish an empty list or a missing request.';
+    const error = new AdtApiError(explanation, 200, path);
+    // Minimal mode hides the message; extraHint preserves this fixed explanation, never SAP response text.
+    error.extraHint = explanation;
+    throw error;
+  }
   const requests = findDeepNodes(parsed, 'request');
 
   return requests.map((req) => {

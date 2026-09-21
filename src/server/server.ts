@@ -7,6 +7,7 @@
  * - http-streamable: for remote/containerized deployments
  */
 
+import type { Server as HttpServer } from 'node:http';
 import { type ApiKeyEntry, createApiKeyVerifier, type Verifier } from '@arc-mcp/xsuaa-auth';
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -70,6 +71,7 @@ import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } 
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
 import { buildServerInstructions } from './server-instructions.js';
+import { closeHttpServer, registerShutdownHandlers } from './shutdown.js';
 import { FileSink } from './sinks/file.js';
 import { filterToolsByAuthScope } from './tool-auth.js';
 import type { ServerConfig } from './types.js';
@@ -77,7 +79,7 @@ import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
 /** ARC-1 version */
-export const VERSION = '1.2.0'; // x-release-please-version
+export const VERSION = '1.3.0'; // x-release-please-version
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's
@@ -606,14 +608,15 @@ export async function runStartupAuthPreflightWithClient(
   const skipped = skippedStartupAuthPreflight(config);
   if (skipped) return skipped;
   const checkedAt = new Date().toISOString();
-  const endpoint = STARTUP_AUTH_ENDPOINT;
+  let endpoint = STARTUP_AUTH_ENDPOINT;
 
   try {
-    await client.http.get(endpoint);
-    const reason = 'Startup auth preflight succeeded for shared SAP credentials.';
+    endpoint = await client.http.fetchCsrfToken();
+    const reason = 'Startup authentication/CSRF bootstrap succeeded; each tool still checks authorization.';
     logger.info(reason, { endpoint });
     return { status: 'ok', blocking: false, endpoint, checkedAt, reason };
   } catch (err) {
+    if (err instanceof AdtApiError) endpoint = err.path;
     if (err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)) {
       const reason = buildStartupAuthFailureReason(err.statusCode, config);
       // Non-blocking downgrade only applies to cookieFile mode — that's the path
@@ -637,7 +640,7 @@ export async function runStartupAuthPreflightWithClient(
 
     const detail = err instanceof Error ? err.message : String(err);
     const reason =
-      'Startup auth preflight was inconclusive (non-auth failure). ' +
+      'Startup authentication/CSRF bootstrap was inconclusive (non-auth failure). ' +
       'Continuing and letting runtime requests handle connectivity diagnostics.';
     logger.warn(reason, { endpoint, error: detail });
     return { status: 'inconclusive', blocking: false, endpoint, checkedAt, reason };
@@ -1119,17 +1122,17 @@ export async function createAndStartServer(
     logger.addSink(new FileSink(config.logFile));
     logger.info('File logging enabled', { logFile: config.logFile });
   }
-
-  // Add BTP Audit Log sink if auditlog service is bound (auto-detected from VCAP_SERVICES)
   try {
     const { BTPAuditLogSink, parseBTPAuditLogConfig } = await import('./sinks/btp-auditlog.js');
     const auditLogConfig = parseBTPAuditLogConfig();
     if (auditLogConfig) {
-      logger.addSink(new BTPAuditLogSink(auditLogConfig));
+      const reportDeliveryError = (error: string) =>
+        logger.warn('BTP Audit Log delivery failed (rate-limited)', { error });
+      logger.addSink(new BTPAuditLogSink(auditLogConfig, reportDeliveryError));
       logger.info('BTP Audit Log sink enabled', { url: auditLogConfig.url });
     }
   } catch (err) {
-    logger.warn('BTP Audit Log sink initialization failed (optional)', {
+    logger.error('BTP Audit Log sink disabled; audit events will remain on stderr and the optional file sink', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -1399,47 +1402,16 @@ export async function createAndStartServer(
         }
       : undefined;
 
-  // Shutdown hook for SQLite cache cleanup (guard against double-close from multiple signals).
-  // IMPORTANT: registering a SIGINT/SIGTERM listener suppresses Node's default exit behavior,
-  // so we must call process.exit() explicitly after cleanup — otherwise Ctrl+C hangs the process.
-  if (cachingLayer) {
-    let cacheClosed = false;
-    const cleanup = (signal: string) => {
-      if (cacheClosed) return;
-      cacheClosed = true;
-      try {
-        cachingLayer?.cache.close();
-      } catch {
-        // Ignore close errors during shutdown
-      }
-      logger.info(`ARC-1 shutting down (${signal})`);
-      process.exit(0);
-    };
-    process.on('SIGTERM', () => cleanup('SIGTERM'));
-    process.on('SIGINT', () => cleanup('SIGINT'));
-  } else {
-    // No cache — still log clean shutdown on explicit signals so operators see it in logs.
-    process.on('SIGTERM', () => {
-      logger.info('ARC-1 shutting down (SIGTERM)');
-      process.exit(0);
-    });
-    process.on('SIGINT', () => {
-      logger.info('ARC-1 shutting down (SIGINT)');
-      process.exit(0);
-    });
+  const httpServers: HttpServer[] = [];
+  if (uiDeps && config.uiMode === 'local') {
+    httpServers.push(await startLocalUiServer(uiDeps));
   }
 
   if (config.transport === 'stdio') {
-    if (uiDeps && config.uiMode === 'local') {
-      await startLocalUiServer(uiDeps);
-    }
     const transport = new StdioServerTransport();
     await server.connect(transport);
     logger.info('ARC-1 MCP server running on stdio');
   } else {
-    if (uiDeps && config.uiMode === 'local') {
-      await startLocalUiServer(uiDeps);
-    }
     // HTTP Streamable transport — for containerized/BTP deployments
     // Pass the factory function so HTTP server can create fresh server+transport
     // per request. This is required because MCP SDK's Server can only connect
@@ -1491,14 +1463,23 @@ export async function createAndStartServer(
             },
           }
         : undefined;
-    await startHttpServer(
-      serveSingleTargetEndpoint ? buildDefaultServer : undefined,
-      config,
-      xsuaaCredentials,
-      config.uiMode === 'web' ? uiDeps : undefined,
-      multiTargets,
+    httpServers.push(
+      await startHttpServer(
+        serveSingleTargetEndpoint ? buildDefaultServer : undefined,
+        config,
+        xsuaaCredentials,
+        config.uiMode === 'web' ? uiDeps : undefined,
+        multiTargets,
+      ),
     );
   }
 
+  registerShutdownHandlers(
+    async () => {
+      await Promise.all(httpServers.map(closeHttpServer));
+      await server.close();
+    },
+    () => cachingLayer?.cache.close(),
+  );
   return server;
 }

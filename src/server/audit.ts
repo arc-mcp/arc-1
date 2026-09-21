@@ -152,7 +152,7 @@ export interface DataSourcePolicyDecisionEvent extends AuditEventBase {
   decision: 'allow' | 'deny';
   decisionId: string;
   /** Absent on allow. */
-  code?: 'DATA_SOURCE_BLOCKED' | 'DATA_LINEAGE_UNRESOLVED' | 'DATA_SQL_UNSUPPORTED';
+  code?: 'DATA_SOURCE_BLOCKED' | 'DATA_POLICY_UNAVAILABLE' | 'DATA_LINEAGE_UNRESOLVED' | 'DATA_SQL_UNSUPPORTED';
   /** True only if the SAP data request was actually submitted; always false for a policy denial. */
   executed: boolean;
   /** Canonical direct roots of the whole logical request. */

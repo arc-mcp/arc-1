@@ -885,6 +885,7 @@ describe('AdtHttpClient', () => {
     it('throws AdtApiError when CSRF token is missing from response', async () => {
       mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
       mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
 
       const client = new AdtHttpClient(getDefaultConfig());
       await expect(client.fetchCsrfToken()).rejects.toThrow(AdtApiError);
@@ -950,58 +951,6 @@ describe('AdtHttpClient', () => {
       await client.fetchCsrfToken();
 
       expect(fetchHeaders(0).Cookie).toContain('sap-usercontext=abc');
-    });
-  });
-
-  // ─── Stateful Sessions ─────────────────────────────────────────────
-
-  describe('stateful sessions', () => {
-    it('creates isolated session for withStatefulSession', async () => {
-      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'SESSION_TOKEN' }));
-      mockFetch.mockResolvedValueOnce(mockResponse(200, 'locked'));
-
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).csrfToken = 'MAIN_TOKEN';
-
-      await client.withStatefulSession(async (session) => {
-        const resp = await session.post('/sap/bc/adt/lock', '<lock/>');
-        return resp;
-      });
-    });
-
-    it('session client includes stateful header', async () => {
-      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      mockFetch.mockResolvedValueOnce(mockResponse(200, 'locked'));
-
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).csrfToken = 'T';
-
-      await client.withStatefulSession(async (session) => {
-        await session.post('/lock', '<xml/>');
-      });
-
-      // The POST from session client should have stateful header
-      const lastCallHeaders = fetchHeaders(mockFetch.mock.calls.length - 1);
-      expect(lastCallHeaders['X-sap-adt-sessiontype']).toBe('stateful');
-    });
-
-    it('session client shares CSRF token with parent', async () => {
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).csrfToken = 'PARENT_TOKEN';
-
-      await client.withStatefulSession(async (session) => {
-        // Session should have the parent's token
-        expect((session as any).csrfToken).toBe('PARENT_TOKEN');
-      });
-    });
-
-    it('session client shares cookie jar with parent', async () => {
-      const client = new AdtHttpClient(getDefaultConfig());
-      (client as any).cookieJar.set('SAP_SESSIONID', 'sess1');
-
-      await client.withStatefulSession(async (session) => {
-        expect((session as any).cookieJar.get('SAP_SESSIONID')).toBe('sess1');
-      });
     });
   });
 

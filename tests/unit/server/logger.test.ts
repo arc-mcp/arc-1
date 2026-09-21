@@ -227,5 +227,30 @@ describe('Logger', () => {
       await logger.flush();
       expect(mockSink.flush).toHaveBeenCalled();
     });
+
+    it.each(['throw', 'reject'])('waits for healthy sinks when another sink fails with %s', async (failure) => {
+      const logger = new Logger('text', false);
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => (finish = resolve));
+      logger.addSink({
+        write: vi.fn(),
+        flush: () => {
+          if (failure === 'throw') throw new Error('sink failed');
+          return Promise.reject(new Error('sink failed'));
+        },
+      });
+      const flush = vi.fn().mockReturnValue(pending);
+      logger.addSink({ write: vi.fn(), flush });
+      let settled = false;
+      const flushing = logger.flush().then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(flush).toHaveBeenCalledOnce();
+      expect(settled).toBe(false);
+      finish();
+      await flushing;
+      expect(settled).toBe(true);
+    });
   });
 });

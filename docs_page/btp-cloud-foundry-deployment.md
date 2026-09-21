@@ -216,6 +216,43 @@ Use a separate principal-type-None Cloud Connector mapping with internal HTTPS a
 least-privileged technical SAP user. See
 [Shared Basic controls](multi-target-administration.md#basic-shared-identity-controls).
 
+### Optional: BTP Audit Log sink
+
+ARC-1 always writes audit events to stderr. To also send the supported security/data categories to
+SAP BTP Audit Log Service, first assign `auditlog` **premium** quota and an owner for certificate
+rotation. The service uses X.509 client authentication; a plain service instance and binding create
+a client secret that the Audit Log Write API cannot use.
+
+The base `mta.yaml` contains the complete service-instance and binding configuration but keeps the
+resource inactive. Add this to the real landscape extension, merging it into an existing
+`resources:` block when necessary:
+
+```yaml
+resources:
+  - name: arc1-auditlog
+    active: true
+```
+
+The base descriptor then supplies both required halves:
+
+- service-instance configuration with a unique `xsappname`, X.509 credential type, and
+  `client_credentials` grant; and
+- module `requires.parameters.config` with `xsuaa.credential-type: x509` and a two-month
+  certificate.
+
+For a reviewed direct-`cf push` deployment, use SAP's instance and binding commands in
+[Audit Log Write API for Customers](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers),
+then restage `arc1-mcp-server`.
+
+`cf bind-service` can return `OK` yet produce a `binding-secret` binding. After deployment, check
+`cf logs arc1-mcp-server --recent`: `BTP Audit Log sink enabled` confirms the required fields are
+present; an `ERROR` names missing X.509 fields. Do not print `cf env` or binding credentials into
+tickets — they contain the private key. Confirm actual delivery with a known audit event; startup
+validation alone does not prove authentication or delivery.
+
+For expiry and rebinding, see
+[Audit Log certificate rotation](btp-administration.md#audit-log-certificate-rotation).
+
 ## 5. Validate, build, and inspect the MTAR
 
 ```bash
@@ -360,9 +397,17 @@ npm run btp:build-deploy-ext
 The deployment creates/updates:
 
 - `arc1-mcp-server`, one 512 MB process by default;
-- XSUAA with ARC-1 scopes, templates, and seven space-qualified role collections;
-- Destination and Connectivity service instances and bindings; and
+- XSUAA with ARC-1 scopes, templates, seven space-qualified role collections, and exact backend
+  `/oauth/callback` and `/oauth/logged-out` URLs;
+- Destination and Connectivity service instances and bindings;
+- the Audit Log premium instance and X.509 binding only when `arc1-auditlog` is activated; and
 - a health check on `/health`.
+
+The default backend route needs no callback setting. For a custom public URL or explicit backend
+`routes:`, follow [Custom public URL](xsuaa-setup.md#custom-public-url) before deployment.
+When updating an existing installation, first check the
+[callback upgrade table](xsuaa-setup.md#upgrading-an-existing-deployment), including preservation
+of an existing optional UI URL.
 
 The unconfigured base application and multi-target mode can start with no SAP targets. The
 single-PP profile is different: its startup destination must already exist, as checked in step 4.
@@ -582,6 +627,8 @@ buildpack push does not create the seven MTA role collections for you.
 | SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |
 | SAP `403` after PP login | Check the actual propagated user's SAP authorizations |
 | Destination change appears ignored | Restart every ARC-1 instance; only discovered multi-target Basic username/password fields are hot |
+| `BTP Audit Log sink disabled` at startup | The selected premium binding is incomplete; recreate/rebind it with the X.509 instance and binding parameters from step 4 |
+| Repeated `BTP Audit Log delivery failed` warning | Check certificate validity, token/API reachability, and service health; rotate the binding before retrying |
 
 ## Official references
 
@@ -589,4 +636,5 @@ buildpack push does not create the seven MTA role collections for you.
 - [SAP: Defining MTA Extension Descriptors](https://help.sap.com/docs/btp/sap-business-technology-platform/defining-mta-extension-descriptors)
 - [SAP: Destination Service](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/destination-service)
 - [SAP: Working with Role Collections](https://help.sap.com/docs/btp/sap-business-technology-platform/working-with-role-collections)
+- [SAP: Audit Log Write API for Customers](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers)
 - [Cloud Foundry: Start, Restart, and Restage](https://docs.cloudfoundry.org/devguide/deploy-apps/start-restart-restage.html)

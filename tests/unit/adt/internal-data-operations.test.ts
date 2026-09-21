@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canonicalDataSourceName } from '../../../src/adt/data-source-name.js';
+import { DataSourcePolicyError } from '../../../src/adt/data-source-policy.js';
 import {
   INTERNAL_DATA_OPERATIONS,
   type InternalDataOperationId,
@@ -13,6 +14,7 @@ import {
 
 const srcDir = join(import.meta.dirname, '../../../src');
 const read = (relative: string) => readFileSync(join(srcDir, relative), 'utf8');
+const denied = new DataSourcePolicyError('DATA_SOURCE_BLOCKED', 'TADIR', ['TADIR'], 'blocked');
 
 describe('internal data-operation registry', () => {
   it('declares every source as an already-canonical name', () => {
@@ -62,11 +64,23 @@ describe('internal data-operation registry', () => {
   });
 
   it('gives a core denial the affected feature and an actionable alternative', () => {
-    const message = internalOperationDenial('tadir_lookup_db', 'DATA_SOURCE_BLOCKED: ...');
+    const message = internalOperationDenial('tadir_lookup_db', denied, false);
     expect(message).toContain('SAPSearch');
     expect(message).toContain('source="adt"');
     // Honest about what the alternative cannot do.
     expect(message).toContain('orphan/ghost TADIR rows');
+  });
+
+  it('formats core denials through the minimal client-message contract', () => {
+    const error = new DataSourcePolicyError('DATA_SOURCE_BLOCKED', 'TADIR', ['TADIR'], 'private diagnostic');
+    const message = internalOperationDenial('tadir_lookup_db', error, true);
+
+    expect(message).toContain('DATA_SOURCE_BLOCKED');
+    expect(message).toContain('executed=false');
+    expect(message).toContain('Affected: SAPSearch');
+    expect(message).not.toContain('Source path');
+    expect(message).not.toContain('private diagnostic');
+    expect(message).not.toContain('SAP_BLOCKED_DATA_SOURCES');
   });
 
   it('gives an optional degradation an explicit incompleteness warning', () => {
@@ -77,7 +91,7 @@ describe('internal data-operation registry', () => {
   });
 
   it('uses MAIN rather than local definitions for the hierarchy fallback', () => {
-    const message = internalOperationDenial('class_hierarchy', 'DATA_SOURCE_BLOCKED');
+    const message = internalOperationDenial('class_hierarchy', denied, false);
     expect(message).toContain('grep="INTERFACES|INHERITING"');
     expect(message).toContain('MAIN');
     expect(message).toContain('not a complete subclass list');
@@ -85,7 +99,7 @@ describe('internal data-operation registry', () => {
   });
 
   it('explains why the authorization trace denies rather than partially answering', () => {
-    const message = internalOperationDenial('authorization_trace', 'DATA_SOURCE_BLOCKED: ...');
+    const message = internalOperationDenial('authorization_trace', denied, false);
     expect(message).toContain('SUAUTHVALTRC');
     expect(message).toContain('TOBJ');
     expect(message).toMatch(/ambiguous|misleading/);

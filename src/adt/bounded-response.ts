@@ -117,6 +117,11 @@ export async function capResponseBody(response: Response, budget: DataResponseBu
   });
 }
 
+function destroyProxyBody(body: Readable): void {
+  // Observe disposal errors even before the first read; otherwise UND_ERR_ABORTED can escape (#805).
+  body.on('error', () => {}).destroy();
+}
+
 function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal): ReadableStream<Uint8Array> {
   // Do not bridge Undici's BodyReadable through Readable.toWeb(). Cancelling that
   // adapter closes its web-stream controller before Client.destroy() has drained
@@ -151,10 +156,9 @@ function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal):
     settled = true;
     signal.removeEventListener('abort', onAbort);
     if (error) {
-      // Stop the body without emitting a second error, then destroy its dedicated
-      // client with the original cause. The async iterator retains Node's error
-      // listener, so a transport error racing with teardown stays handled.
-      if (!body.destroyed) body.destroy();
+      // Stop the body, handling disposal errors even before the first read, then
+      // destroy its dedicated client with the original cause.
+      if (!body.destroyed) destroyProxyBody(body);
       await client.destroy(error);
     } else {
       await client.close();
@@ -221,18 +225,13 @@ export async function connectivityProxyResponse(
   if (headersOnly) {
     // CSRF GET fallback can return a large discovery document. It is not result data;
     // destroy its dedicated transport without ever buffering or decoding that body.
-    // No reader will be attached on this path. Observe Undici's asynchronous
-    // UND_ERR_ABORTED teardown event; it is expected when discarding the body.
-    response.body.on('error', () => {
-      /* Intentional control-body disposal. */
-    });
-    response.body.destroy();
+    destroyProxyBody(response.body);
     await client.destroy();
     return new Response(null, { status: response.statusCode, headers });
   }
 
   if (response.statusCode === 204 || response.statusCode === 205 || response.statusCode === 304) {
-    response.body.destroy();
+    destroyProxyBody(response.body);
     return new Response(null, { status: response.statusCode, headers });
   }
   if (!bounded) {
@@ -242,7 +241,7 @@ export async function connectivityProxyResponse(
   const contentEncoding = headers.get('content-encoding')?.trim().toLowerCase();
   if (contentEncoding && contentEncoding !== 'identity') {
     const error = new Error(`Unexpected Content-Encoding '${contentEncoding}' on bounded proxy response.`);
-    response.body.destroy();
+    destroyProxyBody(response.body);
     await client.destroy(error);
     throw error;
   }

@@ -639,6 +639,7 @@ export function toLegacyAunitResults(result: AunitRunResult): UnitTestResult[] {
 export async function handleSAPDiagnose(
   client: AdtClient,
   args: Record<string, unknown>,
+  minimalErrors: boolean,
   options: { deadline?: number; signal?: AbortSignal } = {},
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
@@ -880,7 +881,7 @@ export async function handleSAPDiagnose(
     }
     case 'unittest_ci':
     case 'atc_ci':
-      return handleCiQuality(client, args, handleSAPDiagnose);
+      return handleCiQuality(client, args, (c, a, o) => handleSAPDiagnose(c, a, minimalErrors, o));
     case 'atc': {
       if (args.objects !== undefined) {
         const objects = (args.objects as { type: AtcBatchObject['type']; name: string }[]).map((object) => ({
@@ -1224,7 +1225,7 @@ export async function handleSAPDiagnose(
           result = await getAuthorizationTrace(client, { user, authObject, onlyFailures, maxResults });
         } catch (error) {
           if (error instanceof DataSourcePolicyError) {
-            return errorResult(internalOperationDenial('authorization_trace', error.message));
+            return errorResult(internalOperationDenial('authorization_trace', error, minimalErrors));
           }
           throw error;
         }

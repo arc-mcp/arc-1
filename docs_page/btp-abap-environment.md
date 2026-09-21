@@ -44,8 +44,10 @@ SAP documents this exchange for applications that must call another application 
 
 ### 1. Bind the BTP services
 
+First prepare the route-specific file in [XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
 cf create-service destination lite arc1-destination
 ```
 

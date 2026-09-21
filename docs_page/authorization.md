@@ -134,10 +134,11 @@ With an active list, one logical request is decided exactly once:
 | Code | Meaning |
 |---|---|
 | `DATA_SOURCE_BLOCKED` | An exact configured rule matched, directly or transitively. |
+| `DATA_POLICY_UNAVAILABLE` | The target lacks the table-source metadata required to enforce replacement lineage safely, or discovery was unavailable and its canonical table-source request returned `404` (normally SAP_BASIS 7.50/7.51). |
 | `DATA_LINEAGE_UNRESOLVED` | Identity, dependency-graph or replacement lineage could not be proven. |
 | `DATA_SQL_UNSUPPORTED` | The statement is outside the strict accepted SQL grammar. |
 
-All three mean the SAP data request was **not executed**. Each carries `executed=false` and an opaque
+All four mean the SAP data request was **not executed**. Each carries `executed=false` and an opaque
 `decisionId` that also appears in the audit log.
 
 ### What is deliberately unsupported
@@ -181,6 +182,16 @@ cross-request cache in v1: every request revalidates live lineage, so a policy c
 activation takes effect immediately and no stale decision can be reused. Directly blocked sources
 stay cheap and local. The check and the query are separate SAP requests, so the pair is not
 transactionally atomic (a TOCTOU window remains).
+
+Replacement-object proof for a transparent table needs SAP's canonical ADT table-source resource,
+available from SAP_BASIS 7.52 onward. If loaded discovery proves the resource absent, ARC-1 returns
+`DATA_POLICY_UNAVAILABLE` without requesting it; if discovery is unknown, a canonical source `404`
+produces the same code after that one metadata request. The SAP data request is never executed. Direct
+matches and blocked aliases visible in a CDS graph retain `DATA_SOURCE_BLOCKED`, while other unsupported
+source kinds retain `DATA_LINEAGE_UNRESOLVED`. A `404` from a resource advertised by discovery also
+remains unresolved because it can indicate an object or authorization problem. ARC-1 does not assume a
+transparent table has no replacement object: replacement objects exist on 7.50, so that fallback would
+weaken the blocklist.
 
 Under principal propagation the metadata reads run as the calling SAP user, so a user who lacks read
 authorization on a DDL source can get `DATA_LINEAGE_UNRESOLVED` for a query SAP itself would have

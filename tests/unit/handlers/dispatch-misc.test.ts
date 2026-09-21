@@ -521,6 +521,69 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(text).not.toContain('SAP_BLOCKED_DATA_SOURCES');
     });
 
+    it('explains unavailable policy metadata safely in minimal-error mode', async () => {
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          '<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/SCARR" adtcore:type="TABL/DT" adtcore:name="SCARR"/></adtcore:objectReferences>',
+        ),
+      );
+      const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
+      const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+      // A non-table entry means discovery is loaded while proving the table collection is absent.
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/ddic/structures', ['text/plain']]]));
+
+      const result = await handleToolCall(
+        client,
+        {
+          ...DEFAULT_CONFIG,
+          allowDataPreview: true,
+          allowFreeSQL: true,
+          blockedDataSources: ['USR02'],
+          minimalErrors: true,
+        },
+        'SAPQuery',
+        { sql: 'SELECT * FROM SCARR' },
+      );
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toContain('DATA_POLICY_UNAVAILABLE');
+      expect(text).toContain('7.52');
+      expect(text).toContain('executed=false');
+      expect(text).toContain('Retrying unchanged');
+      expect(text).not.toMatch(/SCARR|USR02|SAP_BLOCKED_DATA_SOURCES|\/ddic\/tables/i);
+    });
+
+    it('keeps internal data-operation denials minimal while preserving the feature guidance', async () => {
+      mockFetch.mockReset();
+      const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['TADIR'] };
+      const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
+
+      const result = await handleToolCall(
+        client,
+        {
+          ...DEFAULT_CONFIG,
+          allowDataPreview: true,
+          allowFreeSQL: true,
+          blockedDataSources: ['TADIR'],
+          minimalErrors: true,
+        },
+        'SAPSearch',
+        { searchType: 'tadir_lookup', names: ['ZFOO'], source: 'db' },
+      );
+      const text = result.content[0]?.text ?? '';
+
+      expect(result.isError).toBe(true);
+      expect(text).toContain('DATA_SOURCE_BLOCKED');
+      expect(text).toContain('executed=false');
+      // Registry guidance may name the operation's documented source, never the rule or the variable.
+      expect(text).toContain('Affected: SAPSearch(searchType="tadir_lookup"');
+      expect(text).toContain('Retry with source="adt"');
+      expect(text).not.toContain('Source path');
+      expect(text).not.toContain('SAP_BLOCKED_DATA_SOURCES');
+    });
+
     it('minimal mode redacts the client message but never the audit record', async () => {
       const auditSpy = vi.spyOn(logger, 'emitAudit');
       try {
@@ -1545,6 +1608,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
 
     it('adds a BDEF base-extensible hint for behavior extension create failures', async () => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       mockFetch.mockResolvedValue(
         mockResponse(
           400,

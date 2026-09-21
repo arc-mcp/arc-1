@@ -134,7 +134,7 @@ vulnerable SQL Console host expression.
 | `SAP_ALLOW_WRITES`                 | `false` unless writes are needed | Blocks every mutation — object writes, activation, transport writes, git writes. |
 | `SAP_ALLOW_FREE_SQL`               | `false` on sensitive systems | Blocks arbitrary SQL queries against the database via `SAPQuery`.                               |
 | `SAP_ALLOW_DATA_PREVIEW`           | `false` unless table preview is required | Blocks named table content preview.                                              |
-| `SAP_BLOCKED_DATA_SOURCES`         | Exact sensitive sources when data preview is approved; otherwise empty | Experimental, default-off emergency brake, slower by design (extra SAP metadata calls, no cache). Fails closed on unsupported lineage but leaves every unlisted source eligible. Not an allowlist, not a DCL replacement, and not a remediation for SAP Note 3772411. |
+| `SAP_BLOCKED_DATA_SOURCES`         | Exact sensitive sources when data access is approved; keep data access disabled if the target lacks the required ADT table-source metadata | Experimental, default-off emergency brake, slower by design (extra SAP metadata calls, no cache). The required resource is normally available on SAP_BASIS 7.52+; older targets return `DATA_POLICY_UNAVAILABLE` before data execution. Fails closed on unsupported lineage but leaves every unlisted source eligible. Not an allowlist, not a DCL replacement, and not a remediation for SAP Note 3772411. |
 | `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Prefix wildcards (`Z*`), exact matches, and DEVCLASS subtree rules (`ZFOO/**` — `ZFOO` plus every transitive sub-package) are all supported; subtree resolution is fail-closed on SAP errors. Reads are never package-gated. |
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |
 | `SAP_ALLOW_GIT_WRITES`             | `false` unless Git needed | Opt-in for gated abapGit mutations and SAP-side Git egress. It does not enable gCTS mutations, which remain quarantined before HTTP; accepted abapGit mutations without an authoritative postcondition return incomplete. |
@@ -263,7 +263,12 @@ event; the BTP Audit Log sink forwards the security/data categories described be
 |------|-----------|--------|
 | **Stderr** | Always active | JSON lines to stderr |
 | **File** | Set `--log-file` / `ARC1_LOG_FILE` | JSON lines appended to a file |
-| **BTP Audit Log** | Auto-detected from `VCAP_SERVICES` (requires `auditlog` premium plan) | Categorized security and data events sent to BTP Audit Log Service v2 API |
+| **BTP Audit Log** | Auto-detected from a complete X.509 `auditlog` premium binding | Categorized security and data events sent to BTP Audit Log Service v2 API |
+
+Audit Log requires X.509 on both the service instance and binding. Incomplete bindings log an
+`ERROR` and are skipped; delivery failures log a `WARN` at most once a minute without failing the
+tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-sink) and
+[certificate rotation](btp-administration.md#audit-log-certificate-rotation).
 
 ### What Gets Logged
 

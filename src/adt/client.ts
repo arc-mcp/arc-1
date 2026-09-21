@@ -22,11 +22,7 @@ import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
 import { canonicalDataSourceName } from './data-source-name.js';
-import {
-  CDS_DEPENDENCY_GRAPH_PATH,
-  createDataSourceBlocklistGuard,
-  type DataSourceBlocklistGuard,
-} from './data-source-policy.js';
+import { CDS_DEPENDENCY_GRAPH_PATH, DataSourceBlocklistGuard } from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
@@ -36,7 +32,12 @@ import { canonicalRevisionSourcePath } from './path-safety.js';
 import { clampUrlLimit } from './result-limits.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { Semaphore } from './semaphore.js';
-import { buildTableQuerySql, clampPreviewRows, executeDataPreviewStatements } from './table-query.js';
+import {
+  buildTableQuerySql,
+  clampPreviewRows,
+  executeDataPreviewStatements,
+  fitFreestyleSqlLines,
+} from './table-query.js';
 import {
   readTextElementPart,
   readTextElements,
@@ -1343,9 +1344,11 @@ export class AdtClient {
 
   /** A fresh guard per logical request; instrumentation never leaks between decisions. */
   private dataSourceBlocklistGuard(): DataSourceBlocklistGuard {
-    return createDataSourceBlocklistGuard({
-      blockedDataSources: this.safety.blockedDataSources,
+    return new DataSourceBlocklistGuard(this.safety.blockedDataSources, {
       searchObject: (name, maxResults) => this.searchObject(name, maxResults),
+      canonicalTableSourceAvailable: this.http.hasDiscoveryData()
+        ? this.http.discoveryAcceptFor('/sap/bc/adt/ddic/tables') !== undefined
+        : undefined,
       // Canonical /tables source only: the NW 7.50 /structures fallback omits
       // replacementObject metadata and therefore cannot prove authorization.
       readTableSource: async (name) => (await this.getTable(name)).source,
@@ -1478,7 +1481,12 @@ export class AdtClient {
     signal?: AbortSignal,
   ): Promise<string> {
     const rowLimit = clampPreviewRows(maxRows);
-    return this.postDataPreview(`/sap/bc/adt/datapreview/freestyle?rowNumber=${rowLimit}`, sql, budget, signal);
+    return this.postDataPreview(
+      `/sap/bc/adt/datapreview/freestyle?rowNumber=${rowLimit}`,
+      fitFreestyleSqlLines(sql),
+      budget,
+      signal,
+    );
   }
 
   /**

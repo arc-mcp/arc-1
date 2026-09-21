@@ -10,6 +10,7 @@ import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import { AdtApiError } from '../adt/errors.js';
 import { internalOperationWarning } from '../adt/internal-data-operations.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
+import { isServerDrivenObjectType, serverDrivenObjectUrl } from '../adt/server-driven.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
 
 export type LiveUsageResult = WhereUsedResult | ReferenceResult;
@@ -53,6 +54,10 @@ export async function resolveWhereUsedUri(
   }
   if (type === 'TABL') {
     return client.resolveTablObjectUrl(name);
+  }
+  // These objects have registered collections; the generic resolver would treat them as programs.
+  if (isServerDrivenObjectType(type)) {
+    return serverDrivenObjectUrl(type, name);
   }
   return objectUrlForType(type, name);
 }

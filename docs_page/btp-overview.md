@@ -105,4 +105,5 @@ results. It does not add setup steps.
 | Why was a destination excluded or quarantined? | [Multi-Target Administration](multi-target-administration.md) |
 | Does this change need restart, restage, or redeploy? | [BTP Administration](btp-administration.md#change-and-restart-matrix) |
 | How do I update or roll back ARC-1? | [Updating](updating.md) and [BTP Administration](btp-administration.md) |
+| How do I upgrade OAuth callbacks and keep existing URLs? | [XSUAA upgrade table](xsuaa-setup.md#upgrading-an-existing-deployment) |
 | What should I inspect in logs? | [Log Analysis](log-analysis.md) |

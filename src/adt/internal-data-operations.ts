@@ -21,6 +21,8 @@
  *              registry exists to prevent.
  */
 
+import type { DataSourcePolicyError } from './data-source-policy.js';
+
 export type InternalDataOperationId =
   | 'tadir_lookup_db'
   | 'tran_program_enrichment'
@@ -110,15 +112,23 @@ export function internalOperationsBlockedBy(
 /**
  * Model-facing explanation for a denied internal read.
  *
- * `reason` carries the already-redacted policy text, so this adds the affected feature and the
- * alternative without re-deriving anything policy-sensitive.
+ * Takes the error, not its text, so the policy part always honours `ARC1_MINIMAL_ERRORS`. The added
+ * guidance names only the operation's documented sources, never a configured rule or variable.
  */
-export function internalOperationDenial(id: InternalDataOperationId, reason: string): string {
+export function internalOperationDenial(
+  id: InternalDataOperationId,
+  error: DataSourcePolicyError,
+  minimalErrors: boolean,
+): string {
   const operation = INTERNAL_DATA_OPERATIONS[id];
-  return `${reason}\n\nAffected: ${operation.consumer}. ${operation.guidance}`;
+  return `${error.clientMessage(minimalErrors)}\n\nAffected: ${operation.consumer}. ${operation.guidance}`;
 }
 
-/** Warning appended to a degraded-but-correct result when an optional internal read is denied. */
+/**
+ * Warning appended to a degraded-but-correct result when an optional internal read is denied.
+ * `reason` must be stable caller-authored text (normally an error code), never caught policy or
+ * backend text: warnings bypass `ARC1_MINIMAL_ERRORS`.
+ */
 export function internalOperationWarning(id: InternalDataOperationId, reason: string): string {
   const operation = INTERNAL_DATA_OPERATIONS[id];
   return `Incomplete result: ${operation.consumer} could not read ${operation.sources.join(' / ')}. ${operation.guidance} (${reason})`;
