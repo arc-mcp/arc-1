@@ -223,6 +223,8 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | Doc | Description |
 |-----|-------------|
 | [quickstart.md](quickstart.md) | **Start here** — 5-minute npx + Claude Desktop setup |
+| [release-notes.md](release-notes.md) | Released changes and upgrade notes |
+| [roadmap.md](roadmap.md) | Parked ideas and future possibilities |
 | [local-development.md](local-development.md) | Full local dev — npx/npm/Docker/git, `.env`, SSO cookie extractor, MCP client configs |
 | [deployment.md](deployment.md) | Multi-user deployment — Docker on a VM, BTP Cloud Foundry, BTP ABAP |
 | [configuration-reference.md](configuration-reference.md) | Every flag and env var, one table |
@@ -244,7 +246,6 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [multi-target-administration.md](multi-target-administration.md) | Multi-target diagnostics, registry lifecycle, capacity, and security operations |
 | [operations.md](operations.md) | Operational task map for BTP, Docker, updates, logging, limits, caching, auth testing, and incidents |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
-| [roadmap.md](roadmap.md) | Planned features |
 | [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |
 
 ## License

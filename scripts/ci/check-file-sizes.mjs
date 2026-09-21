@@ -72,7 +72,7 @@ const BUDGETS = {
   'tests/integration/adt.integration.test.ts': 3100,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1550,
+  'src/adt/http.ts': 1563, // #807: keep the small session-owned proxy lifecycle in the transport.
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
   'src/server/server.ts': 1484,
 };

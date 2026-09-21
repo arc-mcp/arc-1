@@ -18,7 +18,7 @@ currently [multi-target mode](multi-target-setup.md), may still change in a mino
 `1.0.0` onward and every `0.9` release are listed individually. `0.1`–`0.8` are summarized, with the
 important `0.7.0` authorization migration retained below.
 
-## 1.3.0 — CI, safer writes, and runtime fixes (unreleased)
+## 1.3.0 — CI, safer writes, and runtime fixes (2026-09-17)
 
 Adds quality gates, bounded relations, safer authoring, and clearer partial-result evidence. Defaults need
 no configuration change.

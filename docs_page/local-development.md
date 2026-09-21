@@ -48,6 +48,17 @@ For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP c
 
 ### git clone (contributing or running from source)
 
+For every contribution, check the [idea roadmap](roadmap.md) before starting and before opening or
+updating the PR. Record useful deferred work, narrow partially completed ideas, and remove completed
+items from both the overview and details in the same PR. State the affected IDs or "No roadmap
+impact" in the PR description. This also applies to fixes, documentation, refactors, and research.
+
+For SAP-facing or runtime changes, test through ARC-1 on a real, authorized SAP test system when
+possible. Use the [PR template](https://github.com/arc-mcp/arc-1/blob/main/.github/pull_request_template.md)
+to record the tested build, SAP release, deployment/authentication route, observed results, and
+untested scenarios. If you lack access, explain why and what still needs verification; this does
+not prevent you from contributing. Documentation-only changes can mark live testing as N/A.
+
 ```bash
 git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
