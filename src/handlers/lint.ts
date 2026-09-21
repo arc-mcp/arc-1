@@ -10,7 +10,12 @@ import {
   prettyPrint,
   setPrettyPrinterSettings,
 } from '../adt/devtools.js';
-import { buildLintConfig, listRulesFromConfig, type RuleOverrides } from '../lint/config-builder.js';
+import {
+  buildLintConfig,
+  getLintSyntaxVersion,
+  listRulesFromConfig,
+  type RuleOverrides,
+} from '../lint/config-builder.js';
 import { detectFilename, lintAbapSource, lintAndFix } from '../lint/lint.js';
 import type { ServerConfig } from '../server/types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -51,10 +56,7 @@ export async function handleSAPLint(
       const enabled = rules.filter((r) => r.enabled);
       const disabled = rules.filter((r) => !r.enabled);
       const effectiveAbapRelease = configOptions.abapRelease ?? 'unknown';
-      const syntaxVersion = lintConfig.get().syntax.version ?? {
-        release: lintConfig.getRelease().name,
-        language: lintConfig.getLanguageVersion(),
-      };
+      const syntaxVersion = getLintSyntaxVersion(lintConfig);
       const warnings: string[] = [];
       if (!configOptions.abapRelease) {
         warnings.push(

@@ -51,12 +51,12 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
   const cachedFeatures = getCachedFeatures();
   // Match unit lookup's on-prem ceiling only when the target release is unknown.
   // Keep this fallback local: standalone lint and other write actions still use their defaults.
-  const lintConfig = { ...config, abapRelease: config.abapRelease ?? String(ABAPLINT_MAX_RELEASE) };
-  const abaplintVersion = mapSapReleaseToAbaplintVersion(cachedFeatures?.abapRelease ?? lintConfig.abapRelease);
+  const release = cachedFeatures?.abapRelease ?? config.abapRelease ?? String(ABAPLINT_MAX_RELEASE);
+  const abaplintVersion = mapSapReleaseToAbaplintVersion(release);
   const spliced = spliceUnit(currentSource, name, unit, source, abaplintVersion);
   if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 
-  const lint = runPreWriteLint(spliced.newSource, type, name, lintConfig, lintOverride);
+  const lint = runPreWriteLint(spliced.newSource, type, name, { ...config, abapRelease: release }, lintOverride);
   if (lint.blocked) return lint.result!;
   const checkNotes = await runPreWriteSyntaxCheck(client, type, spliced.newSource, objectUrl, config, checkOverride);
 

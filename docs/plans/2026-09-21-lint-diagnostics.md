@@ -18,8 +18,9 @@
 2. Report preset and SAP-release provenance alongside the effective syntax version. Unknown
    release warnings name the actual syntax; keep their wording short and actionable. Preserve
    an explicit system-type override's origin when the probe caches it.
-3. Point pre-write failures to `SAPLint list_rules` and version/configuration checks before
-   suggesting source changes. Preserve rule severity, custom overrides and whole-source validation.
+3. Include the syntax from the config actually used for pre-write validation in blocked-write
+   errors, then point to `SAPLint list_rules` and version/configuration checks. Keep one syntax
+   reporting helper for both paths. Preserve rule severity, custom overrides and whole-source validation.
 4. Cover default, explicit, probed, Cloud and custom syntax configurations through dispatch.
    Reproduce #775 through `edit_unit`, proving the untouched source survives at release 758
    and that rejected edits issue no PUT. Align the unknown-release `edit_unit` fallback with
@@ -39,9 +40,6 @@
   The edit succeeded, preserved the untouched source and passed SAP's inactive syntax check.
   A malformed replacement was blocked and readback proved the source stayed unchanged.
   No program was executed or activated. Deleted the test program and verified HTTP 404.
-- The first live harness run used the wrong syntax-result property (`success` instead of
-  `checked`/`hasErrors`); cleanup succeeded. The corrected harness passed all assertions
-  on a fresh object, which was also deleted and verified absent.
 - Earlier read-only live diagnostics correctly reported onprem/probe, 758/probe, v758.
   The exact customer `DELETE ... UP TO` example remains a local regression: #775 stays
   open because its complete source/effective configuration is unavailable.

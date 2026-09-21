@@ -7,6 +7,7 @@ import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js'
 import { featuresOff } from './handler-test-config.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
+const { runPreWriteLint } = await import('../../../src/handlers/write-helpers.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
@@ -124,27 +125,33 @@ describe('SAPLint configuration diagnostics', () => {
     },
   ];
 
-  it.each(cases)('reports effective settings: $name', async ({ config, probe, customSyntax, expected, warn }) => {
-    if (probe) setCachedFeatures({ ...featuresOff(), ...probe });
-    const effectiveConfig = { ...DEFAULT_CONFIG, ...config };
-    if (customSyntax) {
-      effectiveConfig.abaplintConfig = join(directory, 'abaplint.json');
-      writeFileSync(effectiveConfig.abaplintConfig, JSON.stringify({ syntax: { version: customSyntax } }));
-    }
-    const result = await handleToolCall(createClient(), effectiveConfig, 'SAPLint', { action: 'list_rules' });
-    expect(result.isError).toBeUndefined();
-    const data = JSON.parse(result.content[0]!.text);
-    expect(data).toMatchObject(expected);
-    if (warn) {
-      expect(data.warnings).toHaveLength(1);
-      expect(data.warnings[0]).toContain(JSON.stringify(data.syntaxVersion));
-      expect(data.warnings[0]).toContain('SAP_ABAP_RELEASE');
-      expect(data.warnings[0]).not.toContain('[object Object]');
-    } else {
-      expect(data.warnings).toEqual([]);
-    }
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
+  it.each(cases)(
+    'reports effective settings for lint and blocked writes: $name',
+    async ({ config, probe, customSyntax, expected, warn }) => {
+      if (probe) setCachedFeatures({ ...featuresOff(), ...probe });
+      const effectiveConfig = { ...DEFAULT_CONFIG, ...config };
+      if (customSyntax) {
+        effectiveConfig.abaplintConfig = join(directory, 'abaplint.json');
+        writeFileSync(effectiveConfig.abaplintConfig, JSON.stringify({ syntax: { version: customSyntax } }));
+      }
+      const result = await handleToolCall(createClient(), effectiveConfig, 'SAPLint', { action: 'list_rules' });
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0]!.text);
+      expect(data).toMatchObject(expected);
+      if (warn) {
+        expect(data.warnings).toHaveLength(1);
+        expect(data.warnings[0]).toContain(JSON.stringify(data.syntaxVersion));
+        expect(data.warnings[0]).toContain('SAP_ABAP_RELEASE');
+        expect(data.warnings[0]).not.toContain('[object Object]');
+      } else {
+        expect(data.warnings).toEqual([]);
+      }
+      const lint = runPreWriteLint('REPORT zbad.\nnot_an_abap_statement.', 'PROG', 'ZBAD', effectiveConfig);
+      expect(lint.blocked).toBe(true);
+      expect(lint.result?.content[0]?.text).toContain(`abaplint syntax ${JSON.stringify(expected.syntaxVersion)}`);
+      expect(mockFetch).not.toHaveBeenCalled();
+    },
+  );
 
   it('uses the selected target for both values and their provenance', async () => {
     setCachedFeatures({ ...featuresOff(), systemType: 'btp', abapRelease: '816' });

@@ -1477,7 +1477,7 @@ an explicit `SAP_SYSTEM_TYPE` override and preserves its `config` origin. A cust
 
 **Pre-Write Validation:**
 
-When `--lint-before-write` is enabled (default: true), SAPWrite automatically runs a strict subset of lint rules before writing to SAP. Parser errors and cloud violations block the write. Style issues (keyword case, indentation) never block writes.
+When `--lint-before-write` is enabled (default: true), SAPWrite automatically runs a strict subset of lint rules before writing to SAP. Parser errors and cloud violations block the write. Style issues (keyword case, indentation) never block writes. A blocked-write error includes the actual `abaplint syntax` used for that check, including custom syntax overrides.
 
 `edit_unit` validates the resulting whole source, including unchanged FORMs. When neither probe
 nor configuration supplies a release, this action uses the on-prem parser ceiling (currently v758)

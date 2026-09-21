@@ -156,6 +156,11 @@ export function buildPreWriteConfig(options: LintConfigOptions = {}): Config {
   return new Config(JSON.stringify(raw));
 }
 
+/** Report the actual syntax setting, including structured Cloud/custom configurations. */
+export function getLintSyntaxVersion(config: Config) {
+  return config.get().syntax.version ?? { release: config.getRelease().name, language: config.getLanguageVersion() };
+}
+
 /** Resolve the abaplint Version from options */
 function resolveVersion(options: LintConfigOptions): Version {
   if (options.systemType === 'btp') return Version.Cloud;

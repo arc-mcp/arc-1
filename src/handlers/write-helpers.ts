@@ -1056,7 +1056,8 @@ export function runPreWriteLint(
       return {
         blocked: true,
         result: errorResult(
-          `Pre-write lint check failed for ${type} ${name}. Fix these errors before writing:\n${errorLines}\n\n` +
+          `Pre-write lint check failed for ${type} ${name} (abaplint syntax ${JSON.stringify(result.syntaxVersion)}). ` +
+            `Fix these errors before writing:\n${errorLines}\n\n` +
             'For parser/version findings, check SAPLint action="list_rules" and the target SAP release before ' +
             'changing valid source. Use SAPLint action="lint_and_fix" for fixable findings, or ' +
             'lintBeforeWrite=false to skip this check for this call.',
