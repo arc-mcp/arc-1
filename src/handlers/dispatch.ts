@@ -176,7 +176,7 @@ function buildBaseErrorMessage(
         : 'Create request failed. Use the request ID to correlate server-side logs.'
       : message;
     let inspection =
-      'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version. Do not overwrite an existing object blindly.';
+      'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version, before updating an existing object.';
     if (tool === 'SAPTransport') {
       inspection = 'Use SAPTransport to list requests and inspect their owner, description and contents.';
     } else if (tool === 'SAPManage' && String(args.action).startsWith('flp_')) {

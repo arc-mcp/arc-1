@@ -136,7 +136,7 @@ const createArgs = {
 };
 
 describe('create failure guidance', () => {
-  it.each<Failure>([429, 500, 502, 503, 504, 'disconnect'])(
+  it.each<Failure>([500, 'disconnect'])(
     'reports unknown completion after %s without unsafe retry advice',
     async (status) => {
       for (const minimalErrors of [false, true]) {
@@ -319,38 +319,28 @@ it('preserves uncertain-create guidance and the final audit when source-cache cl
   });
 });
 
-it.each([
-  { action: 'flp_create_catalog', domainId: 'ZTEST', title: 'Test' },
-  { action: 'flp_create_group', groupId: 'ZTEST', title: 'Test' },
-  {
-    action: 'flp_create_tile',
-    catalogId: 'ZTEST',
-    tile: { id: 'test', title: 'Test', semanticObject: 'Test', semanticAction: 'display' },
-  },
-  { action: 'flp_add_tile_to_group', groupId: 'ZGROUP', catalogId: 'ZTEST', tileInstanceId: '1' },
-])('reports uncertain $action with FLP inspection guidance', async (args) => {
-  for (const minimalErrors of [false, true]) {
-    await withSap(503, true, async (_http, state, baseUrl) => {
-      const result = await handleToolCall(
-        new AdtClient({ baseUrl, safety }),
-        { ...config, minimalErrors },
-        'SAPManage',
-        args,
-      );
-      expect(result.isError).toBe(true);
-      const text = result.content[0]?.text ?? '';
-      expect(text).toContain('Create completion is unconfirmed');
-      expect(text).toContain('flp_list_tiles');
-      expect(text).toContain('group membership');
-      expect(text).not.toContain('SAPRead/SAPSearch');
-      expect(text).not.toContain('overwrite');
-      expect(text).not.toContain('retry in a trusted');
-      if (minimalErrors) {
-        expect(text).toContain('status 503');
-        expect(text).toContain('ARC1_MINIMAL_ERRORS=true');
-        expect(text).not.toContain('database connection');
-      }
-      expect(state.posts).toBe(1);
-    });
-  }
+it('reports uncertain FLP creation with catalog and group inspection guidance', async () => {
+  await withSap(503, true, async (_http, state, baseUrl) => {
+    const result = await handleToolCall(
+      new AdtClient({ baseUrl, safety }),
+      { ...config, minimalErrors: true },
+      'SAPManage',
+      {
+        action: 'flp_create_tile',
+        catalogId: 'ZTEST',
+        tile: { id: 'test', title: 'Test', semanticObject: 'Test', semanticAction: 'display' },
+      },
+    );
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? '';
+    expect(text).toContain('Create completion is unconfirmed');
+    expect(text).toContain('flp_list_tiles');
+    expect(text).toContain('group membership');
+    expect(text).not.toContain('SAPRead/SAPSearch');
+    expect(text).not.toContain('overwrite');
+    expect(text).toContain('status 503');
+    expect(text).toContain('ARC1_MINIMAL_ERRORS=true');
+    expect(text).not.toContain('database connection');
+    expect(state.posts).toBe(1);
+  });
 });

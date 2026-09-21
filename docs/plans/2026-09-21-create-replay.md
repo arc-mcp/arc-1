@@ -38,15 +38,7 @@ or public tool schema. Other operations (activation, lock/unlock, refactoring, G
 retain their existing policies; this change protects creation, not every mutation.
 No existing roadmap item describes this defect; no roadmap impact.
 
-## Validation
-
-The initial 11 regression cases failed on main; the focused suite now covers all
-nine creation paths, 429/500/502/503/504/disconnect, rejection-before-execution,
-auth/CSRF/DTEL fallback, GET and read-POST retries, denial, batch persistence,
-minimal-mode diagnostics, transport/FLP guidance and uncertain-create cache invalidation
-(including a throwing cache). Type aliases already normalize before dispatch; the
-regression checks the canonical cache key for a slash alias too.
-The original error remains typed; safety/package checks and public schemas are unchanged.
+## Live validation
 
 Live a4h SAP_BASIS 758, client 001, direct HTTPS Basic: a disposable `$TMP` PROG
 was created and its successful response replaced locally with a synthetic 503.
