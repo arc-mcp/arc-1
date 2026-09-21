@@ -93,7 +93,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.edit_method_signature': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete_method': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.change_method_visibility': { scope: 'write', opType: OperationType.Update },
-  // edit_text_symbols writes a class's text pool (textelements service). Explicit entry so admins can
+  // edit_text_symbols writes a CLAS/PROG/FUGR text-pool part. Explicit entry so admins can
   // target it with SAP_DENY_ACTIONS (validateDenyActions derives valid patterns from ACTION_POLICY —
   // without a row, "SAPWrite.edit_text_symbols" would be rejected at startup as matching no action).
   'SAPWrite.edit_text_symbols': { scope: 'write', opType: OperationType.Update },
@@ -124,6 +124,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPNavigate: { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.definition': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.references': { scope: 'read', opType: OperationType.Intelligence },
+  'SAPNavigate.relations': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.completion': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.hierarchy': { scope: 'read', opType: OperationType.Intelligence },
 
@@ -141,7 +142,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPDiagnose: { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.syntax': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.unittest': { scope: 'read', opType: OperationType.Test },
+  'SAPDiagnose.unittest_ci': { scope: 'read', opType: OperationType.Test },
   'SAPDiagnose.atc': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.atc_ci': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.atc_variants': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.cds_testcases': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.dumps': { scope: 'read', opType: OperationType.Read },

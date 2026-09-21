@@ -2,6 +2,32 @@ import type { Readable } from 'node:stream';
 import type { Client, Dispatcher } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import type { DataResponseBudget } from './data-result-context.js';
+import { AdtApiError } from './errors.js';
+import type { AdtRequestOptions } from './http-deadline.js';
+
+/** Optional scoped controls; existing unscoped reads retain their response behavior. */
+export async function prepareBoundedResponse(
+  response: Response,
+  url: string,
+  options?: AdtRequestOptions,
+): Promise<Response> {
+  if (options?.attemptBudget && !options.discardResponseBody && [401, 403].includes(response.status)) {
+    options.attemptBudget.authorizationFailureObserved = true;
+  }
+  if (options?.attemptBudget && response.status >= 300 && response.status < 400 && response.status !== 304) {
+    await response.body?.cancel();
+    throw new AdtApiError(
+      'Redirects are not allowed during bounded SAP analysis.',
+      response.status,
+      new URL(url).pathname,
+    );
+  }
+  if (options?.discardResponseBody) {
+    await response.body?.cancel();
+    return response;
+  }
+  return options?.responseBudget ? await capResponseBody(response, options.responseBudget) : response;
+}
 
 type ConnectivityProxyResponse = Pick<Dispatcher.ResponseData, 'statusCode' | 'headers' | 'body'>;
 
@@ -91,6 +117,11 @@ export async function capResponseBody(response: Response, budget: DataResponseBu
   });
 }
 
+function destroyProxyBody(body: Readable): void {
+  // Observe disposal errors even before the first read; otherwise UND_ERR_ABORTED can escape (#805).
+  body.on('error', () => {}).destroy();
+}
+
 function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal): ReadableStream<Uint8Array> {
   // Do not bridge Undici's BodyReadable through Readable.toWeb(). Cancelling that
   // adapter closes its web-stream controller before Client.destroy() has drained
@@ -125,10 +156,9 @@ function proxyResponseBody(body: Readable, client: Client, signal: AbortSignal):
     settled = true;
     signal.removeEventListener('abort', onAbort);
     if (error) {
-      // Stop the body without emitting a second error, then destroy its dedicated
-      // client with the original cause. The async iterator retains Node's error
-      // listener, so a transport error racing with teardown stays handled.
-      if (!body.destroyed) body.destroy();
+      // Stop the body, handling disposal errors even before the first read, then
+      // destroy its dedicated client with the original cause.
+      if (!body.destroyed) destroyProxyBody(body);
       await client.destroy(error);
     } else {
       await client.close();
@@ -184,6 +214,7 @@ export async function connectivityProxyResponse(
   client: Client,
   signal: AbortSignal,
   bounded: boolean,
+  headersOnly = false,
 ): Promise<Response> {
   const headers = new Headers();
   for (const [key, value] of Object.entries(response.headers)) {
@@ -191,8 +222,16 @@ export async function connectivityProxyResponse(
     for (const item of Array.isArray(value) ? value : [String(value)]) headers.append(key, item);
   }
 
+  if (headersOnly) {
+    // CSRF GET fallback can return a large discovery document. It is not result data;
+    // destroy its dedicated transport without ever buffering or decoding that body.
+    destroyProxyBody(response.body);
+    await client.destroy();
+    return new Response(null, { status: response.statusCode, headers });
+  }
+
   if (response.statusCode === 204 || response.statusCode === 205 || response.statusCode === 304) {
-    response.body.destroy();
+    destroyProxyBody(response.body);
     return new Response(null, { status: response.statusCode, headers });
   }
   if (!bounded) {
@@ -202,7 +241,7 @@ export async function connectivityProxyResponse(
   const contentEncoding = headers.get('content-encoding')?.trim().toLowerCase();
   if (contentEncoding && contentEncoding !== 'identity') {
     const error = new Error(`Unexpected Content-Encoding '${contentEncoding}' on bounded proxy response.`);
-    response.body.destroy();
+    destroyProxyBody(response.body);
     await client.destroy(error);
     throw error;
   }

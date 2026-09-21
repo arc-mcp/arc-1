@@ -1631,12 +1631,10 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
         expect(result.content[0]?.text).not.toContain('requires a transport number');
         expect(warnSpy).toHaveBeenCalledWith(
-          'SAPWrite batch_create transport preflight failed; continuing without auto transport',
+          'SAPWrite transport preflight unavailable; continuing without auto transport',
           expect.objectContaining({
             package: 'Z_MY_PKG',
-            type: 'PROG',
-            name: 'ZTEST',
-            error: expect.stringContaining('ADT API error'),
+            statusCode: 500,
           }),
         );
       } finally {
@@ -1657,14 +1655,17 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'batch_create',
         package: 'Z_MY_PKG',
-        objects: [
-          { type: 'DDLS', name: 'ZI_TRAVEL', source: '@EndUserText.label: "Travel"\ndefine view entity ZI_TRAVEL ...' },
-        ],
+        objects: [{ type: 'PROG', name: 'ZTRAVEL', source: 'REPORT ztravel.' }],
       });
 
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('requires a transport number');
       expect(result.content[0]?.text).toContain('SAPTransport');
+      expect(
+        mockFetch.mock.calls.some(
+          ([url, options]) => options?.method === 'POST' && String(url).includes('/sap/bc/adt/programs/programs'),
+        ),
+      ).toBe(false);
     });
 
     it('still preflights batch_create package when only some objects provide object transport', async () => {

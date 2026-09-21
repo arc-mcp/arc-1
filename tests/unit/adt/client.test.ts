@@ -821,8 +821,9 @@ describe('AdtClient', () => {
     });
   });
 
-  describe('class text symbols', () => {
+  describe('text elements (text pool)', () => {
     const SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
+    const SELECTIONS_CT = 'application/vnd.sap.adt.textelements.selections.v1';
     const LOCK_BODY =
       '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H9</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL><MODIFICATION_SUPPORT>X</MODIFICATION_SUPPORT></DATA></asx:values></asx:abap>';
 
@@ -877,6 +878,69 @@ describe('AdtClient', () => {
       await expect(client.writeClassTextSymbols('ZCL_FOO', 'bad')).rejects.toBeInstanceOf(AdtApiError);
       const calls = mockFetch.mock.calls as [string, RequestInit][];
       expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it("writeTextElementPart PUTs a program's selection texts with the selections media type", async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        const m = (init?.method ?? 'GET').toUpperCase();
+        if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK_BODY));
+        if (u.includes('_action=UNLOCK')) return Promise.resolve(mockResponse(200, ''));
+        if (m === 'PUT') return Promise.resolve(mockResponse(200, ''));
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient();
+      await client.writeTextElementPart('PROG', 'ZHU_CREATE', 'selections', 'P_LGNUM=Warehouse\n', 'EWDK900524');
+      const calls = mockFetch.mock.calls as [string, RequestInit][];
+      const put = calls.find(([, i]) => (i?.method ?? 'GET').toUpperCase() === 'PUT');
+      expect(String(put?.[0])).toContain('/sap/bc/adt/textelements/programs/ZHU_CREATE/source/selections');
+      expect(String(put?.[0])).toContain('corrNr=EWDK900524');
+      const ph = put?.[1]?.headers as Record<string, string>;
+      expect(ph['Content-Type']).toBe(SELECTIONS_CT);
+      expect(ph.Accept).toBe(SELECTIONS_CT);
+      expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('getTextElements labels every non-empty part and omits empty bodies', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/source/symbols')) return Promise.resolve(mockResponse(200, ''));
+        if (u.includes('/source/selections')) return Promise.resolve(mockResponse(200, 'P_LGNUM=Warehouse'));
+        return Promise.resolve(mockResponse(200, ''));
+      });
+      const client = createClient();
+      const body = await client.getTextElements('ZHU_CREATE', { objectType: 'PROG' });
+      expect(body).toContain('=== selections ===');
+      expect(body).toContain('P_LGNUM=Warehouse');
+      // Symbols and headings came back empty, so neither is listed.
+      expect(body).not.toContain('=== symbols ===');
+      expect(body).not.toContain('=== headings ===');
+    });
+
+    it('getTextElements reports an empty pool instead of returning nothing', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, ''));
+      const client = createClient();
+      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).resolves.toContain(
+        'No text elements maintained for PROG ZHU_CREATE.',
+      );
+    });
+
+    it('getTextElements rejects an object type that has no text pool', async () => {
+      const client = createClient();
+      await expect(client.getTextElements('ZIF_FOO', { objectType: 'INTF' })).rejects.toThrow(/exist only for/i);
+    });
+
+    it('getTextElements refuses an absent service without calling the broken legacy resource', async () => {
+      const client = createClient();
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['text/plain']]]));
+      mockFetch.mockReset();
+      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).rejects.toThrow(
+        /textelements service/i,
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('fails clean when discovery is loaded but the textelements service is absent (NW 7.50)', async () => {
@@ -1005,18 +1069,29 @@ describe('AdtClient', () => {
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
     <dtel:typeKind>domain</dtel:typeKind><dtel:typeName>BUKRS</dtel:typeName>
     <dtel:dataType>CHAR</dtel:dataType><dtel:dataTypeLength>000004</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals>
-    <dtel:shortFieldLabel>CoCd</dtel:shortFieldLabel><dtel:mediumFieldLabel>Company Code</dtel:mediumFieldLabel>
-    <dtel:longFieldLabel>Company Code</dtel:longFieldLabel><dtel:headingFieldLabel>CoCd</dtel:headingFieldLabel>
+    <dtel:shortFieldLabel>CoCd</dtel:shortFieldLabel><dtel:shortFieldLength>06</dtel:shortFieldLength>
+    <dtel:mediumFieldLabel>Company Code</dtel:mediumFieldLabel><dtel:mediumFieldLength>15</dtel:mediumFieldLength>
+    <dtel:longFieldLabel>Company Code</dtel:longFieldLabel><dtel:longFieldLength>15</dtel:longFieldLength>
+    <dtel:headingFieldLabel>CoCd</dtel:headingFieldLabel><dtel:headingFieldLength>04</dtel:headingFieldLength>
     <dtel:searchHelp>C_T001</dtel:searchHelp><dtel:defaultComponentName>COMP_CODE</dtel:defaultComponentName>
+    <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>
   </dtel:dataElement>
 </blue:wbobj>`,
         ),
       );
       const client = createClient();
-      const dtel = await client.getDataElement('BUKRS');
+      const dtel = await client.getDataElement('BUKRS', 'inactive');
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/ddic/dataelements/BUKRS?version=inactive',
+      );
       expect(dtel.name).toBe('BUKRS');
       expect(dtel.typeName).toBe('BUKRS');
       expect(dtel.searchHelp).toBe('C_T001');
+      expect(dtel.shortLength).toBe('06');
+      expect(dtel.mediumLength).toBe('15');
+      expect(dtel.longLength).toBe('15');
+      expect(dtel.headingLength).toBe('04');
+      expect(dtel.deactivateInputHistory).toBe(true);
     });
 
     it('getTransaction returns parsed metadata', async () => {
@@ -1255,6 +1330,9 @@ describe('AdtClient', () => {
     it('encodes special characters in search query', async () => {
       const client = createClient();
       await client.searchObject('/NAMESPACE/*', 5);
+      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('query')).toBe('/NAMESPACE/*');
+      expect(params.has('objectType')).toBe(false);
     });
   });
 
@@ -2001,6 +2079,22 @@ describe('AdtClient', () => {
         sourcePath: ['USR02'],
       });
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('uses loaded discovery to refuse missing replacement metadata before table source or data preview', async () => {
+      mockFetch.mockResolvedValue(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      // A non-table entry means discovery is loaded while proving the table collection is absent.
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/ddic/structures', ['text/plain']]]));
+
+      await expect(client.runTableQuery('SCARR')).rejects.toMatchObject({
+        code: 'DATA_POLICY_UNAVAILABLE',
+        sourcePath: ['SCARR'],
+      });
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(true);
+      expect(urls.some((url) => url.includes('/ddic/tables/SCARR/source/main'))).toBe(false);
+      expect(urls.some((url) => url.includes('/datapreview/'))).toBe(false);
     });
 
     // Phase 3 invariant: the identifier ARC-1 authorizes is byte-for-byte the identifier it sends.

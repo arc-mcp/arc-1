@@ -567,6 +567,7 @@ Security-relevant uncertainty should deny only when the feature is enabled. Stab
 should distinguish at least:
 
 - `DATA_SOURCE_BLOCKED`: a configured name matched; query was not sent;
+- `DATA_POLICY_UNAVAILABLE`: the target cannot expose metadata required to enforce the policy safely;
 - `DATA_LINEAGE_UNRESOLVED`: ARC-1 could not establish complete supported lineage; query was not sent;
 - `DATA_SQL_UNSUPPORTED`: the statement falls outside the strict parser subset; query was not sent.
 
@@ -582,7 +583,7 @@ call/node counts — regardless of the flag. An operator investigating a denial 
 it fully from the audit trail even when the model was told almost nothing.
 
 One honest limitation must be documented rather than overstated: minimal mode redacts **names and paths**,
-but the three stable codes remain distinct on purpose, because a model that cannot tell "blocked by
+but the four stable codes remain distinct on purpose, because a model that cannot tell "blocked by
 policy" from "SQL unsupported" cannot self-correct. Retaining a distinguishable `DATA_SOURCE_BLOCKED`
 therefore still permits coarse membership inference by probing. That is a deliberate, documented trade in
 favour of useful model feedback. Do not claim minimal mode eliminates membership inference.

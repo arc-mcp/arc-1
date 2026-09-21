@@ -47,6 +47,10 @@ shared SAP user.
 
 ## Configuration ownership
 
+For the OAuth callback-policy upgrade, follow
+[XSUAA upgrade guidance](xsuaa-setup.md#upgrading-an-existing-deployment). It requires a full MTA
+deployment; an app restart alone does not update the XSUAA service policy.
+
 Use one source of truth for each kind of value:
 
 | Location | Put here | Avoid here |
@@ -153,6 +157,19 @@ With a dedicated secret, rebinding XSUAA no longer revokes DCR registrations by 
 `ARC1_DCR_SIGNING_SECRET` when global DCR revocation is intended. ARC-1 currently consumes it as an
 environment variable; sufficiently privileged CF operators can therefore read it. A bound/file
 secret is a future hardening item, not a property that documentation can provide today.
+
+## Audit Log certificate rotation
+
+The optional Audit Log binding certificate does not renew inside a running process. Before its
+configured validity ends, unbind `arc1-auditlog` from `arc1-mcp-server` during a maintenance window.
+For MTA deployments, redeploy the reviewed MTAR with the same extension to recreate the binding;
+for direct `cf push`, repeat SAP's
+[X.509 binding procedure](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers)
+and restage. Check the startup log and delivery of a known audit event afterward. Do not rotate
+ARC-1's XSUAA binding or DCR signing key as part of this operation.
+
+On SIGTERM/SIGINT, ARC-1 allows up to five seconds to drain requests and flush audit sinks before
+exiting. A timeout is logged and exits with status 1; SIGKILL cannot flush pending records.
 
 ## Deployment and scaling by identity mode
 

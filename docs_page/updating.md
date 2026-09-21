@@ -1,5 +1,17 @@
 # Updating ARC-1
 
+<a id="xsuaa-callback-hardening"></a>
+
+## v1.4.0 — XSUAA callback hardening
+
+Standard MCP clients keep their URL and registration. Perform a full MTA deployment so XSUAA
+and the app both receive the restricted policies. Before upgrading, use the
+[XSUAA upgrade table](xsuaa-setup.md#upgrading-an-existing-deployment) for your setup.
+If you use the optional browser UI with its old default route,
+[pin that route first](xsuaa-setup.md#keep-an-existing-ui-url) to keep its address unchanged.
+Custom gateways and manual XSUAA services need their exact public callbacks registered;
+clients relying on an arbitrary CF/BAS callback with the shared client ID should switch to DCR.
+
 ## v1.1.0 — CLI/CI hardening compatibility changes
 
 The CLI/CI hardening release targets `1.1.0`. Its direct CI commands and unavailable Git mutation
@@ -35,7 +47,7 @@ Four things to check. Per-change context for the whole release is in the
 | **Retired settings abort startup** | anyone who configured cache warmup or the unreleased multi-destination prototype | Remove `ARC1_CACHE_WARMUP`, `ARC1_CACHE_WARMUP_PACKAGES`, `--cache-warmup`, `--cache-warmup-packages` and `SAP_BTP_DESTINATIONS` — details in [Cache warmup removal](#v10-cache-warmup-removal) and [multi-target migration](#v10-experimental-destination-discovered-multi-target-migration) below. Setting them to `false` is not enough; the value is not read, the presence is |
 | **Unknown tool parameters are rejected** | MCP clients and agent frameworks that send extra keys | A parameter outside a tool's schema now returns a validation error instead of being silently stripped. If a custom client injects its own keys into tool arguments, stop doing that before upgrading — previously the call succeeded while quietly ignoring them |
 | **`SAPTransport(action="list")` returns headers only** | anything that reads the object list out of `list` | Pass `summary=false` to restore the previous full response |
-| **The XSUAA descriptor gained a jwt-bearer grant** | BTP Cloud Foundry, and only if you want app-to-app propagation | `cf update-service arc1-mcp-xsuaa -c xs-security.json` (or an MTA redeploy). Existing bindings inherit it without rebinding, and every existing login path keeps working untouched |
+| **The XSUAA descriptor gained a jwt-bearer grant** | BTP Cloud Foundry, and only if you want app-to-app propagation | a full MTA redeploy (manual services: apply the route-specific `xs-security.landscape.json`). Existing bindings inherit it without rebinding, and every existing login path keeps working untouched |
 
 Nothing else in 1.0 needs an action: the tool surface grew (procedural unit surgery, FUNC processing types,
 new server-driven types, `atc_variants`), and the rest is fixes.
@@ -132,10 +144,11 @@ Added two new scopes: `transports`, `git`. `admin` now **implies all other scope
 
 #### xs-security.json (BTP)
 
-`MCPDeveloper` role template now bundles `[read, write, transports, git]`. Re-deploy `xs-security.json` to your XSUAA service:
+`MCPDeveloper` role template now bundles `[read, write, transports, git]`. Redeploy the MTA,
+or update a manually owned service with its route-specific file:
 
 ```bash
-cf update-service arc1-xsuaa -c xs-security.json
+cf update-service arc1-xsuaa -c xs-security.landscape.json
 ```
 
 Users assigned to `ARC-1 Developer` role collection automatically gain transport scope and the gated
@@ -157,7 +170,7 @@ want "developer without CTS/Git", create your own role template referencing just
 #### BTP Cloud Foundry
 
 1. Update `xs-security.json` in your repo (already done in the ARC-1 v0.7 release).
-2. Redeploy the XSUAA service: `cf update-service arc1-xsuaa -c xs-security.json`. This updates scopes and role templates, but does not create role collections from `mta.yaml`.
+2. For an MTA-owned service, continue with the full MTA deployment below. For a manually owned service, update with its route-specific `xs-security.landscape.json`; a service update alone does not create role collections from `mta.yaml`.
 3. Run the full MTA deployment: `npm run btp:build-deploy-ext` (or `mbt build && cf deploy mta_archives/arc1-mcp_*.mtar -e mta-overrides.mtaext`). If you don't have a `mta-overrides.mtaext` yet, copy it from the tracked `mta-overrides.mtaext.example` first. The base `mta.yaml` is deliberately target-free; the extension preserves the existing single-target names or enables multi-target mode explicitly.
 4. In BTP Cockpit, verify that all seven `ARC-1 … (<space>)` role collections exist and contain roles. Existing assignments survive, but collections added after an older deployment are not created by `cf update-service` alone and must be assigned explicitly.
 5. Test with a developer user: `SAPTransport(action=check)` should succeed with a read-scoped user now; `SAPTransport(action=create)` should succeed for users in `ARC-1 Developer`.
@@ -175,7 +188,7 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 ## Before you update
 
 1. **Check what changed** — start with the annotated [Release Notes](release-notes.md): every release with its impact and the action it needs (usually none). The raw [CHANGELOG.md](https://github.com/arc-mcp/arc-1/blob/main/CHANGELOG.md) and the [Releases page](https://github.com/arc-mcp/arc-1/releases) list every merged PR.
-2. **Pin to a version** — in production, use exact version tags (for example `:1.2.0`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
+2. **Pin to a version** — in production, use exact version tags (for example `:1.3.0`), never `:latest`. Prevents surprise upgrades. <!-- x-release-please-version -->
 3. **Test first** — update a dev/staging instance before production. Verify MCP clients still connect and tools work as expected.
 4. **Read the startup auth line after upgrade** — a drift-free instance will log the same `auth: MCP=[...] SAP=[...]` summary before and after. If it's different, the upgrade changed something you didn't expect.
 
@@ -191,10 +204,10 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 npx arc-1@latest
 
 # Pinned
-npx arc-1@1.2.0
+npx arc-1@1.3.0
 
 # Global install
-npm install -g arc-1@1.2.0
+npm install -g arc-1@1.3.0
 ```
 <!-- x-release-please-end -->
 
@@ -208,7 +221,7 @@ If you pin in MCP client config, update the `args`:
 
 <!-- x-release-please-start-version -->
 ```json
-{ "command": "npx", "args": ["-y", "arc-1@1.2.0"] }
+{ "command": "npx", "args": ["-y", "arc-1@1.3.0"] }
 ```
 <!-- x-release-please-end -->
 
@@ -219,7 +232,7 @@ If you pin in MCP client config, update the `args`:
 <!-- x-release-please-start-version -->
 ```bash
 # 1. Pull the new image
-docker pull ghcr.io/arc-mcp/arc-1:1.2.0
+docker pull ghcr.io/arc-mcp/arc-1:1.3.0
 
 # 2. Stop & remove the running container
 docker stop arc1 && docker rm arc1
@@ -227,7 +240,7 @@ docker stop arc1 && docker rm arc1
 # 3. Start with the new image (same env vars / config)
 docker run -d --name arc1 -p 8080:8080 \
   --env-file .env \
-  ghcr.io/arc-mcp/arc-1:1.2.0
+  ghcr.io/arc-mcp/arc-1:1.3.0
 
 # 4. Verify
 docker logs arc1 | head -20
@@ -245,6 +258,8 @@ docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:0.6
 ```
 
 ---
+
+<a id="updating-on-btp"></a>
 
 ## BTP Cloud Foundry
 

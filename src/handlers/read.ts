@@ -4,13 +4,14 @@
  */
 
 import { resolveBspNameAndPath } from '../adt/bsp-path.js';
-import type { AdtClient, SourceReadResult } from '../adt/client.js';
+import type { AdtClient, SourceReadResult, TextElementPart } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
-import { decodeKtdText, formatKtdShortTexts, formatKtdUndocumentedIndex, KTD_META_MARKER } from '../adt/ddic-xml.js';
+import { decodeKtdText, formatKtdNodeIndex, formatKtdShortTexts, KTD_META_MARKER } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
+import { describePackageListing } from '../adt/package-contents.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
   ensureServerDrivenSupport,
@@ -143,12 +144,12 @@ function sourceVersionWarning(effectiveVersion: SourceVersion, draft?: InactiveO
  * SWOTLV is a declared internal source and BOR method resolution has no alternative in ARC-1, so a
  * policy denial must name the affected feature rather than surfacing a bare policy error.
  */
-async function swotlv<T>(run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
+async function swotlv<T>(minimalErrors: boolean, run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
   try {
     return await run();
   } catch (error) {
     if (error instanceof DataSourcePolicyError) {
-      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error.message)) };
+      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error, minimalErrors)) };
     }
     throw error;
   }
@@ -159,6 +160,7 @@ export async function handleSAPRead(
   args: Record<string, unknown>,
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
+  minimalErrors: boolean,
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -285,9 +287,11 @@ export async function handleSAPRead(
     return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
   };
 
-  // Structured format is only supported for CLAS type
-  if (args.format === 'structured' && type !== 'CLAS') {
-    return errorResult('The "structured" format is only supported for CLAS type. Other types return text format.');
+  // Structured ordinary reads: class metadata or a package listing envelope.
+  if (args.format === 'structured' && type !== 'CLAS' && type !== 'DEVC') {
+    return errorResult(
+      'For ordinary reads, format="structured" supports CLAS and DEVC. Retry this read with format="text" or omit format; DDIC metadata is returned by its normal reader.',
+    );
   }
 
   switch (type) {
@@ -571,10 +575,9 @@ export async function handleSAPRead(
         // be pasted into SAPWrite. Grep searches the stored Markdown without escapes.
         const markdown = decodeKtdText(source, { routeSafe: !args.grep });
         if (args.grep) return grepText(markdown);
-        // decodeKtdText hides nodes SAP pre-created without text. List their ids compactly
-        // so an undocumented node can be addressed in SAPWrite without first provoking the
-        // write's refusal error to learn them.
-        const index = formatKtdUndocumentedIndex(source);
+        // List copyable names for every writable node, including empty nodes omitted from Markdown.
+        // The labels use the same resolver as SAPWrite.
+        const index = formatKtdNodeIndex(source);
         const readOnlyContext = [
           versionWarning,
           cacheHit && revalidated ? '[cached:revalidated]' : undefined,
@@ -620,7 +623,9 @@ export async function handleSAPRead(
       return textResult(toolJson(domain));
     }
     case 'DTEL': {
-      const dtel = await client.getDataElement(name);
+      // SAP's version-less developer view exposes pending drafts for omitted and `auto` reads.
+      const dtelVersion = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+      const dtel = await client.getDataElement(name, dtelVersion);
       return textResult(toolJson(dtel));
     }
     case 'TTYP': {
@@ -774,7 +779,7 @@ export async function handleSAPRead(
       }
       if (safeMethod) {
         // Read specific BOR method implementation via SWOTLV lookup
-        const data = await swotlv(() =>
+        const data = await swotlv(minimalErrors, () =>
           client.runQuery(
             `SELECT PROGNAME, FORMNAME FROM SWOTLV WHERE LOBJTYPE = '${safeName}' AND VERB = '${safeMethod}'`,
             1,
@@ -796,7 +801,7 @@ export async function handleSAPRead(
         );
       }
       // List all methods for this BOR object
-      const methods = await swotlv(() =>
+      const methods = await swotlv(minimalErrors, () =>
         client.runQuery(`SELECT VERB, PROGNAME, FORMNAME, DESCRIPT FROM SWOTLV WHERE LOBJTYPE = '${safeName}'`, 100),
       );
       if ('policyDenial' in methods) return methods.policyDenial;
@@ -808,7 +813,11 @@ export async function handleSAPRead(
     case 'DEVC': {
       const maxResults = args.maxResults != null ? Number(args.maxResults) : undefined;
       const contents = await client.getPackageContents(name, maxResults);
-      return textResult(toolJson(contents));
+      const listing = describePackageListing(contents.length, maxResults);
+      if (args.format === 'structured') return textResult(toolJson({ objects: contents, listing }));
+      const result = textResult(toolJson(contents));
+      result.content.push({ type: 'text', text: toolJson({ listing }) });
+      return result;
     }
     case 'SYSTEM':
       return textResult(await client.getSystemInfo());
@@ -835,8 +844,17 @@ export async function handleSAPRead(
         return textResult(await client.getMessages(name));
       }
     }
-    case 'TEXT_ELEMENTS':
-      return textResult(await client.getTextElements(name));
+    case 'TEXT_ELEMENTS': {
+      // objectType picks the textelements collection (PROG default, also CLAS/FUGR); include picks
+      // one subobject (symbols | selections | headings) instead of the whole pool.
+      const part = (args.include as string | undefined)?.toLowerCase() as TextElementPart | undefined;
+      return textResult(
+        await client.getTextElements(name, {
+          objectType: (args.objectType as string | undefined) ?? 'PROG',
+          part,
+        }),
+      );
+    }
     case 'VARIANTS':
       return textResult(await client.getVariants(name));
     case 'BSP': {

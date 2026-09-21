@@ -109,6 +109,25 @@ describe('multi-target tool surface', () => {
     ]);
   });
 
+  it('explicitly permits bounded ATC batches within one pinned or aggregate target', () => {
+    const tools = multiTargetToolDefinitions(getToolDefinitions(DEFAULT_CONFIG), DEFAULT_CONFIG);
+    const diagnose = tools.find((tool) => tool.name === 'SAPDiagnose')!;
+    const objects = property(diagnose, 'objects');
+    expect(objects).toMatchObject({
+      minItems: 1,
+      maxItems: 20,
+      items: { additionalProperties: false, required: ['type', 'name'] },
+    });
+    expect(diagnose.annotations?.readOnlyHint).toBe(true);
+    const aggregate = injectTargetSchema(diagnose, [target(1)]);
+    expect(property(aggregate, 'objects')).toEqual(objects);
+    expect(aggregate.inputSchema.required).toContain('target');
+    const selection = [{ type: 'CLAS', name: 'ZCL_A' }];
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc', objects: selection }, DEFAULT_CONFIG)).toBe(
+      'allowed',
+    );
+  });
+
   it.each([1, 16])('uses an exact target enum for %i targets', (count) => {
     const targets = Array.from({ length: count }, (_, index) => target(index));
     const injected = injectTargetSchema(getToolDefinitions(DEFAULT_CONFIG)[0], targets);
@@ -145,7 +164,9 @@ describe('multi-target tool surface', () => {
     expect(multiTargetInvocationDecision('SAPTransport', { action: 'create' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPTransport', { action: 'layers' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'atc_ci' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest' }, DEFAULT_CONFIG)).toBe('allowed');
+    expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'unittest_ci' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_start' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'trace_cancel' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPDiagnose', { action: 'apply_quickfix' }, DEFAULT_CONFIG)).toBe(

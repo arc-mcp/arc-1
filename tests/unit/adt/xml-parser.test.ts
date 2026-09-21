@@ -857,11 +857,21 @@ describe('XML Parser', () => {
       expect(dtel.length).toBe('000004');
       expect(dtel.decimals).toBe('000000');
       expect(dtel.shortLabel).toBe('CoCd');
+      expect(dtel.shortLength).toBe('06');
       expect(dtel.mediumLabel).toBe('Company Code');
+      expect(dtel.mediumLength).toBe('15');
       expect(dtel.longLabel).toBe('Company Code');
+      expect(dtel.longLength).toBe('15');
       expect(dtel.headingLabel).toBe('CoCd');
+      expect(dtel.headingLength).toBe('04');
       expect(dtel.searchHelp).toBe('C_T001');
+      expect(dtel.searchHelpParameter).toBe('BUKRS');
+      expect(dtel.setGetParameter).toBe('BUK');
       expect(dtel.defaultComponentName).toBe('COMP_CODE');
+      expect(dtel.deactivateInputHistory).toBe(false);
+      expect(dtel.changeDocument).toBe(true);
+      expect(dtel.leftToRightDirection).toBe(false);
+      expect(dtel.deactivateBIDIFiltering).toBe(false);
       expect(dtel.package).toBe('BF');
     });
 
@@ -873,6 +883,14 @@ describe('XML Parser', () => {
       expect(dtel.description).toBe('Test Element');
       expect(dtel.typeKind).toBe('');
       expect(dtel.typeName).toBe('');
+      expect(dtel.shortLength).toBe('');
+      expect(dtel.deactivateInputHistory).toBe(false);
+    });
+
+    it('parses a true deactivateInputHistory value', () => {
+      const xml =
+        '<blue:wbobj xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:deactivateInputHistory>true</dtel:deactivateInputHistory></dtel:dataElement></blue:wbobj>';
+      expect(parseDataElementMetadata(xml).deactivateInputHistory).toBe(true);
     });
   });
 

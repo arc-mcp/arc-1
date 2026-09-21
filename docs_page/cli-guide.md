@@ -84,8 +84,21 @@ need no SAP connection; `lint` never performs SAP I/O even when `SAP_URL` is con
 
 The generic `call` command preserves MCP semantics. Its `--output json` value is the outer MCP
 `ToolResult` envelope (`content`, optional `isError`); handler JSON may itself be a string in
-`content[0].text`. A successful tool call exits `0` even if its domain payload contains test failures,
-ATC findings, or a non-empty diff.
+`content[0].text`. Ordinary successful tool calls exit `0` even if their domain payload
+contains test failures, ATC findings, or a non-empty diff.
+
+The headless quality actions `SAPDiagnose.atc_ci` and `SAPDiagnose.unittest_ci`
+also evaluate their CI outcome: `status: "completed"` with `fail: false` exits `0`;
+`fail: true`, tool errors, or missing/malformed/incomplete outcome fields exit `1`.
+Text and JSON output retain the report even when the quality gate fails. This
+does not change MCP `isError`. ATC uses the requested severity threshold. AUnit is harmless-only and incomplete
+or empty evidence always fails. Use `includeReportXml:true` to request bounded XML
+reports; the default response contains summaries and result paths. These actions
+require explicit packages/packageTrees and normal ADT access; they are single-target only.
+
+```bash
+arc1 call SAPDiagnose --json '{"action":"atc_ci","packages":["ZFOO"]}' --output json
+```
 
 Use the dedicated `unittest`, `atc`, `diff`, and `lint` commands in CI. They still invoke the normal MCP
 dispatcher, but interpret the structured result and apply domain-aware exit rules.
@@ -171,6 +184,19 @@ source](tools.md#active-vs-inactive-source).
 default to text, so it usually has no visible effect; it does not convert metadata-shaped object types
 into source. Use the generic tool call with `format=structured` when you intentionally need the larger
 structured class result.
+
+Package reads (`read DEVC` or `call SAPRead` with `type=DEVC`) in default text mode
+print two JSON documents: the objects array, then listing metadata. A single
+`JSON.parse(stdout)` cannot parse that output. For scripts, use `--output json` and
+parse the outer MCP result (`content[0].text` contains the array and `content[1].text`
+contains the listing metadata), or request one structured document:
+
+```bash
+arc1-cli call SAPRead --json '{"type":"DEVC","name":"ZMY_PACKAGE","format":"structured"}'
+```
+
+The structured document contains `{objects, listing}`. Listing metadata reports the
+limit and unknown completeness; ADT search is not a full package inventory.
 
 `source` is the legacy alias of `read --flat`:
 

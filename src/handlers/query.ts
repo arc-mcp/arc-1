@@ -152,7 +152,11 @@ function resolveUnknownColumnTable(sql: string, badColumn: string): string | und
   return qualifiers.size === 0 && sources.length === 1 ? sources[0]!.table : undefined;
 }
 
-export async function handleSAPQuery(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+export async function handleSAPQuery(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  minimalErrors: boolean,
+): Promise<ToolResult> {
   const sql = String(args.sql ?? '');
   const maxRows = Number(args.maxRows ?? 100);
   const effectiveMaxRows = clampPreviewRows(maxRows);
@@ -212,7 +216,7 @@ export async function handleSAPQuery(client: AdtClient, args: Record<string, unk
       // Dialect mistakes must win over column enrichment. SAP reuses data-preview message 004
       // for many grammar errors, so treating it as an unknown column first produces false advice
       // such as `Unknown column "DESC"` and hides the actionable correction.
-      const parserHint = classifySapQueryParserError(err, sql, chunkingAttempted);
+      const parserHint = classifySapQueryParserError(err, sql, chunkingAttempted, minimalErrors);
       if (parserHint) return errorResult(parserHint);
 
       // Self-correct an unknown-column error by listing the table's real columns (best-effort).

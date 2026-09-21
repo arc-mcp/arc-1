@@ -26,10 +26,14 @@ import {
 import { getMetadataWriteProperties } from '../../../src/handlers/write-helpers.js';
 
 describe('SAPReadSchema', () => {
-  it('accepts valid on-prem input', () => {
+  it('accepts valid on-prem input without materializing the handler-owned version default', () => {
     const result = SAPReadSchema.safeParse({ type: 'PROG', name: 'ZTEST' });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.version).toBe('active');
+    if (result.success) expect(result.data.version).toBeUndefined();
+
+    const btpResult = SAPReadSchemaBtp.safeParse({ type: 'CLAS', name: 'ZCL_TEST' });
+    expect(btpResult.success).toBe(true);
+    if (btpResult.success) expect(btpResult.data.version).toBeUndefined();
   });
 
   it('accepts diff display labels', () => {
@@ -458,6 +462,11 @@ describe('SAPReadSchemaBtp', () => {
 });
 
 describe('SAPSearchSchema', () => {
+  it.each([SAPSearchSchema, SAPSearchSchemaNoSource])('bounds the type filter in both tool variants', (schema) => {
+    expect(schema.safeParse({ query: '*', objectType: 'CLAS/OC' }).success).toBe(true);
+    expect(schema.safeParse({ query: '*', objectType: 'X'.repeat(65) }).success).toBe(false);
+  });
+
   it('accepts valid input with query', () => {
     const result = SAPSearchSchema.safeParse({ query: 'ZCL_*' });
     expect(result.success).toBe(true);
@@ -814,11 +823,60 @@ describe('SAPWriteSchema', () => {
       typeKind: 'domain',
       typeName: 'ZDOMAIN',
       shortLabel: 'Status',
+      shortLength: '10',
+      mediumLength: 20,
+      longLength: 40,
+      headingLength: 55,
+      deactivateInputHistory: 'true',
       changeDocument: 'true',
     });
     expect(dtel.success).toBe(true);
     if (dtel.success) {
       expect(dtel.data.changeDocument).toBe(true);
+      expect(dtel.data.shortLength).toBe(10);
+      expect(dtel.data.deactivateInputHistory).toBe(true);
+    }
+  });
+
+  it('keeps valid DTEL label metadata in every write schema and rejects invalid lengths', () => {
+    const fields = {
+      shortLength: 0,
+      mediumLength: 20,
+      longLength: 40,
+      headingLength: 55,
+      deactivateInputHistory: 'false',
+    };
+    const inputs = [
+      { schema: SAPWriteSchema, value: { action: 'create', type: 'DTEL', name: 'ZDTEL', ...fields } },
+      { schema: SAPWriteSchemaBtp, value: { action: 'create', type: 'DTEL', name: 'ZDTEL', ...fields } },
+      {
+        schema: SAPWriteSchema,
+        value: { action: 'batch_create', objects: [{ type: 'DTEL', name: 'ZDTEL', ...fields }] },
+      },
+      {
+        schema: SAPWriteSchemaBtp,
+        value: { action: 'batch_create', objects: [{ type: 'DTEL', name: 'ZDTEL', ...fields }] },
+      },
+    ];
+
+    for (const { schema, value } of inputs) {
+      const result = schema.safeParse(value);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        const parsed = 'objects' in result.data ? result.data.objects?.[0] : result.data;
+        expect(parsed).toMatchObject({ ...fields, deactivateInputHistory: false });
+      }
+    }
+
+    for (const [field, value] of [
+      ['shortLength', 11],
+      ['mediumLength', -1],
+      ['longLength', 40.5],
+      ['headingLength', 56],
+    ] as const) {
+      expect(SAPWriteSchema.safeParse({ action: 'create', type: 'DTEL', name: 'ZDTEL', [field]: value }).success).toBe(
+        false,
+      );
     }
   });
 
@@ -1587,6 +1645,10 @@ describe('SAPDiagnoseSchema', () => {
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 1 }).success).toBe(true);
     expect(SAPDiagnoseSchema.safeParse({ action: 'unittest', timeoutSeconds: 3601 }).success).toBe(false);
     expect(SAPDiagnoseSchema.safeParse({ action: 'atc', timeoutSeconds: 30 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'atc_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(true);
+    expect(SAPDiagnoseSchema.safeParse({ action: 'unittest_ci', packages: ['Z'], timeoutSeconds: 600 }).success).toBe(
+      true,
+    );
     expect(SAPDiagnoseSchema.safeParse({ action: 'syntax', timeoutSeconds: 30 }).success).toBe(false);
   });
 

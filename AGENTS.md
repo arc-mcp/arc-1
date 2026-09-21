@@ -26,6 +26,21 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
    default-off shared Basic identity only under its one-instance/lockout controls. Do not broaden
    either exception to writes or another discovery/auth model without a new ADR/security review.
 
+## Roadmap Discipline
+
+- Check [docs_page/roadmap.md](docs_page/roadmap.md) at the start and before finishing every change
+  (features, fixes, refactors, documentation, or research); use its evidence and avoid duplicate ideas.
+- The roadmap is an idea parking lot, not an execution queue or changelog. An entry is not
+  authorization or a commitment to implement it.
+- Update it in the same PR when the change affects an idea: add useful deferred work, narrow partial
+  completions to the remaining gap, and remove fully implemented/verified, rejected, or subsumed
+  items from both the overview and details. Keep closed-PR links for unfinished ideas; do not add
+  strikethroughs or a completed section.
+- Ground decisions in current code, tests, docs, issues/PRs, and relevant specifications. Keep
+  priority, effort, category, status, and resume trigger consistent in the overview and details.
+- State the roadmap impact in the PR description (item IDs and changes, or "No roadmap impact"
+  after checking). Unrelated changes need no artificial roadmap edit.
+
 ## Build & Test
 
 ```bash
@@ -95,7 +110,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_TOOL_MODE` | `standard` (12 tools) or `hyperfocused` (1 tool, ~200 tokens) |
 | `ARC1_SCHEMA_NULLABLE_OPTIONALS` | `auto`/`off`/`on` for optional `SAPWrite` schema null unions; default `auto` emits portable plain schemas, `on` is explicit OpenAI/Azure strict-mode compatibility (#360/#520) |
 | `ARC1_PLUGINS` | FEAT-61 extensions: CSV of absolute LOCAL paths (`.js`/`.json`), NOT npm. Adds `Custom_*` tools (reads + gated non-ADT writes/execute) — docs_page/extensions.md |
-| `SAP_ALLOW_PLUGIN_EXECUTE` | Opt-in (default false): let plugin tools execute ABAP console classes (`ctx.run.classRun`). ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool |
+| `SAP_ALLOW_PLUGIN_EXECUTE` | Opt-in (default false): let plugin tools execute ABAP classes/reports (`ctx.run.classRun` / `ctx.run.programRun`). ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool |
 | `SAP_ALLOW_PLUGIN_RAW_WRITES` | Opt-in (default false): let plugin tools `ctx.http.post`/`put`/`delete` to **non-ADT** (OData/ICF) paths. ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool; `/sap/bc/adt/…` writes always refused |
 | `SAP_ABAPLINT_CONFIG` / `SAP_LINT_BEFORE_WRITE` | Custom abaplint config / pre-write lint (default true) |
 | `SAP_CHECK_BEFORE_WRITE` | SAP-side pre-write syntax check, non-blocking (default false) |
@@ -194,9 +209,9 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | FUGR expanded read (`expand_includes`) | `src/adt/client.ts` (`getFunctionGroupExpanded`), `src/handlers/read.ts` — bodies live in nested LZ…U01 includes; dynpros NOT reachable via ADT |
 | FUNC structured parameters (#252) | `src/adt/fm-signature.ts`, `src/handlers/write.ts`, `src/handlers/read.ts` — FUNC excluded from pre-write lint |
 | CLAS include writes | `src/handlers/write/update-delete.ts`, `src/adt/crud.ts` (`safeUpdateClassInclude` POST-creates a missing include under the class lock) |
-| CLAS text symbols read/write (`SAPRead include=text_symbols`, `SAPWrite action=edit_text_symbols`) | `src/adt/client.ts` (`get/writeClassTextSymbols`), `src/handlers/read.ts` (pre-switch CLAS branch — bypasses version/cache), `src/handlers/write/update-delete.ts` (`writeActionEditTextSymbols`), `{schemas,tools}.ts` — top-level `/sap/bc/adt/textelements/classes/{n}/source/symbols`; PUT needs Content-Type AND Accept `…symbols.v1`; lock the textelements object (not the class); immediately active (no SAPActivate); on-prem only, discovery-gated (absent on 7.50). Body: per-symbol `@MaxLength:NN` then `NNN=text`, blank-line separated. Selection texts are a program concept (classes have none → SAP 406) — deferred with programs. Details: docs/research/2026-07-02-class-text-symbols-textpool.md |
+| Text elements read/write (`SAPRead type=TEXT_ELEMENTS`, `SAPWrite action=edit_text_symbols`) | `src/adt/text-elements.ts` + `client.ts` wrappers, `src/handlers/{read,schemas,tools,object-types}.ts`, `write/update-delete.ts` — `objectType=PROG` (default), `CLAS`, or `FUGR`; `include`/`textPart` selects symbols/selections/headings (CLAS writes/default reads: symbols; explicit reads return SAP bodies). Writes replace the whole part; explicit empty source clears it. Lock the textelements object, PUT with matching Content-Type + Accept, immediately active. Discovery-gated, no legacy fallback; read failures propagate. Class `include=text_symbols` remains supported. Details: docs/research/2026-09-09-pr768-text-elements-review.md |
 | FUGR structural-include write (FEAT-18 sibling) | `src/handlers/write.ts` (objectUrl branch: `type=INCL`+`group` → `/functions/groups/{grp}/includes/{inc}`, flows the generic `safeUpdateSource` path) — lock the INCLUDE not the group (group 423s the PUT); the include's `containerRef` carries the group package (fail-closed gate intact). Create/delete supported too: POST the group's `/includes` collection with CT `…functions.fincludes.v2+xml` (unversioned is refused); name must start with `L<GROUP>` or SAP 500s; SAP maintains the main program's INCLUDE line. Create gates `allowedPackages` on the GROUP's resolved package (the include inherits it and SAP ignores `_package`) — reuses `resolveFunctionGroupCreatePackage`, never `args.package` |
-| SKTD/KTD multi-node docs read/write | `src/adt/ddic-xml.ts` (`decodeKtdText`/`rewriteKtdDocument`), `src/handlers/read.ts` + `write/{create,update-delete}.ts` — a KTD holds one `<sktd:element>` per node (root id = object name; every other id = an ADT fragment URI), each with Base64 `<sktd:text>` and optionally `<sktd:shortText sktd:text="Base64" sktd:obligation="…"/>`. Exact full IDs address bodies and `shortTexts`; full SAPRead reversibly prefixes colliding body headings and exact `KTD_META_MARKER` body lines with `\`, and a lone root-name H2 without SAPRead context is refused as ambiguous. Unaddressed nodes stay byte-identical; unchanged documented non-writable sections pass through, while attempted non-documentable, empty/ambiguous body, and forbidden/missing short-text writes are REFUSED. The write's `getKtd()` deliberately takes no `version` so consecutive drafts accumulate. `SAPRead` heads a lone documented node when writable empty siblings exist, then puts populated short texts, its writable-node index, and version/cache annotations behind the final unescaped `KTD_META_MARKER`; `SAPContext` and `grep` stay on unescaped bare Markdown. Never synthesize an `<sktd:element>` or `<sktd:shortText>`. Details: docs/research/2026-09-02-sktd-multi-node-write.md and docs/research/2026-09-04-sktd-short-texts.md |
+| SKTD/KTD multi-node docs read/write | `src/adt/ddic-xml.ts`, `src/handlers/read.ts`, `src/handlers/write/{create,update-delete}.ts` — write-side `getKtd()` must omit `version` so inactive drafts accumulate. Shared routing, reversible Markdown, refusals, and write reports: [routing review](docs/research/2026-09-08-pr766-ktd-routing-review.md); wire contracts: [multi-node](docs/research/2026-09-02-sktd-multi-node-write.md) and [short texts](docs/research/2026-09-04-sktd-short-texts.md). |
 | Package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents` — informationsystem/search GET, omits legacy SEGW types) |
 | Transport history / create / TR_TARGET | `src/adt/transport.ts`, `src/handlers/transport.ts`, `src/authz/policy.ts` — only `/cts/transportrequests` sets the target, discovery-gated (7.58 yes, 7.50 no); `release`/`release_recursive` run a fail-fast `getInactiveObjects` pre-check (`inactiveObjectsForTransport`) AFTER the `checkTransport` write gate — inactive objects hang SAP's release pipeline; `create` always makes a Workbench (K) request (type is not a param; the package sets the target/layer, not the K/W category — live-verified) |
 | Transport review diff (`SAPTransport action="diff"`) | `src/adt/transport-diff.ts` (pair selection + LIMU→R3TR rollup), `src/handlers/transport.ts`, `src/adt/xml-parser.ts` (`revisionTransportId`), `src/adt/client.ts` (`REVISION_URL_BUILDERS`) — the versions feed carries the CTS id in `adtcore:name` on a `…/relations/transport/request` link, NOT in the link title (that is the description). Wire shapes, per-type feed URLs and the review semantics: docs/dev-guide.md + docs/plans/2026-08-03-transport-diff.md |
@@ -206,7 +221,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Add new tool type | `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/handlers/dispatch.ts` |
 | Add/modify tool input schema | `src/handlers/schemas.ts` + `src/handlers/tools.ts` (three-file sync — see invariants) |
 | Harden against GPT/OpenAI arg pollution (#360) | `src/handlers/object-types.ts` (`stripLlmEmptyValues`), `src/handlers/schemas.ts` — `looseOptionalBoolean` for EVERY optional boolean, never `z.coerce.boolean()` (maps "false"→true) |
-| DDIC domain/data-element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/write.ts` |
+| DDIC domain/data-element write | `src/adt/ddic-xml.ts`, `src/adt/crud.ts`, `src/handlers/write.ts`, `src/handlers/write-helpers.ts` — every DTEL create needs the post-create PUT (POST drops description, labels, lengths); partial metadata updates must carry every stored DTEL field, incl. the negative `deactivateInputHistory` flag (#771) |
 | TTYP (table type) read/write (FEAT-65) | `src/adt/ddic-xml.ts` (`buildTableTypeXml`/`parseTableType`), `src/handlers/write/create.ts` (POST creates a CHAR shell → follow-up PUT sets the real row type; `rowType`/`rowTypeKind` params), `src/adt/client.ts` (`getTableType`). TRAN write is NOT supported — `/sap/bc/adt/aps/iam/tran` is absent on 758/816/7.50 |
 | Master language on create (#343) | `src/adt/ddic-xml.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts` — see docs/research/2026-06-04-issue-343-masterlanguage-on-create.md |
 | ADT discovery / MIME types | `src/adt/discovery.ts`, `src/adt/http.ts` |
@@ -222,17 +237,19 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |
 | Class-section surgery (#303) | `src/adt/class-structure.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/handlers/write/class-surgery.ts` — client-side refuse-diff before PUT |
 | SAPSearch tadir_lookup source variants | `src/handlers/search.ts`, `src/adt/client.ts`, `src/authz/policy.ts` — `db`/`both` escalate to sql scope |
-| SAPQuery freestyle SQL hints + IN-list chunking | `src/handlers/{query,query-errors}.ts`, `src/adt/table-query.ts` — ABAP Open SQL uses `alias~field` + `ASCENDING`/`DESCENDING`; auto-chunk plain SELECTs only |
+| SAPQuery freestyle SQL lines, hints + IN-list chunking | `src/handlers/{query,query-errors}.ts`, `src/adt/{client,table-query}.ts` — ADT cuts physical SQL lines at 255 characters (7.58/8.16); `fitFreestyleSqlLines` wraps at the shared freestyle POST boundary. |
 | Data-preview response memory boundary (#737) | `src/adt/{data-result-context,bounded-response,http,client}.ts`, `src/server/{context,runtime-memory,server}.ts`, `src/handlers/{dispatch,query}.ts` — the byte budget is cumulative per tool call and the data-result semaphore is process-wide; never infer scope from URL paths |
-| batch_create `activateAtEnd` | `src/handlers/write/create.ts` — prefer for interdependent objects (one activator pass) |
+| batch_create preflight / `activateAtEnd` | `src/handlers/write/create.ts` + `write/batch-results.ts` — validate the whole batch before creation; preserve confirmed/unknown persistence and invalidate caches on partial failures. |
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/atc.ts` (`runAtcCheck`/`resolveCheckVariant`) — variant MUST bind at worklist creation; run with `clientWait=false`, poll a safe returned run location to `Completed` (unknown non-failure states keep polling), and use 10 s full-worklist settlement when SAP returns no usable location; protocol deviations preserve worklist findings but remain incomplete; `FINDING_STATS` is informational severity data, never completeness evidence (details: dev-guide) |
+| CI ATC/AUnit | `src/adt/ci-quality.ts`, `src/handlers/{diagnose-ci,diagnose-fields}.ts`, `src/cli-checks.ts` — verified package scope, harmless-only AUnit, incomplete evidence never passes. |
 | CDS test-case suggestions (8.16+) | `src/adt/devtools.ts`, `src/handlers/diagnose.ts` — discovery-gated, read-only |
 | Server-driven objects read/write (DESD/EVTB/DSFD/…) | `src/adt/server-driven.ts` (`SDO_TYPES` + `SDO_REGISTRY` — the SAPRead/SAPWrite table rows derive from the tuple; `sourceFormat` is per-type: `text` for DTSC/DSFD/DTDC, `json` for the rest — wrong one = hard 415; DTDC is the first NON-blue type — metadata root/ns/marker are per-entry (`metadataRootQName`/`metadataNamespace`/`discoveryMarker`), blue family shares the `BLUE_METADATA` spread), `src/handlers/read.ts` + `write.ts`/`write-helpers.ts` early branches — per-type/release-adaptive gates; EVTO=v2 content type (details: dev-guide) |
 | XML response parser / safety check | `src/adt/xml-parser.ts` / `src/adt/safety.ts` |
 | PrettyPrint / lint rules / pre-write hints | `src/handlers/lint.ts` + `src/adt/devtools.ts` / `src/lint/{lint,config-builder}.ts` + presets/ / `src/lint/pre-write-hints.ts` |
 | abaplint beyond its grammar ceiling (8xx) | `src/adt/features.ts` (`ABAPLINT_MAX_RELEASE`), `src/lint/config-builder.ts` — parser errors demoted to warnings when release > 758 |
-| Dependency / CDS-dep / contract / compressor | `src/context/{deps,cds-deps,contract,compressor}.ts` |
+| Dependency / CDS-dep / contract / compressor | `src/context/{deps,cds-deps,contract,compressor,parse-cache}.ts` — parse memoization only AFTER authorized source retrieval; PP bypass stays mandatory |
+| Experimental live relations | `src/handlers/{live-relations,relation-input,relation-tool}.ts`, `src/adt/{repository-relations,relation-objects}.ts`, `src/context/relation-walk.ts` — automatic capability/deny-action projection, no result cache; docs_page/live-relations.md |
 | Experimental data-source blocklist | `src/adt/{data-source-name,sql-source-analyzer,data-source-policy,internal-data-operations}.ts` + `client.ts` — one canonicalizer for every policy input; blank=off but a stray comma fails startup (details: dev-guide) |
 | Runtime + source-state diagnostics | `src/adt/diagnostics.ts`, `src/handlers/diagnose.ts`, `{schemas,tools}.ts` |
 | Authorization trace (`SAPDiagnose authorization_trace`) | `src/adt/authorization-trace.ts` (`getAuthorizationTrace`/`decodeAuthTraceRows`), `diagnostics.ts` re-export, `diagnose.ts`, `{schemas,tools}.ts`, `policy.ts` — data scope + `SAP_ALLOW_DATA_PREVIEW`; on-prem `SUAUTHVALTRC` via `runTableQuery`, TOBJ decode, client-side sort; not SU53/STAUTHTRACE (details: `docs/research/2026-07-09-su53-authorization-analysis-adt-surface.md`) |
@@ -309,6 +326,11 @@ await http.withStatefulSession(async (session) => {
 ## Testing
 
 Every code change requires tests. Skip taxonomy: `docs/testing-skip-policy.md`.
+
+For SAP-facing/runtime changes, test on a real authorized SAP test system when possible and record
+the tested build, release, deployment/auth route, observed result, and gaps in the
+[PR template](.github/pull_request_template.md). If unavailable, state why and the remaining scenario;
+never present mocks or skipped tests as live coverage. Documentation-only changes may use N/A.
 
 | Level | Command | Needs |
 |-------|---------|-------|

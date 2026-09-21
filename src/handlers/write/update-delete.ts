@@ -3,6 +3,12 @@
  */
 
 import {
+  isTextElementObjectType,
+  TEXT_ELEMENT_OBJECT_TYPES,
+  TEXT_ELEMENT_PARTS,
+  type TextElementPart,
+} from '../../adt/client.js';
+import {
   deleteObject,
   lockObject,
   safeUpdateClassInclude,
@@ -10,7 +16,12 @@ import {
   safeUpdateSource,
   unlockObject,
 } from '../../adt/crud.js';
-import { type KtdShortText, rewriteKtdDocument } from '../../adt/ddic-xml.js';
+import {
+  formatKtdWriteReport,
+  type KtdShortText,
+  type KtdWriteReport,
+  rewriteKtdDocument,
+} from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import {
@@ -121,11 +132,21 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     // 2026-09-02). SAPRead defaults to "active", so its node list can lag this one;
     // every refusal raised below lists the ids of the envelope it actually merged.
     const { source: currentEnvelope } = await client.getKtd(name);
+    const report: KtdWriteReport = { proseHeadings: [] };
     const body = rewriteKtdDocument(
       currentEnvelope,
       hasSource ? source : undefined,
       args.shortTexts as KtdShortText[] | undefined,
+      report,
     );
+    // Report both changed nodes and headings retained as prose so a new body exposes its routing.
+    const summary = formatKtdWriteReport(currentEnvelope, body, report, args.dryRun === true);
+    // A KTD update is a merge: only the addressed nodes change. dryRun runs the identical
+    // validation and reports the outcome without the PUT, so a 90-node edit can be checked
+    // before it touches SAP.
+    if (args.dryRun === true) {
+      return textResult(`Dry run for ${type} ${name} — nothing was written.\n${summary}`);
+    }
     await safeUpdateObject(
       client.http,
       client.safety,
@@ -136,7 +157,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       getCachedFeatures()?.abapRelease,
     );
     invalidateWrittenObject(type, name);
-    return textResult(`Successfully updated ${type} ${name}.`);
+    return textResult(`Successfully updated ${type} ${name}.\n${summary}`);
   }
 
   if (isMetadataWriteType(type)) {
@@ -328,25 +349,50 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
   return textResult(`Deleted ${type} ${name}.`);
 }
 
-/** Write a global class's text symbols via the ADT textelements service. type=CLAS only. The body is
- *  the properties-style pool (`@MaxLength:NN` per symbol, then `NNN=text`). Immediately active — no
- *  SAPActivate. The client method locks the textelements object, PUTs, and unlocks; the package gate
- *  here checks the class's real package (ctx.objectUrl is the /oo/classes/{n} URL). Not an
- *  ABAP-source write → no lint. (Selection texts are a program selection-screen concept — a class has
- *  none — so only text symbols are supported here.) */
+/** Write one subobject of an object's textpool via the ADT textelements service (CLAS, PROG, FUGR).
+ *  `textPart` selects it: symbols (`@MaxLength:NN` then `NNN=text`), selections (a report's
+ *  selection texts, `P_PARAM=Label` per line), headings (`listHeader=`, `columnHeader_N=`).
+ *  ARC-1 supports only symbols for classes. Immediately active, no SAPActivate.
+ *  The client method locks the textelements object, PUTs, and unlocks; the package gate here checks
+ *  the owning object's real package (ctx.objectUrl). Not an ABAP-source write → no lint. */
 export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<ToolResult> {
-  const { client, type, name, source, hasSource, transport, enforcePackageForExistingObject, invalidateWrittenObject } =
-    ctx;
-  if (type !== 'CLAS') {
-    return errorResult('action edit_text_symbols requires type=CLAS (global class text symbols).');
-  }
-  if (!hasSource) {
+  const {
+    args,
+    client,
+    type,
+    name,
+    source,
+    hasSource,
+    transport,
+    enforcePackageForExistingObject,
+    invalidateWrittenObject,
+  } = ctx;
+  if (!isTextElementObjectType(type)) {
     return errorResult(
-      'source is required for edit_text_symbols — the text-symbol body, e.g. "@MaxLength:20\\n001=Label\\n" (one @MaxLength per symbol, blank-line separated).',
+      `action edit_text_symbols requires type=${TEXT_ELEMENT_OBJECT_TYPES.join('/')} — got "${type}".`,
     );
   }
+  const requestedPart = (args.textPart as string | undefined) ?? 'symbols';
+  if (!TEXT_ELEMENT_PARTS.includes(requestedPart as TextElementPart)) {
+    return errorResult(`Invalid textPart "${requestedPart}" — valid values: ${TEXT_ELEMENT_PARTS.join(', ')}.`);
+  }
+  const part = requestedPart as TextElementPart;
+  if (type === 'CLAS' && part !== 'symbols') {
+    return errorResult(`Only symbols can be written for CLAS; ${part} is read-only in ARC-1.`);
+  }
+  if (!hasSource) {
+    return errorResult(`source is required for edit_text_symbols — the ${part} body, e.g. ${TEXT_PART_EXAMPLE[part]}.`);
+  }
   await enforcePackageForExistingObject();
-  await client.writeClassTextSymbols(name, source, transport);
+  await client.writeTextElementPart(type, name, part, source, transport);
   invalidateWrittenObject();
-  return textResult(`Updated text symbols for class ${name}.`);
+  return textResult(`Updated ${part} of ${type} ${name}.`);
 }
+
+/** One-line body example per subobject, used in the missing-source error so the caller can retry
+ *  without opening the docs. */
+const TEXT_PART_EXAMPLE: Record<TextElementPart, string> = {
+  symbols: '"@MaxLength:20\\n001=Label\\n" (one @MaxLength per symbol, blank-line separated)',
+  selections: '"P_LGNUM=Warehouse\\nP_WRKST=Work center" (one PARAMETER/SELECT-OPTION per line)',
+  headings: '"listHeader=My report\\ncolumnHeader_1=First column"',
+};

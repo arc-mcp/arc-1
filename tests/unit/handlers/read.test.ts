@@ -511,7 +511,7 @@ describe('SAPRead handler', () => {
       expect(getUrl).not.toContain('version=workingArea');
     });
 
-    it('returns marker-free single-node route escapes that SAPWrite can consume verbatim', async () => {
+    it('keeps single-node route escapes in the writable half and the node index behind the marker', async () => {
       mockFetch.mockReset();
       const name = 'ZI_TRAVEL';
       const marker = '<!-- arc1:ktd-meta — read-only context below; SAPWrite ignores it -->';
@@ -525,8 +525,13 @@ describe('SAPRead handler', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'SKTD', name });
       const text = result.content[0]?.text ?? '';
 
-      expect(text).toBe(`## ${name}\n\n\\## ${name}\n\nThe travel view.\n\n\\${marker}\n\nStill body text.`);
-      expect(text.split(/\r?\n/)).not.toContain(marker);
+      // Every read now carries the node index, so the writable half is asserted on its own.
+      const [writable, context] = text.split(`\n\n${marker}\n`);
+      expect(writable).toBe(`## ${name}\n\n\\## ${name}\n\nThe travel view.\n\n\\${marker}\n\nStill body text.`);
+      // The body's own marker line stays escaped; only the trailer delimiter is bare.
+      expect(writable.split(/\r?\n/)).not.toContain(marker);
+      expect(context).toContain('Nodes: 1');
+      // The complete read — trailer included — still writes back byte-identically.
       expect(rewriteKtdText(envelope, text)).toBe(envelope);
     });
 
@@ -587,10 +592,12 @@ describe('SAPRead handler', () => {
       const text = result.content[0]?.text ?? '';
       expect(text.startsWith('## ZBDEF\n\nRoot docs.')).toBe(true);
       expect(text).toContain('<!-- arc1:ktd-meta');
-      expect(text).toContain('Undocumented nodes: 2');
+      expect(text).toContain('Nodes: 3 (2 with no text yet');
+      expect(text).toContain('root: ZBDEF');
       expect(text).toContain(`base: ${base}`);
       expect(text).toContain('BDEF/BAC (1): ZBDEF.SetPhoto');
       expect(text).toContain('BDEF/BAF (1): ZBDEF.GetPhoto');
+      expect(text).toContain('empty (2): ZBDEF.SetPhoto, ZBDEF.GetPhoto');
       expect(text).not.toContain('<sktd:');
     });
 
@@ -672,7 +679,9 @@ describe('SAPRead handler', () => {
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Root docs.');
       expect(result.content[0]?.text).not.toContain('\\## ZBDEF');
-      expect(result.content[0]?.text).not.toContain('Undocumented nodes');
+      // The node index lives behind the marker, so grep — which searches the bare Markdown — never sees it.
+      expect(result.content[0]?.text).not.toContain('Nodes:');
+      expect(result.content[0]?.text).not.toContain('<!-- arc1:ktd-meta');
     });
 
     it('returns soft informational message when SKTD is not found (404)', async () => {
@@ -908,6 +917,24 @@ describe('SAPRead handler', () => {
       });
       expect(result.isError).toBeUndefined();
     });
+
+    it.each(['CLASS lcl_helper DEFINITION.\nENDCLASS.', ''])(
+      'keeps an explicit local definitions include separate from MAIN (%j)',
+      async (localSource) => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValue(mockResponse(200, localSource, { 'x-csrf-token': 't' }));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type: 'CLAS',
+          name: 'ZCL_FOO',
+          include: 'definitions',
+        });
+        expect(result.isError).toBeUndefined();
+        if (localSource) expect(result.content[0]?.text).toContain(localSource);
+        const urls = mockFetch.mock.calls.map(([url]) => String(url));
+        expect(urls.some((url) => url.includes('/includes/definitions'))).toBe(true);
+        expect(urls.some((url) => url.includes('/source/main'))).toBe(false);
+      },
+    );
 
     it('lists BSP apps when no name provided', async () => {
       mockFetch.mockReset();
@@ -1287,12 +1314,42 @@ describe('SAPRead handler', () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'DTEL',
         name: 'BUKRS',
+        version: 'inactive',
       });
       expect(result.isError).toBeUndefined();
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/ddic/dataelements/BUKRS?version=inactive',
+      );
       const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.name).toBe('BUKRS');
       expect(parsed.typeName).toBe('BUKRS');
       expect(parsed.searchHelp).toBe('C_T001');
+    });
+
+    it.each([
+      ['omitted', undefined, ''],
+      ['auto', 'auto', ''],
+      ['explicit active', 'active', '?version=active'],
+    ])('routes a %s DTEL version correctly', async (_case, version, expectedQuery) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0"?><blue:wbobj adtcore:name="ZDTEL" xmlns:blue="http://www.sap.com/wbobj/dictionary/dtel" xmlns:adtcore="http://www.sap.com/adt/core"><dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements"><dtel:dataType>CHAR</dtel:dataType></dtel:dataElement></blue:wbobj>`,
+        ),
+      );
+
+      const args: Record<string, unknown> = {
+        type: 'DTEL',
+        name: 'ZDTEL',
+      };
+      if (version !== undefined) args.version = version;
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', args);
+
+      expect(result.isError).toBeUndefined();
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain(`/sap/bc/adt/ddic/dataelements/ZDTEL${expectedQuery}`);
+      expect(url.includes('version=')).toBe(expectedQuery.length > 0);
     });
 
     it('reads an authorization field (AUTH)', async () => {
@@ -1792,16 +1849,21 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).toContain('REPORT');
     });
 
-    it('returns error when format="structured" used with non-CLAS type', async () => {
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'PROG',
-        name: 'ZTEST',
-        format: 'structured',
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('structured');
-      expect(result.content[0]?.text).toContain('CLAS');
-    });
+    it.each(['PROG', 'TABL', 'TTYP', 'DTEL', 'DOMA', 'INTF'])(
+      'offers a retry without fetching %s for unsupported structured format',
+      async (type) => {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+          type,
+          name: 'ZTEST',
+          format: 'structured',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('structured');
+        expect(result.content[0]?.text).toContain('CLAS');
+        expect(result.content[0]?.text).toContain('Retry this read with format="text" or omit format');
+        expect(mockFetch).not.toHaveBeenCalled();
+      },
+    );
 
     it('reads class with format="structured" and method param — format takes precedence', async () => {
       const classMetadataXml = `<?xml version="1.0" encoding="utf-8"?>

@@ -8,6 +8,7 @@
  * - RunATCCheck: ABAP Test Cockpit (code quality)
  */
 
+import { XMLValidator } from 'fast-xml-parser';
 import { logger } from '../server/logger.js';
 import { type AunitRunResult, parseAunitRunResult, withAunitCoverage } from './aunit.js';
 import { AdtApiError, AdtSafetyError } from './errors.js';
@@ -52,7 +53,7 @@ export async function syntaxCheck(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
-  options?: { version?: 'active' | 'inactive'; content?: string },
+  options?: { version?: 'active' | 'inactive'; content?: string; artifactContentType?: 'application/json' },
 ): Promise<SyntaxCheckResult> {
   checkOperation(safety, OperationType.Read, 'SyntaxCheck');
 
@@ -65,7 +66,7 @@ export async function syntaxCheck(
 <chkrun:checkObjectList xmlns:chkrun="http://www.sap.com/adt/checkrun" xmlns:adtcore="http://www.sap.com/adt/core">
   <chkrun:checkObject adtcore:uri="${escapeXmlAttr(objectUrl)}" chkrun:version="${version}">
     <chkrun:artifacts>
-      <chkrun:artifact chkrun:contentType="text/plain; charset=utf-8" chkrun:uri="${escapeXmlAttr(artifactUri)}">
+      <chkrun:artifact chkrun:contentType="${options.artifactContentType ?? 'text/plain; charset=utf-8'}" chkrun:uri="${escapeXmlAttr(artifactUri)}">
         <chkrun:content>${encoded}</chkrun:content>
       </chkrun:artifact>
     </chkrun:artifacts>
@@ -74,7 +75,10 @@ export async function syntaxCheck(
     const resp = await http.post('/sap/bc/adt/checkruns?reporters=abapCheckRun', body, 'application/*', {
       Accept: 'application/vnd.sap.adt.checkmessages+xml',
     });
-    return parseSyntaxCheckResult(resp.body);
+    return parseSyntaxCheckResult(
+      resp.body,
+      options.artifactContentType === 'application/json' ? objectUrl : undefined,
+    );
   }
 
   const body = `<?xml version="1.0" encoding="UTF-8"?>
@@ -987,7 +991,12 @@ function extractShortText(m: Record<string, unknown>): string {
   return '';
 }
 
-function parseSyntaxCheckResult(xml: string): SyntaxCheckResult {
+function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCheckResult {
+  // JSON candidate checks must prove that SAP processed this object. Keep legacy ABAP responses
+  // compatible, but never interpret a login page, truncated XML, or missing report as a clean UIAD.
+  if (expectedJsonUri && (Buffer.byteLength(xml) > 256 * 1024 || XMLValidator.validate(xml) !== true)) {
+    return { hasErrors: false, messages: [], checked: false, statusText: 'Invalid or oversized JSON check response.' };
+  }
   const parsed = parseXml(xml);
   // Two response shapes observed:
   //   - <msg type="E" shortText="..." line="..." col="..."/> (older / some variants)
@@ -1004,12 +1013,16 @@ function parseSyntaxCheckResult(xml: string): SyntaxCheckResult {
       if (!line) line = Number.parseInt(startMatch[1], 10);
       if (!column) column = Number.parseInt(startMatch[2], 10);
     }
+    const code = String(m['@_code'] ?? '');
+    const t100 = findDeepNodes(m, 't100Key')[0];
     return {
       severity: type === 'E' ? 'error' : type === 'W' ? 'warning' : 'info',
       text: decodeXmlEntities(String(m['@_shortText'] ?? '')),
       line: Number.isFinite(line) ? line : 0,
       column: Number.isFinite(column) ? column : 0,
       ...(uri ? { uri } : {}),
+      ...(code ? { code } : {}),
+      ...(t100 ? { t100: { id: String(t100['@_msgid'] ?? ''), number: String(t100['@_msgno'] ?? '') } } : {}),
     };
   });
 
@@ -1018,12 +1031,23 @@ function parseSyntaxCheckResult(xml: string): SyntaxCheckResult {
   // otherwise read as "clean". Legacy <msg> shapes carry no report → treat as checked.
   const reports = findDeepNodes(parsed, 'checkReport');
   const unprocessed = reports.find((r) => r['@_status'] && String(r['@_status']) !== 'processed');
+  const jsonReportValid =
+    !expectedJsonUri ||
+    (parsed.checkRunReports !== undefined &&
+      reports.length === 1 &&
+      reports[0]['@_status'] === 'processed' &&
+      reports[0]['@_reporter'] === 'abapCheckRun' &&
+      String(reports[0]['@_triggeringUri'] ?? '').toLowerCase() === expectedJsonUri.toLowerCase() &&
+      msgs.every((m) => ['E', 'W', 'I'].includes(String(m['@_type'] ?? ''))));
 
   return {
     hasErrors: messages.some((m) => m.severity === 'error'),
     messages,
-    checked: !unprocessed,
+    checked: !unprocessed && jsonReportValid,
     ...(unprocessed ? { statusText: decodeXmlEntities(String(unprocessed['@_statusText'] ?? '')) } : {}),
+    ...(!jsonReportValid && !unprocessed
+      ? { statusText: 'SAP did not return a processed JSON candidate check for this object.' }
+      : {}),
   };
 }
 

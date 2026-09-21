@@ -83,6 +83,7 @@ nav:
           - Blog Series: blog-series.md
   - Reference:
       - Release Notes: release-notes.md
+      - Idea Roadmap: roadmap.md
       - Configuration: configuration-reference.md
       - Configuration Precedence: configuration-precedence.md
       - SAP API Policy & Architecture: sap-api-policy-and-architecture.md
@@ -93,6 +94,7 @@ nav:
           - Log Analysis: log-analysis.md
           - Updating: updating.md
           - Caching: caching.md
+          - Live Relations (Experimental): live-relations.md
           - Rate Limiting: rate-limiting.md
   - Development:
       - Local Development: local-development.md
@@ -101,7 +103,6 @@ nav:
           - CLI Guide: cli-guide.md
           - SAP Trial Setup: sap-trial-setup.md
           - Authentication Test Process: auth-test-process.md
-          - Roadmap: roadmap.md
 
 markdown_extensions:
   - admonition

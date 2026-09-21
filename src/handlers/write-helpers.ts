@@ -125,25 +125,6 @@ export function createContentTypeForType(type: string, cloud = false, fugrInclud
   return needsVendorContentType(type) ? vendorContentTypeForType(type) : 'application/*';
 }
 
-/**
- * Check if a DTEL create has properties that SAP ignores on POST but accepts on PUT.
- * SAP's DTEL POST only stores the shell (name, description, package, typeKind, typeName, dataType, length).
- * Labels, searchHelp, setGetParameter, etc. require a follow-up PUT to take effect.
- */
-export function dtelNeedsPostCreateUpdate(props: Record<string, unknown>): boolean {
-  return Boolean(
-    props.shortLabel ||
-      props.mediumLabel ||
-      props.longLabel ||
-      props.headingLabel ||
-      props.searchHelp ||
-      props.searchHelpParameter ||
-      props.setGetParameter ||
-      props.defaultComponentName ||
-      props.changeDocument,
-  );
-}
-
 export function vendorContentTypeForType(type: string): string {
   switch (type) {
     case 'DOMA':
@@ -200,13 +181,18 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     rowTypeKind: input.rowTypeKind,
     domainName: input.domainName,
     shortLabel: input.shortLabel,
+    shortLength: input.shortLength,
     mediumLabel: input.mediumLabel,
+    mediumLength: input.mediumLength,
     longLabel: input.longLabel,
+    longLength: input.longLength,
     headingLabel: input.headingLabel,
+    headingLength: input.headingLength,
     searchHelp: input.searchHelp,
     searchHelpParameter: input.searchHelpParameter,
     setGetParameter: input.setGetParameter,
     defaultComponentName: input.defaultComponentName,
+    deactivateInputHistory: input.deactivateInputHistory,
     changeDocument: input.changeDocument,
     messages: input.messages,
     serviceDefinition: input.serviceDefinition,
@@ -247,70 +233,85 @@ export async function mergeMetadataWriteProperties(
   name: string,
   provided: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  try {
-    if (type === 'MSAG') {
-      const existing = await client.getMessageClassInfo(name);
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        messages: provided.messages ?? existing.messages,
-      };
-    }
-    if (type === 'DOMA') {
-      const existing = await client.getDomain(name);
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        dataType: provided.dataType ?? existing.dataType,
-        length: provided.length ?? existing.length,
-        decimals: provided.decimals ?? existing.decimals,
-        // When length changes but outputLength isn't given, follow the new length (mirrors the create
-        // default of `outputLength ?? length`) — otherwise SAP warns "Output length < calculated length".
-        outputLength: provided.outputLength ?? provided.length ?? existing.outputLength,
-        conversionExit: provided.conversionExit ?? existing.conversionExit,
-        signExists: provided.signExists ?? existing.signExists,
-        lowercase: provided.lowercase ?? existing.lowercase,
-        fixedValues: provided.fixedValues ?? existing.fixedValues,
-        valueTable: provided.valueTable ?? existing.valueTable,
-      };
-    }
-    if (type === 'DTEL') {
-      const existing = await client.getDataElement(name);
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        dataType: provided.dataType ?? existing.dataType,
-        length: provided.length ?? existing.length,
-        decimals: provided.decimals ?? existing.decimals,
-        typeKind: provided.typeKind ?? existing.typeKind,
-        typeName: provided.typeName ?? existing.typeName,
-        domainName: provided.domainName ?? existing.typeName, // DTEL stores domain in typeName
-        shortLabel: provided.shortLabel ?? existing.shortLabel,
-        mediumLabel: provided.mediumLabel ?? existing.mediumLabel,
-        longLabel: provided.longLabel ?? existing.longLabel,
-        headingLabel: provided.headingLabel ?? existing.headingLabel,
-        searchHelp: provided.searchHelp ?? existing.searchHelp,
-        searchHelpParameter: provided.searchHelpParameter,
-        setGetParameter: provided.setGetParameter,
-        defaultComponentName: provided.defaultComponentName ?? existing.defaultComponentName,
-        changeDocument: provided.changeDocument,
-      };
-    }
-    if (type === 'SRVB') {
-      const { source: existingRaw } = await client.getSrvb(name);
-      const existing = JSON.parse(existingRaw) as Record<string, unknown>;
-      return {
-        _description: existing.description,
-        _package: existing.package,
-        serviceDefinition: provided.serviceDefinition ?? existing.serviceDefinition,
-        bindingType: provided.bindingType ?? existing.bindingType,
-        category: provided.category ?? normalizeSrvbCategory(existing.bindingCategory),
-        version: provided.version ?? existing.serviceVersion,
-        odataVersion: provided.odataVersion ?? existing.odataVersion,
-      };
-    }
-  } catch {
-    // If we can't read existing metadata (e.g., object is new/inactive), fall through
+  if (type === 'MSAG') {
+    const existing = await client.getMessageClassInfo(name);
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      messages: provided.messages ?? existing.messages,
+    };
+  }
+  if (type === 'DOMA') {
+    const existing = await client.getDomain(name);
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      dataType: provided.dataType ?? existing.dataType,
+      length: provided.length ?? existing.length,
+      decimals: provided.decimals ?? existing.decimals,
+      // When length changes but outputLength isn't given, follow the new length (mirrors the create
+      // default of `outputLength ?? length`) — otherwise SAP warns "Output length < calculated length".
+      outputLength: provided.outputLength ?? provided.length ?? existing.outputLength,
+      conversionExit: provided.conversionExit ?? existing.conversionExit,
+      signExists: provided.signExists ?? existing.signExists,
+      lowercase: provided.lowercase ?? existing.lowercase,
+      fixedValues: provided.fixedValues ?? existing.fixedValues,
+      valueTable: provided.valueTable ?? existing.valueTable,
+    };
+  }
+  if (type === 'DTEL') {
+    const existing = await client.getDataElement(name);
+    const shortLabel = provided.shortLabel ?? existing.shortLabel;
+    const mediumLabel = provided.mediumLabel ?? existing.mediumLabel;
+    const longLabel = provided.longLabel ?? existing.longLabel;
+    const headingLabel = provided.headingLabel ?? existing.headingLabel;
+    const searchHelp = provided.searchHelp ?? existing.searchHelp;
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      dataType: provided.dataType ?? existing.dataType,
+      length: provided.length ?? existing.length,
+      decimals: provided.decimals ?? existing.decimals,
+      typeKind: provided.typeKind ?? existing.typeKind,
+      typeName: provided.typeName ?? existing.typeName,
+      domainName: provided.domainName ?? existing.typeName, // DTEL stores domain in typeName
+      shortLabel,
+      shortLength: provided.shortLength ?? (shortLabel === existing.shortLabel ? existing.shortLength : undefined),
+      mediumLabel,
+      mediumLength: provided.mediumLength ?? (mediumLabel === existing.mediumLabel ? existing.mediumLength : undefined),
+      longLabel,
+      longLength: provided.longLength ?? (longLabel === existing.longLabel ? existing.longLength : undefined),
+      headingLabel,
+      headingLength:
+        provided.headingLength ?? (headingLabel === existing.headingLabel ? existing.headingLength : undefined),
+      searchHelp,
+      // A search-help parameter belongs to its search help: keep it only while that is unchanged.
+      searchHelpParameter:
+        provided.searchHelpParameter ??
+        (String(searchHelp).toUpperCase() === existing.searchHelp.toUpperCase()
+          ? existing.searchHelpParameter
+          : undefined),
+      setGetParameter: provided.setGetParameter ?? existing.setGetParameter,
+      defaultComponentName: provided.defaultComponentName ?? existing.defaultComponentName,
+      deactivateInputHistory: provided.deactivateInputHistory ?? existing.deactivateInputHistory,
+      changeDocument: provided.changeDocument ?? existing.changeDocument,
+      // No public inputs: carry SAP's stored bidi flags through the full-XML replace.
+      leftToRightDirection: existing.leftToRightDirection,
+      deactivateBIDIFiltering: existing.deactivateBIDIFiltering,
+    };
+  }
+  if (type === 'SRVB') {
+    const { source: existingRaw } = await client.getSrvb(name);
+    const existing = JSON.parse(existingRaw) as Record<string, unknown>;
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      serviceDefinition: provided.serviceDefinition ?? existing.serviceDefinition,
+      bindingType: provided.bindingType ?? existing.bindingType,
+      category: provided.category ?? normalizeSrvbCategory(existing.bindingCategory),
+      version: provided.version ?? existing.serviceVersion,
+      odataVersion: provided.odataVersion ?? existing.odataVersion,
+    };
   }
   return provided;
 }
@@ -637,14 +638,21 @@ function buildCreateXmlBody(
         length: properties?.length as string | number | undefined,
         decimals: properties?.decimals as string | number | undefined,
         shortLabel: properties?.shortLabel ? String(properties.shortLabel) : undefined,
+        shortLength: properties?.shortLength as string | number | undefined,
         mediumLabel: properties?.mediumLabel ? String(properties.mediumLabel) : undefined,
+        mediumLength: properties?.mediumLength as string | number | undefined,
         longLabel: properties?.longLabel ? String(properties.longLabel) : undefined,
+        longLength: properties?.longLength as string | number | undefined,
         headingLabel: properties?.headingLabel ? String(properties.headingLabel) : undefined,
+        headingLength: properties?.headingLength as string | number | undefined,
         searchHelp: properties?.searchHelp ? String(properties.searchHelp) : undefined,
         searchHelpParameter: properties?.searchHelpParameter ? String(properties.searchHelpParameter) : undefined,
         setGetParameter: properties?.setGetParameter ? String(properties.setGetParameter) : undefined,
         defaultComponentName: properties?.defaultComponentName ? String(properties.defaultComponentName) : undefined,
+        deactivateInputHistory: toBoolean(properties?.deactivateInputHistory),
         changeDocument: toBoolean(properties?.changeDocument),
+        leftToRightDirection: toBoolean(properties?.leftToRightDirection),
+        deactivateBIDIFiltering: toBoolean(properties?.deactivateBIDIFiltering),
         language: masterLanguage,
         responsible: responsibleUser,
       };

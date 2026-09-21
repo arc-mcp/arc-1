@@ -71,11 +71,15 @@ describe('experimental data-source blocklist live contract', () => {
     });
   });
 
-  it('allows an unrelated static table after live lineage checks on a bound data-preview backend', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: /datapreview is unbound on the live SAP_BASIS 750 target`);
-    }
+  it('denies an unrelated table before 7.52 and allows it afterwards', async () => {
     const strict = withBlocked(['USR02']);
+    if (basisRelease < 752) {
+      await expect(strict.runQuery('SELECT CARRID FROM SCARR')).rejects.toMatchObject({
+        code: 'DATA_POLICY_UNAVAILABLE',
+        sourcePath: ['SCARR'],
+      });
+      return;
+    }
     const result = await strict.runQuery('SELECT CARRID FROM SCARR');
     expect(result.columns).toContain('CARRID');
   });

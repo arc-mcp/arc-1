@@ -52,3 +52,22 @@ Live evidence: `objectType=MSAG` and `objectType=MSAG/N` both return `adtcore:ty
 - **Test gap to close**:
   - Unit: `normalizeObjectType('MSAG/N') === 'MSAG'`.
   - Integration: read `SY` and assert message-class XML root.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### MSAG/N
+
+- Observed object: `/BOBF/COM_GEN_MODEL`; GET `/sap/bc/adt/messageclass/%2fbobf%2fcom_gen_model`.
+- Recorded: 2026-09-09T22:28:49.655Z; metadata QName: `mc:messageClass`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/msag-n.json) also preserves one observed WUL edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<mc:messageClass adtcore:name="/BOBF/COM_GEN_MODEL" adtcore:type="MSAG/N" adtcore:version="active" xmlns:mc="http://www.sap.com/adt/MessageClass" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%2fbobf%2fconfiguration" adtcore:type="DEVC/K" adtcore:name="/BOBF/CONFIGURATION"/>
+</mc:messageClass>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

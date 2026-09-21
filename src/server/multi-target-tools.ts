@@ -74,7 +74,9 @@ const MULTI_TARGET_ACTION_RULES = new Map<
         'sql_trace_directory',
         'authorization_trace',
       ]),
-      omittedProperties: new Set(),
+      // Reviewed ATC objects[]: max 20 on this call's one selected target/identity,
+      // at most two worklists sharing one deadline; repository mutations stay forbidden.
+      omittedProperties: new Set(['packages', 'packageTrees', 'configuration', 'failOnSeverity', 'includeReportXml']),
     },
   ],
 ]);

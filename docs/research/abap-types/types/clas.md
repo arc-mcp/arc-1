@@ -56,3 +56,22 @@ Live evidence:
 - Keep `CLAS/LI` for one release as a deprecated alias mapping to `CLAS` (cheap legacy tolerance) but document it as accepted-not-real.
 - **Breaking change**: minimal. Only affects users who learned `CLAS/LI` from ARC-1 docs.
 - **Test gap to close**: add `tests/unit/handlers/intent.normalize-types.test.ts` asserting `normalizeObjectType('CLAS/I') === 'CLAS'` and that ADT's class-root XML can round-trip its include `adtcore:type` through `normalizeObjectType`.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### CLAS/OC
+
+- Observed object: `ZCL_SSI_FACTORY`; GET `/sap/bc/adt/oo/classes/zcl_ssi_factory`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `class:abapClass`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/clas-oc.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<class:abapClass adtcore:name="ZCL_SSI_FACTORY" adtcore:type="CLAS/OC" adtcore:version="active" xmlns:class="http://www.sap.com/adt/oo/classes" xmlns:abapoo="http://www.sap.com/adt/oo" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/zssi_importer" adtcore:type="DEVC/K" adtcore:name="ZSSI_IMPORTER"/>
+</class:abapClass>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

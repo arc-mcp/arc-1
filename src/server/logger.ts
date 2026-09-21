@@ -112,7 +112,10 @@ export class Logger {
 
   /** Flush all sinks (for graceful shutdown) */
   async flush(): Promise<void> {
-    await Promise.all(this.sinks.map((s) => s.flush?.()));
+    const results = await Promise.allSettled(this.sinks.map(async (sink) => sink.flush?.()));
+    if (results.some((result) => result.status === 'rejected')) {
+      this.warn('Failed to flush an audit sink');
+    }
   }
 
   private write(level: LogLevel, message: string, context?: LogContext): void {

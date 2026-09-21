@@ -597,6 +597,14 @@ sessions stable.
 Multi-target dispatch rejects the hidden hyperfocused `SAP` alias and any plugin/custom tool name,
 even if a client calls an unlisted tool directly.
 
+Reviewed ATC selection extension (#770/#772): `SAPDiagnose.atc objects[]` is permitted on
+pinned and aggregate routes with at most 20 input entries and at most two worklists sharing
+one deadline. Every entry uses the call's one selected target and SAP identity; nested target
+selection is forbidden. This is covered by the existing ATC workload decision, including Basic
+targets under ADR-0007. It adds no repository mutation, parallel per-object jobs, or identity
+fallback. SAP authorization, global request/rate limits and `SAP_DENY_ACTIONS` still apply;
+the semaphore limits concurrent HTTP requests, not total ATC findings or SAP job duration.
+
 For 17–256 targets, the model obtains exact IDs and meaningful labels from `SAPTargets`; descriptions
 are deliberately not duplicated into every SAP-contacting tool schema. There is no standalone HTTP
 target catalog or browser HTML target page in v1. Copyable pinned and aggregate client-configuration

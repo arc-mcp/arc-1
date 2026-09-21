@@ -64,3 +64,22 @@ Live evidence:
   - Unit: assert `normalizeObjectType('VIEW/DV') === 'VIEW'` and `objectBasePath('VIEW')` includes `vit/wb`.
   - Integration: add a `VIEW` read against `V_USR_NAME` to `tests/integration/adt.integration.test.ts` (currently no VIEW coverage; this gap is what hid the bug).
   - Probe replay fixture under `tests/fixtures/probe/` showing `VIEW` returning 200 from the corrected URL.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### VIEW/DV
+
+- Observed object: `V_USR_NAME`; GET `/sap/bc/adt/vit/wb/object_type/viewdv/object_name/V_USR_NAME`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `adtcore:mainObject`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/view-dv.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<adtcore:mainObject adtcore:name="V_USR_NAME" adtcore:type="VIEW/DV" adtcore:version="active" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/susr" adtcore:type="DEVC/K" adtcore:name="SUSR"/>
+</adtcore:mainObject>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

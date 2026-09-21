@@ -49,10 +49,11 @@ describe('E2E RAP write lifecycle tests', () => {
         type: 'DEVC',
         name: packageName,
       });
-      const readText = expectToolSuccess(readResult);
-      const parsed = JSON.parse(readText);
+      expect(readResult.isError).toBeFalsy();
+      expect(readResult.content).toHaveLength(2);
+      expect(readResult.content.every((block) => block.type === 'text')).toBe(true);
+      const parsed = JSON.parse(readResult.content[0].text);
       expect(Array.isArray(parsed)).toBe(true);
-
       const deleteResult = await callTool(client, 'SAPManage', {
         action: 'delete_package',
         name: packageName,

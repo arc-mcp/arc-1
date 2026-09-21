@@ -550,7 +550,15 @@ export function parseDiscoveryDocument(xml: string): Map<string, string[]> {
   if (!xml?.trim()) return new Map();
 
   try {
-    const parsed = parseXml(xml);
+    return parseDiscoveryObject(parseXml(xml));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Map an already-parsed discovery document without parsing its XML a second time. */
+export function parseDiscoveryObject(parsed: Record<string, unknown>): Map<string, string[]> {
+  try {
     const service = (parsed.service ?? {}) as Record<string, unknown>;
     const workspaces = Array.isArray(service.workspace)
       ? service.workspace
@@ -693,6 +701,7 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
   // Find the dataElement node — after NS strip: dtel:dataElement → dataElement
   const dtelNodes = findDeepNodes(parsed, 'dataElement');
   const dtel = dtelNodes[0] ?? {};
+  const flag = (value: unknown) => String(value ?? '').toLowerCase() === 'true';
 
   return {
     name: String(wbobj['@_name'] ?? ''),
@@ -703,11 +712,21 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
     length: String(dtel.dataTypeLength ?? ''),
     decimals: String(dtel.dataTypeDecimals ?? ''),
     shortLabel: String(dtel.shortFieldLabel ?? ''),
+    shortLength: String(dtel.shortFieldLength ?? ''),
     mediumLabel: String(dtel.mediumFieldLabel ?? ''),
+    mediumLength: String(dtel.mediumFieldLength ?? ''),
     longLabel: String(dtel.longFieldLabel ?? ''),
+    longLength: String(dtel.longFieldLength ?? ''),
     headingLabel: String(dtel.headingFieldLabel ?? ''),
+    headingLength: String(dtel.headingFieldLength ?? ''),
     searchHelp: String(dtel.searchHelp ?? ''),
+    searchHelpParameter: String(dtel.searchHelpParameter ?? ''),
+    setGetParameter: String(dtel.setGetParameter ?? ''),
     defaultComponentName: String(dtel.defaultComponentName ?? ''),
+    deactivateInputHistory: flag(dtel.deactivateInputHistory),
+    changeDocument: flag(dtel.changeDocument),
+    leftToRightDirection: flag(dtel.leftToRightDirection),
+    deactivateBIDIFiltering: flag(dtel.deactivateBIDIFiltering),
     package: String(pkgRef['@_name'] ?? ''),
   };
 }

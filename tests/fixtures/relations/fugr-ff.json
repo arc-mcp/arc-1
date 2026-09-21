@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/functions/groups/su_user/fmodules/bapi_user_getlist",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "5393f7e288de773f2b7c33920e879acf6b2b3f636780d6c4e56ef88ccc09dfca",
+    "networkSha256": "e03fe492e83d1e67fc7c33640bb8c8e5444b2799cd43b6a0d838fad87cc35c7a",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 6,
+    "observedEdges": 5
+  },
+  "type": "FUNC",
+  "native": "FUGR/FF",
+  "name": "BAPI_USER_GETLIST",
+  "uri": "/sap/bc/adt/functions/groups/su_user/fmodules/bapi_user_getlist",
+  "metadataRootQName": "fmodule:abapFunctionModule",
+  "context": "ENV",
+  "metadataXml": "<fmodule:abapFunctionModule adtcore:name=\"BAPI_USER_GETLIST\" adtcore:type=\"FUGR/FF\" adtcore:version=\"active\" xmlns:fmodule=\"http://www.sap.com/adt/functions/fmodules\" xmlns:abapsource=\"http://www.sap.com/adt/abapsource\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:containerRef adtcore:uri=\"/sap/bc/adt/functions/groups/su_user\" adtcore:type=\"FUGR/F\" adtcore:name=\"SU_USER\" adtcore:packageName=\"SUSR\"/>\n</fmodule:abapFunctionModule>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/structures/bapiret2\" adtcore:type=\"TABL/DS\" adtcore:name=\"BAPIRET2\" adtcore:packageName=\"SBF_BAPI\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/functions/groups/su_user/fmodules/bapi_user_getlist\" adtcore:type=\"FUGR/FF\" adtcore:name=\"SAPLSU_USER                             BAPI_USER_GETLIST\" adtcore:packageName=\"SUSR\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/functions/groups/su_user/fmodules/bapi_user_getlist</oro:object1><oro:object2>/sap/bc/adt/ddic/structures/bapiret2</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

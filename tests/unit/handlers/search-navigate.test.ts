@@ -12,9 +12,12 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
+// Dynamic like every other src import here: server-driven.ts pulls in http.ts (undici), which must
+// not load before setup-undici-mock has installed the mock.
+const { SDO_REGISTRY, SDO_TYPES } = await import('../../../src/adt/server-driven.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-const { transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
+const { handleSAPSearch, transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
 
 function dataPreviewXml(column: string, values: string[]): string {
   return `<abap><values><COLUMNS><COLUMN><METADATA name="${column}"/><DATASET>${values
@@ -44,6 +47,57 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPSearch', () => {
+    it.each([
+      ['clas/oc', 'CLAS/OC'],
+      ['ddls/df', 'DDLS/DF'],
+      ['ktd', 'SKTD'],
+      ['uiac', 'UIAC'],
+    ])('preserves real search subtypes and translates friendly aliases: %s', async (objectType, expected) => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams.get('objectType')).toBe(expected);
+    });
+
+    it.each([false, true])('explains a rejected filter without retrying (minimalErrors=%s)', async (minimalErrors) => {
+      mockFetch.mockResolvedValue(mockResponse(406, 'private SAP diagnostic'));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPSearch', {
+        query: '*',
+        objectType: 'NOSUCH',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('SAP rejected the object search with objectType="NOSUCH"');
+      expect(result.content[0].text).not.toContain('private SAP diagnostic');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['NOSUCH', undefined])('gives appropriate empty-result guidance for filter %s', async (objectType) => {
+      mockFetch.mockResolvedValue(mockResponse(200, '<objectReferences/>'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(result.isError).toBeUndefined();
+      if (objectType) {
+        expect(result.content[0].text).toContain('objectType="NOSUCH" was applied; omit it to search all types.');
+      } else {
+        expect(result.content[0].text).toContain('try Z* or Y*');
+      }
+    });
+
+    it('preserves authorization errors instead of misclassifying them as rejected filters', async () => {
+      const client = createClient();
+      const error = new AdtApiError('Forbidden', 403, '/sap/bc/adt/repository/informationsystem/search');
+      vi.spyOn(client, 'searchObject').mockRejectedValue(error);
+      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' }, false)).rejects.toBe(error);
+    });
+
+    it('preserves and encodes a slash type without injecting query parameters', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+        query: '*',
+        objectType: 'clas/oc&maxResults=999',
+        maxResults: 2,
+      });
+      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('objectType')).toBe('CLAS/OC&MAXRESULTS=999');
+      expect(params.getAll('maxResults')).toEqual(['2']);
+    });
+
     it('executes search', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'ZCL_*',
@@ -648,6 +702,29 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(text).not.toContain('single-table');
     });
 
+    it.each([false, true])(
+      'applies minimalErrors=%s to classified query results through dispatch',
+      async (minimalErrors) => {
+        const diagnostic = 'Private SAP diagnostic\n\nHint: private backend details';
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+        mockFetch.mockResolvedValueOnce(mockResponse(400, diagnostic));
+
+        const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPQuery', {
+          sql: 'SELECT mandt FROM t000 ORDER BY mandt DESC',
+        });
+        const text = result.content[0]?.text ?? '';
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain('ASCENDING or DESCENDING');
+        expect(text.includes('Private SAP diagnostic')).toBe(!minimalErrors);
+        expect(text.includes('private backend details')).toBe(!minimalErrors);
+        expect(text.includes('/sap/bc/adt/datapreview/freestyle')).toBe(!minimalErrors);
+        if (minimalErrors) expect(text).toMatch(/^ADT API error: status 400\.\n\nHint: Use the ABAP SQL/);
+        expect(freestylePostCalls()).toHaveLength(1);
+      },
+    );
+
     it('does not false-flag tilde JOIN with an INTO clause as dot-notation; gives the target-clause hint', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -1196,6 +1273,45 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPNavigate symbolic references', () => {
+    // Exercise every registry entry and a namespace through the public tool dispatch.
+    it.each([
+      ...SDO_TYPES.map((type) => ({
+        type,
+        name: 'ZTEST_OBJECT',
+        expectedUri: `${SDO_REGISTRY[type].href}/ZTEST_OBJECT`,
+      })),
+      { type: 'dsfd', name: '/arc/test', expectedUri: '/sap/bc/adt/ddic/dsfd/sources/%2FARC%2FTEST' },
+    ])('resolves server-driven $type $name to its own collection URI', async ({ type, name, expectedUri }) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>
+    <usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/zcl_consumer" isResult="true" canHaveChildren="false">
+      <usageReferences:adtObject adtcore:name="ZCL_CONSUMER" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usageReferences:referencedObject>
+  </usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type,
+        name,
+      });
+      expect(result.isError).toBeUndefined();
+      const whereUsedCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('usageReferences'));
+      expect(whereUsedCall).toBeDefined();
+      const requestedUri = new URL(String(whereUsedCall?.[0])).searchParams.get('uri');
+      expect(requestedUri).toBe(expectedUri);
+      expect(requestedUri).not.toContain('/programs/programs/');
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.total).toBe(1);
+    });
+
     it('resolves type+name to URI for references action (scope-based Where-Used fails, falls back to simple)', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch for the POST
@@ -1825,6 +1941,10 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.text).toContain('data access permissions');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_FREE_SQL=true');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_DATA_PREVIEW=true');
+      expect(result.content[0]?.text).toContain('Without changing permissions');
+      expect(result.content[0]?.text).toContain('class MAIN source');
+      expect(result.content[0]?.text).not.toContain('include="definitions"');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

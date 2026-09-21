@@ -5,7 +5,7 @@
  * These tests verify:
  *  - SAPManage cache_stats returns valid structure
  *  - Repeated SAPRead calls for an ETag-capable fixture use conditional GET revalidation
- *  - SAPContext(deps) second call returns [cached] output
+ *  - SAPContext(deps) rebuilds valid context on every call; no aggregate-cache marker
  *  - SAPContext(usages) performs a live lookup without cache preloading
  */
 
@@ -135,34 +135,27 @@ describe('E2E Cache Tests', () => {
     expect(text).toContain('CL_ABAP_CHAR_UTILITIES');
   });
 
-  // ── SAPContext dep graph caching ──────────────────────────────
+  // ── Fresh SAPContext dependency results ───────────────────────
 
-  it('SAPContext deps — second call returns [cached] output', async () => {
+  it('SAPContext deps — repeated calls return fresh context without aggregate-cache markers', async () => {
     // Use RSHOWTIM (a standard program guaranteed to exist on any SAP system).
-    // The dep graph is cached after the first resolution regardless of how many
-    // deps are resolved (empty dep graphs are also cached to avoid re-fetching).
+    // Even an empty dependency graph is rebuilt; normal source caching still revalidates with SAP.
     const args = { action: 'deps', type: 'PROG', name: 'RSHOWTIM', depth: 1 };
 
-    // First call may or may not be cached depending on previous e2e traffic.
-    // The key requirement is that repeated calls return a valid cached response.
     const r1 = await callTool(client, 'SAPContext', args);
     const out1 = expectToolSuccess(r1);
-    expect(out1).toContain('Dependency context for');
+    expect(out1).toContain('Dependency context for RSHOWTIM');
+    expect(out1).not.toContain('[cached]');
 
-    // Second call — should hit dep graph cache and be marked [cached]
-    const t0 = Date.now();
+    // Repeat through MCP; no aggregate shortcut or cache-hit latency promise.
     const r2 = await callTool(client, 'SAPContext', args);
-    const cachedMs = Date.now() - t0;
     const out2 = expectToolSuccess(r2);
 
-    expect(out2).toContain('[cached]');
-    // Cached response should complete quickly, but local MCP transport overhead varies in CI.
-    expect(cachedMs).toBeLessThan(5000);
-
-    console.log(`    SAPContext cached in ${cachedMs}ms`);
+    expect(out2).toContain('Dependency context for RSHOWTIM');
+    expect(out2).not.toContain('[cached]');
   });
 
-  it('SAPContext deps — cached output refers to same object', async () => {
+  it('SAPContext deps — fresh output keeps the requested object identity', async () => {
     const args = { action: 'deps', type: 'CLAS', name: 'CL_ABAP_CHAR_UTILITIES', depth: 1 };
 
     const r1 = await callTool(client, 'SAPContext', args);
@@ -174,8 +167,10 @@ describe('E2E Cache Tests', () => {
     // Both should mention the object name
     expect(out1).toContain('CL_ABAP_CHAR_UTILITIES');
     expect(out2).toContain('CL_ABAP_CHAR_UTILITIES');
-    // Second call must be served from cache
-    expect(out2).toContain('[cached]');
+    expect(out1).toContain('Dependency context for');
+    expect(out2).toContain('Dependency context for');
+    expect(out1).not.toContain('[cached]');
+    expect(out2).not.toContain('[cached]');
   });
 
   // ── SAPContext usages — live SAP lookup ──────────────────────

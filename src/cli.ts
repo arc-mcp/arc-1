@@ -21,6 +21,7 @@ import {
   assertAtcPriority,
   assertPercent,
   atcToCheckstyle,
+  diagnoseCiQualityFailed,
   evaluateAtc,
   evaluateAunit,
   evaluateDiff,
@@ -931,7 +932,9 @@ async function runToolCall(
     if (outcome.knownTools) console.error(`Known tools: ${outcome.knownTools.join(', ')}`);
     return 2;
   }
-  return renderToolResult(outcome.result, outputMode);
+  const exitCode = renderToolResult(outcome.result, outputMode);
+  if (toolName === 'SAPDiagnose' && diagnoseCiQualityFailed(args, outcome.result)) return 1;
+  return exitCode;
 }
 
 type CliProgramWithLifecycle = Command & {

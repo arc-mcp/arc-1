@@ -114,6 +114,30 @@ describe('MCP Server', () => {
     expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
   });
 
+  it.each(['standard', 'hyperfocused'] as const)(
+    'preserves evidence-led reviews and targeted method reads in %s',
+    async (toolMode) => {
+      const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
+      expect(instructions).toContain('Understanding an object: SAPContext(action="deps") returns available KTD');
+      expect(instructions).toContain('Native relationship maps: SAPNavigate(action="relations") when listed');
+      expect(instructions).toContain(
+        'Use SAPRead afterwards for exact implementation, method bodies or known references',
+      );
+      expect(instructions).toContain('One method: SAPRead(type="CLAS", method="name")');
+      expect(instructions).toContain('Source behavior is not a specification');
+      expect(instructions).toContain(
+        'For draft reviews/test design, first SAPContext(action="deps") for available KTD (type+name), unless requirements are supplied',
+      );
+      expect(instructions).toContain(
+        'Test expectations follow those requirements; show current behavior separately, even when it is a defect',
+      );
+      expect(instructions).toContain('If a targeted requirements lookup yields no evidence or lead');
+      expect(instructions).toContain('finish with observed source behavior and unverified intent/compliance');
+      expect(instructions).toContain('Do not broaden the policy search');
+      expect(instructions).toContain('Unavailable or failed syntax/ATC/test checks are not passes');
+    },
+  );
+
   it('keeps the maximum system label below the client instruction ceiling', async () => {
     const instructions = (
       await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })
@@ -1109,7 +1133,7 @@ describe('startup auth preflight', () => {
   });
 
   it('returns blocking failure on 401/403 auth errors', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'Unauthorized'),
     );
 
@@ -1127,8 +1151,8 @@ describe('startup auth preflight', () => {
   });
 
   it('can run on an existing client so direct callers retain its auth state', async () => {
-    const get = vi.fn(async () => '<discovery/>');
-    const client = { http: { get } } as unknown as import('../../../src/adt/client.js').AdtClient;
+    const fetchCsrfToken = vi.fn(async () => '/sap/bc/adt/discovery');
+    const client = { http: { fetchCsrfToken } } as unknown as import('../../../src/adt/client.js').AdtClient;
 
     const result = await runStartupAuthPreflightWithClient(
       {
@@ -1140,12 +1164,12 @@ describe('startup auth preflight', () => {
     );
 
     expect(result.status).toBe('ok');
-    expect(get).toHaveBeenCalledOnce();
-    expect(get).toHaveBeenCalledWith('/sap/bc/adt/core/discovery');
+    expect(fetchCsrfToken).toHaveBeenCalledOnce();
+    expect(result.endpoint).toBe('/sap/bc/adt/discovery');
   });
 
   it('returns inconclusive and non-blocking on non-auth failures', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(new Error('connect ECONNREFUSED'));
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(new Error('connect ECONNREFUSED'));
 
     const result = await runStartupAuthPreflight({
       ...DEFAULT_CONFIG,
@@ -1161,7 +1185,7 @@ describe('startup auth preflight', () => {
 
   it('downgrades 401 to inconclusive (non-blocking) when in cookie-auth mode', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 
@@ -1184,7 +1208,7 @@ describe('startup auth preflight', () => {
 
   it('keeps 403 blocking even in cookie-auth mode', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', 'forbidden'),
     );
 
@@ -1205,7 +1229,7 @@ describe('startup auth preflight', () => {
   });
 
   it('keeps 401 blocking when not in cookie-auth mode', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'wrong creds'),
     );
 
@@ -1227,7 +1251,7 @@ describe('startup auth preflight', () => {
   // promising "no restart needed" would be a lie. Only SAP_COOKIE_FILE gets
   // the non-blocking downgrade.
   it('keeps 401 blocking when only cookieString is set (no hot-reload promise)', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 
@@ -1249,7 +1273,7 @@ describe('startup auth preflight', () => {
 
   it('downgrade applies even when both cookieFile and cookieString are set (file wins)', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 

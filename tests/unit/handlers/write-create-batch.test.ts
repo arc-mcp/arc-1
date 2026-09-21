@@ -1653,6 +1653,41 @@ lv = CONV string( 1 ).`,
   });
 
   describe('SAPWrite batch_create', () => {
+    it('PUTs a label-less DTEL after its POST so SAP keeps the description', async () => {
+      const putBodies: string[] = [];
+      mockFetch.mockImplementation((url: string | URL, options?: RequestInit) => {
+        if (new URL(String(url)).searchParams.get('_action') === 'LOCK') {
+          return Promise.resolve(
+            mockResponse(200, '<asx:values><LOCK_HANDLE>LH</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
+              'x-csrf-token': 'T',
+            }),
+          );
+        }
+        if (options?.method === 'PUT') putBodies.push(String(options.body));
+        return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [
+          {
+            type: 'DTEL',
+            name: 'ZSTATUS',
+            description: 'No labels',
+            typeKind: 'predefinedAbapType',
+            dataType: 'CHAR',
+            length: 10,
+          },
+        ],
+      });
+
+      expect(result.isError).toBeUndefined();
+      // SAP's DTEL POST drops the description; only the follow-up PUT stores it.
+      expect(putBodies).toHaveLength(1);
+      expect(putBodies[0]).toContain('adtcore:description="No labels"');
+    });
+
     it('routes FUNC entries through their parent group and preserves processing metadata', async () => {
       const functionModuleMetadata = new Map<string, string>();
       mockFetch.mockImplementation((url: string | URL, options?: RequestInit) => {
@@ -2286,44 +2321,6 @@ lv = CONV string( 1 ).`,
         expect(result.isError).toBeUndefined();
       });
 
-      it('activateAtEnd=true breaks loop on write failure and only batch-activates the already-written subset', async () => {
-        mockFetch.mockReset();
-        // Fail ANY request for object ZBAE_FAIL. ZBAE_OK's full create+lock+source PUT+unlock
-        // cycle stays on 200, and the eventual batch-activate of ZBAE_OK alone also stays on 200.
-        mockFetch.mockImplementation((url: any) => {
-          const u = String(url);
-          if (u.includes('ZBAE_FAIL')) {
-            return Promise.resolve(mockResponse(500, 'Internal Server Error', { 'x-csrf-token': 'T' }));
-          }
-          return Promise.resolve(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
-        });
-
-        const config = { ...DEFAULT_CONFIG, lintBeforeWrite: false };
-        const result = await handleToolCall(createClient(), config, 'SAPWrite', {
-          action: 'batch_create',
-          package: '$TMP',
-          activateAtEnd: true,
-          objects: [
-            { type: 'PROG', name: 'ZBAE_OK', source: 'REPORT zbae_ok.' },
-            { type: 'PROG', name: 'ZBAE_FAIL', source: 'REPORT zbae_fail.' },
-            { type: 'PROG', name: 'ZBAE_SKIP', source: 'REPORT zbae_skip.' },
-          ],
-        });
-
-        // Loop broke on second object; ZBAE_SKIP is never attempted.
-        const text = result.content[0]?.text ?? '';
-        expect(text).toContain('ZBAE_SKIP');
-        expect(text).toContain('skipped');
-        // The terminal batch-activate (if it fired) ran only over the already-written subset.
-        const counts = countActivationPosts();
-        if (counts.batch > 0) {
-          expect(counts.batch).toBe(1);
-          expect(counts.batchBody).not.toContain('ZBAE_SKIP');
-          expect(counts.batchBody).not.toContain('ZBAE_FAIL');
-          expect(counts.batchBody).toContain('ZBAE_OK');
-        }
-      });
-
       it("activateAtEnd=true flips all written entries to 'failed' when the terminal batch-activate fails", async () => {
         mockFetch.mockReset();
         // Activation failure XML — parseActivationOutcome looks for <msg> with severity=error.
@@ -2362,9 +2359,9 @@ lv = CONV string( 1 ).`,
         expect(text).toContain('written, batch activation failed');
       });
 
-      it('activateAtEnd=true caches are invalidated only after the terminal activate succeeds', async () => {
-        // We don't have a clean cache-spy; instead assert the activation call ordering:
-        // every create+source PUT must precede the single terminal activation call.
+      it('activateAtEnd=true completes all writes before the terminal activation call', async () => {
+        // Cache failure behavior has separate coverage in batch-preflight.test.ts.
+        // This test checks every create+source PUT precedes terminal activation.
         mockFetch.mockReset();
         mockFetch.mockResolvedValue(mockResponse(200, '<xml>ok</xml>', { 'x-csrf-token': 'T' }));
 

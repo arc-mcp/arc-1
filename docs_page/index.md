@@ -171,7 +171,12 @@ All MCP clients that support stdio work out of the box — just point them at `n
 
 ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot Studio.
 
-For object understanding, start with `SAPContext(action="deps")` instead of raw `SAPRead`: ARC-1 prepends the object's Knowledge Transfer Document (`SKTD`, also accepted as `KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that when you need exact source, a method body, grep output, drafts, revisions, or metadata.
+Choose evidence for the question: targeted `SAPRead` for exact behavior or a known reference.
+For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)`
+for available KTD and dependency contracts, then compare documented requirements with source.
+Without documented requirements, intent is unverified. Neither contracts nor metadata relationships prove runtime behavior.
+Experimental [live relations](live-relations.md) automatically offer bounded repository neighborhoods where available;
+no additional database is required.
 
 Full reference: **[tools.md](tools.md)**
 
@@ -218,6 +223,8 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | Doc | Description |
 |-----|-------------|
 | [quickstart.md](quickstart.md) | **Start here** — 5-minute npx + Claude Desktop setup |
+| [release-notes.md](release-notes.md) | Released changes and upgrade notes |
+| [roadmap.md](roadmap.md) | Parked ideas and future possibilities |
 | [local-development.md](local-development.md) | Full local dev — npx/npm/Docker/git, `.env`, SSO cookie extractor, MCP client configs |
 | [deployment.md](deployment.md) | Multi-user deployment — Docker on a VM, BTP Cloud Foundry, BTP ABAP |
 | [configuration-reference.md](configuration-reference.md) | Every flag and env var, one table |
@@ -227,7 +234,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [tools.md](tools.md) | Complete tool reference (12 intent-based tools) |
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
-| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
+| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency parsing reuse, and live reverse-dependency lookup |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |
@@ -239,7 +246,6 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [multi-target-administration.md](multi-target-administration.md) | Multi-target diagnostics, registry lifecycle, capacity, and security operations |
 | [operations.md](operations.md) | Operational task map for BTP, Docker, updates, logging, limits, caching, auth testing, and incidents |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
-| [roadmap.md](roadmap.md) | Planned features |
 | [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |
 
 ## License

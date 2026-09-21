@@ -10,7 +10,7 @@ import { classifyTextSearchError } from '../adt/features.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
 import type { AdtObjectLookupResult, AdtSearchResult } from '../adt/types.js';
 import { getCachedFeatures } from './feature-cache.js';
-import { normalizeObjectType } from './object-types.js';
+import { normalizeObjectType, normalizeSearchObjectType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 // ─── Search Helpers ─────────────────────────────────────────────────
@@ -54,7 +54,11 @@ export function looksLikeFieldName(query: string): boolean {
   return true;
 }
 
-export async function handleSAPSearch(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+export async function handleSAPSearch(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  minimalErrors: boolean,
+): Promise<ToolResult> {
   const rawQuery = String(args.query ?? '');
   const maxResults = Number(args.maxResults ?? 100);
   const searchType = String(args.searchType ?? 'object');
@@ -95,7 +99,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
         finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
       } catch (error) {
         if (error instanceof DataSourcePolicyError) {
-          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+          return errorResult(internalOperationDenial('tadir_lookup_db', error, minimalErrors));
         }
         throw error;
       }
@@ -110,7 +114,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
         ]);
       } catch (error) {
         if (error instanceof DataSourcePolicyError) {
-          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+          return errorResult(internalOperationDenial('tadir_lookup_db', error, minimalErrors));
         }
         throw error;
       }
@@ -222,7 +226,19 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
     ? `Note: Query contained non-ASCII characters. Transliterated "${rawQuery}" → "${query}" (SAP object names are ASCII-only).\n\n`
     : '';
 
-  const results = await client.searchObject(query, maxResults);
+  const objectType = typeof args.objectType === 'string' ? normalizeSearchObjectType(args.objectType) : undefined;
+  let results: AdtSearchResult[];
+  try {
+    results = await client.searchObject(query, maxResults, objectType);
+  } catch (error) {
+    if (objectType && error instanceof AdtApiError && error.statusCode === 406) {
+      return errorResult(
+        `SAP rejected the object search with objectType="${objectType}". Verify that this system supports the ADT type ` +
+          '(for example CLAS, CLAS/OC, DDLS/DF or UIAC), or explicitly omit objectType to search without a type filter.',
+      );
+    }
+    throw error;
+  }
   if (Array.isArray(results) && results.length === 0) {
     let hint =
       '[]' +
@@ -230,6 +246,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
       transliterationNote +
       'No objects found. If searching for custom objects, try Z* or Y* prefixes (e.g., "Z*ESTIM*"). ' +
       'If you already found objects in a package, use SAPRead with type=DEVC to list all package contents instead of more searches.';
+    if (objectType) hint += `\nobjectType="${objectType}" was applied; omit it to search all types.`;
     if (looksLikeFieldName(query)) {
       const stripped = query.replace(/\*/g, '');
       hint += `\nThis looks like a field/column name. Use SAPQuery("SELECT fieldname, rollname, domname FROM dd03l WHERE fieldname = '${stripped}'") or SAPRead(type='DDLS', include='elements') to find fields.`;

@@ -17,6 +17,7 @@ import {
   updateServerDrivenObjectSource,
 } from '../../../src/adt/server-driven.js';
 import { parseServerDrivenMetadata } from '../../../src/adt/xml-parser.js';
+import { logger } from '../../../src/server/logger.js';
 
 const readOnlySafety = (): SafetyConfig => ({ ...unrestrictedSafetyConfig(), allowWrites: false });
 
@@ -107,6 +108,28 @@ describe('parseServerDrivenMetadata', () => {
 });
 
 describe('SDO registry + gate', () => {
+  it('honors an explicit UIAD creation language version without changing other SDO types', () => {
+    expect(buildServerDrivenMetadataXml('UIAD', 'ZTEST', '$TMP', 'Test', 'cloudDevelopment')).toContain(
+      'adtcore:abapLanguageVersion="cloudDevelopment"',
+    );
+    expect(buildServerDrivenMetadataXml('DESD', 'ZTEST', '$TMP', 'Test', 'cloudDevelopment')).not.toContain(
+      'abapLanguageVersion',
+    );
+    expect(buildServerDrivenMetadataXml('UIAD', 'ZTEST', '$TMP', 'Test')).not.toContain('abapLanguageVersion');
+  });
+  it('preserves the PUT failure when unlock also fails', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { http } = mockWriteHttp({ putThrows: true, unlockThrows: true });
+    await expect(
+      updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'UIAD', 'ZTEST', '{}'),
+    ).rejects.toThrow('put failed');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unlock failed'), {
+      objectUrl: '/sap/bc/adt/fiori/uiad/ZTEST',
+      statusCode: 404,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/LH123|lockHandle|unlock failed at/);
+    warn.mockRestore();
+  });
   it('isServerDrivenObjectType', () => {
     expect(isServerDrivenObjectType('DESD')).toBe(true);
     expect(isServerDrivenObjectType('EVTB')).toBe(true);
