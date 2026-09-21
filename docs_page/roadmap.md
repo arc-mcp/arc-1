@@ -122,25 +122,17 @@ releases.
 - **Priority / effort / status:** P2 / S / Ready
 - **Category:** Architecture
 
-**Idea.** Resolve server-driven object types (`SDO_REGISTRY` — DESD, DTSC, CSNM, EVTB, EVTO, COTA,
-DSFD, DTDC, UIAD) to their registered collection in every generic object-URL caller, not only in the
-paths that special-case them today.
+**Idea.** Resolve `SDO_REGISTRY` types to their registered collection in generic object-URL callers.
 
-**Why it remains.** `objectBasePath()` has no case for these types, so its deliberate unknown-type
-arm maps them to `/sap/bc/adt/programs/programs/`. Reads, writes, activation and — since
-[#809](https://github.com/arc-mcp/arc-1/pull/809) — where-used each carry their own guard, but
-`SAPTransport` (`check`, `history`) and single-object `SAPDiagnose` (`syntax`, `atc`, `unittest`)
-do not. ATC batches share the helper but their `ATC_BATCH_TYPES` schema currently rejects all
-server-driven types, so that route is not an exposed instance of this defect.
-Live on SAP_BASIS 758 SP02, `SAPTransport(history, DSFD, CALENDAR_OPERATION)`
-returns an empty result whose echoed `uri` is the program path, and
-`SAPDiagnose(syntax, DSFD, CALENDAR_OPERATION)` reports "The REPORT/PROGRAM statement is missing".
-Both read as facts about the object rather than a routing error.
+**Why it remains.** After [#809](https://github.com/arc-mcp/arc-1/pull/809), `objectBasePath()` still
+maps these types to program URLs in `SAPTransport` (`check`, `history`) and single-object
+`SAPDiagnose` (`syntax`, `atc`, `unittest`). On SAP_BASIS 758 SP02, syntax checking DSFD
+`CALENDAR_OPERATION` reports "The REPORT/PROGRAM statement is missing". ATC batches reject these
+types in `ATC_BATCH_TYPES` before dispatch; they are not an exposed instance of this defect.
 
-**Resume with.** Teach `objectBasePath()` the registry hrefs (derived from `SDO_REGISTRY`, never
-copied), then delete the per-caller guards that only exist to work around the fallback — keeping
-`SAPActivate`'s, which also carries the discovery gate. Verify each affected tool on a real system
-before and after; a generic URL is not proof that SAP supports the operation for that type.
+**Resume with.** Derive generic paths from `SDO_REGISTRY`, remove redundant per-caller guards,
+and preserve `SAPActivate`'s discovery gate. Verify every affected tool on a real system;
+a valid object URL does not establish support for each operation.
 
 <a id="feat-59"></a>
 ### FEAT-59 — Embeddable multi-tenant server API
