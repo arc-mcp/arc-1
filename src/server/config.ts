@@ -150,7 +150,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     description: 'Optional-schema null mode: auto/on/off',
   },
   { name: 'plugins', valueName: 'paths', description: 'Comma-separated extension paths' },
-  { name: 'allow-plugin-execute', valueName: 'boolean', description: 'Enable plugin class execution (true/false)' },
+  {
+    name: 'allow-plugin-execute',
+    valueName: 'boolean',
+    description: 'Enable plugin class/report execution (true/false)',
+  },
   {
     name: 'allow-plugin-raw-writes',
     valueName: 'boolean',
@@ -865,7 +869,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  // Opt-in: let plugin tools execute ABAP console classes (ctx.run.classRun). Also needs allowWrites.
+  // Opt-in: let plugins execute ABAP classes/reports through ctx.run. Also needs allowWrites.
   config.allowPluginExecute = resolveBool(
     'allow-plugin-execute',
     'SAP_ALLOW_PLUGIN_EXECUTE',
