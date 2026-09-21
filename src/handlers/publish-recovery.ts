@@ -28,9 +28,8 @@ export async function recoverServiceBindingPublish(
   serviceType: 'odatav2' | 'odatav4',
   first: PublishResult,
 ): Promise<ToolResult | undefined> {
-  const systemType = getCachedFeatures()?.systemType ?? (client.usesBearerAuth ? 'btp' : undefined);
   if (
-    systemType !== 'btp' ||
+    getCachedFeatures()?.systemType !== 'btp' ||
     serviceType !== 'odatav4' ||
     version !== '0001' ||
     first.severity !== 'ERROR' ||

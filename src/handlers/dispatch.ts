@@ -185,6 +185,14 @@ function buildBaseErrorMessage(
       ...(config.targetId ? { target: config.targetId } : {}),
     });
   }
+  if (
+    tool === 'SAPActivate' &&
+    args.action === 'publish_srvb' &&
+    (err instanceof AdtNetworkError || (err instanceof AdtApiError && (err.statusCode === 429 || err.isServerError)))
+  ) {
+    const detail = config.minimalErrors ? 'Publish request failed.' : message;
+    return `${detail}\nPublish completion is unconfirmed. Use SAPRead to verify publication state before another publish.`;
+  }
   if (err instanceof AdtApiError) {
     if (
       tool === 'SAPNavigate' &&

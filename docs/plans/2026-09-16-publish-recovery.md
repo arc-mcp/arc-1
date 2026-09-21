@@ -1,85 +1,50 @@
-# Bounded recovery for the BTP V4 missing-inbound publish error
+# Bounded BTP V4 publication recovery
 
-## Evidence and scope
+## Evidence and root-cause limits
 
-A customer reports that repeating an unchanged BTP OData V4 UI publish succeeds after
-`Local Publish of <name> failed` / `Inbound service <name>_0001_G4BA does not exist`.
-The timed customer example included approximately ten seconds between attempts.
-Our SAP_BASIS/SAP_CLOUD 920 SP04 investigation found six normal first-attempt successes.
-A controlled deletion of our own generated SCO2 reproduced the exact AS-XML error,
-but neither a ten-second retry nor reactivation restored that missing object.
-Active metadata still reported `bindingCreated=true`. This is recovery for a specific
-failure, not a claim that the backend root cause or readiness delay is known.
+The customer repeated an unchanged V4 UI publish successfully after the exact English
+`Local Publish of <name> failed` / `Inbound service <name>_0001_G4BA does not exist` error;
+one timed interval was approximately ten seconds. On SAP_BASIS/SAP_CLOUD 920 SP04 we
+observed ordinary first-attempt success and reproduced the error by deleting an owned
+unpublished binding's generated SCO2. Retry and reactivation did not repair that deletion.
+`bindingCreated=true` persisted, so it is not readiness evidence. The natural transient
+cause and a successful live recovery remain unobserved. Preserve the historical results in
+[verification](../research/2026-09-16-publish-recovery-verification.md) and the
+[feedback investigation](../research/2026-09-17-publish-feedback-investigation.md).
 
-No new tool fields, schema descriptions, user configuration, unpublish behavior,
-object creation, automatic activation, or background work. No SAP source or credentials
-in the patch. Existing normal publish and other error paths retain their behavior.
+A separate real-HTTP reproduction showed that publication can commit before a response is
+replaced with 429/503/database-session 500; generic transport retries then resend the job.
+This does not prove the customer's root cause. Automatic repetition of a non-idempotent
+request needs evidence of safe replay or non-application
+([RFC 9110 §9.2.2](https://httpwg.org/specs/rfc9110.html#idempotent.methods)).
 
-## Implementation plan
+## Implemented design
 
-1. Only enter recovery for a confirmed BTP target, the V4 endpoint, requested version
-   `0001`, and exact structured `PublishResult` severity/short/long text for this binding.
-   The generated V4 inbound identifier is fixed to `0001`; do not generalize to other
-   versions or languages without evidence. Probed system type wins over bearer fallback.
-2. Read active SRVB XML directly through the current client, with read safety, no cache,
-   and a strict identity/namespace/version reader. Require an active SRVB/SVB, ODATA V4
-   UI binding, one matching service/version, and explicit boolean publication state.
-   Malformed, inactive, conflicting or incomplete evidence is unknown, never false.
-3. If already published, report the original failure and the confirmed state without
-   another POST. If unknown/unreadable, preserve the original error and stop.
-4. If explicitly unpublished, wait ten seconds, then read the active state again.
-   Ten seconds is a bounded operational grace period based on the observed customer
-   interval, not a measured SAP buffering guarantee. It is never paid on success.
-5. If still explicitly unpublished, re-run the real-package gate and write safety,
-   then invoke the existing publisher once using the same client/name/version/type.
-   Keep content negotiation intact. Read active metadata afterwards; report recovery
-   only on an explicit published state and a non-error retry result. Never turn a
-   retry exception, authorization failure, or repeated SAP error into success.
-6. Preserve the original SAP message and retry outcome in the tool result. Ambiguous
-   completion says to read status, not to blindly retry. No recursive recovery.
-7. A single 150-second deadline starts at recovery admission and covers status reads,
-   wait, package verification, retry and verification. The original first attempt
-   retains its existing timeouts. Thread cancellation through the existing HTTP options.
-   Cap recovery HTTP sends through the shared request-attempt budget (20, including
-   CSRF/HTTP recovery); a logical retry may include existing protocol-negotiation sends.
-   Existing subtree package resolution is also awaited within the deadline; a late
-   result cannot authorize a publish after timeout/cancellation. Its existing separate
-   traversal limits/cache remain unchanged.
+1. Admit only the target-scoped resolved BTP type, V4 endpoint, version `0001`, and exact
+   binding-specific structured SAP error. Unknown targets (including bearer-only), other
+   versions/languages/errors and V2/on-prem targets do not enter recovery.
+2. Read active metadata through the same client without cache. The strict reader requires
+   valid namespaces, matching active SRVB/SVB identity, one V4 UI service/version and an
+   explicit published boolean. Malformed, incomplete or conflicting data stays unknown.
+3. Already published: report the confirmed state and original failure without another POST.
+   Unknown or unreadable: stop. Explicitly unpublished: wait ten seconds and check again.
+   This is an operational grace period, not a measured SAP synchronization guarantee.
+4. Recheck the real package and write ceiling before one logical retry. Require explicit
+   published readback for recovery success; preserve the original error and retry outcome.
+   Never activate, recreate dependencies or recursively retry.
+5. Bound recovery with caller cancellation, a 150-second deadline and 20 physical HTTP
+   sends, including CSRF/authentication/MIME handling. Subtree lookup retains its existing
+   traversal/cache limits; a late answer cannot authorize a cancelled or expired publish.
+6. Disable transient HTTP replay for every publication attempt with one internal request
+   option, preserving rejection-based authentication/CSRF/MIME handling. Report 429/5xx/
+   network failure as unconfirmed completion with state-read guidance in both error modes.
+   Keep unpublish and other operations unchanged; the broader create/retry fix is separate.
 
-## Plan review before implementation
+## Review and validation
 
-- A permanently missing SCO2 is a required negative test, not evidence of a transient
-  race. Do not rely on `bindingCreated` or automatically repair the object graph.
-- Match the structured SAP result before formatting; do not retry generic HTTP errors,
-  other bindings' messages, on-prem/V2 calls, or unknown target types.
-- Do not use the permissive general SRVB parser for retry authorization: it defaults
-  absent publication state to false and omits active-version identity.
-- Readiness polling through SCO2 is deferred: a single 404 cannot distinguish delay
-  from deletion, and a successful read need not share the next publish's app server.
-- Package revalidation and cancellation must finish before the second logical POST.
-  Preserve the same SAP identity and request-local state; no shared recovery cache.
-- Prefer one dedicated helper and one strict metadata reader over refactoring all
-  activation paths. Keep schema snapshots and size budgets unchanged where possible.
-
-## Verification and completion criteria
-
-Tests first: real-shape sanitized metadata and AS-XML fixtures; successful recovery;
-permanent failure; already-published before/after waiting; unknown/inactive/mismatched
-metadata; wrong target/version/category/error; read errors; second-call failures;
-changed/unknown package; write ceiling; cancellation during wait and package lookup;
-shared deadline; HTTP negotiation/attempt accounting; concurrent identities isolated.
-Run relevant existing activate/devtools/HTTP tests, then all repository gates. Review
-argument encoding, safety, failure reporting and complexity against the final diff.
-Finally run the changed build on the owned BTP system with an ordinary publish and a
-controlled missing-inbound case, clean up, document limits, and open a PR. Do not merge.
-
-## Implementation review outcome
-
-The exact missing-inbound negative case, strict metadata gate, repeated real-package
-check, shared HTTP recovery budget and caller cancellation are implemented. Review found
-and corrected a misleading missing-dependency hint for a different retry error, and verified
-that a late package-hierarchy answer cannot trigger a publish after cancellation. The strict
-state read also checks cancellation/deadline again after receiving its response.
-
-Local gates and loopback HTTP checks passed; detailed evidence and the current live-test
-status are in [the verification record](../research/2026-09-16-publish-recovery-verification.md).
+The 2026-09-21 review added failing dispatcher/real-HTTP tests before removing bearer-only
+eligibility and hidden publication replay. Tests cover both attempts, both disclosure modes,
+committed backend state after response loss, MIME budgets, isolated identities, package and
+write gates, cancellation, strict state parsing and unchanged ordinary success.
+Current validation and live-access limitations are recorded in the verification document.
+No tool fields, public configuration, schemas, background work or roadmap items were added.

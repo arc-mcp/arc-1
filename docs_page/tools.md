@@ -833,7 +833,7 @@ Use batch activation for RAP stacks where objects depend on each other (DDLS, BD
 
 For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a concrete batch re-activation template derived from where-used results.
 
-On BTP, `publish_srvb` can recover once from the exact English missing-inbound-service error
+On a target resolved as BTP, `publish_srvb` can recover once from the exact English missing-inbound-service error
 for an OData V4 UI binding at version `0001`. It checks active publication state, waits ten
 seconds only after that error, checks again, and revalidates the package before one retry.
 Already-published bindings need no retry; unknown state or a repeated error stops recovery.
@@ -841,7 +841,15 @@ Success after recovery requires an explicit published readback. The response ret
 initial error and the outcome. This does not repair missing dependencies or prove a SAP
 synchronization delay. The recovery phase has a 150-second deadline and a shared 20-send
 HTTP allowance; existing protocol retries count toward it. No activation or recreation is
-performed. Other publish/unpublish paths retain their existing behavior.
+performed. An unresolved target type does not qualify; bearer authentication alone is
+not BTP evidence.
+
+All `publish_srvb` calls (including the first attempt and V2/on-prem calls) avoid automatic
+HTTP replay after availability or database-session errors. A 429, 5xx or network failure
+leaves completion unconfirmed: use `SAPRead(type="SRVB", name="…")` to inspect publication
+state before another publish. Authentication/CSRF/content-negotiation handling remains;
+these protocol sends are distinct from the single missing-inbound recovery attempt.
+Unpublish and other operations keep their existing retry policies.
 
 **Examples:**
 ```

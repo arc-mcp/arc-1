@@ -17,6 +17,8 @@ export interface AdtRequestOptions extends RequestDeadlineOptions {
   probe?: boolean;
   /** Explicit post-content-decoding response allowance for a guarded data operation. */
   responseBudget?: DataResponseBudget;
+  /** Disable availability/DB-session replays when a mutation may already have completed. */
+  retryTransientErrors?: boolean;
   /** Optional request-local SAP send allowance; CSRF and retries share the same counter. */
   attemptBudget?: RequestAttemptBudget;
   /** Internal control requests need headers only; do not buffer their bodies through Connectivity. */

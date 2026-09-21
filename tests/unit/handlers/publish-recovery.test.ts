@@ -113,15 +113,16 @@ describe('publish recovery through the dispatcher', () => {
     expect(jobs).toBe(1);
     expect(reads).toBe(0);
   });
-  it('uses direct BTP bearer evidence when the probe is not ready', async () => {
+  it('does not infer BTP from bearer authentication when the probe is not ready', async () => {
     features.resetCachedFeatures();
     const client = new AdtClient({
       baseUrl: 'http://sap:8000',
       bearerTokenProvider: async () => 'own-token',
       safety: unrestrictedSafetyConfig(),
     });
-    expect((await call(client)).isError).toBeUndefined();
-    expect(jobs).toBe(2);
+    expect((await call(client)).isError).toBe(true);
+    expect(jobs).toBe(1);
+    expect(reads).toBe(0);
   });
   it.each([{ service_type: 'odatav2' }, { version: '0002' }])(
     'does not broaden to another endpoint/version: %j',

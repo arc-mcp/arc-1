@@ -25,11 +25,12 @@ interface Send {
   body: string;
 }
 async function withSap(
-  mode: 'success' | 'negotiation' | 'persistent' | 'blocked-read',
+  mode: 'success' | 'negotiation' | 'persistent' | 'blocked-read' | { status: number | 'disconnect'; attempt: number },
   check: (clients: AdtClient[], sends: Send[]) => Promise<void>,
 ) {
   const sends: Send[] = [];
   const jobs = new Map<string, number>();
+  const committed = new Set<string>();
   const server = createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) body += chunk;
@@ -45,6 +46,17 @@ async function withSap(
     const n = jobs.get(identity) ?? 0;
     if (path.includes('/publishjobs')) {
       jobs.set(identity, n + 1);
+      if (typeof mode === 'object' && n + 1 === mode.attempt) {
+        committed.add(identity); // The job took effect; only its response was lost/replaced.
+        if (mode.status === 'disconnect') {
+          res.destroy();
+          return;
+        }
+        res.statusCode = mode.status;
+        res.setHeader('retry-after', '0');
+        res.end('<error>database connection is not open</error>');
+        return;
+      }
       if (n === 0 || mode === 'persistent') {
         res.end(failure);
         return;
@@ -62,7 +74,11 @@ async function withSap(
       res.end('<error>denied</error>');
       return;
     }
-    res.end(n > 1 && mode !== 'persistent' ? xml.replace('published="false"', 'published="true"') : xml);
+    res.end(
+      committed.has(identity) || (n > 1 && mode !== 'persistent')
+        ? xml.replace('published="false"', 'published="true"')
+        : xml,
+    );
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -84,8 +100,8 @@ async function withSap(
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
-const call = (client: AdtClient) =>
-  handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', {
+const call = (client: AdtClient, minimalErrors = false) =>
+  handleToolCall(client, { ...DEFAULT_CONFIG, minimalErrors }, 'SAPActivate', {
     action: 'publish_srvb',
     name: 'ZARC1_PUBLISH',
     service_type: 'odatav4',
@@ -102,7 +118,7 @@ afterEach(() => {
 describe('publish recovery over the real HTTP transport', () => {
   it('keeps concurrent identities separate and never publishes more than twice per caller', async () => {
     await withSap('success', async (clients, sends) => {
-      const results = await Promise.all(clients.map(call));
+      const results = await Promise.all(clients.map((client) => call(client)));
       expect(results.every((r) => !r.isError)).toBe(true);
       const posts = sends.filter((s) => s.path.includes('/publishjobs'));
       expect(posts).toHaveLength(4);
@@ -119,7 +135,7 @@ describe('publish recovery over the real HTTP transport', () => {
       const options: deadline.AdtRequestOptions[] = [];
       const post = client!.http.post.bind(client!.http);
       vi.spyOn(client!.http, 'post').mockImplementation((path, body, type, headers, opts) => {
-        if (opts) options.push(opts);
+        if (opts?.attemptBudget) options.push(opts);
         return post(path, body, type, headers, opts);
       });
       const r = await call(client!);
@@ -133,6 +149,28 @@ describe('publish recovery over the real HTTP transport', () => {
       expect(posts.at(-1)?.contentType).toContain('dataname=com.sap.adt.businessservices.odatav4.publishjob');
     });
   });
+  it.each([429, 500, 502, 503, 504, 'disconnect'] as const)(
+    'does not replay an ambiguously completed publish after %s, on either attempt',
+    async (status) => {
+      for (const [attempt, minimalErrors] of [
+        [1, false],
+        [2, false],
+        [1, true],
+        [2, true],
+      ] as const) {
+        await withSap({ status, attempt }, async ([client], sends) => {
+          const r = await call(client!, minimalErrors);
+          expect(r.isError).toBe(true);
+          expect(r.content[0]?.text).toContain('completion is unconfirmed');
+          expect(r.content[0]?.text).toContain('SAPRead');
+          expect(sends.filter((s) => s.path.includes('/publishjobs'))).toHaveLength(attempt);
+          // Error reporting must not imply rollback: the synthetic SAP job already committed.
+          const state = await client!.http.get('/sap/bc/adt/businessservices/bindings/ZARC1_PUBLISH?version=active');
+          expect(state.body).toContain('published="true"');
+        });
+      }
+    },
+  );
   it('stops on denied metadata without a second POST', async () => {
     await withSap('blocked-read', async ([client], sends) => {
       const r = await call(client!);

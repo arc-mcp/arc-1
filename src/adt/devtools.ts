@@ -546,7 +546,11 @@ export async function publishServiceBinding(
   options?: AdtRequestOptions,
 ): Promise<PublishResult> {
   checkOperation(safety, OperationType.Activate, 'PublishServiceBinding');
-  return postPublishJob(http, serviceType, 'publishjob', name, version, options);
+  // A lost/replaced response does not prove that SAP rejected the publish job.
+  return postPublishJob(http, serviceType, 'publishjob', name, version, {
+    ...options,
+    retryTransientErrors: false,
+  });
 }
 
 /** Unpublish an OData service binding (removes the service from consumption) */

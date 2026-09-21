@@ -1082,7 +1082,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
-        undefined,
+        { retryTransientErrors: false },
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('published locally');
@@ -1096,7 +1096,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
-        undefined,
+        { retryTransientErrors: false },
       );
     });
 
@@ -1108,7 +1108,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
-        undefined,
+        { retryTransientErrors: false },
       );
     });
 
@@ -1211,7 +1211,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         'application/xml',
         { Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' },
-        undefined,
+        { retryTransientErrors: false },
       );
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.publishjob';
@@ -1221,7 +1221,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         asXmlType,
         { Accept: asXmlType },
-        undefined,
+        { retryTransientErrors: false },
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('ZSSI_UI_S_ORD_O4 published locally');
@@ -1266,7 +1266,7 @@ describe('DevTools', () => {
         expect.any(String),
         asXmlType,
         { Accept: asXmlType },
-        undefined,
+        { retryTransientErrors: false },
       );
     });
 

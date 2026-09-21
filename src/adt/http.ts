@@ -523,6 +523,7 @@ export class AdtHttpClient {
     const httpStart = Date.now();
 
     // Per-request guards to prevent infinite retry loops
+    const retryTransientErrors = options?.retryTransientErrors !== false;
     let negotiationRetried = false;
     let authRetried = false;
     let retried429 = false;
@@ -539,7 +540,12 @@ export class AdtHttpClient {
       // work process. If that WP has a broken HANA connection, every request fails
       // with "database connection is not open". Fix: clear the session to force
       // ICM to assign a different work process on retry.
-      if (response.status === 500 && this.isDbConnectionError(responseBody) && !this.dbRetryInProgress) {
+      if (
+        retryTransientErrors &&
+        response.status === 500 &&
+        this.isDbConnectionError(responseBody) &&
+        !this.dbRetryInProgress
+      ) {
         this.dbRetryInProgress = true;
         try {
           logger.emitAudit({
@@ -596,11 +602,9 @@ export class AdtHttpClient {
       }
 
       // Handle 503 Service Unavailable — ICM thread/MPI exhaustion or WP overload.
-      // Retry ALL methods: a 503 means ICM rejected the request before it reached a work
-      // process, so the operation never executed — retrying is safe even for POST/PUT/DELETE.
+      // Legacy retries remain the default; ambiguous mutations can disable transient replay.
       // Retry happens INSIDE the semaphore slot to avoid increasing load on an overloaded system.
-      // Honors RFC 7231 Retry-After header when present; falls back to 1-2 s jitter otherwise.
-      if (response.status === 503) {
+      if (response.status === 503 && retryTransientErrors) {
         const { delayMs: jitterMs, source } = parseRetryAfter(
           response.headers.get('retry-after'),
           1000 + Math.random() * 1000,
@@ -637,13 +641,9 @@ export class AdtHttpClient {
       }
 
       // Handle 429 Too Many Requests — emitted by SAP Web Dispatcher, BTP API
-      // Management, or any upstream gateway throttling us. Like 503, the request did
-      // not reach a SAP work process, so retrying ALL methods is safe (gateway-level
-      // rejection, never partial execution). Honors RFC 7231 Retry-After when present;
-      // falls back to 1-2 s jitter. Single retry only — per-request `retried429` guard
-      // prevents loops. If the upstream is still throttling on the second attempt, we
-      // surface the 429 to the caller for them to back off at the agent/LLM layer.
-      if (response.status === 429 && !retried429) {
+      // Management, or any upstream gateway throttling us. Honors Retry-After when present;
+      // otherwise wait 1-2 s. Surface a repeated 429 without a third attempt.
+      if (response.status === 429 && !retried429 && retryTransientErrors) {
         retried429 = true;
         const { delayMs: jitterMs, source } = parseRetryAfter(
           response.headers.get('retry-after'),
