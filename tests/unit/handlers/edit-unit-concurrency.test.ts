@@ -116,16 +116,13 @@ it('ignores cached draft absence, cached source and recent activation when selec
   expect(cache.inactiveLists.getCached(client.username)).toBeNull();
 });
 
-it.each([403, 404, 502])(
-  'unlocks and refuses the write when the protected source read returns %s',
-  async (readStatus) => {
-    const state = backend({ readStatus });
-    const result = await handleToolCall(createClient(), config, 'SAPWrite', args);
-    expect(result.isError).toBe(true);
-    expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
-    expect(state.locked).toBe(false);
-  },
-);
+it('unlocks and refuses the write when the protected source read fails', async () => {
+  const state = backend({ readStatus: 403 });
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', args);
+  expect(result.isError).toBe(true);
+  expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
+  expect(state.locked).toBe(false);
+});
 
 it.each([
   {

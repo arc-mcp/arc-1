@@ -82,6 +82,7 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
       const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
       return extras ? textResult(`${message}\n\n${extras}`) : textResult(message);
     } finally {
+      // Surface failed unlocks: SAP may still hold the lock after a successful write.
       try {
         await unlockObject(session, objectUrl, lock.lockHandle);
       } finally {

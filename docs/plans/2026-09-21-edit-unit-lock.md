@@ -46,14 +46,7 @@ No generic transform/caching API, edit_content, line-range reads, insert-unit
 feature or FUGR auto-discovery. #586 retains its remaining proposed features.
 No roadmap item covers this correctness defect; no roadmap impact.
 
-## Validation
-
-The original dispatcher race test failed before the fix. Local regressions cover
-concurrent source drift, stale caches, source/read/lock/write/unlock failures,
-removed units, malformed source, package/write gates, transport propagation,
-optional syntax-check session identity and cache exceptions during cleanup.
-The existing #597 release-aware lint cases remain passing. `SAPRead` now directly
-tests the `INCL` → `FUGR/I` worklist alias; removing that branch fails the regression.
+## Live validation
 
 Live a4h/758, client 001, direct HTTPS Basic: two clients using the same test user;
 the second client completed a draft change immediately before the first acquired
@@ -68,5 +61,4 @@ Follow-up: class-method/definition surgery still selects a version and reads sou
 before locking (`write.ts:fetchClassStructureAndMain`, `write/class-surgery.ts`).
 The same stale-worklist/concurrent-edit risk needs a separate fix that also keeps
 class-structure ranges consistent with the locked source. This PR is limited to
-`edit_unit`. Failed unlocks remain visible errors with session-cleanup guidance;
-silencing them would hide a potentially retained SAP lock.
+`edit_unit`.
