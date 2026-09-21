@@ -120,7 +120,7 @@
     "fast-xml-parser": "^5.11.1",
     "helmet": "^8.3.0",
     "jose": "^6.2.12",
-    "rate-limiter-flexible": "^11.2.0",
+    "rate-limiter-flexible": "^11.2.1",
     "undici": "^8.10.2",
     "zod": "^4.6.2"
   },
