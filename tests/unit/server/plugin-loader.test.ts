@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,6 +28,17 @@ function dispatchCtx(args: Record<string, unknown>): ToolDispatchContext {
     args,
     requestId: 'req-7',
   } as unknown as ToolDispatchContext;
+}
+
+async function withProcessGetuid<T>(getuid: (() => number) | undefined, run: () => Promise<T>): Promise<T> {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'getuid');
+  Object.defineProperty(process, 'getuid', { value: getuid, configurable: true, writable: true });
+  try {
+    return await run();
+  } finally {
+    if (descriptor) Object.defineProperty(process, 'getuid', descriptor);
+    else Reflect.deleteProperty(process, 'getuid');
+  }
 }
 
 describe('registerPluginTool', () => {
@@ -155,7 +166,43 @@ describe('loadPlugins — path safety (assertLoadablePath)', () => {
     );
     chmodSync(mf, 0o777); // sets the world-writable bit assertLoadablePath rejects
     try {
-      await expect(loadPlugins([mf], new ToolRegistry())).rejects.toThrow(/world-writable/);
+      await withProcessGetuid(
+        () => statSync(mf).uid,
+        async () => await expect(loadPlugins([mf], new ToolRegistry())).rejects.toThrow(/world-writable/),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('loads a writable-mode plugin when POSIX ownership APIs are unavailable (Windows)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arc1-plugin-windows-perm-'));
+    const pluginPath = join(dir, 'index.js');
+    const mf = join(dir, 'Custom_Windows.tool.json');
+    writeFileSync(
+      mf,
+      JSON.stringify({
+        name: 'Custom_Windows',
+        description: 'd',
+        scope: 'read',
+        inputSchema: { type: 'object', additionalProperties: false, properties: {} },
+        request: { method: 'GET', path: '/sap/bc/adt/discovery' },
+      }),
+    );
+    writeFileSync(
+      pluginPath,
+      "module.exports = { name: 'windows-permissions', version: '1.0.0', apiVersion: 1, tools: [], manifests: ['./Custom_Windows.tool.json'] };",
+    );
+    chmodSync(mf, 0o666); // Windows reports synthetic writable mode bits without POSIX ownership semantics.
+    chmodSync(pluginPath, 0o666);
+    try {
+      await withProcessGetuid(undefined, async () => {
+        const registry = new ToolRegistry();
+        await expect(loadPlugins([pluginPath], registry)).resolves.toMatchObject([
+          { name: 'windows-permissions', version: '1.0.0', path: pluginPath, toolNames: ['Custom_Windows'] },
+        ]);
+        expect(registry.get('Custom_Windows')?.source).toBe('plugin');
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

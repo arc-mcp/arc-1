@@ -30,7 +30,7 @@ import type { Dependency, DependencyKind } from './types.js';
  * Since we only extract dependencies here (no linting), the permissive
  * parser is the correct choice.
  */
-const ABAPLINT_VERSION = Version.Cloud;
+export const DEFAULT_DEPENDENCY_VERSION = Version.Cloud;
 
 /** ABAP built-in types that are never external dependencies */
 const BUILTIN_TYPES = new Set([
@@ -112,7 +112,7 @@ export function extractDependencies(
 ): Dependency[] {
   // Normalize CRLF → LF (SAP ADT returns CRLF which can break abaplint parsing)
   const normalizedSource = source.replace(/\r\n/g, '\n');
-  const config = getDefaultAbaplintConfig(abaplintVersion ?? ABAPLINT_VERSION);
+  const config = getDefaultAbaplintConfig(abaplintVersion ?? DEFAULT_DEPENDENCY_VERSION);
   const filename = detectFilename(normalizedSource, objectName);
   const reg = new Registry(config);
   reg.addFile(new MemoryFile(filename, normalizedSource));

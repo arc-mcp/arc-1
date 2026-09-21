@@ -119,7 +119,8 @@ describe('SAPManage create_package — BTP cloud path', () => {
 
   it('on-prem (non-bearer, systemType auto) keeps the legacy LOCAL body — no cloud transform', async () => {
     const client = createClient();
-    const res = await handleToolCall(client, DEFAULT_CONFIG, 'SAPManage', {
+    // On-prem DEVC needs a real person-responsible (#636); basic auth always supplies SAP_USER.
+    const res = await handleToolCall(client, { ...DEFAULT_CONFIG, username: 'ADMIN' }, 'SAPManage', {
       action: 'create_package',
       name: 'ZPKG_OP',
       description: 'd',

@@ -5,10 +5,17 @@
  */
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FLP_TILE_PAGE_SIZE } from '../../../src/adt/flp.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+
+// On-prem package create needs a person-responsible that is a real ABAP user: SPAK_ST_PACKAGES
+// rejects an empty one and validates existence (#636). Basic auth always supplies SAP_USER, so
+// these mechanics tests use a config that has one.
+const PKG_CONFIG = { ...DEFAULT_CONFIG, username: 'ADMIN' };
+
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
@@ -81,7 +88,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_TEST',
         description: 'Test package',
@@ -105,7 +112,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_TR',
         description: 'Transported package',
@@ -119,7 +126,7 @@ describe('SAPManage / SAPContext handlers', () => {
     });
 
     it('create_package returns error when name is missing', async () => {
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         description: 'Missing name',
       });
@@ -660,7 +667,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml/>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_NEEDS_TR',
         description: 'Transport-required package',
@@ -681,7 +688,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_FULL',
         description: 'Full options package',
@@ -708,7 +715,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_NO_RECORD',
         description: 'No recording',
@@ -731,7 +738,7 @@ describe('SAPManage / SAPContext handlers', () => {
         return Promise.resolve(mockResponse(200, '<xml>created</xml>', { 'x-csrf-token': 'T' }));
       });
 
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      const result = await handleToolCall(createClient(), PKG_CONFIG, 'SAPManage', {
         action: 'create_package',
         name: 'ZPKG_ZLOCAL',
         description: 'ZLOCAL package',
@@ -784,6 +791,93 @@ describe('SAPManage / SAPContext handlers', () => {
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('"catalogId" is required');
+    });
+
+    it('flp_list_tiles reads the Page association without a $filter', async () => {
+      mockFetch.mockReset();
+      const urls: string[] = [];
+      mockFetch.mockImplementation((url: string | URL) => {
+        urls.push(String(url));
+        return Promise.resolve(
+          mockResponse(
+            200,
+            JSON.stringify({
+              d: {
+                results: [
+                  {
+                    pageId: 'X-SAP-UI2-CATALOGPAGE:ZCAT',
+                    instanceId: 'TILE1',
+                    chipId: 'X-SAP-UI2-CHIP:/UI2/STATIC_APPLAUNCHER',
+                    title: 'My Tile',
+                    configuration: '{"tileConfiguration":"{\\"semantic_object\\":\\"ZSO\\"}"}',
+                  },
+                ],
+              },
+            }),
+            { 'x-csrf-token': 'T' },
+          ),
+        );
+      });
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'flp_list_tiles',
+        catalogId: 'ZCAT',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toContain('1 tiles in catalog "ZCAT"');
+      expect(result.content[0]!.text).toContain('TILE1 | My Tile');
+      const tileUrl = urls.find((u) => u.includes('PageChipInstances'));
+      // A $filter here short-dumps the backend (/UI2/CL_EDM_DA_V06_USAGE asserts).
+      expect(tileUrl).not.toContain('filter');
+      expect(tileUrl).toContain("/Pages('X-SAP-UI2-CATALOGPAGE%3AZCAT')/PageChipInstances");
+    });
+
+    it('flp_list_tiles names the catalog when SAP reports it missing', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(404, JSON.stringify({ error: { message: { value: 'Resource Page not found' } } }), {
+          'x-csrf-token': 'T',
+        }),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'flp_list_tiles',
+        catalogId: 'ZNOPE',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('FLP catalog "ZNOPE" not found');
+      expect(result.content[0]!.text).toContain('flp_list_catalogs');
+    });
+
+    it('flp_list_tiles flags a listing that hits the row cap', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          JSON.stringify({
+            d: {
+              results: Array.from({ length: FLP_TILE_PAGE_SIZE }, (_, i) => ({
+                pageId: 'X-SAP-UI2-CATALOGPAGE:ZBIG',
+                instanceId: `TILE${i}`,
+                chipId: 'X-SAP-UI2-CHIP:/UI2/STATIC_APPLAUNCHER',
+                title: `Tile ${i}`,
+                configuration: '',
+              })),
+            },
+          }),
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'flp_list_tiles',
+        catalogId: 'ZBIG',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]!.text).toContain(`capped at ${FLP_TILE_PAGE_SIZE} — may be truncated`);
     });
 
     it('flp_create_catalog is blocked in read-only safety mode', async () => {
@@ -874,7 +968,9 @@ describe('SAPManage / SAPContext handlers', () => {
         name: 'ZCL_TEST',
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('type');
+      expect(result.content[0]?.text).toContain('requires type and name, even with supplied source');
+      expect(result.content[0]?.text).toContain('use SAPSearch if unknown');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('returns error when name is missing', async () => {
@@ -1008,6 +1104,38 @@ ENDCLASS.`;
       expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/zcl_doc'))).toBe(true);
     });
 
+    it('prepends every duplicate-ID KTD body without applying write restrictions or escapes', async () => {
+      const source = 'CLASS zcl_doc DEFINITION PUBLIC. ENDCLASS. CLASS zcl_doc IMPLEMENTATION. ENDCLASS.';
+      const bodies = ['First body\n\n## ZCL_DOC\n\nExample', 'Second body'];
+      const duplicate =
+        '<sktd:docu adtcore:name="ZCL_DOC">' +
+        bodies
+          .map(
+            (body) =>
+              `<sktd:element><sktd:id>ZCL_DOC</sktd:id><sktd:text>${Buffer.from(body).toString('base64')}</sktd:text></sktd:element>`,
+          )
+          .join('') +
+        '</sktd:docu>';
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string | URL) =>
+        Promise.resolve(
+          mockResponse(200, String(url).includes('/documentation/ktd/documents/') ? duplicate : source, {
+            'x-csrf-token': 'T',
+          }),
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPContext', {
+        type: 'CLAS',
+        name: 'ZCL_DOC',
+      });
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBeUndefined();
+      for (const body of bodies) expect(text).toContain(body);
+      expect(text).toContain('Dependency context');
+      expect(text).not.toContain('\\## ZCL_DOC');
+      expect(text).not.toContain('SAPWrite unavailable');
+    });
+
     it('continues dependency context when KTD is not found', async () => {
       const source = `CLASS zcl_no_doc DEFINITION PUBLIC.
   PUBLIC SECTION.
@@ -1065,19 +1193,10 @@ ENDCLASS.`;
       expect(calls.some((url) => url.includes('/sap/bc/adt/documentation/ktd/documents/'))).toBe(false);
     });
 
-    it('composes KTD with cached dependency context', async () => {
+    it('composes KTD with freshly resolved context', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
       const markdown = '# Cached Root KTD\n\nUse this before editing.';
-      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
-        {
-          name: 'ZIF_DEP',
-          type: 'INTF',
-          methodCount: 1,
-          source: 'INTERFACE zif_dep PUBLIC.\n  METHODS run.\nENDINTERFACE.',
-          success: true,
-        },
-      ]);
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL) => {
         const urlStr = String(url);
@@ -1101,16 +1220,16 @@ ENDCLASS.`;
       expect(result.isError).toBeUndefined();
       expect(text).toContain('Knowledge Transfer Document for ZCL_ROOT');
       expect(text).toContain(markdown);
-      expect(text).toContain('[cached]');
-      expect(text).toContain('ZIF_DEP');
+      expect(text).not.toContain('[cached]');
+      expect(text).not.toContain('ZIF_DEP');
+      expect(text).toContain('0 deps resolved');
     });
 
-    it('does not serve cached dependency contracts under principal propagation', async () => {
+    it('returns empty dependency context under principal propagation without an aggregate API', async () => {
       const layer = new CachingLayer(new MemoryCache());
       const source = 'CLASS zcl_root DEFINITION PUBLIC. ENDCLASS.';
-      layer.putDepGraph(source, 'ZCL_ROOT', 'CLAS', [
-        { name: 'ZCL_SECRET', type: 'CLAS', methodCount: 0, source: 'SECRET SOURCE', success: true },
-      ]);
+      expect(layer).not.toHaveProperty('getCachedDepGraph');
+      expect(layer).not.toHaveProperty('putDepGraph');
       const auth: AuthInfo = {
         token: 'jwt',
         clientId: 'oidc-client',
@@ -1131,7 +1250,6 @@ ENDCLASS.`;
       );
 
       expect(result.isError).toBeUndefined();
-      expect(result.content[0]?.text).not.toContain('SECRET SOURCE');
       expect(result.content[0]?.text).not.toContain('[cached]');
       expect(result.content[0]?.text).toContain('0 deps resolved');
     });

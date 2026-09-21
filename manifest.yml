@@ -1,14 +1,14 @@
 ---
 # Cloud Foundry deployment manifest for ARC-1 MCP server on SAP BTP.
 #
-# This is a TEMPLATE. Copy and customize per deployment scenario:
-#   manifest-onprem.yml  — on-premise SAP via Cloud Connector
-#   manifest-btp.yml     — BTP ABAP Environment (direct OAuth)
+# This is the shipped on-premise TEMPLATE. Copy it to a deployment-specific
+# filename such as manifest-onprem.yml before customizing it. For BTP ABAP
+# Environment (direct OAuth), start from the shipped manifest-btp-abap.yml.
 #
 # Credentials are NOT stored here. Set ARC1_API_KEYS via `cf set-env`; separate
 # API-key and strict PP instances are recommended, while mixed mode is supported.
 #
-# See docs/deployment-best-practices.md for architecture guidance.
+# See docs_page/deployment-best-practices.md for architecture guidance.
 # See docs_page/btp-cloud-foundry-deployment.md for step-by-step BTP deployment.
 
 # ──────────────────────────────────────────────────────────────────────
@@ -19,7 +19,9 @@ applications:
     docker:
       image: ghcr.io/arc-mcp/arc-1:latest
     instances: 1
-    memory: 256M
+    # Keep this Docker-path allocation and NODE_OPTIONS below in lockstep.
+    # The shipped MTA uses the Node.js buildpack's adaptive policy instead.
+    memory: 512M
     disk_quota: 512M
     health-check-type: http
     health-check-http-endpoint: /health
@@ -33,6 +35,9 @@ applications:
       SAP_SYSTEM_TYPE: "auto"
       # MCP transport (CF sets PORT env var automatically)
       SAP_TRANSPORT: "http-streamable"
+      # Docker bypasses the buildpack's OPTIMIZE_MEMORY start command. Reserve
+      # 25% of the 512M container for native/HTTP/XML/serialization memory.
+      NODE_OPTIONS: "--max-old-space-size=384"
       # BTP Destination Service (reads credentials from destination config)
       SAP_BTP_DESTINATION: "SAP_TRIAL"
       # Principal Propagation (per-user SAP auth)
@@ -45,6 +50,7 @@ applications:
       SAP_ALLOW_WRITES: "false"
       SAP_ALLOW_DATA_PREVIEW: "false"
       SAP_ALLOW_FREE_SQL: "false"
+      SAP_BLOCKED_DATA_SOURCES: ""
       SAP_ALLOW_TRANSPORT_WRITES: "false"
       SAP_ALLOW_GIT_WRITES: "false"
       # Experimental read-only UI. Keep disabled unless explicitly testing it.
@@ -55,8 +61,13 @@ applications:
       # ARC1_ALLOWED_ORIGINS: "https://your-ui.example.com"
       # Logging
       SAP_VERBOSE: "true"
+      # Experimental destination-discovered multi-target is intentionally not
+      # configured in this generic single-target manifest. Use the reviewed MTA
+      # profile in docs_page/multi-target-setup.md; it also creates XSUAA role
+      # collections and documents the required Basic one-process/non-rolling
+      # operator procedure. A descriptor cannot prevent process overlap.
     services:
       - arc1-connectivity
       - arc1-destination
-      # - arc1-xsuaa       # Uncomment for XSUAA OAuth
+      # - arc1-xsuaa       # Required for experimental multi-target; optional otherwise
       # - arc1-auditlog    # Uncomment for BTP Audit Log

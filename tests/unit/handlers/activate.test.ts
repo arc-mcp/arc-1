@@ -11,6 +11,12 @@ import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 
+const { buildBatchActivationStatuses, formatBatchActivationStatuses } = await import(
+  '../../../src/handlers/activate.js'
+);
+const devtools = await import('../../../src/adt/devtools.js');
+const objects = ['ZFIRST', 'ZFIRST2'].map((name) => ({ type: 'INTF', name, url: `/sap/bc/adt/oo/interfaces/${name}` }));
+
 describe('SAPActivate handler', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -824,5 +830,165 @@ describe('SAPActivate handler', () => {
       expect(result.content[0]?.text).toContain('Warnings:');
       expect(result.content[0]?.text).toContain('Consider using CDS view entity');
     });
+  });
+
+  /**
+   * Server-driven objects (SDO) route via the registry href, not objectBasePath. Moved here from
+   * write-create-batch.test.ts: these are SAPActivate tests, and that suite was at its size budget.
+   */
+  describe('SAPActivate — server-driven objects', () => {
+    type FetchCall = [string | URL, { method?: string; body?: string }];
+    const callMatching = (method: string, pathname: string): FetchCall | undefined =>
+      (mockFetch.mock.calls as unknown as FetchCall[]).find(
+        (call) => (call[1]?.method ?? 'GET') === method && String(call[0]).includes(pathname),
+      );
+
+    it('SAPActivate routes a server-driven type through the registry URL', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+      });
+      // Routing worked iff the activation request referenced the SDO URL (no objectBasePath throw).
+      const activation = callMatching('POST', '/sap/bc/adt/activation');
+      expect(activation).toBeDefined();
+      expect(activation?.[1].body).toContain('/sap/bc/adt/ddic/desd/ZARC1_SDO');
+    });
+
+    it('SAPActivate returns the release gate error when discovery shows the collection is absent', async () => {
+      const client = createClient();
+      (client.http as unknown as { hasDiscoveryData(): boolean }).hasDiscoveryData = () => true;
+      (client.http as unknown as { discoveryAcceptFor(p: string): string | undefined }).discoveryAcceptFor = () =>
+        undefined;
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        type: 'DESD',
+        name: 'ZARC1_SDO',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not advertise ADT support');
+      expect(callMatching('POST', '/sap/bc/adt/activation')).toBeUndefined();
+    });
+
+    it('batch SAPActivate routes a server-driven type through the registry URL, never the program path', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        objects: [{ type: 'DESD', name: 'ZARC1_SDO' }],
+      });
+      const activation = callMatching('POST', '/sap/bc/adt/activation');
+      expect(activation).toBeDefined();
+      // The bug: objectBasePath's default arm maps unknown non-slash types to the program path,
+      // so a batch entry silently activated /sap/bc/adt/programs/programs/ZARC1_SDO.
+      expect(activation?.[1].body).not.toContain('/sap/bc/adt/programs/programs/');
+      expect(activation?.[1].body).toContain('/sap/bc/adt/ddic/desd/ZARC1_SDO');
+    });
+
+    it('batch SAPActivate gates a server-driven type on discovery like the single-object path', async () => {
+      const client = createClient();
+      (client.http as unknown as { hasDiscoveryData(): boolean }).hasDiscoveryData = () => true;
+      (client.http as unknown as { discoveryAcceptFor(p: string): string | undefined }).discoveryAcceptFor = () =>
+        undefined;
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        objects: [{ type: 'DESD', name: 'ZARC1_SDO' }],
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('does not advertise ADT support');
+      expect(callMatching('POST', '/sap/bc/adt/activation')).toBeUndefined();
+    });
+
+    it('batch SAPActivate still routes non-SDO types normally', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', {
+        action: 'activate',
+        objects: [{ type: 'PROG', name: 'ZARC1_PROG' }],
+      });
+      const activation = callMatching('POST', '/sap/bc/adt/activation');
+      expect(activation?.[1].body).toContain('/sap/bc/adt/programs/programs/ZARC1_PROG');
+    });
+  });
+});
+
+describe('batch activation status attribution', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.resetAllMocks();
+  });
+  it.each(['', '/source/main#start=3,1', '/'])('matches a diagnostic at an object boundary: %s', (suffix) => {
+    const result = buildBatchActivationStatuses(objects, {
+      success: false,
+      messages: ['Broken second object'],
+      details: [{ severity: 'error', text: 'Broken second object', uri: `${objects[1].url.toLowerCase()}${suffix}` }],
+    });
+    expect(result.map((row) => row.status)).toEqual(['unknown', 'error']);
+    expect(result[0].messages).toEqual([]);
+    expect(result[1].messages.join()).toContain('Broken second object');
+  });
+  it('keeps warnings without implying successful activation', () => {
+    const result = buildBatchActivationStatuses(objects, {
+      success: false,
+      messages: [],
+      details: [
+        { severity: 'warning', text: 'Own warning', uri: objects[0].url },
+        { severity: 'error', text: 'Cancelled' },
+      ],
+    });
+    expect(result[0]).toMatchObject({ status: 'unknown' });
+    expect(result[0].messages.join()).toContain('Own warning');
+    expect(result[0].messages.join()).not.toContain('Cancelled');
+    expect(formatBatchActivationStatuses(result)).toContain('ZFIRST (INTF): unknown');
+  });
+  it('retains successful and warning outcomes after confirmed batch success', () => {
+    const result = buildBatchActivationStatuses(objects, {
+      success: true,
+      messages: [],
+      details: [{ severity: 'warning', text: 'Warning', uri: objects[1].url }],
+    });
+    expect(result.map((row) => row.status)).toEqual(['active', 'warning']);
+  });
+  it.each([true, false])('retains flat-only global messages (success=%s)', async (success) => {
+    mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+    vi.spyOn(devtools, 'activateBatch').mockResolvedValue({ success, messages: ['Global status'], details: [] });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', { objects });
+    expect(result.isError === true).toBe(!success);
+    expect(result.content[0].text.match(/Global status/g)).toHaveLength(1);
+    expect(result.content[0].text).toContain('Messages: Global status');
+    expect(result.content[0].text).toContain(`ZFIRST (INTF): ${success ? 'active' : 'unknown'}`);
+  });
+  it.each(['info', 'warning'] as const)(
+    'retains global %s details and unrelated flat messages without duplicates',
+    async (severity) => {
+      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      vi.spyOn(devtools, 'activateBatch').mockResolvedValue({
+        success: false,
+        messages: ['Own error', 'Global detail', 'Additional status', 'Additional status'],
+        details: [
+          { severity: 'error', text: 'Own error', uri: objects[1].url },
+          { severity, text: 'Global detail' },
+        ],
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', { objects });
+      for (const message of ['Own error', 'Global detail', 'Additional status']) {
+        expect(result.content[0].text.split(message)).toHaveLength(2);
+      }
+      expect(result.content[0].text).toContain('ZFIRST (INTF): unknown');
+      expect(result.content[0].text).toContain('ZFIRST2 (INTF): error');
+    },
+  );
+
+  it('shows a global cancellation once without attaching it to the first object', async () => {
+    mockFetch.mockImplementation(async (url, options) =>
+      mockResponse(
+        200,
+        options?.method === 'POST' && new URL(String(url)).pathname === '/sap/bc/adt/activation'
+          ? '<messages><msg severity="error" shortText="Activation was cancelled."/></messages>'
+          : '',
+        { 'x-csrf-token': 'T' },
+      ),
+    );
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPActivate', { objects });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text.match(/Activation was cancelled\./g)).toHaveLength(1);
+    expect(result.content[0].text).toContain('ZFIRST (INTF): unknown');
+    expect(result.content[0].text).toContain('ZFIRST2 (INTF): unknown');
   });
 });

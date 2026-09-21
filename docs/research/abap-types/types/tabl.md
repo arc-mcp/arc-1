@@ -95,3 +95,34 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 - Consider sunsetting the `STRU/DS` legacy alias one minor release after v0.8.0 once telemetry confirms no real callers. (Not urgent.)
 - **Breaking change**: none from current state.
 - **Test gap closed**: integration tests in `tests/integration/adt.integration.test.ts` now cover `resolveTablObjectUrlForWrite` on a4h; unit tests in `tests/unit/adt/client.test.ts` and `tests/unit/handlers/intent.test.ts` mock the search response and discovery state to exercise the NW 7.50 refusal path.
+
+
+## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
+
+This dated section concerns read-only relationship roots, not new SAPRead operations, writes, or a global slash alias. The metadata root and `adtcore:type` attribute below were retained from an actual metadata **GET**, not a create template. Namespace prefixes are preserved. Authors, descriptions and unrelated fields were removed; identity values were not invented or rewritten.
+
+### TABL/DT
+
+- Observed object: `ZABAPGIT`; GET `/sap/bc/adt/ddic/tables/zabapgit`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `blue:blueSource`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/tabl-dt.json) also preserves one observed WUL edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<blue:blueSource adtcore:name="ZABAPGIT" adtcore:type="TABL/DT" adtcore:version="active" xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%24tmp" adtcore:type="DEVC/K" adtcore:name="$TMP"/>
+</blue:blueSource>
+```
+
+### TABL/DS
+
+- Observed object: `/BOBF/S_FRW_ACTION`; GET `/sap/bc/adt/ddic/structures/%2fbobf%2fs_frw_action`.
+- Recorded: 2026-09-09T22:07:49.315Z; metadata QName: `blue:blueSource`.
+- [Sanitized wire fixture](../../../../tests/fixtures/relations/tabl-ds.json) also preserves one observed ENV edge and original-body SHA-256 values. It is a projection, not a complete network.
+
+```xml
+<blue:blueSource adtcore:name="/BOBF/S_FRW_ACTION" adtcore:type="TABL/DS" adtcore:version="active" xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core">
+<adtcore:packageRef adtcore:uri="/sap/bc/adt/packages/%2fbobf%2fframework" adtcore:type="DEVC/K" adtcore:name="/BOBF/FRAMEWORK"/>
+</blue:blueSource>
+```
+
+Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.

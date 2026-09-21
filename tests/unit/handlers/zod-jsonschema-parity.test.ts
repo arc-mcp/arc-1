@@ -20,6 +20,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import { getToolSchema } from '../../../src/handlers/schemas.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { features, fullConfig } from './handler-test-config.js';
@@ -78,26 +79,41 @@ const ANY_NODE = '{}';
  * throwing on `.transform()` fields (e.g. SAPContext.siblingMaxCandidates) — those emit `any` and
  * are skipped below, since a transform has no JSON-Schema type to compare against.
  */
-function generatedProps(tool: string, btp: boolean): Record<string, unknown> {
+function generatedProps(tool: string, btp: boolean, relationsAllowed: boolean): Record<string, unknown> {
   const schema = getToolSchema(tool, btp, true);
   if (!schema) throw new Error(`getToolSchema returned undefined for ${tool} (${btp ? 'btp' : 'onprem'})`);
   const json = z.toJSONSchema(schema, { unrepresentable: 'any' }) as JsonNode;
-  return (json.properties as Record<string, unknown>) ?? {};
+  const props = (json.properties as Record<string, JsonNode>) ?? {};
+  if (tool === 'SAPNavigate' && !relationsAllowed) {
+    // Only the conditional action/fields are intentionally absent from the denied wire schema.
+    const actions = props.action!.enum as string[];
+    expect(actions).toContain('relations');
+    props.action = { ...props.action, enum: actions.filter((action) => action !== 'relations') };
+    for (const field of ['direction', 'depth', 'expandPackages']) delete props[field];
+  }
+  return props;
 }
 
-function handWrittenProps(tool: string, btp: boolean): Record<string, unknown> | null {
+function handWrittenProps(tool: string, btp: boolean, relationsAllowed: boolean): Record<string, unknown> | null {
   // features() = all backends available, so feature-gated tools (SAPGit) are registered.
-  const def = getToolDefinitions(fullConfig(btp), true, features()).find((d) => d.name === tool);
+  const def = getToolDefinitions(
+    { ...fullConfig(btp), denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'] },
+    true,
+    features(),
+    {
+      discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+    },
+  ).find((d) => d.name === tool);
   return def ? (((def.inputSchema as JsonNode).properties as Record<string, unknown>) ?? {}) : null;
 }
 
-describe('Zod ↔ JSON-Schema per-property type parity', () => {
+describe.each([false, true])('Zod ↔ JSON-Schema per-property type parity, relationsAllowed=%s', (relationsAllowed) => {
   for (const tool of TOOLS) {
     for (const btp of [false, true]) {
       it(`${tool} (${btp ? 'btp' : 'onprem'}) property types are reproducible from Zod`, () => {
-        const hand = handWrittenProps(tool, btp);
+        const hand = handWrittenProps(tool, btp, relationsAllowed);
         expect(hand, `${tool} (${btp ? 'btp' : 'onprem'}) not registered under the full config`).not.toBeNull();
-        const gen = generatedProps(tool, btp);
+        const gen = generatedProps(tool, btp, relationsAllowed);
 
         // Only docs/compare keys present on BOTH sides — the key SET is schema-key-sync.test.ts's job.
         // Skip keys zod can't represent (ANY_NODE, i.e. `.transform()` fields): nothing to compare.

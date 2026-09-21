@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DataSourcePolicyError } from '../../../src/adt/data-source-policy.js';
 import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
@@ -12,7 +13,7 @@ vi.mock('undici', async (importOriginal) => {
   return { ...actual, fetch: mockFetch };
 });
 
-const { AdtClient, clampSearchResults } = await import('../../../src/adt/client.js');
+const { AdtClient, clampSearchResults, toTextSearchObjectType } = await import('../../../src/adt/client.js');
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
@@ -35,6 +36,31 @@ function createClient(overrides: Record<string, unknown> = {}): InstanceType<typ
 /** Get headers from a specific fetch call */
 function fetchHeaders(callIndex = 0): Record<string, string> {
   return ((mockFetch.mock.calls[callIndex]?.[1] as RequestInit)?.headers as Record<string, string>) ?? {};
+}
+
+function objectSearchResponse(uri: string, type: string, name: string): Response {
+  return mockResponse(
+    200,
+    `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}" adtcore:packageName="SABAPDEMOS" adtcore:description="fixture"/>
+</adtcore:objectReferences>`,
+  );
+}
+
+function objectSearchResponses(entries: Array<{ uri: string; type: string; name: string }>): Response {
+  return mockResponse(
+    200,
+    `<?xml version="1.0" encoding="utf-8"?>
+<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  ${entries
+    .map(
+      ({ uri, type, name }) =>
+        `<adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}" adtcore:packageName="SABAPDEMOS" adtcore:description="fixture"/>`,
+    )
+    .join('\n  ')}
+</adtcore:objectReferences>`,
+  );
 }
 
 describe('AdtClient', () => {
@@ -630,6 +656,31 @@ describe('AdtClient', () => {
       expect(urls.some((u) => u.includes('/oo/interfaces/ZIF_TEST/source/main/versions'))).toBe(true);
     });
 
+    // DDLS/DCLS hang the feed off the object, not off /source/main — live-probed on a4h (758),
+    // where the /source/main/versions form 404s for both. Their DDIC sibling SRVD does NOT.
+    it('uses the object-level revisions endpoint for DDLS', async () => {
+      const client = createClient();
+      await client.getRevisions('DDLS', 'Z_VIEW');
+      const urls = mockFetch.mock.calls.map((c: any[]) => String(c[0]));
+      expect(urls.some((u) => u.includes('/ddic/ddl/sources/Z_VIEW/versions?'))).toBe(true);
+    });
+
+    it('uses the object-level revisions endpoint for DCLS', async () => {
+      const client = createClient();
+      await client.getRevisions('DCLS', 'Z_ACCESS');
+      const urls = mockFetch.mock.calls.map((c: any[]) => String(c[0]));
+      expect(urls.some((u) => u.includes('/acm/dcl/sources/Z_ACCESS/versions?'))).toBe(true);
+    });
+
+    it('keeps the source/main revisions endpoint for SRVD and BDEF', async () => {
+      const client = createClient();
+      await client.getRevisions('SRVD', 'Z_SRVD');
+      await client.getRevisions('BDEF', 'Z_BDEF');
+      const urls = mockFetch.mock.calls.map((c: any[]) => String(c[0]));
+      expect(urls.some((u) => u.includes('/ddic/srvd/sources/Z_SRVD/source/main/versions'))).toBe(true);
+      expect(urls.some((u) => u.includes('/bo/behaviordefinitions/Z_BDEF/source/main/versions'))).toBe(true);
+    });
+
     it('throws descriptive error for FUNC revisions without group', async () => {
       const client = createClient();
       await expect(client.getRevisions('FUNC', 'Z_MY_FUNC')).rejects.toThrow(/Function group is required/i);
@@ -647,6 +698,22 @@ describe('AdtClient', () => {
       await expect(client.getRevisionSource('https://evil.example/foo')).rejects.toThrow(/\/sap\/bc\/adt\//);
     });
 
+    it.each([
+      '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/programs/%2f..%2fadmin',
+      '/sap/bc/adt/programs/%5c..%5cadmin',
+      '/sap/bc/adt\\..\\sap\\opu\\odata',
+      '/sap/bc/adt/programs/source#fragment',
+      '/sap/bc/adt/programs/source\u0000suffix',
+    ])('rejects unsafe revision URI %j before HTTP dispatch', async (versionUri) => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource(versionUri)).rejects.toThrow(/canonical host-relative ADT path/i);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('returns plain source text for valid revision URI', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(
@@ -660,6 +727,32 @@ describe('AdtClient', () => {
       const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
       expect(calledUrl).toContain('/versions/20260410185851/00000/content');
       expect(fetchHeaders(0).Accept).toBe('text/plain');
+    });
+
+    it('rejects unrelated same-host ADT endpoints before HTTP dispatch', async () => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource('/sap/bc/adt/runtime/dumps')).rejects.toThrow(/VERSIONS response/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('accepts an encoded namespace in a revision object segment', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'CLASS /arc/cl_demo DEFINITION.'));
+      const client = createClient();
+      const path = '/sap/bc/adt/oo/classes/%2FARC%2FCL_DEMO/includes/main/versions/1/00000/content';
+      await expect(client.getRevisionSource(path)).resolves.toContain('/arc/cl_demo');
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('%2FARC%2FCL_DEMO');
+    });
+
+    it.each([
+      '/sap/bc/adt/oo/classes/%252FARC%252FCL_DEMO/includes/main/versions/1/00000/content',
+      '/sap/bc/adt/oo/classes/ZCL_DEMO/includes/main/versions/1%2F00000%2Fcontent',
+    ])('rejects ambiguous encoded separators in revision source path %s', async (path) => {
+      mockFetch.mockClear();
+      const client = createClient();
+      await expect(client.getRevisionSource(path)).rejects.toThrow(/VERSIONS response/);
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -728,8 +821,9 @@ describe('AdtClient', () => {
     });
   });
 
-  describe('class text symbols', () => {
+  describe('text elements (text pool)', () => {
     const SYMBOLS_CT = 'application/vnd.sap.adt.textelements.symbols.v1';
+    const SELECTIONS_CT = 'application/vnd.sap.adt.textelements.selections.v1';
     const LOCK_BODY =
       '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H9</LOCK_HANDLE><CORRNR></CORRNR><IS_LOCAL>X</IS_LOCAL><MODIFICATION_SUPPORT>X</MODIFICATION_SUPPORT></DATA></asx:values></asx:abap>';
 
@@ -786,6 +880,69 @@ describe('AdtClient', () => {
       expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
     });
 
+    it("writeTextElementPart PUTs a program's selection texts with the selections media type", async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+        const u = String(url);
+        const m = (init?.method ?? 'GET').toUpperCase();
+        if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK_BODY));
+        if (u.includes('_action=UNLOCK')) return Promise.resolve(mockResponse(200, ''));
+        if (m === 'PUT') return Promise.resolve(mockResponse(200, ''));
+        return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient();
+      await client.writeTextElementPart('PROG', 'ZHU_CREATE', 'selections', 'P_LGNUM=Warehouse\n', 'EWDK900524');
+      const calls = mockFetch.mock.calls as [string, RequestInit][];
+      const put = calls.find(([, i]) => (i?.method ?? 'GET').toUpperCase() === 'PUT');
+      expect(String(put?.[0])).toContain('/sap/bc/adt/textelements/programs/ZHU_CREATE/source/selections');
+      expect(String(put?.[0])).toContain('corrNr=EWDK900524');
+      const ph = put?.[1]?.headers as Record<string, string>;
+      expect(ph['Content-Type']).toBe(SELECTIONS_CT);
+      expect(ph.Accept).toBe(SELECTIONS_CT);
+      expect(calls.some(([u]) => String(u).includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('getTextElements labels every non-empty part and omits empty bodies', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        const u = String(url);
+        if (u.includes('/source/symbols')) return Promise.resolve(mockResponse(200, ''));
+        if (u.includes('/source/selections')) return Promise.resolve(mockResponse(200, 'P_LGNUM=Warehouse'));
+        return Promise.resolve(mockResponse(200, ''));
+      });
+      const client = createClient();
+      const body = await client.getTextElements('ZHU_CREATE', { objectType: 'PROG' });
+      expect(body).toContain('=== selections ===');
+      expect(body).toContain('P_LGNUM=Warehouse');
+      // Symbols and headings came back empty, so neither is listed.
+      expect(body).not.toContain('=== symbols ===');
+      expect(body).not.toContain('=== headings ===');
+    });
+
+    it('getTextElements reports an empty pool instead of returning nothing', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, ''));
+      const client = createClient();
+      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).resolves.toContain(
+        'No text elements maintained for PROG ZHU_CREATE.',
+      );
+    });
+
+    it('getTextElements rejects an object type that has no text pool', async () => {
+      const client = createClient();
+      await expect(client.getTextElements('ZIF_FOO', { objectType: 'INTF' })).rejects.toThrow(/exist only for/i);
+    });
+
+    it('getTextElements refuses an absent service without calling the broken legacy resource', async () => {
+      const client = createClient();
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['text/plain']]]));
+      mockFetch.mockReset();
+      await expect(client.getTextElements('ZHU_CREATE', { objectType: 'PROG' })).rejects.toThrow(
+        /textelements service/i,
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('fails clean when discovery is loaded but the textelements service is absent (NW 7.50)', async () => {
       const client = createClient();
       // Discovery loaded WITHOUT a textelements/classes collection → capability absent (NW 7.50).
@@ -794,6 +951,80 @@ describe('AdtClient', () => {
       mockFetch.mockResolvedValue(mockResponse(200, 'should-not-be-requested'));
       await expect(client.getClassTextSymbols('ZCL_FOO')).rejects.toThrow(/textelements service/i);
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('function module properties', () => {
+    const fmDoc = (attrs: string) =>
+      `<?xml version="1.0" encoding="utf-8"?><fmodule:abapFunctionModule${attrs} adtcore:name="Z_FM" adtcore:type="FUGR/FF" xmlns:fmodule="http://www.sap.com/adt/functions/fmodules" xmlns:adtcore="http://www.sap.com/adt/core"><atom:link href="source/main" xmlns:atom="http://www.w3.org/2005/Atom"/></fmodule:abapFunctionModule>`;
+
+    it('getFunctionModuleProperties reads the lowercased fmodule resource, letting discovery pick the version', async () => {
+      // No hardcoded Accept: 7.50 serves …fmodules.v2+xml and 758 serves v3 (both live-verified),
+      // so pinning a version here would be an assumption rather than a contract.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, fmDoc(' fmodule:processingType="rfc"')));
+      const client = createClient();
+      const props = await client.getFunctionModuleProperties('ZGRP', 'Z_FM');
+      expect(props.processingType).toBe('rfc');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/sap/bc/adt/functions/groups/zgrp/fmodules/z_fm');
+      expect(fetchHeaders(0).Accept).not.toMatch(/fmodules\.v\d/);
+    });
+  });
+
+  describe('getFunctionGroup pre-7.52 fallback', () => {
+    const PRIMARY = '/objectstructure';
+    const OK_TREE =
+      '<objectStructureElement name="ZGRP" type="FUGR/F"><objectStructureElement name="Z_FM" type="FUGR/FF"/></objectStructureElement>';
+    const FALLBACK_NODES =
+      '<projectexplorer:objectstructure xmlns:projectexplorer="http://www.sap.com/adt/projectexplorer">' +
+      '<projectexplorer:node nodeid="1" isfolder="false" objecttype="FUGR/FF" objectname="Z_FM750"/>' +
+      '<projectexplorer:node nodeid="2" isfolder="false" objecttype="FUGR/I" objectname="LZGRPTOP"/>' +
+      '</projectexplorer:objectstructure>';
+
+    it('uses the per-group objectstructure and issues no fallback request when it succeeds', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, OK_TREE));
+      const client = createClient();
+      const fg = await client.getFunctionGroup('ZGRP');
+      expect(fg.functions).toEqual(['Z_FM']);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain('/functions/groups/ZGRP/objectstructure');
+    });
+
+    it('falls back to the generic repository resource with LOWERCASE params on 404', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes(`/functions/groups/ZGRP${PRIMARY}`)
+            ? mockResponse(404, '<exc:exception><message>does not exist</message></exc:exception>')
+            : mockResponse(200, FALLBACK_NODES),
+        ),
+      );
+      const client = createClient();
+      const fg = await client.getFunctionGroup('ZGRP');
+      expect(fg).toEqual({ name: 'ZGRP', functions: ['Z_FM750'], includes: ['LZGRPTOP'] });
+      const fallbackUrl = String((mockFetch.mock.calls as [string][])[1]?.[0]);
+      expect(fallbackUrl).toContain('/sap/bc/adt/repository/objectstructure');
+      expect(fallbackUrl).toContain('objectname=ZGRP');
+      expect(fallbackUrl).toContain(`objecttype=${encodeURIComponent('FUGR/F')}`);
+    });
+
+    it('propagates a non-404 error without attempting the fallback', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(403, '<exc:exception><message>forbidden</message></exc:exception>'));
+      const client = createClient();
+      await expect(client.getFunctionGroup('ZGRP')).rejects.toBeInstanceOf(AdtApiError);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('surfaces the error when both paths 404', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(404, '<exc:exception><message>does not exist</message></exc:exception>'),
+      );
+      const client = createClient();
+      await expect(client.getFunctionGroup('ZGRP')).rejects.toBeInstanceOf(AdtApiError);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -838,18 +1069,29 @@ describe('AdtClient', () => {
   <dtel:dataElement xmlns:dtel="http://www.sap.com/adt/dictionary/dataelements">
     <dtel:typeKind>domain</dtel:typeKind><dtel:typeName>BUKRS</dtel:typeName>
     <dtel:dataType>CHAR</dtel:dataType><dtel:dataTypeLength>000004</dtel:dataTypeLength><dtel:dataTypeDecimals>000000</dtel:dataTypeDecimals>
-    <dtel:shortFieldLabel>CoCd</dtel:shortFieldLabel><dtel:mediumFieldLabel>Company Code</dtel:mediumFieldLabel>
-    <dtel:longFieldLabel>Company Code</dtel:longFieldLabel><dtel:headingFieldLabel>CoCd</dtel:headingFieldLabel>
+    <dtel:shortFieldLabel>CoCd</dtel:shortFieldLabel><dtel:shortFieldLength>06</dtel:shortFieldLength>
+    <dtel:mediumFieldLabel>Company Code</dtel:mediumFieldLabel><dtel:mediumFieldLength>15</dtel:mediumFieldLength>
+    <dtel:longFieldLabel>Company Code</dtel:longFieldLabel><dtel:longFieldLength>15</dtel:longFieldLength>
+    <dtel:headingFieldLabel>CoCd</dtel:headingFieldLabel><dtel:headingFieldLength>04</dtel:headingFieldLength>
     <dtel:searchHelp>C_T001</dtel:searchHelp><dtel:defaultComponentName>COMP_CODE</dtel:defaultComponentName>
+    <dtel:deactivateInputHistory>true</dtel:deactivateInputHistory>
   </dtel:dataElement>
 </blue:wbobj>`,
         ),
       );
       const client = createClient();
-      const dtel = await client.getDataElement('BUKRS');
+      const dtel = await client.getDataElement('BUKRS', 'inactive');
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/ddic/dataelements/BUKRS?version=inactive',
+      );
       expect(dtel.name).toBe('BUKRS');
       expect(dtel.typeName).toBe('BUKRS');
       expect(dtel.searchHelp).toBe('C_T001');
+      expect(dtel.shortLength).toBe('06');
+      expect(dtel.mediumLength).toBe('15');
+      expect(dtel.longLength).toBe('15');
+      expect(dtel.headingLength).toBe('04');
+      expect(dtel.deactivateInputHistory).toBe(true);
     });
 
     it('getTransaction returns parsed metadata', async () => {
@@ -1088,6 +1330,9 @@ describe('AdtClient', () => {
     it('encodes special characters in search query', async () => {
       const client = createClient();
       await client.searchObject('/NAMESPACE/*', 5);
+      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('query')).toBe('/NAMESPACE/*');
+      expect(params.has('objectType')).toBe(false);
     });
   });
 
@@ -1812,6 +2057,371 @@ describe('AdtClient', () => {
     });
   });
 
+  describe('experimental data-source blocklist', () => {
+    const strictSafety = (blockedDataSources: string[]) => ({
+      ...unrestrictedSafetyConfig(),
+      blockedDataSources,
+    });
+
+    it.each([
+      ['TABLE_CONTENTS', (client: InstanceType<typeof AdtClient>) => client.getTableContents('USR02')],
+      ['TABLE_QUERY', (client: InstanceType<typeof AdtClient>) => client.runTableQuery('USR02')],
+      ['SAPQuery', (client: InstanceType<typeof AdtClient>) => client.runQuery('SELECT * FROM USR02')],
+      [
+        'SAPQuery join with blocked second source',
+        (client: InstanceType<typeof AdtClient>) =>
+          client.runQuery('SELECT * FROM SCARR AS a INNER JOIN USR02 AS b ON a~MANDT = b~MANDT'),
+      ],
+    ])('denies a direct blocked source before any SAP request on %s', async (_label, call) => {
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(call(client)).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['USR02'],
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('uses loaded discovery to refuse missing replacement metadata before table source or data preview', async () => {
+      mockFetch.mockResolvedValue(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      // A non-table entry means discovery is loaded while proving the table collection is absent.
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/ddic/structures', ['text/plain']]]));
+
+      await expect(client.runTableQuery('SCARR')).rejects.toMatchObject({
+        code: 'DATA_POLICY_UNAVAILABLE',
+        sourcePath: ['SCARR'],
+      });
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(true);
+      expect(urls.some((url) => url.includes('/ddic/tables/SCARR/source/main'))).toBe(false);
+      expect(urls.some((url) => url.includes('/datapreview/'))).toBe(false);
+    });
+
+    // Phase 3 invariant: the identifier ARC-1 authorizes is byte-for-byte the identifier it sends.
+    // The old builder stripped anything outside [\w/], so `USR02$` was checked as USR02$ and
+    // executed as USR02. Identifier handling must not depend on whether the blocklist is active.
+    it('with the blocklist off, executes the exact canonical identity', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+
+      await client.runTableQuery('usr02$');
+
+      const post = mockFetch.mock.calls.find((call) => String(call[0]).includes('/datapreview/freestyle'));
+      expect(String(post?.[1]?.body)).toBe('SELECT * FROM USR02$');
+    });
+
+    it('with the blocklist on, authorizes that same exact identity', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(objectSearchResponses([]));
+      const client = createClient({ safety: strictSafety(['SCARR']) });
+
+      // Unresolvable here (the mocked search returns nothing), which is correct fail-closed
+      // behaviour. What this asserts is the identity the policy was handed: USR02$, not USR02.
+      await expect(client.runTableQuery('usr02$')).rejects.toMatchObject({ code: 'DATA_LINEAGE_UNRESOLVED' });
+
+      const searchUrl = mockFetch.mock.calls
+        .map((call) => String(call[0]))
+        .find((url) => url.includes('/repository/informationsystem/search'));
+      expect(decodeURIComponent(String(searchUrl))).toContain('USR02$');
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+
+    it('does not strip characters from a TABLE_CONTENTS entity name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+
+      await client.getTableContents('usr02$');
+
+      const url = mockFetch.mock.calls.map((call) => String(call[0])).find((u) => u.includes('/datapreview/ddic'));
+      expect(url).toContain('ddicEntityName=USR02%24');
+    });
+
+    it.each([
+      ['TABLE_QUERY', (c: InstanceType<typeof AdtClient>) => c.runTableQuery('US R02')],
+      ['TABLE_CONTENTS', (c: InstanceType<typeof AdtClient>) => c.getTableContents('T000; DROP')],
+    ])('refuses an identifier that would need rewriting on %s', async (_label, call) => {
+      mockFetch.mockReset();
+      const client = createClient({ safety: strictSafety([]) });
+      await expect(call(client)).rejects.toThrow(/not an exact technical name/);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    // ── One decision per logical request (no cross-request cache) ──────────────
+    describe('batched authorization', () => {
+      const chunks = [
+        "SELECT * FROM SCARR WHERE CARRID IN ('A','B')",
+        "SELECT * FROM SCARR WHERE CARRID IN ('C','D')",
+        "SELECT * FROM SCARR WHERE CARRID IN ('E','F')",
+      ];
+
+      const allowMocks = () => {
+        mockFetch.mockReset();
+        mockFetch.mockImplementation(async (url: string) => {
+          const u = String(url);
+          if (u.includes('/repository/informationsystem/search')) {
+            return objectSearchResponses([{ uri: '/sap/bc/adt/ddic/tables/scarr', type: 'TABL/DT', name: 'SCARR' }]);
+          }
+          if (u.includes('/ddic/tables/')) {
+            return mockResponse(200, 'define table scarr { key mandt : abap.clnt; }', { 'x-csrf-token': 'T' });
+          }
+          return mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' });
+        });
+      };
+
+      it('resolves lineage once for N chunks and posts each chunk', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        await client.runQueryBatch(chunks, 100);
+
+        const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+        // One search and one table-source read for the single distinct source across all chunks.
+        expect(urls.filter((u) => u.includes('/repository/informationsystem/search'))).toHaveLength(1);
+        expect(urls.filter((u) => u.includes('/ddic/tables/'))).toHaveLength(1);
+        // …but every chunk still executes.
+        expect(urls.filter((u) => u.includes('/datapreview/freestyle'))).toHaveLength(chunks.length);
+      });
+
+      it('covers the union of all chunk sources, not just the first chunk', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        // USR02 appears ONLY in the last chunk; it must still deny the whole batch.
+        await expect(client.runQueryBatch([...chunks, 'SELECT * FROM USR02'], 100)).rejects.toMatchObject({
+          code: 'DATA_SOURCE_BLOCKED',
+          sourcePath: ['USR02'],
+        });
+
+        // Direct block short-circuits before any SAP call at all.
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('makes zero SAP calls when any chunk names a directly blocked source', async () => {
+        mockFetch.mockReset();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        await expect(client.runQueryBatch(['SELECT * FROM USR02'], 100)).rejects.toMatchObject({
+          code: 'DATA_SOURCE_BLOCKED',
+        });
+        expect(mockFetch).not.toHaveBeenCalled();
+      });
+
+      it('bounds the whole batch with ONE shared response-memory budget', async () => {
+        // #739 bounds data-preview response memory per logical request. The batch must share a
+        // single scope, or N chunks would each get a fresh budget and together exceed the limit a
+        // single response may consume.
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        const postSpy = vi.spyOn(client.http, 'post');
+
+        await client.runQueryBatch(chunks, 100);
+
+        const budgets = postSpy.mock.calls
+          .filter((call) => String(call[0]).includes('/datapreview/freestyle'))
+          .map((call) => (call[4] as { responseBudget?: unknown } | undefined)?.responseBudget);
+
+        expect(budgets).toHaveLength(chunks.length);
+        expect(budgets.every((budget) => budget !== undefined)).toBe(true);
+        // Same object for every chunk — cumulative, not reset per chunk.
+        expect(new Set(budgets).size).toBe(1);
+      });
+
+      it('re-resolves lineage on a second request: no decision survives the first', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+
+        await client.runQueryBatch(['SELECT * FROM SCARR'], 100);
+        const afterFirst = mockFetch.mock.calls.filter((c) =>
+          String(c[0]).includes('/repository/informationsystem/search'),
+        ).length;
+
+        await client.runQueryBatch(['SELECT * FROM SCARR'], 100);
+        const afterSecond = mockFetch.mock.calls.filter((c) =>
+          String(c[0]).includes('/repository/informationsystem/search'),
+        ).length;
+
+        // A cache would make the second request cost nothing; there is deliberately none.
+        expect(afterFirst).toBe(1);
+        expect(afterSecond).toBe(2);
+      });
+
+      it('runQuery and runQueryWithMetrics are a batch of one', async () => {
+        allowMocks();
+        const client = createClient({ safety: strictSafety(['USR02']) });
+        await client.runQuery('SELECT * FROM SCARR');
+        const first = mockFetch.mock.calls.filter((c) => String(c[0]).includes('/datapreview/freestyle')).length;
+        expect(first).toBe(1);
+
+        const withMetrics = await client.runQueryWithMetrics('SELECT * FROM SCARR');
+        expect(withMetrics.columns.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('keeps empty-list behavior byte-for-byte and performs no metadata lookup', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient({ safety: strictSafety([]) });
+      await client.runQuery('SELECT * FROM SCARR');
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(false);
+      expect(urls.some((url) => url.includes('/ddl/dependencies/graphdata'))).toBe(false);
+      expect(urls.some((url) => url.includes('/datapreview/freestyle'))).toBe(true);
+    });
+
+    it('rejects filtered DDIC preview before any request while strict analysis is active', async () => {
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.getTableContents('SCARR', 10, "CARRID = 'LH'")).rejects.toMatchObject({
+        code: 'DATA_SQL_UNSUPPORTED',
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'SELECT * FROM (lv_table)',
+      'SELECT * FROM SCARR WHERE CARRID = @lv_carrid',
+      'SELECT * FROM SCARR. DELETE FROM USR02',
+    ])('returns DATA_SQL_UNSUPPORTED before SAP for unsupported SQL: %s', async (sql) => {
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.runQuery(sql)).rejects.toMatchObject({
+        code: 'DATA_SQL_UNSUPPORTED',
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('allows an unrelated static table query only after exact lookup and replacement inspection', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('/repository/informationsystem/search')) {
+          return Promise.resolve(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
+        }
+        if (url.includes('/ddic/tables/SCARR/source/main')) {
+          return Promise.resolve(mockResponse(200, 'define table scarr { key mandt : abap.clnt; }'));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.runQuery('SELECT * FROM SCARR')).resolves.toMatchObject({ columns: expect.any(Array) });
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(true);
+      expect(urls.some((url) => url.includes('/ddic/tables/SCARR/source/main'))).toBe(true);
+      expect(urls.some((url) => url.includes('/datapreview/freestyle'))).toBe(true);
+    });
+
+    it('denies a blocked transitive CDS table using the live graph before the data POST', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('/repository/informationsystem/search')) {
+          return Promise.resolve(
+            objectSearchResponse(
+              '/sap/bc/adt/ddic/ddl/sources/DEMO_CDS_SUMDIST/source/main#name=DEMO_CDS_SUMDIST',
+              'STOB/DO',
+              'DEMO_CDS_SUMDIST',
+            ),
+          );
+        }
+        if (url.includes('/ddl/dependencies/graphdata')) {
+          return Promise.resolve(mockResponse(200, loadFixture('cds-dependency-graph-758.xml')));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['SPFLI']) });
+      client.http.setDiscoveryMap(
+        new Map([
+          ['/sap/bc/adt/ddic/ddl/dependencies/graphdata', ['application/vnd.sap.adt.ddl.SQLDependencyModel.v3+xml']],
+        ]),
+      );
+      await expect(client.runQuery('SELECT * FROM DEMO_CDS_SUMDIST')).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
+      });
+      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
+      expect(
+        urls.some((url) => url.includes('ddlsourceName=DEMO_CDS_SUMDIST') && url.includes('addMetrics=false')),
+      ).toBe(true);
+      expect(urls.some((url) => url.includes('/datapreview/'))).toBe(false);
+    });
+
+    it('resolves decorated NW 7.50 entity and DDLS search results before reading the old graph', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('/repository/informationsystem/search')) {
+          return Promise.resolve(
+            objectSearchResponses([
+              {
+                uri: '/sap/bc/adt/vit/wb/object_type/stobdo/object_name/DEMO_CDS_SUMDIST',
+                type: 'STOB/DO',
+                name: 'DEMO_CDS_SUMDIST (Entity)',
+              },
+              {
+                uri: '/sap/bc/adt/ddic/ddl/sources/demo_cds_sumdist',
+                type: 'DDLS/DF',
+                name: 'DEMO_CDS_SUMDIST (Data Definition)',
+              },
+            ]),
+          );
+        }
+        if (url.includes('/ddl/dependencies/graphdata')) {
+          return Promise.resolve(mockResponse(200, loadFixture('cds-dependency-graph-750.xml')));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['SPFLI']) });
+      client.http.setDiscoveryMap(
+        new Map([['/sap/bc/adt/ddic/ddl/dependencies/graphdata', ['application/vnd.sap.adt.elementinfo+xml']]]),
+      );
+      await expect(client.runQuery('SELECT * FROM DEMO_CDS_SUMDIST')).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
+      });
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+
+    it('expands a DDIC replacement object before allowing the request', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockImplementation((url: string) => {
+        if (url.includes('query=DEMO_SUMDIST')) {
+          return Promise.resolve(
+            objectSearchResponse('/sap/bc/adt/ddic/tables/DEMO_SUMDIST', 'TABL/DT', 'DEMO_SUMDIST'),
+          );
+        }
+        if (url.includes('/ddic/tables/DEMO_SUMDIST/source/main')) {
+          return Promise.resolve(
+            mockResponse(200, "@AbapCatalog.replacementObject: 'demo_cds_sumdist'\ndefine table demo_sumdist"),
+          );
+        }
+        if (url.includes('query=DEMO_CDS_SUMDIST')) {
+          return Promise.resolve(
+            objectSearchResponse(
+              '/sap/bc/adt/ddic/ddl/sources/DEMO_CDS_SUMDIST/source/main#name=DEMO_CDS_SUMDIST',
+              'STOB/DO',
+              'DEMO_CDS_SUMDIST',
+            ),
+          );
+        }
+        if (url.includes('/ddl/dependencies/graphdata')) {
+          return Promise.resolve(mockResponse(200, loadFixture('cds-dependency-graph-758.xml')));
+        }
+        return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      });
+      const client = createClient({ safety: strictSafety(['SCARR']) });
+      await expect(client.runTableQuery('DEMO_SUMDIST')).rejects.toMatchObject({
+        sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUMDIST', 'SCARR'],
+      });
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+
+    it('fails closed for a classic view and does not reach data preview', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        objectSearchResponse('/sap/bc/adt/vit/wb/object_type/viewdv/V_USR_NAME', 'VIEW/DV', 'V_USR_NAME'),
+      );
+      const client = createClient({ safety: strictSafety(['USR02']) });
+      await expect(client.runQuery('SELECT * FROM V_USR_NAME')).rejects.toBeInstanceOf(DataSourcePolicyError);
+      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+    });
+  });
+
   describe('result-limit clamping (unbounded count DoS guard)', () => {
     it('clampSearchResults bounds to [1, 1000] and falls back on invalid input', () => {
       expect(clampSearchResults(50, 100)).toBe(50);
@@ -1831,12 +2441,52 @@ describe('AdtClient', () => {
       expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
     });
 
-    it('searchSource clamps an oversized maxResults in the query string', async () => {
+    it('searchSource clamps an oversized limit into the paging window', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
       const client = createClient();
       await client.searchSource('foo', 999_999);
-      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain('maxResults=1000');
+      // textsearch has no maxResults parameter — the limit becomes the 1-based paging window.
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('searchFromIndex=1');
+      expect(url).toContain('searchToIndex=1000');
+      expect(url).not.toContain('maxResults=');
+    });
+
+    it('searchSource targets the lowercase textsearch collection', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchSource('foo');
+      // `textSearch` (camelCase) is answered with 404 "No suitable resource found".
+      expect(String(mockFetch.mock.calls[0]?.[0] ?? '')).toContain(
+        '/sap/bc/adt/repository/informationsystem/textsearch?',
+      );
+    });
+
+    it('searchSource sends the short object type the filter matches on', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchSource('foo', 10, 'CLAS/OC', 'ZDEMO_PKG');
+      // The slash form is accepted with HTTP 200 but silently returns zero results.
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('objectType=CLAS');
+      expect(url).not.toContain('CLAS%2FOC');
+      expect(url).toContain('packageName=ZDEMO_PKG');
+    });
+
+    it('maps the live-advertised function group and function module types to distinct filters', async () => {
+      expect(toTextSearchObjectType('FUGR/F')).toBe('FUGR');
+      expect(toTextSearchObjectType('FUGR/FF')).toBe('FUNC');
+
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, '<empty/>'));
+      const client = createClient();
+      await client.searchSource('foo', 10, 'FUGR/FF');
+      const url = String(mockFetch.mock.calls[0]?.[0] ?? '');
+      expect(url).toContain('objectType=FUNC');
+      expect(url).not.toContain('objectType=FUGR');
     });
 
     it('getTableContents (TABLE_CONTENTS) clamps rowNumber to <= 10000 and NaN to the default', async () => {
@@ -1852,6 +2502,25 @@ describe('AdtClient', () => {
       await client.getTableContents('MARA', Number.NaN);
       const nan = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/ddic'));
       expect(String(nan?.[0])).toContain('rowNumber=100');
+    });
+
+    it('runQuery clamps rowNumber at the private freestyle sink', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      await client.runQuery('SELECT * FROM T000', 999_999);
+      const postCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/datapreview/freestyle'));
+      expect(String(postCall?.[0])).toContain('rowNumber=10000');
+    });
+
+    it('routes every known data-preview endpoint through the required-budget sink', () => {
+      const source = readFileSync(new URL('../../../src/adt/client.ts', import.meta.url), 'utf8');
+      const endpointLiterals = source.match(/\/sap\/bc\/adt\/datapreview\/(?:ddic|freestyle)/g) ?? [];
+
+      expect(endpointLiterals).toEqual(['/sap/bc/adt/datapreview/ddic', '/sap/bc/adt/datapreview/freestyle']);
+      expect(source).not.toMatch(/this\.http\.post\([\s\S]{0,160}\/sap\/bc\/adt\/datapreview\//);
+      expect(source).toContain('private async postDataPreview(');
+      expect(source).toContain('budget: DataResponseBudget');
     });
   });
 
@@ -2038,7 +2707,7 @@ describe('AdtClient', () => {
 
     it('getBspAppStructure returns files and folders', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       const nodes = await client.getBspAppStructure('zapp_booking');
       expect(nodes).toHaveLength(2);
@@ -2048,9 +2717,20 @@ describe('AdtClient', () => {
       expect(nodes[1].name).toBe('i18n');
     });
 
+    it('getBspAppStructure rejects a file response with the requested ADT path', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'file content', { 'content-type': 'text/plain' }));
+      const client = createClient();
+      await expect(client.getBspAppStructure('zapp_booking', 'manifest.json')).rejects.toMatchObject({
+        statusCode: 400,
+        path: `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent('ZAPP_BOOKING/manifest.json')}/content`,
+        message: expect.stringContaining('file, not a folder'),
+      });
+    });
+
     it('getBspAppStructure URL-encodes the app path with %2f', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       await client.getBspAppStructure('zapp_booking', '/i18n');
       const url = mockFetch.mock.calls[0][0] as string;
@@ -2067,6 +2747,17 @@ describe('AdtClient', () => {
       expect(content).toContain('sap.app');
     });
 
+    it('getBspFileContent rejects a folder response with the requested ADT path', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
+      const client = createClient();
+      await expect(client.getBspFileContent('zapp_booking', 'i18n')).rejects.toMatchObject({
+        statusCode: 400,
+        path: `/sap/bc/adt/filestore/ui5-bsp/objects/${encodeURIComponent('ZAPP_BOOKING/i18n')}/content`,
+        message: expect.stringContaining('folder, not a file'),
+      });
+    });
+
     it('getBspFileContent URL-encodes appName/filePath as single segment', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, 'file content'));
@@ -2078,7 +2769,7 @@ describe('AdtClient', () => {
 
     it('getBspAppStructure normalizes subPath without leading slash', async () => {
       mockFetch.mockReset();
-      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml));
+      mockFetch.mockResolvedValue(mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml' }));
       const client = createClient();
       await client.getBspAppStructure('zapp_booking', 'i18n');
       const url = mockFetch.mock.calls[0][0] as string;
@@ -2095,6 +2786,36 @@ describe('AdtClient', () => {
       // Verify no double-slash in the path portion (after the protocol)
       const pathPortion = url.replace('http://', '');
       expect(pathPortion).not.toContain('//');
+    });
+
+    it('legacy BSP structure reads preserve a mixed-case path appended to the app name', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml;type=feed' }),
+      );
+      const client = createClient();
+      await client.getBspAppStructure('zapp_booking/WebContent');
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('ZAPP_BOOKING/WebContent'));
+    });
+
+    it('getBspPathContent identifies folders from the response media type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, bspFolderXml, { 'content-type': 'application/atom+xml;type=feed' }),
+      );
+      const client = createClient();
+      const result = await client.getBspPathContent('zapp_booking', '/WebContent');
+      expect(result.kind).toBe('folder');
+      if (result.kind === 'folder') expect(result.nodes).toHaveLength(2);
+      expect(String(mockFetch.mock.calls[0]?.[0])).toContain(encodeURIComponent('ZAPP_BOOKING/WebContent'));
+    });
+
+    it('getBspPathContent identifies extensionless files from the response media type', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, 'license text', { 'content-type': 'text/plain' }));
+      const client = createClient();
+      const result = await client.getBspPathContent('zapp_booking', 'LICENSE');
+      expect(result).toEqual({ kind: 'file', content: 'license text' });
     });
 
     it('listBspApps returns empty array for empty feed', async () => {

@@ -14,12 +14,12 @@
 #   mbt build
 #   cf deploy mta_archives/arc1-mcp_<version>.mtar -e mta-overrides.mtaext
 #
-# Any property left commented uses the `mta.yaml` value unchanged. The two
-# `SAP_BTP_*_DESTINATION` properties below are the only ones that have to
-# be set — the base `mta.yaml` ships with placeholder destination names so
-# deploying without an override fails fast at startup.
+# Any property left commented uses the `mta.yaml` value unchanged. The base
+# descriptor has no fake SAP destination: configure the single-target
+# block below, or enable the experimental multi-target block and manage marked
+# destinations in the BTP Cockpit.
 #
-# IMPORTANT — an extension can only OVERRIDE a base property, never remove it.
+# IMPORTANT — an extension can ADD or OVERRIDE a property, but never remove one.
 # To turn a base-enabled feature OFF you must write the explicit off-value here;
 # commenting the line out or deleting it just falls back to the `mta.yaml` value.
 # (`SAP_FOO: ~` fails the deploy, and `cf unset-env` is undone by the next
@@ -32,27 +32,55 @@ extends: arc1-mcp
 
 modules:
   - name: arc1-mcp-server
+    # If data-result limits are raised, size this per-process memory together
+    # with them. See docs_page/btp-administration.md#data-preview-ram-sizing.
+    # parameters:
+    #   memory: 1G
     properties:
-      # ── Destinations (REQUIRED override) ─────────────────────────────
+      # ── Single-target /mcp (optional) ────────────────────────────────
       # BasicAuth destination for startup feature probing
       # SAP_BTP_DESTINATION: "my-basic-auth-destination"
 
       # PrincipalPropagation destination for per-user requests (with JWT)
       # SAP_BTP_PP_DESTINATION: "my-pp-destination"
 
+      # ── MCP server identity ──────────────────────────────────────────
+      # Server name advertised in the MCP initialize handshake (default arc-1).
+      # Set a unique name per instance when several ARC-1 deployments target
+      # different SAP systems, so clients can derive a target-specific tool
+      # prefix without numeric collision suffixes.
+      # ARC1_SERVER_NAME: "arc1-erp-dev"
+
+      # Optional model-facing label for clients that replace the handshake name
+      # with an opaque connector ID. Single line, max 160 characters; ignored by
+      # the target-aware instructions on multi-target endpoints.
+      # ARC1_SYSTEM_LABEL: "ERP development (read-only)"
+
       # ── Principal propagation behaviour ──────────────────────────────
-      # Per-user principal propagation (default in mta.yaml: true). Uncomment
-      # the line below to run every SAP call as the shared destination identity
-      # instead. The base `SAP_PP_STRICT: "true"` can stay as it is — it only
-      # warns once PP is off.
+      # The base MTA keeps single-target JWT calls on PP by default. Set false only
+      # for an intentional shared-identity/API-key deployment.
       # SAP_PP_ENABLED: "false"
 
-      # The base MTA uses the recommended strict default: API-key/non-JWT tool
-      # calls are rejected. Set false for supported mixed PP/API-key operation;
+      # The base MTA also keeps strict PP enabled: API-key/non-JWT tool calls
+      # are rejected. Set false for supported mixed PP/API-key operation;
       # JWT calls use PP and API-key calls use the shared destination identity.
-      # Leaving this at the base "true" while adding ARC1_API_KEYS means those
-      # API-key clients are rejected on every tool call.
+      # Leaving this "true" while adding ARC1_API_KEYS means those API-key
+      # clients are rejected on every tool call.
       # SAP_PP_STRICT: "false"
+
+      # ── Experimental multi-target v1 (alternative or side-by-side) ──
+      # Discovers subaccount destinations marked arc1.enabled=true. The routes
+      # are mutation-free regardless of single-target /mcp settings.
+      # ARC1_MULTI_TARGET_ENDPOINTS: "true"
+      # ARC1_CACHE: none
+      # Optional shared BasicAuthentication targets. PP remains recommended.
+      # If enabled, keep arc1-mcp-server parameters.instances at exactly 1;
+      # the base mta.yaml already does so.
+      # ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "true"
+      # Non-default shared-service limits for 1–5 active beta users.
+      # ARC1_AUTH_RATE_LIMIT: "30"
+      # ARC1_MCP_HTTP_RATE_LIMIT: "1000"
+      # ARC1_RATE_LIMIT: "120"
 
       # ── Safety / Authorization ───────────────────────────────────────
       # Enable object mutations (create, update, delete)
@@ -63,6 +91,19 @@ modules:
 
       # Enable freestyle SQL execution
       # SAP_ALLOW_FREE_SQL: "true"
+
+      # Successful data-preview response allowance per complete tool call,
+      # counted after transfer decompression and before string conversion.
+      # Positive integer bytes; default 2097152 (2 MiB). Wide rows can hit it
+      # before the 10,000-row request ceiling.
+      # ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES: "2097152"
+
+      # Process-wide data-result calls admitted through fetch, parse, result
+      # serialization, and terminal audit. Positive integer; default 2.
+      # Raise the byte limit only after benchmarking, and normally lower this
+      # value proportionally so their product remains controlled. Change the
+      # module memory above in the same reviewed deployment when needed.
+      # ARC1_MAX_CONCURRENT_DATA_RESULTS: "2"
 
       # Enable transport mutations (release, create, add to transport).
       # Also requires SAP_ALLOW_WRITES=true.
@@ -86,6 +127,10 @@ modules:
       # through a reverse proxy on a different hostname or under a base-path
       # prefix than the bound CF route.
       # ARC1_PUBLIC_URL: "https://gateway.example.com/arc1"
+      # IMPORTANT: XSUAA must also accept ARC-1's proxy callback on that exact
+      # public URL. Add an arc1-xsuaa resource override like the example near
+      # the bottom of this file. Never use a shared *.hana.ondemand.com or
+      # *.applicationstudio.cloud.sap wildcard.
 
       # ── OAuth Dynamic Client Registration (DCR) ──────────────────────
       # Lifetime of an OAuth DCR `client_id` in seconds. Default: "0" (never
@@ -180,6 +225,15 @@ modules:
     #           parameters:
     #             config:
     #               xsappname: arc1-mcp-prod
+    #
+    # If ARC1_PUBLIC_URL points at a gateway/custom domain, the same resource
+    # override must replace XSUAA's upstream callback list with that exact URL.
+    # Extension maps merge recursively; this list replaces the base list while
+    # preserving the grants and token lifetimes from mta.yaml:
+    #               oauth2-configuration:
+    #                 redirect-uris:
+    #                   - https://gateway.example.com/arc1/oauth/callback
+    #                   - https://gateway.example.com/arc1/oauth/logged-out
 
 # ── Application logging (OFF by default — deprecated service) ───────────
 # SAP Application Logging Service is deprecated (SAP Note 3557260; removed from
@@ -192,3 +246,33 @@ modules:
 # resources:
 #   - name: arc1-application-logs
 #     active: true
+
+# ── BTP Audit Log (OFF by default — optional premium service) ─────────
+# The base descriptor contains the complete X.509 instance and binding config,
+# but keeps the resource inactive. After assigning Audit Log premium quota and
+# an owner for certificate rotation, enable it by adding this resource override
+# to the real mta-overrides.mtaext (merge with any existing `resources:` block):
+# resources:
+#   - name: arc1-auditlog
+#     active: true
+
+# ── Reusing a SHARED Destination / Connectivity instance ────────────────
+# The base mta.yaml declares `arc1-destination` / `arc1-connectivity` as
+# `org.cloudfoundry.managed-service`, and a managed instance is named after its
+# resource. If your landscape's instances are named differently, a deploy creates
+# ADDITIONAL instances rather than reusing them. Subaccount-level destinations
+# still resolve through a new instance, so this usually costs `lite` quota (the
+# deploy fails outright on a subaccount at its limit) — but ARC-1 does lose the
+# targets if the shared instance carries instance-level destinations. Check
+# `cf services` first. An extension cannot change a resource's `type` (mbt
+# rejects `type` in mta.ResourceExt) — it can only repoint a managed resource at
+# a named instance (a sibling of `modules:`):
+# resources:
+#   - name: arc1-destination
+#     parameters:
+#       service-name: my-shared-destination
+# That instance then stays MTA-MANAGED: the deploy creates it if absent, and
+# `cf undeploy --delete-services` would delete it. Use it only if this ARC-1
+# deployment is meant to own the instance. Binding one whose lifecycle belongs
+# to someone else needs `org.cloudfoundry.existing-service` in `mta.yaml`, which
+# this descriptor does not offer — that is a reviewed descriptor change.

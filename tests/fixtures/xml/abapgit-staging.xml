@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<abapgitrepo:objects xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository">
-  <abapgitrepo:object abapgitrepo:type="CLAS" abapgitrepo:name="ZCL_ARC1_TEST" abapgitrepo:package="$TMP" abapgitrepo:path="src/classes/zcl_arc1_test.clas.abap" abapgitrepo:state="M" abapgitrepo:operation="M"/>
-  <abapgitrepo:object abapgitrepo:type="INTF" abapgitrepo:name="ZIF_ARC1_TEST" abapgitrepo:package="$TMP" abapgitrepo:path="src/interfaces/zif_arc1_test.intf.abap" abapgitrepo:state="A" abapgitrepo:operation="A"/>
-</abapgitrepo:objects>
+<!-- Staging response shape derived from abapGit's own ADT backend transformations
+     (ZABAPGIT_ST_REPO_STAGE + ZABAPGIT_ST_REPO_STAGE_OBJECT, abapGit/ADT_Backend).
+     Not a live capture: the a4h trial has no STRUST trust for its remotes, so every stage call
+     there returns the bridge's 421 SSL error instead of a body. Object references carry adtcore
+     attributes, files carry abapgitstaging ones, and the bridge pre-fills author/committer. -->
+<abapgitstaging:abapgitstaging xmlns:abapgitstaging="http://www.sap.com/adt/abapgit/staging"
+                               xmlns:adtcore="http://www.sap.com/adt/core"
+                               xmlns:atom="http://www.w3.org/2005/Atom">
+  <abapgitstaging:unstaged_objects>
+    <abapgitstaging:abapgitobject adtcore:name="ZCL_ARC1_TEST" adtcore:type="CLAS/OC" adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_test" abapgitstaging:wbkey="CLAS">
+      <abapgitstaging:abapgitfile abapgitstaging:name="zcl_arc1_test.clas.abap" abapgitstaging:path="/src/" abapgitstaging:localState="M"/>
+      <abapgitstaging:abapgitfile abapgitstaging:name="zcl_arc1_test.clas.xml" abapgitstaging:path="/src/" abapgitstaging:localState="M"/>
+    </abapgitstaging:abapgitobject>
+    <abapgitstaging:abapgitobject adtcore:name="ZIF_ARC1_TEST" adtcore:type="INTF/OI" adtcore:uri="/sap/bc/adt/oo/interfaces/zif_arc1_test" abapgitstaging:wbkey="INTF">
+      <abapgitstaging:abapgitfile abapgitstaging:name="zif_arc1_test.intf.abap" abapgitstaging:path="/src/" abapgitstaging:localState="A"/>
+    </abapgitstaging:abapgitobject>
+  </abapgitstaging:unstaged_objects>
+  <abapgitstaging:staged_objects/>
+  <abapgitstaging:ignored_objects>
+    <abapgitstaging:abapgitobject adtcore:name="non-code and meta files">
+      <abapgitstaging:abapgitfile abapgitstaging:name=".gitignore" abapgitstaging:path="/" abapgitstaging:remoteState="A"/>
+    </abapgitstaging:abapgitobject>
+  </abapgitstaging:ignored_objects>
+  <abapgitstaging:abapgit_comment abapgitstaging:comment="">
+    <abapgitstaging:author abapgitstaging:name="DEVELOPER" abapgitstaging:email="developer@example.com"/>
+    <abapgitstaging:committer abapgitstaging:name="DEVELOPER" abapgitstaging:email="developer@example.com"/>
+  </abapgitstaging:abapgit_comment>
+</abapgitstaging:abapgitstaging>

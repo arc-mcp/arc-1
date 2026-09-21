@@ -4,11 +4,10 @@
  * Uses `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` for catalog/group/tile management.
  */
 
-import { logger } from '../server/logger.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
-import type { FlpCatalog, FlpGroup, FlpTileInstance, FlpTileResult } from './types.js';
+import type { FlpCatalog, FlpGroup, FlpTileInstance } from './types.js';
 
 export const FLP_SERVICE_PATH = '/sap/opu/odata/UI2/PAGE_BUILDER_CUST';
 
@@ -110,23 +109,14 @@ const CATALOG_PAGE_PREFIX = 'X-SAP-UI2-CATALOGPAGE:';
  * Normalize a catalog ID to domain-only form.
  *
  * listCatalogs returns both `id` (e.g. "X-SAP-UI2-CATALOGPAGE:FOO") and
- * `domainId` (e.g. "FOO"). Functions that build pageId filters expect the
- * domain ID, so we strip the prefix when callers pass the full form.
+ * `domainId` (e.g. "FOO"). Functions that build a pageId expect the domain
+ * ID, so we strip the prefix when callers pass the full form.
  */
 export function normalizeCatalogId(catalogId: string): string {
   if (catalogId.startsWith(CATALOG_PAGE_PREFIX)) {
     return catalogId.slice(CATALOG_PAGE_PREFIX.length);
   }
   return catalogId;
-}
-
-function isAssertionFailedError(err: unknown): boolean {
-  if (!(err instanceof AdtApiError) || err.statusCode !== 500) {
-    return false;
-  }
-  const body = (err.responseBody ?? '').toUpperCase();
-  const msg = err.message.toUpperCase();
-  return body.includes('ASSERTION_FAILED') || msg.includes('ASSERTION_FAILED');
 }
 
 function buildTileConfiguration(tile: FlpTileInput): string {
@@ -208,31 +198,31 @@ export async function listGroups(http: AdtHttpClient, safety: SafetyConfig): Pro
   return parseODataCollection<FlpGroupEntity>(resp.body).map(mapGroup);
 }
 
-export async function listTiles(http: AdtHttpClient, safety: SafetyConfig, catalogId: string): Promise<FlpTileResult> {
+/** Row cap for a single tile listing — `$top` is enforced by the service, so this can truncate. */
+export const FLP_TILE_PAGE_SIZE = 500;
+
+/**
+ * List the tiles of a catalog via the Page → PageChipInstances association.
+ *
+ * Never send a `$filter` to PageChipInstances — not on `pageId`, not on `chipId`.
+ * The data accessor (/UI2/CL_EDM_DA_V06_USAGE) takes the page from the navigation
+ * parent and `assert 1 = 2`s on any select-option but its internal GADGET_ID, so a
+ * filter short-dumps the backend (ST22) on 7.50, 758 and 816 alike.
+ */
+export async function listTiles(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  catalogId: string,
+): Promise<FlpTileInstance[]> {
   checkOperation(safety, OperationType.Read, 'ListFlpTiles');
 
-  const domain = normalizeCatalogId(catalogId);
-  const pageId = `X-SAP-UI2-CATALOGPAGE:${encodeURIComponent(domain)}`;
+  const pageId = `X-SAP-UI2-CATALOGPAGE:${normalizeCatalogId(catalogId)}`;
   const path =
-    `${FLP_SERVICE_PATH}/PageChipInstances?` +
-    `$format=json&$top=500&$select=pageId,instanceId,chipId,title,configuration&$filter=pageId%20eq%20'${pageId}'`;
+    `${FLP_SERVICE_PATH}/Pages('${encodeURIComponent(pageId)}')/PageChipInstances?` +
+    `$format=json&$top=${FLP_TILE_PAGE_SIZE}&$select=pageId,instanceId,chipId,title,configuration`;
 
-  try {
-    const resp = await http.get(path, { Accept: 'application/json' });
-    return { tiles: parseODataCollection<FlpTileEntity>(resp.body).map(mapTile) };
-  } catch (err) {
-    if (isAssertionFailedError(err)) {
-      logger.warn('FLP tile listing hit backend ASSERTION_FAILED; returning empty result', { catalogId });
-      return {
-        tiles: [],
-        backendError:
-          'ASSERTION_FAILED — the SAP backend crashed while reading this catalog. ' +
-          'This is a known SAP issue with certain catalogs. The chipCount in the catalog metadata may show tiles exist, ' +
-          'but they cannot be read via the OData API. Do NOT attempt alternative queries — this is a backend limitation.',
-      };
-    }
-    throw err;
-  }
+  const resp = await http.get(path, { Accept: 'application/json' });
+  return parseODataCollection<FlpTileEntity>(resp.body).map(mapTile);
 }
 
 export async function createCatalog(

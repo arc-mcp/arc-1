@@ -229,7 +229,7 @@ The facade is constructed from the **same `cacheSecurity` context** threaded int
 ### 4.1 Directory entries
 
 `ARC1_PLUGINS=/abs/plugin-dir` resolves `dir/package.json` → `exports['.']` ?? `main` ?? `index.js`,
-then loads as a code plugin. Same fail-fast ownership/permission checks as a `.js` entry. (v1
+then loads as a code plugin. Same fail-fast POSIX ownership/permission checks (or Windows ACL reliance) as a `.js` entry. (v1
 handles `.js` + `.json` only.)
 
 ### 4.2 npm package discovery (CAP-style)

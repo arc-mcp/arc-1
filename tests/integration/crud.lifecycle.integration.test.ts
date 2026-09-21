@@ -154,6 +154,14 @@ describe('CRUD lifecycle', () => {
       await client.writeClassTextSymbols(name, '@MaxLength:20\n001=Hello\n');
       expect(await client.getClassTextSymbols(name)).toContain('001=Hello');
 
+      // Explicit class reads expose SAP's empty selections and heading placeholders.
+      // Writes remain restricted to symbols, independently of those readable resources.
+      expect(await client.getTextElementPart('CLAS', name, 'selections')).toBe('');
+      expect(await client.getTextElementPart('CLAS', name, 'headings')).toContain('listHeader=');
+      await expect(client.writeTextElementPart('CLAS', name, 'selections', '')).rejects.toMatchObject({
+        statusCode: 400,
+      });
+
       // FAILURE PATH: a malformed body (one @MaxLength shared by two symbols) is rejected (406),
       // and the earlier symbol stays intact.
       try {

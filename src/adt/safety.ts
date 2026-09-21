@@ -66,6 +66,8 @@ export interface SafetyConfig {
   allowFreeSQL: boolean;
   allowTransportWrites: boolean;
   allowGitWrites: boolean;
+  /** Experimental exact-name denylist for direct and transitive SQL data sources. */
+  blockedDataSources: string[];
   allowedPackages: string[];
   allowedTransports: string[];
   /** Resolved deny-action patterns from SAP_DENY_ACTIONS. Populated at config-parse time. */
@@ -84,6 +86,7 @@ export function defaultSafetyConfig(): SafetyConfig {
     allowFreeSQL: false,
     allowTransportWrites: false,
     allowGitWrites: false,
+    blockedDataSources: [],
     allowedPackages: ['$TMP'],
     allowedTransports: [],
     denyActions: [],
@@ -98,6 +101,7 @@ export function unrestrictedSafetyConfig(): SafetyConfig {
     allowFreeSQL: true,
     allowTransportWrites: true,
     allowGitWrites: true,
+    blockedDataSources: [],
     allowedPackages: [],
     allowedTransports: [],
     denyActions: [],
@@ -366,6 +370,7 @@ export function deriveUserSafety(serverConfig: SafetyConfig, scopes: string[]): 
     ...serverConfig,
     allowedPackages: [...serverConfig.allowedPackages],
     allowedTransports: [...serverConfig.allowedTransports],
+    blockedDataSources: [...serverConfig.blockedDataSources],
     denyActions: [...serverConfig.denyActions],
   };
 
@@ -466,6 +471,7 @@ export function deriveUserSafetyFromProfile(
     allowGitWrites: and(serverConfig.allowGitWrites, profileSafety.allowGitWrites),
     allowedPackages: intersectList(serverConfig.allowedPackages, profileSafety.allowedPackages),
     allowedTransports: intersectList(serverConfig.allowedTransports, profileSafety.allowedTransports),
+    blockedDataSources: [...new Set([...serverConfig.blockedDataSources, ...(profileSafety.blockedDataSources ?? [])])],
     denyActions: [...new Set([...serverConfig.denyActions, ...(profileSafety.denyActions ?? [])])],
   };
 
@@ -483,6 +489,7 @@ export function describeSafety(config: SafetyConfig): string {
   if (config.allowGitWrites) parts.push('GIT-WRITES');
   if (config.allowedPackages.length > 0) parts.push(`Packages=${displayAllowList(config.allowedPackages)}`);
   if (config.allowedTransports.length > 0) parts.push(`Transports=${displayAllowList(config.allowedTransports)}`);
+  if (config.blockedDataSources.length > 0) parts.push(`BlockedDataSources=${config.blockedDataSources.length}`);
   if (config.denyActions.length > 0) parts.push(`DenyActions=${config.denyActions.length}`);
   return parts.length === 0 ? 'READ-ONLY' : parts.join(', ');
 }

@@ -21,7 +21,7 @@ import {
 import { safeUpdateClassInclude, safeUpdateSource } from '../../adt/crud.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { spliceMethod } from '../../context/method-surgery.js';
-import { cachedFeatures } from '../feature-cache.js';
+import { getCachedFeatures } from '../feature-cache.js';
 import {
   CLASS_WRITE_INCLUDES,
   type ClassWriteInclude,
@@ -115,9 +115,8 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
   }
 
   // Use detected ABAP version from probe if available
-  const abaplintVer = cachedFeatures?.abapRelease
-    ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-    : undefined;
+  const probedAbapRelease = getCachedFeatures()?.abapRelease;
+  const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
 
   // Splice in the new method body
   const spliced = spliceMethod(currentSource, name, method, source, abaplintVer);
@@ -159,7 +158,7 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
       classIncludeUrl(name, resolvedInclude),
       spliced.newSource,
       transport,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
     );
   } else {
     await safeUpdateSource(
@@ -169,7 +168,7 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
       srcUrl,
       spliced.newSource,
       transport,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
     );
   }
   invalidateWrittenObject(type, name);
@@ -276,7 +275,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
         writeUrl,
         spliced,
         transport,
-        cachedFeatures?.abapRelease,
+        getCachedFeatures()?.abapRelease,
       )
     : undefined;
   if (!include) {
@@ -287,7 +286,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
       writeUrl,
       spliced,
       transport,
-      cachedFeatures?.abapRelease,
+      getCachedFeatures()?.abapRelease,
     );
   }
   invalidateWrittenObject(type, name);
@@ -358,7 +357,7 @@ export async function writeActionEditMethodSignature(ctx: SapWriteContext): Prom
     srcUrl,
     spliced,
     transport,
-    cachedFeatures?.abapRelease,
+    getCachedFeatures()?.abapRelease,
   );
   invalidateWrittenObject(type, name);
   return textResult(
@@ -456,7 +455,7 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
     srcUrl,
     spliced,
     transport,
-    cachedFeatures?.abapRelease,
+    getCachedFeatures()?.abapRelease,
   );
   invalidateWrittenObject(type, name);
   const stubNote = isAbstract ? ' (abstract — no IMPL stub inserted)' : '';
@@ -519,7 +518,7 @@ export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<Too
     srcUrl,
     spliced,
     transport,
-    cachedFeatures?.abapRelease,
+    getCachedFeatures()?.abapRelease,
   );
   invalidateWrittenObject(type, name);
   const where = method.implementation ? ' (DEFINITION + IMPLEMENTATION)' : ' (DEFINITION only — was ABSTRACT)';
@@ -608,7 +607,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
     srcUrl,
     spliced,
     transport,
-    cachedFeatures?.abapRelease,
+    getCachedFeatures()?.abapRelease,
   );
   invalidateWrittenObject(type, name);
   return textResult(

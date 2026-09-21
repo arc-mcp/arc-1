@@ -7,9 +7,17 @@ import {
   expandScopes,
   getActionPolicy,
   hasRequiredScope,
+  invocationPolicyKey,
 } from '../../../src/authz/policy.js';
 
 describe('ACTION_POLICY matrix', () => {
+  it('derives one canonical policy key for dispatch and multi-target preflight', () => {
+    expect(invocationPolicyKey('SAPRead', { type: 'table_contents' })).toBe('TABLE_CONTENTS');
+    expect(invocationPolicyKey('SAPSearch', { searchType: 'tadir_lookup', source: 'DB' })).toBe('tadir_lookup_db');
+    expect(invocationPolicyKey('SAPDiagnose', { action: 'atc' })).toBe('atc');
+    expect(invocationPolicyKey('SAPQuery', {})).toBeUndefined();
+  });
+
   it('includes tool-level defaults for every top-level tool', () => {
     const tools = [
       'SAPRead',
@@ -41,6 +49,24 @@ describe('ACTION_POLICY matrix', () => {
     const policy = getActionPolicy('SAPRead', 'PROG');
     expect(policy?.scope).toBe('read');
     expect(policy?.opType).toBe(OperationType.Read);
+  });
+
+  it('SAPDiagnose.atc_variants requires only read scope', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'atc_variants');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Read);
+  });
+
+  it('SAPDiagnose.atc_ci is a workload-producing read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'atc_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Read);
+  });
+
+  it('SAPDiagnose.unittest_ci is a workload-producing test read', () => {
+    const policy = getActionPolicy('SAPDiagnose', 'unittest_ci');
+    expect(policy?.scope).toBe('read');
+    expect(policy?.opType).toBe(OperationType.Test);
   });
 
   it('CLASSIFICATION FIX: SAPLint.set_formatter_settings requires write scope', () => {
@@ -77,22 +103,23 @@ describe('ACTION_POLICY matrix', () => {
   });
 
   it('SAPGit mutations require git scope', () => {
-    for (const action of ['stage', 'clone', 'pull', 'push', 'commit', 'switch_branch', 'create_branch', 'unlink']) {
+    for (const action of [
+      'external_info',
+      'stage',
+      'clone',
+      'pull',
+      'push',
+      'switch_branch',
+      'create_branch',
+      'unlink',
+    ]) {
       expect(getActionPolicy('SAPGit', action)?.scope, `SAPGit.${action}`).toBe('git');
     }
+    expect(getActionPolicy('SAPGit', 'external_info')?.opType).toBe(OperationType.Update);
   });
 
   it('SAPGit read actions require read scope', () => {
-    for (const action of [
-      'list_repos',
-      'whoami',
-      'config',
-      'branches',
-      'external_info',
-      'history',
-      'objects',
-      'check',
-    ]) {
+    for (const action of ['list_repos', 'whoami', 'config', 'branches', 'history', 'objects', 'check']) {
       expect(getActionPolicy('SAPGit', action)?.scope, `SAPGit.${action}`).toBe('read');
     }
   });

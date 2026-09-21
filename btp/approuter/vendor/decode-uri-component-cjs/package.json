@@ -1,0 +1,9 @@
+{
+  "name": "decode-uri-component-cjs",
+  "version": "0.5.0",
+  "license": "MIT",
+  "main": "index.cjs",
+  "dependencies": {
+    "decode-uri-component-esm": "npm:decode-uri-component@0.5.0"
+  }
+}

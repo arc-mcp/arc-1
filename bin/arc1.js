@@ -1,12 +1,7 @@
 #!/usr/bin/env node
 
-// ARC-1 — ABAP Relay Connector
-// CLI entry point — delegates to compiled TypeScript
-//
-// Why a thin JS wrapper instead of direct dist/ reference:
-// The MCP SDK's stdio transport requires the entry process to own stdin/stdout.
-// Using a direct require() (not spawn) ensures no intermediate process layer
-// that could interfere with the JSON-RPC stream.
-// (Learned from fr0ster/mcp-abap-adt bin/mcp-abap-adt.js)
+// ARC-1 — all published executable names share the same strict CLI runtime.
+// Keeping this as an in-process import lets stdio MCP own stdin/stdout directly.
 
-import('../dist/cli.js');
+const { main } = await import('../dist/cli.js');
+process.exitCode = await main(process.argv.slice(2));
