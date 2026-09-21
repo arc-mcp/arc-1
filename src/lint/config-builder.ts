@@ -36,15 +36,12 @@ export type RuleOverrides = Record<string, boolean | Record<string, unknown>>;
 export interface LintConfigOptions {
   /** SAP system type: 'btp' or 'onprem' */
   systemType?: SystemType;
-  /**
-   * How systemType was resolved: a live ADT probe ('probe'), an explicit non-'auto'
-   * SAP_SYSTEM_TYPE/--system-type config value ('config'), or neither ('default' — systemType
-   * is undefined and callers fall back to 'onprem'). Informational only; not read by
-   * buildLintConfig/resolveVersion.
-   */
+  /** Diagnostic provenance only; does not affect rule selection. */
   systemTypeSource?: 'probe' | 'config' | 'default';
   /** SAP_BASIS release string (e.g., "757") */
   abapRelease?: string;
+  /** Diagnostic provenance of the SAP release, not the custom lint syntax version. */
+  abapReleaseSource?: 'probe' | 'config' | 'unknown';
   /** Path to custom abaplint.jsonc config file */
   configFile?: string;
   /** Inline rule overrides (from tool call args) */

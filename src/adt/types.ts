@@ -68,6 +68,8 @@ export interface ResolvedFeatures {
   abapRelease?: string;
   /** Detected system type: 'btp' (SAP_CLOUD component present) or 'onprem'. */
   systemType?: SystemType;
+  /** Whether the probe detected the type or applied an explicit configuration override. */
+  systemTypeSource?: 'probe' | 'config';
   /** Text search (source_code) probe result — available, or reason it's unavailable */
   textSearch?: { available: boolean; reason?: string };
   /** Authorization probe results — search and transport access */

@@ -463,6 +463,14 @@ describe('Feature Detection', () => {
       } as unknown as AdtHttpClient;
     }
 
+    it.each([
+      ['auto', 'onprem', 'probe'],
+      ['btp', 'btp', 'config'],
+    ])('retains the origin of system type with %s configuration', async (override, systemType, systemTypeSource) => {
+      const result = await probeFeatures(mockProbeClient(), defaultConfig, override);
+      expect(result).toMatchObject({ systemType, systemTypeSource, abapRelease: '758' });
+    });
+
     it('includes discovery map from startup probe', async () => {
       const client = mockProbeClient();
       const result = await probeFeatures(client, defaultConfig);

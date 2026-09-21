@@ -51,16 +51,16 @@ export async function handleSAPLint(
       const enabled = rules.filter((r) => r.enabled);
       const disabled = rules.filter((r) => !r.enabled);
       const effectiveAbapRelease = configOptions.abapRelease ?? 'unknown';
-      const syntax = lintConfig.get().syntax as { version?: string } | undefined;
+      const syntaxVersion = lintConfig.get().syntax.version ?? {
+        release: lintConfig.getRelease().name,
+        language: lintConfig.getLanguageVersion(),
+      };
       const warnings: string[] = [];
       if (!configOptions.abapRelease) {
         warnings.push(
-          'ABAP release of the connected SAP system is unknown; linting against the default v702 ' +
-            'syntax version, which may not match this system. Modern constructs (DATA(...), VALUE, NEW, ' +
-            'FOR, COND, REDUCE, ...) will be reported as parser_error/downport findings even if they are ' +
-            'valid on the real system — treat those specific findings as possibly false positives ' +
-            'from a version mismatch, not confirmed issues. Set SAP_ABAP_RELEASE / --abap-release to the ' +
-            'target system release if known.',
+          `SAP release is unknown; effective lint syntax is ${JSON.stringify(syntaxVersion)}. ` +
+            'Check SAP_SYSTEM_TYPE, SAP_ABAP_RELEASE and any SAP_ABAPLINT_CONFIG override before treating ' +
+            'version-related parser findings as source errors.',
         );
       }
       return textResult(
@@ -68,7 +68,8 @@ export async function handleSAPLint(
           preset: configOptions.systemType === 'btp' ? 'cloud' : 'onprem',
           presetSource: configOptions.systemTypeSource ?? 'default',
           abapVersion: effectiveAbapRelease,
-          syntaxVersion: syntax?.version ?? 'unknown',
+          abapVersionSource: configOptions.abapReleaseSource ?? 'unknown',
+          syntaxVersion,
           enabledRules: enabled.length,
           disabledRules: disabled.length,
           rules: enabled,
