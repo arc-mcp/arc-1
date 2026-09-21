@@ -1104,7 +1104,7 @@ const SYNTAX_CHECKABLE_TYPES = new Set([
  *  sequence lands. Real blocking is deferred to SAPActivate, which runs after all
  *  dependencies are in place. Best-effort: network/endpoint failures return ''. */
 export async function runPreWriteSyntaxCheck(
-  client: AdtClient,
+  client: Pick<AdtClient, 'http' | 'safety'>,
   type: string,
   source: string,
   objectUrl: string,
