@@ -439,13 +439,73 @@ describe('Runtime Diagnostics', () => {
 
     it('clamps maxResults to safe bounds', async () => {
       const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      // Above one page, each request still asks for SAP's 100-entry maximum.
       await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 9999 });
       const highUrl = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-      expect(highUrl).toContain('$top=200');
+      expect(highUrl).toContain('$top=100');
 
       await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 0 });
       const lowUrl = (http.get as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
       expect(lowUrl).toContain('$top=1');
+    });
+
+    it('passes from/to time bounds, normalizing to SAP format', async () => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await listDumps(http, unrestrictedSafetyConfig(), { from: '2026-09-15', to: '2026-09-20T13:28:37Z' });
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      // Date-only and ISO both collapse to YYYYMMDDHHMMSS; SAP ignores anything else.
+      expect(url).toContain('from=20260915000000');
+      expect(url).toContain('to=20260920132837');
+    });
+
+    it('accepts the fractional seconds toISOString produces', async () => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await listDumps(http, unrestrictedSafetyConfig(), { from: new Date('2026-09-15T06:58:45.123Z').toISOString() });
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(url).toContain('from=20260915065845');
+    });
+
+    it('converts a UTC offset to the feed’s own UTC basis', async () => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await listDumps(http, unrestrictedSafetyConfig(), { from: '2026-09-15T08:00:00+02:00' });
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(url).toContain('from=20260915060000');
+    });
+
+    it('rejects an unparsable time bound instead of silently widening the query', async () => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await expect(listDumps(http, unrestrictedSafetyConfig(), { from: 'yesterday' })).rejects.toThrow(/Invalid from/);
+      expect(http.get).not.toHaveBeenCalled();
+    });
+
+    it('pages past SAP’s 100-entry ceiling using the to cursor', async () => {
+      const page = (start: number, count: number) =>
+        `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom">${Array.from(
+          { length: count },
+          (_, i) => {
+            const n = start + i;
+            const ts = new Date(Date.UTC(2026, 8, 1, 0, 0, 0) - n * 1000).toISOString().replace('.000', '');
+            return `<atom:entry><atom:author FullName="MARIAN"><atom:name>MARIAN</atom:name></atom:author><atom:category term="ERR" label="ABAP runtime error"/><atom:category term="PROG" label="Terminated ABAP program"/><atom:id>/sap/bc/adt/runtime/dump/dump${n}</atom:id><atom:published>${ts}</atom:published></atom:entry>`;
+          },
+        ).join('')}</atom:feed>`;
+
+      // Second page repeats the boundary entry, exactly as an inclusive `to` bound does.
+      const http = mockHttpSequence([{ body: page(0, 100) }, { body: page(99, 100) }, { body: page(198, 20) }]);
+      const result = await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 250 });
+
+      expect(http.get).toHaveBeenCalledTimes(3);
+      expect(result).toHaveLength(218); // 100 + 99 new + 19 new, duplicates dropped
+      expect(new Set(result.map((entry) => entry.id)).size).toBe(218);
+      // The cursor is the oldest entry of the previous page.
+      const secondUrl = (http.get as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
+      expect(secondUrl).toContain('to=20260831235821');
+    });
+
+    it('stops at one request when SAP returns a short page', async () => {
+      const xml = readFileSync(join(FIXTURES_DIR, 'dumps-list.xml'), 'utf-8');
+      const http = mockHttp(xml);
+      await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 500 });
+      expect(http.get).toHaveBeenCalledTimes(1);
     });
 
     it('returns empty array for empty feed', async () => {

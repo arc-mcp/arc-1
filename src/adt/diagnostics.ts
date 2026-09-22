@@ -47,19 +47,25 @@ const DEFAULT_SYSTEM_MESSAGE_MAX_RESULTS = 50;
 const DEFAULT_GATEWAY_ERROR_MAX_RESULTS = 50;
 const MAX_RESULTS_CAP = 200;
 
-export interface ListDumpsOptions {
-  /** Filter by SAP user (uppercase) */
-  user?: string;
-  /** Maximum number of dumps to return (default 50) */
-  maxResults?: number;
-}
+/** SAP serves at most 100 dump entries per request; `$top` only narrows this, never raises it. */
+const DUMP_PAGE_SIZE = 100;
+/** Dumps page via the `to` cursor, so they allow a higher ceiling than the single-shot feeds. */
+const MAX_DUMP_RESULTS_CAP = 500;
+/** Stop runaway paging if SAP ever serves very short pages: 500 results need 6 pages. */
+const MAX_DUMP_PAGES = 10;
 
 interface FeedQueryOptions {
+  /** Filter by SAP user (uppercase) */
   user?: string;
+  /** Maximum number of entries to return (default 50) */
   maxResults?: number;
+  /** Inclusive lower time bound */
   from?: string;
+  /** Inclusive upper time bound */
   to?: string;
 }
+
+export interface ListDumpsOptions extends FeedQueryOptions {}
 
 export interface ListSystemMessagesOptions extends FeedQueryOptions {}
 
@@ -164,10 +170,37 @@ function appendQueryParam(path: string, key: string, value: string): string {
 }
 
 /**
- * List ABAP short dumps (ST22 equivalent).
+ * Normalize a feed time bound to SAP's `YYYYMMDDHHMMSS`.
  *
- * Endpoint: GET /sap/bc/adt/runtime/dumps
- * Returns an Atom feed with dump entries.
+ * SAP ignores a bound it cannot parse and answers with the whole feed, so an unparsable
+ * value fails here rather than silently widening the query. Date-only is one of the forms
+ * SAP drops, hence the pad to midnight.
+ */
+function normalizeFeedTimestamp(value: string | undefined, field: string): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+
+  // Drop fractional seconds first: toISOString() emits them and SAP takes whole seconds.
+  const digits = raw.replace(/\.\d+/, '').replace(/[-:TZ\s]/g, '');
+  if (/^\d{8}$/.test(digits)) return `${digits}000000`;
+  if (/^\d{14}$/.test(digits)) return digits;
+
+  // Remaining shapes (a UTC offset, say) go through Date, whose UTC output matches the feed.
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+
+  throw new Error(
+    `Invalid ${field} timestamp "${raw}". Use YYYYMMDDHHMMSS, YYYY-MM-DD, or an ISO timestamp such as 2026-09-15T00:00:00Z.`,
+  );
+}
+
+/**
+ * List ABAP short dumps (ST22 equivalent) from the newest-first Atom feed at
+ * GET /sap/bc/adt/runtime/dumps.
+ *
+ * SAP serves at most 100 entries per request and ignores `$skip`, so more than that is
+ * assembled by re-querying with `to` set to the oldest entry seen. That bound is inclusive
+ * and so repeats the boundary entry, which keying by dump id drops.
  */
 export async function listDumps(
   http: AdtHttpClient,
@@ -176,12 +209,37 @@ export async function listDumps(
 ): Promise<DumpEntry[]> {
   checkOperation(safety, OperationType.Read, 'ListDumps');
 
-  const queryString = buildFeedQueryString(options, DEFAULT_DUMP_MAX_RESULTS, 'user');
-  const resp = await http.get(`/sap/bc/adt/runtime/dumps${queryString}`, {
-    Accept: 'application/atom+xml;type=feed',
-  });
+  const wanted = clampMaxResults(options?.maxResults, DEFAULT_DUMP_MAX_RESULTS, MAX_DUMP_RESULTS_CAP);
+  const from = normalizeFeedTimestamp(options?.from, 'from');
+  let to = normalizeFeedTimestamp(options?.to, 'to');
 
-  return parseDumpList(resp.body);
+  const pageSize = Math.min(wanted, DUMP_PAGE_SIZE);
+  const byId = new Map<string, DumpEntry>();
+  for (let page = 0; page < MAX_DUMP_PAGES && byId.size < wanted; page++) {
+    const queryString = buildFeedQueryString(
+      { ...options, from, to, maxResults: pageSize },
+      DEFAULT_DUMP_MAX_RESULTS,
+      'user',
+    );
+    const resp = await http.get(`/sap/bc/adt/runtime/dumps${queryString}`, {
+      Accept: 'application/atom+xml;type=feed',
+    });
+
+    const entries = parseDumpList(resp.body);
+    const before = byId.size;
+    for (const entry of entries) byId.set(entry.id, entry);
+
+    // A page short of the requested size means SAP has nothing older left.
+    if (entries.length < pageSize) break;
+    // A full page of ids already seen would otherwise spin on the same cursor.
+    if (byId.size === before) break;
+
+    const oldest = entries.at(-1)?.timestamp;
+    if (!oldest) break;
+    to = normalizeFeedTimestamp(oldest, 'to');
+  }
+
+  return [...byId.values()].slice(0, wanted);
 }
 
 /**
@@ -1368,9 +1426,9 @@ function buildFeedQueryString(
   return params.length > 0 ? `?${params.join('&')}` : '';
 }
 
-function clampMaxResults(maxResults: number | undefined, fallback: number): number {
+function clampMaxResults(maxResults: number | undefined, fallback: number, cap = MAX_RESULTS_CAP): number {
   if (!Number.isFinite(maxResults)) return fallback;
-  return Math.max(1, Math.min(MAX_RESULTS_CAP, Math.trunc(maxResults!)));
+  return Math.max(1, Math.min(cap, Math.trunc(maxResults!)));
 }
 
 function toRecordArray(value: unknown): Array<Record<string, unknown>> {

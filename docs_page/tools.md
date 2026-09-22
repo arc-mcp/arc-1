@@ -1673,6 +1673,8 @@ SAPDiagnose(action="quickfix", type="CLAS", name="ZCL_ORDER", source="<current_s
 SAPDiagnose(action="apply_quickfix", type="CLAS", name="ZCL_ORDER", source="<current_source>", line=42, column=1, proposalUri="/sap/bc/adt/quickfixes/...", proposalUserContent="<opaque_state>")
 SAPDiagnose(action="dumps")
 SAPDiagnose(action="dumps", user="DEVELOPER", maxResults=10)
+SAPDiagnose(action="dumps", from="2026-09-15", to="2026-09-20T23:59:59Z")
+SAPDiagnose(action="dumps", maxResults=500)  # SAP serves 100 per request; ARC-1 pages the rest
 SAPDiagnose(action="dumps", id="20260409_123456_DUMP_ID")
 SAPDiagnose(action="traces")
 SAPDiagnose(action="traces", id="TRACE123", analysis="hitlist")
