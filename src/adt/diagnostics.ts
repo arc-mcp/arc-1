@@ -198,7 +198,8 @@ function normalizeFeedTimestamp(value: string | undefined, field: string): strin
     );
 
   // A trailing UTC offset is applied after the calendar check, so the check sees plain components.
-  const offset = raw.match(/([+-])(\d{2}):?(\d{2})$/);
+  // Its own range is enforced here: +02:60 or +24:00 would otherwise shift the query silently.
+  const offset = raw.match(/([+-])([01]\d|2[0-3]):?([0-5]\d)$/);
   const wallClock = offset ? raw.slice(0, offset.index) : raw;
 
   // Drop fractional seconds: toISOString() emits them and SAP takes whole seconds.

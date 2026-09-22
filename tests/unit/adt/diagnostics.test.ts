@@ -465,11 +465,15 @@ describe('Runtime Diagnostics', () => {
       expect(url).toContain('from=20260915065845');
     });
 
-    it('converts a UTC offset to the feed’s own UTC basis', async () => {
+    it.each([
+      ['a positive offset', '2026-09-15T08:00:00+02:00', 'from=20260915060000'],
+      ['a negative offset', '2026-09-15T08:00:00-05:30', 'from=20260915133000'],
+      ['an offset without a colon', '2026-09-15T08:00:00+0200', 'from=20260915060000'],
+    ])('converts %s to the feed’s own UTC basis', async (_label, from, expected) => {
       const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
-      await listDumps(http, unrestrictedSafetyConfig(), { from: '2026-09-15T08:00:00+02:00' });
+      await listDumps(http, unrestrictedSafetyConfig(), { from });
       const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-      expect(url).toContain('from=20260915060000');
+      expect(url).toContain(expected);
     });
 
     it.each([
@@ -477,10 +481,16 @@ describe('Runtime Diagnostics', () => {
       ['a day February does not have', '2026-02-30'],
       ['an impossible hour', '2026-09-15T25:00:00Z'],
       ['an impossible date behind an offset', '2026-02-30T00:00:00+02:00'],
-    ])('rejects %s rather than querying a different day', async (_label, from) => {
-      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
-      await expect(listDumps(http, unrestrictedSafetyConfig(), { from })).rejects.toThrow(/Invalid from/);
-      expect(http.get).not.toHaveBeenCalled();
+      ['offset minutes past 59', '2026-09-15T08:00:00+02:60'],
+      ['an offset hour past 23', '2026-09-15T08:00:00+24:00'],
+    ])('rejects %s in either bound rather than querying a different time', async (_label, value) => {
+      for (const field of ['from', 'to'] as const) {
+        const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+        await expect(listDumps(http, unrestrictedSafetyConfig(), { [field]: value })).rejects.toThrow(
+          new RegExp(`Invalid ${field}`),
+        );
+        expect(http.get).not.toHaveBeenCalled();
+      }
     });
 
     it('rejects an unparsable time bound instead of silently widening the query', async () => {
