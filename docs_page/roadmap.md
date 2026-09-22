@@ -87,6 +87,7 @@ sequence.
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
 | [FEAT-69](#feat-69) | Mass syntax check | P2 | S | Ready | Diagnostics |
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
+| [FEAT-74](#feat-74) | Dump feed attribute filters | P3 | S | Ready | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
@@ -452,6 +453,34 @@ volume limits are not implemented.
 
 **Resume with.** Capture a bounded real trace result, define redaction and response-size behavior,
 and keep trace activation separate from result reading.
+
+<a id="feat-74"></a>
+### FEAT-74 — Dump feed attribute filters
+
+- **Priority / effort / status:** P3 / S / Ready
+- **Category:** Diagnostics
+
+**Idea.** Let `SAPDiagnose(action="dumps")` filter short dumps by the other attributes SAP's feed
+supports, not only `user` and the time window.
+
+**Why it remains.** `GET /sap/bc/adt/feeds` self-describes the dumps feed, and its
+`feed:attributes` list is much wider than what ARC-1 exposes: `runtimeError`, `exception`,
+`objectName`, `package`, `packageHierarchy`, `component`, `responsible`, `objectResponsible`,
+`packageResponsible`, and a `dateTime`-typed `datetime`. The declared operators are `equals`,
+`notEquals`, `contains`, `notContains`, `greater`, `greaterOrEquals`, `less`, `lessOrEquals`,
+`between`, `notBetween`, with `queryDepth` 2. Live-verified on SAP_BASIS 816 (2026-09-22):
+`and(contains(objectName,SAPM))` returned 11 entries and
+`and(between(datetime,20260901000000,20260910000000))` returned 49, against an unfiltered feed
+capped at 100. Filtering server-side is far cheaper than paging the whole feed and discarding
+entries client-side, and answers questions ARC-1 cannot express today, such as "every TIME_OUT
+dump in package Z\*".
+
+**Resume with.** Read the per-system `feed:attributes` rather than hardcoding the list (it is
+release-dependent and also published for system messages and the gateway error log), map a small
+typed filter input onto the `and(...)` grammar without string-concatenating caller text, and keep
+the existing `user`/`from`/`to` parameters working. Note that the feed's own `rel="next"` link
+appends `sap-client` on every hop, so paging must keep rebuilding the `to` cursor as
+`listDumps` does.
 
 <a id="feat-69"></a>
 ### FEAT-69 — Mass syntax check
