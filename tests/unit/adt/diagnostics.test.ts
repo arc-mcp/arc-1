@@ -472,6 +472,17 @@ describe('Runtime Diagnostics', () => {
       expect(url).toContain('from=20260915060000');
     });
 
+    it.each([
+      ['month 13', '2026-13-01'],
+      ['a day February does not have', '2026-02-30'],
+      ['an impossible hour', '2026-09-15T25:00:00Z'],
+      ['an impossible date behind an offset', '2026-02-30T00:00:00+02:00'],
+    ])('rejects %s rather than querying a different day', async (_label, from) => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await expect(listDumps(http, unrestrictedSafetyConfig(), { from })).rejects.toThrow(/Invalid from/);
+      expect(http.get).not.toHaveBeenCalled();
+    });
+
     it('rejects an unparsable time bound instead of silently widening the query', async () => {
       const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
       await expect(listDumps(http, unrestrictedSafetyConfig(), { from: 'yesterday' })).rejects.toThrow(/Invalid from/);
@@ -499,6 +510,57 @@ describe('Runtime Diagnostics', () => {
       // The cursor is the oldest entry of the previous page.
       const secondUrl = (http.get as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
       expect(secondUrl).toContain('to=20260831235821');
+    });
+
+    // A feed that behaves like SAP: newest first, `to` inclusive, never more than 100 per request.
+    const mockDumpFeed = (corpus: Array<{ id: string; ts: string }>): AdtHttpClient => {
+      const newestFirst = [...corpus].sort((a, b) => b.ts.localeCompare(a.ts));
+      const compact = (ts: string) => ts.replace(/[-:T]/g, '').slice(0, 14);
+      return {
+        get: vi.fn().mockImplementation((url: string) => {
+          const top = Number(url.match(/\$top=(\d+)/)?.[1] ?? 100);
+          const bound = url.match(/[?&]to=(\d{14})/)?.[1];
+          const visible = newestFirst.filter((e) => !bound || compact(e.ts) <= bound);
+          const body = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom">${visible
+            .slice(0, Math.min(top, 100))
+            .map(
+              (e) =>
+                `<atom:entry><atom:author FullName="MARIAN"><atom:name>MARIAN</atom:name></atom:author><atom:category term="ERR" label="ABAP runtime error"/><atom:category term="PROG" label="Terminated ABAP program"/><atom:id>/sap/bc/adt/runtime/dump/${e.id}</atom:id><atom:published>${e.ts}</atom:published></atom:entry>`,
+            )
+            .join('')}</atom:feed>`;
+          return Promise.resolve({ statusCode: 200, headers: {}, body });
+        }),
+        post: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+        fetchCsrfToken: vi.fn(),
+        withStatefulSession: vi.fn(),
+      } as unknown as AdtHttpClient;
+    };
+
+    it('refuses to report a short list when the cursor second cannot be split', async () => {
+      // 150 dumps in one second exceed SAP's 100-per-request ceiling, and 50 older ones are
+      // stranded behind them: the cursor cannot advance, so completeness is unknowable.
+      const corpus = [
+        ...Array.from({ length: 150 }, (_, i) => ({ id: `burst${i}`, ts: '2026-09-01T00:00:00Z' })),
+        ...Array.from({ length: 50 }, (_, i) => ({
+          id: `older${i}`,
+          ts: new Date(Date.UTC(2026, 7, 31, 12, 0, 0) - i * 1000).toISOString().replace('.000', ''),
+        })),
+      ];
+
+      await expect(listDumps(mockDumpFeed(corpus), unrestrictedSafetyConfig(), { maxResults: 500 })).rejects.toThrow(
+        /share that second/,
+      );
+    });
+
+    it('still answers a single-page request from inside such a burst', async () => {
+      const corpus = Array.from({ length: 150 }, (_, i) => ({ id: `burst${i}`, ts: '2026-09-01T00:00:00Z' }));
+      const http = mockDumpFeed(corpus);
+      const result = await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 100 });
+
+      expect(result).toHaveLength(100);
+      expect(http.get).toHaveBeenCalledTimes(1);
     });
 
     it('stops at one request when SAP returns a short page', async () => {

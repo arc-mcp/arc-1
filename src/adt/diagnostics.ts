@@ -169,29 +169,51 @@ function appendQueryParam(path: string, key: string, value: string): string {
   return `${base}${queryString ? `?${queryString}` : ''}${fragment ? `#${fragment}` : ''}`;
 }
 
+/** The feed publishes UTC, and SAP compares bounds against those same values. */
+function toSapStamp(date: Date): string {
+  return date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+}
+
+/** Inverse of {@link toSapStamp}; the caller has already checked the 14-digit shape. */
+function sapStampToDate(stamp: string): Date {
+  const date = `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}`;
+  const time = `${stamp.slice(8, 10)}:${stamp.slice(10, 12)}:${stamp.slice(12, 14)}`;
+  return new Date(`${date}T${time}Z`);
+}
+
 /**
  * Normalize a feed time bound to SAP's `YYYYMMDDHHMMSS`.
  *
- * SAP ignores a bound it cannot parse and answers with the whole feed, so an unparsable
- * value fails here rather than silently widening the query. Date-only is one of the forms
- * SAP drops, hence the pad to midnight.
+ * SAP ignores a bound it cannot parse and answers with the whole feed, so anything not
+ * understood here has to fail rather than silently widen the query. Date-only is one of the
+ * forms SAP drops, hence the pad to midnight.
  */
 function normalizeFeedTimestamp(value: string | undefined, field: string): string | undefined {
   const raw = String(value ?? '').trim();
   if (!raw) return undefined;
 
-  // Drop fractional seconds first: toISOString() emits them and SAP takes whole seconds.
-  const digits = raw.replace(/\.\d+/, '').replace(/[-:TZ\s]/g, '');
-  if (/^\d{8}$/.test(digits)) return `${digits}000000`;
-  if (/^\d{14}$/.test(digits)) return digits;
+  const invalid = () =>
+    new Error(
+      `Invalid ${field} timestamp "${raw}". Use YYYYMMDDHHMMSS, YYYY-MM-DD, or an ISO timestamp such as 2026-09-15T00:00:00Z.`,
+    );
 
-  // Remaining shapes (a UTC offset, say) go through Date, whose UTC output matches the feed.
-  const parsed = new Date(raw);
-  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  // A trailing UTC offset is applied after the calendar check, so the check sees plain components.
+  const offset = raw.match(/([+-])(\d{2}):?(\d{2})$/);
+  const wallClock = offset ? raw.slice(0, offset.index) : raw;
 
-  throw new Error(
-    `Invalid ${field} timestamp "${raw}". Use YYYYMMDDHHMMSS, YYYY-MM-DD, or an ISO timestamp such as 2026-09-15T00:00:00Z.`,
-  );
+  // Drop fractional seconds: toISOString() emits them and SAP takes whole seconds.
+  const digits = wallClock.replace(/\.\d+/, '').replace(/[-:TZ\s]/g, '');
+  const stamp = /^\d{8}$/.test(digits) ? `${digits}000000` : digits;
+  if (!/^\d{14}$/.test(stamp)) throw invalid();
+
+  // Date rolls impossible dates over (2026-02-30 becomes 2026-03-02), so compare the parse back:
+  // a digit count alone would let a typo return a different day's dumps as a success.
+  const parsed = sapStampToDate(stamp);
+  if (Number.isNaN(parsed.getTime()) || toSapStamp(parsed) !== stamp) throw invalid();
+
+  if (!offset) return stamp;
+  const offsetMinutes = (Number(offset[2]) * 60 + Number(offset[3])) * (offset[1] === '+' ? -1 : 1);
+  return toSapStamp(new Date(parsed.getTime() + offsetMinutes * 60_000));
 }
 
 /**
@@ -231,8 +253,16 @@ export async function listDumps(
 
     // A page short of the requested size means SAP has nothing older left.
     if (entries.length < pageSize) break;
-    // A full page of ids already seen would otherwise spin on the same cursor.
-    if (byId.size === before) break;
+
+    // A full page of ids already seen means at least pageSize dumps share the cursor second.
+    // No time bound splits them and SAP reports no total, so whether any remain is unknowable —
+    // say so instead of returning the short list as though it were the whole answer. Only a
+    // caller asking for more than one page can get here.
+    if (byId.size === before) {
+      throw new Error(
+        `Cannot page past ${to}: at least ${pageSize} dumps share that second, which is SAP's maximum per request, so older ones are unreachable. Narrow the query with user, or read that second with to=${to}.`,
+      );
+    }
 
     const oldest = entries.at(-1)?.timestamp;
     if (!oldest) break;

@@ -1288,7 +1288,7 @@ export function getToolDefinitions(
           maxResults: {
             type: 'number',
             description:
-              'Result limit: dumps/system_messages/gateway_errors default 50; authorization_trace 100. Capped (dumps 500, others 200).',
+              'Result limit (default 50; authorization_trace 100). Caps: dumps 500, system_messages/gateway_errors 200, authorization_trace 10000.',
           },
           sections: {
             type: 'array',
