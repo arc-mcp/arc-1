@@ -463,6 +463,14 @@ describe('Feature Detection', () => {
       } as unknown as AdtHttpClient;
     }
 
+    it.each([
+      ['auto', 'onprem', 'probe'],
+      ['btp', 'btp', 'config'],
+    ])('retains the origin of system type with %s configuration', async (override, systemType, systemTypeSource) => {
+      const result = await probeFeatures(mockProbeClient(), defaultConfig, override);
+      expect(result).toMatchObject({ systemType, systemTypeSource, abapRelease: '758' });
+    });
+
     it('includes discovery map from startup probe', async () => {
       const client = mockProbeClient();
       const result = await probeFeatures(client, defaultConfig);
@@ -503,6 +511,40 @@ describe('Feature Detection', () => {
       const urls = ((client as any).get.mock.calls as Array<[string]>).map((c) => c[0]);
       expect(urls).toContain('/sap/bc/adt/filestore/ui5-bsp/objects');
       expect(urls).not.toContain('/sap/bc/adt/filestore/ui5-bsp');
+    });
+
+    it('does not request non-ADT capability paths when the BTP acceptance profile disables them', async () => {
+      const client = mockProbeClient();
+      const result = await probeFeatures(client, { ...defaultConfig, gcts: 'off', ui5repo: 'off', flp: 'off' });
+      const urls = vi.mocked(client.get).mock.calls.map(([url]) => url);
+
+      expect(urls).toContain('/sap/bc/adt/discovery');
+      expect(urls.every((url) => url.startsWith('/sap/bc/adt/'))).toBe(true);
+      for (const id of ['gcts', 'ui5repo', 'flp'] as const) {
+        expect(result[id]).toMatchObject({ available: false, mode: 'off' });
+      }
+    });
+
+    it.each([401, 403, 404])('retains ADT evidence when optional OData probes return %i', async (status) => {
+      const client = mockProbeClient();
+      const get = vi.mocked(client.get);
+      const originalGet = get.getMockImplementation()!;
+      get.mockImplementation((url, headers, options) => {
+        if (url.startsWith('/sap/opu/odata/')) {
+          return Promise.reject(new AdtApiError('Optional service unavailable', status, url));
+        }
+        return originalGet(url, headers, options);
+      });
+
+      const result = await probeFeatures(client, defaultConfig);
+
+      expect(get).toHaveBeenCalledWith('/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV', undefined, { probe: true });
+      expect(get).toHaveBeenCalledWith('/sap/opu/odata/UI2/PAGE_BUILDER_CUST/', undefined, { probe: true });
+      expect(result.ui5repo.available).toBe(false);
+      expect(result.flp.available).toBe(false);
+      expect(result.rap.available).toBe(true);
+      expect(result.authProbe?.searchAccess).toBe(true);
+      expect(result.discoveryMap?.get('/sap/bc/adt/oo/classes')).toEqual(['application/vnd.sap.adt.oo.classes.v4+xml']);
     });
 
     it('does not fail feature probing when discovery request fails', async () => {
@@ -875,8 +917,8 @@ describe('Feature Detection', () => {
       return { get: vi.fn().mockResolvedValue({ statusCode, body: '' }) } as unknown as AdtHttpClient;
     }
 
-    function mockClientThrows(statusCode: number): AdtHttpClient {
-      return { get: vi.fn().mockRejectedValue({ statusCode }) } as unknown as AdtHttpClient;
+    function mockClientThrows(statusCode: number, responseBody?: string): AdtHttpClient {
+      return { get: vi.fn().mockRejectedValue({ statusCode, responseBody }) } as unknown as AdtHttpClient;
     }
 
     function mockClientNetworkError(): AdtHttpClient {
@@ -887,6 +929,17 @@ describe('Feature Detection', () => {
       const result = await probeTextSearch(mockClient(200));
       expect(result.available).toBe(true);
       expect(result.reason).toBeUndefined();
+    });
+
+    it('probes the support sub-resource instead of running a real search', async () => {
+      const client = mockClient(200);
+      await probeTextSearch(client);
+      // `db` is part of the advertised support template; an empty value selects source search.
+      expect(client.get).toHaveBeenCalledWith(
+        '/sap/bc/adt/repository/informationsystem/textsearch/support?db=',
+        undefined,
+        { probe: true },
+      );
     });
 
     it('returns auth error for thrown 401', async () => {
@@ -902,11 +955,30 @@ describe('Feature Detection', () => {
       expect(result.reason).toContain('authorization');
     });
 
-    it('returns SICF activation hint for thrown 404', async () => {
+    it('reports SAP SADT_REST 020 as backend-unsupported rather than an authorization failure', async () => {
+      const responseBody = `<?xml version="1.0" encoding="utf-8"?>
+<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
+  <exc:localizedMessage>The action is not supported</exc:localizedMessage>
+  <exc:properties>
+    <exc:entry key="T100KEY-ID">SADT_REST</exc:entry>
+    <exc:entry key="T100KEY-NO">020</exc:entry>
+  </exc:properties>
+</exc:exception>`;
+      const result = await probeTextSearch(mockClientThrows(403, responseBody));
+      expect(result.available).toBe(false);
+      expect(result.reason).toContain('not supported by this SAP backend');
+      expect(result.reason).not.toContain('authorization');
+      expect(result.reason).not.toContain('S_ADT_RES');
+    });
+
+    it('reports an unmapped endpoint for thrown 404 without blaming SICF outright', async () => {
       const result = await probeTextSearch(mockClientThrows(404));
       expect(result.available).toBe(false);
-      expect(result.reason).toContain('SICF');
-      expect(result.reason).toContain('textSearch');
+      expect(result.reason).toContain('textsearch');
+      expect(result.reason).toContain('discovery');
+      // 404 is ADT's generic reply for any unmapped URI, so the hint must not
+      // assert an inactive ICF node as the cause.
+      expect(result.reason).not.toMatch(/not activated/i);
     });
 
     it('returns framework error for thrown 500', async () => {

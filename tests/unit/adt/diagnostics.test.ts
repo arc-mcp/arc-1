@@ -439,13 +439,145 @@ describe('Runtime Diagnostics', () => {
 
     it('clamps maxResults to safe bounds', async () => {
       const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      // Above one page, each request still asks for SAP's 100-entry maximum.
       await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 9999 });
       const highUrl = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-      expect(highUrl).toContain('$top=200');
+      expect(highUrl).toContain('$top=100');
 
       await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 0 });
       const lowUrl = (http.get as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
       expect(lowUrl).toContain('$top=1');
+    });
+
+    it('passes from/to time bounds, normalizing to SAP format', async () => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await listDumps(http, unrestrictedSafetyConfig(), { from: '2026-09-15', to: '2026-09-20T13:28:37Z' });
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      // Date-only and ISO both collapse to YYYYMMDDHHMMSS; SAP ignores anything else.
+      expect(url).toContain('from=20260915000000');
+      expect(url).toContain('to=20260920132837');
+    });
+
+    it('accepts the fractional seconds toISOString produces', async () => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await listDumps(http, unrestrictedSafetyConfig(), { from: new Date('2026-09-15T06:58:45.123Z').toISOString() });
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(url).toContain('from=20260915065845');
+    });
+
+    it.each([
+      ['a positive offset', '2026-09-15T08:00:00+02:00', 'from=20260915060000'],
+      ['a negative offset', '2026-09-15T08:00:00-05:30', 'from=20260915133000'],
+      ['an offset without a colon', '2026-09-15T08:00:00+0200', 'from=20260915060000'],
+    ])('converts %s to the feed’s own UTC basis', async (_label, from, expected) => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await listDumps(http, unrestrictedSafetyConfig(), { from });
+      const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(url).toContain(expected);
+    });
+
+    it.each([
+      ['month 13', '2026-13-01'],
+      ['a day February does not have', '2026-02-30'],
+      ['an impossible hour', '2026-09-15T25:00:00Z'],
+      ['an impossible date behind an offset', '2026-02-30T00:00:00+02:00'],
+      ['offset minutes past 59', '2026-09-15T08:00:00+02:60'],
+      ['an offset hour past 23', '2026-09-15T08:00:00+24:00'],
+    ])('rejects %s in either bound rather than querying a different time', async (_label, value) => {
+      for (const field of ['from', 'to'] as const) {
+        const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+        await expect(listDumps(http, unrestrictedSafetyConfig(), { [field]: value })).rejects.toThrow(
+          new RegExp(`Invalid ${field}`),
+        );
+        expect(http.get).not.toHaveBeenCalled();
+      }
+    });
+
+    it('rejects an unparsable time bound instead of silently widening the query', async () => {
+      const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
+      await expect(listDumps(http, unrestrictedSafetyConfig(), { from: 'yesterday' })).rejects.toThrow(/Invalid from/);
+      expect(http.get).not.toHaveBeenCalled();
+    });
+
+    it('pages past SAP’s 100-entry ceiling using the to cursor', async () => {
+      const page = (start: number, count: number) =>
+        `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom">${Array.from(
+          { length: count },
+          (_, i) => {
+            const n = start + i;
+            const ts = new Date(Date.UTC(2026, 8, 1, 0, 0, 0) - n * 1000).toISOString().replace('.000', '');
+            return `<atom:entry><atom:author FullName="MARIAN"><atom:name>MARIAN</atom:name></atom:author><atom:category term="ERR" label="ABAP runtime error"/><atom:category term="PROG" label="Terminated ABAP program"/><atom:id>/sap/bc/adt/runtime/dump/dump${n}</atom:id><atom:published>${ts}</atom:published></atom:entry>`;
+          },
+        ).join('')}</atom:feed>`;
+
+      // Second page repeats the boundary entry, exactly as an inclusive `to` bound does.
+      const http = mockHttpSequence([{ body: page(0, 100) }, { body: page(99, 100) }, { body: page(198, 20) }]);
+      const result = await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 250 });
+
+      expect(http.get).toHaveBeenCalledTimes(3);
+      expect(result).toHaveLength(218); // 100 + 99 new + 19 new, duplicates dropped
+      expect(new Set(result.map((entry) => entry.id)).size).toBe(218);
+      // The cursor is the oldest entry of the previous page.
+      const secondUrl = (http.get as ReturnType<typeof vi.fn>).mock.calls[1][0] as string;
+      expect(secondUrl).toContain('to=20260831235821');
+    });
+
+    // A feed that behaves like SAP: newest first, `to` inclusive, never more than 100 per request.
+    const mockDumpFeed = (corpus: Array<{ id: string; ts: string }>): AdtHttpClient => {
+      const newestFirst = [...corpus].sort((a, b) => b.ts.localeCompare(a.ts));
+      const compact = (ts: string) => ts.replace(/[-:T]/g, '').slice(0, 14);
+      return {
+        get: vi.fn().mockImplementation((url: string) => {
+          const top = Number(url.match(/\$top=(\d+)/)?.[1] ?? 100);
+          const bound = url.match(/[?&]to=(\d{14})/)?.[1];
+          const visible = newestFirst.filter((e) => !bound || compact(e.ts) <= bound);
+          const body = `<?xml version="1.0"?><atom:feed xmlns:atom="http://www.w3.org/2005/Atom">${visible
+            .slice(0, Math.min(top, 100))
+            .map(
+              (e) =>
+                `<atom:entry><atom:author FullName="MARIAN"><atom:name>MARIAN</atom:name></atom:author><atom:category term="ERR" label="ABAP runtime error"/><atom:category term="PROG" label="Terminated ABAP program"/><atom:id>/sap/bc/adt/runtime/dump/${e.id}</atom:id><atom:published>${e.ts}</atom:published></atom:entry>`,
+            )
+            .join('')}</atom:feed>`;
+          return Promise.resolve({ statusCode: 200, headers: {}, body });
+        }),
+        post: vi.fn(),
+        put: vi.fn(),
+        delete: vi.fn(),
+        fetchCsrfToken: vi.fn(),
+        withStatefulSession: vi.fn(),
+      } as unknown as AdtHttpClient;
+    };
+
+    it('refuses to report a short list when the cursor second cannot be split', async () => {
+      // 150 dumps in one second exceed SAP's 100-per-request ceiling, and 50 older ones are
+      // stranded behind them: the cursor cannot advance, so completeness is unknowable.
+      const corpus = [
+        ...Array.from({ length: 150 }, (_, i) => ({ id: `burst${i}`, ts: '2026-09-01T00:00:00Z' })),
+        ...Array.from({ length: 50 }, (_, i) => ({
+          id: `older${i}`,
+          ts: new Date(Date.UTC(2026, 7, 31, 12, 0, 0) - i * 1000).toISOString().replace('.000', ''),
+        })),
+      ];
+
+      await expect(listDumps(mockDumpFeed(corpus), unrestrictedSafetyConfig(), { maxResults: 500 })).rejects.toThrow(
+        /share that second/,
+      );
+    });
+
+    it('still answers a single-page request from inside such a burst', async () => {
+      const corpus = Array.from({ length: 150 }, (_, i) => ({ id: `burst${i}`, ts: '2026-09-01T00:00:00Z' }));
+      const http = mockDumpFeed(corpus);
+      const result = await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 100 });
+
+      expect(result).toHaveLength(100);
+      expect(http.get).toHaveBeenCalledTimes(1);
+    });
+
+    it('stops at one request when SAP returns a short page', async () => {
+      const xml = readFileSync(join(FIXTURES_DIR, 'dumps-list.xml'), 'utf-8');
+      const http = mockHttp(xml);
+      await listDumps(http, unrestrictedSafetyConfig(), { maxResults: 500 });
+      expect(http.get).toHaveBeenCalledTimes(1);
     });
 
     it('returns empty array for empty feed', async () => {
@@ -818,6 +950,25 @@ describe('Runtime Diagnostics', () => {
       expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/gw/errorlog/Frontend%20Error/ABC123', {
         Accept: 'text/html, application/xhtml+xml, application/xml;q=0.5',
       });
+    });
+
+    it.each([
+      '/sap/bc/adt/../../../sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%2e%2e/%2e%2e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/%252e%252e/%252e%252e/sap/opu/odata/sap/ZSECRET',
+      '/sap/bc/adt/gw/errorlog/%2fadmin',
+      '/sap/bc/adt/gw/errorlog/%5cadmin',
+      '/sap/bc/adt\\..\\sap\\opu\\odata',
+      '/sap/bc/adt/gw/errorlog/ABC#fragment',
+      '/sap/bc/adt/gw/errorlog/ABC\u0000suffix',
+      'https://a4h.example/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+      'adt://A4H/sap/bc/adt/gw/errorlog/FrontendError/ABC123',
+    ])('rejects unsafe gateway detail URL %j before HTTP dispatch', async (detailUrl) => {
+      const http = mockHttp('');
+      await expect(getGatewayErrorDetail(http, unrestrictedSafetyConfig(), { detailUrl })).rejects.toThrow(
+        /canonical host-relative ADT path/i,
+      );
+      expect(http.get).not.toHaveBeenCalled();
     });
 
     it('builds detail URL from errorType + id (normalizes display form "Frontend Error" to URL form "FrontendError")', async () => {

@@ -11,7 +11,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { classifyCdsImpact } from '../../src/adt/cds-impact.js';
 import type { AdtClient } from '../../src/adt/client.js';
 import { findWhereUsed } from '../../src/adt/codeintel.js';
-import { getCdsTestCases, runAtcCheck, supportsCdsTestCases } from '../../src/adt/devtools.js';
+import {
+  getAtcSystemDefaultVariant,
+  getCdsTestCases,
+  runAtcCheck,
+  supportsCdsTestCases,
+} from '../../src/adt/devtools.js';
 import {
   getDump,
   getGatewayErrorDetail,
@@ -120,6 +125,25 @@ describe('ADT Integration Tests', () => {
     });
   });
 
+  describe('BSP filestore', () => {
+    it('classifies a BSP root from SAP response media type', async (ctx) => {
+      let apps: Awaited<ReturnType<AdtClient['listBspApps']>> | undefined;
+      try {
+        apps = await client.listBspApps(undefined, 1);
+      } catch (error) {
+        if (error instanceof AdtApiError && (error.statusCode === 403 || error.statusCode === 404)) {
+          requireOrSkip(ctx, undefined, `${SkipReason.BACKEND_UNSUPPORTED}: BSP filestore unavailable`);
+        }
+        throw error;
+      }
+      const app = apps?.[0];
+      requireOrSkip(ctx, app, `${SkipReason.NO_FIXTURE}: no BSP application available`);
+      const content = await client.getBspPathContent(app.name);
+      expect(content.kind).toBe('folder');
+      if (content.kind === 'folder') expect(Array.isArray(content.nodes)).toBe(true);
+    });
+  });
+
   // ─── ADT Discovery (MIME Negotiation) ─────────────────────────
 
   describe('discovery MIME negotiation', () => {
@@ -206,25 +230,19 @@ describe('ADT Integration Tests', () => {
       }
     }, 60000);
 
-    it('lists tiles for a catalog (returns array, may be empty)', async (ctx) => {
+    it('lists every tile of a catalog without dumping the backend', async (ctx) => {
       requireOrSkip(ctx, serviceAvailable, SkipReason.BACKEND_UNSUPPORTED);
       const catalogs = await listCatalogs(client.http, unrestrictedSafetyConfig());
-      const catalogWithPrefix = catalogs.find((c) => c.id.startsWith('X-SAP-UI2-CATALOGPAGE:'));
-      requireOrSkip(ctx, catalogWithPrefix, SkipReason.NO_FIXTURE);
-      // Use full ID to verify normalization handles it correctly. On older
-      // releases the PageChipInstances OData service can ABAP-dump (500) for
-      // some catalogs — that's a backend bug, not an ARC-1 bug, skip cleanly.
-      try {
-        const result = await listTiles(client.http, unrestrictedSafetyConfig(), catalogWithPrefix.id);
-        expect(Array.isArray(result.tiles)).toBe(true);
-      } catch (err) {
-        expectSapFailureClass(err, [500], [/ASSERT condition/i, /RABAX/i, /Internal Server Error/i]);
-        requireOrSkip(
-          ctx,
-          undefined,
-          `${SkipReason.BACKEND_UNSUPPORTED}: PageChipInstances service unstable on this release`,
-        );
-      }
+      // Prefer a catalog that actually has tiles so the count assertion has teeth.
+      const populated = catalogs.find((c) => c.id.startsWith('X-SAP-UI2-CATALOGPAGE:') && Number(c.chipCount) > 0);
+      requireOrSkip(ctx, populated, SkipReason.NO_FIXTURE);
+
+      // Full ID on purpose — verifies prefix normalization AND key encoding.
+      // No dump-tolerant catch here: a 500 means ARC-1 sent a $filter to
+      // PageChipInstances again (/UI2/CL_EDM_DA_V06_USAGE asserts), and this
+      // test exists to fail loudly if it does.
+      const tiles = await listTiles(client.http, unrestrictedSafetyConfig(), populated.id);
+      expect(tiles.length).toBe(Number(populated.chipCount));
     }, 60000);
 
     it('CRUD lifecycle — create and delete catalog', async (ctx) => {
@@ -2247,18 +2265,39 @@ describe('ADT Integration Tests', () => {
 
   // ─── ATC worklist + check-variant flow (runAtcCheck) ─────────────────
   describe('runAtcCheck (worklist + variant flow)', () => {
-    // Regression guard for the three-step ATC flow. The previous implementation POSTed
-    // straight to /atc/runs?worklistId=1 and never bound a check variant, so ATC executed
-    // no checks and always returned zero findings. These tests assert the worklist→run→get
-    // flow completes and returns a well-formed findings array against a live system.
-    // Finding COUNT is system-dependent (ATC content + check variants vary, and ATC skips
-    // $TMP objects), so exact-format parsing is locked down by the unit fixture test
-    // (tests/unit/adt/devtools.test.ts → "parses the real SAP worklist response format").
+    // A variant may exclude this class, but that must remain incomplete rather than appear clean.
     const KERNEL_CLASS_URL = '/sap/bc/adt/oo/classes/cl_abap_typedescr';
-
+    // Assert the invariants that always hold, not "the run completed" — an incomplete run is a
+    // legitimate outcome (for example, a variant excluding the class), and it must be *reported*
+    // as incomplete rather than appear clean. Asserting
+    // completeness here made the test depend on live ATC timing and it flaked at the deadline.
+    const expectSoundResult = (result: Awaited<ReturnType<typeof runAtcCheck>>) => {
+      if (result.complete) {
+        expect(result.processedObjectCount).toBeGreaterThan(0);
+        expect(['asyncRunCompleted', 'legacyWorklistSettled']).toContain(result.completionEvidence);
+        expect(result.incompleteReasons).toEqual([]);
+      } else {
+        expect(result.incompleteReasons.length).toBeGreaterThan(0);
+      }
+      if (result.completionEvidence === 'asyncRunCompleted') expect(result.runStatus).toBe('Completed');
+      if (result.findingStatistics) {
+        expect(result.expectedFindingCount).toBe(result.findingStatistics.total);
+        expect(result.findingStatistics.total).toBe(
+          result.findingStatistics.errors + result.findingStatistics.warnings + result.findingStatistics.infos,
+        );
+      } else {
+        expect(result.expectedFindingCount).toBeNull();
+      }
+      expect(result.truncated).toBe(false);
+      expect(Array.isArray(result.runInfos)).toBe(true);
+      // Nothing processed can never read as clean.
+      if (result.processedObjectCount === 0) expect(result.complete).toBe(false);
+    };
     it('completes the flow with an explicit check variant', async () => {
-      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB');
-      expect(Array.isArray(result.findings)).toBe(true);
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'PERFORMANCE_DB', {
+        timeoutMs: 30_000,
+      });
+      expectSoundResult(result);
       for (const f of result.findings) {
         expect(typeof f.priority).toBe('number');
         expect(typeof f.line).toBe('number');
@@ -2270,9 +2309,50 @@ describe('ADT Integration Tests', () => {
       }
     }, 90000);
 
-    it('completes the flow with the system default variant (no variant passed)', async () => {
-      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL);
-      expect(Array.isArray(result.findings)).toBe(true);
+    // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT, NOT to
+    // systemCheckVariant — so runAtcCheck resolves the system default itself and sends it.
+    // Evidence: docs/research/2026-08-19-atc-default-check-variant.md
+    it('binds the system default check variant when none is passed', async () => {
+      const systemDefault = await getAtcSystemDefaultVariant(client.http, unrestrictedSafetyConfig());
+
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
+        timeoutMs: 30_000,
+      });
+
+      expectSoundResult(result);
+      if (systemDefault) {
+        expect(result.variantSource).toBe('systemDefault');
+        expect(result.variant).toBe(systemDefault);
+      } else {
+        // No /atc/customizing (or no systemCheckVariant) on this system — documented degradation.
+        expect(result.variantSource).toBe('sapFallback');
+        expect(result.variant).toBeNull();
+      }
+    }, 90000);
+
+    // A4H may return an incomplete zero-object result for this default-variant fixture. The 758
+    // async status must still terminate far inside the request budget without the legacy quiet wait.
+    // Evidence: docs/research/issues/728-atc-finding-stats-completeness.md
+    it('returns a terminal run far inside its budget', async () => {
+      const started = Date.now();
+      const result = await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, undefined, {
+        timeoutMs: 60_000,
+      });
+      const elapsed = Date.now() - started;
+
+      expectSoundResult(result);
+      expect(elapsed).toBeLessThan(45_000);
+    }, 90000);
+
+    it('rejects an unknown check variant instead of letting SAP silently run DEFAULT', async () => {
+      try {
+        await runAtcCheck(client.http, unrestrictedSafetyConfig(), KERNEL_CLASS_URL, 'ZZZ_ARC1_NO_SUCH_VARIANT', {
+          timeoutMs: 30_000,
+        });
+        throw new Error('Expected runAtcCheck to reject an unknown check variant');
+      } catch (err) {
+        expectSapFailureClass(err, [400], [/does not exist on this system/i]);
+      }
     }, 90000);
   });
 
@@ -2359,6 +2439,20 @@ describe('ADT Integration Tests', () => {
       expect(typeof r.package).toBe('string');
       expect(r.source).toBeTypeOf('object');
       expect((r.source as Record<string, unknown>).header).toBeDefined();
+    });
+
+    it('reads a UIAD (Launchpad App Descriptor Item) — the only /fiori/ type and a blues-v2 Accept', async (ctx) => {
+      await gateOrSkip(ctx, 'UIAD');
+      // LADI names are GUIDs, so discover one from the package rather than hardcoding an instance.
+      const pkg = await client.getPackageContents('SWDP_CONFIGURATION');
+      const ladi = pkg.find((o) => o.type === 'UIAD/TYP');
+      requireOrSkip(ctx, ladi, `${SkipReason.BACKEND_UNSUPPORTED}: no UIAD instance in SWDP_CONFIGURATION`);
+      const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'UIAD', ladi.name);
+      expect(r.type).toBe('UIAD/TYP');
+      const src = r.source as Record<string, unknown>;
+      // The fields that make a LADI the exposure-v2 unit: app type + catalog + intent.
+      expect(src.generalInformation).toBeDefined();
+      expect(src.navigation).toBeDefined();
     });
 
     it('reads an EVTB (RAP Event Binding) with a populated events array', async (ctx) => {
@@ -2947,5 +3041,44 @@ describe('SAPManage set_api_state (API release write)', () => {
         // best-effort-cleanup
       });
     }
+  }, 90_000);
+});
+
+/**
+ * Golden case on a4h: A4HK906291 lists one LIMU METH for ZCL_ARC1_DEMO_CALC, whose main
+ * include feed is 00002 (this transport), 00000 (active), 00001 — in that order. The review
+ * must roll the method up to its class and diff 00001 -> 00002, skipping the active entry.
+ */
+describe('SAPTransport diff (integration)', () => {
+  const client = getTestClient();
+  const TRANSPORT = process.env.TEST_TRANSPORT_DIFF_ID ?? 'A4HK906291';
+
+  it('rolls LIMU entries up to their class and reports the revision pair', async (ctx) => {
+    const { handleToolCall } = await import('../../src/handlers/dispatch.js');
+    const config = {
+      arc1Port: 8080,
+      arc1HttpAddr: '0.0.0.0:8080',
+      toolMode: 'standard',
+    } as unknown as Parameters<typeof handleToolCall>[1];
+
+    const result = await handleToolCall(client, config, 'SAPTransport', { action: 'diff', id: TRANSPORT });
+    const text = result.content[0]?.text ?? '';
+    requireOrSkip(ctx, text.startsWith('{') || undefined, `${SkipReason.NO_FIXTURE} (transport ${TRANSPORT})`);
+
+    type Part = { part: string; selectionMethod: string; baselineStatus: string; from: string | null };
+    const payload = JSON.parse(text) as {
+      comparison: string;
+      objects: Array<{ type: string; name: string; parts: Part[] }>;
+    };
+
+    expect(payload.comparison).toBe('transport-correction-to-immediate-previous');
+    // The transport lists a method, never a class — the rollup is what makes this reviewable.
+    const clas = payload.objects.find((o) => o.type === 'CLAS');
+    expect(clas?.name).not.toMatch(/\s|=/);
+
+    const main = clas?.parts.find((p) => p.part === 'main');
+    expect(main?.selectionMethod).toBe('exact-transport');
+    expect(main?.baselineStatus).toBe('prior-revision');
+    expect(main?.from).toBeTruthy();
   }, 90_000);
 });

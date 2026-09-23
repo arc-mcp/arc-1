@@ -1,0 +1,84 @@
+{
+  "name": "SAPNavigate",
+  "description": "Navigate code (BTP ABAP Environment): definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC); type+name replaces uri. Scope = released SAP + custom Z/Y. hierarchy queries SEOMETAREL: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets. Experimental relations: dependency maps or package neighborhoods, then selected reads. Consumer locations: references; objectType=\"CLAS/OC\" for class-only; otherwise omit. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "definition",
+          "references",
+          "completion",
+          "hierarchy",
+          "relations"
+        ],
+        "description": "Navigation action"
+      },
+      "uri": {
+        "type": "string",
+        "description": "Source URI of the object. Optional for references if type+name are provided."
+      },
+      "type": {
+        "type": "string",
+        "description": "Root object type, paired with name instead of uri (e.g. type=\"INTF\"). Not the result-type filter. relations: CLAS, INTF, DDLS, DCLS, BDEF, SRVD, TABL, TTYP, DTEL, DOMA, PROG, INCL, FUGR, FUNC, VIEW, ENHO, MSAG, TRAN, SHLP, SKTD, ENHS, ENQU, TYPE, EVTB, DSFD. ENHO/XHB, ENHS/XSB only; TTYP=table type; MSAG=message class."
+      },
+      "name": {
+        "type": "string",
+        "description": "Object name — alternative to uri for references."
+      },
+      "objectType": {
+        "type": "string",
+        "description": "references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. Omit for all consumer types. A bare prefix (\"CLAS\") matches every subtype."
+      },
+      "maxResults": {
+        "type": "number",
+        "description": "references: max entries (default 100, max 1000). \"total\" counts every match of the filter. relations: node cap incl. root, 1–100 (default 50); may stop earlier."
+      },
+      "line": {
+        "type": "number",
+        "description": "Line number (1-based)"
+      },
+      "column": {
+        "type": "number",
+        "description": "Column number (1-based)"
+      },
+      "source": {
+        "type": "string",
+        "description": "Current source code (for definition/completion)"
+      },
+      "direction": {
+        "type": "string",
+        "enum": [
+          "incoming",
+          "outgoing"
+        ],
+        "description": "relations: incoming=users; outgoing=dependencies (default)."
+      },
+      "depth": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3,
+        "description": "relations: native steps (default 1), not source-call hops."
+      },
+      "expandPackages": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_$]+$"
+        },
+        "description": "relations: expand exact packages beyond root; others visible. Not authorization."
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "annotations": {
+    "readOnlyHint": true
+  }
+}

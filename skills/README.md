@@ -4,6 +4,21 @@ Best-practice agent skills for common SAP development workflows with ARC-1.
 
 Each skill is a directory containing a `SKILL.md` file with YAML frontmatter — the format used by [Anthropic Agent Skills](https://code.claude.com/docs/en/skills) and consumed by the [`vercel-labs/skills`](https://github.com/vercel-labs/skills) CLI. Agents discover them by `description` and load them on demand.
 
+## Install as an Agent Plugin (MCP server + all skills)
+
+The repository root is an [Agent Plugins 1.0](https://agent-plugins.org/) package for GitHub
+Copilot, VS Code, Cursor, Codex, and other compatible clients. For Copilot CLI:
+
+```bash
+copilot plugin marketplace add arc-mcp/arc-1
+copilot plugin install arc-1@arc-1
+```
+
+This installs the ARC-1 MCP server and every skill below. The portable specification does not
+define secret prompts, so the SAP connection belongs in `.env` under the client-managed
+`${PLUGIN_DATA}` working directory. Follow the
+[Agent Plugin guide](https://docs.arc-1-mcp.com/agent-plugin/) to locate and configure it safely.
+
 ## Install as a Claude Code plugin (MCP server + all skills in one step)
 
 For **Claude Code**, the whole toolchain ships as a single plugin — the ARC-1 **MCP server** *and* every skill below — from a marketplace hosted in this repo:
@@ -185,7 +200,7 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 - `SAPRead(type="VERSIONS")` and `SAPRead(type="VERSION_SOURCE")` for pattern mining and safer edits of existing RAP stacks
 - `SAPSearch(searchType="tadir_lookup", source="both")` for one-shot existence checks against both released and inactive variants, with a `splitBrain` warning when an object exists only in one source — used by `migrate-segw-to-rap` Phase 6a (ARC-1 v0.9.5+ / PR #270)
 - `SAPWrite(action="batch_create", activateAtEnd: true)` for atomic CDS-composition activation — replaces per-file + manual terminal activation in `migrate-segw-to-rap` Step 2 (ARC-1 v0.9.5+ / PR #270)
-- `SAPTransport(action="history")` for object-to-transport traceability during later iterations
+- `SAPTransport(action="history")` for current object lock/assignment status during later iterations (legacy name; candidates are not complete history)
 - `SAPRead(action="diff", from=…, to=…)` for server-side single-system version diffs (active↔inactive, or revision↔active) returning only hunks — powers `sap-transport-review` (ARC-1 PR #445)
 - `SAPTransport(action="list", summary=true)` for a headers-only transport overview (omits `objects[]`, keeps `objectCount`) — cheap scan before drilling in, also used by `sap-transport-review` (ARC-1 PR #448)
 - `SAPLint(action="format" | "get_formatter_settings")` for SAP-native keyword case and indentation
@@ -199,7 +214,7 @@ Both skills produce the same RAP artifact stack. The difference is how they get 
 | [explain-abap-code](explain-abap-code/SKILL.md) | Reads an ABAP object, fetches all dependencies via SAPContext, and produces a structured explanation — including behavior definitions (BDEF: parses `implementation in class`, reads the behavior pool CCIMP handlers, runs SAPContext impact on the bound CDS root) | Onboarding to unfamiliar code, investigating bugs, documenting undocumented objects, understanding a RAP behavior (SAP Joule "AI Explain for Behavior Definitions" parity) |
 | [debug-slow-sql](debug-slow-sql/SKILL.md) | Root-causes a slow ABAP SQL or Fiori-Elements OData request without SAP GUI via a cheapest-first diagnostic ladder: `odata_perf` sap-statistics timing split (DB vs ABAP/SADL vs framework vs auth verdict), `cds_sql` Show-SQL, `SAPQuery` execution metrics (`totalRows`/`queryExecutionTimeMs`/`executedQueryString`), ST05 SQL-trace arm/read + ABAP profiler traces — then escalates to ST05/ST12/HANA only for record-level SQL + execution plans. Includes a root-cause catalog and "find the generator" guidance for search-help / SEGW-DPC-generated SQL | Slow reports, OData/Fiori lists, long-running CDS views, query timeouts; "why is this SQL/OData slow and what's the cheapest fix" |
 | [migrate-custom-code](migrate-custom-code/SKILL.md) | Runs ATC readiness checks, groups findings by priority, and generates replacement code | Preparing custom code for S/4HANA migration or ABAP Cloud readiness |
-| [sap-migration-dossier](sap-migration-dossier/SKILL.md) | Creates human-reviewed ECC → S/4HANA migration dossiers with inventory, usage, ATC, clean-core, review cards, and optional Markdown/HTML/JSON/CSV/graph outputs | Package- or namespace-level migration planning where the output needs to be saved, reviewed, visualized, or shared |
+| [sap-migration-dossier](sap-migration-dossier/SKILL.md) | Creates human-reviewed ECC → S/4HANA migration dossiers with inventory, usage, ATC, clean-core, review cards, and optional Markdown/HTML/JSON/CSV/graph outputs. Also inventories integration interfaces (RFC, IDoc, SEGW/OData, destinations) against SAP Note 3690029 clean core integration levels | Package- or namespace-level migration planning where the output needs to be saved, reviewed, visualized, or shared |
 | [sap-object-documenter](sap-object-documenter/SKILL.md) | Batch-documents many custom objects at once — purpose, style (Classic/Modern/Mixed), dependencies — as Markdown | Onboarding packages, handoffs, seeding a repo wiki (vs. explain-abap-code which is single-object interactive) |
 | [sap-transport-review](sap-transport-review/SKILL.md) | Reviews what *changed* — in a transport or in your unactivated drafts — as per-object unified diffs (`SAPTransport summary` to scan, `SAPRead action="diff"` to diff) plus risk flags and optional impact/ATC. The headless/whole-transport twin of Eclipse ADT 3.6's "Object Changes" | Pre-release/pre-activation gate, reviewing a transport (senior dev), "what have I changed since my last release?", change hand-off or audit |
 | [sap-transport-overview](sap-transport-overview/SKILL.md) | System-wide inventory of every open transport (all users) — owner, size, and risk flags (object in two requests, $TMP, stale, empty) via `SAPTransport(list, summary=true, user="*")`. Breadth, no diffs — the companion to sap-transport-review | Basis/release manager: "what's open across the system and what's risky to import", backlog & cleanup, pre-go-live conflict check |

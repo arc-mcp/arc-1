@@ -23,8 +23,15 @@
  */
 
 import { pathToFileURL } from 'node:url';
+import { RELATIONS_MIME, RELATIONS_PATH } from '../../src/adt/repository-relations.js';
 import type { FeatureStatus, ResolvedFeatures } from '../../src/adt/types.js';
 import { getToolDefinitions, type ToolDefinition } from '../../src/handlers/tools.js';
+import type { TargetDescriptor } from '../../src/server/destination-registry.js';
+import {
+  injectTargetSchema,
+  multiTargetToolDefinitions,
+  sapTargetsDefinition,
+} from '../../src/server/multi-target-tools.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../src/server/types.js';
 
 const TOKEN_ESTIMATE_BYTES = 4;
@@ -54,9 +61,9 @@ export interface ToolSchemaBudget {
   schemaTokenEstimate: number;
   descriptionTokenEstimate: number;
   descriptionCount: number;
-  /** Hard client-safety wall on the whole `{ tools }` wire payload (bytes). Do NOT raise — trim. */
+  /** Client-safety wall on the whole `{ tools }` wire payload (bytes). Trim first; raise only deliberately. */
   maxTotalWireBytes?: number;
-  /** Hard client-safety wall on the largest single tool (bytes). Do NOT raise — trim. */
+  /** Client-safety wall on the largest single tool (bytes). Trim first; raise only deliberately. */
   maxPerToolWireBytes?: number;
 }
 
@@ -65,6 +72,8 @@ export interface ToolSchemaScenario {
   config: ServerConfig;
   textSearchAvailable: boolean;
   resolvedFeatures?: ResolvedFeatures;
+  /** Fixed synthetic definitions for conditional runtime surfaces such as aggregate multi-target. */
+  definitions?: ToolDefinition[];
   budget: ToolSchemaBudget;
 }
 
@@ -90,6 +99,11 @@ const ALL_FEATURES_AVAILABLE: ResolvedFeatures = {
   textSearch: { available: true },
 };
 
+const LIVE_RELATIONS_FEATURES: ResolvedFeatures = {
+  ...ALL_FEATURES_AVAILABLE,
+  discoveryMap: new Map([[RELATIONS_PATH, [RELATIONS_MIME]]]),
+};
+
 const FULL_ACCESS_CONFIG: ServerConfig = {
   ...DEFAULT_CONFIG,
   allowWrites: true,
@@ -100,11 +114,61 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 };
 
 // Wire-byte ceilings that keep the tools/list lean (recurring per-request token cost; some clients
-// also cap tool-list size). Conservative — the full write surface sits a few KB under, read-only is
-// far smaller so it gets its own lower ceiling. Ceilings, not ratchets — trim the surface, don't raise.
-const WRITE_WIRE_WALL = 68_000;
+// also cap tool-list size). Read-only is far smaller so it gets its own lower ceiling.
+//
+// Trim the surface before touching these. Duplication between a tool description and its property
+// descriptions is the usual culprit and costs nothing to remove. But the ceiling exists to stop
+// drift, not to make SAPWrite unusable: when the only way to stay under it is to delete guidance an
+// LLM genuinely needs — the refuse-diff rule, which actions are destructive — the description wins
+// and the wall moves. Raised 68,000 → 72,000 (per-tool 21,000 → 23,000) for exactly that reason, so
+// every SAPWrite action carries a line. Raising is a maintainer decision, never a silent fix for a
+// failing build. Maintainer-approved 72,000 → 74,000 for combined #769 relations + #772 ATC
+// batches: 72,561 measured bytes, preserving evaluated guidance with 1,439 bytes of headroom.
+// Read-only, multi-target and per-tool ceilings are unchanged.
+const WRITE_WIRE_WALL = 74_000;
 const READ_WIRE_WALL = 50_000;
-const PER_TOOL_WIRE_WALL = 21_000;
+const PER_TOOL_WIRE_WALL = 23_000;
+
+function syntheticTarget(index: number): TargetDescriptor {
+  const sid = `A${index.toString(36).toUpperCase().padStart(2, '0')}`;
+  const client = String(index).padStart(3, '0');
+  // Exercise the worst-case <=16 enum size: an operator alias may use the full
+  // 32-character system segment even though the real SAP SID remains three characters.
+  const publicSystem = sid.padEnd(32, 'X');
+  return {
+    target: `${publicSystem}/${client}`,
+    sid,
+    client,
+    description: `Synthetic target ${index}`,
+    language: 'EN',
+    destinationName: `SYNTHETIC_${index}`,
+    authentication: 'PrincipalPropagation',
+    identity: 'per-user',
+    proxyType: 'OnPremise',
+    hasCloudConnectorLocationId: false,
+    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false },
+    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false },
+    connectionFingerprint: `connection-${index}`,
+    fingerprint: `fingerprint-${index}`,
+  };
+}
+
+function aggregateDefinitions(targetCount: number, config: ServerConfig = DEFAULT_CONFIG): ToolDefinition[] {
+  const targets = Array.from({ length: targetCount }, (_, index) => syntheticTarget(index));
+  const tools = multiTargetToolDefinitions(getToolDefinitions({ ...config, multiTargetEndpoints: true }), config).map((tool) =>
+    injectTargetSchema(tool, targets),
+  );
+  if (targetCount > 1) tools.push(sapTargetsDefinition());
+  return tools;
+}
+
+const MULTI_TARGET_BUDGET: ToolSchemaBudget = {
+  schemaTokenEstimate: 11_800,
+  descriptionTokenEstimate: 8_800,
+  descriptionCount: 175,
+  maxTotalWireBytes: READ_WIRE_WALL,
+  maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+};
 
 export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
   {
@@ -114,9 +178,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
       // Post-trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
-      schemaTokenEstimate: 11_800,
+      // Package CI adds five bounded controls; description trims retain pre-CI token ratchets.
+      // The 50 KB read and 74 KB write wire ceilings are unchanged.
+      schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 175,
+      descriptionCount: 184,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -128,9 +194,20 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: ALL_FEATURES_AVAILABLE,
     budget: {
       // Post-trim: full write surface ~66.3 KB / ~16.6k schema tokens / 250 descriptions.
-      schemaTokenEstimate: 17_300,
-      descriptionTokenEstimate: 12_400,
-      descriptionCount: 265,
+      // Raised 17_300 -> 17_500 for SAPWrite's opening line, which used to start with ~1,100
+      // characters of payload hygiene before saying what the tool does, plus TTYP in the SAPRead
+      // inventory. Description tokens stay under the original 12_400, and the wire payload is
+      // 69.4 KB against the 72 KB wall.
+      // Raised 17_500 -> 17_700 / 12_400 -> 12_550 for SAPTransport action="diff" (+2 paging
+      // properties). The description spends its tokens on the baselineStatus rule — without it an
+      // LLM reports a missing baseline as "newly created", which is the exact misreading this
+      // action exists to prevent. Only the on-prem write scenario moved; BTP stayed under budget.
+      // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
+      // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
+      // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
+      schemaTokenEstimate: 18_500,
+      descriptionTokenEstimate: 12_800,
+      descriptionCount: 278,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -142,9 +219,12 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     resolvedFeatures: { ...ALL_FEATURES_AVAILABLE, systemType: 'btp' },
     budget: {
       // Post-trim: full BTP write surface ~64.5 KB / ~16.1k schema tokens / 248 descriptions.
-      schemaTokenEstimate: 16_800,
-      descriptionTokenEstimate: 12_000,
-      descriptionCount: 260,
+      // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
+      // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
+      // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
+      schemaTokenEstimate: 17_350,
+      descriptionTokenEstimate: 12_200,
+      descriptionCount: 270,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -161,6 +241,63 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       maxTotalWireBytes: 4_000,
       maxPerToolWireBytes: 4_000,
     },
+  },
+  // Exercise both unknown and explicitly supported discovery. Automatic availability
+  // uses the same reviewed combined-feature budgets in either discovery state.
+  {
+    name: 'standard-default-live-relations',
+    config: { ...DEFAULT_CONFIG },
+    textSearchAvailable: true,
+    resolvedFeatures: LIVE_RELATIONS_FEATURES,
+    budget: {
+      schemaTokenEstimate: 12_000,
+      descriptionTokenEstimate: 8_800,
+      descriptionCount: 184,
+      maxTotalWireBytes: READ_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+    },
+  },
+  {
+    name: 'standard-full-git-live-relations',
+    config: { ...FULL_ACCESS_CONFIG },
+    textSearchAvailable: true,
+    resolvedFeatures: LIVE_RELATIONS_FEATURES,
+    budget: {
+      schemaTokenEstimate: 18_500,
+      descriptionTokenEstimate: 12_800,
+      descriptionCount: 278,
+      maxTotalWireBytes: WRITE_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+    },
+  },
+  {
+    name: 'btp-full-git-live-relations',
+    config: { ...FULL_ACCESS_CONFIG, systemType: 'btp' },
+    textSearchAvailable: true,
+    resolvedFeatures: { ...LIVE_RELATIONS_FEATURES, systemType: 'btp' },
+    budget: {
+      schemaTokenEstimate: 17_350,
+      descriptionTokenEstimate: 12_200,
+      descriptionCount: 270,
+      maxTotalWireBytes: WRITE_WIRE_WALL,
+      maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
+    },
+  },
+  ...([16, 17, 256] as const).map(
+    (targetCount): ToolSchemaScenario => ({
+      name: `multi-target-aggregate-${targetCount}`,
+      config: DEFAULT_CONFIG,
+      textSearchAvailable: true,
+      definitions: aggregateDefinitions(targetCount),
+      budget: MULTI_TARGET_BUDGET,
+    }),
+  ),
+  {
+    name: 'multi-target-aggregate-256-data-sql',
+    config: { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true },
+    textSearchAvailable: true,
+    definitions: aggregateDefinitions(256, { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true }),
+    budget: MULTI_TARGET_BUDGET,
   },
 ];
 
@@ -193,11 +330,13 @@ export function collectDescriptionStats(value: unknown): DescriptionStats {
 }
 
 export function measureToolDefinitions(scenario: ToolSchemaScenario): ToolSchemaMeasurement {
-  const definitions = getToolDefinitions(
-    scenario.config,
-    scenario.textSearchAvailable,
-    scenario.resolvedFeatures,
-  ) as ToolDefinition[];
+  const definitions =
+    scenario.definitions ??
+    (getToolDefinitions(
+      scenario.config,
+      scenario.textSearchAvailable,
+      scenario.resolvedFeatures,
+    ) as ToolDefinition[]);
   // Measure the exact shape the client receives from tools/list: { tools: [...] } (Codex review,
   // issue #520). The JSON-RPC envelope ({"jsonrpc","id","result"}) adds only ~40 bytes on top.
   const schemaBytes = Buffer.byteLength(JSON.stringify({ tools: definitions }), 'utf8');
@@ -293,8 +432,10 @@ export function formatToolSchemaBudgetReport(
   lines.push(
     '',
     'maxTotalWireBytes / maxPerToolWireBytes are wire-byte ceilings — the tools/list is re-sent on every ' +
-      'request (a recurring token cost) and some MCP clients cap its size. Do NOT raise them — trim tool ' +
-      'descriptions/schema payload or move long guidance into docs_page/. Token budgets may be bumped ' +
+      'request (a recurring token cost) and some MCP clients cap its size. Trim first: duplication between ' +
+      'a tool description and its property descriptions is free to remove, and long guidance belongs in ' +
+      'docs_page/. Raise the wall only when the alternative is deleting guidance an LLM needs, and only as ' +
+      'a maintainer decision — never as a silent fix for a failing build. Token budgets may be bumped ' +
       'consciously, but never above the wire ceiling.',
   );
   return lines.join('\n');

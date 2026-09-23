@@ -144,6 +144,45 @@ describe('createPluginRunOps.classRun (gated code execution)', () => {
   });
 });
 
+describe('createPluginRunOps.programRun (gated report execution)', () => {
+  it('refuses when the SAP_ALLOW_PLUGIN_EXECUTE opt-in is off', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), false, 'write', 'Custom_Run');
+    await expect(run.programRun('ZREPORT')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a tool that does not declare write scope', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'read', 'Custom_Run');
+    await expect(run.programRun('ZREPORT')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses when allowWrites=false', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), defaultSafetyConfig(), true, 'write', 'Custom_Run');
+    await expect(run.programRun('ZREPORT')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses invalid report names', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
+    for (const name of ['../../etc/passwd', 'Z REPORT', '/BROKEN', 'Z'.repeat(41)]) {
+      await expect(run.programRun(name)).rejects.toBeInstanceOf(AdtSafetyError);
+    }
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('POSTs to programrun and returns SAP list output when all gates pass', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
+    await expect(run.programRun('/ACME/Z_REPORT$1')).resolves.toBe('console output');
+    expect(u.post).toHaveBeenCalledWith('/sap/bc/adt/programs/programrun/%2Facme%2Fz_report%241');
+  });
+});
+
 describe('createReadOnlyAdtClient (runtime escape-hatch guard, review B1)', () => {
   // A minimal stand-in for AdtClient: a read method that internally needs `this.http`/`this.safety`,
   // plus the escape-hatch members a plugin must never reach.

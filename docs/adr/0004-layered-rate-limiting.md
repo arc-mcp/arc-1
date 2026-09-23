@@ -1,8 +1,9 @@
-# ADR 0004 — Layered Rate Limiting (per-instance, three layers, two operator knobs)
+# ADR 0004 — Layered Rate Limiting (per-instance, three layers)
 
 **Status:** Accepted
 **Date:** 2026-05-12
 **Related PR:** [#276](https://github.com/arc-mcp/arc-1/pull/276)
+**Amended:** 2026-07-17 by [#579](https://github.com/arc-mcp/arc-1/pull/579) to separate the OAuth and MCP HTTP edge controls
 **Closes:** [SEC-05](../../docs_page/roadmap.md#sec-05), CodeQL alert #12 (`js/missing-rate-limiting`)
 **Supersedes:** N/A
 **Superseded by:** N/A
@@ -19,14 +20,19 @@ Three independent threats were uncovered during planning ([docs/plans/completed/
 
 ## Decision
 
-Ship three layers, per-instance, in-memory only. Two operator-facing env vars total — per-endpoint OAuth ceilings live as constants in code.
+Ship three layers, per-instance, in-memory only. OAuth and MCP HTTP traffic use separate Layer 1
+buckets; Layer 2 has its own authenticated-user quota.
 
 ### Layer 1 — HTTP-edge per-IP (OAuth abuse + `/mcp` probing)
 
 - `express-rate-limit` mounted at [src/server/http.ts](../../src/server/http.ts) before any auth middleware.
-- One operator knob: `ARC1_AUTH_RATE_LIMIT` (default `20/min/IP`). `0` disables.
-- OAuth endpoints all use the operator-facing baseline uniformly; `/mcp` gets `max(value × 30, 600)/min/IP` to absorb legitimate batched tool-call traffic.
-- Per-endpoint differentiation lives in `buildLimiter(endpoint)` in `http.ts`, NOT in env — if a constant is wrong, it's a code change. This keeps the operator surface at one knob, not five.
+- `ARC1_AUTH_RATE_LIMIT` (default `20/min/IP`) controls OAuth endpoints. `0` disables only the
+  OAuth bucket.
+- `ARC1_MCP_HTTP_RATE_LIMIT` controls one shared bucket for single-target, pinned, aggregate, and
+  Copilot MCP traffic. When unset it derives `max(ARC1_AUTH_RATE_LIMIT × 30, 600)`; the 600 floor
+  remains active even when OAuth limiting is disabled. `0` explicitly disables only the MCP bucket.
+- Per-route MCP differentiation stays in code, not separate environment variables, so switching
+  endpoint styles cannot multiply one IP's effective allowance.
 - On hit: HTTP `429` + `Retry-After` + RFC 9331 `RateLimit-*` headers + typed `auth_rate_limited` audit event.
 
 ### Layer 2 — Per-user MCP quota (fairness)
@@ -50,7 +56,7 @@ The three layers ship with deliberately different defaults:
 
 | Layer | Default | Rationale |
 |---|---|---|
-| 1 (HTTP edge) | `20/min/IP`, ON | Closes CodeQL HIGH alert `js/missing-rate-limiting`. The cap is generous (`20/min` on OAuth, `600/min` on `/mcp`) — well above any legitimate single-user traffic. Disabling would reopen the SAST finding and remove cheap OAuth-surface protection. |
+| 1 (HTTP edge) | OAuth `20/min/IP`; MCP `600/min/IP`, ON | Closes CodeQL HIGH alert `js/missing-rate-limiting`. OAuth and MCP buckets can be disabled independently; disabling both requires setting both variables to `0`. |
 | 2 (Per-user MCP quota) | `0` (disabled) | **This is the only layer that can fail user-visible work** — an MCP tool error mid-task surfaces as a tool failure to the LLM agent. Single-user deployments (stdio, solo HTTP) don't need it. Multi-user deployments opt in by setting `ARC1_RATE_LIMIT>0` (typical: `60`). Pre-1.0 we prioritize avoiding adoption friction over preemptive fairness enforcement. |
 | 3 (SAP semaphore) | `10`, ON | The bug fix that started this work — per-PP-user `Semaphore` multiplied effective concurrency by `N_users`. Excess requests **queue**, they don't fail. A "too tight" default just means slightly higher latency under load. |
 
@@ -61,6 +67,9 @@ This is the canonical "secure by default + iterate" playbook applied per-layer: 
 **Operators**:
 - Must size Layer 3 against `rdisp/wp_no_dia`. The Rate Limiting Guide has worked-example math: `ARC1_MAX_CONCURRENT = floor(0.6 × wp_no_dia / N_instances)`.
 - Multi-instance deployments behind a load balancer give `N × limit` effective ceilings for Layers 1 and 2. Layer 3 is per-instance and must be sized to share its `rdisp/wp_no_dia` budget across `N`.
+- Upgrading operators that intentionally used `ARC1_AUTH_RATE_LIMIT=0` to disable every Layer 1
+  route must also set `ARC1_MCP_HTTP_RATE_LIMIT=0`. The decoupling prevents an OAuth-only tuning
+  decision from silently removing pre-authentication protection from MCP routes.
 - Layer 2 keyed on `userName ?? clientId` — anon traffic shares one bucket. Operators expecting many DCR-anonymous clients should account for that.
 
 **Security posture**:

@@ -1,10 +1,13 @@
 _schema-version: "3.1"
 ID: arc1-mcp
-version: 0.9.27 # x-release-please-version
+version: 1.3.0 # x-release-please-version
 description: ARC-1 — MCP Server for SAP ABAP Systems
 
 # ──────────────────────────────────────────────────────────────────────
-# On-Premise SAP via Cloud Connector + XSUAA OAuth
+# SAP Multi-Target Application (MTA) deployment for ARC-1 on BTP Cloud Foundry
+#
+# "ARC-1 multi-target" below means multiple SAP system/client targets. It is
+# unrelated to SAP's Multi-Target Application packaging term used by this file.
 #
 # Deploys ARC-1 as a Node.js app with:
 #   - XSUAA for MCP client authentication (Claude Desktop, Cursor, etc.)
@@ -13,20 +16,25 @@ description: ARC-1 — MCP Server for SAP ABAP Systems
 #
 # Prerequisites:
 #   1. Cloud Connector configured with virtual host mapping
-#   2. BTP Destination pointing to the virtual host
+#   2. BTP Destination Service entries for the intended SAP connections
 #   3. Users assigned to ARC-1 role collections (see xs-security.json)
 #
 # Deploy:
-#   mbt build && cf deploy mta_archives/arc1-mcp_0.6.1.mtar
+#   npm run btp:build-deploy
 #
-# Two destinations are recommended for on-premise PP scenarios:
+# For an optional single-target `/mcp` using on-premise PP, two destinations
+# are recommended:
 #   1. BasicAuth destination (SAP_BTP_DESTINATION) — used at startup for
 #      feature probing. No JWT needed.
 #   2. PrincipalPropagation destination (SAP_BTP_PP_DESTINATION) — used at
 #      runtime for per-user requests. Requires user JWT.
+# ARC-1 multi-target routes do not use this pair: each discovered system/client
+# is represented by one destination. PrincipalPropagation is recommended;
+# BasicAuthentication is a default-off, shared-identity read-only exception.
 #
-# When using SAP_BTP_DESTINATION, URL/client come from the destination.
-# Only set manually if NOT using the Destination Service:
+# For a single-target `/mcp` using SAP_BTP_DESTINATION, URL/client come from
+# that destination. Only set them manually when that single-target route does
+# not use the Destination Service:
 #   cf set-env arc1-mcp-server SAP_URL "http://a4h-abap:50000"
 #   cf set-env arc1-mcp-server SAP_CLIENT "001"
 #   cf restage arc1-mcp-server
@@ -63,20 +71,43 @@ modules:
       # `host:` in your `mta-overrides.mtaext` (see mta-overrides.mtaext.example).
       health-check-type: http
       health-check-http-endpoint: /health
-      # Node heap target sized to 87.5% of dyno memory (512M -> 448M) so V8 GCs
-      # cleanly inside the CF cgroup instead of being SIGKILL'd; bump in
-      # lockstep when memory: changes.
-      command: node --max-old-space-size=448 dist/index.js
       buildpack: nodejs_buildpack
+      # Invoke the wrapper through sh because Windows-built MTARs do not preserve
+      # its executable bit. It validates MEMORY_AVAILABLE, applies the adaptive
+      # 75% policy, then execs Node so CF's SIGTERM reaches ARC-1.
+      command: exec sh ./bin/start-cf.sh
     build-parameters:
       builder: custom
       commands: []
       ignore:
-        - .env
+        - .env*
+        - .npmrc
+        - "*service-key*.json"
+        - "*.key"
+        - "*.pem"
+        - "*.p12"
+        - "*.pfx"
+        - "*.pse"
+        - "*.jks"
+        - "*.keystore"
         - .git/
+        - .claude-plugin/
+        - .cfignore
+        - .cursor-plugin/
+        - .cursorignore
+        - .dockerignore
+        - .gitattributes
+        - .gitignore
+        - .mcp.json.example
+        - .mcpbignore
+        - .worktreeinclude
         - src/
         - tests/
         - docs/
+        - docs_page/
+        - examples/
+        - .arc1/
+        - btp/
         - skills/
         - coverage/
         - test-results/
@@ -85,13 +116,38 @@ modules:
         - .husky/
         - .vscode/
         - .claude/
+        - .codex/
+        - .codex-tmp/
+        - artifacts/
+        - site/
+        - public/
         - mta_archives/
+        - Makefile_*.mta
         - mta-op-*/
         - node_modules/
         - scripts/
         - reports/
         - research/
+        - Dockerfile
+        - biome.json
+        - glama.json
+        - icon.png
+        - manifest*.yml
+        - mcp*.json
+        - mkdocs.yml
+        - mta.yaml
+        - mta-*.mtaext*
+        - release-please-config.json
+        - .release-please-manifest.json
+        - server.json
+        - tsconfig*.json
+        - vitest*.ts
+        - xs-security.json
     properties:
+      # Let the CF launcher size old-space to 75% of MEMORY_AVAILABLE.
+      # This follows durable MTA memory overrides (512M -> 384M, 1G -> 768M)
+      # while preserving native/Buffer/parser headroom outside the V8 heap.
+      OPTIMIZE_MEMORY: "true"
       SAP_TRANSPORT: http-streamable
       SAP_SYSTEM_TYPE: auto
       SAP_LANGUAGE: EN
@@ -103,26 +159,46 @@ modules:
       # (module properties are rewritten on every cf deploy); set it once via
       # cf set-env — see docs_page/xsuaa-setup.md "Stable DCR signing key".
       ARC1_OAUTH_DCR_TTL_SECONDS: "0"
-      # Destinations. The base values below are placeholders — every landscape
-      # MUST override them via `mta-overrides.mtaext` (see the
-      # `mta-overrides.mtaext.example` template in this repo) or via
-      # `cf set-env`. Deploying with the placeholders will fail at startup with
-      # a "destination not found" error from BTP, which is the intended signal.
-      #
-      # BasicAuth destination for startup feature probing
-      SAP_BTP_DESTINATION: your-basic-destination
-      # PrincipalPropagation destination for per-user requests (with JWT)
-      SAP_BTP_PP_DESTINATION: your-pp-destination
+      # No fake destination is active in the base descriptor. Configure these
+      # only when intentionally retaining a single-target `/mcp` route:
+      # SAP_BTP_DESTINATION: my-basic-destination
+      # SAP_BTP_PP_DESTINATION: my-pp-destination
+      # Preserve the existing safe identity default for an optional
+      # single-target `/mcp`. With no single-target destination these settings
+      # are inert; discovered PrincipalPropagation targets always force strict
+      # PP. A shared-identity single-target deployment must opt out explicitly
+      # with SAP_PP_ENABLED: "false".
       SAP_PP_ENABLED: "true"
-      # Recommended default: accept only JWT-backed per-user SAP calls. Set false
-      # via an override for supported mixed PP/API-key operation in one instance.
       SAP_PP_STRICT: "true"
-      # Authorization / safety defaults. Keep the MTA conservative; widen per
-      # landscape via `mta-overrides.mtaext` or `cf set-env` only when the
-      # target system actually needs it.
+
+      # Experimental destination-discovered ARC-1 multi-target v1. In this SAP
+      # MTA descriptor, the two lines below are the mandatory opt-in additions;
+      # the other prerequisites already use safe base values. Deploy once, add
+      # `arc1.enabled=true` subaccount destinations, then `cf restart`;
+      # destination changes do not require another MTAR build/deploy.
+      # ARC1_MULTI_TARGET_ENDPOINTS: "true"
+      # ARC1_CACHE: none
+      # Optional shared BasicAuthentication targets. Default false; PP remains
+      # recommended. Enabling this requires parameters.instances: 1 (the base
+      # descriptor already sets it) and a least-privileged technical SAP user.
+      # Every authorized XSUAA user then acts as that same SAP technical user
+      # for the Basic destination; SAP audit records do not preserve the human.
+      # Basic User/Password rotation is hot; every other destination change
+      # remains restart-bound.
+      # ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "true"
+      # Optional rate tuning for a small beta deployment; these values are not
+      # required to enable ARC-1 multi-target mode.
+      # ARC1_AUTH_RATE_LIMIT: "30"
+      # ARC1_MCP_HTTP_RATE_LIMIT: "1000"
+      # ARC1_RATE_LIMIT: "120"
+      # Authorization / safety defaults. Keep the SAP MTA descriptor
+      # conservative. Use `mta-overrides.mtaext` for durable landscape
+      # overrides. A direct `cf set-env` change is temporary and a later
+      # `cf deploy` reapplies this descriptor.
       SAP_ALLOW_WRITES: "false"
       SAP_ALLOW_DATA_PREVIEW: "false"
       SAP_ALLOW_FREE_SQL: "false"
+      SAP_BLOCKED_DATA_SOURCES: ""
       SAP_ALLOW_TRANSPORT_WRITES: "false"
       SAP_ALLOW_GIT_WRITES: "false"
       SAP_ALLOWED_PACKAGES: "$TMP"
@@ -146,9 +222,21 @@ modules:
       # Bound only when the (deprecated) application-logs resource is active —
       # off by default; skipped automatically while inactive. See resource below.
       - name: arc1-application-logs
+      # Optional compliance audit sink. The resource is inactive by default;
+      # when enabled, these binding parameters create the X.509 credentials
+      # required by the premium Audit Log Write API.
+      - name: arc1-auditlog
+        parameters:
+          config:
+            xsuaa:
+              credential-type: x509
+              x509:
+                key-length: 2048
+                validity: 2
+                validity-type: MONTHS
 
   # Optional browser entry point for the experimental read-only UI. It is
-  # excluded by default so the base MTA still deploys one CF app. Include it
+  # excluded by default so the base SAP MTA still deploys one CF app. Include it
   # with `mta-ui-approuter.mtaext`; the AppRouter performs interactive XSUAA login,
   # checks the admin scope, and forwards the user JWT to `/ui/*` on ARC-1.
   - name: arc1-ui-router
@@ -186,6 +274,24 @@ resources:
         # xsappname must be unique per SUBACCOUNT — derive it from the space so
         # the same mtar can be deployed into multiple spaces side by side.
         xsappname: arc1-mcp-${space}
+        # XSUAA sees only ARC-1's callback proxy, never the MCP client's final
+        # redirect URI. Keep this upstream list deployment-owned. Manual client
+        # callbacks are independently allowlisted in src/server/oauth-redirect-policy.ts;
+        # DCR callbacks are exact-bound in their signed client_id.
+        oauth2-configuration:
+          redirect-uris:
+            - ~{arc1-mcp-api/url}/oauth/callback
+            - ~{arc1-mcp-api/url}/oauth/logged-out
+          # The deploy service merges path/config only at the top level: this
+          # object replaces the one in xs-security.json. Keep its grants/TTLs.
+          # .mtaext overrides merge recursively, so extensions need only the
+          # redirect-uris list (or the specific grant/TTL they intend to change).
+          grant-types:
+            - authorization_code
+            - refresh_token
+            - urn:ietf:params:oauth:grant-type:jwt-bearer
+          token-validity: 3600
+          refresh-token-validity: 2592000
         # Role-collection names are also subaccount-scoped. They live here (not
         # in xs-security.json) because `${space}` is only resolved in descriptor
         # values, not inside the path-referenced JSON. Defining the array here
@@ -224,6 +330,8 @@ resources:
             description: "Full ARC-1 administrative access (admin implies all scopes)"
             role-template-references:
               - "$XSAPPNAME.MCPAdmin"
+    requires:
+      - name: arc1-mcp-api
 
   - name: arc1-destination
     type: org.cloudfoundry.managed-service
@@ -236,6 +344,26 @@ resources:
     parameters:
       service: connectivity
       service-plan: lite
+
+  # SAP BTP Audit Log Service — OFF by default (`active: false`). Enable it in
+  # the landscape extension only when the subaccount has premium-plan quota and
+  # an owner for certificate rotation. Both the instance and binding must opt in
+  # to X.509; a plain binding contains a client secret and cannot call the
+  # customer Write API.
+  - name: arc1-auditlog
+    type: org.cloudfoundry.managed-service
+    active: false
+    parameters:
+      service: auditlog
+      service-plan: premium
+      config:
+        xs-security:
+          xsappname: arc1-auditlog-${space}
+          oauth2-configuration:
+            credential-types:
+              - x509
+            grant-types:
+              - client_credentials
 
   # SAP Application Logging Service — OFF by default (`active: false`).
   # The service is DEPRECATED: SAP removed it from the list of Eligible Cloud

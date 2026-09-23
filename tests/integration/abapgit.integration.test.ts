@@ -12,14 +12,12 @@ import type { AdtClient } from '../../src/adt/client.js';
 import { defaultFeatureConfig } from '../../src/adt/config.js';
 import { probeFeatures } from '../../src/adt/features.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
-import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
 const ABAPGIT_REMOTE_TESTS_DISABLED =
-  'TEST_ABAPGIT_REMOTE_TESTS not enabled (abapGit stage/pull requires remote reachability and STRUST trust chain)';
+  'TEST_ABAPGIT_REMOTE_TESTS not enabled (abapGit stage requires remote reachability and STRUST trust chain)';
 const abapGitRemoteTestsEnabled = process.env.TEST_ABAPGIT_REMOTE_TESTS === 'true';
-const abapGitPullRepoKey = process.env.TEST_ABAPGIT_PULL_REPO_KEY;
 
 describe('abapGit ADT bridge integration', () => {
   let client: AdtClient;
@@ -53,14 +51,12 @@ describe('abapGit ADT bridge integration', () => {
     expect(info.branches.length).toBeGreaterThan(0);
   });
 
-  it('unlinkRepo on fake key returns expected bridge error shape', async (ctx) => {
+  it('unlinkRepo is blocked before SAP when allowGitWrites=false', async (ctx) => {
     requireOrSkip(ctx, abapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
-    try {
-      await unlinkRepo(client.http, client.safety, `999999999${Date.now()}`);
-      expect.fail('Expected unlinkRepo to fail for fake key');
-    } catch (err) {
-      expectSapFailureClass(err, [404, 400], [/Repository not found in database/i, /not found/i]);
-    }
+    const noGitSafety = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
+    await expect(unlinkRepo(client.http, noGitSafety, 'NEVER_SENT')).rejects.toThrow(
+      /Git write 'unlink' is blocked: allowGitWrites=false/,
+    );
   });
 
   it('createRepo is blocked when allowGitWrites=false', async (ctx) => {
@@ -108,17 +104,11 @@ describe('abapGit ADT bridge integration', () => {
     await stageRepo(client.http, client.safety, repos[0]);
   });
 
-  it('pullRepo can pull a configured repo when remote trust is explicitly enabled', async (ctx) => {
+  it('pullRepo is blocked before SAP when allowGitWrites=false', async (ctx) => {
     requireOrSkip(ctx, abapGitAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
-    if (!abapGitRemoteTestsEnabled) {
-      skipTest(ctx, ABAPGIT_REMOTE_TESTS_DISABLED);
-      return;
-    }
-    requireOrSkip(
-      ctx,
-      abapGitPullRepoKey,
-      'TEST_ABAPGIT_PULL_REPO_KEY not configured (pullRepo needs an explicit linked repository key)',
+    const noGitSafety = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
+    await expect(pullRepo(client.http, noGitSafety, 'NEVER_SENT')).rejects.toThrow(
+      /Git write 'pull' is blocked: allowGitWrites=false/,
     );
-    await pullRepo(client.http, client.safety, abapGitPullRepoKey);
   });
 });

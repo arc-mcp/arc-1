@@ -2,7 +2,7 @@
 
 import { safeUpdateSourceWithTransform } from '../../adt/crud.js';
 import { spliceContent } from '../../context/content-splice.js';
-import { cachedFeatures } from '../feature-cache.js';
+import { getCachedFeatures } from '../feature-cache.js';
 import { resolveVersionAndDraftInfo } from '../read.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { isCacheConsistentSrcUrl, runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
@@ -91,7 +91,7 @@ export async function writeActionEditContent(ctx: SapWriteContext): Promise<Tool
       return { source: spliced.newSource! };
     },
     transport,
-    cachedFeatures?.abapRelease,
+    getCachedFeatures()?.abapRelease,
     effectiveVersion === 'inactive' ? 'inactive' : undefined,
     cachedSource,
   );

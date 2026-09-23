@@ -27,7 +27,7 @@ type AstNode = {
  * Extract the public API contract from ABAP source.
  */
 /** Default abaplint version for contract extraction (Cloud = superset of all) */
-const DEFAULT_VERSION = Version.Cloud;
+export const DEFAULT_CONTRACT_VERSION = Version.Cloud;
 
 export function extractContract(
   source: string,
@@ -37,7 +37,7 @@ export function extractContract(
 ): Contract {
   // Normalize CRLF → LF (SAP ADT returns CRLF which can break abaplint parsing)
   const normalized = source.replace(/\r\n/g, '\n');
-  const ver = abaplintVersion ?? DEFAULT_VERSION;
+  const ver = abaplintVersion ?? DEFAULT_CONTRACT_VERSION;
   try {
     switch (objectType) {
       case 'CLAS':

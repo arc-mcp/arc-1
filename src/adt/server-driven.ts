@@ -1,31 +1,37 @@
 /**
- * Generic "server-driven object" (SDO) read/write path for ABAP Platform 2025 (SAP_BASIS 8.16+).
+ * Generic "server-driven object" (SDO) read/write path. Most SDO types need ABAP Platform 2025
+ * (SAP_BASIS 8.16+), but some (DTDC, DSFD, EVTB) also ship on S/4HANA 2023 (758) — availability is
+ * discovery-gated per type, never a hardcoded release.
  *
- * 816 introduced ~46 repository object types that all share ONE AFF generic-object contract:
- *   - metadata: GET …/{name}              (Accept application/vnd.sap.adt.blues.vN+xml) → <blue:blueSource>
- *   - content : GET …/{name}/source/main                                                → AFF JSON
+ * These repository object types share ONE AFF generic-object contract:
+ *   - metadata: GET …/{name}   (Accept = per-type metadataContentType) → <blue:blueSource> or <dtdc:dtdcSource>
+ *   - content : GET …/{name}/source/main                                                → AFF JSON *or* DDL text
  * Rather than per-type plumbing, this module exposes a curated registry of high-value types
  * and ONE generic engine, discovery-gated so pre-8.16 systems degrade cleanly.
  *
  * WRITE (create/update-source/delete) is supported and reuses the verified machinery:
- *   - CREATE = POST <collection-href>  (Content-Type = the type's blues.vN+xml) with a minimal
- *             <blue:blueSource> body (adtcore:type/name/description + packageRef) → 201.
- *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… (Content-Type application/json,
- *             the AFF JSON body) → unlock.
+ *   - CREATE = POST <collection-href>  (Content-Type = the type's metadataContentType) with a minimal
+ *             metadata body (blue:blueSource / dtdc:dtdcSource; adtcore:type/name/description + packageRef) → 201.
+ *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… → unlock. The Content-Type is
+ *             per-type (registry `sourceFormat`): application/json for the AFF-JSON types,
+ *             text/plain for the DDL-text ones (DTSC, DSFD, DTDC). The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
  * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
  *
- * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB uses EVTB/EVB) and the
- * blues content-type is NOT uniformly v1 (EVTO uses v2) — both are stored per registry entry,
- * verified live on a4h-2025 (816): DESD/DTSC/CSNM/EVTB/COTA create with blues.v1, EVTO with blues.v2.
+ * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB=EVTB/EVB, DTDC=DTDC/DF) and
+ * the metadata content-type varies (blues v1, EVTO=blues v2, DTDC=ddic.dtdc.v1) — all stored per
+ * registry entry, verified live: the blue family on 816, DTDC create→activate on 758 + 816.
  */
+import { logger } from '../server/logger.js';
+import { postCreate } from './create-request.js';
 import { lockObject, unlockObject } from './crud.js';
+import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { ServerDrivenObjectResult } from './types.js';
-import { escapeXmlAttr, parseBlueSource } from './xml-parser.js';
+import { escapeXmlAttr, parseServerDrivenMetadata } from './xml-parser.js';
 
 /** Registry entry for a curated server-driven object type. */
 export interface SdoRegistryEntry {
@@ -39,63 +45,167 @@ export interface SdoRegistryEntry {
    */
   createType: string;
   /**
-   * blues content-type for BOTH the metadata GET (Accept) and the create POST (Content-Type).
-   * NOT uniformly v1 — EVTO advertises/accepts v2. The supportsServerDrivenObject() gate matches
-   * either via a `.includes('blues')` substring test, so it is version-agnostic.
+   * Metadata content-type for BOTH the metadata GET (Accept) and the create POST (Content-Type).
+   * Most types use `application/vnd.sap.adt.blues.vN+xml` (EVTO is v2, the rest v1); DTDC uses its
+   * own `application/vnd.sap.adt.ddic.dtdc.v1+xml`. Matched by `discoveryMarker` in the gate.
    */
-  blueContentType: string;
+  metadataContentType: string;
+  /**
+   * Local name of the metadata root element AFTER the parser strips namespace prefixes
+   * (`removeNSPrefix: true`): `blueSource` for the blue family, `dtdcSource` for DTDC. Drives the
+   * parse path (`parseServerDrivenMetadata`).
+   */
+  metadataRootLocalName: string;
+  /**
+   * Qualified root element name + its namespace URI for the create body. Blue family:
+   * `blue:blueSource` / `http://www.sap.com/wbobj/blue`. DTDC: `dtdc:dtdcSource` /
+   * `http://www.sap.com/adt/ddic/dtdcsources`. Drives the build path.
+   */
+  metadataRootQName: string;
+  metadataNamespace: string;
+  /**
+   * Substring the discovery gate matches against the collection's advertised Accept type: `blues`
+   * for the blue family, `dtdc` for DTDC. Version-agnostic (matches v1/v2).
+   */
+  discoveryMarker: string;
+  /**
+   * Source flavor — drives BOTH the client-side validation and the PUT Content-Type. NOT uniform:
+   * the AFF-JSON types 415 on text/plain, and the DDL-text types (DTSC, DSFD, DTDC) 415 on
+   * application/json. Live-verified per type on 816.
+   */
+  sourceFormat: SdoSourceFormat;
 }
+
+/** AFF JSON body vs plain DDL text. Required per entry — a wrong guess is a hard 415 from SAP. */
+export type SdoSourceFormat = 'json' | 'text';
+
+/**
+ * Shared metadata-format fields for the "blue" family (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD) — every
+ * blue type has the identical root element/namespace/discovery marker; only its content-type version
+ * (v1/v2) and source flavor differ. Spread into each blue entry so the shape can't drift.
+ */
+const BLUE_METADATA = {
+  metadataRootLocalName: 'blueSource',
+  metadataRootQName: 'blue:blueSource',
+  metadataNamespace: 'http://www.sap.com/wbobj/blue',
+  discoveryMarker: 'blues',
+} as const;
 
 const BLUES_V1 = 'application/vnd.sap.adt.blues.v1+xml';
 const BLUES_V2 = 'application/vnd.sap.adt.blues.v2+xml';
-/** AFF source is JSON for every server-driven type (read GET + write PUT). */
-const SDO_SOURCE_CONTENT_TYPE = 'application/json';
+
+/** Content-Type for the source PUT, derived from the type's declared source flavor. */
+export function serverDrivenSourceContentType(code: string): string {
+  const format = sdoEntry(code).sourceFormat;
+  switch (format) {
+    case 'json':
+      return 'application/json';
+    case 'text':
+      return 'text/plain';
+    default: {
+      // A new SdoSourceFormat must map to a content type here — falling through would only
+      // surface as a live 415. Exhaustiveness is a compile error, not a runtime surprise.
+      const unhandled: never = format;
+      throw new AdtApiError(`Unhandled server-driven source format "${String(unhandled)}".`, 500, '');
+    }
+  }
+}
+
+/** Declared source flavor for a registered type (drives the client-side JSON parse gate). */
+export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
+  return sdoEntry(code).sourceFormat;
+}
 
 /**
  * The registered server-driven type codes, in registry (= LLM tool-surface) order. The SAPRead/
  * SAPWrite rows in src/handlers/tool-registry.ts derive from this tuple, so registering a type
- * here is the ONLY step needed to expose it — `btp: true` by construction (every SDO type is
- * 8.16+, and runtime availability is discovery-gated per system anyway).
+ * here is the ONLY step needed to expose it — `btp: true` by construction (runtime availability is
+ * discovery-gated per system, so a type absent on a release degrades cleanly).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const;
+export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD'] as const;
 
-/** Curated registry of high-value 816 server-driven object types — keys are exactly SDO_TYPES. */
+/** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
   DESD: {
     href: '/sap/bc/adt/ddic/desd',
     label: 'CDS Logical External Schema',
     createType: 'DESD/TYP',
-    blueContentType: BLUES_V1,
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
   },
   DTSC: {
     href: '/sap/bc/adt/ddic/dtsc/sources',
     label: 'CDS Static Cache (table-entity buffer)',
     createType: 'DTSC/TYP',
-    blueContentType: BLUES_V1,
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'text',
   },
   CSNM: {
     href: '/sap/bc/adt/csn/csnm',
     label: 'Core Schema Notation Model (CSN)',
     createType: 'CSNM/TYP',
-    blueContentType: BLUES_V1,
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
   },
   EVTB: {
     href: '/sap/bc/adt/businessservices/evtbevb',
     label: 'RAP Event Binding',
     createType: 'EVTB/EVB',
-    blueContentType: BLUES_V1,
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
   },
   EVTO: {
     href: '/sap/bc/adt/businessservices/evtoevo',
     label: 'RAP Event Object',
     createType: 'EVTO/EVO',
-    blueContentType: BLUES_V2,
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
   },
   COTA: {
     href: '/sap/bc/adt/conn/commtargets',
     label: 'Communication Target',
     createType: 'COTA/TYP',
-    blueContentType: BLUES_V1,
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  DSFD: {
+    href: '/sap/bc/adt/ddic/dsfd/sources',
+    label: 'CDS Scalar Function Definition',
+    createType: 'DSFD/SCF',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'text',
+  },
+  // DTDC is the first NON-blue server-driven type: its own metadata format (<dtdc:dtdcSource> +
+  // application/vnd.sap.adt.ddic.dtdc.v1+xml), DDL-text source. Available on 758 + 816.
+  DTDC: {
+    href: '/sap/bc/adt/ddic/dtdc/sources',
+    label: 'CDS Dynamic Cache',
+    createType: 'DTDC/DF',
+    metadataContentType: 'application/vnd.sap.adt.ddic.dtdc.v1+xml',
+    metadataRootLocalName: 'dtdcSource',
+    metadataRootQName: 'dtdc:dtdcSource',
+    metadataNamespace: 'http://www.sap.com/adt/ddic/dtdcsources',
+    discoveryMarker: 'dtdc',
+    sourceFormat: 'text',
+  },
+  // Launchpad content: the LADI replaces the deprecated tile/target-mapping model and is the
+  // developer-owned unit on ABAP Cloud. blues.v2 (v1 -> 406, verified on 816).
+  // Manual Cloud-language items are editable, including on-prem 816. Generated items and Standard
+  // language items can be readonly. The UIAD writer probes the object's root configuration flag.
+  UIAD: {
+    href: '/sap/bc/adt/fiori/uiad',
+    label: 'Launchpad App Descriptor Item (LADI)',
+    createType: 'UIAD/TYP',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
   },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
@@ -121,31 +231,78 @@ export function serverDrivenObjectUrl(code: string, name: string): string {
 }
 
 /**
- * The blues content-type for a type — used as the metadata GET Accept (incl. package resolution,
- * where the <blue:blueSource> packageRef only renders under this Accept). Version-correct per type
- * (EVTO → v2). Throws AdtApiError for an unknown code.
+ * The metadata content-type for a type — used as the metadata GET Accept (incl. package resolution,
+ * where the metadata root's packageRef only renders under this Accept) and the create POST
+ * Content-Type. Per type (EVTO → blues v2, DTDC → its own dtdc type). Throws for an unknown code.
  */
-export function serverDrivenBlueContentType(code: string): string {
-  return sdoEntry(code).blueContentType;
+export function serverDrivenMetadataContentType(code: string): string {
+  return sdoEntry(code).metadataContentType;
 }
 
 /**
- * Capability gate — true iff ADT discovery advertises the type's collection with the
- * server-driven `blues` accept (present on 8.16+, absent on 7.5x / 758). Returns undefined
- * when discovery has not been loaded (caller may attempt and let a 404 surface). Mirrors
- * supportsExplicitTransportTarget() / supportsCdsTestCases(). Version-agnostic: matches v1 and v2.
+ * Capability gate — true iff ADT discovery advertises the type's collection with its per-type
+ * metadata accept (the blue family's `blues`, DTDC's `dtdc`; present on the releases that ship the
+ * type, absent otherwise). Returns undefined when discovery has not been loaded (caller may attempt
+ * and let a 404 surface). Mirrors supportsExplicitTransportTarget() / supportsCdsTestCases().
+ * Version-agnostic: `discoveryMarker` is a substring, so it matches v1 and v2.
  */
 export function supportsServerDrivenObject(http: AdtHttpClient, code: string): boolean | undefined {
   const entry = REGISTRY_BY_CODE[code];
   if (!entry) return false;
   if (!http.hasDiscoveryData()) return undefined;
-  return (http.discoveryAcceptFor(entry.href) ?? '').includes('blues');
+  return (http.discoveryAcceptFor(entry.href) ?? '').includes(entry.discoveryMarker);
 }
 
 /**
- * Read a server-driven object: its `<blue:blueSource>` metadata + AFF JSON source.
- * The source is JSON-parsed when possible (raw text otherwise). Throws AdtApiError 404 for a
- * nonexistent object. Gate availability with supportsServerDrivenObject() on unknown systems.
+ * Resolve SDO availability, fetching ADT discovery when it has not been loaded yet.
+ *
+ * The sync check returns `undefined` on a cold discovery map — which the CLI always is
+ * (`handleToolCall` runs without the startup probe). Callers that treated only an explicit `false`
+ * as "unavailable" therefore fell through to the request and surfaced a raw 404 with a "verify the
+ * name exists" hint, when in truth the object type does not exist on that release.
+ *
+ * `safety` is REQUIRED: fetchDiscoveryDocument issues an unguarded GET, and this runs inside a tool
+ * call, so it must pass the safety ceiling. Read is always permitted at that layer today, so this is
+ * a convention guard (and a real gate if a Read restriction is ever added), not an active control.
+ * The fetched map is used locally and deliberately NOT stored: server.ts re-injects the cached map
+ * before every tool call, and writing to the shared client would leak one user's capability view
+ * under the non-strict principal-propagation fallback.
+ *
+ * Still-unknown resolves to `true` (proceed): `hasDiscoveryData()` cannot tell "discovery
+ * unreachable" from "discovery empty", and failing closed would break every SDO read on a system
+ * where /sap/bc/adt/discovery is 403'd. This gate only improves the error message — the real
+ * controls are checkOperation and the package allowlist.
+ */
+export async function ensureServerDrivenSupport(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  code: string,
+): Promise<boolean> {
+  const known = supportsServerDrivenObject(http, code);
+  if (known !== undefined) return known;
+  const entry = REGISTRY_BY_CODE[code];
+  if (!entry) return false;
+  checkOperation(safety, OperationType.Read, 'FetchDiscovery');
+  const { map } = await fetchDiscoveryDocument(http); // never throws
+  // Empty map = discovery unreachable, NOT "collection absent" — those must not collapse together,
+  // or a 403'd discovery would block every SDO read. A populated map lacking the href IS unsupported.
+  if (map.size === 0) return true;
+  return (resolveAcceptType(map, entry.href) ?? '').includes(entry.discoveryMarker);
+}
+
+/** Shared "this release does not have this type" message for the three SDO entry points. */
+export function serverDrivenUnavailableMessage(tool: string, code: string): string {
+  return (
+    `${tool} type=${code} (server-driven object): this system does not advertise ADT support for it. ` +
+    'These types are discovery-gated and depend on the SAP release / support package ' +
+    '(e.g. DTSC/CSNM/EVTO ship on ABAP Platform 2025 / SAP_BASIS 8.16+, while DTDC/DSFD/EVTB and UIAD backports also ship on S/4HANA 2023 / 758).'
+  );
+}
+
+/**
+ * Read a server-driven object: its metadata (blue:blueSource or dtdc:dtdcSource) + source (AFF JSON
+ * or DDL text). The source is JSON-parsed when possible (raw text otherwise). Throws AdtApiError 404
+ * for a nonexistent object. Gate availability with supportsServerDrivenObject() on unknown systems.
  */
 export async function getServerDrivenObject(
   http: AdtHttpClient,
@@ -157,8 +314,8 @@ export async function getServerDrivenObject(
   const entry = sdoEntry(code);
   const objUrl = serverDrivenObjectUrl(code, name);
 
-  const metaResp = await http.get(objUrl, { Accept: entry.blueContentType });
-  const metadata = parseBlueSource(metaResp.body);
+  const metaResp = await http.get(objUrl, { Accept: entry.metadataContentType });
+  const metadata = parseServerDrivenMetadata(metaResp.body, entry.metadataRootLocalName);
 
   const srcResp = await http.get(`${objUrl}/source/main`, { Accept: 'application/json, */*' });
   let source: unknown = srcResp.body;
@@ -171,27 +328,40 @@ export async function getServerDrivenObject(
 }
 
 /**
- * Build the minimal `<blue:blueSource>` create body for a server-driven object. Uses the type's
- * verified `createType` for `adtcore:type` (e.g. DESD/TYP, EVTB/EVB) + the package ref.
+ * Build the minimal metadata create body for a server-driven object — the per-type root element
+ * (blue:blueSource or dtdc:dtdcSource) with the verified `createType` for `adtcore:type`
+ * (e.g. DESD/TYP, EVTB/EVB, DTDC/DF) + the package ref.
  *
  * NOTE — no `adtcore:masterLanguage`: live-verified on a4h-2025 (816) that ADT *silently ignores*
  * that attribute for these objects (create with masterLanguage="DE" → object still read back as the
  * session language). The object's master language comes from the `sap-language` request param (the
  * session = `config.language` / SAP_LANGUAGE), as with other source-based objects (cf. #343). Emitting
- * it would be an ADT-ignored attribute that's only ever been create-tested on DESD — so the body here
- * is exactly the form proven to create all 6 registered types.
+ * it would be an ADT-ignored attribute — so the body here is exactly the form proven to create every
+ * registered type.
  */
-export function buildBlueSourceXml(code: string, name: string, pkg: string, description: string): string {
+export type UiadLanguageVersion = 'standard' | 'keyUser' | 'cloudDevelopment';
+
+export function buildServerDrivenMetadataXml(
+  code: string,
+  name: string,
+  pkg: string,
+  description: string,
+  uiadLanguageVersion?: UiadLanguageVersion,
+): string {
   const entry = sdoEntry(code);
+  const [prefix] = entry.metadataRootQName.split(':');
   return `<?xml version="1.0" encoding="UTF-8"?>
-<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${escapeXmlAttr(entry.createType)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}">
+<${entry.metadataRootQName} xmlns:${prefix}="${entry.metadataNamespace}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${escapeXmlAttr(entry.createType)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}"${code === 'UIAD' && uiadLanguageVersion ? ` adtcore:abapLanguageVersion="${escapeXmlAttr(uiadLanguageVersion)}"` : ''}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
-</blue:blueSource>`;
+</${entry.metadataRootQName}>`;
 }
 
 /** Options shared by the SDO write operations. */
 export interface ServerDrivenWriteOptions {
   transport?: string;
+  /** Internal mutation accounting; never a tool input. */
+  onSourceWrite?: (state: 'attempted' | 'confirmed') => void;
+  onUnlockFailure?: () => void;
 }
 
 /**
@@ -204,27 +374,29 @@ export async function createServerDrivenObject(
   safety: SafetyConfig,
   code: string,
   name: string,
-  opts: { package: string; description: string; transport?: string },
+  opts: { package: string; description: string; transport?: string; uiadLanguageVersion?: UiadLanguageVersion },
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
   const entry = sdoEntry(code);
-  const body = buildBlueSourceXml(code, name, opts.package, opts.description);
+  const body = buildServerDrivenMetadataXml(code, name, opts.package, opts.description, opts.uiadLanguageVersion);
   const url = opts.transport ? `${entry.href}?corrNr=${encodeURIComponent(opts.transport)}` : entry.href;
-  const resp = await http.post(url, body, entry.blueContentType);
+  const resp = await postCreate(http, url, body, entry.metadataContentType);
   return resp.body;
 }
 
 /**
- * Write the AFF JSON source of a server-driven object: lock → PUT …/source/main (application/json)
- * → unlock (guaranteed via try-finally). Auto-propagates the lock's corrNr when no explicit
- * transport is supplied (same contract as crud.ts safeUpdateSource).
+ * Write the source of a server-driven object: lock → PUT …/source/main → unlock (guaranteed via
+ * try-finally). The Content-Type comes from the type's declared sourceFormat — AFF-JSON types take
+ * application/json, DDL-text types (DTSC, DSFD) take text/plain; sending the wrong one is a 415.
+ * Auto-propagates the lock's corrNr when no explicit transport is supplied (same contract as
+ * crud.ts safeUpdateSource).
  */
 export async function updateServerDrivenObjectSource(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
   name: string,
-  sourceJson: string,
+  source: string,
   opts: ServerDrivenWriteOptions = {},
 ): Promise<void> {
   checkOperation(safety, OperationType.Update, 'UpdateServerDrivenObjectSource');
@@ -232,13 +404,27 @@ export async function updateServerDrivenObjectSource(
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, objUrl, 'MODIFY');
     const transport = opts.transport ?? (lock.corrNr || undefined);
+    let unlockError: unknown;
     try {
       const params = [`lockHandle=${encodeURIComponent(lock.lockHandle)}`];
       if (transport) params.push(`corrNr=${encodeURIComponent(transport)}`);
-      await session.put(`${objUrl}/source/main?${params.join('&')}`, sourceJson, SDO_SOURCE_CONTENT_TYPE);
+      opts.onSourceWrite?.('attempted');
+      await session.put(`${objUrl}/source/main?${params.join('&')}`, source, serverDrivenSourceContentType(code));
+      opts.onSourceWrite?.('confirmed');
     } finally {
-      await unlockObject(session, objUrl, lock.lockHandle);
+      try {
+        await unlockObject(session, objUrl, lock.lockHandle);
+      } catch (error) {
+        unlockError = error;
+        logger.warn('Server-driven object unlock failed; a SAP lock may remain.', {
+          objectUrl: objUrl,
+          ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
+        });
+        opts.onUnlockFailure?.();
+      }
     }
+    // Reached only when the PUT succeeded. A failed PUT keeps its original exception.
+    if (unlockError !== undefined) throw unlockError;
   });
 }
 

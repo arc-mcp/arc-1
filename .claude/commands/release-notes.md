@@ -1,0 +1,89 @@
+# Release Notes — annotate a release for the docs
+
+Turn a raw release-please changelog entry into an **annotated release entry** in
+[`docs_page/release-notes.md`](../../docs_page/release-notes.md) — the page users and LLMs read to
+understand what a release actually changed for them.
+
+`CHANGELOG.md` is machine-generated and stays that way: one line per merged PR, no context. This
+command adds the context next to it, never inside it.
+
+---
+
+## When to run
+
+**While the release-please PR is open**, before merging it. The PR body already contains the exact
+changelog entry for the upcoming version, so the notes can land first and `main` never goes red.
+
+**Write notes on a main-bound PR, or on the release branch only once nothing else will merge.**
+release-please rebuilds the branch from `main` with [`force: true`](https://github.com/googleapis/release-please/blob/v17.6.0/src/github.ts),
+discarding manual commits when the changelog changes.
+
+`tests/unit/server/release-notes.test.ts` requires every released version and all changelog PR links
+in the newest release annotation. Group related PRs in one row when appropriate.
+
+## Input
+
+A version (`1.0.1`), a release-please PR number, or nothing (then annotate every version present in
+`CHANGELOG.md` but missing from `docs_page/release-notes.md`).
+
+---
+
+## Method
+
+1. **Get the raw entry** — from the open release-please PR body (`gh pr view <n> --json body`) or from
+   `CHANGELOG.md` for an already-released version.
+2. **Read what actually changed** — for each line: `git show <sha> --stat`, then the diff of the parts
+   that matter. The PR title is a hint, not evidence. `gh pr view <n>` for the description where useful.
+3. **Find the user-visible surface** — for each change, answer concretely:
+   - New or changed env var / CLI flag? (`src/server/types.ts`, `docs_page/configuration-reference.md`)
+   - New or changed tool, action, object type, or parameter? (`src/handlers/tools.ts`, and the
+     `tests/fixtures/tool-definitions/*.json` diff — that file *is* the LLM-visible surface)
+   - Behavior change an existing setup would notice? Breaking? Security-relevant?
+   - Which `docs_page/*.md` page documents it now?
+4. **Write the entry** using the template below, newest-first, above the previous version.
+5. **Cut the draft** — remove implementation detail, debugging history, validation anecdotes, repeated
+   facts, and claims already clear from the change title. Link to detailed documentation instead.
+6. **Verify** — `npx vitest run tests/unit/server/release-notes.test.ts`, and check every relative doc
+   link resolves to a file that exists. The guard counts a version as annotated only when it has its own
+   `##`/`###` heading or is the first cell of a table row — a mention in prose does not satisfy it.
+
+**Accuracy beats completeness.** Every claim must trace to a diff you read. If you cannot determine
+the impact, write `(unverified)` — never guess what a change does for a user. The changelog remains the
+complete inventory; the release notes should contain only information needed to understand impact or act.
+
+---
+
+## Template
+
+```markdown
+## 1.0.1 — <short theme> (YYYY-MM-DD)
+
+<1–2 sentences: the release theme and the most important action, if any.>
+
+| Change | Impact | Action |
+|---|---|---|
+| <short title> ([#NNN](https://github.com/arc-mcp/arc-1/pull/NNN)) | <one or two short sentences about user-visible behavior> | `none` / one specific action |
+
+**Upgrade notes** — only when something breaks or needs a config change.
+**New configuration** — one bullet per new flag, with its default.
+**Tool-surface changes** — one bullet per change an MCP client or LLM sees.
+```
+
+Rules:
+
+- Be terse and factual; no marketing, scene-setting, or implementation narrative.
+- Keep the framing to 1–2 sentences and each table cell to 1–2 short sentences.
+- Group related PRs by one user-visible outcome. Do not mirror every changelog line into its own row.
+- Keep only details that change behavior, compatibility, security, configuration, or a user's next step.
+- Put deep protocol details, benchmarks, reproduction history, and evidence in linked documentation.
+- Use `Action: none` when no action is required. Give one concrete action otherwise.
+- Summarize CI-only or release-plumbing releases in one sentence.
+- As a default target, keep an entry under 350 words; exceed it only for a breaking migration that cannot
+  be stated safely in less space.
+
+---
+
+## Ship it
+
+`docs:` commit (deliberately no release — see AGENTS.md "Releasing"), e.g.
+`docs: annotate the 1.0.1 release notes`.

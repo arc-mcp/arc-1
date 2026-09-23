@@ -1,0 +1,23 @@
+{
+  "source": {
+    "recordedAt": "2026-09-09T22:07:49.315Z",
+    "sapBasis": "758",
+    "metadataMethod": "GET",
+    "metadataPath": "/sap/bc/adt/vit/wb/object_type/viewdv/object_name/V_USR_NAME",
+    "nativeMethod": "POST",
+    "nativePath": "/sap/bc/adt/objectrelations/network",
+    "metadataSha256": "52fc648405098b09d1a59148615619cfce094c69b33ef0e0f53f3bb5ec76a667",
+    "networkSha256": "cb00d6c4ab46c2543faf369265f4818e5ec14b6c9be2852d86c5f1f7f4d3f017",
+    "projection": "Original XML names and retained attribute values; unrelated metadata, authors, descriptions, contexts and all but one observed edge removed. Not a complete response.",
+    "observedNodes": 3,
+    "observedEdges": 2
+  },
+  "type": "VIEW",
+  "native": "VIEW/DV",
+  "name": "V_USR_NAME",
+  "uri": "/sap/bc/adt/vit/wb/object_type/viewdv/object_name/V_USR_NAME",
+  "metadataRootQName": "adtcore:mainObject",
+  "context": "ENV",
+  "metadataXml": "<adtcore:mainObject adtcore:name=\"V_USR_NAME\" adtcore:type=\"VIEW/DV\" adtcore:version=\"active\" xmlns:adtcore=\"http://www.sap.com/adt/core\">\n<adtcore:packageRef adtcore:uri=\"/sap/bc/adt/packages/susr\" adtcore:type=\"DEVC/K\" adtcore:name=\"SUSR\"/>\n</adtcore:mainObject>",
+  "networkXml": "<oro:networkResponse xmlns:oro=\"http://www.sap.com/adt/objectrelations\">\n<oro:activeContext>ENV</oro:activeContext>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/ddic/tables/adrp\" adtcore:type=\"TABL/DT\" adtcore:name=\"ADRP\" adtcore:packageName=\"SZAD\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:objectReference oro:exists=\"true\" oro:version=\"active\" adtcore:uri=\"/sap/bc/adt/vit/wb/object_type/viewdv/object_name/V_USR_NAME\" adtcore:type=\"VIEW/DV\" adtcore:name=\"V_USR_NAME\" adtcore:packageName=\"SUSR\" xmlns:adtcore=\"http://www.sap.com/adt/core\"/>\n<oro:relation oro:relationType=\"parentChild\" oro:state=\"A\"><oro:object1>/sap/bc/adt/vit/wb/object_type/viewdv/object_name/V_USR_NAME</oro:object1><oro:object2>/sap/bc/adt/ddic/tables/adrp</oro:object2></oro:relation>\n</oro:networkResponse>"
+}

@@ -11,10 +11,10 @@
  *   accept that trade-off to preserve the stateless-deployment property from PR #212.
  *   IPv6 clients are keyed by /56 subnet (via express-rate-limit v8's `ipKeyGenerator`)
  *   so they can't bypass the cap by rotating addresses within their prefix.
- * - The operator-facing knob is a single per-minute baseline (`ARC1_AUTH_RATE_LIMIT`,
- *   default 20). Per-endpoint differentiation is done at the mount site in http.ts:
- *   OAuth endpoints all use the baseline; `/mcp` gets a higher cap to absorb
- *   legitimate batch tool-call traffic.
+ * - `ARC1_AUTH_RATE_LIMIT` (default 20) controls the OAuth baseline. The MCP
+ *   bucket derives a higher default in http.ts and has its own explicit
+ *   `ARC1_MCP_HTTP_RATE_LIMIT` override so disabling OAuth limiting cannot
+ *   silently remove pre-bearer MCP protection.
  * - On limit hit, emits a typed `auth_rate_limited` audit event BEFORE responding so
  *   the security event stream captures the denial regardless of response timing.
  * - Uses `standardHeaders: 'draft-7'` for RFC 9331 / draft-ietf-httpapi-ratelimit
@@ -24,13 +24,14 @@
 import type { Request, RequestHandler, Response } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { logger } from './logger.js';
+import { PINNED_MCP_PATH_PATTERN } from './multi-target-identity.js';
 
 /**
  * Optional knobs for `createAuthRateLimiter`.
  *
- * `skip` is the only one currently — used to layer two limiters on the same
- * route (`/authorize`) where one skips JSON-RPC bodies and the other only
- * applies to JSON-RPC bodies. See http.ts for the Copilot Studio rationale.
+ * `skip` lets one middleware mounted at the Express root count only the
+ * request classes assigned to its shared bucket. See http.ts for the MCP and
+ * Copilot Studio routing rationale.
  * Passing a `skip` function is preferred over building an outer conditional
  * dispatcher: CodeQL's `js/missing-rate-limiting` query only recognises
  * `app.use(path, rateLimit({...}))` patterns where the second argument is
@@ -46,8 +47,8 @@ export interface AuthRateLimiterOptions {
  * - allows `perMinute` requests per minute per IP (60_000 ms window),
  * - returns HTTP 429 with `Retry-After` and RFC 9331 `RateLimit-*` headers on hit,
  * - emits a typed `auth_rate_limited` audit event on every denial,
- * - honors an optional `skip` predicate so the same Express route can stack
- *   two limiters (one for OAuth bodies, one for Copilot Studio MCP JSON-RPC).
+ * - honors an optional `skip` predicate so a root-mounted limiter can share
+ *   one bucket across several endpoint styles.
  *
  * `endpoint` is used only for the audit event label and for diagnostic logs;
  * the path-based mount in Express is done by the caller.
@@ -121,4 +122,27 @@ export function isCopilotJsonRpc(req: Request): boolean {
   if (req.method !== 'POST') return false;
   const body = req.body as { jsonrpc?: unknown } | undefined;
   return body != null && Boolean(body.jsonrpc);
+}
+
+/**
+ * Return true for requests that consume ARC-1's single MCP-edge bucket.
+ *
+ * The path match is intentionally registry-independent: syntactically valid
+ * unknown target routes are rate-limited before authentication and route
+ * resolution, exactly like accepted targets. OAuth metadata and normal OAuth
+ * `/authorize` traffic remain outside this bucket.
+ */
+export function isMcpHttpTraffic(req: Request): boolean {
+  // Express string routes accept one or more trailing delimiters in the default
+  // non-strict mode. Normalize them here so an accepted alias cannot skip the
+  // root-mounted bucket before reaching `/mcp` or `/authorize`.
+  const requestPath = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
+  // Express string routes are case-insensitive by default. Normalize those
+  // aliases for the limiter too; otherwise `/MCP` or Copilot
+  // JSON-RPC on `/AUTHORIZE` can reach the same handler without consuming the
+  // root edge bucket. The pinned-target regex stays deliberately uppercase.
+  const staticPath = requestPath.toLowerCase();
+  if (staticPath === '/mcp' || staticPath === '/multi/mcp') return true;
+  if (PINNED_MCP_PATH_PATTERN.test(requestPath)) return true;
+  return staticPath === '/authorize' && isCopilotJsonRpc(req);
 }

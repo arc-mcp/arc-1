@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import type { AdtClient } from '../../../src/adt/client.js';
+import { DataResultScope, DEFAULT_DATA_PREVIEW_RESPONSE_BYTES } from '../../../src/adt/data-result-context.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { getToolRegistry, handleToolCall } from '../../../src/handlers/dispatch.js';
 import { defineTool } from '../../../src/public/index.js';
@@ -13,7 +14,11 @@ import type { ServerConfig } from '../../../src/server/types.js';
 // through handleToolCall, be scope-gated by its declared policy (registry fallback), and an
 // unregistered Custom_ name must fall through to "Unknown tool".
 
-const fakeClient = { http: {}, safety: unrestrictedSafetyConfig() } as unknown as AdtClient;
+const fakeClient = {
+  http: {},
+  safety: unrestrictedSafetyConfig(),
+  createDataResultScope: () => new DataResultScope(DEFAULT_DATA_PREVIEW_RESPONSE_BYTES),
+} as unknown as AdtClient;
 const config = { systemType: 'onprem', denyActions: [] } as unknown as ServerConfig;
 const auth = (scopes: string[]): AuthInfo => ({ token: 't', scopes, clientId: 'c', extra: {} }) as unknown as AuthInfo;
 

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
+import { AdtApiError, AdtNetworkError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import {
@@ -10,6 +10,7 @@ import {
   CTS_NAMESPACE_TM,
   createTransport,
   createTransportWithTarget,
+  DEFAULT_RELEASE_TIMEOUT_MS,
   deleteTransport,
   failedReleaseReports,
   getObjectTransports,
@@ -20,8 +21,10 @@ import {
   listTransports,
   listTransportTargets,
   parseReleaseReports,
+  parseTransportNodeStates,
   reassignTransport,
   releaseTransport,
+  releaseTransportAndWait,
   releaseTransportRecursive,
   removeObjectFromTransport,
   supportsExplicitTransportTarget,
@@ -81,11 +84,11 @@ describe('Transport Management', () => {
       expect(url).toContain('user=TESTUSER');
     });
 
-    it('does not add user param for wildcard', async () => {
+    it("sends user=* for SAP's wildcard owner query", async () => {
       const http = mockHttp('<tm:root xmlns:tm="http://www.sap.com/cts/transports"/>');
       await listTransports(http, enabledSafety, '*');
       const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
-      expect(url).not.toContain('user=');
+      expect(new URL(url, 'https://sap.example').searchParams.get('user')).toBe('*');
     });
 
     it('sends requestType=KWT and target=true (sapcli pattern)', async () => {
@@ -190,6 +193,32 @@ describe('Transport Management', () => {
       const transport = await getTransport(http, enabledSafety, 'A4HK900100');
       expect(transport).not.toBeNull();
       expect(transport?.id).toBe('A4HK900100');
+    });
+
+    it('does not copy task objects onto the request', async () => {
+      // parseTransportList must read the request's DIRECT abap_object children. A recursive
+      // search descends into <tm:task> whenever the request has none of its own, which would
+      // duplicate task objects onto the request and stamp them with the request id.
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="A4HK900100" tm:owner="DEV" tm:desc="d" tm:status="D" tm:type="K">
+          <tm:task tm:number="A4HK900101" tm:owner="DEV" tm:status="D">
+            <tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="Z_ONLY_IN_TASK" tm:wbtype="PROG/P"/>
+          </tm:task>
+        </tm:request>
+      </tm:root>`;
+      const transport = await getTransport(mockHttp(xml), enabledSafety, 'A4HK900100');
+      expect(transport?.tasks[0]?.objects.map((o) => o.name)).toEqual(['Z_ONLY_IN_TASK']);
+      expect(transport?.requestObjects).toBeUndefined();
+    });
+
+    it('surfaces objects recorded directly on the request (transport of copies)', async () => {
+      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="A4HK900100" tm:owner="DEV" tm:desc="d" tm:status="D" tm:type="T">
+          <tm:abap_object tm:pgmid="R3TR" tm:type="PROG" tm:name="Z_ON_REQUEST" tm:wbtype="PROG/P"/>
+        </tm:request>
+      </tm:root>`;
+      const transport = await getTransport(mockHttp(xml), enabledSafety, 'A4HK900100');
+      expect(transport?.requestObjects?.map((o) => o.name)).toEqual(['Z_ON_REQUEST']);
     });
 
     it('returns null when transport not found (Issue #26)', async () => {
@@ -841,6 +870,18 @@ describe('Transport Management', () => {
   // ─── releaseTransportRecursive ────────────────────────────────────
 
   describe('releaseTransportRecursive', () => {
+    const transportTree = (parentStatus: string, taskStatuses: string[] = []) =>
+      `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="${parentStatus}" tm:type="K">
+          ${taskStatuses
+            .map(
+              (status, index) =>
+                `<tm:task tm:number="DEVK900001T${index + 1}" tm:owner="DEV${index + 1}" tm:desc="Task ${index + 1}" tm:status="${status}"/>`,
+            )
+            .join('')}
+        </tm:request>
+      </tm:root>`;
+
     it('is blocked when transports not enabled', async () => {
       const http = mockHttp();
       const safety = { ...unrestrictedSafetyConfig(), allowTransportWrites: false };
@@ -848,13 +889,16 @@ describe('Transport Management', () => {
     });
 
     it('releases unreleased tasks before parent', async () => {
-      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
-        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
-          <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="D"/>
-          <tm:task tm:number="DEVK900001T2" tm:owner="DEV2" tm:desc="Task 2" tm:status="D"/>
-        </tm:request>
-      </tm:root>`;
-      const http = mockHttp(xml);
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['D', 'D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R') });
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-success.xml'),
+      });
       const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
       const postCalls = (http.post as ReturnType<typeof vi.fn>).mock.calls;
       // Posts: task1 release, task2 release, parent release
@@ -863,52 +907,90 @@ describe('Transport Management', () => {
       expect(postCalls[1]?.[0] as string).toContain('DEVK900001T2');
       expect(postCalls[2]?.[0] as string).toContain('DEVK900001');
       expect(result.released).toEqual(['DEVK900001T1', 'DEVK900001T2', 'DEVK900001']);
+      expect(result.outcome).toBe('released');
+      expect(result.verified).toBe(true);
+      expect(result.intended).toEqual([
+        expect.objectContaining({ id: 'DEVK900001', lastStatus: 'R', confirmation: 'observed_terminal' }),
+        expect.objectContaining({ id: 'DEVK900001T1', confirmation: 'parent_terminal' }),
+        expect.objectContaining({ id: 'DEVK900001T2', confirmation: 'parent_terminal' }),
+      ]);
     });
 
     it('skips already-released tasks', async () => {
-      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
-        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
-          <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="R"/>
-          <tm:task tm:number="DEVK900001T2" tm:owner="DEV2" tm:desc="Task 2" tm:status="D"/>
-        </tm:request>
-      </tm:root>`;
-      const http = mockHttp(xml);
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['R', 'D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R') });
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-success.xml'),
+      });
       const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
-      expect(result.released).toEqual(['DEVK900001T2', 'DEVK900001']);
+      expect(result.released).toEqual(['DEVK900001T1', 'DEVK900001T2', 'DEVK900001']);
+      const postCalls = (http.post as ReturnType<typeof vi.fn>).mock.calls;
+      expect(postCalls).toHaveLength(2);
+      expect(postCalls[0]?.[0] as string).toContain('DEVK900001T2');
+      expect(postCalls[1]?.[0] as string).toContain('DEVK900001');
+    });
+
+    it('advances immediately from an observed O task to the remaining D task phase', async () => {
+      const http = mockHttp();
+      const sleep = vi.fn(async () => {});
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['O', 'D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['R', 'D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R') });
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-success.xml'),
+      });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001', { sleep });
+      const postedIds = (http.post as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+
+      expect(result.outcome).toBe('released');
+      expect(postedIds).toHaveLength(2);
+      expect(postedIds[0]).toContain('DEVK900001T2');
+      expect(postedIds[1]).toContain('DEVK900001');
+      expect(sleep).not.toHaveBeenCalled();
     });
 
     it('returns list of all released IDs in order', async () => {
-      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
-        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K"/>
-      </tm:root>`;
-      const http = mockHttp(xml);
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R') });
       const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
       expect(result.released).toEqual(['DEVK900001']);
+      expect(http.post).toHaveBeenCalledTimes(1);
     });
 
     it('skips already-released parent (retry-safe)', async () => {
-      const xml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
-        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="R" tm:type="K"/>
-      </tm:root>`;
-      const http = mockHttp(xml);
+      const http = mockHttp(transportTree('R'));
       const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
-      // Parent already released — no release calls, empty result
-      expect(result.released).toEqual([]);
+      // Parent already released — no release calls, but the terminal postcondition is explicit.
+      expect(result.released).toEqual(['DEVK900001']);
+      expect(result.verified).toBe(true);
+      expect(result.polls).toBe(0);
       expect((http.post as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
     });
 
     it('a task that cannot release on its own (e.g. unclassified) does NOT abort the parent release', async () => {
       // Live reality (a4h 758): releasing an empty/unclassified task returns abortrelapifail, but the
       // parent request release still succeeds and folds it in. The parent report is authoritative.
-      const listXml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
-        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K">
-          <tm:task tm:number="DEVK900001T1" tm:owner="DEV1" tm:desc="Task 1" tm:status="D"/>
-        </tm:request>
-      </tm:root>`;
       const blocked = loadFixture('transport-release-report-blocked.xml'); // the task release "fails"
       const success = loadFixture('transport-release-report-success.xml'); // the parent release succeeds
       const http = {
-        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: listXml }),
+        get: vi
+          .fn()
+          .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['D']) })
+          .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['D']) })
+          .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R') }),
         post: vi.fn().mockImplementation((url: unknown) =>
           Promise.resolve({
             statusCode: 200,
@@ -925,13 +1007,466 @@ describe('Transport Management', () => {
       // Both the task and the parent were attempted; the benign task failure did not abort the parent.
       expect((http.post as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
       expect(result.released).toContain('DEVK900001'); // parent released
-      expect(result.released).not.toContain('DEVK900001T1'); // benign-failed task not listed
+      expect(result.released).toContain('DEVK900001T1'); // final CTS state is authoritative
+      expect(result.reportConflicts).toEqual(['DEVK900001T1']);
       // Returned reports are the authoritative parent release → clean.
       expect(result.reports.every((r) => r.released)).toBe(true);
+    });
+
+    it('trusts refreshed parent status R when SAP returns a contradictory failed report', async () => {
+      const draftXml = `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:owner="DEV" tm:desc="Test" tm:status="D" tm:type="K"/>
+      </tm:root>`;
+      const releasedXml = draftXml.replace('tm:status="D"', 'tm:status="R"');
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: draftXml })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: draftXml })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: releasedXml });
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-blocked.xml'),
+      });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
+
+      expect(result.released).toContain('DEVK900001');
+      expect(result.reports.some((r) => !r.released)).toBe(true); // raw SAP report is preserved
+      expect(result.reportConflicts).toEqual(['DEVK900001']);
+      expect(http.get).toHaveBeenCalledTimes(3);
+    });
+
+    it('keeps a failed parent report authoritative when refreshed state is not released', async () => {
+      const http = mockHttp(transportTree('D'));
+      const sleep = vi.fn(async () => undefined);
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-blocked.xml'),
+      });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001', {
+        sleep,
+      });
+
+      expect(result.released).not.toContain('DEVK900001');
+      expect(failedReleaseReports(result.reports)).toHaveLength(1);
+      expect(result.outcome).toBe('blocked');
+      expect(result.verified).toBe(false);
+      expect(http.get).toHaveBeenCalledTimes(3);
+      expect(sleep).not.toHaveBeenCalled();
+    });
+
+    it('returns a definitively blocked single release without exhausting the polling budget', async () => {
+      const http = mockHttp(transportTree('D'));
+      const sleep = vi.fn(async () => undefined);
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-blocked.xml'),
+      });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', { sleep });
+
+      expect(result).toMatchObject({ outcome: 'blocked', verified: false, polls: 1 });
+      expect(http.get).toHaveBeenCalledTimes(2);
+      expect(sleep).not.toHaveBeenCalled();
+    });
+
+    it('refuses recursive release under a restrictive transport allowlist before CTS reads or writes', async () => {
+      const http = mockHttp(transportTree('D', ['D', 'D']));
+      const safety = {
+        ...enabledSafety,
+        allowedTransports: ['DEVK900001', 'DEVK900001T1'],
+      };
+
+      await expect(releaseTransportRecursive(http, safety, 'DEVK900001')).rejects.toThrow(AdtSafetyError);
+      expect(http.get).not.toHaveBeenCalled();
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('allows recursive release under an explicit all-transports policy', async () => {
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R') });
+
+      const result = await releaseTransportRecursive(
+        http,
+        { ...enabledSafety, allowedTransports: ['*'] },
+        'DEVK900001',
+      );
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, released: ['DEVK900001'] });
+      expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not submit the parent when a child appears in the fresh pre-parent snapshot', async () => {
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['R', 'D']) });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
+
+      expect(result.intended.map((node) => node.id)).toEqual(['DEVK900001', 'DEVK900001T1']);
+      expect(result).toMatchObject({
+        outcome: 'unknown',
+        verified: false,
+        released: ['DEVK900001T1'],
+        unexpectedChildren: ['DEVK900001T2'],
+      });
+      expect(result.lastReadError).toContain('before parent release');
+      expect((http.post as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+      expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string).toContain('DEVK900001T1');
+    });
+
+    it('refuses exact-set verification when a child appears in the post-parent readback', async () => {
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['D']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['R']) })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('R', ['R', 'R']) });
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001');
+
+      expect(result).toMatchObject({
+        outcome: 'unknown',
+        verified: false,
+        released: ['DEVK900001T1', 'DEVK900001'],
+        unexpectedChildren: ['DEVK900001T2'],
+      });
+      expect(result.lastReadError).toContain('Exact-set terminal verification was refused');
+      const postCalls = (http.post as ReturnType<typeof vi.fn>).mock.calls;
+      expect(postCalls).toHaveLength(2);
+      expect(postCalls[1]?.[0] as string).toContain('DEVK900001');
+    });
+
+    it('stops after a recursive submission error and reconciles the frozen tree', async () => {
+      let clock = 0;
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: transportTree('D', ['D', 'D']) })
+        .mockResolvedValue({ statusCode: 200, headers: {}, body: transportTree('D', ['R', 'D']) });
+      (http.post as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: '' })
+        .mockRejectedValueOnce(new Error('response lost after submission'));
+
+      const result = await releaseTransportRecursive(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 1,
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+
+      expect(result).toMatchObject({ outcome: 'unknown', verified: false, released: ['DEVK900001T1'] });
+      expect(result.submissions).toEqual([
+        expect.objectContaining({ id: 'DEVK900001T1', reports: [] }),
+        expect.objectContaining({ id: 'DEVK900001T2', reports: [], error: 'response lost after submission' }),
+      ]);
+      expect(result.lastReadError).toContain('DEVK900001T2');
+      expect((http.post as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+      expect((http.post as ReturnType<typeof vi.fn>).mock.calls[1]?.[0] as string).toContain('DEVK900001T2');
+      expect(
+        (http.post as ReturnType<typeof vi.fn>).mock.calls.some((call) => String(call[0]).endsWith('DEVK900001')),
+      ).toBe(false);
     });
   });
 
   // ─── Transport object parsing ─────────────────────────────────────
+
+  describe('terminal release convergence', () => {
+    const requestXml = (status: string, id = 'DEVK900001') => `<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+      <tm:request tm:number="${id}" tm:status="${status}"/>
+    </tm:root>`;
+
+    it('uses a five-minute default verification budget', () => {
+      expect(DEFAULT_RELEASE_TIMEOUT_MS).toBe(300_000);
+    });
+
+    it('parses a parent tree and a standalone task response into flat state rows', () => {
+      const nested = parseTransportNodeStates(`<tm:root xmlns:tm="http://www.sap.com/cts/transports">
+        <tm:request tm:number="DEVK900001" tm:status="D">
+          <tm:task tm:number="DEVK900001T1" tm:status="R"/>
+        </tm:request>
+      </tm:root>`);
+      const standalone = parseTransportNodeStates(
+        `<tm:task xmlns:tm="http://www.sap.com/cts/transports" tm:number="DEVK900001T1" tm:parent="/sap/bc/adt/cts/transportrequests/DEVK900001" tm:status="D"/>`,
+      );
+
+      expect(nested).toEqual([
+        expect.objectContaining({ id: 'DEVK900001', kind: 'request', initialStatus: 'D' }),
+        expect.objectContaining({ id: 'DEVK900001T1', kind: 'task', parentId: 'DEVK900001', lastStatus: 'R' }),
+      ]);
+      expect(standalone).toEqual([
+        expect.objectContaining({ id: 'DEVK900001T1', kind: 'task', parentId: 'DEVK900001', lastStatus: 'D' }),
+      ]);
+    });
+
+    it('polls an exact request through D to terminal R with an injectable clock', async () => {
+      let clock = 0;
+      const http = mockHttp();
+      const controller = new AbortController();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('R') });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 100,
+        initialDelayMs: 5,
+        maxDelayMs: 10,
+        now: () => clock,
+        signal: controller.signal,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, released: ['DEVK900001'], polls: 2 });
+      expect(result.intended[0]).toMatchObject({ initialStatus: 'D', lastStatus: 'R', confirmedReleased: true });
+      expect((http.get as ReturnType<typeof vi.fn>).mock.calls.every((call) => call[2]?.deadline === 100)).toBe(true);
+      expect(
+        (http.get as ReturnType<typeof vi.fn>).mock.calls.every((call) => call[2]?.signal === controller.signal),
+      ).toBe(true);
+      expect((http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[4]).toEqual({
+        deadline: 100,
+        signal: controller.signal,
+      });
+    });
+
+    it('confirms a released task when SAP folds it out of the organizer tree', async () => {
+      const taskId = 'DEVK900001T1';
+      const taskXml = `<tm:task xmlns:tm="http://www.sap.com/cts/transports" tm:number="${taskId}" tm:parent="/sap/bc/adt/cts/transportrequests/DEVK900001" tm:status="D"/>`;
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: taskXml })
+        .mockRejectedValueOnce(new AdtApiError('Task no longer exists', 404, `/transportrequests/${taskId}`));
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-success.xml'),
+      });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, taskId);
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, released: [taskId], polls: 1 });
+      expect(result.intended[0]).toMatchObject({
+        id: taskId,
+        lastStatus: 'D',
+        confirmedReleased: true,
+        confirmation: 'accepted_submission_absence',
+      });
+    });
+
+    it('polls an initial O release job without submitting it again', async () => {
+      let clock = 0;
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('O') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('R') });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 100,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, polls: 1 });
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('accepts protected-modifiable L, release-preparation P, and terminal N statuses', async () => {
+      let clock = 0;
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('P') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('L') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('N') });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 100,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, released: ['DEVK900001'], polls: 2 });
+      expect(result.intended[0]).toMatchObject({ initialStatus: 'P', lastStatus: 'N', confirmedReleased: true });
+      expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('treats D to O to R as normal nonterminal convergence', async () => {
+      let clock = 0;
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('O') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('R') });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 100,
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, polls: 2 });
+      expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('retains a lost submission response while accepting authoritative final R', async () => {
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('D') })
+        .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: requestXml('R') });
+      (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('connection reset after POST'));
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001');
+
+      expect(result).toMatchObject({ outcome: 'released', verified: true, released: ['DEVK900001'] });
+      expect(result.submissions).toEqual([
+        expect.objectContaining({ id: 'DEVK900001', reports: [], error: 'connection reset after POST' }),
+      ]);
+      expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not claim success when a clean release report never converges to R', async () => {
+      let clock = 0;
+      const http = mockHttp(requestXml('D'));
+      (http.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+        statusCode: 200,
+        headers: {},
+        body: loadFixture('transport-release-report-success.xml'),
+      });
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 1,
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+
+      expect(result).toMatchObject({ outcome: 'timeout', verified: false, released: [] });
+      expect(result.reports.every((report) => report.released)).toBe(true);
+    });
+
+    it('returns unknown without submitting when the exact requested ID is absent', async () => {
+      const http = mockHttp(requestXml('D', 'DEVK999999'));
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001');
+
+      expect(result).toMatchObject({ outcome: 'unknown', verified: false, intended: [], submissions: [] });
+      expect(result.lastReadError).toContain('was not present');
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('honors an already-aborted signal before any release POST', async () => {
+      const http = mockHttp(requestXml('D'));
+      const controller = new AbortController();
+      controller.abort();
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        signal: controller.signal,
+      });
+
+      expect(result).toMatchObject({ outcome: 'unknown', verified: false, submissions: [] });
+      expect(result.lastReadError).toContain('aborted before submission');
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('does not expose SAP response details or ADT paths from an initial state-read error', async () => {
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new AdtApiError(
+          'User MARIAN lacks S_ADT_RES; password=TOPSECRET',
+          403,
+          '/sap/bc/adt/cts/transportrequests/DEVK900001?token=SECRET',
+          '<error>User MARIAN lacks S_ADT_RES; password=TOPSECRET</error>',
+        ),
+      );
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001');
+      const serialized = JSON.stringify(result);
+
+      expect(result).toMatchObject({
+        outcome: 'unknown',
+        verified: false,
+        lastReadError: 'SAP CTS request failed with HTTP 403.',
+      });
+      expect(serialized).not.toContain('MARIAN');
+      expect(serialized).not.toContain('S_ADT_RES');
+      expect(serialized).not.toContain('TOPSECRET');
+      expect(serialized).not.toContain('/sap/bc/adt/');
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it('does not expose SAP response details or ADT paths from a release-submission error', async () => {
+      let clock = 0;
+      const http = mockHttp(requestXml('D'));
+      (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new AdtApiError(
+          'Backend user MARIAN returned session=TOPSECRET',
+          500,
+          '/sap/bc/adt/cts/transportrequests/DEVK900001/newreleasejobs?token=SECRET',
+          '<error>Backend user MARIAN returned session=TOPSECRET</error>',
+        ),
+      );
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001', {
+        timeoutMs: 1,
+        initialDelayMs: 1,
+        maxDelayMs: 1,
+        now: () => clock,
+        sleep: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      });
+      const serialized = JSON.stringify(result);
+
+      expect(result).toMatchObject({ outcome: 'unknown', verified: false });
+      expect(result.submissions).toEqual([
+        expect.objectContaining({
+          id: 'DEVK900001',
+          reports: [],
+          error: 'SAP CTS request failed with HTTP 500.',
+        }),
+      ]);
+      expect(serialized).not.toContain('MARIAN');
+      expect(serialized).not.toContain('TOPSECRET');
+      expect(serialized).not.toContain('/sap/bc/adt/');
+    });
+
+    it('does not expose SAP URLs or credentials from a network error', async () => {
+      const http = mockHttp();
+      (http.get as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new AdtNetworkError('connect ETIMEDOUT https://TECHUSER:TOPSECRET@sap.example/sap/bc/adt/cts'),
+      );
+
+      const result = await releaseTransportAndWait(http, enabledSafety, 'DEVK900001');
+      const serialized = JSON.stringify(result);
+
+      expect(result.lastReadError).toBe('SAP CTS network request failed.');
+      expect(serialized).not.toContain('TECHUSER');
+      expect(serialized).not.toContain('TOPSECRET');
+      expect(serialized).not.toContain('sap.example');
+      expect(serialized).not.toContain('/sap/bc/adt/');
+    });
+  });
 
   describe('transport object parsing', () => {
     it('parses tm:abap_object elements from tasks', async () => {
@@ -1172,6 +1707,27 @@ describe('Transport Management', () => {
       });
     });
 
+    it('parses every candidate from the live REQUESTS/CTS_REQUEST/REQ_HEADER shape', async () => {
+      const http = mockHttp(loadFixture('transport-check-candidates.xml'));
+      const info = await getTransportInfo(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/zcl_arc1_sample',
+        'ZARC1_SAMPLE',
+      );
+
+      expect(info.operation).toBe('I');
+      expect(info.result).toBe('S');
+      expect(info.correctionFlag).toBe(true);
+      expect(info.existingRequestOnly).toBe(false);
+      expect(info.existingTransports).toEqual([
+        { id: 'DEVK900101', description: 'First candidate', owner: 'DEVELOPER' },
+        { id: 'DEVK900102', description: 'Second candidate', owner: 'DEVELOPER' },
+      ]);
+      expect(info.lockedTasks).toEqual([]);
+      expect(info.messages).toEqual([]);
+    });
+
     it('parses locked transport from response', async () => {
       const xml = `<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
         <asx:values><DATA>
@@ -1194,6 +1750,53 @@ describe('Transport Management', () => {
         'Z_MY_PKG',
       );
       expect(info.lockedTransport).toBe('A4HK900999');
+    });
+
+    it('parses the live lock-holder parent, owner, and child-task shape', async () => {
+      const http = mockHttp(loadFixture('transport-check-locked.xml'));
+      const info = await getTransportInfo(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/interfaces/zif_arc1_sample',
+        'ZARC1_SAMPLE',
+        '',
+      );
+
+      expect(info.recording).toBe(false);
+      expect(info.operation).toBe('');
+      expect(info.lockedTransport).toBe('DEVK900201');
+      expect(info.lockedTransportOwner).toBe('DEVELOPER');
+      expect(info.lockedTasks).toEqual(['DEVK900202']);
+      expect(info.existingTransports).toEqual([]);
+    });
+
+    it('returns warning diagnostics and rejects fatal HTTP-200 diagnostics', async () => {
+      const response = (severity: string, text: string) => `<asx:abap xmlns:asx="http://www.sap.com/abapxml">
+        <asx:values><DATA>
+          <RESULT>${severity === 'W' ? 'S' : 'E'}</RESULT>
+          <RECORDING/><DLVUNIT>HOME</DLVUNIT><DEVCLASS>ZARC1_SAMPLE</DEVCLASS>
+          <MESSAGES><CTS_MESSAGE><SEVERITY>${severity}</SEVERITY><ARBGB>TK</ARBGB><MSGNR>103</MSGNR><TEXT>${text}</TEXT></CTS_MESSAGE></MESSAGES>
+        </DATA></asx:values>
+      </asx:abap>`;
+
+      const warning = await getTransportInfo(
+        mockHttp(response('W', 'Review the package')),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/zcl_test',
+        'ZARC1_SAMPLE',
+      );
+      expect(warning.messages).toEqual([
+        { severity: 'W', text: 'Review the package', messageClass: 'TK', number: '103' },
+      ]);
+
+      await expect(
+        getTransportInfo(
+          mockHttp(response('E', 'This syntax cannot be used for an object name')),
+          unrestrictedSafetyConfig(),
+          '/sap/bc/adt/oo/classes/zcl_test',
+          'ZARC1_SAMPLE',
+        ),
+      ).rejects.toThrow('SAP transport check failed: This syntax cannot be used for an object name');
     });
 
     it('does not require allowTransportWrites for read-only transport info', async () => {
@@ -1219,6 +1822,17 @@ describe('Transport Management', () => {
       await getTransportInfo(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_test', '$TMP');
       const body = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
       expect(body).toContain('<OPERATION>I</OPERATION>');
+    });
+
+    it('sends an empty operation for modify checks', async () => {
+      const xml = `<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA>
+        <RECORDING/><DLVUNIT>LOCAL</DLVUNIT><DEVCLASS>$TMP</DEVCLASS>
+      </DATA></asx:values></asx:abap>`;
+      const http = mockHttp(xml);
+      await getTransportInfo(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_test', '$TMP', '');
+      const body = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as string;
+      expect(body).toContain('<OPERATION></OPERATION>');
+      expect(body).not.toContain('<OPERATION>I</OPERATION>');
     });
 
     it('handles empty transport list', async () => {

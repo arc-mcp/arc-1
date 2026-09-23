@@ -87,6 +87,9 @@ arc1*.tmp.json
 sessions/
 node_modules/
 
+# Local documentation build output.
+/site/
+
 # Claude worktrees
 .claude/worktrees/
 

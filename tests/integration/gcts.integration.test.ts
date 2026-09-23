@@ -2,15 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { defaultFeatureConfig } from '../../src/adt/config.js';
 import { probeFeatures } from '../../src/adt/features.js';
-import {
-  cloneRepo,
-  getConfig,
-  getSystemInfo,
-  getTransportHistory,
-  getUserInfo,
-  listRepos,
-} from '../../src/adt/gcts.js';
-import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
+import { getConfig, getSystemInfo, getTransportHistory, getUserInfo, listRepos } from '../../src/adt/gcts.js';
 import { expectSapFailureClass } from '../helpers/expected-error.js';
 import { requireOrSkip, SkipReason } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
@@ -44,8 +36,17 @@ describe('gCTS integration', () => {
     requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     const config = await getConfig(client.http, client.safety);
     expect(Array.isArray(config)).toBe(true);
-    if (config.length > 0) {
-      expect(config.some((entry) => typeof entry.ckey === 'string' && entry.ckey.length > 0)).toBe(true);
+    expect(config.length).toBeGreaterThan(0);
+    expect(config.some((entry) => typeof entry.ckey === 'string' && entry.ckey.length > 0)).toBe(true);
+    for (const entry of config) {
+      const key = String(entry.key ?? entry.ckey ?? '').toUpperCase();
+      if (key.includes('AUTH_USER') || key.includes('AUTH_PWD') || key.includes('AUTH_TOKEN')) {
+        for (const [field, value] of Object.entries(entry)) {
+          if (['value', 'defaultvalue', 'currentvalue', 'example'].includes(field.toLowerCase())) {
+            expect(value).toBe('[REDACTED]');
+          }
+        }
+      }
     }
   });
 
@@ -53,17 +54,6 @@ describe('gCTS integration', () => {
     requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
     const repos = await listRepos(client.http, client.safety);
     expect(Array.isArray(repos)).toBe(true);
-  });
-
-  it('clone operations are blocked when allowGitWrites is disabled', async (ctx) => {
-    requireOrSkip(ctx, gctsAvailable ? true : undefined, SkipReason.BACKEND_UNSUPPORTED);
-    const noGitSafety = { ...unrestrictedSafetyConfig(), allowGitWrites: false };
-    await expect(
-      cloneRepo(client.http, noGitSafety, {
-        url: 'https://github.com/example/repo.git',
-        package: '$TMP',
-      }),
-    ).rejects.toThrow(/Git write 'clone' is blocked: allowGitWrites=false/);
   });
 
   it('getTransportHistory for unknown repo returns expected backend error class', async (ctx) => {

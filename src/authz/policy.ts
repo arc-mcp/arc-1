@@ -52,6 +52,8 @@ export const OPTYPE_SCOPE: Record<OperationTypeCode, Scope> = {
 
 /** The central policy matrix — all tools, all actions/types. */
 export const ACTION_POLICY: Record<string, ActionPolicy> = {
+  // Aggregate multi-target catalog (no SAP request).
+  SAPTargets: { scope: 'read', opType: OperationType.Read },
   // ── SAPRead ──────────────────────────────────────────────────────
   // Tool-level default — applies to all SAP object reads (PROG, CLAS, etc.)
   SAPRead: { scope: 'read', opType: OperationType.Read },
@@ -92,7 +94,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.edit_method_signature': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete_method': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.change_method_visibility': { scope: 'write', opType: OperationType.Update },
-  // edit_text_symbols writes a class's text pool (textelements service). Explicit entry so admins can
+  // edit_text_symbols writes a CLAS/PROG/FUGR text-pool part. Explicit entry so admins can
   // target it with SAP_DENY_ACTIONS (validateDenyActions derives valid patterns from ACTION_POLICY —
   // without a row, "SAPWrite.edit_text_symbols" would be rejected at startup as matching no action).
   'SAPWrite.edit_text_symbols': { scope: 'write', opType: OperationType.Update },
@@ -123,6 +125,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPNavigate: { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.definition': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.references': { scope: 'read', opType: OperationType.Intelligence },
+  'SAPNavigate.relations': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.completion': { scope: 'read', opType: OperationType.Intelligence },
   'SAPNavigate.hierarchy': { scope: 'read', opType: OperationType.Intelligence },
 
@@ -140,7 +143,10 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPDiagnose: { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.syntax': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.unittest': { scope: 'read', opType: OperationType.Test },
+  'SAPDiagnose.unittest_ci': { scope: 'read', opType: OperationType.Test },
   'SAPDiagnose.atc': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.atc_ci': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.atc_variants': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.cds_testcases': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.dumps': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.traces': { scope: 'read', opType: OperationType.Read },
@@ -165,6 +171,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAPTransport: { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.list': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.get': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
+  // diff reads the transport plus each object's revision feed and sources — all reads.
+  'SAPTransport.diff': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.check': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.history': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
   'SAPTransport.layers': { scope: 'read', opType: OperationType.Read, featureGate: 'transport' },
@@ -182,7 +190,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPGit.whoami': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.config': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.branches': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
-  'SAPGit.external_info': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
+  // SAP performs outbound network access to a caller-selected remote. Treat this as an
+  // egress-capable Git mutation: it needs user `git` scope plus allowWrites/allowGitWrites.
+  'SAPGit.external_info': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.history': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.objects': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
   'SAPGit.check': { scope: 'read', opType: OperationType.Read, featureGate: 'git' },
@@ -190,7 +200,6 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPGit.clone': { scope: 'git', opType: OperationType.Create, featureGate: 'git' },
   'SAPGit.pull': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.push': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
-  'SAPGit.commit': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.switch_branch': { scope: 'git', opType: OperationType.Update, featureGate: 'git' },
   'SAPGit.create_branch': { scope: 'git', opType: OperationType.Create, featureGate: 'git' },
   'SAPGit.unlink': { scope: 'git', opType: OperationType.Delete, featureGate: 'git' },
@@ -252,6 +261,27 @@ export function getActionPolicy(tool: string, action?: string): ActionPolicy | u
     if (specific) return specific;
   }
   return ACTION_POLICY[tool];
+}
+
+/**
+ * Derive the policy key from the arguments that a handler will dispatch.
+ *
+ * Callers should normalize untrusted MCP arguments first. Keeping the SAPSearch
+ * SQL special case here prevents listing, multi-target preflight, and normal
+ * dispatch from applying different policy rules to the same invocation.
+ */
+export function invocationPolicyKey(tool: string, args: Record<string, unknown>): string | undefined {
+  if (
+    tool === 'SAPSearch' &&
+    args.searchType === 'tadir_lookup' &&
+    typeof args.source === 'string' &&
+    ['db', 'both'].includes(args.source.toLowerCase())
+  ) {
+    return `tadir_lookup_${args.source.toLowerCase()}`;
+  }
+  const value = tool === 'SAPRead' ? args.type : args.action;
+  if (value === undefined || value === null || value === '') return undefined;
+  return tool === 'SAPRead' ? String(value).toUpperCase() : String(value);
 }
 
 /** Return all keys in the policy matrix (used by validator + consistency tests). */

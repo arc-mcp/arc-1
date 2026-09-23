@@ -7,6 +7,7 @@
  */
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
+import { DEFAULT_CONCURRENT_DATA_RESULTS, DEFAULT_DATA_PREVIEW_RESPONSE_BYTES } from './data-result-context.js';
 import type { SafetyConfig } from './safety.js';
 import { unrestrictedSafetyConfig } from './safety.js';
 
@@ -55,6 +56,8 @@ export interface AdtClientConfig {
   language: string;
   /** Skip TLS verification */
   insecure: boolean;
+  /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
+  gzipDataPreviewBody: boolean;
   /** Cookie-based auth (alternative to basic auth) */
   cookies: Record<string, string>;
   /** Path to cookie file — enables hot-reload on stale auth */
@@ -99,6 +102,18 @@ export interface AdtClientConfig {
   samlAuthorization?: string;
   /** Opt-in: disable SAML redirect via X-SAP-SAML2 header + saml2 query param */
   disableSaml?: boolean;
+  /**
+   * Internal authentication retry policy. Defaults to true for compatibility.
+   * Multi-target shared Basic clients set this to false so one rejected
+   * credential produces exactly one SAP authentication attempt. Requests on
+   * that per-call client are serialized and fail locally after its first 401.
+   */
+  retryUnauthorized?: boolean;
+  /**
+   * Internal, secret-free notification for a final HTTP 401. The callback must
+   * never receive request headers, response bodies, usernames, or passwords.
+   */
+  onUnauthorized?: (context: { path: string; statusCode: 401 }) => void;
   /** Maximum concurrent SAP HTTP requests. When set, requests beyond this limit queue.
    *  Falls back to constructing a private Semaphore if `adtSemaphore` is not provided.
    *  Used by stdio / tests that don't have a server-wide shared instance. */
@@ -107,6 +122,12 @@ export interface AdtClientConfig {
    *  constructed with this config. The server constructs one at startup so principal-propagation
    *  per-user clients all share the same cap. Takes precedence over `maxConcurrent`. */
   adtSemaphore?: import('./semaphore.js').Semaphore;
+  /** Cumulative decompressed response bytes allowed per data-result scope. */
+  maxDataPreviewResponseBytes: number;
+  /** Private fallback data-result concurrency when no shared semaphore is supplied. */
+  maxConcurrentDataResults: number;
+  /** Process-wide data-result semaphore shared by every server-created ADT client. */
+  dataResultSemaphore?: import('./semaphore.js').Semaphore;
 }
 
 /** Create default ADT client config */
@@ -118,9 +139,12 @@ export function defaultAdtClientConfig(): AdtClientConfig {
     client: '100',
     language: 'EN',
     insecure: false,
+    gzipDataPreviewBody: false,
     cookies: {},
     safety: unrestrictedSafetyConfig(),
     features: defaultFeatureConfig(),
     verbose: false,
+    maxDataPreviewResponseBytes: DEFAULT_DATA_PREVIEW_RESPONSE_BYTES,
+    maxConcurrentDataResults: DEFAULT_CONCURRENT_DATA_RESULTS,
   };
 }

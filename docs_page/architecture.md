@@ -153,7 +153,7 @@ Three rate-limiting layers gate the request flow at different stages:
 - **Layer 2** runs at the top of `handleToolCall`, AFTER `authInfo` is available but BEFORE scope/Zod/safety checks. A per-user token bucket returns an MCP tool error (not HTTP 429) so the LLM agent loop backs off.
 - **Layer 3** is the server-wide `Semaphore` inside the ADT HTTP client — caps concurrent SAP requests across ALL users (shared + per-user PP). Honors `Retry-After` on `429`/`503` from SAP or BTP gateways.
 
-See the [Rate Limiting Guide](rate-limiting.md) and [ADR-0004](../docs/adr/0004-layered-rate-limiting.md).
+See the [Rate Limiting Guide](rate-limiting.md) and [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
 
 ## Tool listing flow
 
@@ -169,14 +169,28 @@ sequenceDiagram
     participant Policy as Scope/deny pruning
 
     Client->>Server: tools/list
-    Server->>Probe: Wait up to 10s for feature probe
-    Probe-->>Server: Features + ADT discovery map
+    Server->>Probe: Read cached features (never waits)
+    Probe-->>Server: Features + ADT discovery map, or nothing yet
     Server->>Tools: Build standard or hyperfocused tool schema
     alt authInfo present
         Server->>Policy: Remove actions/types missing scope or denied by policy
     end
     Server-->>Client: Available tools and input schemas
+    opt stdio, once the startup probe finishes
+        Server-->>Client: notifications/tools/list_changed
+        Client->>Server: tools/list (now feature-adjusted)
+    end
 ```
+
+`tools/list` never blocks on SAP. MCP clients cancel it on their own schedule (Cline at roughly
+5 seconds) and a feature probe against a real system can take longer, which previously left those
+clients with no tools at all. Until the probe lands, the answer is built from configuration alone
+and is a **superset** of the probed surface — a tool may be listed that this system turns out not to
+support, but nothing is ever missing. The server declares `tools.listChanged` and, on stdio, emits
+`notifications/tools/list_changed` when discovery completes so clients can re-fetch the narrowed
+list. Clients that ignore that notification keep the superset, and unsupported calls fail with a
+typed error. On HTTP each request builds its own server, so its first `tools/list` already reflects
+the cached probe.
 
 Tool schemas also adapt to backend and configuration:
 
@@ -201,10 +215,10 @@ Standard mode groups many ADT endpoints into 12 intent-based tools.
 | `SAPQuery` | Freestyle ABAP SQL. | Requires SQL scope and `SAP_ALLOW_FREE_SQL=true`. |
 | `SAPContext` | Dependency context, usages, and CDS impact analysis. | Uses cache for reverse usages. |
 | `SAPLint` | Local abaplint, formatting, formatter settings, pre-write validation helpers. | Formatter settings mutation needs write permission. |
-| `SAPDiagnose` | Syntax, unit tests, ATC, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |
+| `SAPDiagnose` | Syntax, unit tests, ATC, headless CI ATC/AUnit, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |
 | `SAPManage` | Feature probe, cache stats, packages, package moves, FLP catalog/group/tile actions. | Read actions stay visible in read-only mode. |
 | `SAPTransport` | CTS list/get/check/history and mutations. | Write actions require transport write opt-in. |
-| `SAPGit` | gCTS and abapGit read/write operations. | Feature-gated by detected backend support. |
+| `SAPGit` | gCTS/abapGit reads and gated abapGit workflows; gCTS mutations are quarantined, and unverifiable accepted abapGit mutations return incomplete. | Feature-gated by detected backend support. |
 
 Hyperfocused mode maps one `SAP` action to the same underlying handlers:
 

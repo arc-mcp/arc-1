@@ -144,7 +144,7 @@
 | # | Method | Path / pattern | Module / function | Notes |
 |---|--------|------------------|---------------------|-------|
 | 27 | `GET` | `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query={query}&maxResults={n}` | `client.ts` (`searchObject`) | Object name quick search. |
-| 28 | `GET` | `/sap/bc/adt/repository/informationsystem/textSearch?searchString={pattern}&maxResults={n}[&objectType=...][&packageName=...]` | `client.ts` (`searchSource`) | Source text search; optional filters. |
+| 28 | `GET` | `/sap/bc/adt/repository/informationsystem/textsearch?searchString={pattern}&searchFromIndex=1&searchToIndex={n}[&objectType=...][&packageName=...]` | `client.ts` (`searchSource`) | Lowercase path; 1-based paging; filters use short catalog names (`CLAS`, `FUNC`). |
 | 29 | `POST` | `/sap/bc/adt/repository/nodestructure?parent_type=DEVC/K&parent_name={package}&withShortDescriptions=true` | `client.ts` (`getPackageContents`) | Body `undefined`, `Content-Type: application/xml`. |
 
 ---
@@ -240,7 +240,7 @@ These URLs are invoked with **`client.get`** (not HEAD — see implementation). 
 | 63 | `GET` | `/sap/bc/adt/debugger/amdp` | Probe `amdp` |
 | 64 | `GET` | `/sap/bc/adt/filestore/ui5-bsp` | Probe `ui5` |
 | 65 | `GET` | `/sap/bc/adt/cts/transportrequests` | Probe `transport` |
-| 66 | `GET` | `/sap/bc/adt/repository/informationsystem/textSearch?searchString=SY-SUBRC&maxResults=1` | `probeTextSearch` |
+| 66 | `GET` | `/sap/bc/adt/repository/informationsystem/textsearch/support?db=` | `probeTextSearch`; dedicated support check, with `SADT_REST 020` distinguished from authorization 403 |
 | 67 | `GET` | `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=CL_ABAP_*&maxResults=1` | `probeAuthorization` — search |
 | 68 | `GET` | `/sap/bc/adt/cts/transportrequests?user=__PROBE__` | `probeAuthorization` — transport |
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuditEvent } from '../../../src/server/audit.js';
+import { requestContext } from '../../../src/server/context.js';
 import { Logger } from '../../../src/server/logger.js';
 import type { LogSink } from '../../../src/server/sinks/types.js';
 
@@ -65,6 +66,36 @@ describe('Logger', () => {
     expect(parsed.username).toBe('admin'); // Not sensitive
   });
 
+  it('suppresses SAP 401/403 response details in messages and nested debug context', () => {
+    const logger = new Logger('json', true);
+    const sentinel = 'SENTINEL_TECHNICAL_USER_AND_SECURITY_DETAIL';
+    logger.debug(`Read failed: ADT API error: status 401 at /sap/bc/adt/discovery: ${sentinel}`, {
+      error: `ADT API error: status 403 at /sap/bc/adt/repository/informationsystem: ${sentinel}`,
+      nested: { errors: [`ADT API error: status 403 at /sap/bc/adt/oo/classes: ${sentinel}`] },
+    });
+
+    const output = stderrSpy.mock.calls[0]?.[0] as string;
+    expect(output).not.toContain(sentinel);
+    const parsed = JSON.parse(output);
+    expect(parsed.message).toBe(
+      'Read failed: ADT API error: status 401 at /sap/bc/adt/discovery: [response details suppressed]',
+    );
+    expect(parsed.error).toBe(
+      'ADT API error: status 403 at /sap/bc/adt/repository/informationsystem: [response details suppressed]',
+    );
+    expect(parsed.nested.errors[0]).toBe(
+      'ADT API error: status 403 at /sap/bc/adt/oo/classes: [response details suppressed]',
+    );
+  });
+
+  it('keeps non-authentication ADT error details for diagnostics', () => {
+    const logger = new Logger('json', true);
+    logger.debug('request failed', { error: 'ADT API error: status 500 at /sap/bc/adt/test: useful detail' });
+
+    const output = stderrSpy.mock.calls[0]?.[0] as string;
+    expect(JSON.parse(output).error).toContain('useful detail');
+  });
+
   describe('Sink Architecture', () => {
     it('starts with stderr sink by default', () => {
       const logger = new Logger('text', false);
@@ -124,6 +155,70 @@ describe('Logger', () => {
       expect(goodSink.write).toHaveBeenCalled();
     });
 
+    it('emitAudit attaches clientAgent and traceparent from the request context', () => {
+      const logger = new Logger('text', false);
+      const mockSink: LogSink = { write: vi.fn() };
+      logger.addSink(mockSink);
+      const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+
+      requestContext.run({ requestId: 'REQ-9', clientAgent: 'claude-code/1.2.3', traceparent }, () => {
+        logger.emitAudit({
+          timestamp: '',
+          level: 'info',
+          event: 'tool_call_start',
+          tool: 'SAPRead',
+          args: {},
+        });
+      });
+
+      const written = (mockSink.write as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(written.clientAgent).toBe('claude-code/1.2.3');
+      expect(written.traceparent).toBe(traceparent);
+      expect(written.requestId).toBe('REQ-9');
+    });
+
+    it('emitAudit lets an explicit clientAgent win over the context', () => {
+      const logger = new Logger('text', false);
+      const mockSink: LogSink = { write: vi.fn() };
+      logger.addSink(mockSink);
+
+      requestContext.run({ requestId: 'REQ-9', clientAgent: 'from-context' }, () => {
+        logger.emitAudit({
+          timestamp: '',
+          level: 'info',
+          event: 'tool_call_start',
+          tool: 'SAPRead',
+          clientAgent: 'from-event',
+          args: {},
+        });
+      });
+
+      const written = (mockSink.write as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(written.clientAgent).toBe('from-event');
+    });
+
+    it('does not redact clientAgent or traceparent — neither carries a secret', () => {
+      const logger = new Logger('text', false);
+      const mockSink: LogSink = { write: vi.fn() };
+      logger.addSink(mockSink);
+      const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+
+      logger.emitAudit({
+        timestamp: '',
+        level: 'info',
+        event: 'tool_call_end',
+        tool: 'SAPRead',
+        durationMs: 1,
+        status: 'success',
+        clientAgent: 'vscode/1.107.0',
+        traceparent,
+      });
+
+      const written = (mockSink.write as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(written.clientAgent).toBe('vscode/1.107.0');
+      expect(written.traceparent).toBe(traceparent);
+    });
+
     it('flush calls flush on all sinks', async () => {
       const logger = new Logger('text', false);
       const mockSink: LogSink = { write: vi.fn(), flush: vi.fn().mockResolvedValue(undefined) };
@@ -131,6 +226,31 @@ describe('Logger', () => {
 
       await logger.flush();
       expect(mockSink.flush).toHaveBeenCalled();
+    });
+
+    it.each(['throw', 'reject'])('waits for healthy sinks when another sink fails with %s', async (failure) => {
+      const logger = new Logger('text', false);
+      let finish!: () => void;
+      const pending = new Promise<void>((resolve) => (finish = resolve));
+      logger.addSink({
+        write: vi.fn(),
+        flush: () => {
+          if (failure === 'throw') throw new Error('sink failed');
+          return Promise.reject(new Error('sink failed'));
+        },
+      });
+      const flush = vi.fn().mockReturnValue(pending);
+      logger.addSink({ write: vi.fn(), flush });
+      let settled = false;
+      const flushing = logger.flush().then(() => {
+        settled = true;
+      });
+      await Promise.resolve();
+      expect(flush).toHaveBeenCalledOnce();
+      expect(settled).toBe(false);
+      finish();
+      await flushing;
+      expect(settled).toBe(true);
     });
   });
 });

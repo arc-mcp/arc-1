@@ -7,7 +7,34 @@
  * in shape and conventions (pure, no I/O, CRLF-preserving).
  */
 
-import { validateLineWindow } from './line-range.js';
+interface LineWindowValidation {
+  valid: boolean;
+  /** Present when !valid. */
+  error?: string;
+  /** Present when valid — lineEnd clamped to totalLines. */
+  clampedEnd?: number;
+}
+
+/**
+ * Validation for a 1-based, inclusive `[lineStart, lineEnd]` window against a source of
+ * `totalLines` lines. `lineEnd` is clamped to `totalLines` rather than treated as an error, since
+ * callers commonly pass a generous upper bound. Used only for the write-side anchor search.
+ */
+function validateLineWindow(totalLines: number, lineStart: number, lineEnd: number): LineWindowValidation {
+  if (!Number.isInteger(lineStart) || !Number.isInteger(lineEnd)) {
+    return { valid: false, error: 'lineStart and lineEnd must be integers.' };
+  }
+  if (lineStart < 1) {
+    return { valid: false, error: `lineStart must be >= 1 (got ${lineStart}).` };
+  }
+  if (lineStart > lineEnd) {
+    return { valid: false, error: `lineStart (${lineStart}) must be <= lineEnd (${lineEnd}).` };
+  }
+  if (lineStart > totalLines) {
+    return { valid: false, error: `lineStart (${lineStart}) is past the end of the source (${totalLines} line(s)).` };
+  }
+  return { valid: true, clampedEnd: Math.min(lineEnd, totalLines) };
+}
 
 export type ContentSpliceOutcome = 'spliced' | 'already-applied' | 'error';
 

@@ -4,17 +4,20 @@ import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { type SafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import {
-  buildBlueSourceXml,
+  buildServerDrivenMetadataXml,
   createServerDrivenObject,
   deleteServerDrivenObject,
+  ensureServerDrivenSupport,
   getServerDrivenObject,
   isServerDrivenObjectType,
   SDO_REGISTRY,
   serverDrivenObjectUrl,
+  serverDrivenSourceContentType,
   supportsServerDrivenObject,
   updateServerDrivenObjectSource,
 } from '../../../src/adt/server-driven.js';
-import { parseBlueSource } from '../../../src/adt/xml-parser.js';
+import { parseServerDrivenMetadata } from '../../../src/adt/xml-parser.js';
+import { logger } from '../../../src/server/logger.js';
 
 const readOnlySafety = (): SafetyConfig => ({ ...unrestrictedSafetyConfig(), allowWrites: false });
 
@@ -64,9 +67,9 @@ function mockHttp(resolve: (path: string) => { statusCode?: number; body: string
   } as unknown as AdtHttpClient;
 }
 
-describe('parseBlueSource', () => {
+describe('parseServerDrivenMetadata', () => {
   it('parses DESD metadata (name/type/description/package/language)', () => {
-    const m = parseBlueSource(DESD_META);
+    const m = parseServerDrivenMetadata(DESD_META, 'blueSource');
     expect(m.name).toBe('DEMO_CDS_LOGICL_EXTERNL_SCHEMA');
     expect(m.type).toBe('DESD/TYP');
     expect(m.description).toBe('Demo CDS Logical External Schema');
@@ -78,14 +81,25 @@ describe('parseBlueSource', () => {
   });
 
   it('parses EVTB metadata (RAP event binding)', () => {
-    const m = parseBlueSource(EVTB_META);
+    const m = parseServerDrivenMetadata(EVTB_META, 'blueSource');
     expect(m.name).toBe('S_BUSINESSPARTNER_CHANGE');
     expect(m.type).toBe('EVTB/EVB');
     expect(m.package).toBe('MDC_BUPA_BO');
   });
 
+  it('parses DTDC metadata from the dtdc:dtdcSource root (non-blue format)', () => {
+    const DTDC_META =
+      '<?xml version="1.0" encoding="utf-8"?><dtdc:dtdcSource adtcore:responsible="SAP" adtcore:masterLanguage="EN" adtcore:abapLanguageVersion="cloudDevelopment" adtcore:name="DEMO_DDIC_DYNAMIC_CACHE" adtcore:type="DTDC/DF" adtcore:version="active" adtcore:description="Demo Dynamic Cache" xmlns:dtdc="http://www.sap.com/adt/ddic/dtdcsources" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="SABAP_DEMOS"/></dtdc:dtdcSource>';
+    const m = parseServerDrivenMetadata(DTDC_META, 'dtdcSource');
+    expect(m.name).toBe('DEMO_DDIC_DYNAMIC_CACHE');
+    expect(m.type).toBe('DTDC/DF');
+    expect(m.description).toBe('Demo Dynamic Cache');
+    expect(m.package).toBe('SABAP_DEMOS');
+    expect(m.abapLanguageVersion).toBe('cloudDevelopment');
+  });
+
   it('returns empty name/type for an unrelated root and omits empty optionals', () => {
-    const m = parseBlueSource('<other/>');
+    const m = parseServerDrivenMetadata('<other/>', 'blueSource');
     expect(m.name).toBe('');
     expect(m.type).toBe('');
     expect(m.package).toBeUndefined();
@@ -94,6 +108,28 @@ describe('parseBlueSource', () => {
 });
 
 describe('SDO registry + gate', () => {
+  it('honors an explicit UIAD creation language version without changing other SDO types', () => {
+    expect(buildServerDrivenMetadataXml('UIAD', 'ZTEST', '$TMP', 'Test', 'cloudDevelopment')).toContain(
+      'adtcore:abapLanguageVersion="cloudDevelopment"',
+    );
+    expect(buildServerDrivenMetadataXml('DESD', 'ZTEST', '$TMP', 'Test', 'cloudDevelopment')).not.toContain(
+      'abapLanguageVersion',
+    );
+    expect(buildServerDrivenMetadataXml('UIAD', 'ZTEST', '$TMP', 'Test')).not.toContain('abapLanguageVersion');
+  });
+  it('preserves the PUT failure when unlock also fails', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { http } = mockWriteHttp({ putThrows: true, unlockThrows: true });
+    await expect(
+      updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'UIAD', 'ZTEST', '{}'),
+    ).rejects.toThrow('put failed');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('unlock failed'), {
+      objectUrl: '/sap/bc/adt/fiori/uiad/ZTEST',
+      statusCode: 404,
+    });
+    expect(JSON.stringify(warn.mock.calls)).not.toMatch(/LH123|lockHandle|unlock failed at/);
+    warn.mockRestore();
+  });
   it('isServerDrivenObjectType', () => {
     expect(isServerDrivenObjectType('DESD')).toBe(true);
     expect(isServerDrivenObjectType('EVTB')).toBe(true);
@@ -122,6 +158,73 @@ describe('SDO registry + gate', () => {
     const http = { hasDiscoveryData: () => true, discoveryAcceptFor: () => undefined } as unknown as AdtHttpClient;
     expect(supportsServerDrivenObject(http, 'DESD')).toBe(false);
     expect(supportsServerDrivenObject(http, 'NOPE')).toBe(false);
+  });
+});
+
+/**
+ * The gate used to be consulted synchronously, so a cold discovery map (always, in the CLI) let the
+ * call through and surfaced a raw 404 with a misleading "verify the name exists" hint.
+ */
+describe('ensureServerDrivenSupport', () => {
+  /** `has` controls whether the served discovery doc advertises ddic/desd with the blues accept. */
+  function mockHttp(opts: { loaded: boolean; has?: boolean; getThrows?: boolean }) {
+    const doc =
+      '<?xml version="1.0"?><app:service xmlns:app="http://www.w3.org/2007/app" ' +
+      'xmlns:atom="http://www.w3.org/2005/Atom"><app:workspace><atom:title>W</atom:title>' +
+      (opts.has
+        ? '<app:collection href="/sap/bc/adt/ddic/desd"><atom:title>D</atom:title>' +
+          '<app:accept>application/vnd.sap.adt.blues.v1+xml</app:accept></app:collection>'
+        : '<app:collection href="/sap/bc/adt/programs/programs"><atom:title>P</atom:title>' +
+          '<app:accept>text/plain</app:accept></app:collection>') +
+      '</app:workspace></app:service>';
+    const get = vi.fn(async () => {
+      if (opts.getThrows) throw new AdtApiError('discovery forbidden', 403, '/sap/bc/adt/discovery');
+      return { statusCode: 200, headers: {}, body: doc };
+    });
+    return {
+      http: {
+        get,
+        hasDiscoveryData: () => opts.loaded,
+        discoveryAcceptFor: (path: string) =>
+          opts.loaded && path === '/sap/bc/adt/ddic/desd' ? 'application/vnd.sap.adt.blues.v1+xml' : undefined,
+        setDiscoveryMap: vi.fn(),
+      } as unknown as AdtHttpClient,
+      get,
+    };
+  }
+
+  it('uses the already-loaded map without fetching discovery', async () => {
+    const { http, get } = mockHttp({ loaded: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('fetches discovery when cold, then reports the type as unavailable on that release', async () => {
+    const { http, get } = mockHttp({ loaded: false, has: false });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(false);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches discovery when cold, then reports the type as available', async () => {
+    const { http } = mockHttp({ loaded: false, has: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+  });
+
+  it('never stores the fetched map — server.ts re-injects per call, and sharing it would leak per-user capabilities', async () => {
+    const { http } = mockHttp({ loaded: false, has: true });
+    await ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD');
+    expect(http.setDiscoveryMap).not.toHaveBeenCalled();
+  });
+
+  it('proceeds when discovery itself is unreachable — the gate is an error-message affordance, not a control', async () => {
+    const { http } = mockHttp({ loaded: false, getThrows: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'DESD')).resolves.toBe(true);
+  });
+
+  it('rejects an unknown code without paying for a discovery round-trip', async () => {
+    const { http, get } = mockHttp({ loaded: false, has: true });
+    await expect(ensureServerDrivenSupport(http, unrestrictedSafetyConfig(), 'NOPE')).resolves.toBe(false);
+    expect(get).not.toHaveBeenCalled();
   });
 });
 
@@ -182,23 +285,114 @@ describe('getServerDrivenObject', () => {
 });
 
 describe('SDO registry write metadata', () => {
-  it('every entry carries a createType and a blues content-type', () => {
+  it('every entry carries a createType and a metadata content-type', () => {
     for (const e of Object.values(SDO_REGISTRY)) {
       expect(e.createType).toMatch(/^[A-Z]{4}\/[A-Z]+$/);
-      expect(e.blueContentType).toMatch(/^application\/vnd\.sap\.adt\.blues\.v[12]\+xml$/);
+      expect(e.metadataContentType).toMatch(/^application\/vnd\.sap\.adt\./);
     }
   });
 
-  it('EVTO uses blues v2; the others use v1 (verified live on 816)', () => {
-    expect(SDO_REGISTRY.EVTO.blueContentType).toContain('v2');
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA'] as const) {
-      expect(SDO_REGISTRY[code].blueContentType).toContain('v1');
+  it('the blue family uses blues content types (EVTO v2, rest v1); DTDC uses its own (verified live)', () => {
+    expect(SDO_REGISTRY.EVTO.metadataContentType).toContain('blues.v2');
+    expect(SDO_REGISTRY.UIAD.metadataContentType).toContain('blues.v2');
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD'] as const) {
+      expect(SDO_REGISTRY[code].metadataContentType).toContain('blues.v1');
+      expect(SDO_REGISTRY[code].discoveryMarker).toBe('blues');
     }
+    expect(SDO_REGISTRY.DTDC.metadataContentType).toBe('application/vnd.sap.adt.ddic.dtdc.v1+xml');
+    expect(SDO_REGISTRY.DTDC.discoveryMarker).toBe('dtdc');
+    expect(SDO_REGISTRY.DTDC.metadataRootLocalName).toBe('dtdcSource');
   });
 
   it('createType is not uniformly /TYP (EVTB → EVTB/EVB)', () => {
     expect(SDO_REGISTRY.EVTB.createType).toBe('EVTB/EVB');
     expect(SDO_REGISTRY.DESD.createType).toBe('DESD/TYP');
+  });
+
+  // Regression guard for the 2026-07-21 fix: the source PUT content type used to be a single
+  // hardcoded 'application/json' for every type, which SAP answers with 415 for the DDL-text
+  // ones — DTSC write was dead on arrival. Content types live-verified per type on 816.
+  it('maps each type to the source content type SAP actually accepts (live-verified 816)', () => {
+    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const) {
+      expect(serverDrivenSourceContentType(code)).toBe('application/json');
+    }
+    for (const code of ['DTSC', 'DSFD', 'DTDC'] as const) {
+      expect(serverDrivenSourceContentType(code)).toBe('text/plain');
+    }
+  });
+});
+
+// DTDC is the first NON-blue server-driven type. These lock down that the generalized engine paths
+// use DTDC's own metadata format end-to-end and never fall back to blue:blueSource / blues content
+// types — the whole point of "generalize off blue-only".
+describe('DTDC engine paths (non-blue server-driven type)', () => {
+  const DTDC_META =
+    '<?xml version="1.0" encoding="utf-8"?><dtdc:dtdcSource adtcore:name="DEMO_DDIC_DYNAMIC_CACHE" adtcore:type="DTDC/DF" adtcore:description="Demo Dynamic Cache" xmlns:dtdc="http://www.sap.com/adt/ddic/dtdcsources" xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="SABAP_DEMOS"/></dtdc:dtdcSource>';
+  const DTDC_SRC = 'define dynamic cache DEMO_DDIC_DYNAMIC_CACHE on demo_ddic_types { char1 }';
+
+  it('isServerDrivenObjectType(DTDC) is true', () => {
+    expect(isServerDrivenObjectType('DTDC')).toBe(true);
+  });
+
+  it('serverDrivenSourceContentType(DTDC) is text/plain (DDL source)', () => {
+    expect(serverDrivenSourceContentType('DTDC')).toBe('text/plain');
+  });
+
+  it('supportsServerDrivenObject: true when the DTDC collection advertises the dtdc accept', () => {
+    const http = {
+      hasDiscoveryData: () => true,
+      discoveryAcceptFor: (p: string) =>
+        p === '/sap/bc/adt/ddic/dtdc/sources' ? 'application/vnd.sap.adt.ddic.dtdc.v1+xml, text/html' : undefined,
+    } as unknown as AdtHttpClient;
+    expect(supportsServerDrivenObject(http, 'DTDC')).toBe(true);
+  });
+
+  it('supportsServerDrivenObject: false when the DTDC collection advertises only a non-dtdc accept', () => {
+    const http = {
+      hasDiscoveryData: () => true,
+      // e.g. a blues accept on the dtdc href would NOT match DTDC's discoveryMarker ('dtdc').
+      discoveryAcceptFor: (p: string) =>
+        p === '/sap/bc/adt/ddic/dtdc/sources' ? 'application/vnd.sap.adt.blues.v1+xml' : undefined,
+    } as unknown as AdtHttpClient;
+    expect(supportsServerDrivenObject(http, 'DTDC')).toBe(false);
+  });
+
+  it('getServerDrivenObject(DTDC) uses the dtdc Accept and parses <dtdc:dtdcSource> (DDL source kept raw)', async () => {
+    const http = mockHttp((p) => (p.endsWith('/source/main') ? { body: DTDC_SRC } : { body: DTDC_META }));
+    const r = await getServerDrivenObject(http, unrestrictedSafetyConfig(), 'DTDC', 'DEMO_DDIC_DYNAMIC_CACHE');
+    expect(r.type).toBe('DTDC/DF');
+    expect(r.package).toBe('SABAP_DEMOS');
+    expect(r.source).toBe(DTDC_SRC); // DDL text, not JSON-parsed
+    expect(http.get).toHaveBeenCalledWith(
+      '/sap/bc/adt/ddic/dtdc/sources/DEMO_DDIC_DYNAMIC_CACHE',
+      expect.objectContaining({ Accept: 'application/vnd.sap.adt.ddic.dtdc.v1+xml' }),
+    );
+  });
+
+  it('createServerDrivenObject(DTDC) POSTs the dtdc collection with the dtdc content-type + <dtdc:dtdcSource> body', async () => {
+    const { http, calls } = mockWriteHttp();
+    await createServerDrivenObject(http, unrestrictedSafetyConfig(), 'DTDC', 'ZDYN', {
+      package: '$TMP',
+      description: 'd',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/sap/bc/adt/ddic/dtdc/sources',
+      contentType: 'application/vnd.sap.adt.ddic.dtdc.v1+xml',
+    });
+    expect(calls[0].body).toContain('<dtdc:dtdcSource');
+    expect(calls[0].body).toContain('adtcore:type="DTDC/DF"');
+    expect(calls[0].body).not.toContain('blue:blueSource');
+  });
+
+  it('updateServerDrivenObjectSource(DTDC) PUTs the DDL source as text/plain', async () => {
+    const { http, calls } = mockWriteHttp();
+    await updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'DTDC', 'ZDYN', DTDC_SRC);
+    const put = calls.find((c) => c.method === 'PUT')!;
+    expect(put.path).toContain('/sap/bc/adt/ddic/dtdc/sources/ZDYN/source/main');
+    expect(put.contentType).toBe('text/plain');
+    expect(put.body).toBe(DTDC_SRC);
   });
 });
 
@@ -212,9 +406,9 @@ describe('serverDrivenObjectUrl', () => {
   });
 });
 
-describe('buildBlueSourceXml', () => {
+describe('buildServerDrivenMetadataXml', () => {
   it('emits the per-type createType, packageRef, and escapes the description', () => {
-    const xml = buildBlueSourceXml('EVTB', 'ZEVT', '$TMP', 'A & B "x"');
+    const xml = buildServerDrivenMetadataXml('EVTB', 'ZEVT', '$TMP', 'A & B "x"');
     expect(xml).toContain('adtcore:type="EVTB/EVB"');
     expect(xml).toContain('adtcore:name="ZEVT"');
     expect(xml).toContain('adtcore:description="A &amp; B &quot;x&quot;"');
@@ -225,12 +419,20 @@ describe('buildBlueSourceXml', () => {
     // The create body deliberately omits masterLanguage: a4h-2025 (816) silently ignores it
     // (create with "DE" → object read back as the session language). Master language comes from
     // the sap-language request param (session = config.language), as with other source objects.
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA']) {
-      expect(buildBlueSourceXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD']) {
+      expect(buildServerDrivenMetadataXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
     }
   });
   it('throws AdtApiError for an unknown code', () => {
-    expect(() => buildBlueSourceXml('NOPE', 'Z', '$TMP', 'd')).toThrow(AdtApiError);
+    expect(() => buildServerDrivenMetadataXml('NOPE', 'Z', '$TMP', 'd')).toThrow(AdtApiError);
+  });
+
+  it('emits the DTDC root element + namespace (not blue) for the non-blue type', () => {
+    const xml = buildServerDrivenMetadataXml('DTDC', 'ZDYN', '$TMP', 'd');
+    expect(xml).toContain('<dtdc:dtdcSource xmlns:dtdc="http://www.sap.com/adt/ddic/dtdcsources"');
+    expect(xml).toContain('adtcore:type="DTDC/DF"');
+    expect(xml).toContain('</dtdc:dtdcSource>');
+    expect(xml).not.toContain('blue:blueSource');
   });
   it('emits a cloud-safe create body for every type — no responsible/masterSystem/abapLanguageVersion (BTP)', () => {
     // BTP/Steampunk create simple-transformations reject adtcore:responsible/masterSystem; the cloud
@@ -239,7 +441,7 @@ describe('buildBlueSourceXml', () => {
     // so a refactor can't reintroduce a cloud-hostile attribute. See btp-abap.integration.test.ts.
     const reg = SDO_REGISTRY as Record<string, { createType: string }>;
     for (const code of Object.keys(reg)) {
-      const xml = buildBlueSourceXml(code, 'ZARC1_SDO', 'ZPKG', 'd');
+      const xml = buildServerDrivenMetadataXml(code, 'ZARC1_SDO', 'ZPKG', 'd');
       expect(xml).not.toContain('adtcore:responsible');
       expect(xml).not.toContain('adtcore:masterSystem');
       expect(xml).not.toContain('abapLanguageVersion');
@@ -250,7 +452,7 @@ describe('buildBlueSourceXml', () => {
 });
 
 describe('createServerDrivenObject', () => {
-  it('POSTs the collection href with the entry blues content-type and the blue body', async () => {
+  it('POSTs the collection href with the entry metadata content-type and the blue-family body', async () => {
     const { http, calls } = mockWriteHttp();
     await createServerDrivenObject(http, unrestrictedSafetyConfig(), 'DESD', 'ZD', {
       package: '$TMP',
@@ -294,7 +496,7 @@ describe('createServerDrivenObject', () => {
 });
 
 describe('updateServerDrivenObjectSource', () => {
-  it('locks → PUTs /source/main as application/json → unlocks (in order)', async () => {
+  it('locks → PUTs /source/main as the type\u2019s source content type → unlocks (in order)', async () => {
     const { http, calls } = mockWriteHttp();
     await updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'DESD', 'ZD', '{"formatVersion":"1"}');
     const methods = calls.map((c) => `${c.method} ${c.path.split('?')[0]}`);
@@ -307,6 +509,16 @@ describe('updateServerDrivenObjectSource', () => {
     expect(put.contentType).toBe('application/json');
     expect(put.path).toContain('lockHandle=LH123');
     expect(put.body).toBe('{"formatVersion":"1"}');
+  });
+
+  it('PUTs a DDL-text type (DTSC) as text/plain, not application/json', async () => {
+    const { http, calls } = mockWriteHttp();
+    const ddl = 'define static cache ZC on DEMO_CDS_CUBE_VIEW { sum( amount_sum ) } retention 60 s;';
+    await updateServerDrivenObjectSource(http, unrestrictedSafetyConfig(), 'DTSC', 'ZC', ddl);
+    const put = calls.find((c) => c.method === 'PUT')!;
+    // application/json here is a hard 415 from SAP — live-verified on 816.
+    expect(put.contentType).toBe('text/plain');
+    expect(put.body).toBe(ddl);
   });
 
   it('still unlocks when the PUT throws', async () => {

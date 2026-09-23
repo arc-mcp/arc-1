@@ -57,7 +57,6 @@ Tests typically suffix these with a specific clause explaining *which* fixture o
 | Skip message fragment | Affected tests | Typical on | Should NOT skip on |
 |---|---|---|---|
 | `BACKEND_UNSUPPORTED: DOMA reads not supported on this release` | `adt.integration.test.ts` domain metadata (MANDT, BUKRS) (2 tests) | NW 7.50–7.51 | SAP_BASIS ≥ 7.52 |
-| `BACKEND_UNSUPPORTED: DTEL v2 content type not supported on this release` | `crud.lifecycle.integration.test.ts` DTEL + DOMA+DTEL lifecycle (2 tests) | NW 7.50–7.51 | SAP_BASIS ≥ 7.52 |
 | `BACKEND_UNSUPPORTED: /datapreview/ddic endpoint not available on this release` | `adt.integration.test.ts` table contents, POST/CSRF session (4 tests) | NW 7.50 (depends on SP/activation) | Most modern releases |
 | `BACKEND_UNSUPPORTED: /ddic/domains endpoint not available on this release` | `crud.lifecycle.integration.test.ts` DOMA CRUD variants (2 tests) | NW 7.50–7.51 | SAP_BASIS ≥ 7.52 |
 | `NW 7.5x ADT_TM gap: reassign requires URL-query params on that release; needs release-aware fallback` | `transport.integration.test.ts` reassignTransport (1 test) | NW 7.50–7.51 | S/4HANA any release |
@@ -155,7 +154,7 @@ The E2E suite calls tools end-to-end through a running MCP server. The integrati
 
 ### E2E cat α — Fixture sync failure cascade
 
-E2E's fixture sync (`tests/e2e/sync-fixtures.ts`) seeds managed Z-namespace persistent objects (`ZCL_ARC1_TEST`, `ZI_ARC1_I33_ROOT`, etc.) before tests run. If sync fails for a given fixture because of a **backend quirk** (same 7.50 lock-handle 423 issue, DTEL 415, DOMA 404), that single fixture goes into a `summary.skipped` list and the suite continues — tests that expect it then auto-skip via `expectToolSuccessOrSkip()`.
+E2E's fixture sync (`tests/e2e/sync-fixtures.ts`) seeds managed Z-namespace persistent objects (`ZCL_ARC1_TEST`, `ZI_ARC1_I33_ROOT`, etc.) before tests run. If sync fails for a given fixture because of a **backend quirk** (same 7.50 lock-handle 423 issue, DOMA 404), that single fixture goes into a `summary.skipped` list and the suite continues — tests that expect it then auto-skip via `expectToolSuccessOrSkip()`.
 
 | Skip message fragment | Root cause | Typical on |
 |---|---|---|

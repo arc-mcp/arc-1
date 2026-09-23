@@ -5,7 +5,8 @@
 
 import type { AdtClient } from '../adt/client.js';
 import { createObject, deleteObject, lockObject, unlockObject } from '../adt/crud.js';
-import { buildPackageXml, type PackageCreateParams } from '../adt/ddic-xml.js';
+import { buildPackageXml, normalizeAdtResponsible, type PackageCreateParams } from '../adt/ddic-xml.js';
+import { AdtApiError } from '../adt/errors.js';
 import { probeFeatures } from '../adt/features.js';
 import {
   addTileToGroup,
@@ -13,6 +14,7 @@ import {
   createGroup,
   createTile,
   deleteCatalog,
+  FLP_TILE_PAGE_SIZE,
   listCatalogs,
   listGroups,
   listTiles,
@@ -23,10 +25,19 @@ import { getTransportInfo } from '../adt/transport.js';
 import { parseSearchResults } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
-import { cachedFeatures, setCachedFeatures } from './feature-cache.js';
+import {
+  getCachedFeatures,
+  isPackagesEndpointAvailable,
+  setCachedDiscovery,
+  setCachedFeatures,
+} from './feature-cache.js';
 import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
-import { enforceAllowedPackageForObjectUrl, resolveWriteSystemType } from './write-helpers.js';
+import {
+  DEVC_WRITE_UNAVAILABLE_HINT,
+  enforceAllowedPackageForObjectUrl,
+  resolveWriteSystemType,
+} from './write-helpers.js';
 
 // ─── SAPManage Handler ────────────────────────────────────────────────
 
@@ -43,12 +54,12 @@ export async function handleSAPManage(
 
   switch (action) {
     case 'features': {
-      if (!cachedFeatures) {
+      if (!getCachedFeatures()) {
         return textResult(
           toolJson({ message: 'No features probed yet. Use action="probe" to probe the SAP system first.' }),
         );
       }
-      return textResult(toolJson(cachedFeatures));
+      return textResult(toolJson(getCachedFeatures()));
     }
 
     case 'set_api_state': {
@@ -110,6 +121,12 @@ export async function handleSAPManage(
       if (!name) return errorResult('"name" is required for create_package action.');
       if (!description) return errorResult('"description" is required for create_package action.');
 
+      // Discovery gate: /sap/bc/adt/packages is absent wholesale before 7.52. Without this the
+      // caller gets a raw 404 plus a SICF-misconfiguration hint that sends them down the wrong path.
+      if (isPackagesEndpointAvailable() === false) {
+        return errorResult(DEVC_WRITE_UNAVAILABLE_HINT);
+      }
+
       checkOperation(client.safety, OperationType.Create, 'CreatePackage');
 
       // Package allowlist gate:
@@ -131,7 +148,13 @@ export async function handleSAPManage(
       // below. Details: docs/research/2026-06-27-btp-package-create-solved.md.
       const systemType = resolveWriteSystemType(config, client);
       const cloud = systemType === 'btp';
-      const responsible = cloud ? responsibleArg || client.getInternalUser() || '' : config.username;
+      // On-prem, unlike every other type, DEVC cannot fall back to omitting adtcore:responsible:
+      // SPAK_ST_PACKAGES rejects an empty value AND validates that the user exists ("Enter a valid
+      // user, not <x>, as the person responsible"). So an unusable logon user (the email-style
+      // principal under PP) must be replaced by an explicit responsible, not dropped (#636).
+      const responsible = cloud
+        ? responsibleArg || client.getInternalUser() || ''
+        : responsibleArg || normalizeAdtResponsible(config.username);
       if (cloud) {
         if (!superPackage) {
           return errorResult(
@@ -146,6 +169,14 @@ export async function handleSAPManage(
               'SAPRead createdBy on an object you own), or create any object first to auto-resolve it.',
           );
         }
+      } else if (!responsible) {
+        return errorResult(
+          'Package create needs a person-responsible that is a valid SAP user name (XUBNAME, max 12 ' +
+            'characters) — unlike other object types, SAP rejects an empty one here. ' +
+            `The connection user (${config.username || 'unset'}) cannot be used. ` +
+            'This is the normal case under principal propagation, where the identity is an email. ' +
+            'Pass responsible="<your SAP user name>".',
+        );
       }
 
       let effectiveTransport = transport || undefined;
@@ -206,7 +237,7 @@ export async function handleSAPManage(
         'application/*',
         effectiveTransport,
         undefined,
-        cachedFeatures?.abapRelease,
+        getCachedFeatures()?.abapRelease,
       );
       // Hierarchy changed: invalidate any cached subtree that could contain
       // the new package. Conservative: clear all (cheap; per-call cost is one BFS).
@@ -226,7 +257,7 @@ export async function handleSAPManage(
 
       const packageUrl = `/sap/bc/adt/packages/${encodeURIComponent(name)}`;
       await client.http.withStatefulSession(async (session) => {
-        const lock = await lockObject(session, client.safety, packageUrl, 'MODIFY', cachedFeatures?.abapRelease);
+        const lock = await lockObject(session, client.safety, packageUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
         const effectiveTransport = transport || lock.corrNr || undefined;
         try {
           await deleteObject(session, client.safety, packageUrl, lock.lockHandle, effectiveTransport);
@@ -357,13 +388,24 @@ export async function handleSAPManage(
     case 'flp_list_tiles': {
       const catalogId = String(args.catalogId ?? '');
       if (!catalogId) return errorResult('"catalogId" is required for flp_list_tiles action.');
-      const result = await listTiles(client.http, client.safety, catalogId);
-      if (result.backendError) {
-        return textResult(`⚠ Backend error for catalog "${catalogId}": ${result.backendError}\n\nReturned 0 tiles.`);
+      // SAP answers an unknown catalog with a 404 on the Page; dispatch's generic 404 hint would
+      // tell the LLM to SAPSearch for an empty name, so name the catalog here instead.
+      let tiles: Awaited<ReturnType<typeof listTiles>>;
+      try {
+        tiles = await listTiles(client.http, client.safety, catalogId);
+      } catch (err) {
+        if (err instanceof AdtApiError && err.statusCode === 404) {
+          return errorResult(
+            `FLP catalog "${catalogId}" not found. Use SAPManage action="flp_list_catalogs" to list available catalogs.`,
+          );
+        }
+        throw err;
       }
+      const truncated =
+        tiles.length === FLP_TILE_PAGE_SIZE ? ` (capped at ${FLP_TILE_PAGE_SIZE} — may be truncated)` : '';
       const lines = [
-        `${result.tiles.length} tiles in catalog "${catalogId}". Columns: instanceId | title | chipId | semanticObject | semanticAction`,
-        ...result.tiles.map((t) => {
+        `${tiles.length} tiles${truncated} in catalog "${catalogId}". Columns: instanceId | title | chipId | semanticObject | semanticAction`,
+        ...tiles.map((t) => {
           const so = (t.configuration as Record<string, unknown> | null)?.semantic_object ?? '';
           const sa = (t.configuration as Record<string, unknown> | null)?.semantic_action ?? '';
           return `${t.instanceId} | ${t.title || '(no title)'} | ${t.chipId} | ${so} | ${sa}`;
@@ -373,7 +415,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_create_catalog': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const domainId = String(args.domainId ?? '');
@@ -385,7 +427,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_create_group': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const groupId = String(args.groupId ?? '');
@@ -397,7 +439,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_create_tile': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const catalogId = String(args.catalogId ?? '');
@@ -430,7 +472,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_add_tile_to_group': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const groupId = String(args.groupId ?? '');
@@ -444,7 +486,7 @@ export async function handleSAPManage(
     }
 
     case 'flp_delete_catalog': {
-      if (cachedFeatures?.flp && !cachedFeatures.flp.available) {
+      if (getCachedFeatures()?.flp?.available === false) {
         return errorResult(flpUnavailableMessage);
       }
       const catalogId = String(args.catalogId ?? '');
@@ -485,9 +527,8 @@ export async function handleSAPManage(
       // In PP mode with a per-user client, auth-sensitive results (401/403 on any
       // feature) must not poison the global cache — another user may have different
       // authorizations.  Return the per-user result to the caller but keep the global
-      // cache unchanged.  However, when PP is enabled but the request fell back to the
-      // shared/default client (no JWT, missing btpConfig, or non-strict fallback), the
-      // probe ran with the same service-account credentials as the startup probe, so
+      // cache unchanged. For requests using the shared/default client (for example,
+      // an API-key request), the probe uses the same credentials as startup, so
       // updating the cache is safe and allows a manual probe to repair a failed startup.
       // Apply the same auth-failure sanitization as the startup probe: in PP mode,
       // shared-client 401/403 on textSearch must not hide source_code from users who
@@ -500,6 +541,10 @@ export async function handleSAPManage(
           }
         }
         setCachedFeatures(probed);
+        if (probed.discoveryMap) {
+          setCachedDiscovery(probed.discoveryMap);
+          client.http.setDiscoveryMap(probed.discoveryMap);
+        }
       }
       return textResult(toolJson(probed));
     }
