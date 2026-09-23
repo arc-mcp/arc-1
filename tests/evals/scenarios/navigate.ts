@@ -24,7 +24,13 @@ export const SCENARIOS: EvalScenario[] = [
       },
     ],
     mockResponses: {
-      SAPNavigate: JSON.stringify([{ uri: '/sap/bc/adt/programs/programs/ZTEST/source/main', line: 15, column: 5 }]),
+      // references returns the paged envelope, not a bare array.
+      SAPNavigate: JSON.stringify({
+        total: 1,
+        shown: 1,
+        truncated: false,
+        references: [{ uri: '/sap/bc/adt/programs/programs/ZTEST/source/main', line: 15, column: 5 }],
+      }),
       SAPSearch: JSON.stringify([{ objectName: 'ZTEST', objectType: 'PROG/P', line: 15 }]),
     },
   },

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<aunit:runResult xmlns:aunit="http://www.sap.com/adt/aunit">
+<program adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe" adtcore:type="CLAS/OC" adtcore:name="ZCL_ARC1_AUNIT_PROBE" uriType="semantic" xmlns:adtcore="http://www.sap.com/adt/core">
+<testClasses>
+<testClass adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe#testclass=LTCL_OK" adtcore:type="CLAS/OP" adtcore:name="LTCL_OK" uriType="semantic" durationCategory="short" riskLevel="harmless">
+<testMethods>
+<testMethod adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe#testclass=LTCL_OK;testmethod=FAILS" adtcore:type="CLAS/OLI" adtcore:name="FAILS" executionTime="0.63" uriType="semantic" unit="s">
+<alerts>
+<alert kind="failedAssertion" severity="critical">
+<title>Critical Assertion Error: 'one is not two'</title>
+<details>
+<detail text="Different values">
+<details>
+<detail text="Expected [2] Actual [1]"/>
+</details>
+</detail>
+<detail text="Test 'LTCL_OK-&gt;FAILS' in Main Program 'ZCL_ARC1_AUNIT_PROBE================CP'"/>
+</details>
+<stack>
+<stackEntry adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe/includes/testclasses#start=12,0;end=12,0" adtcore:type="CLAS/OCN/testclasses" adtcore:name="ZCL_ARC1_AUNIT_PROBE" adtcore:description="Include: &lt;ZCL_ARC1_AUNIT_PROBE================CCAU&gt; Line: &lt;12&gt; (FAILS)"/>
+</stack>
+</alert>
+</alerts>
+</testMethod>
+<testMethod adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe#testclass=LTCL_OK;testmethod=PASSES" adtcore:type="CLAS/OLI" adtcore:name="PASSES" executionTime="0" uriType="semantic" unit="s"/>
+</testMethods>
+</testClass>
+<testClass adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe#testclass=LTCL_RISKY" adtcore:type="CLAS/OP" adtcore:name="LTCL_RISKY" uriType="semantic" durationCategory="long" riskLevel="dangerous">
+<alerts>
+<alert kind="warning" severity="tolerable">
+<title>No execution, risk level of test class exceeds upper limit</title>
+<details>
+<detail text="You can find further information in document &lt;HY&gt; &lt;CHAPSAUNIT_TEST_PROPS&gt;"/>
+</details>
+</alert>
+</alerts>
+</testClass>
+<testClass adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe#testclass=LTCL_SETUP_FAIL" adtcore:type="CLAS/OP" adtcore:name="LTCL_SETUP_FAIL" uriType="semantic" durationCategory="short" riskLevel="harmless">
+<alerts>
+<alert kind="exception" severity="critical">
+<title>Exception Error &lt;UNCAUGHT_EXCEPTION&gt;</title>
+<details>
+<detail text="An exception with the type CX_SY_ITAB_LINE_NOT_FOUND was raised, but was not handled locally or declared in a RAISING clause."/>
+<detail text="A row with the index 1 is not in the table."/>
+<detail text="Test 'LTCL_SETUP_FAIL' in Main Program 'ZCL_ARC1_AUNIT_PROBE================CP'"/>
+<detail text="Test failed in CLASS_SETUP or CLASS_CONSTRUCTOR"/>
+</details>
+<stack>
+<stackEntry adtcore:uri="/sap/bc/adt/oo/classes/zcl_arc1_aunit_probe/includes/testclasses#start=26,0;end=26,0" adtcore:type="CLAS/OCN/testclasses" adtcore:name="ZCL_ARC1_AUNIT_PROBE" adtcore:description="Include: &lt;ZCL_ARC1_AUNIT_PROBE================CCAU&gt; Line: &lt;26&gt;"/>
+</stack>
+</alert>
+</alerts>
+</testClass>
+</testClasses>
+</program>
+</aunit:runResult>

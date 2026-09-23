@@ -16,6 +16,7 @@
  *   - See docs_page/updating.md for the full migration table.
  */
 
+import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
@@ -28,6 +29,170 @@ import type {
   UiMode,
 } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
+
+/**
+ * Parse metadata for configuration flags accepted by the CLI.
+ *
+ * `resolveConfig()` remains the source of truth for defaults, environment
+ * variables, precedence, and validation. This table only describes the argv
+ * grammar so Commander and the low-level resolver cannot drift apart.
+ */
+export interface CliConfigOptionSpec {
+  name: string;
+  valueName: string;
+  description: string;
+  valueOptional?: boolean;
+}
+
+/** Keeps the complete model-facing server instructions below clients' known 2,048-character ceiling. */
+export const SYSTEM_LABEL_MAX_LENGTH = 160;
+
+/** Normalize a configured system label to one model-facing line. */
+export function normalizeSystemLabel(value: string): string {
+  const withoutControls = Array.from(value.normalize('NFKC'), (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f) ? ' ' : character;
+  }).join('');
+  const normalized = withoutControls.replace(/\s+/g, ' ').trim();
+  if (normalized.length > SYSTEM_LABEL_MAX_LENGTH) {
+    throw new Error(`ARC1_SYSTEM_LABEL must be at most ${SYSTEM_LABEL_MAX_LENGTH} characters after normalization.`);
+  }
+  return normalized;
+}
+
+export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
+  { name: 'url', valueName: 'url', description: 'SAP base URL' },
+  { name: 'user', valueName: 'user', description: 'SAP username (prefer SAP_USER in CI)' },
+  { name: 'password', valueName: 'password', description: 'SAP password (prefer SAP_PASSWORD in CI)' },
+  { name: 'client', valueName: 'client', description: 'SAP client' },
+  { name: 'language', valueName: 'language', description: 'SAP logon and object master language' },
+  { name: 'insecure', valueName: 'boolean', description: 'Disable SAP TLS verification (true/false)' },
+  {
+    name: 'gzip-datapreview-body',
+    valueName: 'boolean',
+    description: 'Gzip data-preview POST bodies for WAF compatibility (true/false)',
+  },
+  { name: 'cookie-file', valueName: 'path', description: 'Netscape-format SAP cookie file' },
+  { name: 'cookie-string', valueName: 'cookies', description: 'SAP Cookie header value' },
+  { name: 'transport', valueName: 'transport', description: 'MCP transport: stdio or http-streamable' },
+  { name: 'http-addr', valueName: 'host:port', description: 'HTTP transport bind address' },
+  { name: 'port', valueName: 'port', description: 'HTTP transport port override' },
+  { name: 'server-name', valueName: 'name', description: 'MCP server name' },
+  { name: 'system-label', valueName: 'label', description: 'Connected-system label shown in MCP instructions' },
+  {
+    name: 'ui',
+    valueName: 'mode',
+    description: 'Enable the read-only admin UI (optional: local/web/off)',
+    valueOptional: true,
+  },
+  { name: 'ui-addr', valueName: 'host:port', description: 'Admin UI bind address' },
+  { name: 'ui-port', valueName: 'port', description: 'Admin UI port override' },
+  { name: 'ui-open', valueName: 'boolean', description: 'Open the local admin UI in a browser (true/false)' },
+  { name: 'allow-writes', valueName: 'boolean', description: 'Enable SAP mutations (true/false)' },
+  { name: 'allow-data-preview', valueName: 'boolean', description: 'Enable table data preview (true/false)' },
+  { name: 'allow-free-sql', valueName: 'boolean', description: 'Enable freestyle SQL (true/false)' },
+  {
+    name: 'allow-transport-writes',
+    valueName: 'boolean',
+    description: 'Enable transport mutations (true/false)',
+  },
+  { name: 'allow-git-writes', valueName: 'boolean', description: 'Enable Git mutations (true/false)' },
+  {
+    name: 'blocked-data-sources',
+    valueName: 'names',
+    description: 'Experimental exact SQL/CDS source blocklist (comma-separated)',
+  },
+  { name: 'allowed-packages', valueName: 'patterns', description: 'Comma-separated write package allowlist' },
+  { name: 'allowed-transports', valueName: 'ids', description: 'Comma-separated transport allowlist' },
+  { name: 'deny-actions', valueName: 'patterns', description: 'Action deny patterns or file path' },
+  { name: 'feature-abapgit', valueName: 'mode', description: 'abapGit feature toggle: auto/on/off' },
+  { name: 'feature-gcts', valueName: 'mode', description: 'gCTS feature toggle: auto/on/off' },
+  { name: 'feature-rap', valueName: 'mode', description: 'RAP feature toggle: auto/on/off' },
+  { name: 'feature-amdp', valueName: 'mode', description: 'AMDP feature toggle: auto/on/off' },
+  { name: 'feature-ui5', valueName: 'mode', description: 'UI5 feature toggle: auto/on/off' },
+  { name: 'feature-transport', valueName: 'mode', description: 'Transport feature toggle: auto/on/off' },
+  { name: 'feature-hana', valueName: 'mode', description: 'HANA feature toggle: auto/on/off' },
+  { name: 'feature-ui5repo', valueName: 'mode', description: 'UI5 repository feature toggle: auto/on/off' },
+  { name: 'feature-flp', valueName: 'mode', description: 'FLP feature toggle: auto/on/off' },
+  { name: 'system-type', valueName: 'type', description: 'SAP system type: auto/btp/onprem' },
+  { name: 'abap-release', valueName: 'release', description: 'ABAP release override for abaplint' },
+  { name: 'api-keys', valueName: 'keys', description: 'MCP API keys (prefer ARC1_API_KEYS in CI)' },
+  { name: 'oidc-issuer', valueName: 'url', description: 'OIDC issuer URL' },
+  { name: 'oidc-audience', valueName: 'audience', description: 'OIDC audience' },
+  { name: 'oidc-clock-tolerance', valueName: 'seconds', description: 'OIDC clock tolerance' },
+  { name: 'oidc-discovery', valueName: 'boolean', description: 'Enable OIDC discovery (true/false)' },
+  { name: 'oidc-scopes', valueName: 'scopes', description: 'OIDC scopes' },
+  { name: 'xsuaa-auth', valueName: 'boolean', description: 'Enable XSUAA MCP authentication (true/false)' },
+  { name: 'allow-http-no-auth', valueName: 'boolean', description: 'Allow unauthenticated HTTP MCP (true/false)' },
+  { name: 'oauth-dcr-ttl-seconds', valueName: 'seconds', description: 'OAuth DCR client lifetime' },
+  { name: 'dcr-signing-secret', valueName: 'secret', description: 'OAuth DCR signing secret' },
+  { name: 'btp-service-key', valueName: 'json', description: 'BTP ABAP service-key JSON' },
+  { name: 'btp-service-key-file', valueName: 'path', description: 'BTP ABAP service-key file' },
+  { name: 'btp-oauth-callback-port', valueName: 'port', description: 'BTP OAuth callback port' },
+  { name: 'multi-target-endpoints', valueName: 'boolean', description: 'Enable multi-target endpoints (true/false)' },
+  {
+    name: 'multi-target-allow-basic-auth',
+    valueName: 'boolean',
+    description: 'Allow shared Basic multi-target identity (true/false)',
+  },
+  { name: 'pp-enabled', valueName: 'boolean', description: 'Enable principal propagation (true/false)' },
+  { name: 'pp-strict', valueName: 'boolean', description: 'Require principal propagation (true/false)' },
+  {
+    name: 'pp-allow-shared-cookies',
+    valueName: 'boolean',
+    description: 'Allow shared cookies beside principal propagation (true/false)',
+  },
+  { name: 'disable-saml', valueName: 'boolean', description: 'Disable SAP SAML redirects (true/false)' },
+  { name: 'tool-mode', valueName: 'mode', description: 'Tool mode: standard or hyperfocused' },
+  {
+    name: 'schema-nullable-optionals',
+    valueName: 'mode',
+    description: 'Optional-schema null mode: auto/on/off',
+  },
+  { name: 'plugins', valueName: 'paths', description: 'Comma-separated extension paths' },
+  {
+    name: 'allow-plugin-execute',
+    valueName: 'boolean',
+    description: 'Enable plugin class/report execution (true/false)',
+  },
+  {
+    name: 'allow-plugin-raw-writes',
+    valueName: 'boolean',
+    description: 'Enable plugin non-ADT writes (true/false)',
+  },
+  { name: 'abaplint-config', valueName: 'path', description: 'Custom abaplint configuration file' },
+  { name: 'lint-before-write', valueName: 'boolean', description: 'Lint before source writes (true/false)' },
+  { name: 'check-before-write', valueName: 'boolean', description: 'Run SAP syntax check before writes (true/false)' },
+  { name: 'cache', valueName: 'mode', description: 'Cache mode: auto/memory/sqlite/none' },
+  { name: 'cache-file', valueName: 'path', description: 'SQLite cache file' },
+  { name: 'max-concurrent', valueName: 'count', description: 'Maximum concurrent SAP requests' },
+  {
+    name: 'max-datapreview-response-bytes',
+    valueName: 'bytes',
+    description: 'Cumulative data-preview response bytes per tool call',
+  },
+  {
+    name: 'max-concurrent-data-results',
+    valueName: 'count',
+    description: 'Maximum concurrent data-result calls',
+  },
+  { name: 'auth-rate-limit', valueName: 'per-minute', description: 'OAuth requests per IP per minute' },
+  { name: 'rate-limit', valueName: 'per-minute', description: 'MCP calls per user per minute' },
+  { name: 'allowed-origins', valueName: 'origins', description: 'Comma-separated browser CORS origins' },
+  { name: 'log-file', valueName: 'path', description: 'Audit/log output file' },
+  { name: 'log-level', valueName: 'level', description: 'Log level: debug/info/warn/error' },
+  { name: 'log-format', valueName: 'format', description: 'Log format: text or json' },
+  { name: 'minimal-errors', valueName: 'boolean', description: 'Hide SAP diagnostic details (true/false)' },
+  { name: 'verbose', valueName: 'boolean', description: 'Enable verbose logging (true/false)' },
+];
+
+const CLI_CONFIG_OPTION_NAMES = new Set(CLI_CONFIG_OPTION_SPECS.map((spec) => spec.name));
+
+function assertRegisteredCliConfigOption(name: string): void {
+  if (!CLI_CONFIG_OPTION_NAMES.has(name)) {
+    throw new Error(`Internal configuration error: CLI flag --${name} is not registered`);
+  }
+}
 
 /**
  * Named API-key profiles — the safety config + scope set granted to a key
@@ -125,25 +290,27 @@ export const API_KEY_PROFILES: Record<string, ApiKeyProfile> = {
  */
 export function parseApiKeys(raw: string): Array<{ key: string; profile: string }> {
   const entries: Array<{ key: string; profile: string }> = [];
-  for (const pair of raw.split(',')) {
+  const validProfiles = Object.keys(API_KEY_PROFILES).join(', ');
+  const invalidEntry = (position: number): Error =>
+    new Error(
+      `Invalid API key entry at position ${position}: expected a non-empty key and valid profile in 'key:profile' format. ` +
+        `Valid profiles: ${validProfiles}`,
+    );
+
+  for (const [index, pair] of raw.split(',').entries()) {
     const trimmed = pair.trim();
     if (!trimmed) continue;
     const colonIdx = trimmed.lastIndexOf(':');
     if (colonIdx === -1) {
-      throw new Error(
-        `Invalid API key entry '${trimmed}': expected 'key:profile' format. ` +
-          `Valid profiles: ${Object.keys(API_KEY_PROFILES).join(', ')}`,
-      );
+      throw invalidEntry(index + 1);
     }
     const key = trimmed.slice(0, colonIdx);
     const profile = trimmed.slice(colonIdx + 1);
     if (!key) {
-      throw new Error('Invalid API key entry: key cannot be empty');
+      throw invalidEntry(index + 1);
     }
     if (!API_KEY_PROFILES[profile]) {
-      throw new Error(
-        `Invalid profile '${profile}' in API key entry. Valid profiles: ${Object.keys(API_KEY_PROFILES).join(', ')}`,
-      );
+      throw invalidEntry(index + 1);
     }
     entries.push({ key, profile });
   }
@@ -206,12 +373,41 @@ const RETIRED_ENV_VARS: Record<string, string> = {
   ARC1_CACHE_WARMUP: 'Cache warmup was removed. The normal request-driven cache remains available through ARC1_CACHE.',
   ARC1_CACHE_WARMUP_PACKAGES:
     'Cache warmup package filters were removed with cache warmup. Remove this environment variable.',
+  SAP_BTP_DESTINATIONS:
+    'The unreleased multi-destination prototype was removed. Use ARC1_MULTI_TARGET_ENDPOINTS=true and mark subaccount destinations with arc1.enabled=true.',
 };
 
 const RETIRED_CLI_FLAGS: Record<string, string> = {
   'cache-warmup': RETIRED_ENV_VARS.ARC1_CACHE_WARMUP,
   'cache-warmup-packages': RETIRED_ENV_VARS.ARC1_CACHE_WARMUP_PACKAGES,
 };
+
+function cliFlagViolations(args: readonly string[], flags: Record<string, string>): string[] {
+  return Object.entries(flags)
+    .filter(([flag]) => args.some((arg) => arg === `--${flag}` || arg.startsWith(`--${flag}=`)))
+    .map(([flag, hint]) => `  --${flag}: ${hint}`);
+}
+
+function legacyConfigError(violations: readonly string[]): Error {
+  return new Error(
+    `Legacy authorization config detected (removed in v0.7):\n${violations.join('\n')}\n\nSee docs_page/updating.md#v07-authorization-refactor-breaking-change for the full migration guide.`,
+  );
+}
+
+function retiredConfigError(violations: readonly string[]): Error {
+  return new Error(
+    `Removed ARC-1 configuration detected:\n${violations.join('\n')}\n\nSee docs_page/updating.md for migration details.`,
+  );
+}
+
+/** Fail with migration guidance before a strict CLI parser rejects removed flags as unknown. */
+export function assertNoRemovedCliFlags(args: readonly string[]): void {
+  const legacyViolations = cliFlagViolations(args, LEGACY_CLI_FLAGS);
+  if (legacyViolations.length > 0) throw legacyConfigError(legacyViolations);
+
+  const retiredViolations = cliFlagViolations(args, RETIRED_CLI_FLAGS);
+  if (retiredViolations.length > 0) throw retiredConfigError(retiredViolations);
+}
 
 /** Migration guard — throws a helpful error if any legacy identifier is set. */
 function detectLegacyConfig(args: string[]): void {
@@ -223,16 +419,10 @@ function detectLegacyConfig(args: string[]): void {
     }
   }
 
-  for (const flag of Object.keys(LEGACY_CLI_FLAGS)) {
-    if (args.some((a) => a === `--${flag}` || a.startsWith(`--${flag}=`))) {
-      violations.push(`  --${flag}: ${LEGACY_CLI_FLAGS[flag]}`);
-    }
-  }
+  violations.push(...cliFlagViolations(args, LEGACY_CLI_FLAGS));
 
   if (violations.length > 0) {
-    throw new Error(
-      `Legacy authorization config detected (removed in v0.7):\n${violations.join('\n')}\n\nSee docs_page/updating.md#v07-authorization-refactor-breaking-change for the full migration guide.`,
-    );
+    throw legacyConfigError(violations);
   }
 }
 
@@ -241,17 +431,9 @@ function detectRetiredConfig(args: string[]): void {
   for (const env of Object.keys(RETIRED_ENV_VARS)) {
     if (process.env[env] !== undefined) violations.push(`  ${env}: ${RETIRED_ENV_VARS[env]}`);
   }
-  for (const flag of Object.keys(RETIRED_CLI_FLAGS)) {
-    if (args.some((arg) => arg === `--${flag}` || arg.startsWith(`--${flag}=`))) {
-      violations.push(`  --${flag}: ${RETIRED_CLI_FLAGS[flag]}`);
-    }
-  }
+  violations.push(...cliFlagViolations(args, RETIRED_CLI_FLAGS));
   if (violations.length > 0) {
-    throw new Error(
-      `Removed ARC-1 cache warmup configuration detected:\n${violations.join('\n')}\n\n` +
-        'Use SAPContext(action="usages") or SAPNavigate(action="references") for live SAP-authorized lookup. ' +
-        'See docs_page/updating.md for migration details.',
-    );
+    throw retiredConfigError(violations);
   }
 }
 
@@ -269,6 +451,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
 
   // ── Resolvers ──────────────────────────────────────────────────────
   const getFlag = (name: string): string | undefined => {
+    assertRegisteredCliConfigOption(name);
     const prefix = `--${name}=`;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === `--${name}` && i + 1 < args.length) return args[i + 1];
@@ -278,6 +461,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   };
 
   const getOptionalFlagValue = (name: string): string | undefined => {
+    assertRegisteredCliConfigOption(name);
     const prefix = `--${name}=`;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === `--${name}`) {
@@ -353,6 +537,26 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     return undefined;
   };
 
+  const resolvePositiveSafeInteger = (flag: string, envVar: string, defaultVal: number, fieldName: string): number => {
+    const flagVal = getFlag(flag);
+    const envVal = process.env[envVar];
+    const raw = flagVal ?? envVal;
+    if (raw === undefined) {
+      sources[fieldName] = 'default';
+      return defaultVal;
+    }
+    const source = flagVal !== undefined ? `--${flag}` : envVar;
+    if (!/^[1-9]\d*$/.test(raw)) {
+      throw new Error(`Invalid ${source}='${raw}': expected a positive base-10 integer.`);
+    }
+    const parsed = Number(raw);
+    if (!Number.isSafeInteger(parsed)) {
+      throw new Error(`Invalid ${source}='${raw}': value exceeds JavaScript's safe-integer range.`);
+    }
+    sources[fieldName] = flagVal !== undefined ? { flag: `--${flag}` } : { env: envVar };
+    return parsed;
+  };
+
   // ── SAP Connection ─────────────────────────────────────────────────
   config.url = resolveStr('url', 'SAP_URL', '', 'url');
   config.username = resolveStr('user', 'SAP_USER', '', 'username');
@@ -360,6 +564,12 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.client = resolveStr('client', 'SAP_CLIENT', '100', 'client');
   config.language = resolveStr('language', 'SAP_LANGUAGE', 'EN', 'language');
   config.insecure = resolveBool('insecure', 'SAP_INSECURE', false, 'insecure');
+  config.gzipDataPreviewBody = resolveBool(
+    'gzip-datapreview-body',
+    'SAP_GZIP_DATAPREVIEW_BODY',
+    false,
+    'gzipDataPreviewBody',
+  );
 
   // ── Cookie Auth ────────────────────────────────────────────────────
   config.cookieFile = resolveOptionalStr('cookie-file', 'SAP_COOKIE_FILE', 'cookieFile');
@@ -390,6 +600,10 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     config.httpAddr = `${addrHost}:${parsedPort}`;
     sources.httpAddr = getFlag('port') !== undefined ? { flag: '--port' } : { env: 'ARC1_PORT' };
   }
+  config.serverName = resolveStr('server-name', 'ARC1_SERVER_NAME', DEFAULT_CONFIG.serverName, 'serverName');
+  config.systemLabel = normalizeSystemLabel(
+    resolveStr('system-label', 'ARC1_SYSTEM_LABEL', DEFAULT_CONFIG.systemLabel, 'systemLabel'),
+  );
 
   // ── Read-only Admin UI ────────────────────────────────────────────
   const uiFlag = getOptionalFlagValue('ui');
@@ -429,6 +643,23 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'allowTransportWrites',
   );
   config.allowGitWrites = resolveBool('allow-git-writes', 'SAP_ALLOW_GIT_WRITES', false, 'allowGitWrites');
+
+  // Experimental data-source blocklist. Unset / empty / ASCII-whitespace-only all mean off, which is
+  // what lets the shipped Dockerfile and MTA descriptors carry a visible `""` default and still give
+  // operators a one-field rollback. Any other value is strict CSV: every field is mandatory, so a
+  // stray separator fails startup instead of quietly shortening or disabling a security control.
+  const blockedFlag = getFlag('blocked-data-sources');
+  const blockedDataSourcesRaw = blockedFlag ?? process.env.SAP_BLOCKED_DATA_SOURCES;
+  if (blockedDataSourcesRaw !== undefined) {
+    config.blockedDataSources = parseBlockedDataSourcesCsv(
+      blockedDataSourcesRaw,
+      blockedFlag !== undefined ? '--blocked-data-sources' : 'SAP_BLOCKED_DATA_SOURCES',
+    );
+    sources.blockedDataSources =
+      blockedFlag !== undefined ? { flag: '--blocked-data-sources' } : { env: 'SAP_BLOCKED_DATA_SOURCES' };
+  } else {
+    sources.blockedDataSources = 'default';
+  }
 
   const pkgs = getFlag('allowed-packages') ?? process.env.SAP_ALLOWED_PACKAGES;
   if (pkgs !== undefined) {
@@ -524,6 +755,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     const parsed = Number.parseInt(clockTolerance, 10);
     config.oidcClockTolerance = Number.isNaN(parsed) ? undefined : parsed;
   }
+  config.oidcDiscovery = resolveBool('oidc-discovery', 'SAP_OIDC_DISCOVERY', true, 'oidcDiscovery');
+  const oidcScopesRaw = getFlag('oidc-scopes') ?? process.env.SAP_OIDC_SCOPES;
+  if (oidcScopesRaw) {
+    // Comma or whitespace separated — OAuth scope strings are space-delimited on the wire.
+    config.oidcScopes = oidcScopesRaw
+      .split(/[,\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    sources.oidcScopes = getFlag('oidc-scopes') !== undefined ? { flag: '--oidc-scopes' } : { env: 'SAP_OIDC_SCOPES' };
+  } else {
+    sources.oidcScopes = 'default';
+  }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
   config.allowHttpNoAuth = resolveBool('allow-http-no-auth', 'ARC1_ALLOW_HTTP_NO_AUTH', false, 'allowHttpNoAuth');
 
@@ -565,6 +808,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   );
   const cbPort = resolveStr('btp-oauth-callback-port', 'SAP_BTP_OAUTH_CALLBACK_PORT', '0', 'btpOAuthCallbackPort');
   config.btpOAuthCallbackPort = Number.parseInt(cbPort, 10) || 0;
+  config.multiTargetEndpoints = resolveBool(
+    'multi-target-endpoints',
+    'ARC1_MULTI_TARGET_ENDPOINTS',
+    false,
+    'multiTargetEndpoints',
+  );
+  config.multiTargetAllowBasicAuth = resolveBool(
+    'multi-target-allow-basic-auth',
+    'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH',
+    false,
+    'multiTargetAllowBasicAuth',
+  );
 
   // ── Principal Propagation ──────────────────────────────────────────
   config.ppEnabled = resolveBool('pp-enabled', 'SAP_PP_ENABLED', false, 'ppEnabled');
@@ -614,7 +869,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  // Opt-in: let plugin tools execute ABAP console classes (ctx.run.classRun). Also needs allowWrites.
+  // Opt-in: let plugins execute ABAP classes/reports through ctx.run. Also needs allowWrites.
   config.allowPluginExecute = resolveBool(
     'allow-plugin-execute',
     'SAP_ALLOW_PLUGIN_EXECUTE',
@@ -648,6 +903,18 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     const parsed = Number.parseInt(maxConcurrent, 10);
     config.maxConcurrent = Number.isNaN(parsed) || parsed < 1 ? 1 : parsed;
   }
+  config.maxDataPreviewResponseBytes = resolvePositiveSafeInteger(
+    'max-datapreview-response-bytes',
+    'ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES',
+    DEFAULT_CONFIG.maxDataPreviewResponseBytes,
+    'maxDataPreviewResponseBytes',
+  );
+  config.maxConcurrentDataResults = resolvePositiveSafeInteger(
+    'max-concurrent-data-results',
+    'ARC1_MAX_CONCURRENT_DATA_RESULTS',
+    DEFAULT_CONFIG.maxConcurrentDataResults,
+    'maxConcurrentDataResults',
+  );
 
   // ── Rate limiting (Layer 1 + Layer 2) ──────────────────────────────
   // Both knobs accept a positive integer (requests per minute) or `0` to disable.
@@ -666,6 +933,21 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     }
   } else {
     sources.authRateLimit = 'default';
+  }
+
+  const mcpHttpRateLimitRaw = process.env.ARC1_MCP_HTTP_RATE_LIMIT;
+  if (mcpHttpRateLimitRaw !== undefined) {
+    const parsed = Number.parseInt(mcpHttpRateLimitRaw, 10);
+    if (Number.isNaN(parsed) || parsed < 0 || String(parsed) !== mcpHttpRateLimitRaw.trim()) {
+      logger.warn(
+        `Invalid ARC1_MCP_HTTP_RATE_LIMIT='${mcpHttpRateLimitRaw}' — expected positive integer or 0. Using the derived MCP HTTP limit.`,
+      );
+    } else {
+      config.mcpHttpRateLimit = parsed;
+      sources.mcpHttpRateLimit = { env: 'ARC1_MCP_HTTP_RATE_LIMIT' };
+    }
+  } else {
+    sources.mcpHttpRateLimit = 'default';
   }
 
   const rateLimitRaw = getFlag('rate-limit') ?? process.env.ARC1_RATE_LIMIT;
@@ -749,6 +1031,53 @@ export function validateConfig(config: ServerConfig): void {
     );
   }
 
+  if (config.multiTargetEndpoints) {
+    if (config.transport !== 'http-streamable') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires SAP_TRANSPORT=http-streamable.');
+    }
+    if (!config.xsuaaAuth) {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires SAP_XSUAA_AUTH=true.');
+    }
+    if (config.cacheMode !== 'none') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires ARC1_CACHE=none.');
+    }
+    if (config.toolMode !== 'standard') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires ARC1_TOOL_MODE=standard.');
+    }
+    if (config.uiMode !== 'off') {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires ARC1_UI=off.');
+    }
+    if (config.plugins.length > 0) {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true does not support ARC1_PLUGINS in v1.');
+    }
+    if (config.cookieFile || config.cookieString || config.ppAllowSharedCookies) {
+      throw new Error(
+        'ARC1_MULTI_TARGET_ENDPOINTS=true does not support shared cookies or SAP_PP_ALLOW_SHARED_COOKIES.',
+      );
+    }
+    if (config.btpServiceKey || config.btpServiceKeyFile) {
+      throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires BTP CF service bindings, not a BTP service key.');
+    }
+    if (config.url || config.username || config.password) {
+      throw new Error(
+        'ARC1_MULTI_TARGET_ENDPOINTS=true does not support a direct SAP_URL/SAP_USER/SAP_PASSWORD connection. Use BTP destinations; configure an optional single-target /mcp through SAP_BTP_DESTINATION.',
+      );
+    }
+    if (config.rateLimit === 0) {
+      console.error(
+        '[warn] ARC1_RATE_LIMIT=0 leaves per-user MCP limiting disabled in multi-target mode. Set a value based on expected active users; 120/min is the recommended beta starting point.',
+      );
+    }
+  }
+
+  // This opt-in is evaluated only by the multi-target runtime. Keep startup nonfatal so an
+  // administrator can stage the setting before enabling the feature, but make the no-op visible.
+  if (config.multiTargetAllowBasicAuth && !config.multiTargetEndpoints) {
+    console.error(
+      '[warn] ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true has no effect without ARC1_MULTI_TARGET_ENDPOINTS=true — ignoring the shared Basic opt-in.',
+    );
+  }
+
   if (config.oidcIssuer && !config.oidcAudience) {
     throw new Error(
       'SAP_OIDC_AUDIENCE is required when SAP_OIDC_ISSUER is set — ' +
@@ -758,10 +1087,28 @@ export function validateConfig(config: ServerConfig): void {
   if (config.oidcAudience && !config.oidcIssuer) {
     throw new Error('SAP_OIDC_ISSUER is required when SAP_OIDC_AUDIENCE is set');
   }
-
-  if (config.ppStrict && !config.ppEnabled) {
+  if (config.oidcScopes?.length && !config.oidcIssuer) {
     throw new Error(
-      'SAP_PP_STRICT=true requires SAP_PP_ENABLED=true — strict mode has no effect without principal propagation enabled',
+      'SAP_OIDC_ISSUER is required when SAP_OIDC_SCOPES is set — scopes are only advertised in OIDC mode',
+    );
+  }
+
+  // Inert, not dangerous — both strict-PP enforcement sites gate on ppEnabled. Warn instead
+  // of crashing: an mtaext cannot unset a base mta.yaml property, so an override that turns
+  // PP off strands SAP_PP_STRICT=true and a hard throw would brick the deployment.
+  if (config.ppStrict && !config.ppEnabled) {
+    console.error(
+      '[warn] SAP_PP_STRICT=true has no effect without SAP_PP_ENABLED=true — ignoring strict mode. Set SAP_PP_ENABLED=true if you meant to enable principal propagation.',
+    );
+  }
+
+  // The mirror-image stranding: an mtaext that turns XSUAA off and adds API keys, but leaves
+  // the base SAP_PP_ENABLED/SAP_PP_STRICT stranded, passes validation (API keys satisfy
+  // hasHttpAuth) and logs a healthy `per-user` scope while server.ts rejects every API-key
+  // call for lacking a JWT. Loud at startup beats 100% of traffic failing silently.
+  if (config.ppEnabled && config.ppStrictExplicit && config.ppStrict && config.apiKeys?.length) {
+    console.error(
+      '[warn] SAP_PP_STRICT=true rejects every non-JWT call, so the configured ARC1_API_KEYS clients cannot call any tool. Set SAP_PP_STRICT=false for mixed PP/API-key operation, or SAP_PP_ENABLED=false to run fully shared.',
     );
   }
 

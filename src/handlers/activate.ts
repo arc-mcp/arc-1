@@ -12,12 +12,20 @@ import {
   unpublishServiceBinding,
 } from '../adt/devtools.js';
 import { AdtSafetyError } from '../adt/errors.js';
-import { isServerDrivenObjectType, serverDrivenBlueContentType, serverDrivenObjectUrl } from '../adt/server-driven.js';
+import {
+  ensureServerDrivenSupport,
+  isServerDrivenObjectType,
+  serverDrivenMetadataContentType,
+  serverDrivenObjectUrl,
+  serverDrivenUnavailableMessage,
+} from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
+import { activationDetailMatchesObject } from './activation-results.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { buildCdsActivationDependencyHint } from './cds-hints.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
+import { inspectServiceBindingPublishFailure } from './publish-failure.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 import {
   enforceAllowedPackageForObjectUrl,
@@ -128,6 +136,8 @@ export async function handleSAPActivate(
     const serviceType = await resolveServiceType();
     const result = await publishServiceBinding(client.http, client.safety, name, version, serviceType);
     if (result.severity === 'ERROR') {
+      const inspected = await inspectServiceBindingPublishFailure(client, name, version, serviceType, result);
+      if (inspected) return inspected;
       return errorResult(
         `Failed to publish service binding ${name}: ${result.shortText}${result.longText ? ` — ${result.longText}` : ''}`,
       );
@@ -219,6 +229,20 @@ export async function handleSAPActivate(
 
   if (args.objects && Array.isArray(args.objects)) {
     const rawObjects = args.objects as Array<Record<string, unknown>>;
+    // Server-driven types need the registry href — objectBasePath(<sdo>) has no case and its
+    // default arm maps unknown non-slash types to the PROGRAM path, so an ungated batch entry
+    // silently addressed /sap/bc/adt/programs/programs/<name>. Gate once per DISTINCT type
+    // (the resolver below runs per object, and the gate may fetch discovery).
+    const batchSdoTypes = [
+      ...new Set(
+        rawObjects.map((o) => normalizeObjectType(String(o.type ?? type))).filter((t) => isServerDrivenObjectType(t)),
+      ),
+    ];
+    for (const sdoType of batchSdoTypes) {
+      if (!(await ensureServerDrivenSupport(client.http, client.safety, sdoType))) {
+        return errorResult(serverDrivenUnavailableMessage('SAPActivate', sdoType));
+      }
+    }
     // Resolve URLs sequentially. For TABL we await the URL resolver so DDIC
     // structures (which live at /sap/bc/adt/ddic/structures/) are addressed
     // correctly; the resolver short-circuits on its in-memory cache.
@@ -256,6 +280,9 @@ export async function handleSAPActivate(
           const group = String(o.group ?? args.group).trim();
           const groupLc = encodeURIComponent(group.toLowerCase());
           url = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(objName.toLowerCase())}`;
+        } else if (isServerDrivenObjectType(objType)) {
+          // Availability already gated per distinct type above.
+          url = serverDrivenObjectUrl(objType, objName);
         } else {
           url = objectUrlForType(objType, objName);
         }
@@ -267,7 +294,14 @@ export async function handleSAPActivate(
     // activating ANY of them — one out-of-allowlist object aborts the whole batch
     // (no partial activation). Fail-closed; no-op when unrestricted. (security audit 2026-06)
     for (const o of objects) {
-      await enforceAllowedPackageForObjectUrl(client, o.url, `Activation of ${o.type} '${o.name}'`);
+      await enforceAllowedPackageForObjectUrl(
+        client,
+        o.url,
+        `Activation of ${o.type} '${o.name}'`,
+        // Mirror the single-object call: SDO metadata (and its packageRef) is negotiated with
+        // the type's own content type rather than relying on discovery-driven negotiation.
+        isServerDrivenObjectType(o.type) ? serverDrivenMetadataContentType(o.type) : undefined,
+      );
     }
 
     // Capture each object's inactive draft before the batch flips them to active.
@@ -280,13 +314,21 @@ export async function handleSAPActivate(
     const names = objects.map((o) => o.name).join(', ');
     const batchStatuses = buildBatchActivationStatuses(objects, result);
     const statusDetails = formatBatchActivationStatuses(batchStatuses);
+    const globalMessages = formatActivationMessages({
+      ...result,
+      details: result.details.filter(
+        (detail) => !objects.some((object) => activationDetailMatchesObject(detail.uri, object.url)),
+      ),
+      // Exclude assigned details before the global formatter sees only the unmatched subset.
+      messages: result.messages.filter((message) => !result.details.some((detail) => detail.text === message)),
+    });
 
     if (result.success) {
       for (const [i, object] of objects.entries()) {
         applyActivationToCache(cachingLayer, object.type, object.name, drafts[i], perUserClient);
       }
       invalidateInactiveList(cachingLayer, client, cacheSecurity);
-      return textResult(`Successfully activated ${objects.length} objects: ${names}.${statusDetails}`);
+      return textResult(`Successfully activated ${objects.length} objects: ${names}.${statusDetails}${globalMessages}`);
     }
     // On batch failure enrich with per-object inactive-version syntax errors —
     // only for objects whose activation returned no error details, to avoid duplicating messages.
@@ -298,9 +340,7 @@ export async function handleSAPActivate(
       .map((d, i) => (d ? `\n[${objectsNeedingSyntaxCheck[i].name}]${d}` : ''))
       .filter(Boolean)
       .join('');
-    return errorResult(
-      `Batch activation failed for: ${names}.${statusDetails}\n${formatActivationMessages(result)}${combinedDiag}`,
-    );
+    return errorResult(`Batch activation failed for: ${names}.${statusDetails}${globalMessages}${combinedDiag}`);
   }
 
   // Single activation (existing behavior). For TABL we use the write-path
@@ -344,9 +384,14 @@ export async function handleSAPActivate(
     const groupLc = encodeURIComponent(String(args.group).trim().toLowerCase());
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
   } else if (isServerDrivenObjectType(type)) {
-    // Server-driven objects (8.16+): objectBasePath(<sdo>) throws, so route via the registry href.
-    // Single-object activation only — SDO is not added to the batch resolver above (batch is
-    // RAP-stack-oriented). The generic activate() endpoint handles SDO (verified: activate(DESD) → ok).
+    // Server-driven objects: objectBasePath(<sdo>) has no case and its default arm would route to
+    // the program path, so use the registry href. The batch resolver above does the same (EVTB/EVTO
+    // are RAP objects, so they legitimately appear in a RAP-stack batch).
+    // The generic activate() endpoint handles SDO (verified: activate(DESD) → ok).
+    // Gated like the SAPRead/SAPWrite branches so unsupported releases get the release message.
+    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+      return errorResult(serverDrivenUnavailableMessage('SAPActivate', type));
+    }
     objectUrl = serverDrivenObjectUrl(type, name);
   } else {
     objectUrl = objectUrlForType(type, name);
@@ -361,7 +406,7 @@ export async function handleSAPActivate(
     client,
     objectUrl,
     `Activation of ${type} '${name}'`,
-    isServerDrivenObjectType(type) ? serverDrivenBlueContentType(type) : undefined,
+    isServerDrivenObjectType(type) ? serverDrivenMetadataContentType(type) : undefined,
   );
 
   // Capture the inactive draft before activation flips it to active (see captureDraftForPromotion).
@@ -388,8 +433,6 @@ export async function handleSAPActivate(
 
 /** Format activation result messages with structured detail (line numbers, URIs) when available */
 function formatActivationMessages(result: ActivationResult): string {
-  if (result.details.length === 0) return '';
-
   const errors = result.details.filter((d) => d.severity === 'error');
   const warnings = result.details.filter((d) => d.severity === 'warning');
 
@@ -412,10 +455,15 @@ function formatActivationMessages(result: ActivationResult): string {
     parts.push(`Warnings:\n${formatted.join('\n')}`);
   }
 
-  // Fall back to flat messages if no errors/warnings but info messages exist
-  if (parts.length === 0 && result.messages.length > 0) {
-    return `\nMessages: ${result.messages.join('; ')}`;
-  }
+  // Retain info details and flat-only messages even alongside errors/warnings. Structured
+  // details already rendered above must not be repeated in the flat fallback.
+  const otherMessages = [
+    ...new Set([
+      ...result.details.filter((detail) => detail.severity === 'info').map((detail) => detail.text),
+      ...result.messages.filter((message) => !result.details.some((detail) => detail.text === message)),
+    ]),
+  ];
+  if (otherMessages.length > 0) parts.push(`Messages: ${otherMessages.join('; ')}`);
 
   return parts.length > 0 ? `\n${parts.join('\n')}` : '';
 }
@@ -429,55 +477,29 @@ export interface BatchActivationObject {
 interface BatchActivationObjectStatus {
   type: string;
   name: string;
-  status: 'active' | 'warning' | 'error';
+  status: 'active' | 'warning' | 'error' | 'unknown';
   messages: string[];
-}
-
-function normalizeActivationUri(uri: string | undefined): string | undefined {
-  if (!uri) return undefined;
-  return uri.replace(/#.*$/, '').replace(/\/+$/, '').toLowerCase();
 }
 
 export function buildBatchActivationStatuses(
   objects: BatchActivationObject[],
   result: ActivationResult,
 ): BatchActivationObjectStatus[] {
-  // Group error details by object. SAP error URIs may be subpaths of the object URL
-  // (e.g. .../classes/zcl_demo/source/main for object .../classes/ZCL_DEMO) and may
-  // differ in case, so we lowercase and use startsWith for matching.
-  const objectKeys = objects.map((obj) => normalizeActivationUri(obj.url) ?? '');
-  const perObject: Array<Array<{ severity: 'error' | 'warning' | 'info'; text: string }>> = objects.map(() => []);
-  const unassigned: string[] = [];
-
-  for (const detail of result.details) {
-    const detailUri = normalizeActivationUri(detail.uri);
-    const prefix = detail.line ? `[line ${detail.line}] ` : '';
-    const suffix = detail.uri ? ` (${detail.uri})` : '';
-    if (!detailUri) {
-      unassigned.push(`${prefix}${detail.text}${suffix}`);
-      continue;
-    }
-    const matchIdx = objectKeys.findIndex((k) => k && detailUri.startsWith(k));
-    if (matchIdx >= 0) {
-      perObject[matchIdx].push({ severity: detail.severity, text: `${prefix}${detail.text}${suffix}` });
-    } else {
-      unassigned.push(`${prefix}${detail.text}${suffix}`);
-    }
-  }
-
-  return objects.map((obj, index) => {
-    const details = perObject[index];
-    const hasError = details.some((detail) => detail.severity === 'error');
-    const hasWarning = details.some((detail) => detail.severity === 'warning');
-    const status: BatchActivationObjectStatus['status'] = hasError ? 'error' : hasWarning ? 'warning' : 'active';
-    const messages = details.map((detail) => detail.text);
-    if (index === 0 && unassigned.length > 0) {
-      messages.push(...unassigned);
-    }
+  return objects.map((obj) => {
+    const details = result.details.filter((detail) => activationDetailMatchesObject(detail.uri, obj.url));
+    const messages = details.map(
+      (detail) => `${detail.line ? `[line ${detail.line}] ` : ''}${detail.text}${detail.uri ? ` (${detail.uri})` : ''}`,
+    );
     return {
       type: obj.type,
       name: obj.name,
-      status,
+      status: details.some((detail) => detail.severity === 'error')
+        ? 'error'
+        : !result.success
+          ? 'unknown'
+          : details.some((detail) => detail.severity === 'warning')
+            ? 'warning'
+            : 'active',
       messages,
     };
   });
@@ -485,16 +507,10 @@ export function buildBatchActivationStatuses(
 
 export function formatBatchActivationStatuses(statuses: BatchActivationObjectStatus[]): string {
   if (statuses.length === 0) return '';
-  const lines: string[] = [];
-  for (const status of statuses) {
-    if (status.messages.length === 0) {
-      lines.push(`- ${status.name} (${status.type}): ${status.status}`);
-    } else {
-      for (const msg of status.messages) {
-        lines.push(`- ${status.name} (${status.type}) ${msg}`);
-      }
-    }
-  }
+  const lines = statuses.flatMap(({ name, type, status, messages }) => {
+    const label = `- ${name} (${type}): ${status}`;
+    return messages.length ? messages.map((message) => `${label} — ${message}`) : [label];
+  });
   return `\n${lines.join('\n')}`;
 }
 

@@ -28,13 +28,13 @@ The three-step worklist flow (`POST /atc/worklists?checkVariant=<v>` → `POST /
 ```
 SAPDiagnose(action=atc, type=PROG, name=Z_CREATE_BOOKING_SAMPLES, variant=PERFORMANCE_DB)
   → 1 finding: priority 2, line 86, "Search DB Operations: DB Operation INSERT for /DMO/BOOKING found."
-SAPDiagnose(action=atc, type=PROG, name=Z_CREATE_BOOKING_SAMPLES)   (system default variant)
+SAPDiagnose(action=atc, type=PROG, name=Z_CREATE_BOOKING_SAMPLES)   (no variant -> CI variant DEFAULT at the time; see the 2026-08-19 dossier)
   → 3 findings (priority 3)
 ```
 
 Two gotchas (documented in the `sap-clean-core-atc` / `migrate-custom-code` skills):
 - **ATC skips `$TMP`/local objects** — the object set resolves empty → 0 findings. Run against a transportable package.
-- **The check variant must exist.** A4H has `S4HANA_READINESS_2023`, `PERFORMANCE_DB`, `SECURITY_*`, `SAP_CLOUD_PLATFORM_DEFAULT`, … but **not** literally `ABAP_CLOUD_READINESS` (that's the BTP/Cloud name). Omitting `variant` uses the system default.
+- **The check variant must exist.** A4H has `S4HANA_READINESS_2023`, `PERFORMANCE_DB`, `SECURITY_*`, `SAP_CLOUD_PLATFORM_DEFAULT`, … but **not** literally `ABAP_CLOUD_READINESS` (that's the BTP/Cloud name). Omitting `variant` used to run the CI variant `DEFAULT`, **not** the system default — corrected in [2026-08-19-atc-default-check-variant.md](2026-08-19-atc-default-check-variant.md); ARC-1 now resolves and sends `systemCheckVariant` itself.
 
 `S4HANA_READINESS_2023` returns `Check not executable, due to missing prerequisites` — the simplification-DB content isn't set up on the trial.
 

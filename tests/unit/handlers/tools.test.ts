@@ -16,6 +16,18 @@ describe('Tool Definitions', () => {
     expect(names).toContain('SAPSearch');
   });
 
+  it.each(['onprem', 'btp'] as const)(
+    'puts metadata format and hierarchy prerequisites in %s tool descriptions',
+    (systemType) => {
+      const tools = getToolDefinitions({ ...DEFAULT_CONFIG, systemType });
+      expect(tools.find((tool) => tool.name === 'SAPRead')!.description).toContain('DDIC metadata: omit format');
+      expect(tools.find((tool) => tool.name === 'SAPNavigate')!.description).toContain(
+        'requires data/SQL opt-in + matching scope',
+      );
+      expect(tools.find((tool) => tool.name === 'SAPNavigate')!.description).toContain('class MAIN with SAPRead');
+    },
+  );
+
   it('exposes the SAPRead grep parameter on both on-prem and BTP tool schemas', () => {
     for (const config of [DEFAULT_CONFIG, { ...DEFAULT_CONFIG, systemType: 'btp' as const }]) {
       const sapRead = getToolDefinitions(config).find((t) => t.name === 'SAPRead');
@@ -25,6 +37,36 @@ describe('Tool Definitions', () => {
       expect(props.grep.maxLength).toBe(MAX_GREP_PATTERN_LENGTH);
     }
   });
+
+  it.each(['onprem', 'btp'] as const)('distinguishes global MAIN from local class includes on %s', (systemType) => {
+    const read = getToolDefinitions({ ...DEFAULT_CONFIG, systemType }).find((tool) => tool.name === 'SAPRead')!;
+    expect(read.description).toContain('Global class declaration/implementation: MAIN');
+    expect(read.description).toContain('definitions/implementations contain local helpers');
+    const props = (read.inputSchema as Record<string, any>).properties;
+    expect(props.include.description).toContain('omit include or use main');
+    expect(props.include.description).toContain('Explicit include wins');
+  });
+
+  it.each(['onprem', 'btp'] as const)(
+    'preserves context-first understanding and targeted source guidance on %s',
+    (systemType) => {
+      for (const relationsAllowed of [false, true]) {
+        const tools = getToolDefinitions({
+          ...DEFAULT_CONFIG,
+          systemType,
+          denyActions: relationsAllowed ? [] : ['SAPNavigate.relations'],
+        });
+        const read = tools.find((tool) => tool.name === 'SAPRead')!.description!;
+        const context = tools.find((tool) => tool.name === 'SAPContext')!.description!;
+        expect(read).toContain('specs, reviews or pre-change context, prefer SAPContext first');
+        expect(read).toContain('method="NAME" for one body');
+        expect(context).toContain('Primary tool for understanding ABAP/CDS objects');
+        expect(context).toContain('KTD when available');
+        expect(context).toContain('"What does <object> do?" / "Explain" / "deps before editing"');
+        expect(context).toContain('not SAP-native relationships or a complete inventory');
+      }
+    },
+  );
 
   it('registers all implemented tools', () => {
     const tools = getToolDefinitions({
@@ -47,6 +89,13 @@ describe('Tool Definitions', () => {
     // SAPContext and SAPManage are now implemented
     expect(names).toContain('SAPContext');
     expect(names).toContain('SAPManage');
+  });
+
+  it.each(['onprem', 'btp'] as const)('keeps general consumer lookup unfiltered in %s guidance', (systemType) => {
+    const nav = getToolDefinitions({ ...DEFAULT_CONFIG, systemType }).find((tool) => tool.name === 'SAPNavigate')!;
+    const props = (nav.inputSchema as Record<string, any>).properties;
+    expect(props.objectType.description).toContain('Omit for all consumer types');
+    expect(nav.inputSchema.required).not.toContain('objectType');
   });
 
   it('hides write tools in read-only mode but keeps SAPManage read actions', () => {
@@ -88,7 +137,30 @@ describe('Tool Definitions', () => {
     const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: false });
     const sapTransport = tools.find((t) => t.name === 'SAPTransport')!;
     const actionEnum = (sapTransport.inputSchema as Record<string, any>).properties.action.enum as string[];
-    expect(actionEnum).toEqual(['list', 'get', 'check', 'history', 'layers', 'targets']);
+    expect(actionEnum).toEqual(['list', 'get', 'diff', 'check', 'history', 'layers', 'targets']);
+  });
+
+  it('SAPTransport exposes create/modify checks and documents Workbench-only request creation', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, allowTransportWrites: true });
+    const sapTransport = tools.find((tool) => tool.name === 'SAPTransport')!;
+    const schema = sapTransport.inputSchema as Record<string, any>;
+
+    expect(schema.properties.operation.enum).toEqual(['create', 'modify']);
+    expect(schema.properties.operation.description).toContain('default');
+    expect(schema.properties.package.description).toContain('Workbench type K');
+    expect(schema.properties.type.description).toContain('Workbench (K)');
+    expect(sapTransport.description).toContain('always a Workbench (K) request');
+  });
+
+  it('SAPTransport documents history as current assignment status, not complete history', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: false, allowTransportWrites: false });
+    const sapTransport = tools.find((tool) => tool.name === 'SAPTransport')!;
+    const schema = sapTransport.inputSchema as Record<string, any>;
+
+    expect(sapTransport.description).toContain('current object lock plus assignment candidates');
+    expect(sapTransport.description).toContain('not complete transport history');
+    expect(schema.properties.action.description).toContain('not complete transport history');
+    expect(schema.properties.maxResults.description).toContain('assignment candidates');
   });
 
   it('SAPTransport includes write actions only when both write gates are enabled', () => {
@@ -142,7 +214,7 @@ describe('Tool Definitions', () => {
     const schema = sapGit!.inputSchema as Record<string, any>;
     const actions: string[] = schema.properties.action.enum;
     expect(actions).toContain('list_repos');
-    expect(actions).toContain('external_info');
+    expect(actions).not.toContain('external_info');
     expect(actions).not.toContain('commit');
     expect(actions).not.toContain('unlink');
     expect(schema.properties.backend.enum).toEqual(['gcts', 'abapgit']);
@@ -157,8 +229,9 @@ describe('Tool Definitions', () => {
     expect(sapGit).toBeDefined();
     const schema = sapGit!.inputSchema as Record<string, any>;
     const actions: string[] = schema.properties.action.enum;
+    expect(actions).toContain('external_info');
     expect(actions).toContain('list_repos');
-    expect(actions).toContain('commit');
+    expect(actions).not.toContain('commit');
     expect(actions).toContain('unlink');
     expect(schema.properties.backend.enum).toEqual(['gcts', 'abapgit']);
   });
@@ -204,6 +277,58 @@ describe('Tool Definitions', () => {
     expect(names).toContain('SAPQuery');
   });
 
+  it('documents TABLE_QUERY IN values as raw values that ARC-1 quotes', () => {
+    const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
+    const schema = sapRead.inputSchema as Record<string, any>;
+    const whereDescription = schema.properties.where.description as string;
+
+    expect(whereDescription).toContain('bare comma-separated values');
+    expect(whereDescription).toContain('do NOT quote them');
+    expect(whereDescription).toContain('ARC-1 quotes and escapes values');
+    expect(whereDescription).toContain('"261,262"');
+    expect(whereDescription).not.toContain('single-quoted literals');
+  });
+
+  it('documents the live-verified TABLE_QUERY and TABLE_CONTENTS limitations on SAP_BASIS 758', () => {
+    const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
+    const schema = sapRead.inputSchema as Record<string, any>;
+
+    expect(schema.properties.maxRows.description).toContain('On 758, TABLE_CONTENTS returns N+1');
+    expect(schema.properties.sqlFilter.description).toContain('broken on 758');
+    expect(schema.properties.sqlFilter.description).toContain('TABLE_QUERY where');
+    expect(schema.properties.where.description).toContain('use <> because 758 rejects !=');
+    expect(schema.properties.where.description).not.toContain('Ops: =, !=');
+  });
+
+  it('documents VERSION_SOURCE canonical-path enforcement', () => {
+    const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
+    const description = (sapRead.inputSchema as Record<string, any>).properties.versionUri.description as string;
+
+    expect(description).toContain('canonical source/revision URI');
+    expect(description).toContain('unrelated ADT endpoints');
+    expect(description).toContain('traversal');
+    expect(description).toContain('fragments');
+  });
+
+  it('documents action-specific SAPDiagnose result formats', () => {
+    const diagnose = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPDiagnose')!;
+    const resultFormat = (diagnose.inputSchema as Record<string, any>).properties.resultFormat;
+
+    expect(resultFormat.enum).toEqual(['legacy', 'structured', 'junit']);
+    expect(resultFormat.description).toContain('unittest: legacy|structured|junit');
+    expect(resultFormat.description).toContain('atc: legacy|structured');
+    expect(resultFormat.description).toContain('other actions reject it');
+  });
+
+  it('advertises exact-by-default DEVC package AUnit scope', () => {
+    const diagnose = getToolDefinitions(DEFAULT_CONFIG).find((tool) => tool.name === 'SAPDiagnose')!;
+    const schema = diagnose.inputSchema as Record<string, any>;
+
+    expect(diagnose.description).toContain('CLAS/PROG/FUGR or DEVC');
+    expect(schema.properties.type.description).toContain('DEVC');
+    expect(schema.properties.includeSubpackages).toEqual({ type: 'boolean', default: false });
+  });
+
   it('describes SAPRead sqlFilter as condition-only expression', () => {
     const tools = getToolDefinitions(DEFAULT_CONFIG);
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;
@@ -219,7 +344,8 @@ describe('Tool Definitions', () => {
     const sapRead = tools.find((t) => t.name === 'SAPRead')!;
     const schema = sapRead.inputSchema as Record<string, any>;
     const typeEnum: string[] = schema.properties.type.enum;
-    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA']) expect(typeEnum).toContain(t);
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
+      expect(typeEnum).toContain(t);
     expect(schema.properties.type.description).toContain('Server-driven objects');
   });
 
@@ -228,7 +354,8 @@ describe('Tool Definitions', () => {
     const sapWrite = tools.find((t) => t.name === 'SAPWrite')!;
     const schema = sapWrite.inputSchema as Record<string, any>;
     const typeEnum: string[] = schema.properties.type.enum;
-    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA']) expect(typeEnum).toContain(t);
+    for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
+      expect(typeEnum).toContain(t);
     expect(schema.properties.type.description).toContain('Server-driven objects');
   });
 
@@ -270,6 +397,26 @@ describe('Tool Definitions', () => {
     expect(item.required).toContain('name');
   });
 
+  it('SAPWrite schema exposes creation-time FUNC processing metadata on-prem only', () => {
+    const onPrem = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true }).find((t) => t.name === 'SAPWrite')!
+      .inputSchema as Record<string, any>;
+    expect(onPrem.properties.processingType.enum).toEqual(['normal', 'rfc', 'update']);
+    expect(onPrem.properties.updateTaskKind.enum).toEqual([
+      'startImmediate',
+      'immediateStartNoRestart',
+      'startDelayed',
+    ]);
+    expect(onPrem.properties.objects.items.properties.group).toBeDefined();
+    expect(onPrem.properties.objects.items.properties.processingType.enum).toEqual(['normal', 'rfc', 'update']);
+    expect(onPrem.properties.objects.items.properties.parameters.items.properties.kind.enum).toContain('importing');
+
+    const btp = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' }).find(
+      (t) => t.name === 'SAPWrite',
+    )!.inputSchema as Record<string, any>;
+    expect(btp.properties.processingType).toBeUndefined();
+    expect(btp.properties.updateTaskKind).toBeUndefined();
+  });
+
   it('SAPWrite type and include descriptions track the supported schema surface', () => {
     const onPremTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true });
     const onPremSchema = onPremTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;
@@ -288,6 +435,9 @@ describe('Tool Definitions', () => {
     expect(onPremSchema.properties.include.description).toContain('CLAS-ONLY');
     expect(onPremSchema.properties.include.description).toContain('change_method_visibility');
     expect(onPremSchema.properties.source.description).toContain('change_method_visibility');
+    expect(onPremSchema.properties.source.description).toContain('`extend view`');
+    expect(onPremSchema.properties.source.description).toContain('`extend view entity`');
+    expect(onPremSchema.properties.source.description).toContain('Standard ABAP package');
 
     const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
     const btpDescription = btpTools.find((t) => t.name === 'SAPWrite')!.description;
@@ -297,6 +447,8 @@ describe('Tool Definitions', () => {
       expect(btpTypeDescription).toContain(type);
     }
     expect(btpDescription).toContain('DCLS');
+    expect(btpSchema.properties.source.description).toContain('`extend view entity`');
+    expect(btpSchema.properties.source.description).toContain('not legacy `extend view`');
   });
 
   it('SAPWrite schema exposes class-section surgery actions (issue #303)', () => {
@@ -496,15 +648,15 @@ describe('Tool Definitions', () => {
       expect(sapContext.description).toMatch(/who consumes/i);
     });
 
-    it('SAPContext description steers object-understanding questions away from raw SAPRead', () => {
+    it('distinguishes exact behavior from requirements-sensitive context reads', () => {
       const tools = getToolDefinitions(DEFAULT_CONFIG);
       const sapContext = tools.find((t) => t.name === 'SAPContext')!;
       const sapRead = tools.find((t) => t.name === 'SAPRead')!;
 
-      expect(sapContext.description).toMatch(/what does <object> do/i);
+      expect(sapContext.description).toContain('source (not SAP-native relationships or a complete inventory)');
       expect(sapContext.description).toMatch(/KTD/i);
-      expect(sapContext.description).toMatch(/Use SAPRead after SAPContext/i);
-      expect(sapRead.description).toMatch(/prefer SAPContext first/i);
+      expect(sapContext.description).toContain('Use SAPRead after SAPContext for exact source');
+      expect(sapRead.description).toContain('prefer SAPContext first');
     });
 
     it('SAPContext action description steers LLMs away from SAPQuery-against-DDDDLSRC', () => {
@@ -585,7 +737,10 @@ describe('Tool Definitions', () => {
 
     expect(actionEnum).toContain('syntax');
     expect(actionEnum).toContain('unittest');
+    expect(actionEnum).toContain('unittest_ci');
     expect(actionEnum).toContain('atc');
+    expect(actionEnum).toContain('atc_ci');
+    expect(actionEnum).toContain('atc_variants');
     expect(actionEnum).toContain('cds_testcases');
     expect(actionEnum).toContain('quickfix');
     expect(actionEnum).toContain('apply_quickfix');
@@ -594,7 +749,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('traces');
     expect(actionEnum).toContain('system_messages');
     expect(actionEnum).toContain('gateway_errors');
-    expect(sapDiagnose.description).toContain('active and inactive source versions');
+    expect(sapDiagnose.description).toContain('active vs inactive source versions');
     expect(schema.properties.source).toBeDefined();
     expect(schema.properties.sourceUri).toBeDefined();
     expect(schema.properties.line).toBeDefined();

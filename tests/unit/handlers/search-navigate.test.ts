@@ -12,9 +12,12 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
+// Dynamic like every other src import here: server-driven.ts pulls in http.ts (undici), which must
+// not load before setup-undici-mock has installed the mock.
+const { SDO_REGISTRY, SDO_TYPES } = await import('../../../src/adt/server-driven.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
-const { transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
+const { handleSAPSearch, transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
 
 function dataPreviewXml(column: string, values: string[]): string {
   return `<abap><values><COLUMNS><COLUMN><METADATA name="${column}"/><DATASET>${values
@@ -44,6 +47,57 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPSearch', () => {
+    it.each([
+      ['clas/oc', 'CLAS/OC'],
+      ['ddls/df', 'DDLS/DF'],
+      ['ktd', 'SKTD'],
+      ['uiac', 'UIAC'],
+    ])('preserves real search subtypes and translates friendly aliases: %s', async (objectType, expected) => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams.get('objectType')).toBe(expected);
+    });
+
+    it.each([false, true])('explains a rejected filter without retrying (minimalErrors=%s)', async (minimalErrors) => {
+      mockFetch.mockResolvedValue(mockResponse(406, 'private SAP diagnostic'));
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPSearch', {
+        query: '*',
+        objectType: 'NOSUCH',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('SAP rejected the object search with objectType="NOSUCH"');
+      expect(result.content[0].text).not.toContain('private SAP diagnostic');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['NOSUCH', undefined])('gives appropriate empty-result guidance for filter %s', async (objectType) => {
+      mockFetch.mockResolvedValue(mockResponse(200, '<objectReferences/>'));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', { query: '*', objectType });
+      expect(result.isError).toBeUndefined();
+      if (objectType) {
+        expect(result.content[0].text).toContain('objectType="NOSUCH" was applied; omit it to search all types.');
+      } else {
+        expect(result.content[0].text).toContain('try Z* or Y*');
+      }
+    });
+
+    it('preserves authorization errors instead of misclassifying them as rejected filters', async () => {
+      const client = createClient();
+      const error = new AdtApiError('Forbidden', 403, '/sap/bc/adt/repository/informationsystem/search');
+      vi.spyOn(client, 'searchObject').mockRejectedValue(error);
+      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' }, false)).rejects.toBe(error);
+    });
+
+    it('preserves and encodes a slash type without injecting query parameters', async () => {
+      await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+        query: '*',
+        objectType: 'clas/oc&maxResults=999',
+        maxResults: 2,
+      });
+      const params = new URL(String(mockFetch.mock.calls[0]?.[0])).searchParams;
+      expect(params.get('objectType')).toBe('CLAS/OC&MAXRESULTS=999');
+      expect(params.getAll('maxResults')).toEqual(['2']);
+    });
+
     it('executes search', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'ZCL_*',
@@ -484,7 +538,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     it('returns helpful error when source search is not available', async () => {
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(
-        new AdtApiError('Not found', 404, '/sap/bc/adt/repository/informationsystem/textSearch'),
+        new AdtApiError('Not found', 404, '/sap/bc/adt/repository/informationsystem/textsearch'),
       );
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
         query: 'test_pattern',
@@ -500,7 +554,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         textSearch: {
           available: false,
           reason:
-            'textSearch ICF service not activated — activate /sap/bc/adt/repository/informationsystem/textSearch in SICF.',
+            'The textsearch endpoint is not available on this system — confirm it is missing from /sap/bc/adt/discovery before asking Basis to activate anything in SICF.',
         },
       });
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
@@ -510,6 +564,31 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('SICF');
       expect(result.content[0]?.text).toContain('not available');
+    });
+
+    it('reports the live SADT_REST 020 response as backend-unsupported rather than missing authorization', async () => {
+      resetCachedFeatures();
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          403,
+          `<?xml version="1.0" encoding="utf-8"?>
+<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
+  <exc:localizedMessage>The action is not supported</exc:localizedMessage>
+  <exc:properties>
+    <exc:entry key="T100KEY-ID">SADT_REST</exc:entry>
+    <exc:entry key="T100KEY-NO">020</exc:entry>
+  </exc:properties>
+</exc:exception>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPSearch', {
+        query: 'test_pattern',
+        searchType: 'source_code',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('not supported by this SAP backend');
+      expect(result.content[0]?.text).not.toContain('S_ADT_RES');
     });
 
     it('searches normally when textSearch probe says available', async () => {
@@ -585,6 +664,26 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.rows).toHaveLength(2);
     });
 
+    it('reports when an oversized maxRows value is clamped at the freestyle sink', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('MANDT', ['001'])));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: 'SELECT mandt FROM t000',
+        maxRows: 50_000,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed).toMatchObject({
+        rowLimitClamped: true,
+        requestedRows: 50_000,
+        effectiveMaxRows: 10_000,
+      });
+      expect(String(freestylePostCalls()[0]?.[0])).toContain('rowNumber=10000');
+    });
+
     it('flags dot-notation (alias.field) as the cause of "only one SELECT" — the real fix is a tilde', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -602,6 +701,29 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(text).not.toContain('SAP Note 3605050');
       expect(text).not.toContain('single-table');
     });
+
+    it.each([false, true])(
+      'applies minimalErrors=%s to classified query results through dispatch',
+      async (minimalErrors) => {
+        const diagnostic = 'Private SAP diagnostic\n\nHint: private backend details';
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+        mockFetch.mockResolvedValueOnce(mockResponse(400, diagnostic));
+
+        const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPQuery', {
+          sql: 'SELECT mandt FROM t000 ORDER BY mandt DESC',
+        });
+        const text = result.content[0]?.text ?? '';
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain('ASCENDING or DESCENDING');
+        expect(text.includes('Private SAP diagnostic')).toBe(!minimalErrors);
+        expect(text.includes('private backend details')).toBe(!minimalErrors);
+        expect(text.includes('/sap/bc/adt/datapreview/freestyle')).toBe(!minimalErrors);
+        if (minimalErrors) expect(text).toMatch(/^ADT API error: status 400\.\n\nHint: Use the ABAP SQL/);
+        expect(freestylePostCalls()).toHaveLength(1);
+      },
+    );
 
     it('does not false-flag tilde JOIN with an INTO clause as dot-notation; gives the target-clause hint', async () => {
       mockFetch.mockReset();
@@ -817,6 +939,29 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(String(postCalls[0]?.[0])).toContain('rowNumber=3');
     });
 
+    it('clamps the total chunked row limit and reports the effective limit', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z01'])));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, dataPreviewXml('OBJ_NAME', ['Z09'])));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: "SELECT object_name FROM tadir WHERE object_name IN ('Z01', 'Z02', 'Z03', 'Z04', 'Z05', 'Z06', 'Z07', 'Z08', 'Z09')",
+        maxRows: 50_000,
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text)).toMatchObject({
+        rowLimitClamped: true,
+        requestedRows: 50_000,
+        effectiveMaxRows: 10_000,
+      });
+      const postCalls = freestylePostCalls();
+      expect(postCalls).toHaveLength(2);
+      expect(String(postCalls[0]?.[0])).toContain('rowNumber=10000');
+      expect(String(postCalls[1]?.[0])).toContain('rowNumber=9999');
+    });
+
     it('does not rewrite short IN lists', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -890,17 +1035,31 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   describe('SAPGit', () => {
     const gctsReposJson = '{"result":[{"rid":"ZARC1","url":"https://github.com/example/arc1.git"}]}';
     const abapGitReposXml = `<?xml version="1.0" encoding="utf-8"?>
-<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository" xmlns:atom="http://www.w3.org/2005/Atom">
-  <abapgitrepo:repository abapgitrepo:key="000000000001" abapgitrepo:package="$TMP" abapgitrepo:url="https://github.com/example/repo.git" abapgitrepo:branchName="main">
+<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories" xmlns:atom="http://www.w3.org/2005/Atom">
+  <abapgitrepo:repository>
+    <abapgitrepo:key>000000000001</abapgitrepo:key>
+    <abapgitrepo:package>$TMP</abapgitrepo:package>
+    <abapgitrepo:url>https://github.com/example/repo.git</abapgitrepo:url>
+    <abapgitrepo:branchName>refs/heads/main</abapgitrepo:branchName>
     <atom:link rel="http://www.sap.com/adt/abapgit/relations/stage" href="/sap/bc/adt/abapgit/repos/000000000001/stage" type="stage_link"/>
     <atom:link rel="http://www.sap.com/adt/abapgit/relations/push" href="/sap/bc/adt/abapgit/repos/000000000001/push" type="push_link"/>
     <atom:link rel="http://www.sap.com/adt/abapgit/relations/check" href="/sap/bc/adt/abapgit/repos/000000000001/checks" type="check_link"/>
   </abapgitrepo:repository>
 </abapgitrepo:repositories>`;
     const stagingXml = `<?xml version="1.0" encoding="utf-8"?>
-<abapgitrepo:objects xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository">
-  <abapgitrepo:object abapgitrepo:type="CLAS" abapgitrepo:name="ZCL_ARC1_TEST" abapgitrepo:operation="M"/>
-</abapgitrepo:objects>`;
+<abapgitstaging:abapgitstaging xmlns:abapgitstaging="http://www.sap.com/adt/abapgit/staging" xmlns:adtcore="http://www.sap.com/adt/core">
+  <abapgitstaging:unstaged_objects>
+    <abapgitstaging:abapgitobject adtcore:name="ZCL_ARC1_TEST" adtcore:type="CLAS/OC" abapgitstaging:wbkey="CLAS">
+      <abapgitstaging:abapgitfile abapgitstaging:name="zcl_arc1_test.clas.abap" abapgitstaging:path="/src/" abapgitstaging:localState="M"/>
+    </abapgitstaging:abapgitobject>
+  </abapgitstaging:unstaged_objects>
+  <abapgitstaging:staged_objects/>
+  <abapgitstaging:ignored_objects/>
+  <abapgitstaging:abapgit_comment abapgitstaging:comment="">
+    <abapgitstaging:author abapgitstaging:name="DEVELOPER" abapgitstaging:email="developer@example.com"/>
+    <abapgitstaging:committer abapgitstaging:name="DEVELOPER" abapgitstaging:email="developer@example.com"/>
+  </abapgitstaging:abapgit_comment>
+</abapgitstaging:abapgitstaging>`;
 
     function readAuth(): AuthInfo {
       return {
@@ -986,7 +1145,91 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.backend).toBe('abapgit');
-      expect(parsed.result.objects[0].type).toBe('CLAS');
+      expect(parsed.result.objects[0].name).toBe('ZCL_ARC1_TEST');
+      expect(parsed.result.objects[0].files[0].name).toBe('zcl_arc1_test.clas.abap');
+    });
+
+    it('push stages first, sends selected objects, and reports accepted-but-unverified evidence', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml)); // loadAbapGitRepo
+      mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml, { 'x-csrf-token': 'T' })); // stage
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '')); // push
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'push',
+        backend: 'abapgit',
+        repoId: '000000000001',
+        message: 'arc-1 commit',
+      });
+
+      expect(result.isError).toBe(true);
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.result).toMatchObject({
+        ok: false,
+        outcome: 'incomplete',
+        accepted: true,
+        verified: false,
+      });
+      expect(parsed.result.pushed).toEqual([{ name: 'ZCL_ARC1_TEST', type: 'CLAS/OC' }]);
+      expect(parsed.result.message).toContain('Do not retry blindly');
+      const pushCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/push'));
+      const body = String(pushCall?.[1]?.body);
+      expect(body).toContain('abapgitstaging:comment="arc-1 commit"');
+      expect(body).toContain('adtcore:name="ZCL_ARC1_TEST"');
+      expect(body).toContain('abapgitstaging:name="zcl_arc1_test.clas.abap"');
+    });
+
+    it('push without a message is rejected before any SAP call', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'push',
+        backend: 'abapgit',
+        repoId: '000000000001',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('requires message');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('push selects only the requested objects and no-ops when nothing matches', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'push',
+        backend: 'abapgit',
+        repoId: '000000000001',
+        message: 'arc-1 commit',
+        objects: [{ type: 'CLAS', name: 'ZCL_SOMETHING_ELSE' }],
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text).result.pushed).toEqual([]);
+      expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/push'))).toBe(false);
+    });
+
+    it('maps an abapGit token to private-remote bridge credentials', async () => {
+      setCachedFeatures(featuresOff({ abapGit: true }));
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, abapGitReposXml));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, stagingXml));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPGit', {
+        action: 'stage',
+        backend: 'abapgit',
+        repoId: '000000000001',
+        token: 'private-token',
+      });
+
+      expect(result.isError).toBeUndefined();
+      const stageCall = mockFetch.mock.calls.find(([url]) => String(url).includes('/stage'));
+      const headers = stageCall?.[1]?.headers as Record<string, string>;
+      expect(headers.Username).toBe('x-access-token');
+      expect(headers.Password).toBe(Buffer.from('private-token', 'utf-8').toString('base64'));
     });
 
     it('surfaces AdtSafetyError from git write operations when allowGitWrites=false', async () => {
@@ -1030,6 +1273,45 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPNavigate symbolic references', () => {
+    // Exercise every registry entry and a namespace through the public tool dispatch.
+    it.each([
+      ...SDO_TYPES.map((type) => ({
+        type,
+        name: 'ZTEST_OBJECT',
+        expectedUri: `${SDO_REGISTRY[type].href}/ZTEST_OBJECT`,
+      })),
+      { type: 'dsfd', name: '/arc/test', expectedUri: '/sap/bc/adt/ddic/dsfd/sources/%2FARC%2FTEST' },
+    ])('resolves server-driven $type $name to its own collection URI', async ({ type, name, expectedUri }) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>
+    <usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/zcl_consumer" isResult="true" canHaveChildren="false">
+      <usageReferences:adtObject adtcore:name="ZCL_CONSUMER" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usageReferences:referencedObject>
+  </usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type,
+        name,
+      });
+      expect(result.isError).toBeUndefined();
+      const whereUsedCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('usageReferences'));
+      expect(whereUsedCall).toBeDefined();
+      const requestedUri = new URL(String(whereUsedCall?.[0])).searchParams.get('uri');
+      expect(requestedUri).toBe(expectedUri);
+      expect(requestedUri).not.toContain('/programs/programs/');
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.total).toBe(1);
+    });
+
     it('resolves type+name to URI for references action (scope-based Where-Used fails, falls back to simple)', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch for the POST
@@ -1051,16 +1333,20 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.isError).toBeUndefined();
       // Should not get "No references found" since we have a match
       const parsed = JSON.parse(result.content[0]?.text);
-      expect(parsed).toHaveLength(1);
+      expect(parsed.total).toBe(1);
+      expect(parsed.truncated).toBe(false);
+      expect(parsed.references).toHaveLength(1);
     });
 
-    it('falls back to simple references with objectType (returns warning note about dropped filter)', async () => {
+    it('falls back to simple references and STILL applies the objectType filter client-side', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch for the POST
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
       // Second call: findWhereUsed POST fails with 404 (older SAP system)
       mockFetch.mockRejectedValueOnce(new AdtApiError('Not found', 404, '/usageReferences'));
-      // Third call: findReferences GET succeeds (fallback) — includes CLAS/OC to prove results are unfiltered
+      // Third call: findReferences GET succeeds (fallback) — CLAS/OC must be filtered OUT.
+      // SAP ignores objectTypeFilter server-side, so the filter is applied here; it used to be
+      // silently dropped and apologised for in a "note".
       mockFetch.mockResolvedValueOnce(
         mockResponse(
           200,
@@ -1075,16 +1361,14 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(result.content).toHaveLength(1);
-      const text = result.content[0]?.text;
-      // Response should be valid JSON with note and results
-      const parsed = JSON.parse(text);
-      expect(parsed.note).toContain('objectType filter');
-      expect(parsed.note).toContain('PROG/P');
-      expect(parsed.note).toContain('ignored');
-      expect(parsed.results).toHaveLength(2);
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.note).toBeUndefined();
+      expect(parsed.total).toBe(1);
+      expect(parsed.references).toHaveLength(1);
+      expect(parsed.references[0].type).toBe('PROG/P');
     });
 
-    it('falls back to simple references without objectType (no warning note)', async () => {
+    it('falls back to simple references without objectType (returns everything)', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch for the POST
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -1104,11 +1388,9 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBeUndefined();
       expect(result.content).toHaveLength(1);
-      const text = result.content[0]?.text;
-      // No warning — objectType was not requested
-      expect(text).not.toContain('objectType filter');
-      const parsed = JSON.parse(text);
-      expect(parsed).toHaveLength(1);
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.total).toBe(1);
+      expect(parsed.references).toHaveLength(1);
     });
 
     it('uses scope-based Where-Used successfully with objectType filter', async () => {
@@ -1139,10 +1421,104 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       });
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]?.text);
-      expect(parsed).toHaveLength(1);
-      expect(parsed[0].name).toBe('ZPROG1');
-      expect(parsed[0].packageName).toBe('$TMP');
-      expect(parsed[0].objectDescription).toBe('Test Program');
+      expect(parsed.total).toBe(1);
+      expect(parsed.references).toHaveLength(1);
+      expect(parsed.references[0].name).toBe('ZPROG1');
+      expect(parsed.references[0].packageName).toBe('$TMP');
+      expect(parsed.references[0].objectDescription).toBe('Test Program');
+    });
+
+    /** usageReferences result with `count` PROG/P entries plus one CLAS/OC entry. */
+    function whereUsedXmlBulk(count: number): string {
+      const rows = Array.from(
+        { length: count },
+        (_, i) => `<usageReferences:referencedObject uri="/sap/bc/adt/programs/programs/zp${i}" isResult="true">
+      <usageReferences:adtObject adtcore:name="ZP${i}" adtcore:type="PROG/P" xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:packageRef adtcore:name="$TMP"/>
+      </usageReferences:adtObject>
+    </usageReferences:referencedObject>`,
+      ).join('\n');
+      return `<?xml version="1.0" encoding="utf-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>
+    ${rows}
+    <usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/zcl_x" isResult="true">
+      <usageReferences:adtObject adtcore:name="ZCL_X" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core">
+        <adtcore:packageRef adtcore:name="$TMP"/>
+      </usageReferences:adtObject>
+    </usageReferences:referencedObject>
+  </usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`;
+    }
+
+    const bulkRefs = async (args: Record<string, unknown>, count = 250) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, whereUsedXmlBulk(count)));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type: 'CLAS',
+        name: 'ZCL_TEST',
+        ...args,
+      });
+      expect(result.isError).toBeUndefined();
+      return JSON.parse(result.content[0]?.text as string);
+    };
+
+    describe('references bounding', () => {
+      it('caps at the 100 default while reporting the true total', async () => {
+        const parsed = await bulkRefs({});
+        expect(parsed.references).toHaveLength(100);
+        // The total must survive slicing — an under-reported blast radius is a wrong answer,
+        // not merely a terse one.
+        expect(parsed.total).toBe(251);
+        expect(parsed.truncated).toBe(true);
+        expect(parsed.hint).toContain('100 of 251');
+      });
+
+      it('honors maxResults (regression: it used to be silently ignored)', async () => {
+        const parsed = await bulkRefs({ maxResults: 5 });
+        expect(parsed.references).toHaveLength(5);
+        expect(parsed.total).toBe(251);
+      });
+
+      it('clamps maxResults to 1000 and ignores junk values', async () => {
+        expect((await bulkRefs({ maxResults: 99999 })).references).toHaveLength(251);
+        expect((await bulkRefs({ maxResults: 0 })).references).toHaveLength(100);
+        expect((await bulkRefs({ maxResults: -3 })).references).toHaveLength(100);
+      });
+
+      it('omits truncated/hint when everything fits', async () => {
+        const parsed = await bulkRefs({}, 10);
+        expect(parsed.total).toBe(11);
+        expect(parsed.truncated).toBe(false);
+        expect(parsed.hint).toBeUndefined();
+      });
+
+      it('filters by objectType client-side, and total counts post-filter', async () => {
+        const parsed = await bulkRefs({ objectType: 'CLAS/OC' });
+        expect(parsed.total).toBe(1);
+        expect(parsed.references[0].name).toBe('ZCL_X');
+      });
+
+      it('matches a bare objectType prefix against subtypes', async () => {
+        const parsed = await bulkRefs({ objectType: 'CLAS', maxResults: 5 });
+        expect(parsed.total).toBe(1);
+        expect(parsed.references[0].type).toBe('CLAS/OC');
+      });
+
+      it('tolerates a padded objectType instead of silently matching nothing', async () => {
+        const parsed = await bulkRefs({ objectType: '  CLAS/OC  ', maxResults: 5 });
+        expect(parsed.total).toBe(1);
+        expect(parsed.references[0].name).toBe('ZCL_X');
+      });
+
+      it('treats a whitespace-only objectType as no filter', async () => {
+        // Otherwise it would filter on the empty type, match nothing, and read as "No references
+        // found" — a wrong answer dressed as an empty one.
+        const parsed = await bulkRefs({ objectType: '   ' });
+        expect(parsed.total).toBe(251);
+      });
     });
 
     it('returns error when neither uri nor type+name provided for references', async () => {
@@ -1270,7 +1646,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         name: 'ZIF_FOO',
       });
       expect(result.isError).toBeUndefined();
-      const refs = JSON.parse(result.content[0]?.text);
+      const refs = JSON.parse(result.content[0]?.text).references;
       // Original 2 entries + 2 augmented implementers
       expect(refs).toHaveLength(4);
       const impl1 = refs.find((r: { name: string }) => r.name === 'ZCL_IMPL1');
@@ -1279,6 +1655,27 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(impl1.uri).toBe('/sap/bc/adt/oo/classes/zcl_impl1');
       expect(impl1.objectDescription).toBe('implements ZIF_FOO');
       expect(impl1.isResult).toBe(true);
+    });
+
+    it('augments INTF implementers for a PADDED objectType, same as the trimmed value', async () => {
+      // Regression: the filter was trimmed at comparison time but the RAW objectType still reached
+      // augmentInterfaceImplementers, whose /^CLAS/i check rejects " CLAS/OC " — so augmentation was
+      // skipped and the implementers were dropped before the (trimmed) filter could keep them. The
+      // filter is now normalized once at the entry, so padding cannot change behaviour.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, intfWhereUsedXmlSparse()));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, clsnameXml(['ZCL_IMPL1'])));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type: 'INTF',
+        name: 'ZIF_FOO',
+        objectType: '  CLAS/OC  ',
+      });
+      const parsed = JSON.parse(result.content[0]?.text as string);
+      expect(parsed.total).toBe(1);
+      expect(parsed.references[0].name).toBe('ZCL_IMPL1');
     });
 
     it('dedupes — does not re-add an implementer SAP already returned', async () => {
@@ -1303,7 +1700,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         type: 'INTF',
         name: 'ZIF_FOO',
       });
-      const refs = JSON.parse(result.content[0]?.text);
+      const refs = JSON.parse(result.content[0]?.text).references;
       // SAP entry (1) + 1 newly added (ZCL_IMPL2) — dedupe drops the duplicate
       expect(refs).toHaveLength(2);
       expect(refs.filter((r: { name: string }) => r.name === 'ZCL_IMPL1')).toHaveLength(1);
@@ -1327,7 +1724,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         type: 'INTF',
         name: 'ZIF_FOO',
       });
-      const refs = JSON.parse(result.content[0]?.text);
+      const refs = JSON.parse(result.content[0]?.text).references;
       // Only the 2 entries SAP returned — no augmentation
       expect(refs).toHaveLength(2);
       expect(refs.find((r: { name: string; type: string }) => r.type === 'CLAS/OC')).toBeUndefined();
@@ -1345,9 +1742,16 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         name: 'ZIF_FOO',
         objectType: 'PROG/P',
       });
-      const refs = JSON.parse(result.content[0]?.text);
-      // Only the 2 SAP entries
-      expect(refs).toHaveLength(2);
+      // Augmentation skipped: only CSRF + where-used were fetched, no SEOMETAREL lookup.
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      // The sparse fixture holds only INTF/OI + a structural node, so a PROG/P filter keeps none.
+      // Previously these were returned unfiltered despite the caller asking for PROG/P. The empty
+      // case still returns the envelope — a consumer parsing it must not hit a bare text string.
+      const parsed = JSON.parse(result.content[0]?.text as string);
+      expect(parsed.total).toBe(0);
+      expect(parsed.shown).toBe(0);
+      expect(parsed.truncated).toBe(false);
+      expect(parsed.references).toEqual([]);
     });
 
     it('does not augment for CLAS references (only INTF)', async () => {
@@ -1375,7 +1779,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         type: 'CLAS',
         name: 'ZCL_TARGET',
       });
-      const refs = JSON.parse(result.content[0]?.text);
+      const refs = JSON.parse(result.content[0]?.text).references;
       expect(refs).toHaveLength(1);
       expect(refs[0].name).toBe('ZCL_CALLER');
     });
@@ -1513,9 +1917,12 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.superclass).toBe('CL_PARENT');
       expect(parsed.subclasses).toEqual(['ZCL_CHILD1']);
-      // Verify it used the ddic endpoint (named table), not freestyle
+      // Uses the STRUCTURED table query, not the filtered DDIC preview. The sqlFilter condition
+      // language is outside the analyzed subset and is refused whenever the blocklist is active, so
+      // this fallback would otherwise stop working the moment an operator configured a blocklist.
       const postCalls = mockFetch.mock.calls.filter((c: unknown[]) => (c[1] as { method?: string })?.method === 'POST');
-      expect(postCalls[0]![0]).toContain('/datapreview/ddic');
+      expect(postCalls[0]![0]).toContain('/datapreview/freestyle');
+      expect(String(postCalls[0]![1].body)).toContain("FROM SEOMETAREL WHERE CLSNAME = 'ZCL_TEST'");
     });
 
     it('returns error when both free SQL and table preview are blocked', async () => {
@@ -1534,6 +1941,10 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.text).toContain('data access permissions');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_FREE_SQL=true');
       expect(result.content[0]?.text).toContain('SAP_ALLOW_DATA_PREVIEW=true');
+      expect(result.content[0]?.text).toContain('Without changing permissions');
+      expect(result.content[0]?.text).toContain('class MAIN source');
+      expect(result.content[0]?.text).not.toContain('include="definitions"');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 });

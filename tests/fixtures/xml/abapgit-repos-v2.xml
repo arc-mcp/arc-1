@@ -1,15 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repository" xmlns:atom="http://www.w3.org/2005/Atom">
-  <abapgitrepo:repository abapgitrepo:key="000000000001" abapgitrepo:package="$TUTORIALS" abapgitrepo:url="https://github.com/example/tutorials.git" abapgitrepo:branchName="main" abapgitrepo:selectedBranch="main" abapgitrepo:deserializedBy="DEVELOPER" abapgitrepo:writeProtected="false" abapgitrepo:createdBy="DEVELOPER" abapgitrepo:createdAt="20260417120000">
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/pull" href="/sap/bc/adt/abapgit/repos/000000000001/pull"/>
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/stage" href="/sap/bc/adt/abapgit/repos/000000000001/stage" type="stage_link"/>
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/push" href="/sap/bc/adt/abapgit/repos/000000000001/push" type="push_link"/>
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/check" href="/sap/bc/adt/abapgit/repos/000000000001/checks" type="check_link"/>
+<!-- Shape captured live from a4h (S/4HANA 2023, SAP_BASIS 758) on 2026-07-29:
+     GET /sap/bc/adt/abapgit/repos, Accept: application/abapgit.adt.repos.v2+xml.
+     Namespace and element-style fields match ZABAPGIT_ST_REPOS; remote URLs neutralised.
+     The second repository deliberately drops the atom:link type attributes so the client's
+     resolve-by-rel path stays covered. -->
+<abapgitrepo:repositories xmlns:abapgitrepo="http://www.sap.com/adt/abapgit/repositories">
+  <abapgitrepo:repository>
+    <abapgitrepo:key>000000000001</abapgitrepo:key>
+    <abapgitrepo:package>$TUTORIALS</abapgitrepo:package>
+    <abapgitrepo:url>https://github.com/example/tutorials</abapgitrepo:url>
+    <abapgitrepo:branchName>refs/heads/master</abapgitrepo:branchName>
+    <abapgitrepo:createdBy>DEVELOPER</abapgitrepo:createdBy>
+    <abapgitrepo:createdAt>20200130121100.563083</abapgitrepo:createdAt>
+    <abapgitrepo:deserializedBy/>
+    <abapgitrepo:deserializedAt>0.0</abapgitrepo:deserializedAt>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/pull" rel="http://www.sap.com/adt/abapgit/relations/pull" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/stage" rel="http://www.sap.com/adt/abapgit/relations/stage" type="stage_link" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/push" rel="http://www.sap.com/adt/abapgit/relations/push" type="push_link" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000001/checks" rel="http://www.sap.com/adt/abapgit/relations/check" type="check_link" xmlns:atom="http://www.w3.org/2005/Atom"/>
   </abapgitrepo:repository>
-  <abapgitrepo:repository abapgitrepo:key="000000000006" abapgitrepo:package="/DMO/FLIGHT" abapgitrepo:url="https://github.com/SAP/abap-platform-refscen-flight.git" abapgitrepo:branchName="main" abapgitrepo:selectedBranch="main" abapgitrepo:deserializedBy="DEVELOPER" abapgitrepo:writeProtected="false">
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/pull" href="/sap/bc/adt/abapgit/repos/000000000006/pull"/>
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/stage" href="/sap/bc/adt/abapgit/repos/000000000006/stage"/>
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/push" href="/sap/bc/adt/abapgit/repos/000000000006/push"/>
-    <atom:link rel="http://www.sap.com/adt/abapgit/relations/check" href="/sap/bc/adt/abapgit/repos/000000000006/checks"/>
+  <abapgitrepo:repository>
+    <abapgitrepo:key>000000000006</abapgitrepo:key>
+    <abapgitrepo:package>/DMO/FLIGHT</abapgitrepo:package>
+    <abapgitrepo:url>https://github.com/SAP/abap-platform-refscen-flight</abapgitrepo:url>
+    <abapgitrepo:branchName>refs/heads/main</abapgitrepo:branchName>
+    <abapgitrepo:createdBy>DEVELOPER</abapgitrepo:createdBy>
+    <abapgitrepo:createdAt>20200130123138.446028</abapgitrepo:createdAt>
+    <abapgitrepo:deserializedBy>DEVELOPER</abapgitrepo:deserializedBy>
+    <abapgitrepo:deserializedAt>20200130123341.917881</abapgitrepo:deserializedAt>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000006/pull" rel="http://www.sap.com/adt/abapgit/relations/pull" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000006/stage" rel="http://www.sap.com/adt/abapgit/relations/stage" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000006/push" rel="http://www.sap.com/adt/abapgit/relations/push" xmlns:atom="http://www.w3.org/2005/Atom"/>
+    <atom:link href="/sap/bc/adt/abapgit/repos/000000000006/checks" rel="http://www.sap.com/adt/abapgit/relations/check" xmlns:atom="http://www.w3.org/2005/Atom"/>
   </abapgitrepo:repository>
 </abapgitrepo:repositories>

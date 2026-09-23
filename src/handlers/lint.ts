@@ -10,10 +10,15 @@ import {
   prettyPrint,
   setPrettyPrinterSettings,
 } from '../adt/devtools.js';
-import { buildLintConfig, listRulesFromConfig, type RuleOverrides } from '../lint/config-builder.js';
+import {
+  buildLintConfig,
+  getLintSyntaxVersion,
+  listRulesFromConfig,
+  type RuleOverrides,
+} from '../lint/config-builder.js';
 import { detectFilename, lintAbapSource, lintAndFix } from '../lint/lint.js';
 import type { ServerConfig } from '../server/types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { buildLintConfigOptions } from './write-helpers.js';
 
 // Some SAPLint actions run offline (@abaplint/core), others call SAP ADT formatter APIs.
@@ -34,7 +39,7 @@ export async function handleSAPLint(
       const filename = detectFilename(source, name);
       const lintConfig = buildLintConfig(configOptions);
       const issues = lintAbapSource(source, filename, lintConfig);
-      return textResult(JSON.stringify(issues, null, 2));
+      return textResult(toolJson(issues));
     }
     case 'lint_and_fix': {
       const source = String(args.source ?? '');
@@ -43,7 +48,7 @@ export async function handleSAPLint(
       const filename = detectFilename(source, name);
       const lintConfig = buildLintConfig(configOptions);
       const result = lintAndFix(source, filename, lintConfig);
-      return textResult(JSON.stringify(result, null, 2));
+      return textResult(toolJson(result));
     }
     case 'list_rules': {
       const lintConfig = buildLintConfig(configOptions);
@@ -51,21 +56,28 @@ export async function handleSAPLint(
       const enabled = rules.filter((r) => r.enabled);
       const disabled = rules.filter((r) => !r.enabled);
       const effectiveAbapRelease = configOptions.abapRelease ?? 'unknown';
-      const syntax = lintConfig.get().syntax as { version?: string } | undefined;
+      const syntaxVersion = getLintSyntaxVersion(lintConfig);
+      const warnings: string[] = [];
+      if (!configOptions.abapRelease) {
+        warnings.push(
+          `SAP release is unknown; effective lint syntax is ${JSON.stringify(syntaxVersion)}. ` +
+            'Check SAP_SYSTEM_TYPE, SAP_ABAP_RELEASE and any SAP_ABAPLINT_CONFIG override before treating ' +
+            'version-related parser findings as source errors.',
+        );
+      }
       return textResult(
-        JSON.stringify(
-          {
-            preset: configOptions.systemType === 'btp' ? 'cloud' : 'onprem',
-            abapVersion: effectiveAbapRelease,
-            syntaxVersion: syntax?.version ?? 'unknown',
-            enabledRules: enabled.length,
-            disabledRules: disabled.length,
-            rules: enabled,
-            disabledRuleNames: disabled.map((r) => r.rule),
-          },
-          null,
-          2,
-        ),
+        toolJson({
+          preset: configOptions.systemType === 'btp' ? 'cloud' : 'onprem',
+          presetSource: configOptions.systemTypeSource ?? 'default',
+          abapVersion: effectiveAbapRelease,
+          abapVersionSource: configOptions.abapReleaseSource ?? 'unknown',
+          syntaxVersion,
+          enabledRules: enabled.length,
+          disabledRules: disabled.length,
+          rules: enabled,
+          disabledRuleNames: disabled.map((r) => r.rule),
+          warnings,
+        }),
       );
     }
     case 'format': {
@@ -76,7 +88,7 @@ export async function handleSAPLint(
     }
     case 'get_formatter_settings': {
       const settings = await getPrettyPrinterSettings(client.http, client.safety);
-      return textResult(JSON.stringify(settings, null, 2));
+      return textResult(toolJson(settings));
     }
     case 'set_formatter_settings': {
       const indentation = args.indentation as boolean | undefined;
@@ -90,7 +102,7 @@ export async function handleSAPLint(
         style: style ?? current.style,
       };
       await setPrettyPrinterSettings(client.http, client.safety, next);
-      return textResult(JSON.stringify(next, null, 2));
+      return textResult(toolJson(next));
     }
     default:
       return errorResult(

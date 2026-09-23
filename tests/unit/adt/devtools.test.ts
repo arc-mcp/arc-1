@@ -6,24 +6,42 @@ import {
   activateBatch,
   applyFixProposal,
   extractCoverageMeasurementUri,
+  getAtcSystemDefaultVariant,
   getCdsTestCases,
   getFixProposals,
   getPrettyPrinterSettings,
+  listAtcVariants,
   parseActivationOutcome,
   parseActivationResult,
   parseCoverageMeasurement,
   prettyPrint,
   publishServiceBinding,
-  runAtcCheck,
+  runAtcCheck as runAtcCheckImpl,
   runUnitTests,
   setPrettyPrinterSettings,
   supportsCdsTestCases,
   syntaxCheck,
   unpublishServiceBinding,
 } from '../../../src/adt/devtools.js';
-import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
+import { AdtApiError, AdtNetworkError, AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+
+/** Keep legacy no-location ATC mocks deterministic while production retains its 10 s quiet interval. */
+const runAtcCheck: typeof runAtcCheckImpl = (http, safety, objectUrl, variant, pollOptions) => {
+  if (pollOptions) return runAtcCheckImpl(http, safety, objectUrl, variant, pollOptions);
+  let clock = 0;
+  return runAtcCheckImpl(http, safety, objectUrl, variant, {
+    timeoutMs: 300_000,
+    now: () => clock,
+    sleep: async (ms) => void (clock += ms),
+  });
+};
+
+const AUNIT_MIXED = readFileSync(
+  join(import.meta.dirname, '../../fixtures/xml/aunit-testrun-mixed-alerts.xml'),
+  'utf-8',
+);
 
 function mockHttp(responseBody = ''): AdtHttpClient {
   return {
@@ -49,6 +67,47 @@ function mockHttpSequence(...responses: string[]): AdtHttpClient {
     fetchCsrfToken: vi.fn(),
     withStatefulSession: vi.fn(),
   } as unknown as AdtHttpClient;
+}
+
+/** `<atc:customizing>` with no `systemCheckVariant` → runAtcCheck degrades to the bare worklist path. */
+const ATC_CUSTOMIZING_EMPTY =
+  '<?xml version="1.0"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>';
+
+/**
+ * ATC http mock. `runAtcCheck` GETs `/atc/customizing` before minting the worklist, so that call is
+ * served separately and never consumes the worklist sequence — assert worklist reads on `worklistGet`.
+ */
+function mockAtcHttp(
+  worklistId: string,
+  findingStats: [number, number, number],
+  ...worklists: string[]
+): AdtHttpClient & { worklistGet: ReturnType<typeof vi.fn> } {
+  const runResponse = `<atcworklist:worklistRun xmlns:atcworklist="http://www.sap.com/adt/atc/worklist" xmlns:atcinfo="http://www.sap.com/adt/atc/info">
+    <atcworklist:infos><atcinfo:info><atcinfo:type>FINDING_STATS</atcinfo:type><atcinfo:description>${findingStats.join(',')}</atcinfo:description></atcinfo:info></atcworklist:infos>
+  </atcworklist:worklistRun>`;
+  const post = vi
+    .fn()
+    .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: worklistId })
+    .mockResolvedValueOnce({ statusCode: 200, headers: {}, body: runResponse });
+  const worklistGet = vi.fn();
+  for (const body of worklists) worklistGet.mockResolvedValueOnce({ statusCode: 200, headers: {}, body });
+  if (worklists.length > 0) {
+    worklistGet.mockResolvedValue({ statusCode: 200, headers: {}, body: worklists.at(-1)! });
+  }
+  const get = vi.fn((url: string, ...rest: unknown[]) =>
+    url.includes('/atc/customizing')
+      ? Promise.resolve({ statusCode: 200, headers: {}, body: ATC_CUSTOMIZING_EMPTY })
+      : worklistGet(url, ...rest),
+  );
+  return {
+    get,
+    worklistGet,
+    post,
+    put: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
+    delete: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '' }),
+    fetchCsrfToken: vi.fn(),
+    withStatefulSession: vi.fn(),
+  } as unknown as AdtHttpClient & { worklistGet: ReturnType<typeof vi.fn> };
 }
 
 function defer<T>() {
@@ -195,6 +254,28 @@ describe('DevTools', () => {
         expect(result.messages.find((m) => m.text === 'Old shape error')?.line).toBe(5);
         expect(result.messages.find((m) => m.text === 'New shape error')?.line).toBe(22);
       });
+    });
+
+    // Live-verified on a4h (2026-08-05): SAP answers 200 with an empty, notProcessed report for an
+    // object that does not exist — must never read as "checked, clean".
+    it('reports checked:false when SAP did not process the check (object does not exist)', async () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:triggeringUri="/sap/bc/adt/oo/classes/zcl_nope" chkrun:status="notProcessed" chkrun:statusText="Resource CLASS ZCL_NOPE does not exist."/></chkrun:checkRunReports>`;
+      const http = mockHttp(xml);
+      const result = await syntaxCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/zcl_nope', {
+        content: 'CLASS zcl_nope DEFINITION. rv = 42 +.',
+      });
+      expect(result.checked).toBe(false);
+      expect(result.statusText).toBe('Resource CLASS ZCL_NOPE does not exist.');
+      expect(result.messages).toHaveLength(0);
+    });
+
+    it('reports checked:true for a processed report', async () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?><chkrun:checkRunReports xmlns:chkrun="http://www.sap.com/adt/checkrun"><chkrun:checkReport chkrun:reporter="abapCheckRun" chkrun:status="processed" chkrun:statusText="Object ZTEST has been checked"/></chkrun:checkRunReports>`;
+      const http = mockHttp(xml);
+      const result = await syntaxCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(result.checked).toBe(true);
+      expect(result.hasErrors).toBe(false);
+      expect(result.statusText).toBeUndefined();
     });
   });
 
@@ -1001,6 +1082,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
+        { retryTransientErrors: false },
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('published locally');
@@ -1014,6 +1096,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        { retryTransientErrors: false },
       );
     });
 
@@ -1025,6 +1108,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        { retryTransientErrors: false },
       );
     });
 
@@ -1059,6 +1143,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSB_BOOKING_V4"'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' }),
+        undefined,
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('un-published locally');
@@ -1072,6 +1157,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/xml',
         expect.any(Object),
+        undefined,
       );
     });
 
@@ -1125,6 +1211,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         'application/xml',
         { Accept: 'application/vnd.sap.as+xml, application/*;q=0.8' },
+        { retryTransientErrors: false },
       );
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.publishjob';
@@ -1134,6 +1221,7 @@ describe('DevTools', () => {
         expect.stringContaining('adtcore:objectReference adtcore:name="ZSSI_UI_S_ORD_O4"'),
         asXmlType,
         { Accept: asXmlType },
+        { retryTransientErrors: false },
       );
       expect(result.severity).toBe('OK');
       expect(result.shortText).toBe('ZSSI_UI_S_ORD_O4 published locally');
@@ -1154,7 +1242,14 @@ describe('DevTools', () => {
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav4.unpublishjob';
       expect(http.post).toHaveBeenCalledTimes(2);
-      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+      expect(http.post).toHaveBeenNthCalledWith(
+        2,
+        path,
+        expect.any(String),
+        asXmlType,
+        { Accept: asXmlType },
+        undefined,
+      );
       expect(result.severity).toBe('OK');
     });
 
@@ -1165,7 +1260,14 @@ describe('DevTools', () => {
 
       const asXmlType =
         'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.businessservices.odatav2.publishjob';
-      expect(http.post).toHaveBeenNthCalledWith(2, path, expect.any(String), asXmlType, { Accept: asXmlType });
+      expect(http.post).toHaveBeenNthCalledWith(
+        2,
+        path,
+        expect.any(String),
+        asXmlType,
+        { Accept: asXmlType },
+        { retryTransientErrors: false },
+      );
     });
 
     it('does not retry a 406 that does not name application/vnd.sap.as+xml', async () => {
@@ -1205,139 +1307,55 @@ describe('DevTools', () => {
   // ─── runUnitTests ──────────────────────────────────────────────────
 
   describe('runUnitTests', () => {
-    it('parses passing tests with class info', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_success"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
+    const aunitFixtures = join(import.meta.dirname, '../../fixtures/xml');
+    const mixed816 = readFileSync(join(aunitFixtures, 'aunit-testrun-mixed-alerts.xml'), 'utf-8');
+    it('returns the canonical AUnit result without a parallel legacy parse tree', async () => {
+      const result = await runUnitTests(
+        mockHttp(mixed816),
         unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
+        '/sap/bc/adt/oo/classes/ZCL_ARC1_AUNIT_PROBE',
       );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.testMethod).toBe('test_success');
-      expect(results[0]?.status).toBe('passed');
-      expect(results[0]?.testClass).toBe('LTCL_TEST');
-      expect(results[0]?.program).toBe('ZCL_TEST');
+
+      expect(result).toMatchObject({
+        outcome: 'failed',
+        selection: { maxRisk: 'harmless' },
+        summary: { tests: 2, passed: 1, failures: 1, errors: 1, skipped: 0 },
+      });
+      expect(result.tests.find((test) => test.testMethod === 'FAILS')).toMatchObject({
+        program: 'ZCL_ARC1_AUNIT_PROBE',
+        status: 'failed',
+        durationMs: 630,
+      });
+      expect(result.alerts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ scope: 'class', testClass: 'LTCL_RISKY', severity: 'tolerable' }),
+          expect.objectContaining({ scope: 'class', testClass: 'LTCL_SETUP_FAIL', severity: 'critical' }),
+        ]),
+      );
     });
 
-    it('detects failing tests (with alerts)', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_fail"><alert kind="failedAssertion"><title>Expected X got Y</title></alert></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.status).toBe('failed');
+    it('submits every package object URI in one aligned legacy object set', async () => {
+      const http = mockHttp(mixed816);
+      await runUnitTests(http, unrestrictedSafetyConfig(), [
+        '/sap/bc/adt/oo/classes/ZCL_ONE',
+        '/sap/bc/adt/programs/programs/ZREPORT_TWO',
+      ]);
+
+      const body = String(vi.mocked(http.post).mock.calls[0]?.[1]);
+      expect(body).toContain('adtcore:uri="/sap/bc/adt/oo/classes/ZCL_ONE"');
+      expect(body).toContain('adtcore:uri="/sap/bc/adt/programs/programs/ZREPORT_TWO"');
+      expect(body.match(/<adtcore:objectReference /g)).toHaveLength(2);
     });
 
-    it('handles empty results (no test methods)', async () => {
-      const http = mockHttp('<testResult/>');
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toEqual([]);
-    });
+    it('propagates the evidence deadline to the legacy test request', async () => {
+      const http = mockHttp(mixed816);
+      const requestOptions = { deadline: 12_345 };
 
-    it('handles multiple test methods', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_a"></testMethod>
-          <testMethod name="test_b"><alert kind="failedAssertion"><title>Assertion failed</title></alert></testMethod>
-          <testMethod name="test_c"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(3);
-      expect(results[0]?.status).toBe('passed');
-      expect(results[1]?.status).toBe('failed');
-      expect(results[2]?.status).toBe('passed');
-    });
+      await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', {
+        requestOptions,
+      });
 
-    it('extracts alert message from title element', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_fail">
-            <alert kind="failedAssertion"><title>Expected 42 got 0</title></alert>
-          </testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(1);
-      expect(results[0]?.message).toBe('Expected 42 got 0');
-    });
-
-    it('parses multiple test classes in one response', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_FIRST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_one"></testMethod>
-        </testClass>
-        <testClass name="LTCL_SECOND" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_two"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results).toHaveLength(2);
-      expect(results[0]?.testClass).toBe('LTCL_FIRST');
-      expect(results[0]?.testMethod).toBe('test_one');
-      expect(results[1]?.testClass).toBe('LTCL_SECOND');
-      expect(results[1]?.testMethod).toBe('test_two');
-    });
-
-    it('extracts program name from URI', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_MY_CLASS/includes/testclasses">
-          <testMethod name="test_it"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_MY_CLASS',
-      );
-      expect(results[0]?.program).toBe('ZCL_MY_CLASS');
-    });
-
-    it('extracts duration from executionTime attribute', async () => {
-      const xml = `<testResult>
-        <testClass name="LTCL_TEST" uri="/sap/bc/adt/oo/classes/ZCL_TEST/includes/testclasses">
-          <testMethod name="test_fast" executionTime="0.015"></testMethod>
-        </testClass>
-      </testResult>`;
-      const http = mockHttp(xml);
-      const { tests: results } = await runUnitTests(
-        http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/oo/classes/ZCL_TEST',
-      );
-      expect(results[0]?.duration).toBe(0.015);
+      expect(vi.mocked(http.post).mock.calls[0]?.[4]).toBe(requestOptions);
     });
   });
 
@@ -1349,6 +1367,30 @@ describe('DevTools', () => {
     it('extractCoverageMeasurementUri finds the measurement URI (real fixture); null when absent', () => {
       expect(extractCoverageMeasurementUri(testrunWithCoverage)).toMatch(/\/coverage\/measurements\/[A-F0-9]+$/);
       expect(extractCoverageMeasurementUri('<testResult/>')).toBeNull();
+    });
+
+    it.each([
+      '/sap/bc/adt/admin/trigger?x=/coverage/measurements/EVIL',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/SAFE/../../admin/trigger',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/%2e%2e%2fadmin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/%252e%252e%252fadmin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/ID%5c..%5cadmin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/ID?redirect=/sap/bc/adt/admin',
+      '/sap/bc/adt/runtime/traces/coverage/measurements/ID#fragment',
+      'https://evil.example/sap/bc/adt/runtime/traces/coverage/measurements/ID',
+    ])('rejects non-canonical coverage measurement URI %j', (uri) => {
+      expect(extractCoverageMeasurementUri(`<runResult><coverage uri="${uri}"/></runResult>`)).toBeNull();
+    });
+
+    it('never follows a coverage URI that merely contains the expected marker', async () => {
+      const maliciousRun =
+        '<runResult><coverage uri="/sap/bc/adt/admin/trigger?x=/coverage/measurements/EVIL"/></runResult>';
+      const http = mockHttp(maliciousRun);
+      const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', {
+        coverage: true,
+      });
+      expect(http.post).toHaveBeenCalledTimes(1);
+      expect(result.coverageUnavailableReason).toBe('measurement_not_reported');
     });
 
     it('parseCoverageMeasurement returns the statement/branch/procedure aggregate (real fixture)', () => {
@@ -1486,6 +1528,7 @@ describe('DevTools', () => {
       });
       expect(result.tests.length).toBeGreaterThan(0);
       expect(result.coverage).toBeUndefined();
+      expect(result.coverageUnavailableReason).toBe('request_failed');
     });
 
     it('runUnitTests degrades gracefully when coverage XML contains no valid aggregate', async () => {
@@ -1505,6 +1548,7 @@ describe('DevTools', () => {
       });
       expect(result.tests.length).toBeGreaterThan(0);
       expect(result.coverage).toBeUndefined();
+      expect(result.coverageUnavailableReason).toBe('no_valid_metrics');
     });
 
     it('runUnitTests without coverage makes only the one testruns call', async () => {
@@ -1512,6 +1556,24 @@ describe('DevTools', () => {
       const result = await runUnitTests(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_ABAPGIT_HASH');
       expect(result.coverage).toBeUndefined();
       expect(http.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs only harmless tests and exposes corrected structured evidence', async () => {
+      const http = mockHttp(AUNIT_MIXED);
+      const result = await runUnitTests(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_ARC1_AUNIT_PROBE',
+      );
+
+      const requestBody = vi.mocked(http.post).mock.calls[0]?.[1];
+      expect(requestBody).toContain('<testRiskLevels harmless="true" dangerous="false" critical="false"/>');
+      expect(result).toMatchObject({
+        outcome: 'failed',
+        selection: { maxRisk: 'harmless' },
+        summary: { tests: 2, failures: 1, errors: 1, skipped: 0 },
+      });
+      expect(result.alerts.some((alert) => alert.testClass === 'LTCL_RISKY')).toBe(true);
     });
   });
 
@@ -2054,35 +2116,308 @@ describe('DevTools', () => {
         '',
         'application/xml',
         expect.objectContaining({ Accept: 'text/plain' }),
+        expect.objectContaining({ deadline: expect.any(Number), fetchTimeoutMs: 300_000 }),
       );
       // 2) run the checks into the returned worklist id
       expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('/sap/bc/adt/atc/runs?worklistId=WL789'),
+        '/sap/bc/adt/atc/runs?worklistId=WL789&clientWait=false',
         expect.stringContaining('objectReference'),
         'application/xml',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ deadline: expect.any(Number), fetchTimeoutMs: 300_000 }),
       );
       // 3) fetch the worklist that was actually created (not the hardcoded id=1)
       expect(http.get).toHaveBeenCalledWith(
         '/sap/bc/adt/atc/worklists/WL789',
         expect.objectContaining({ Accept: expect.stringContaining('atc.worklist') }),
+        expect.objectContaining({ deadline: expect.any(Number) }),
       );
     });
 
-    it('binds the worklist to the named check variant when one is given', async () => {
-      const http = {
-        ...mockHttp('WL42'),
-        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '<worklist/>' }),
-      } as unknown as AdtHttpClient;
+    // ─── settled-worklist termination (docs/research/2026-08-20-atc-completeness-polling.md) ───
+    // Legacy systems return no run-status location, so settlement supplies the terminal evidence.
+    // It requires ten seconds of unchanged XML (apart from SAP's volatile root timestamp) because a
+    // live 758 worklist kept filling after `objectSetIsComplete=true`.
+    const worklistXml = (findings: number, opts: { objects?: boolean; timestamp?: string } = {}) => {
+      const rows = Array.from(
+        { length: findings },
+        (_, i) =>
+          `<finding priority="3" checkTitle="t" messageTitle="m${i}" location="/sap/bc/adt/oo/classes/zcl_t/source/main#start=${i + 1},0"/>`,
+      ).join('');
+      const objects =
+        opts.objects === false
+          ? ''
+          : `<objects><object uri="/sap/bc/adt/oo/classes/zcl_t" type="CLAS" name="ZCL_T"><findings>${rows}</findings></object></objects>`;
+      const timestamp = opts.timestamp ? ` timestamp="${opts.timestamp}"` : '';
+      return `<worklist id="WL-SET" objectSetIsComplete="true"${timestamp}>${objects}</worklist>`;
+    };
+    /** Injected clock so sleeps advance deterministically without real waiting. */
+    const settledPollOptions = () => {
+      let clock = 0;
+      return { timeoutMs: 600_000, now: () => clock, sleep: async (ms: number) => void (clock += ms) };
+    };
 
-      await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', 'S4HANA_READINESS_2023');
+    it('accepts a structurally complete settled worklist when FINDING_STATS has a different total', async () => {
+      // Regression for #728: the severity-counter total is informational, not worklist cardinality.
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], worklistXml(1));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result).toMatchObject({
+        complete: true,
+        completionEvidence: 'legacyWorklistSettled',
+        findingCount: 1,
+        expectedFindingCount: 2,
+        findingStatistics: { errors: 0, warnings: 0, infos: 2, total: 2 },
+        runInfos: [{ type: 'FINDING_STATS', description: '0,0,2' }],
+        truncated: false,
+        incompleteReasons: [],
+      });
+    });
+
+    it('stops when SAP never reports a processed object (the NW 7.50 worklist shape)', async () => {
+      const http = mockAtcHttp('WL-SET', [0, 0, 0], worklistXml(0, { objects: false }));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result.complete).toBe(false);
+      expect(result.processedObjectCount).toBe(0);
+      expect(result.incompleteReasons.join(' ')).toMatch(/unchanged for at least 10 seconds/i);
+    });
+
+    it('ignores the volatile root timestamp while measuring the quiet interval', async () => {
+      const bodies = Array.from({ length: 20 }, (_, i) => worklistXml(1, { timestamp: `2026-08-20T00:00:${i}Z` }));
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], ...bodies);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result.complete).toBe(true);
+      expect(result.completionEvidence).toBe('legacyWorklistSettled');
+      expect(result.incompleteReasons).toEqual([]);
+    });
+
+    it('keeps polling while the worklist is still filling', async () => {
+      const http = mockAtcHttp('WL-SET', [0, 0, 3], worklistXml(1), worklistXml(2), worklistXml(3));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result.complete).toBe(true);
+      expect(result.findingCount).toBe(3);
+      expect(result.incompleteReasons).toEqual([]);
+    });
+
+    it('does not mistake a paused fill for a settled one', async () => {
+      // Review reproducer: three fast identical reads are not terminal; the fourth still grows.
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], worklistXml(1), worklistXml(1), worklistXml(1), worklistXml(2));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result.complete).toBe(true);
+      expect(result.findingCount).toBe(2);
+    });
+
+    it('restarts the quiet interval when finding content changes without changing counts', async () => {
+      const initial = worklistXml(1);
+      const changed = initial.replace('messageTitle="m0"', 'messageTitle="updated"');
+      // The change arrives at 9.75 s, just before the first body would have qualified as quiet.
+      const http = mockAtcHttp('WL-SET', [0, 0, 2], ...Array(7).fill(initial), changed);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_T',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(13);
+      expect(result.complete).toBe(true);
+      expect(result.findings[0]?.messageTitle).toBe('updated');
+      expect(result.incompleteReasons).toEqual([]);
+    });
+
+    it('still returns at the deadline when the worklist never stops changing', async () => {
+      let clock = 0;
+      // Every read differs, so the settle rule never fires and only the budget can end the loop.
+      const bodies = Array.from({ length: 40 }, (_, i) => worklistXml(i + 1));
+      const http = mockAtcHttp('WL-SET', [0, 0, 999], ...bodies);
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_T', undefined, {
+        timeoutMs: 3_000,
+        now: () => clock,
+        sleep: async (ms: number) => void (clock += ms),
+      });
+
+      expect(result.complete).toBe(false);
+      expect(clock).toBeGreaterThanOrEqual(3_000);
+    });
+
+    // ─── check-variant binding (see docs/research/2026-08-19-atc-default-check-variant.md) ───
+    // SAP maps an EMPTY checkVariant to the CI variant literally named DEFAULT — not to
+    // systemCheckVariant — so runAtcCheck resolves the system default itself and always sends one.
+    const namedItems = (...names: string[]) =>
+      `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>${names.length}</nameditem:totalItemCount>${names
+        .map((n) => `<nameditem:namedItem><nameditem:name>${n}</nameditem:name><nameditem:data/></nameditem:namedItem>`)
+        .join('')}</nameditem:namedItemList>`;
+    const CUSTOMIZING_WITH_DEFAULT = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;
+
+    /** ATC mock whose GETs are dispatched by URL: customizing / variants / worklist. */
+    const variantAwareHttp = (opts: { customizing?: string | Error; variants?: string | Error } = {}) => {
+      const serve = (body: string | Error | undefined, fallback: string) => {
+        if (body instanceof Error) return Promise.reject(body);
+        return Promise.resolve({ statusCode: 200, headers: {}, body: body ?? fallback });
+      };
+      return {
+        ...mockHttp('WL42'),
+        get: vi.fn((url: string) => {
+          if (url.includes('/atc/customizing')) return serve(opts.customizing, CUSTOMIZING_WITH_DEFAULT);
+          if (url.includes('/atc/variants')) return serve(opts.variants, namedItems('S4HANA_READINESS_2023'));
+          return Promise.resolve({ statusCode: 200, headers: {}, body: '<worklist/>' });
+        }),
+      } as unknown as AdtHttpClient;
+    };
+    const worklistUrls = (http: AdtHttpClient) =>
+      (http.post as ReturnType<typeof vi.fn>).mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.startsWith('/sap/bc/adt/atc/worklists'));
+
+    it('binds the worklist to the named check variant when one is given', async () => {
+      const http = variantAwareHttp();
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+        'S4HANA_READINESS_2023',
+      );
 
       expect(http.post).toHaveBeenCalledWith(
         '/sap/bc/adt/atc/worklists?checkVariant=S4HANA_READINESS_2023',
         '',
         'application/xml',
         expect.objectContaining({ Accept: 'text/plain' }),
+        expect.objectContaining({ deadline: expect.any(Number), fetchTimeoutMs: 300_000 }),
       );
+      expect(result.variantSource).toBe('requested');
+      // An explicit variant must never trigger the system-default lookup.
+      const urls = (http.get as ReturnType<typeof vi.fn>).mock.calls.map((call) => String(call[0]));
+      expect(urls.some((url) => url.includes('/atc/customizing'))).toBe(false);
+    });
+
+    it('resolves and sends the system default check variant when none is given', async () => {
+      const http = variantAwareHttp();
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=ZABAP_CLOUD_DEVELOPMENT']);
+      expect(result.variant).toBe('ZABAP_CLOUD_DEVELOPMENT');
+      expect(result.variantSource).toBe('systemDefault');
+    });
+
+    it('treats an empty-string variant as "not supplied" (LLM arg pollution)', async () => {
+      const http = variantAwareHttp();
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', '   ');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=ZABAP_CLOUD_DEVELOPMENT']);
+      expect(result.variantSource).toBe('systemDefault');
+    });
+
+    it('falls back to the bare worklist path when /atc/customizing is absent (404)', async () => {
+      const http = variantAwareHttp({ customizing: new AdtApiError('not found', 404, '/atc/customizing') });
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists']);
+      expect(result.variant).toBeNull();
+      expect(result.variantSource).toBe('sapFallback');
+    });
+
+    it('reports sapFallback when customizing carries no systemCheckVariant', async () => {
+      const http = variantAwareHttp({
+        customizing:
+          '<?xml version="1.0"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>',
+      });
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
+
+      expect(result.variantSource).toBe('sapFallback');
+    });
+
+    it('propagates a 403 from /atc/customizing instead of silently degrading', async () => {
+      const http = variantAwareHttp({ customizing: new AdtApiError('forbidden', 403, '/atc/customizing') });
+
+      await expect(runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST')).rejects.toThrow(
+        /forbidden/i,
+      );
+      expect(worklistUrls(http)).toEqual([]);
+    });
+
+    it('rejects an unknown check variant instead of letting SAP silently run DEFAULT', async () => {
+      const http = variantAwareHttp({ variants: namedItems() });
+
+      await expect(
+        runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', 'S4HANA_READINES_2023'),
+      ).rejects.toThrow(/does not exist on this system/i);
+      expect(worklistUrls(http)).toEqual([]);
+    });
+
+    it('canonicalises the case of a known variant (SAP lookup is case-sensitive)', async () => {
+      const http = variantAwareHttp();
+
+      await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST', 's4hana_readiness_2023');
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=S4HANA_READINESS_2023']);
+    });
+
+    it('runs anyway when the variant listing itself fails (validation is fail-open)', async () => {
+      const http = variantAwareHttp({ variants: new AdtApiError('not negotiable', 406, '/atc/variants') });
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/ZCL_TEST',
+        'SOME_VARIANT',
+      );
+
+      expect(worklistUrls(http)).toEqual(['/sap/bc/adt/atc/worklists?checkVariant=SOME_VARIANT']);
+      // Fail-open, but honest: SAP may still substitute DEFAULT and ARC-1 did not get to check.
+      expect(result.variantSource).toBe('requestedUnverified');
     });
 
     it('throws a clear error when worklist creation returns no id', async () => {
@@ -2099,10 +2434,7 @@ describe('DevTools', () => {
     it('parses the real SAP worklist response format (captured fixture)', async () => {
       const { readFileSync } = await import('node:fs');
       const fixture = readFileSync(new URL('../../fixtures/xml/atc-worklist-findings.xml', import.meta.url), 'utf-8');
-      const http = {
-        ...mockHttp('1E814DFAAE5E1FE197E6112F5FDC38A2'),
-        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: fixture }),
-      } as unknown as AdtHttpClient;
+      const http = mockAtcHttp('1E814DFAAE5E1FE197E6112F5FDC38A2', [0, 1, 0], fixture);
 
       const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/Z_TEST');
       expect(result.findings).toHaveLength(1);
@@ -2112,6 +2444,254 @@ describe('DevTools', () => {
       expect(result.findings[0]?.line).toBe(86);
       expect(result.findings[0]?.quickfixInfo).toContain('atc:');
       expect(result.findings[0]?.hasQuickfix).toBe(false);
+      expect(result).toMatchObject({
+        worklistId: '1E814DFAAE5E1FE197E6112F5FDC38A2',
+        maximumVerdicts: 100,
+        expectedFindingCount: 1,
+        findingCount: 1,
+        processedObjectCount: 1,
+        objectSetIsComplete: true,
+        truncated: false,
+        complete: true,
+        incompleteReasons: [],
+        worklist: {
+          id: '1E814DFAAE5E1FE197E6112F5FDC38A2',
+          usedObjectSet: '99999999999999999999999999999999',
+        },
+      });
+    });
+
+    it('collects findings from every authoritative worklist object branch', async () => {
+      const body = `<worklist id="WL-MULTI" objectSetIsComplete="true"><objects>
+        <object uri="/sap/bc/adt/programs/programs/ZFIRST" type="PROG" name="ZFIRST"><findings>
+          <finding priority="1" checkTitle="First" messageTitle="First finding" uri="/sap/bc/adt/programs/programs/ZFIRST#start=3,0"/>
+        </findings></object>
+        <object uri="/sap/bc/adt/programs/programs/ZSECOND" type="PROG" name="ZSECOND"><findings>
+          <finding priority="2" checkTitle="Second" messageTitle="Second finding" uri="/sap/bc/adt/programs/programs/ZSECOND#start=7,0"/>
+        </findings></object>
+      </objects></worklist>`;
+      const http = mockAtcHttp('WL-MULTI', [1, 1, 0], body);
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZFIRST');
+
+      expect(result).toMatchObject({ complete: true, processedObjectCount: 2, findingCount: 2 });
+      expect(result.findings.map((finding) => finding.messageTitle)).toEqual(['First finding', 'Second finding']);
+    });
+
+    it('accepts namespaced ABAP object URIs as processed-object evidence', async () => {
+      const body = `<worklist id="WL-NS" objectSetIsComplete="true"><objects>
+        <object uri="/sap/bc/adt/atc/objects/R3TR/CLAS/%2f1BCDWB%2fWSC0040615164730935892" type="CLAS" name="/1BCDWB/WSC0040615164730935892"/>
+      </objects></worklist>`;
+      const result = await runAtcCheck(
+        mockAtcHttp('WL-NS', [0, 0, 0], body),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/%2f1BCDWB%2fWSC0040615164730935892',
+      );
+
+      expect(result).toMatchObject({ complete: true, processedObjectCount: 1, findingCount: 0 });
+    });
+
+    it('returns incomplete evidence when the first ATC snapshot exceeds the request budget', async () => {
+      const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      const http = mockAtcHttp('WL-TIMEOUT', [0, 0, 2]);
+      http.worklistGet.mockRejectedValueOnce(new AdtNetworkError(timeout.message, timeout));
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZTEST',
+        undefined,
+        { timeoutMs: 600_000 },
+      );
+
+      expect(result).toMatchObject({
+        complete: false,
+        expectedFindingCount: 2,
+        findingCount: 0,
+        truncated: false,
+      });
+      expect(result.incompleteReasons.join(' ')).toMatch(/first snapshot/i);
+      expect(http.post).toHaveBeenLastCalledWith(
+        expect.stringContaining('/sap/bc/adt/atc/runs?worklistId=WL-TIMEOUT'),
+        expect.any(String),
+        'application/xml',
+        expect.any(Object),
+        expect.objectContaining({ fetchTimeoutMs: 600_000 }),
+      );
+    });
+
+    it.each([
+      {
+        label: 'missing body worklist id',
+        body: '<worklist objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"/></objects></worklist>',
+        reason: /did not provide the created worklist id/i,
+      },
+      {
+        label: 'mismatched body worklist id',
+        body: '<worklist id="WL-OTHER" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"/></objects></worklist>',
+        reason: /does not match the created worklist id/i,
+      },
+      {
+        label: 'nested fake and malformed schema object rows',
+        body: '<worklist id="WL-EVIDENCE" objectSetIsComplete="true"><metadata><object uri="/sap/bc/adt/programs/programs/ZFAKE" type="PROG" name="ZFAKE"/></metadata><objects><object uri="" type="PROG" name="ZTEST"/></objects></worklist>',
+        reason: /malformed processed ATC object/i,
+      },
+      {
+        label: 'valid row mixed with a malformed text-only sibling',
+        body: '<worklist id="WL-EVIDENCE" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"/><object>not structured evidence</object></objects></worklist>',
+        reason: /malformed processed ATC object/i,
+      },
+    ])('marks $label incomplete instead of synthesizing clean evidence', async ({ body, reason }) => {
+      const http = {
+        ...mockHttp('WL-EVIDENCE'),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body }),
+      } as unknown as AdtHttpClient;
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(result.complete).toBe(false);
+      expect(result.incompleteReasons.join(' ')).toMatch(reason);
+      if (!body.includes('id="WL-EVIDENCE"')) expect(result.worklist.id).not.toBe('WL-EVIDENCE');
+      if (body.includes('<metadata>')) expect(result.processedObjectCount).toBe(0);
+    });
+
+    it('keeps run severity statistics informational and ignores the maximumVerdicts request hint', async () => {
+      const findingRows = Array.from(
+        { length: 101 },
+        (_, index) =>
+          `<finding priority="2" checkTitle="Check" messageTitle="Finding ${index}" uri="/sap/bc/adt/programs/programs/ZTEST#start=${index + 1},0"/>`,
+      );
+      const body = `<worklist id="WL-CAP" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"><findings>${findingRows.join('')}</findings></object></objects></worklist>`;
+      const http = mockAtcHttp('WL-CAP', [0, 0, 101], body);
+
+      const result = await runAtcCheck(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(result).toMatchObject({
+        findingCount: 101,
+        expectedFindingCount: 101,
+        findingStatistics: { errors: 0, warnings: 0, infos: 101, total: 101 },
+        objectSetIsComplete: true,
+        truncated: false,
+        complete: true,
+      });
+
+      const partialBody = `<worklist id="WL-CAP" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZTEST" type="PROG" name="ZTEST"><findings>${findingRows.slice(0, 100).join('')}</findings></object></objects></worklist>`;
+      const partial = await runAtcCheck(
+        mockAtcHttp('WL-CAP', [0, 0, 101], partialBody),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZTEST',
+      );
+      expect(partial).toMatchObject({
+        findingCount: 100,
+        expectedFindingCount: 101,
+        truncated: false,
+        complete: true,
+        completionEvidence: 'legacyWorklistSettled',
+        incompleteReasons: [],
+      });
+
+      const noEvidence = {
+        ...mockHttp('WL-UNKNOWN'),
+        get: vi.fn().mockResolvedValue({ statusCode: 200, headers: {}, body: '<worklist/>' }),
+      } as unknown as AdtHttpClient;
+      const unknown = await runAtcCheck(noEvidence, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(unknown).toMatchObject({ objectSetIsComplete: null, truncated: false, complete: false });
+      expect(unknown.incompleteReasons.join(' ')).toMatch(/did not provide/);
+
+      const zeroProcessed = {
+        ...mockHttp('WL-ZERO'),
+        get: vi.fn().mockResolvedValue({
+          statusCode: 200,
+          headers: {},
+          body: '<worklist objectSetIsComplete="true"/>',
+        }),
+      } as unknown as AdtHttpClient;
+      const empty = await runAtcCheck(zeroProcessed, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
+      expect(empty).toMatchObject({ objectSetIsComplete: true, processedObjectCount: 0, complete: false });
+      expect(empty.incompleteReasons.join(' ')).toMatch(/did not report any processed/i);
+
+      const malformedPriority = {
+        ...mockHttp('WL-BAD-PRIORITY'),
+        get: vi.fn().mockResolvedValue({
+          statusCode: 200,
+          headers: {},
+          body: '<worklist objectSetIsComplete="true"><objects><object><findings><finding priority="oops" checkTitle="Check" messageTitle="Finding"/></findings></object></objects></worklist>',
+        }),
+      } as unknown as AdtHttpClient;
+      const malformed = await runAtcCheck(
+        malformedPriority,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZTEST',
+      );
+      expect(malformed.complete).toBe(false);
+      expect(malformed.incompleteReasons.join(' ')).toMatch(/malformed priority/i);
+    });
+
+    it('waits for legacy worklist settlement after the last response change', async () => {
+      const object = (name: string, count: number) =>
+        `<object uri="/sap/bc/adt/programs/programs/${name}" type="PROG" name="${name}"><findings>${Array.from(
+          { length: count },
+          (_, index) =>
+            `<finding priority="3" checkTitle="Check" messageTitle="${name}-${index}" uri="/sap/bc/adt/programs/programs/${name}#start=${index + 1},0"/>`,
+        ).join('')}</findings></object>`;
+      const partial = `<worklist id="WL-ASYNC" objectSetIsComplete="true"><objects>${object('ZA', 2)}</objects></worklist>`;
+      const complete = `<worklist id="WL-ASYNC" objectSetIsComplete="true"><objects>${object('ZA', 2)}${object('ZB', 3)}</objects></worklist>`;
+      const http = mockAtcHttp('WL-ASYNC', [0, 0, 5], partial, complete);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZA',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result).toMatchObject({
+        findingCount: 5,
+        expectedFindingCount: 5,
+        processedObjectCount: 2,
+        complete: true,
+      });
+    });
+
+    it('waits for processed-object evidence and legacy settlement on a clean run', async () => {
+      const pending = '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects/></worklist>';
+      const complete =
+        '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects><object uri="/sap/bc/adt/programs/programs/ZCLEAN" type="PROG" name="ZCLEAN"/></objects></worklist>';
+      const http = mockAtcHttp('WL-CLEAN', [0, 0, 0], pending, complete);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZCLEAN',
+        undefined,
+        settledPollOptions(),
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(9);
+      expect(result).toMatchObject({
+        findingCount: 0,
+        expectedFindingCount: 0,
+        processedObjectCount: 1,
+        complete: true,
+      });
+    });
+
+    it('returns incomplete clean-run evidence at the polling deadline without starting another request', async () => {
+      const pending = '<worklist id="WL-CLEAN" objectSetIsComplete="true"><objects/></worklist>';
+      let now = 0;
+      const http = mockAtcHttp('WL-CLEAN', [0, 0, 0], pending);
+
+      const result = await runAtcCheck(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ZCLEAN',
+        undefined,
+        { timeoutMs: 250, now: () => now, sleep: async (ms) => void (now += ms) },
+      );
+
+      expect(http.worklistGet).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ expectedFindingCount: 0, processedObjectCount: 0, complete: false });
+      expect(result.incompleteReasons.join(' ')).toMatch(/processed ATC object/i);
     });
 
     it('extracts URI and line from #start= fragment', async () => {
@@ -2308,6 +2888,44 @@ describe('DevTools', () => {
         discoveryAcceptFor: () => undefined,
       } as unknown as AdtHttpClient;
       expect(supportsCdsTestCases(http)).toBe(false);
+    });
+  });
+
+  describe('listAtcVariants + getAtcSystemDefaultVariant (FEAT-68)', () => {
+    // Real 816 shapes (trimmed): the named-item feed + the customizing properties.
+    const VARIANTS = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ABAP_CLOUD_DEVELOPMENT_DEFAULT</nameditem:name><nameditem:description>Cloud default</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZABAP_CLOUD_DEVELOPMENT</nameditem:name><nameditem:description/><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+    const CUSTOMIZING = `<?xml version="1.0" encoding="utf-8"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties><property name="ciCheckFlavour" value="true"/><property name="systemCheckVariant" value="ZABAP_CLOUD_DEVELOPMENT"/></properties></atc:customizing>`;
+
+    it('lists variants via the named-item feed with an explicit name filter', async () => {
+      const http = mockHttp(VARIANTS);
+      const variants = await listAtcVariants(http, unrestrictedSafetyConfig(), 'ABAP_CLOUD*');
+      expect(http.get).toHaveBeenCalledWith(
+        '/sap/bc/adt/atc/variants?name=ABAP_CLOUD*',
+        expect.objectContaining({ Accept: 'application/vnd.sap.adt.nameditems.v1+xml' }),
+        undefined,
+      );
+      expect(variants.map((v) => v.name)).toEqual(['ABAP_CLOUD_DEVELOPMENT_DEFAULT', 'ZABAP_CLOUD_DEVELOPMENT']);
+      expect(variants[0].description).toBe('Cloud default');
+    });
+
+    it('defaults an empty/blank filter to "*" (bare name= returns an empty list on SAP)', async () => {
+      const http = mockHttp(VARIANTS);
+      await listAtcVariants(http, unrestrictedSafetyConfig(), '  ');
+      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/variants?name=*', expect.anything(), undefined);
+    });
+
+    it('reads the system default check variant from customizing', async () => {
+      const http = mockHttp(CUSTOMIZING);
+      const def = await getAtcSystemDefaultVariant(http, unrestrictedSafetyConfig());
+      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/atc/customizing', expect.anything(), undefined);
+      expect(def).toBe('ZABAP_CLOUD_DEVELOPMENT');
+    });
+
+    it('returns undefined when customizing lacks systemCheckVariant', async () => {
+      const http = mockHttp(
+        '<?xml version="1.0"?><atc:customizing xmlns:atc="http://www.sap.com/adt/atc"><properties/></atc:customizing>',
+      );
+      expect(await getAtcSystemDefaultVariant(http, unrestrictedSafetyConfig())).toBeUndefined();
     });
   });
 });

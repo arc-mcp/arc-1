@@ -6,12 +6,13 @@
  * deliberately excluded because abaplint does not expose them as structures.
  */
 
-import { MemoryFile, Registry, Structures, Version } from '@abaplint/core';
+import { MemoryFile, Registry, Structures, type Version } from '@abaplint/core';
+import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 
 // edit_unit is on-prem only. Cloud grammar intentionally rejects classic MODULE
 // blocks, so the no-probe fallback must use the on-prem parser ceiling.
-const DEFAULT_VERSION = Version.v758;
+const DEFAULT_VERSION = mapSapReleaseToAbaplintVersion(String(ABAPLINT_MAX_RELEASE));
 
 export type EditableUnitKind = 'FORM' | 'MODULE';
 

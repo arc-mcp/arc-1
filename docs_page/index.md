@@ -4,6 +4,10 @@
 
 ARC-1 is a TypeScript MCP server (distributed as an npm package and Docker image) that implements the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) and translates AI tool calls into [SAP ABAP Development Tools (ADT)](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/about-abap-development-tools) REST API requests. It works with Claude, GitHub Copilot, VS Code, and any MCP-compatible client.
 
+!!! tip "Stay current with ARC-1"
+
+    Get major releases, upgrade and security notes, practical guides, and occasional questions where your feedback can shape what comes next. [Join ARC-1 Updates →](newsletter.md)
+
 ## Why ARC-1?
 
 As an **admin**, you control what the AI can and cannot do via positive-opt-in flags:
@@ -12,7 +16,9 @@ As an **admin**, you control what the AI can and cannot do via positive-opt-in f
 - Package allowlist restricts writes to `$TMP`, `Z*`, or any pattern
 - `SAP_DENY_ACTIONS` blocks individual actions (e.g. `SAPWrite.delete`) for admins who need a finer scalpel
 - Every tool call audited with user identity; per-user scopes (via XSUAA role collections, OIDC JWTs, or API-key profiles) tighten further
-- **Layered rate limiting** out of the box — per-IP OAuth edge, per-user MCP quota, server-wide SAP-bound semaphore with `Retry-After` honoring. See the [Rate Limiting Guide](rate-limiting.md).
+- **Layered rate limiting** out of the box — separate per-IP OAuth and MCP HTTP edge buckets,
+  optional per-user MCP quota, and a server-wide SAP-bound semaphore with `Retry-After` honoring.
+  See the [Rate Limiting Guide](rate-limiting.md).
 
 ## Quick Start
 
@@ -165,13 +171,19 @@ All MCP clients that support stdio work out of the box — just point them at `n
 
 ARC-1 exposes 12 intent-based tools via MCP, designed for AI agents like Copilot Studio.
 
-For object understanding, start with `SAPContext(action="deps")` instead of raw `SAPRead`: ARC-1 prepends the object's Knowledge Transfer Document (`SKTD`, also accepted as `KTD`) when one exists, then returns compressed dependency contracts. Use `SAPRead` after that when you need exact source, a method body, grep output, drafts, revisions, or metadata.
+Choose evidence for the question: targeted `SAPRead` for exact behavior or a known reference.
+For business purpose, reviews or test design, start with `SAPContext(action="deps", type=..., name=...)`
+for available KTD and dependency contracts, then compare documented requirements with source.
+Without documented requirements, intent is unverified. Neither contracts nor metadata relationships prove runtime behavior.
+Experimental [live relations](live-relations.md) automatically offer bounded repository neighborhoods where available;
+no additional database is required.
 
 Full reference: **[tools.md](tools.md)**
 
 ## Testing & CI
 
-- **3,474 unit tests** run locally without SAP access (`npm test`)
+- **Thousands of unit tests** run locally without SAP access (`npm test`); exact frozen-tree counts belong
+  in release/PR evidence rather than this long-lived landing page.
 - **Default integration + E2E lanes** run against the A4H 2025 SAP target on internal PRs and manual dispatch in GitHub Actions
 - **Manual slow SAP profiles** cover broad where-used, RAP full-stack, and recursive CTS release checks (`test:integration:slow`, `test:e2e:slow`, GitHub **SAP Slow Tests** workflow)
 - **BTP tests** are local-only (`npm run test:integration:btp`, `npm run test:integration:btp:smoke`)
@@ -186,13 +198,16 @@ Every capability is a separate positive opt-in flag:
 - **Nothing**: read / search / navigate / lint / diagnose work out of the box.
 - `SAP_ALLOW_DATA_PREVIEW=true` + `SAP_ALLOW_FREE_SQL=true`: enable named table preview and freestyle SQL.
 - `SAP_ALLOW_WRITES=true` + `SAP_ALLOWED_PACKAGES='$TMP,Z*'`: enable object writes to `$TMP` and `Z*` packages.
-- Add `SAP_ALLOW_TRANSPORT_WRITES=true` for CTS transport mutations, `SAP_ALLOW_GIT_WRITES=true` for abapGit / gCTS pushes.
+- Add `SAP_ALLOW_TRANSPORT_WRITES=true` for CTS transport mutations. Add
+  `SAP_ALLOW_GIT_WRITES=true` for gated abapGit mutations and SAP-side Git egress; gCTS reads are
+  available, but every gCTS mutation remains quarantined before HTTP. Some accepted abapGit actions
+  return error/incomplete when no authoritative postcondition exists—inspect state before retrying.
 
 The three-layer model (server flag + user scope + SAP authorization) is described in [authorization.md](authorization.md). Full flag reference: [configuration-reference.md](configuration-reference.md).
 
 ## SAP API Policy and data access
 
-SAP's current [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) is v.4.2026a. It allows published/documented APIs for their documented purposes, while restricting unsupported internal APIs, misuse, unmanaged autonomous AI call patterns, and large-scale extraction outside endorsed paths. ARC-1 is designed as a governed development-tooling proxy around ADT behavior, not as a bulk data-extraction product. For normal internal developer workflows, the project is intended to be generally usable with real user identity, SAP authorization, audit logging, rate controls, and customer-side governance.
+ARC-1 is a governed development-tooling proxy around ADT behavior, not a bulk data-extraction product — real user identity, SAP authorization, audit logging and rate controls throughout. Where that stands under SAP's API Policy, and what to ask your SAP contact before production, is covered in **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**.
 
 ARC-1's defaults are intentionally conservative: no writes, no named table preview, no freestyle SQL, no transport mutations, no Git mutations. Two capabilities are especially sensitive and are **off by default** behind explicit opt-in env vars:
 
@@ -208,6 +223,8 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | Doc | Description |
 |-----|-------------|
 | [quickstart.md](quickstart.md) | **Start here** — 5-minute npx + Claude Desktop setup |
+| [release-notes.md](release-notes.md) | Released changes and upgrade notes |
+| [roadmap.md](roadmap.md) | Parked ideas and future possibilities |
 | [local-development.md](local-development.md) | Full local dev — npx/npm/Docker/git, `.env`, SSO cookie extractor, MCP client configs |
 | [deployment.md](deployment.md) | Multi-user deployment — Docker on a VM, BTP Cloud Foundry, BTP ABAP |
 | [configuration-reference.md](configuration-reference.md) | Every flag and env var, one table |
@@ -217,14 +234,18 @@ For production, combine conservative tool exposure with real user identity, SAP-
 | [tools.md](tools.md) | Complete tool reference (12 intent-based tools) |
 | [mcp-usage.md](mcp-usage.md) | AI agent usage guide & workflow patterns |
 | [architecture.md](architecture.md) | System architecture with Mermaid diagrams |
-| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency graphs, and live reverse-dependency lookup |
+| [caching.md](caching.md) | Request-driven object caching — server-validated via `ETag`/`If-None-Match`, active/inactive source views, dependency parsing reuse, and live reverse-dependency lookup |
 | [security-guide.md](security-guide.md) | Security hardening checklist for production |
 | [cli-guide.md](cli-guide.md) | CLI commands and configuration |
 | [docker.md](docker.md) | Full Docker reference |
 | [btp-abap-environment.md](btp-abap-environment.md) | BTP ABAP Environment — local service-key OAuth and deployed per-user destination setup |
-| [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | BTP Cloud Foundry deployment details |
+| [btp-cloud-foundry-deployment.md](btp-cloud-foundry-deployment.md) | Canonical BTP Cloud Foundry MTA deployment and read-only acceptance runbook |
+| [btp-overview.md](btp-overview.md) | Start here for SAP BTP topology selection and the correct setup/documentation sequence |
+| [btp-administration.md](btp-administration.md) | BTP configuration ownership, roles, secrets, lifecycle, scaling, rollback, and handover |
+| [multi-target-setup.md](multi-target-setup.md) | Build, deploy, configure, and verify experimental read-only multi-system mode |
+| [multi-target-administration.md](multi-target-administration.md) | Multi-target diagnostics, registry lifecycle, capacity, and security operations |
+| [operations.md](operations.md) | Operational task map for BTP, Docker, updates, logging, limits, caching, auth testing, and incidents |
 | [sap-trial-setup.md](sap-trial-setup.md) | SAP BTP trial setup |
-| [roadmap.md](roadmap.md) | Planned features |
 | [blog-series.md](blog-series.md) | Long-form blog series — AI for ABAP development, ARC-1 design, BTP / Copilot Studio / Joule walkthroughs |
 
 ## License

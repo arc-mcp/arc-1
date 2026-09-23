@@ -11,6 +11,7 @@
 import { createHash } from 'node:crypto';
 import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
+import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type {
   DumpChapter,
@@ -46,19 +47,25 @@ const DEFAULT_SYSTEM_MESSAGE_MAX_RESULTS = 50;
 const DEFAULT_GATEWAY_ERROR_MAX_RESULTS = 50;
 const MAX_RESULTS_CAP = 200;
 
-export interface ListDumpsOptions {
-  /** Filter by SAP user (uppercase) */
-  user?: string;
-  /** Maximum number of dumps to return (default 50) */
-  maxResults?: number;
-}
+/** SAP serves at most 100 dump entries per request; `$top` only narrows this, never raises it. */
+const DUMP_PAGE_SIZE = 100;
+/** Dumps page via the `to` cursor, so they allow a higher ceiling than the single-shot feeds. */
+const MAX_DUMP_RESULTS_CAP = 500;
+/** Stop runaway paging if SAP ever serves very short pages: 500 results need 6 pages. */
+const MAX_DUMP_PAGES = 10;
 
 interface FeedQueryOptions {
+  /** Filter by SAP user (uppercase) */
   user?: string;
+  /** Maximum number of entries to return (default 50) */
   maxResults?: number;
+  /** Inclusive lower time bound */
   from?: string;
+  /** Inclusive upper time bound */
   to?: string;
 }
+
+export interface ListDumpsOptions extends FeedQueryOptions {}
 
 export interface ListSystemMessagesOptions extends FeedQueryOptions {}
 
@@ -162,11 +169,61 @@ function appendQueryParam(path: string, key: string, value: string): string {
   return `${base}${queryString ? `?${queryString}` : ''}${fragment ? `#${fragment}` : ''}`;
 }
 
+/** The feed publishes UTC, and SAP compares bounds against those same values. */
+function toSapStamp(date: Date): string {
+  return date.toISOString().replace(/[-:T]/g, '').slice(0, 14);
+}
+
+/** Inverse of {@link toSapStamp}; the caller has already checked the 14-digit shape. */
+function sapStampToDate(stamp: string): Date {
+  const date = `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}`;
+  const time = `${stamp.slice(8, 10)}:${stamp.slice(10, 12)}:${stamp.slice(12, 14)}`;
+  return new Date(`${date}T${time}Z`);
+}
+
 /**
- * List ABAP short dumps (ST22 equivalent).
+ * Normalize a feed time bound to SAP's `YYYYMMDDHHMMSS`.
  *
- * Endpoint: GET /sap/bc/adt/runtime/dumps
- * Returns an Atom feed with dump entries.
+ * SAP ignores a bound it cannot parse and answers with the whole feed, so anything not
+ * understood here has to fail rather than silently widen the query. Date-only is one of the
+ * forms SAP drops, hence the pad to midnight.
+ */
+function normalizeFeedTimestamp(value: string | undefined, field: string): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+
+  const invalid = () =>
+    new Error(
+      `Invalid ${field} timestamp "${raw}". Use YYYYMMDDHHMMSS, YYYY-MM-DD, or an ISO timestamp such as 2026-09-15T00:00:00Z.`,
+    );
+
+  // A trailing UTC offset is applied after the calendar check, so the check sees plain components.
+  // Its own range is enforced here: +02:60 or +24:00 would otherwise shift the query silently.
+  const offset = raw.match(/([+-])([01]\d|2[0-3]):?([0-5]\d)$/);
+  const wallClock = offset ? raw.slice(0, offset.index) : raw;
+
+  // Drop fractional seconds: toISOString() emits them and SAP takes whole seconds.
+  const digits = wallClock.replace(/\.\d+/, '').replace(/[-:TZ\s]/g, '');
+  const stamp = /^\d{8}$/.test(digits) ? `${digits}000000` : digits;
+  if (!/^\d{14}$/.test(stamp)) throw invalid();
+
+  // Date rolls impossible dates over (2026-02-30 becomes 2026-03-02), so compare the parse back:
+  // a digit count alone would let a typo return a different day's dumps as a success.
+  const parsed = sapStampToDate(stamp);
+  if (Number.isNaN(parsed.getTime()) || toSapStamp(parsed) !== stamp) throw invalid();
+
+  if (!offset) return stamp;
+  const offsetMinutes = (Number(offset[2]) * 60 + Number(offset[3])) * (offset[1] === '+' ? -1 : 1);
+  return toSapStamp(new Date(parsed.getTime() + offsetMinutes * 60_000));
+}
+
+/**
+ * List ABAP short dumps (ST22 equivalent) from the newest-first Atom feed at
+ * GET /sap/bc/adt/runtime/dumps.
+ *
+ * SAP serves at most 100 entries per request and ignores `$skip`, so more than that is
+ * assembled by re-querying with `to` set to the oldest entry seen. That bound is inclusive
+ * and so repeats the boundary entry, which keying by dump id drops.
  */
 export async function listDumps(
   http: AdtHttpClient,
@@ -175,12 +232,45 @@ export async function listDumps(
 ): Promise<DumpEntry[]> {
   checkOperation(safety, OperationType.Read, 'ListDumps');
 
-  const queryString = buildFeedQueryString(options, DEFAULT_DUMP_MAX_RESULTS, 'user');
-  const resp = await http.get(`/sap/bc/adt/runtime/dumps${queryString}`, {
-    Accept: 'application/atom+xml;type=feed',
-  });
+  const wanted = clampMaxResults(options?.maxResults, DEFAULT_DUMP_MAX_RESULTS, MAX_DUMP_RESULTS_CAP);
+  const from = normalizeFeedTimestamp(options?.from, 'from');
+  let to = normalizeFeedTimestamp(options?.to, 'to');
 
-  return parseDumpList(resp.body);
+  const pageSize = Math.min(wanted, DUMP_PAGE_SIZE);
+  const byId = new Map<string, DumpEntry>();
+  for (let page = 0; page < MAX_DUMP_PAGES && byId.size < wanted; page++) {
+    const queryString = buildFeedQueryString(
+      { ...options, from, to, maxResults: pageSize },
+      DEFAULT_DUMP_MAX_RESULTS,
+      'user',
+    );
+    const resp = await http.get(`/sap/bc/adt/runtime/dumps${queryString}`, {
+      Accept: 'application/atom+xml;type=feed',
+    });
+
+    const entries = parseDumpList(resp.body);
+    const before = byId.size;
+    for (const entry of entries) byId.set(entry.id, entry);
+
+    // A page short of the requested size means SAP has nothing older left.
+    if (entries.length < pageSize) break;
+
+    // A full page of ids already seen means at least pageSize dumps share the cursor second.
+    // No time bound splits them and SAP reports no total, so whether any remain is unknowable —
+    // say so instead of returning the short list as though it were the whole answer. Only a
+    // caller asking for more than one page can get here.
+    if (byId.size === before) {
+      throw new Error(
+        `Cannot page past ${to}: at least ${pageSize} dumps share that second, which is SAP's maximum per request, so older ones are unreachable. Narrow the query with user, or read that second with to=${to}.`,
+      );
+    }
+
+    const oldest = entries.at(-1)?.timestamp;
+    if (!oldest) break;
+    to = normalizeFeedTimestamp(oldest, 'to');
+  }
+
+  return [...byId.values()].slice(0, wanted);
 }
 
 /**
@@ -278,7 +368,7 @@ export async function listGatewayErrors(
  * section anchors (#HEADER, #SERVICE, #CONTEXT, #SOURCE, #STACK).
  *
  * Supports either:
- * - full/relative ADT detail URL from a feed entry,
+ * - canonical host-relative gateway-error ADT path from a feed entry,
  * - id of the form "{errorType}/{transactionId}" (as emitted by the feed), or
  * - transaction id + errorType parameters.
  */
@@ -1367,9 +1457,9 @@ function buildFeedQueryString(
   return params.length > 0 ? `?${params.join('&')}` : '';
 }
 
-function clampMaxResults(maxResults: number | undefined, fallback: number): number {
+function clampMaxResults(maxResults: number | undefined, fallback: number, cap = MAX_RESULTS_CAP): number {
   if (!Number.isFinite(maxResults)) return fallback;
-  return Math.max(1, Math.min(MAX_RESULTS_CAP, Math.trunc(maxResults!)));
+  return Math.max(1, Math.min(cap, Math.trunc(maxResults!)));
 }
 
 function toRecordArray(value: unknown): Array<Record<string, unknown>> {
@@ -1435,7 +1525,7 @@ function extractDumpId(entry: Record<string, unknown>): string {
 }
 
 function extractIdFromPath(rawPath: string, markers: string[]): string {
-  const path = normalizeAdtPath(rawPath, false);
+  const path = normalizeAdtPath(rawPath);
   if (!path) return '';
 
   for (const marker of markers) {
@@ -1451,7 +1541,7 @@ function extractIdFromPath(rawPath: string, markers: string[]): string {
 }
 
 function extractTailId(value: string): string {
-  const normalized = normalizeAdtPath(value, false);
+  const normalized = normalizeAdtPath(value);
   if (!normalized) return value;
   const parts = normalized.split('/').filter(Boolean);
   return parts[parts.length - 1] ?? value;
@@ -1561,9 +1651,9 @@ function parseGatewayExceptions(root: Record<string, unknown>): GatewayException
 }
 
 function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string; errorType?: string }): string {
-  const detailUrl = String(params.detailUrl ?? '').trim();
+  const detailUrl = String(params.detailUrl ?? '');
   if (detailUrl) {
-    return normalizeAdtPath(detailUrl, true);
+    return assertCanonicalHostRelativeAdtPath(detailUrl, '/sap/bc/adt/gw/errorlog/');
   }
 
   const id = String(params.id ?? '').trim();
@@ -1572,7 +1662,7 @@ function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string
   }
 
   if (id.includes('/sap/bc/adt/')) {
-    return normalizeAdtPath(id, true);
+    return assertCanonicalHostRelativeAdtPath(id, '/sap/bc/adt/gw/errorlog/');
   }
 
   // Feed atom:id is emitted as "{errorType}/{transactionId}" — accept that form directly.
@@ -1580,7 +1670,8 @@ function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string
     const [derivedType, ...rest] = id.split('/');
     const derivedId = rest.join('/');
     if (derivedType && derivedId) {
-      return `/sap/bc/adt/gw/errorlog/${encodeURIComponent(decodeUriComponentSafe(derivedType))}/${encodeURIComponent(decodeUriComponentSafe(derivedId))}`;
+      const path = `/sap/bc/adt/gw/errorlog/${encodeURIComponent(decodeUriComponentSafe(derivedType))}/${encodeURIComponent(decodeUriComponentSafe(derivedId))}`;
+      return assertCanonicalHostRelativeAdtPath(path, '/sap/bc/adt/gw/errorlog/');
     }
   }
 
@@ -1594,10 +1685,11 @@ function resolveGatewayErrorDetailPath(params: { detailUrl?: string; id?: string
   // whitespace to allow callers to pass either shape.
   const normalizedType = errorType.replace(/\s+/g, '');
 
-  return `/sap/bc/adt/gw/errorlog/${encodeURIComponent(normalizedType)}/${encodeURIComponent(decodeUriComponentSafe(id))}`;
+  const path = `/sap/bc/adt/gw/errorlog/${encodeURIComponent(normalizedType)}/${encodeURIComponent(decodeUriComponentSafe(id))}`;
+  return assertCanonicalHostRelativeAdtPath(path, '/sap/bc/adt/gw/errorlog/');
 }
 
-function normalizeAdtPath(rawPath: string, requireAdtPrefix: boolean): string {
+function normalizeAdtPath(rawPath: string): string {
   if (!rawPath) return '';
   const trimmed = rawPath.trim();
 
@@ -1620,10 +1712,6 @@ function normalizeAdtPath(rawPath: string, requireAdtPrefix: boolean): string {
 
   if (!normalized.startsWith('/') && normalized.includes('/sap/bc/adt/')) {
     normalized = normalized.slice(normalized.indexOf('/sap/bc/adt/'));
-  }
-
-  if (requireAdtPrefix && !normalized.startsWith('/sap/bc/adt/')) {
-    throw new Error(`Unsupported ADT detail URL: ${rawPath}`);
   }
 
   return normalized;

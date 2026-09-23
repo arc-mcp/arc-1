@@ -188,6 +188,16 @@ with a least-privileged technical SAP identity and its own safety ceiling. This 
 mandatory: mixed mode is supported with explicit `SAP_PP_STRICT=false`, but one endpoint then has both
 per-user and shared SAP audit identities.
 
+> **ARC-1 never proxies the caller's token to a SAP API.** Principal propagation exchanges the user
+> JWT for a scoped, user-context credential — `OAuth2UserTokenExchange` / `OAuth2JWTBearer`
+> (RFC 8693) or a SAML bearer assertion, minted by the BTP Destination Service. One path looks like
+> an exception and is not: `SAP-Connectivity-Authentication: Bearer <userJwt>`
+> ([`multi-target-destination-runtime.ts`](../src/server/multi-target-destination-runtime.ts))
+> hands the user JWT to the **Cloud Connector**, which validates it and mints a short-lived X.509
+> user certificate for the on-premise call. The recipient is the connectivity proxy performing the
+> exchange, not a downstream business API — the SAP-prescribed CC principal-propagation flow. The
+> credential that actually reaches SAP is never the caller's MCP token.
+
 ---
 
 ## 5. Residual-risk register
@@ -225,8 +235,9 @@ Added by the 2026-06-09 deep review (Track A/B). All verified in code; R8 verifi
 | R15 | **Cleartext SAP source at rest.** SQLite disk cache stores full SAP source unencrypted when explicitly enabled. The default `ARC1_CACHE=auto` mode now uses in-memory caching for every transport, and cache DB/file audit sinks use private `0600` mode. Plaintext source remains visible to a local actor who can read the service account's files or backups if an operator opts into SQLite. Use encrypted volumes for persistent SQLite or keep `ARC1_CACHE=auto`/`memory`/`none` for IP-sensitive landscapes. | Low/Med when explicitly enabled | disk cache | [`sqlite.ts`](../src/cache/sqlite.ts), [`server.ts`](../src/server/server.ts), [`file.ts`](../src/server/sinks/file.ts) | mitigated/default-closed; explicit SQLite remains an accepted/operator-controlled risk |
 | R16 | **BTP service-key files not gitignored.** `.gitignore` covers `.env`/`*.key`/`.arc1*.json` but no `*service-key*.json` — a top-tier full-SAP credential dropped in-tree during the local BTP test flow can be committed. Not currently tracked (latent). | Low/Med | repo hygiene | [`.gitignore`](../.gitignore) | ✅ [#395](https://github.com/arc-mcp/arc-1/pull/395) merged |
 | R17 | **Hardening cluster (low).** All four subitems are closed: PR titles enter shell steps through an environment variable; `npm run validate:policy` checks schema/policy coverage; API-key verification delegates to the timing-safe `@arc-mcp/xsuaa-auth` verifier; and `change_package` parses ADT search results and compares object types literally instead of compiling a caller-controlled RegExp. | Low | mixed | [`.github/workflows/test.yml`](../.github/workflows/test.yml), [`validate-action-policy.ts`](../scripts/validate-action-policy.ts), [`http.ts`](../src/server/http.ts), [`manage.ts`](../src/handlers/manage.ts) | ✅ [#550](https://github.com/arc-mcp/arc-1/pull/550), `@arc-mcp/xsuaa-auth` >=0.1.4, `npm run validate:policy`, [#556](https://github.com/arc-mcp/arc-1/pull/556) |
-| R18 | **Extension plugins are trusted in-process code (FEAT-61).** A code plugin loaded via `ARC1_PLUGINS` is `import()`-ed into the process with full server privileges — it can read `process.env` (SAP creds, XSUAA `clientsecret`, DCR secret), the FS, and the network; a compromised transitive dependency = full compromise. The gated `ctx` (GET/HEAD + opt-in non-ADT writes on `ctx.http`, runtime-blocked `ctx.client`, the `classRun` + raw-write opt-in gates) bounds a *buggy/over-eager* plugin and the admin's posture, **not** a hostile one. **By design — same trust as adding a dependency.** Mitigations: admin-only local `ARC1_PLUGINS` allowlist (no marketplace/upload), `Custom_` namespace, fail-fast load (owner + not-world-writable checks), bake into immutable artifacts, review the supply chain. | Med (if an untrusted plugin is loaded) | any with plugins | [`plugin-loader.ts`](../src/server/plugin-loader.ts), [`safe-http-client.ts`](../src/server/safe-http-client.ts), [docs_page/extensions.md](../docs_page/extensions.md#security--roles-by-use-case) | by design / documented |
+| R18 | **Extension plugins are trusted in-process code (FEAT-61).** A code plugin loaded via `ARC1_PLUGINS` is `import()`-ed into the process with full server privileges — it can read `process.env` (SAP creds, XSUAA `clientsecret`, DCR secret), the FS, and the network; a compromised transitive dependency = full compromise. The gated `ctx` (GET/HEAD + opt-in non-ADT writes on `ctx.http`, runtime-blocked `ctx.client`, the `classRun` + raw-write opt-in gates) bounds a *buggy/over-eager* plugin and the admin's posture, **not** a hostile one. **By design — same trust as adding a dependency.** Mitigations: admin-only local `ARC1_PLUGINS` allowlist (no marketplace/upload), `Custom_` namespace, fail-fast load (owner + not-world-writable checks on POSIX; host ACLs on Windows), bake into immutable artifacts, review the supply chain. | Med (if an untrusted plugin is loaded) | any with plugins | [`plugin-loader.ts`](../src/server/plugin-loader.ts), [`safe-http-client.ts`](../src/server/safe-http-client.ts), [docs_page/extensions.md](../docs_page/extensions.md#security--roles-by-use-case) | by design / documented |
 | R19 | **Plugin raw writes (`ctx.http.post`/`put`/`delete`) bypass `SAP_ALLOWED_PACKAGES` for non-ADT paths (FEAT-61).** Behind the default-off `SAP_ALLOW_PLUGIN_RAW_WRITES` opt-in (+ `allowWrites` + `write` scope), a plugin may POST/PUT/DELETE to OData/ICF paths. These carry no ABAP package, so the package allowlist genuinely can't constrain them — gated instead by the opt-in + `allowWrites` + scope + `denyActions` + the service's SAP-side auth (+ CC resource allowlist on BTP). Writes to `/sap/bc/adt/…` object paths are **always refused** (normalization-proof), so I1's package gate is never skipped for ADT objects. | Low–Med (opt-in, non-ADT only) | any with plugins + opt-in | [`safe-http-client.ts`](../src/server/safe-http-client.ts) (`gateWrite`/`isAdtPath`) | by design / documented |
+| R20 | **Shared-platform redirect wildcards → OAuth auth-code interception between co-tenants.** Both callback allowlists trusted whole SAP platform domains (`https://*.hana.ondemand.com/**`, `https://*.applicationstudio.cloud.sap/**`). Any co-tenant app or BAS workspace on those domains was therefore a valid redirect target for the shared manual client id, and a previously issued signed state could still steer `/oauth/callback` at one. Narrowing only `xs-security.json` does not close it — XSUAA never sees the client's URI (the proxy sends ARC-1's own `/oauth/callback`), so the runtime list is the one that decides. | **High** (Crit if code is exchangeable) | XSUAA OAuth, shared manual client id | [`oauth-redirect-policy.ts`](../src/server/oauth-redirect-policy.ts), [`http.ts`](../src/server/http.ts), [`xs-security.json`](../xs-security.json), [`mta.yaml`](../mta.yaml) | ✅ [#678](https://github.com/arc-mcp/arc-1/pull/678) — fixed client hosts and native callbacks only; XSUAA restricted to deployment-owned routes; DCR stays exact-bound |
 
 ---
 
@@ -245,7 +256,7 @@ Run the invariant(s) for whatever the change touches. This is the operational co
 | **A new capability or a default value** | **I7**: it is read-only unless an explicit admin opt-in is set; no default loosens; user scopes can only restrict. Update the safety ceiling + `ACTION_POLICY` together. |
 | **`withSafety()` / a new `AdtClient` field** | The clone copies every own field by reference (`Object.assign`, skipping the ctor) and overrides only `safety`, so a new field shares automatically; per-user data is not shared across users via a shared holder. (Regression class: #333.) |
 | **GPT/OpenAI arg hardening** | Stripping/coercion can only make a field *absent* (→ safe default) or error — never flip a deny to allow. Never `z.coerce.boolean()`. |
-| **A URL/redirect allowlist or any string later `new URL()`-parsed** | The allowlist must match a **canonical form rebuilt from parsed components** (`${protocol}//${host}${pathname}`), not the raw string — `\`, `#`, `?`, userinfo all diverge string-match from parse-host (regression class: R8). |
+| **A URL/redirect allowlist or any string later `new URL()`-parsed** | The allowlist must match a **canonical form rebuilt from parsed components** (`${protocol}//${host}${pathname}`), not the raw string — `\`, `#`, `?`, userinfo all diverge string-match from parse-host (regression class: R8). An entry must also name a host that this deployment or a specific client owns — never a shared platform domain such as `*.hana.ondemand.com` or `*.applicationstudio.cloud.sap`, whose co-tenants would all become valid redirect targets (regression class: R20). |
 | **A repository-wide index or reverse-dependency cache** | **I2**: do not serve data built with a shared identity to per-user callers. Prefer a live per-user SAP lookup; otherwise key by verified user identity and revalidate authorization (regression class: R12). |
 
 Anti-patterns that should fail review immediately: an `http` mutation with no preceding
@@ -267,9 +278,13 @@ if the change is *in* one of them.
   verified constant-time; state HMAC-signed + TTL'd; auth-code interception defended by
   registered-`redirect_uri` re-check. The redirect-glob matcher now matches a canonical form
   rebuilt from parsed URL components (fixed in [#387](https://github.com/arc-mcp/arc-1/pull/387);
-  R8), so `\`/`#`/`?` can no longer relocate the parsed host past a wildcard.
-  [`src/server/stateless-client-store.ts`](../src/server/stateless-client-store.ts),
-  [`src/server/oauth-state.ts`](../src/server/oauth-state.ts).
+  R8), so `\`/`#`/`?` can no longer relocate the parsed host past a wildcard. XSUAA's upstream
+  callback list is separately restricted to deployment-owned ARC-1/AppRouter routes; the runtime
+  manual-client list contains only fixed client hosts and native callbacks, with no shared CF/BAS
+  platform wildcard. DCR clients remain exact-bound in their signed client ids. This binding does not establish
+  user consent to a newly registered client; per-client proxy consent is a separate concern.
+  [`src/server/http.ts`](../src/server/http.ts),
+  [`src/server/oauth-redirect-policy.ts`](../src/server/oauth-redirect-policy.ts).
 - **SSRF** — the SAP host is admin-fixed (config / service key / destination); no tool arg reaches
   the host or scheme; `encodeURIComponent` + fixed `/sap/bc/adt/` prefix prevent authority
   relocation. [`src/adt/http.ts`](../src/adt/http.ts).
@@ -289,7 +304,58 @@ if the change is *in* one of them.
 
 ---
 
-## 8. References
+## 8. Cryptography and key handling
+
+ARC-1 uses only vetted primitives from Node's `node:crypto` and the platform TLS stack —
+**no hand-rolled cryptography, and no custom RNG for any security decision.**
+
+| Purpose | Primitive | Where |
+|---|---|---|
+| OAuth PKCE | **S256** — SHA-256 over a `randomBytes(32)` verifier | [`src/adt/oauth.ts`](../src/adt/oauth.ts) |
+| OAuth `state` / nonce | `randomBytes(32)` (base64url) | [`src/adt/oauth.ts`](../src/adt/oauth.ts) |
+| DCR `client_id` + auth `state` | HMAC (HKDF-derived, domain-separated key), constant-time verify | [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth) — see §7 |
+| JWT signature | asymmetric, verified vs kid-matched JWKS; `none` / HS↔RS confusion rejected | [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth), wired via [`src/server/http.ts`](../src/server/http.ts) |
+| Cache key / ETag / content hash | SHA-256 | [`src/cache/cache.ts`](../src/cache/cache.ts), [`src/adt/diagnostics.ts`](../src/adt/diagnostics.ts) |
+| Audit event id | `crypto.randomUUID()` | [`src/server/sinks/btp-auditlog.ts`](../src/server/sinks/btp-auditlog.ts) |
+| Transport | platform TLS; certificate validation **on by default** — `SAP_INSECURE` opt-out is logged as a warning | [`src/adt/http.ts`](../src/adt/http.ts) |
+
+**Key & secret handling.** Secrets (SAP credentials, XSUAA `clientsecret`, the DCR signing
+secret, BTP service-key fields) come only from env / service-key / destination config — never
+hardcoded — and are never persisted at rest in the cache DB or logs (invariant **I4**).
+Accidental hardcoded-credential leaks are prevented by **GitHub secret scanning with push
+protection** (enabled on this repo): a matching secret is blocked at `git push`, and anything
+already committed raises a Security-tab alert. The related "hidden interfaces" concern is bounded
+separately: CodeQL SAST runs on every push (GitHub default setup — JS/TS, Actions, Python), and
+the LLM-visible tool surface is frozen byte-for-byte by `tests/fixtures/tool-definitions/`.
+
+---
+
+## 9. External framework mapping — OWASP MCP Top 10
+
+Snapshot of the [OWASP MCP Top 10](https://github.com/OWASP/www-project-mcp-top-10) taken
+**2026-07-30**. It is an explicitly living document; re-check the identifiers before citing this
+table externally. The mapping exists so a reviewer can get from a framework item to the ARC-1
+control that answers it — the invariants in §3 remain the normative statement.
+
+| OWASP | Risk | ARC-1 control | Where |
+|---|---|---|---|
+| MCP01 | Token mismanagement & secret exposure | **I4** — secrets only from env/service-key/destination, never persisted or logged; central audit redaction; per-user config strips shared credentials (`buildAdtConfig({perUser:true})`) | [`logger.ts`](../src/server/logger.ts), [`audit.ts`](../src/server/audit.ts), [`server.ts`](../src/server/server.ts) |
+| MCP02 | Privilege escalation via scope creep | **I7** + **I1** — the safety ceiling is server-wide and user scopes only *restrict*; `allowedPackages` is re-checked against the object's **real** package, fail-closed | [`safety.ts`](../src/adt/safety.ts), [`policy.ts`](../src/authz/policy.ts), [`write-helpers.ts`](../src/handlers/write-helpers.ts) |
+| MCP03 | Tool poisoning | Tool surface is frozen byte-for-byte by `tests/fixtures/tool-definitions/` — a description or schema change requires a reviewed fixture diff. Plugin tools are namespaced `Custom_*` and load only from an admin-set local allowlist (**R18**) | [`tool-definitions-snapshot.test.ts`](../tests/unit/handlers/tool-definitions-snapshot.test.ts), [`plugin-loader.ts`](../src/server/plugin-loader.ts) |
+| MCP04 | Supply chain & dependency tampering | Dependabot + `dependency-review` + CodeQL + Trivy image scan; third-party Actions SHA-pinned; npm publish via OIDC trusted publishing; CycloneDX SBOM per release. Known gap: **Docker image provenance is unsigned** | [`.github/workflows/`](../.github/workflows/), [`docs_page/security-guide.md`](../docs_page/security-guide.md) |
+| MCP05 | Command injection & execution | **I6** — no shell execution anywhere on the tool path; every arg→sink is encoded (`encodeURIComponent` per path segment, `sanitizeIdentifier`/`quoteSqlLiteral`, `escapeXmlAttr`) | §6 checklist, [`safety.ts`](../src/adt/safety.ts) |
+| MCP06 | Prompt injection via contextual payloads | **Not solvable inside ARC-1** — SAP-resident content (source, comments, errors) reaches the model. The containment is the ceiling that survives a steered model: `allowedPackages`, `allowWrites`, `denyActions`, per-user SAP authorization. See §2 adversaries | §2, §3 **I7** |
+| MCP07 | Insufficient authentication & authorization | XSUAA → OIDC → API key at the edge; `ACTION_POLICY` scope check on every call; **I3** fail-closed (JWT PP failure never falls back to the shared identity); SAP-native `S_DEVELOP`/`S_ADT_RES` underneath | [`http.ts`](../src/server/http.ts), [`policy.ts`](../src/authz/policy.ts), [`dispatch.ts`](../src/handlers/dispatch.ts) |
+| MCP08 | Lack of audit and telemetry | Typed audit events for every tool call, HTTP call, auth decision and safety block, with `user`, `clientId`, `clientAgent`, `requestId` and forwarded `traceparent`; stderr / file (`0600`) / BTP Audit Log sinks | [`audit.ts`](../src/server/audit.ts), [`sinks/`](../src/server/sinks/), [`trace-context.ts`](../src/server/trace-context.ts) |
+| MCP09 | Shadow MCP servers | Deployment concern, not a code control. ARC-1's contribution: `ARC1_SERVER_NAME` makes each direct-connect instance identifiable in the handshake, and one-instance-per-SAP-system is the documented topology | [`docs_page/deployment-best-practices.md`](../docs_page/deployment-best-practices.md) |
+| MCP10 | Context injection & over-sharing | **I2** — anything cached is keyed by a verified unique identity or revalidated per user (regression classes R1, R3, R12); **I5** bounds result size so a tool call can't siphon a package wholesale | [`cache-security.ts`](../src/handlers/cache-security.ts), [`caching-layer.ts`](../src/cache/caching-layer.ts) |
+
+SAP's own guidance for third-party MCP servers is evaluated point-by-point in
+[`docs/research/2026-07-30-sap-architecture-center-mcp-alignment.md`](research/2026-07-30-sap-architecture-center-mcp-alignment.md).
+
+---
+
+## 10. References
 - Operator hardening: [`docs_page/security-guide.md`](../docs_page/security-guide.md)
 - Scopes, profiles, deny-actions: [`docs_page/authorization.md`](../docs_page/authorization.md)
 - Auth coexistence matrix: [`docs_page/enterprise-auth.md`](../docs_page/enterprise-auth.md)

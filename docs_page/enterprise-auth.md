@@ -33,7 +33,9 @@ After starting, check the server's first INFO log line: `auth: MCP=[...] SAP=[..
 | **Team server** (role-based access) | API Keys (multi) | Basic Auth | [API Key Setup](api-key-setup.md) |
 | **Enterprise** (per-user identity) | OIDC / JWT | Basic Auth (shared user) | [OAuth / JWT Setup](oauth-jwt-setup.md) |
 | **Enterprise + SAP audit trail** | OIDC / JWT | Principal Propagation | [OAuth / JWT](oauth-jwt-setup.md) + [PP Setup](principal-propagation-setup.md) |
-| **BTP Cloud Foundry + on-prem SAP** | XSUAA OAuth | Principal Propagation via Destination Service / Cloud Connector | [XSUAA Setup](xsuaa-setup.md) + [Destination Setup](btp-destination-setup.md) |
+| **BTP Cloud Foundry + on-prem SAP, per-user identity** | XSUAA OAuth | Principal Propagation via Destination Service / Cloud Connector | [BTP deployment](btp-cloud-foundry-deployment.md) — single-PP profile |
+| **BTP Cloud Foundry + on-prem SAP, shared identity** | XSUAA OAuth | Basic destination via Cloud Connector | [BTP deployment](btp-cloud-foundry-deployment.md) — single-Basic profile |
+| **BTP CF multi-target read gateway** | XSUAA OAuth | Principal Propagation (recommended), with explicit shared Basic destinations where PP is unavailable | [Multi-System Setup](multi-target-setup.md) |
 | **BTP Cloud Foundry + BTP ABAP Environment** | XSUAA OAuth | Per-user destination (`OAuth2UserTokenExchange`) | [BTP ABAP Setup](btp-abap-environment.md) |
 | **BTP ABAP Environment** (local) | None (stdio) | Service-key browser OAuth | [BTP ABAP Setup](btp-abap-environment.md) |
 
@@ -50,6 +52,13 @@ PP and API keys can also coexist in one fully supported instance. Set `SAP_PP_ST
 explicitly; JWT calls use PP and API-key calls use the shared technical SAP identity. Separate
 instances remain the recommendation when clearer audit, authorization, operational ownership, and
 credential boundaries are preferred, but separation is not mandatory.
+
+The experimental mutation-free multi-target mode has one separately reviewed exception: a single
+XSUAA-protected application may contain strict PP targets and explicitly enabled Basic destinations.
+Each target keeps one fixed identity mode; Basic never replaces failed PP. Basic targets are labeled
+`shared`, require `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true`, and make exactly one CF app instance
+mandatory with non-rolling deployment. See [Multi-System Setup](multi-target-setup.md) and
+[Multi-Target Administration](multi-target-administration.md).
 
 ### What to Consider
 
@@ -127,9 +136,12 @@ These methods control how ARC-1 proves its identity to the SAP system.
 
 Username and password sent with every HTTP request to SAP. The simplest SAP auth method.
 
-**Upsides:** Zero SAP-side setup. Works with any SAP system.
+**Upsides:** Simple ARC-1 configuration. Works with on-premise systems whose ADT ICF service accepts
+HTTP Basic for the selected client and user.
 **Downsides:** Credentials stored in config. Single SAP user for all MCP users. No per-user audit trail.
-**When to use:** Local dev, shared servers where SAP identity doesn't matter.
+**When to use:** Local dev or an explicitly accepted shared-user server. On BTP CF, keep credentials
+in a Basic destination rather than application configuration. Basic is not a fallback for
+Principal Propagation and is not the normal BTP ABAP Environment path.
 **Prerequisites:** A SAP user with appropriate authorization (see [Authorization & Roles](authorization.md#the-model-in-one-picture)).
 
 ```bash
@@ -186,6 +198,13 @@ The most complete authentication model. Each MCP user's identity flows through t
 MCP Client ──XSUAA/OIDC JWT──► ARC-1 ──user token──► BTP Destination ──► SAP
 ```
 
+> **On-premise: creating packages under principal propagation.** The propagated identity is an
+> email, but an ABAP user name (`XUBNAME`) is only 12 characters. For every object type ARC-1
+> simply omits the "person responsible" from the create body and SAP assigns the propagated user
+> automatically. Package create is the one exception — SAP requires a real, existing user name
+> there — so pass it explicitly: `SAPManage(action="create_package", …, responsible="<your SAP
+> user name>")`. See [#636](https://github.com/arc-mcp/arc-1/issues/636).
+
 ### BTP Destination Service
 
 For BTP deployments connecting to SAP systems through centrally managed destinations. The Destination Service handles connection details, credentials, and optionally per-user token exchange / principal propagation.
@@ -196,6 +215,14 @@ For BTP deployments connecting to SAP systems through centrally managed destinat
 **Prerequisites:** BTP Destination Service instance. Add Cloud Connector only for on-premise targets.
 
 **Setup:** [BTP Destination Setup](btp-destination-setup.md)
+
+For experimental multi-target v1, PrincipalPropagation remains recommended. A destination with
+`Authentication=BasicAuthentication` can be accepted only under the separate default-off instance
+ceiling. XSUAA still authenticates the human and applies ARC-1 scopes, but SAP sees the destination's
+shared technical user. The mode remains mutation-free, has no PP/Basic fallback, and requires one CF
+app instance with no rolling/blue-green overlap. Destination credentials are resolved at request
+time and never returned by ARC-1.
+See [Multi-System Setup](multi-target-setup.md).
 
 ---
 
@@ -523,6 +550,7 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | `--btp-oauth-callback-port` | `SAP_BTP_OAUTH_CALLBACK_PORT` | OAuth callback port (0=auto) |
 | — | `SAP_BTP_DESTINATION` | BTP Destination name (shared, or BTP ABAP per-user destination) |
 | — | `SAP_BTP_PP_DESTINATION` | BTP PP Destination name (per-user) |
+| — | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default-off multi-target ceiling permitting shared Basic destinations; requires one CF instance and never enables PP fallback |
 | `--pp-enabled` | `SAP_PP_ENABLED` | Enable ARC-1's per-user destination path |
 | `--pp-strict` | `SAP_PP_STRICT` | JWT PP errors always fail closed; explicit `true` gives the recommended strict topology, while explicit `false` supports mixed PP/API-key operation |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | Allow PP + cookie auth only for shared client (advanced escape hatch) |
@@ -547,6 +575,7 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | Bearer + Cookie | ❌ fail-fast | Two Layer B methods in conflict |
 | Direct service-key bearer + PP | ❌ fail-fast | `SAP_BTP_SERVICE_KEY` is local interactive OAuth and cannot be combined with `SAP_PP_ENABLED=true` |
 | Destination-exchanged bearer + PP | ✅ | BTP ABAP deployed path: `SAP_BTP_DESTINATION` + `SAP_PP_ENABLED=true` + destination `OAuth2UserTokenExchange` |
+| Multi-target PP + Basic destinations | ⚠️ explicit read-only exception | XSUAA remains the human authorization layer; Basic targets are shared SAP identity, require the default-off ceiling, and force one CF instance |
 
 ### SAP Auth Coexistence Rules
 

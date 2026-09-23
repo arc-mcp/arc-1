@@ -9,7 +9,7 @@ function parserError(message = 'Invalid query string. Only one SELECT statement 
 }
 
 function hintFor(sql: string, message?: string, statusCode?: number): string {
-  return classifySapQueryParserError(parserError(message, statusCode), sql) ?? '';
+  return classifySapQueryParserError(parserError(message, statusCode), sql, false, false) ?? '';
 }
 
 function dataPreviewMessage004(message: string): AdtApiError {
@@ -38,15 +38,14 @@ describe('classifySapQueryParserError', () => {
     expect(hint).toContain('WHERE/ORDER BY keys');
   });
 
-  it.each([
-    '@lv_client',
-    ':client',
-    '?',
-  ])('explains why the freestyle endpoint cannot resolve parameter syntax %s', (parameter) => {
-    const hint = hintFor(`SELECT mandt FROM t000 WHERE mandt = ${parameter}`);
-    expect(hint).toContain('no ABAP host-program or prepared-statement context');
-    expect(hint).toContain('single-quoted literal');
-  });
+  it.each(['@lv_client', ':client', '?'])(
+    'explains why the freestyle endpoint cannot resolve parameter syntax %s',
+    (parameter) => {
+      const hint = hintFor(`SELECT mandt FROM t000 WHERE mandt = ${parameter}`);
+      expect(hint).toContain('no ABAP host-program or prepared-statement context');
+      expect(hint).toContain('single-quoted literal');
+    },
+  );
 
   it('requires AS for table aliases', () => {
     const hint = hintFor('SELECT t~mandt FROM t000 t');
@@ -145,17 +144,17 @@ describe('classifySapQueryParserError', () => {
     expect(hint).toContain('RIGHT OUTER');
   });
 
-  it.each([
-    'ambiguous',
-    'zweideutig',
-  ])('preserves an actionable ambiguity diagnosis for localized marker %s', (marker) => {
-    const hint = hintFor(
-      'SELECT tabname FROM dd02l AS l INNER JOIN dd02t AS t ON l~tabname = t~tabname',
-      `The column TABNAME is ${marker}`,
-    );
-    expect(hint).toContain('more than one joined source');
-    expect(hint).toContain('alias~field');
-  });
+  it.each(['ambiguous', 'zweideutig'])(
+    'preserves an actionable ambiguity diagnosis for localized marker %s',
+    (marker) => {
+      const hint = hintFor(
+        'SELECT tabname FROM dd02l AS l INNER JOIN dd02t AS t ON l~tabname = t~tabname',
+        `The column TABNAME is ${marker}`,
+      );
+      expect(hint).toContain('more than one joined source');
+      expect(hint).toContain('alias~field');
+    },
+  );
 
   it('ignores dialect-looking text inside a single-quoted literal', () => {
     const hint = hintFor("SELECT mtext FROM t000 WHERE mtext = 'DESC LIMIT @x != NULL --'", 'invalid query string');
@@ -167,7 +166,7 @@ describe('classifySapQueryParserError', () => {
 
   it('does not relabel unrelated server failures', () => {
     expect(
-      classifySapQueryParserError(parserError('Database unavailable', 500), 'SELECT mandt FROM t000'),
+      classifySapQueryParserError(parserError('Database unavailable', 500), 'SELECT mandt FROM t000', false, false),
     ).toBeUndefined();
   });
 });
@@ -175,15 +174,17 @@ describe('classifySapQueryParserError', () => {
 describe('handleSAPQuery parser-error ordering', () => {
   it('classifies a message-004 DESC failure before unknown-column enrichment', async () => {
     const client = {
-      runQueryWithMetrics: vi
-        .fn()
-        .mockRejectedValue(dataPreviewMessage004('"DESC" is not allowed here. "." is expected.')),
+      runQueryBatch: vi.fn().mockRejectedValue(dataPreviewMessage004('"DESC" is not allowed here. "." is expected.')),
       runQuery: vi.fn(),
     } as unknown as AdtClient;
 
-    const result = await handleSAPQuery(client, {
-      sql: 'SELECT mandt FROM t000 ORDER BY mandt DESC',
-    });
+    const result = await handleSAPQuery(
+      client,
+      {
+        sql: 'SELECT mandt FROM t000 ORDER BY mandt DESC',
+      },
+      false,
+    );
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('ASCENDING or DESCENDING');
@@ -193,11 +194,11 @@ describe('handleSAPQuery parser-error ordering', () => {
 
   it('still enriches a verified unknown column with the table metadata', async () => {
     const client = {
-      runQueryWithMetrics: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
+      runQueryBatch: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
       runQuery: vi.fn().mockResolvedValue({ columns: ['MANDT', 'MTEXT'], rows: [] }),
     } as unknown as AdtClient;
 
-    const result = await handleSAPQuery(client, { sql: 'SELECT bogus FROM t000' });
+    const result = await handleSAPQuery(client, { sql: 'SELECT bogus FROM t000' }, false);
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toBe('Unknown column "BOGUS" on T000. Available columns: MANDT, MTEXT.');
@@ -206,13 +207,17 @@ describe('handleSAPQuery parser-error ordering', () => {
 
   it('uses the qualified join alias to enrich an unknown column from the correct table', async () => {
     const client = {
-      runQueryWithMetrics: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
+      runQueryBatch: vi.fn().mockRejectedValue(dataPreviewMessage004('Unknown column name "BOGUS".')),
       runQuery: vi.fn().mockResolvedValue({ columns: ['TABNAME', 'DDLANGUAGE', 'DDTEXT'], rows: [] }),
     } as unknown as AdtClient;
 
-    const result = await handleSAPQuery(client, {
-      sql: "SELECT t~bogus FROM dd02l AS b INNER JOIN dd02t AS t ON b~tabname = t~tabname WHERE b~tabname = 'T000'",
-    });
+    const result = await handleSAPQuery(
+      client,
+      {
+        sql: "SELECT t~bogus FROM dd02l AS b INNER JOIN dd02t AS t ON b~tabname = t~tabname WHERE b~tabname = 'T000'",
+      },
+      false,
+    );
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toBe(
@@ -224,21 +229,25 @@ describe('handleSAPQuery parser-error ordering', () => {
   it('preserves the SAP error for an unqualified unknown column across multiple sources', async () => {
     const error = dataPreviewMessage004('Unknown column name "BOGUS".');
     const client = {
-      runQueryWithMetrics: vi.fn().mockRejectedValue(error),
+      runQueryBatch: vi.fn().mockRejectedValue(error),
       runQuery: vi.fn(),
     } as unknown as AdtClient;
 
     await expect(
-      handleSAPQuery(client, {
-        sql: 'SELECT bogus FROM dd02l AS b INNER JOIN dd02t AS t ON b~tabname = t~tabname',
-      }),
+      handleSAPQuery(
+        client,
+        {
+          sql: 'SELECT bogus FROM dd02l AS b INNER JOIN dd02t AS t ON b~tabname = t~tabname',
+        },
+        false,
+      ),
     ).rejects.toBe(error);
     expect(client.runQuery).not.toHaveBeenCalled();
   });
 
   it('keeps an ambiguous message-004 error actionable without querying irrelevant metadata', async () => {
     const client = {
-      runQueryWithMetrics: vi
+      runQueryBatch: vi
         .fn()
         .mockRejectedValue(
           dataPreviewMessage004(
@@ -248,9 +257,13 @@ describe('handleSAPQuery parser-error ordering', () => {
       runQuery: vi.fn(),
     } as unknown as AdtClient;
 
-    const result = await handleSAPQuery(client, {
-      sql: 'SELECT tabname FROM dd02l AS l INNER JOIN dd02t AS t ON l~tabname = t~tabname',
-    });
+    const result = await handleSAPQuery(
+      client,
+      {
+        sql: 'SELECT tabname FROM dd02l AS l INNER JOIN dd02t AS t ON l~tabname = t~tabname',
+      },
+      false,
+    );
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('more than one joined source');

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml">
+  <asx:values>
+    <DATA>
+      <PGMID>R3TR</PGMID>
+      <OBJECT>INTF</OBJECT>
+      <OBJECTNAME>ZIF_ARC1_SAMPLE</OBJECTNAME>
+      <OPERATION/>
+      <DEVCLASS>ZARC1_SAMPLE</DEVCLASS>
+      <KORRFLAG>X</KORRFLAG>
+      <DLVUNIT>HOME</DLVUNIT>
+      <RESULT>S</RESULT>
+      <RECORDING/>
+      <EXISTING_REQ_ONLY/>
+      <MESSAGES/>
+      <REQUESTS/>
+      <LOCKS>
+        <CTS_OBJECT_LOCK>
+          <OBJECT_KEY>
+            <PGMID>R3TR</PGMID>
+            <OBJECT>INTF</OBJECT>
+            <OBJ_NAME>ZIF_ARC1_SAMPLE</OBJ_NAME>
+          </OBJECT_KEY>
+          <LOCK_HOLDER>
+            <REQ_HEADER>
+              <TRKORR>DEVK900201</TRKORR>
+              <TRFUNCTION>K</TRFUNCTION>
+              <TRSTATUS>D</TRSTATUS>
+              <AS4USER>DEVELOPER</AS4USER>
+              <AS4TEXT>Locked parent</AS4TEXT>
+            </REQ_HEADER>
+            <REQ_ATTRS/>
+            <TASK_HEADERS>
+              <CTS_TASK_HEADER>
+                <TRKORR>DEVK900202</TRKORR>
+                <TRFUNCTION>S</TRFUNCTION>
+                <TRSTATUS>D</TRSTATUS>
+                <AS4USER>DEVELOPER</AS4USER>
+                <AS4TEXT>Locked task</AS4TEXT>
+              </CTS_TASK_HEADER>
+            </TASK_HEADERS>
+          </LOCK_HOLDER>
+        </CTS_OBJECT_LOCK>
+      </LOCKS>
+      <TADIRDEVC>ZARC1_SAMPLE</TADIRDEVC>
+      <URI>/sap/bc/adt/oo/interfaces/zif_arc1_sample</URI>
+    </DATA>
+  </asx:values>
+</asx:abap>

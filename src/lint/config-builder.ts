@@ -36,8 +36,12 @@ export type RuleOverrides = Record<string, boolean | Record<string, unknown>>;
 export interface LintConfigOptions {
   /** SAP system type: 'btp' or 'onprem' */
   systemType?: SystemType;
+  /** Diagnostic provenance only; does not affect rule selection. */
+  systemTypeSource?: 'probe' | 'config' | 'default';
   /** SAP_BASIS release string (e.g., "757") */
   abapRelease?: string;
+  /** Diagnostic provenance of the SAP release, not the custom lint syntax version. */
+  abapReleaseSource?: 'probe' | 'config' | 'unknown';
   /** Path to custom abaplint.jsonc config file */
   configFile?: string;
   /** Inline rule overrides (from tool call args) */
@@ -150,6 +154,11 @@ export function buildPreWriteConfig(options: LintConfigOptions = {}): Config {
   }
 
   return new Config(JSON.stringify(raw));
+}
+
+/** Report the actual syntax setting, including structured Cloud/custom configurations. */
+export function getLintSyntaxVersion(config: Config) {
+  return config.get().syntax.version ?? { release: config.getRelease().name, language: config.getLanguageVersion() };
 }
 
 /** Resolve the abaplint Version from options */

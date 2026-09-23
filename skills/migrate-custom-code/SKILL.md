@@ -14,7 +14,7 @@ This skill replicates SAP Joule's "Custom Code Migration" capability by combinin
 | Setting | Default | Rationale |
 |---|---|---|
 | Object type | Auto-detect via SAPSearch | Don't make user look up the type |
-| ATC variant | System default | Use what's configured on the system |
+| ATC variant | System default | Omitting `variant` makes ARC-1 resolve and send `systemCheckVariant` |
 | Scope | `fix` (explain + fix proposals) | Most actionable output |
 | Priority filter | All priorities (start with Priority 1 errors) | Don't miss anything, but fix most critical first |
 
@@ -33,7 +33,7 @@ Optionally, the user may specify:
 
 > **ATC gotchas (verified live on S/4HANA 2023):**
 > - **ATC skips `$TMP` / local objects.** A check run against a `$TMP` object resolves to an empty object set and returns **zero findings** — this is not "clean code", it's "not checked". Run ATC against objects in a **transportable package**. If the user points you at `$TMP` code, say so and ask them to assign it to a transportable package first.
-> - **The check variant must exist on the system.** `ABAP_CLOUD_READINESS` is the standard name on SAP BTP ABAP / S/4HANA Cloud, but on-premise systems often ship `S4HANA_READINESS_<release>` (e.g. `S4HANA_READINESS_2023`) or `SAP_CLOUD_PLATFORM_DEFAULT` instead. If the named variant is absent, fall back to the system default (omit `variant`).
+> - **The check variant must exist on the system.** `ABAP_CLOUD_READINESS` is the standard name on SAP BTP ABAP / S/4HANA Cloud, but on-premise systems often ship `S4HANA_READINESS_<release>` (e.g. `S4HANA_READINESS_2023`) or `SAP_CLOUD_PLATFORM_DEFAULT` instead. If the named variant is absent ARC-1 **rejects the call** (SAP would silently run `DEFAULT`) — list the real names with `SAPDiagnose(action="atc_variants")`, or omit `variant` to bind the system's configured default.
 
 ### 1a. Run ATC on the target object
 
@@ -41,7 +41,7 @@ Optionally, the user may specify:
 SAPDiagnose(action="atc", type="<type>", name="<object_name>", variant="<variant>")
 ```
 
-If no variant was specified, run with the system default first (omitting `variant` uses the system's configured default check variant):
+If no variant was specified, run with the system default first (omitting `variant` makes ARC-1 resolve `systemCheckVariant` from ATC customizing and send it explicitly — SAP's own empty-`checkVariant` behavior would run the Code Inspector variant `DEFAULT` instead):
 
 ```
 SAPDiagnose(action="atc", type="<type>", name="<object_name>")
@@ -259,7 +259,7 @@ Next steps:
 
 | Error | Cause | Fix |
 |---|---|---|
-| ATC variant not found | Variant doesn't exist on this system | Run default ATC, list available variants with `SAPDiagnose(action="atc")` |
+| ATC variant not found | Variant doesn't exist on this system (hard error — SAP would otherwise silently run `DEFAULT`) | List the real names with `SAPDiagnose(action="atc_variants")`, or omit `variant` for the system default |
 | Object locked by another user | Object is being edited elsewhere | Inform user, suggest trying later or contacting the lock holder |
 | Fix causes new syntax error | Generated replacement code is incorrect | Revert to original source, show the diff, suggest manual correction |
 | No mcp-sap-docs available | Documentation MCP not configured | Explain findings using ATC finding text only, recommend user check SAP Help Portal |

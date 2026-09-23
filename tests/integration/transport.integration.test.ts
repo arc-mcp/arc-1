@@ -30,6 +30,7 @@ import {
   deleteTransport,
   getObjectTransports,
   getTransport,
+  getTransportInfo,
   inactiveObjectsForTransport,
   listTransportLayers,
   listTransports,
@@ -248,6 +249,26 @@ describe('Transport Integration Tests', () => {
     });
   });
 
+  // ─── getTransportInfo (read-only pre-flight) ────────────────────
+
+  describe('getTransportInfo', () => {
+    it('accepts and echoes create and modify operations without mutating CTS', async () => {
+      const objectUrl = '/sap/bc/adt/oo/classes/zcl_arc1_transport_check';
+
+      const createInfo = await getTransportInfo(client.http, client.safety, objectUrl, '$TMP', 'I');
+      const modifyInfo = await getTransportInfo(client.http, client.safety, objectUrl, '$TMP', '');
+
+      expect(createInfo.operation).toBe('I');
+      expect(modifyInfo.operation).toBe('');
+      expect(createInfo.isLocal).toBe(true);
+      expect(modifyInfo.isLocal).toBe(true);
+      expect(createInfo.recording).toBe(false);
+      expect(modifyInfo.recording).toBe(false);
+      expect(createInfo.existingTransports).toEqual([]);
+      expect(modifyInfo.existingTransports).toEqual([]);
+    });
+  });
+
   // ─── createTransport ───────────────────────────────────────────
 
   describe('createTransport', () => {
@@ -385,7 +406,7 @@ describe('Transport Integration Tests', () => {
 
   // ─── getObjectTransports ───────────────────────────────────────
 
-  describe('getObjectTransports (object → transports reverse lookup)', () => {
+  describe('getObjectTransports (current object lock lookup)', () => {
     it('$TMP fixture object returns no related transports', async (ctx) => {
       try {
         const result = await getObjectTransports(client.http, client.safety, '/sap/bc/adt/oo/classes/zcl_arc1_test');

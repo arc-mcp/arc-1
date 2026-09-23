@@ -26,17 +26,19 @@ export interface LoadedPlugin {
   toolNames: string[];
 }
 
-/** Refuse anything not an absolute, readable, owner-only, non-world-writable file. */
+/** Refuse anything not absolute/readable; on POSIX also require same-owner and not world-writable. */
 function assertLoadablePath(p: string): void {
   if (!isAbsolute(p)) {
     throw new Error(`ARC1_PLUGINS entry must be an absolute path: '${p}'`);
   }
   const st = statSync(p); // throws (ENOENT/EACCES) if missing or unreadable
-  if (typeof process.getuid === 'function' && st.uid !== process.getuid()) {
-    throw new Error(`Plugin '${p}' is not owned by the server user — refusing to load`);
-  }
-  if ((st.mode & 0o002) !== 0) {
-    throw new Error(`Plugin '${p}' is world-writable — refusing to load`);
+  if (typeof process.getuid === 'function') {
+    if (st.uid !== process.getuid()) {
+      throw new Error(`Plugin '${p}' is not owned by the server user — refusing to load`);
+    }
+    if ((st.mode & 0o002) !== 0) {
+      throw new Error(`Plugin '${p}' is world-writable — refusing to load`);
+    }
   }
 }
 

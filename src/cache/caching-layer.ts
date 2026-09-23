@@ -1,15 +1,12 @@
 /**
- * Caching layer — orchestrates source + dependency caching.
+ * Caching layer — source revalidation and function-group lookup.
  *
  * Sits between the intent handler / compressor and the ADT client.
- * Provides cache-aware source fetching with hash-based dependency
- * graph invalidation.
+ * Provides ETag-aware source fetching. SAPContext rebuilds aggregates on every call;
+ * context/parse-cache.ts memoizes only pure parses AFTER authorized source retrieval.
  *
  * Design:
  * - Source code is cached by (type, name, active/inactive version) with a SHA-256 hash and SAP ETag.
- * - Dependency graphs (contracts[]) are cached by source hash.
- *   When the source changes, the hash changes, and deps are re-resolved.
- *   When the source hasn't changed, ALL downstream dep fetches are skipped.
  * - Function group mappings are cached permanently (rarely change).
  * - Writes invalidate the source cache for the written object.
  *
@@ -23,17 +20,9 @@
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import { AdtApiError } from '../adt/errors.js';
 import { logger } from '../server/logger.js';
-import type { Cache, CachedDepGraph, CachedSource, CacheListSourcesQuery, CacheListSourcesResult } from './cache.js';
+import type { Cache, CachedSource, CacheListSourcesQuery, CacheListSourcesResult } from './cache.js';
 import { hashSource } from './cache.js';
 import { InactiveListCache } from './inactive-list-cache.js';
-
-/** Cache hit/miss statistics for a single operation */
-export interface CacheHitInfo {
-  sourceHit: boolean;
-  depGraphHit: boolean;
-  depSourceHits: number;
-  depSourceMisses: number;
-}
 
 export type CacheActivityEvent =
   | 'source_miss'
@@ -42,8 +31,6 @@ export type CacheActivityEvent =
   | 'source_refresh'
   | 'source_invalidate'
   | 'source_evict'
-  | 'depgraph_hit'
-  | 'depgraph_store'
   | 'func_group_hit'
   | 'func_group_store';
 
@@ -222,50 +209,6 @@ export class CachingLayer {
     return this.cache.listSources(query);
   }
 
-  // ─── Dependency Graph Cache ───────────────────────────────────────
-
-  /**
-   * Check if we have a cached dep graph for the given source.
-   * The graph is keyed by the source hash — if source changed, this returns null.
-   */
-  getCachedDepGraph(source: string): CachedDepGraph | null {
-    const hash = hashSource(source);
-    const cached = this.cache.getDepGraph(hash);
-    if (cached) {
-      this.recordActivity('depgraph_hit', {
-        objectType: cached.objectType,
-        objectName: cached.objectName,
-        hash,
-        detail: `${cached.contracts.length} contracts`,
-      });
-      logger.debug(`[cache] depgraph HIT ${cached.objectType}:${cached.objectName} (hash ${hash.slice(0, 8)})`);
-    }
-    return cached;
-  }
-
-  /**
-   * Store a resolved dep graph keyed by source hash.
-   */
-  putDepGraph(source: string, objectName: string, objectType: string, contracts: CachedDepGraph['contracts']): void {
-    const hash = hashSource(source);
-    this.recordActivity('depgraph_store', {
-      objectType,
-      objectName,
-      hash,
-      detail: `${contracts.length} contracts`,
-    });
-    logger.debug(
-      `[cache] depgraph STORE ${objectType}:${objectName} (${contracts.length} contracts, hash ${hash.slice(0, 8)})`,
-    );
-    this.cache.putDepGraph({
-      sourceHash: hash,
-      objectName,
-      objectType,
-      contracts,
-      cachedAt: new Date().toISOString(),
-    });
-  }
-
   // ─── Function Group Resolution ────────────────────────────────────
 
   /**
@@ -365,7 +308,7 @@ export class CachingLayer {
 
   // ─── Stats ────────────────────────────────────────────────────────
 
-  stats(): Cache['stats'] extends (...args: infer _A) => infer R ? R : never {
+  stats(): ReturnType<Cache['stats']> {
     return this.cache.stats();
   }
 

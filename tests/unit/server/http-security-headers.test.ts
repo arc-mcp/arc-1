@@ -116,6 +116,30 @@ describe('applySecurityMiddleware — CORS opt-in', () => {
     expect(res.headers['access-control-expose-headers']?.toLowerCase()).toContain('mcp-session-id');
   });
 
+  it('T4: allows the MCP protocol headers in preflight (mcp-protocol-version, last-event-id)', async () => {
+    // Every SDK-based client sends MCP-Protocol-Version on post-initialize requests
+    // (spec 2025-06-18+) and last-event-id on SSE reconnects; both are preflighted.
+    // Preflight is answered by the cors middleware BEFORE auth — no token needed.
+    // mcp-method is deliberately INCLUDED in the request: if the explicit allowedHeaders
+    // list is ever removed, the cors middleware falls back to reflecting requested
+    // headers verbatim — the negative assertion below catches that regression.
+    const res = await request(buildApp(['https://app.example.com']))
+      .options('/mcp')
+      .set('Origin', 'https://app.example.com')
+      .set('Access-Control-Request-Method', 'POST')
+      .set(
+        'Access-Control-Request-Headers',
+        'content-type,authorization,mcp-protocol-version,last-event-id,mcp-method',
+      );
+    expect(res.status).toBe(204);
+    const allowed = res.headers['access-control-allow-headers']?.toLowerCase() ?? '';
+    expect(allowed).toContain('mcp-protocol-version');
+    expect(allowed).toContain('last-event-id');
+    // 2026-07-28 modern-era headers stay deliberately absent (ADR-0006).
+    expect(allowed).not.toContain('mcp-method');
+    expect(allowed).not.toContain('mcp-name');
+  });
+
   it('reflects only the exact origin from a multi-origin allowlist', async () => {
     const app = buildApp(['https://a.example.com', 'https://b.example.com']);
     const resA = await request(app)

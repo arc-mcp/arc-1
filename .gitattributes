@@ -1,0 +1,6 @@
+# LF everywhere: Biome's formatter defaults to lineEnding "lf", so a CRLF
+# checkout on Windows makes `npm run lint` flag every file.
+* text=auto eol=lf
+
+# ABAP fixtures mirror real SAP source (CRLF) and are read back as source by tests.
+tests/fixtures/abap/** -text

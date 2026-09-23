@@ -68,6 +68,14 @@ ENDCLASS.`;
       expect(detectFilename('define view entity Z_TEST as select from mara', 'Z_TEST')).toBe('z_test.ddls.asddls');
     });
 
+    it('detects legacy CDS view extensions as .ddls.asddls', () => {
+      expect(detectFilename('extend view Z_BASE with Z_EXT { field }', 'Z_EXT')).toBe('z_ext.ddls.asddls');
+    });
+
+    it('detects annotation-free CDS view entity extensions as .ddls.asddls', () => {
+      expect(detectFilename('extend view entity Z_BASE with { field }', 'Z_EXT')).toBe('z_ext.ddls.asddls');
+    });
+
     it('detects CDS with annotation as .ddls.asddls', () => {
       expect(detectFilename('@AbapCatalog.viewEnhancementCategory: [#NONE]\ndefine view', 'Z_TEST')).toBe(
         'z_test.ddls.asddls',
@@ -141,6 +149,17 @@ ENDCLASS.`;
       const results = lintAbapSource(source, 'zi_test.ddls.asddls');
       const parserErrors = results.filter((r) => r.rule === 'cds_parser_error');
       expect(parserErrors).toHaveLength(0);
+    });
+
+    it.each([
+      ['legacy view extension', 'extend view Z_BASE with Z_EXT { field }'],
+      ['view entity extension', 'extend view entity Z_BASE with { field }'],
+    ])('pre-write validation treats a %s as DDLS rather than ABAP class source', (_label, source) => {
+      const filename = detectFilename(source, 'Z_EXT');
+      const result = validateBeforeWrite(source, filename, { systemType: 'onprem', abapRelease: '758' });
+
+      expect(filename).toBe('z_ext.ddls.asddls');
+      expect(result.errors.filter((issue) => issue.rule === 'structure' || issue.rule === 'parser_error')).toEqual([]);
     });
 
     it('returns cds_parser_error for invalid CDS (missing comma)', () => {

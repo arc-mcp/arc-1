@@ -207,7 +207,7 @@ Dev: jest ^29.7.0, ts-jest ^29.2.5
 | **ABAP unit test execution** | **Low** | **0d** | **ARC-1 already has unit tests via SAPDiagnose** |
 | **Annotation definitions read** | **Low** | **0.5d** | **Not implemented** |
 | **RAP publish binding** | **Low** | **0d** | **ARC-1 already has via SAPManage** |
-| ~~Elicitation for destructive ops (7+ flows)~~ | ~~High~~ | ~~1d~~ | ~~IMPLEMENTED — src/server/elicit.ts~~ |
+| Elicitation for destructive ops (7+ flows) | Low | — | NOT PLANNED — core safety is the config ceiling (`allowWrites`/`allowedPackages`/`denyActions`), not fail-open interactive prompts; elicitation is available only to plugin tools via `ctx.elicit` |
 | ~~Transport contents (E071 objects list)~~ | ~~Medium~~ | ~~0.5d~~ | ~~IMPLEMENTED — SAPTransport get action~~ |
 | ~~Transport assign~~ | ~~Medium~~ | ~~1d~~ | ~~IMPLEMENTED — SAPTransport reassign action~~ |
 | ~~Session auto-recovery~~ | ~~Medium~~ | ~~0.5d~~ | ~~IMPLEMENTED — CSRF refresh + stateful sessions~~ |
@@ -219,7 +219,7 @@ See [08-dassian-adt-feature-gap.md](08-dassian-adt-feature-gap.md) for detailed 
 
 ## Features ARC-1 Has That This Project Lacks
 
-Safety system (read-only, op filter, pkg filter, SQL blocking, transport gating, dry-run), OIDC/JWT auth, BTP Destination Service + Cloud Connector + Principal Propagation, API key auth, abaplint (local offline linting), caching (SQLite + memory), audit logging, intent-based routing (11 vs 53 tools), code completion, npm distribution, Docker image, 1315+ unit tests vs 163, MCP elicitation with audit, context compression (SAPContext 7-30x), method-level surgery (95% reduction), hyperfocused mode (~200 tokens), DDLX read, AFF schema validation, multi-object batch creation, MCP scope system (2D: scopes + roles + safety), CDS dependency extraction, API release state / clean core, feature auto-detection (6 probes), BTP CF deployment (MTA).
+Safety system (read-only, op filter, pkg filter, SQL blocking, transport gating, dry-run), OIDC/JWT auth, BTP Destination Service + Cloud Connector + Principal Propagation, API key auth, abaplint (local offline linting), caching (SQLite + memory), audit logging, intent-based routing (11 vs 53 tools), code completion, npm distribution, Docker image, 1315+ unit tests vs 163, context compression (SAPContext 7-30x), method-level surgery (95% reduction), hyperfocused mode (~200 tokens), DDLX read, AFF schema validation, multi-object batch creation, MCP scope system (2D: scopes + roles + safety), CDS dependency extraction, API release state / clean core, feature auto-detection (6 probes), BTP CF deployment (MTA).
 
 ---
 
@@ -246,8 +246,8 @@ Safety system (read-only, op filter, pkg filter, SQL blocking, transport gating,
 | 2026-04-05 | fix(data): skip decodeQueryResult crash on null DATE columns | Low | Verify ARC-1 RunQuery handles null dates | Evaluated |
 | 2026-04-03 | feat: abap_set_class_include tool + session-sticky lock/write/unlock | Medium | Verify ARC-1 crud.ts class include writes | Evaluated |
 | 2026-04-02 | feat: BDEF creation + STRU type support + abap_edit_method + compact mode | Medium | BDEF create: ARC-1 has. Edit method: ARC-1 has method surgery. | Evaluated |
-| 2026-04-01 | MCP quality-of-life: elicitation recovery, batch activation, ATC variant fallback | Low | ARC-1 elicitation already more complete | -- |
-| 2026-03-27 | Initial commit (v2.0) | Yes | Elicitation patterns reviewed — ARC-1 now has elicitation | Done |
+| 2026-04-01 | MCP quality-of-life: elicitation recovery, batch activation, ATC variant fallback | Low | Batch activation / ATC fallback: ARC-1 has. Elicitation: not a core ARC-1 feature (config ceiling instead; plugin `ctx.elicit` only) | -- |
+| 2026-03-27 | Initial commit (v2.0) | Yes | Elicitation patterns reviewed — ARC-1 uses a config safety ceiling for destructive ops, not core interactive elicitation | Done |
 
 ## abap-mcpb (MCPB Variant — March 31, 2026)
 

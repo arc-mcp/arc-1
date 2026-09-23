@@ -35,7 +35,7 @@ describe('E2E SAPNavigate — Slow Where-Used Analysis', () => {
       name: 'BAPIRET2',
     });
     const text = expectToolSuccess(result);
-    const refs = JSON.parse(text);
+    const refs = JSON.parse(text).references;
     expect(refs.length).toBeGreaterThan(0);
     console.log(`    BAPIRET2 has ${refs.length} references`);
   });
@@ -48,7 +48,7 @@ describe('E2E SAPNavigate — Slow Where-Used Analysis', () => {
       name: 'T000',
     });
     const text = expectToolSuccessOrSkip(ctx, result);
-    const refs = JSON.parse(text);
+    const refs = JSON.parse(text).references;
     expect(refs.length).toBeGreaterThan(0);
     console.log(`    T000 table has ${refs.length} references`);
   });
@@ -61,7 +61,7 @@ describe('E2E SAPNavigate — Slow Where-Used Analysis', () => {
       objectType: 'CLAS/OC',
     });
     const text = expectToolSuccess(result);
-    const refs = JSON.parse(text);
+    const refs = JSON.parse(text).references;
     if (Array.isArray(refs)) {
       expect(refs.length).toBeGreaterThan(0);
       const clasCount = refs.filter((r: { type: string }) => r.type === 'CLAS/OC').length;

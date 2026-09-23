@@ -39,6 +39,7 @@ describe('test workflow gate behavior', () => {
 
     expect(testJob).not.toContain('needs: gate');
     expect(testJob).toContain('npm audit --audit-level=high --omit=optional');
+    expect(testJob).toContain('npm audit --prefix btp/approuter --audit-level=high --omit=optional');
     expect(testJob).toContain('npm run lint');
     expect(testJob).toContain('npm run typecheck');
     expect(testJob).toContain('npm test');

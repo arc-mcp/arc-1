@@ -47,6 +47,42 @@ describe('Request Context', () => {
     expect(results).toContain('B');
   });
 
+  it('carries trace context and the calling agent', async () => {
+    const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+    let captured: ReturnType<typeof getCurrentContext>;
+
+    await requestContext.run(
+      { requestId: 'REQ-T', traceparent, tracestate: 'rojo=1', clientAgent: 'cursor/0.44' },
+      () => {
+        captured = getCurrentContext();
+      },
+    );
+
+    expect(captured!.traceparent).toBe(traceparent);
+    expect(captured!.tracestate).toBe('rojo=1');
+    expect(captured!.clientAgent).toBe('cursor/0.44');
+  });
+
+  it('lets an inner run inherit trace context from the HTTP-edge context', async () => {
+    // Mirrors production: serveMcpRequest opens the outer context, handleToolCall the inner one.
+    const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+    let inner: ReturnType<typeof getCurrentContext>;
+
+    await requestContext.run({ requestId: 'REQ-OUTER', traceparent, clientAgent: 'agent/1' }, async () => {
+      const outer = getCurrentContext();
+      await requestContext.run(
+        { requestId: 'REQ-INNER', tool: 'SAPRead', traceparent: outer?.traceparent, clientAgent: outer?.clientAgent },
+        () => {
+          inner = getCurrentContext();
+        },
+      );
+    });
+
+    expect(inner!.requestId).toBe('REQ-INNER');
+    expect(inner!.traceparent).toBe(traceparent);
+    expect(inner!.clientAgent).toBe('agent/1');
+  });
+
   it('context is not available after run() completes', async () => {
     await requestContext.run({ requestId: 'DONE' }, async () => {
       expect(getCurrentContext()!.requestId).toBe('DONE');

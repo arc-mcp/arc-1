@@ -5,12 +5,13 @@
 
 import {
   buildSiblingExtensionFinding,
+  type CdsImpactDownstream,
   classifyCdsImpact,
   deriveSiblingStem,
   isSiblingNameMatch,
   type SiblingExtensionCandidate,
 } from '../adt/cds-impact.js';
-import type { AdtClient, SourceReadResult } from '../adt/client.js';
+import { type AdtClient, clampSearchResults, type SourceReadResult } from '../adt/client.js';
 import { findWhereUsed } from '../adt/codeintel.js';
 import { decodeKtdText } from '../adt/ddic-xml.js';
 import { AdtApiError, isNotFoundError } from '../adt/errors.js';
@@ -21,15 +22,51 @@ import { extractCdsDependencies } from '../context/cds-deps.js';
 import { compressCdsContext, compressContext } from '../context/compressor.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, contextCacheForDependencyPayloads } from './cache-security.js';
-import { cachedFeatures } from './feature-cache.js';
+import { getCachedFeatures } from './feature-cache.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPContext Handler ───────────────────────────────────────────────
 
 const DEFAULT_SIBLING_MAX_CANDIDATES = 4;
 const HARD_MAX_SIBLING_MAX_CANDIDATES = 10;
+
+/** Per-bucket cap for action="impact". Applied per bucket, not across the whole result, so a
+ *  crowded `abapConsumers` cannot hide a single decisive `bdefs` entry. */
+const DEFAULT_IMPACT_BUCKET = 50;
+
+/** Bucket keys of CdsImpactDownstream (everything except `summary`). */
+const IMPACT_BUCKETS = [
+  'projectionViews',
+  'bdefs',
+  'serviceDefinitions',
+  'serviceBindings',
+  'accessControls',
+  'metadataExtensions',
+  'abapConsumers',
+  'tables',
+  'documentation',
+  'other',
+] as const;
+
+/** Slice every downstream bucket to `limit`, reporting which were cut. `summary` is untouched: it
+ *  is computed pre-slice and is what makes a capped answer honest about the real blast radius. */
+function boundImpactBuckets(
+  downstream: CdsImpactDownstream,
+  limit: number,
+): { boundedDownstream: CdsImpactDownstream; truncatedBuckets: string[] } {
+  const truncatedBuckets: string[] = [];
+  const boundedDownstream = { ...downstream };
+  for (const bucket of IMPACT_BUCKETS) {
+    const entries = downstream[bucket];
+    if (entries.length > limit) {
+      truncatedBuckets.push(`${bucket} (${entries.length})`);
+      boundedDownstream[bucket] = entries.slice(0, limit);
+    }
+  }
+  return { boundedDownstream, truncatedBuckets };
+}
 
 function parseSiblingMaxCandidates(value: unknown): number {
   const parsed = Number(value ?? DEFAULT_SIBLING_MAX_CANDIDATES);
@@ -83,18 +120,14 @@ export async function handleSAPContext(
       }
       if (matches.length > 1) {
         return errorResult(
-          JSON.stringify(
-            {
-              error: `Object name "${name.toUpperCase()}" is ambiguous. Retry with type.`,
-              candidates: matches.slice(0, 20).map((match) => ({
-                type: normalizeObjectType(match.objectType),
-                name: match.objectName,
-                uri: match.uri,
-              })),
-            },
-            null,
-            2,
-          ),
+          toolJson({
+            error: `Object name "${name.toUpperCase()}" is ambiguous. Retry with type.`,
+            candidates: matches.slice(0, 20).map((match) => ({
+              type: normalizeObjectType(match.objectType),
+              name: match.objectName,
+              uri: match.uri,
+            })),
+          }),
         );
       }
       const match = matches[0]!;
@@ -102,25 +135,32 @@ export async function handleSAPContext(
       resolvedObject = { type: normalizeObjectType(match.objectType), name: match.objectName, uri: match.uri };
     }
 
-    const lookup = await lookupLiveUsages(client, resolvedUri);
+    const usageMax = args.maxResults === undefined ? undefined : Number(args.maxResults);
+    const lookup = await lookupLiveUsages(client, resolvedUri, undefined, usageMax);
     return textResult(
-      JSON.stringify(
-        {
-          name: name.toUpperCase(),
-          resolvedObject,
-          usageCount: lookup.results.length,
-          usages: lookup.results,
-          source: 'live',
-          fallbackUsed: lookup.fallbackUsed,
-        },
-        null,
-        2,
-      ),
+      toolJson({
+        name: name.toUpperCase(),
+        resolvedObject,
+        // Count matching reference entries before paging, not distinct consumers.
+        usageCount: lookup.total,
+        countMeaning: 'Reference entries, not distinct objects or runtime calls; not a complete inventory.',
+        shown: lookup.results.length,
+        truncated: lookup.truncated,
+        ...(lookup.warning ? { warning: lookup.warning } : {}),
+        ...(lookup.truncated
+          ? { hint: `Showing ${lookup.results.length} of ${lookup.total} usages. Raise maxResults (max 1000).` }
+          : {}),
+        usages: lookup.results,
+        source: 'live',
+        fallbackUsed: lookup.fallbackUsed,
+      }),
     );
   }
 
   if (!type || !name) {
-    return errorResult('Both "type" and "name" are required for SAPContext.');
+    return errorResult(
+      'SAPContext requires type and name, even with supplied source. Retry with the root object type; use SAPSearch if unknown.',
+    );
   }
 
   // Helper: get source with cache support
@@ -327,22 +367,37 @@ export async function handleSAPContext(
     const upstreamCount =
       upstream.tables.length + upstream.views.length + upstream.associations.length + upstream.compositions.length;
 
+    // Bound each downstream bucket. A widely-consumed base view has a huge blast radius, and this
+    // path classifies the FULL where-used tree. `downstream.summary` is computed before slicing, so
+    // the reported total/direct/indirect stay honest — a truncated bucket must never shrink the
+    // blast radius a caller sees.
+    const impactLimit = clampSearchResults(args.maxResults as number | undefined, DEFAULT_IMPACT_BUCKET);
+    const { boundedDownstream, truncatedBuckets } = boundImpactBuckets(downstream, impactLimit);
+
     const response = {
       name,
       type: 'DDLS',
       upstream,
-      downstream,
+      downstream: boundedDownstream,
       summary: {
         upstreamCount,
         downstreamTotal: downstream.summary.total,
         downstreamDirect: downstream.summary.direct,
       },
+      ...(truncatedBuckets.length > 0
+        ? {
+            truncatedBuckets,
+            hint:
+              `Bucket(s) ${truncatedBuckets.join(', ')} were capped at ${impactLimit} entries each; ` +
+              `summary counts remain complete. Raise maxResults (max 1000) to see more.`,
+          }
+        : {}),
       ...(consistencyHints.length > 0 ? { consistencyHints } : {}),
       ...(siblingExtensionAnalysis ? { siblingExtensionAnalysis } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
     };
 
-    return textResult(JSON.stringify(response, null, 2));
+    return textResult(toolJson(response));
   }
 
   if (action === 'structure') {
@@ -351,7 +406,7 @@ export async function handleSAPContext(
     }
 
     const result = await buildStructureHierarchy(client, name);
-    return textResult(JSON.stringify(result, null, 2));
+    return textResult(toolJson(result));
   }
 
   // Get source — either provided or fetched from SAP
@@ -404,44 +459,13 @@ export async function handleSAPContext(
 
   const ktdMarkdown = shouldIncludeKtd ? await readKtdMarkdown(client, name, cachingLayer) : undefined;
 
-  // Check dep graph cache — if source hash matches, return cached contracts
+  // A root hash cannot validate changed dependency contracts or depth/maxDeps options.
+  // Rebuild the aggregate, retaining ETag-validated source reads (and PP isolation).
   const dependencyPayloadCache = contextCacheForDependencyPayloads(cachingLayer, cacheSecurity);
-  if (dependencyPayloadCache) {
-    const cachedGraph = dependencyPayloadCache.getCachedDepGraph(source);
-    if (cachedGraph) {
-      const successful = cachedGraph.contracts.filter((c) => c.success);
-      const failed = cachedGraph.contracts.filter((c) => !c.success);
-      const lines: string[] = [];
-      lines.push(
-        `* === Dependency context for ${name} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) [cached] ===`,
-      );
-      lines.push('');
-      for (const contract of successful) {
-        const typeLabel = contract.type.toLowerCase();
-        const methodLabel = contract.methodCount > 0 ? `, ${contract.methodCount} methods` : '';
-        lines.push(`* --- ${contract.name} (${typeLabel}${methodLabel}) ---`);
-        lines.push(contract.source.trim());
-        lines.push('');
-      }
-      if (failed.length > 0) {
-        lines.push('* --- Failed dependencies ---');
-        for (const f of failed) {
-          lines.push(`* ${f.name}: ${f.error}`);
-        }
-        lines.push('');
-      }
-      const totalLines = lines.length;
-      lines.push(
-        `* Stats: ${successful.length + failed.length} deps found, ${successful.length} resolved, ${failed.length} failed, ${totalLines} lines [from cache]`,
-      );
-      return textResult(prependKtd(lines.join('\n'), name, ktdMarkdown));
-    }
-  }
 
   // Use detected ABAP version from probe if available, otherwise Cloud (superset)
-  const abaplintVersion = cachedFeatures?.abapRelease
-    ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-    : undefined;
+  const probedAbapRelease = getCachedFeatures()?.abapRelease;
+  const abaplintVersion = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
 
   const result = await compressContext(
     client,
@@ -469,7 +493,8 @@ async function readKtdMarkdown(
           )
         ).source
       : (await client.getKtd(name, { version: 'active' })).source;
-    const markdown = decodeKtdText(envelope).trim();
+    // Context is analysis-only: expose the stored Markdown without write-routing escapes.
+    const markdown = decodeKtdText(envelope, { routeSafe: false }).trim();
     return markdown.length > 0 ? markdown : undefined;
   } catch (err) {
     if (isNotFoundError(err)) return undefined;

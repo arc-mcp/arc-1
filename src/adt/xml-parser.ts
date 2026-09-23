@@ -30,6 +30,8 @@ import type {
   DomainInfo,
   EnhancementImplementationInfo,
   FeatureToggleInfo,
+  FunctionGroupStructure,
+  FunctionModuleProperties,
   InactiveObject,
   LineRange,
   MessageClassInfo,
@@ -37,7 +39,6 @@ import type {
   RevisionInfo,
   RevisionListResult,
   ServerDrivenObjectMetadata,
-  SourceSearchResult,
   TransactionInfo,
 } from './types.js';
 
@@ -81,6 +82,8 @@ const ARRAY_TAGS = new Set([
   'proposal',
   'referencedObject',
   'textSearchResult',
+  'textSearchObject',
+  'textLine',
   'testClass',
   'testMethod',
   'alert',
@@ -234,9 +237,10 @@ export function parseSubpackageNodestructure(xml: string): string[] {
  * After namespace stripping, both converge but with different casing.
  * We try both patterns with fallback.
  */
-export function parseTableContents(xml: string): { columns: string[]; rows: Record<string, string>[] } {
-  const parsed = parseXml(xml);
-
+function parseTableContentsObject(parsed: Record<string, unknown>): {
+  columns: string[];
+  rows: Record<string, string>[];
+} {
   // Try old format first: abap > values > COLUMNS > COLUMN
   let columns = getDeepArray(parsed, ['abap', 'values', 'COLUMNS', 'COLUMN']);
   if (columns.length === 0) {
@@ -291,14 +295,12 @@ export interface DataPreviewMeta {
   executedQueryString?: string;
 }
 
-/**
- * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
- * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
- * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
- */
-export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
-  if (!xml || xml.trim().length === 0) return {};
-  const parsed = parseXml(xml);
+export interface DataPreviewResult extends DataPreviewMeta {
+  columns: string[];
+  rows: Record<string, string>[];
+}
+
+function parseDataPreviewMetaObject(parsed: Record<string, unknown>): DataPreviewMeta {
   const td = (parsed.tableData ?? parsed) as Record<string, unknown>;
   const meta: DataPreviewMeta = {};
 
@@ -317,6 +319,28 @@ export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
     meta.executedQueryString = executed.trim().replace(/\s+/g, ' ');
   }
   return meta;
+}
+
+/** Parse data-preview rows and metrics from one shared fast-xml-parser object tree. */
+export function parseDataPreviewResult(xml: string): DataPreviewResult {
+  if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
+  const parsed = parseXml(xml);
+  return { ...parseTableContentsObject(parsed), ...parseDataPreviewMetaObject(parsed) };
+}
+
+export function parseTableContents(xml: string): { columns: string[]; rows: Record<string, string>[] } {
+  if (!xml || xml.trim().length === 0) return { columns: [], rows: [] };
+  return parseTableContentsObject(parseXml(xml));
+}
+
+/**
+ * Parse the scalar metrics from a datapreview response — `totalRows`, `queryExecutionTime`,
+ * `executedQueryString`. All optional: absent fields are omitted. Reads the same body
+ * `parseTableContents` does; surfaced so SAPQuery can report real row counts + server-side timing.
+ */
+export function parseDataPreviewMeta(xml: string): DataPreviewMeta {
+  if (!xml || xml.trim().length === 0) return {};
+  return parseDataPreviewMetaObject(parseXml(xml));
 }
 
 /**
@@ -399,7 +423,7 @@ export function parseSyntaxConfigurations(xml: string): Array<{ version: string;
  * are function modules, `FUGR/I` children are includes, `FUGR/PX` is the main
  * program. Verified live on a4h (see tests/fixtures/xml/function-group.xml).
  */
-export function parseFunctionGroup(xml: string): { name: string; functions: string[]; includes: string[] } {
+export function parseFunctionGroup(xml: string): FunctionGroupStructure {
   const parsed = parseXml(xml);
   // parseXml wraps elements in arrays, so the root <objectStructureElement> arrives as
   // a one-element array; its children are nested under the same (array) key.
@@ -414,6 +438,65 @@ export function parseFunctionGroup(xml: string): { name: string; functions: stri
     else if (type === 'FUGR/I') includes.push(childName);
   }
   return { name: String(root['@_name'] ?? ''), functions, includes };
+}
+
+/**
+ * Parse a function group's structure from the GENERIC repository objectstructure
+ * response (`/sap/bc/adt/repository/objectstructure?objectname=X&objecttype=FUGR/F`).
+ *
+ * This is the pre-7.52 fallback: `/functions/groups/<name>/objectstructure` 404s on
+ * NW 7.50 under every Accept, while the generic resource works there. The payload is a
+ * different shape — a FLAT list of `<projectexplorer:node>` elements with unprefixed
+ * lowercase attributes — so it needs its own parser rather than a tweak to
+ * `parseFunctionGroup`. Folder nodes carry an `objecttype` but no `objectname`, and real
+ * groups also emit FUGR/PD|PM|PO|PT|PU|PZ (dynpros, PBO/PAI modules, text elements) plus
+ * PROG/* nodes, so everything that is not FUGR/FF or FUGR/I is ignored.
+ *
+ * The group name is NOT in the response — callers pass it through.
+ * Verified live on npl 7.50 (see tests/fixtures/xml/function-group-projectexplorer.xml).
+ */
+export function parseFunctionGroupNodes(xml: string, groupName: string): FunctionGroupStructure {
+  const parsed = parseXml(xml);
+  const root = toRecordArray(parsed.objectstructure)[0] ?? {};
+  const functions: string[] = [];
+  const includes: string[] = [];
+  for (const node of toRecordArray(root.node)) {
+    // Folders are grouping headers ("Includes", "Function Modules") — they carry an
+    // objecttype but never an objectname, so the name check alone would not skip them.
+    if (String(node['@_isfolder'] ?? '') === 'true') continue;
+    const type = String(node['@_objecttype'] ?? '');
+    const nodeName = String(node['@_objectname'] ?? '');
+    if (!nodeName) continue;
+    if (type === 'FUGR/FF') functions.push(nodeName);
+    else if (type === 'FUGR/I') includes.push(nodeName);
+  }
+  return { name: groupName, functions, includes };
+}
+
+/**
+ * Attributes ARC-1 writes on a function module. SAP's fmodule resource rejects a
+ * hand-built partial envelope (`400 ExceptionInvalidData` / "Unexpected Case in Branch"),
+ * so the only working write is GET → mutate this document → PUT it back verbatim.
+ * Live-verified on npl 7.50 + a4h 758 — see
+ * docs/research/2026-07-29-nw750-fixture-create-surface.md §8.1.
+ */
+export function parseFunctionModuleProperties(xml: string): FunctionModuleProperties {
+  // Scope to the root element first so an attribute elsewhere in the document can't match,
+  // and accept either quote style — SAP is not consistent across releases.
+  const root = /<fmodule:abapFunctionModule\b[^>]*>/i.exec(xml)?.[0];
+  const pick = (attr: string): string | undefined => {
+    if (!root) return undefined;
+    const m = new RegExp(`\\bfmodule:${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'i').exec(root);
+    return m?.[1] ?? m?.[2];
+  };
+  const props: FunctionModuleProperties = {};
+  const processingType = pick('processingType');
+  if (processingType) props.processingType = processingType;
+  const updateTaskKind = pick('updateTaskKind');
+  if (updateTaskKind) props.updateTaskKind = updateTaskKind;
+  const releaseState = pick('releaseState');
+  if (releaseState) props.releaseState = releaseState;
+  return props;
 }
 
 /**
@@ -467,7 +550,15 @@ export function parseDiscoveryDocument(xml: string): Map<string, string[]> {
   if (!xml?.trim()) return new Map();
 
   try {
-    const parsed = parseXml(xml);
+    return parseDiscoveryObject(parseXml(xml));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Map an already-parsed discovery document without parsing its XML a second time. */
+export function parseDiscoveryObject(parsed: Record<string, unknown>): Map<string, string[]> {
+  try {
     const service = (parsed.service ?? {}) as Record<string, unknown>;
     const workspaces = Array.isArray(service.workspace)
       ? service.workspace
@@ -543,69 +634,6 @@ function normalizeDiscoveryPath(href: string): string | undefined {
 }
 
 /**
- * Parse ADT source/text search results.
- *
- * The textSearch endpoint returns results as either XML with objectReference elements
- * containing match details, or an Atom-like feed. We handle both formats.
- */
-export function parseSourceSearchResults(xml: string): SourceSearchResult[] {
-  const parsed = parseXml(xml);
-  const results: SourceSearchResult[] = [];
-
-  // Try objectReferences format (similar to quickSearch)
-  const refs = getNestedArray(parsed, 'objectReferences', 'objectReference');
-  if (refs.length > 0) {
-    for (const ref of refs) {
-      const matchNodes = findDeepNodes(ref, 'textSearchResult');
-      const matches = matchNodes.map((m: Record<string, unknown>) => ({
-        line: Number(m['@_line'] ?? 0),
-        snippet: String(m['@_snippet'] ?? m['#text'] ?? ''),
-      }));
-      results.push({
-        objectType: String(ref['@_type'] ?? ''),
-        objectName: String(ref['@_name'] ?? ''),
-        uri: String(ref['@_uri'] ?? ''),
-        matches,
-      });
-    }
-    return results;
-  }
-
-  // Try Atom feed format
-  const entries = getNestedArray(parsed, 'feed', 'entry');
-  for (const entry of entries) {
-    const uri = String(entry.id ?? entry['@_href'] ?? '');
-    const title = String(entry.title ?? '');
-    results.push({
-      objectType: '',
-      objectName: title || uri.split('/').pop() || '',
-      uri,
-      matches: [],
-    });
-  }
-
-  // Fallback: try to find any matching nodes
-  if (results.length === 0) {
-    const nodes = findDeepNodes(parsed, 'match');
-    for (const node of nodes) {
-      results.push({
-        objectType: String(node['@_type'] ?? ''),
-        objectName: String(node['@_name'] ?? node['@_objectName'] ?? ''),
-        uri: String(node['@_uri'] ?? ''),
-        matches: [
-          {
-            line: Number(node['@_line'] ?? 0),
-            snippet: String(node['@_snippet'] ?? node['#text'] ?? ''),
-          },
-        ],
-      });
-    }
-  }
-
-  return results;
-}
-
-/**
  * Parse domain metadata XML from /sap/bc/adt/ddic/domains/{name}.
  *
  * Domains don't have /source/main — they return structured XML with
@@ -673,6 +701,7 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
   // Find the dataElement node — after NS strip: dtel:dataElement → dataElement
   const dtelNodes = findDeepNodes(parsed, 'dataElement');
   const dtel = dtelNodes[0] ?? {};
+  const flag = (value: unknown) => String(value ?? '').toLowerCase() === 'true';
 
   return {
     name: String(wbobj['@_name'] ?? ''),
@@ -683,11 +712,21 @@ export function parseDataElementMetadata(xml: string): DataElementInfo {
     length: String(dtel.dataTypeLength ?? ''),
     decimals: String(dtel.dataTypeDecimals ?? ''),
     shortLabel: String(dtel.shortFieldLabel ?? ''),
+    shortLength: String(dtel.shortFieldLength ?? ''),
     mediumLabel: String(dtel.mediumFieldLabel ?? ''),
+    mediumLength: String(dtel.mediumFieldLength ?? ''),
     longLabel: String(dtel.longFieldLabel ?? ''),
+    longLength: String(dtel.longFieldLength ?? ''),
     headingLabel: String(dtel.headingFieldLabel ?? ''),
+    headingLength: String(dtel.headingFieldLength ?? ''),
     searchHelp: String(dtel.searchHelp ?? ''),
+    searchHelpParameter: String(dtel.searchHelpParameter ?? ''),
+    setGetParameter: String(dtel.setGetParameter ?? ''),
     defaultComponentName: String(dtel.defaultComponentName ?? ''),
+    deactivateInputHistory: flag(dtel.deactivateInputHistory),
+    changeDocument: flag(dtel.changeDocument),
+    leftToRightDirection: flag(dtel.leftToRightDirection),
+    deactivateBIDIFiltering: flag(dtel.deactivateBIDIFiltering),
     package: String(pkgRef['@_name'] ?? ''),
   };
 }
@@ -1006,7 +1045,7 @@ export function buildApiReleasePutBody(getXml: string, contract: string, state: 
  * We extract the key fields into a JSON summary:
  * - name, description, OData version (V2/V4), binding type (UI/Web API)
  * - service definition reference, publish status, contract
- */
+ * Compact JSON — returned verbatim to the LLM as SAPRead(type="SRVB").source.*/
 export function parseServiceBinding(xml: string): string {
   const parsed = parseXml(xml);
   const sb = (parsed.serviceBinding ?? {}) as Record<string, unknown>;
@@ -1045,7 +1084,7 @@ export function parseServiceBinding(xml: string): string {
     changedBy: String(sb['@_changedBy'] ?? ''),
   };
 
-  return JSON.stringify(result, null, 2);
+  return JSON.stringify(result);
 }
 
 /**
@@ -1155,8 +1194,13 @@ export function decodeXmlEntities(s: string): string {
     .replace(/&amp;/g, '&');
 }
 
-/** Safely get a nested array from parsed XML */
-function getNestedArray(obj: Record<string, unknown>, parent: string, child: string): Array<Record<string, unknown>> {
+/** Safely get a nested array from parsed XML.
+ *  Absent, empty (`<alerts/>` → `''` on 7.50) and single-node containers all collapse to an array. */
+export function getNestedArray(
+  obj: Record<string, unknown>,
+  parent: string,
+  child: string,
+): Array<Record<string, unknown>> {
   const parentObj = obj[parent] as Record<string, unknown> | undefined;
   if (!parentObj) return [];
   const arr = parentObj[child];
@@ -1186,6 +1230,62 @@ export function findDeepNodes(obj: unknown, key: string): Array<Record<string, u
     if (found.length > 0) return found;
   }
   return [];
+}
+
+/** A parsed `nameditem:namedItem`: identifier (`name`), human text (`description`), optional structured `data`. */
+export interface NamedItem {
+  name: string;
+  description: string;
+  data: string;
+}
+
+/**
+ * Parse a `nameditem:namedItemList` value-help response. Shared by transport layers/targets and
+ * the ATC variant listing — any ADT endpoint that returns the generic named-item feed.
+ */
+export function parseNamedItems(xml: string): NamedItem[] {
+  const parsed = parseXml(xml);
+  // The parser wraps some leaf elements (e.g. `data`) in single-element arrays; unwrap.
+  const str = (v: unknown): string => {
+    const x = Array.isArray(v) ? v[0] : v;
+    return typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '';
+  };
+  // Some items carry entity-encoded markup (e.g. "&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;").
+  // The shared parser leaves entities encoded — decode, strip tags, collapse whitespace.
+  const clean = (v: unknown): string =>
+    str(v)
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&') // decode &amp; last so encoded entities aren't double-decoded
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  return findDeepNodes(parsed, 'namedItem').map((item) => {
+    const rec = item as Record<string, unknown>;
+    // `name` is an identifier passed back verbatim (only trim); `description`/`data` get cleaned.
+    return { name: str(rec.name).trim(), description: clean(rec.description), data: clean(rec.data) };
+  });
+}
+
+/**
+ * Read the system default ATC check variant from an `<atc:customizing>` response — the
+ * `<property name="systemCheckVariant" value="…"/>` entry. This is the system's CONFIGURED ATC
+ * variant; SAP does NOT apply it on an empty `checkVariant` (that runs `DEFAULT`), so `runAtcCheck`
+ * sends it explicitly. Returns undefined when the property is absent.
+ */
+export function parseAtcSystemCheckVariant(xml: string): string | undefined {
+  const parsed = parseXml(xml);
+  for (const prop of findDeepNodes(parsed, 'property')) {
+    if (prop['@_name'] === 'systemCheckVariant') {
+      const value = prop['@_value'];
+      return typeof value === 'string' && value ? value : undefined;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -1255,13 +1355,13 @@ export function parseClassMetadata(xml: string): ClassMetadata {
 }
 
 /**
- * Parse the `<blue:blueSource>` metadata of a server-driven (AFF generic) object — the
- * ABAP Platform 2025 (8.16+) contract shared by DESD, EVTB, DTSC, COTA, … (GET …/{name},
- * Accept application/vnd.sap.adt.blues.v1+xml). `removeNSPrefix` strips blue:/adtcore:, so the
- * root element <blue:blueSource> is keyed `blueSource`. Optional fields are omitted when empty.
+ * Parse the metadata of a server-driven (AFF generic) object — the contract shared by DESD, EVTB,
+ * DTSC, COTA, DSFD (root `<blue:blueSource>`) and DTDC (root `<dtdc:dtdcSource>`). `removeNSPrefix`
+ * strips the prefix, so the root is keyed by its local name (`rootLocalName`: `blueSource` /
+ * `dtdcSource`). The attribute shape is identical across formats. Optional fields omitted when empty.
  */
-export function parseBlueSource(xml: string): ServerDrivenObjectMetadata {
-  const root = (parseXml(xml).blueSource ?? {}) as Record<string, unknown>;
+export function parseServerDrivenMetadata(xml: string, rootLocalName: string): ServerDrivenObjectMetadata {
+  const root = (parseXml(xml)[rootLocalName] ?? {}) as Record<string, unknown>;
   const pkgRef = (root.packageRef ?? {}) as Record<string, unknown>;
   const str = (k: string): string => {
     const v = root[k];
@@ -1391,6 +1491,58 @@ export function parseInactiveObjects(xml: string): InactiveObject[] {
   return flatResults;
 }
 
+const TRANSPORT_RELS = new Set([
+  'http://www.sap.com/adt/relations/transport/request', // live shape (a4h 758)
+  'http://www.sap.com/adt/relations/transports', // legacy — kept for older releases
+]);
+
+/** CTS request/task id: 3-char system + K/T/… + 6 alphanumerics, e.g. A4HK906291. */
+const CTS_ID_RE = /^[A-Z0-9]{3}[A-Z][A-Z0-9]{6}$/;
+
+/** Decode a URI component, returning the raw value rather than throwing on a malformed `%` escape. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+/**
+ * CTS request id of a revision, from its transport link.
+ *
+ * `adtcore:name` carries the id; `@_title` is the transport DESCRIPTION (only used as a last
+ * resort, for releases that put the id there). The href tail is accepted ONLY when it looks
+ * like a CTS id — ADT also emits hrefs ending in `reference?obj_name=…`, and returning
+ * `"reference"` for every revision would silently break attribution everywhere.
+ * Evidence: docs/plans/2026-08-03-transport-diff.md §1.
+ */
+function revisionTransportId(links: Record<string, unknown>[]): string {
+  for (const link of links) {
+    if (!TRANSPORT_RELS.has(String(link['@_rel'] ?? ''))) continue;
+    const name = String(link['@_name'] ?? '').trim();
+    if (name) return name;
+    const tail = safeDecode(
+      String(link['@_href'] ?? '')
+        .split('/')
+        .pop()
+        ?.split('?')[0] ?? '',
+    )
+      .trim()
+      .toUpperCase();
+    if (CTS_ID_RE.test(tail)) return tail;
+    // `@_title`/`@_version` are last resorts for older releases that put the id there; both
+    // go through the shape guard, so a description can never be mistaken for a transport.
+    for (const attr of ['@_title', '@_version'] as const) {
+      const value = String(link[attr] ?? '')
+        .trim()
+        .toUpperCase();
+      if (CTS_ID_RE.test(value)) return value;
+    }
+  }
+  return '';
+}
+
 /** Parse source revision history feed from /source/main/versions */
 export function parseRevisionFeed(xml: string): RevisionListResult {
   const empty: RevisionListResult = {
@@ -1415,10 +1567,7 @@ export function parseRevisionFeed(xml: string): RevisionListResult {
       const authorNode = toRecordArray(entry.author)[0] ?? {};
       const contentNode = toRecordArray(entry.content)[0] ?? {};
       const links = toRecordArray(entry.link);
-      const transportLink = links.find(
-        (link) => String(link['@_rel'] ?? '') === 'http://www.sap.com/adt/relations/transports',
-      );
-      const transport = String(transportLink?.['@_title'] ?? transportLink?.['@_version'] ?? '');
+      const transport = revisionTransportId(links);
       const versionTitle = String(entry.title ?? '');
 
       revisions.push({

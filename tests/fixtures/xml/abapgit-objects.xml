@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- clone/pull response shape derived from abapGit's own ADT backend transformation
+     (ZABAPGIT_ST_REPO_POST_RES, abapGit/ADT_Backend), served as
+     application/abapgit.adt.repo.object.v2+xml. Not a live capture: the a4h trial cannot reach
+     its remotes (STRUST), so clone/pull there fail before a body is rendered. -->
+<abapObjects:abapObjects xmlns:abapObjects="http://www.sap.com/adt/abapgit/abapObjects">
+  <abapObjects:abapObject>
+    <abapObjects:type>CLAS</abapObjects:type>
+    <abapObjects:name>ZCL_ARC1_TEST</abapObjects:name>
+    <abapObjects:package>$TMP</abapObjects:package>
+    <abapObjects:status>Imported</abapObjects:status>
+    <abapObjects:msgType>S</abapObjects:msgType>
+    <abapObjects:msgText>Object imported</abapObjects:msgText>
+  </abapObjects:abapObject>
+  <abapObjects:abapObject>
+    <abapObjects:type>INTF</abapObjects:type>
+    <abapObjects:name>ZIF_ARC1_TEST</abapObjects:name>
+    <abapObjects:package>$TMP</abapObjects:package>
+    <abapObjects:status>Error</abapObjects:status>
+    <abapObjects:msgType>E</abapObjects:msgType>
+    <abapObjects:msgText>Object could not be activated</abapObjects:msgText>
+  </abapObjects:abapObject>
+</abapObjects:abapObjects>

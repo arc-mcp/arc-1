@@ -9,7 +9,6 @@
 import type {
   Cache,
   CacheApi,
-  CachedDepGraph,
   CachedSource,
   CacheListSourcesQuery,
   CacheListSourcesResult,
@@ -21,7 +20,6 @@ import { hashSource, sourceKey } from './cache.js';
 export class MemoryCache implements Cache {
   private apis = new Map<string, CacheApi>();
   private sources = new Map<string, CachedSource>();
-  private depGraphs = new Map<string, CachedDepGraph>();
   private funcGroups = new Map<string, string>();
 
   // ─── API Operations ───────────────────────────────────────────────
@@ -94,16 +92,6 @@ export class MemoryCache implements Cache {
     this.sources.delete(sourceKey(objectType, objectName, version));
   }
 
-  // ─── Dependency Graph Cache ───────────────────────────────────────
-
-  putDepGraph(graph: CachedDepGraph): void {
-    this.depGraphs.set(graph.sourceHash, { ...graph });
-  }
-
-  getDepGraph(sourceHash: string): CachedDepGraph | null {
-    return this.depGraphs.get(sourceHash) ?? null;
-  }
-
   // ─── Function Group Resolution ────────────────────────────────────
 
   putFuncGroup(funcName: string, groupName: string): void {
@@ -119,7 +107,6 @@ export class MemoryCache implements Cache {
   clear(): void {
     this.apis.clear();
     this.sources.clear();
-    this.depGraphs.clear();
     this.funcGroups.clear();
   }
 
@@ -127,7 +114,7 @@ export class MemoryCache implements Cache {
     return {
       apiCount: this.apis.size,
       sourceCount: this.sources.size,
-      contractCount: this.depGraphs.size,
+      contractCount: 0,
     };
   }
 

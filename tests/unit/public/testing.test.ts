@@ -33,4 +33,12 @@ describe('createMockToolContext', () => {
       { method: 'DELETE', path: '/sap/opu/odata/x' },
     ]);
   });
+
+  it('records named execution calls and returns their configured output', async () => {
+    const ctx = createMockToolContext({ classRunOutput: 'CLASS', programRunOutput: 'REPORT' });
+    await expect(ctx.run.classRun('ZCL_DEMO')).resolves.toBe('CLASS');
+    await expect(ctx.run.programRun('ZREPORT')).resolves.toBe('REPORT');
+    expect(ctx.classRunCalls).toEqual(['ZCL_DEMO']);
+    expect(ctx.programRunCalls).toEqual(['ZREPORT']);
+  });
 });

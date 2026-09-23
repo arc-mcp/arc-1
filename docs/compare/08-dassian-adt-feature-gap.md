@@ -100,10 +100,9 @@ SAP UI Landscape XML auto-discovery — reads system landscape configuration to 
 
 These were flagged in the original report but have since been implemented in ARC-1.
 
-### ~~MCP Elicitation~~ — IMPLEMENTED
-- `src/server/elicit.ts`: `confirmDestructive()`, `selectOption()`, `promptString()`
-- Graceful fallback when client doesn't support elicitation
-- Audit logging of all elicitation events
+### MCP Elicitation — NOT a core feature (by design)
+- Core tools have no interactive elicitation. Destructive-op safety is the config ceiling (`allowWrites` / `allowedPackages` / `denyActions`), not fail-open interactive prompts — this is a deliberate design choice, not a gap.
+- Elicitation is available only to plugin/extension tools via `ctx.elicit` (`src/server/plugin-loader.ts`).
 
 ### ~~Session Auto-Recovery~~ — IMPLEMENTED
 - `src/adt/http.ts`: `withStatefulSession()` ensures lock/modify/unlock share same session cookies

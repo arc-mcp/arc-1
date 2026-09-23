@@ -19,9 +19,28 @@ import { parseReleaseNumber, STATEFUL_SESSION_MIN_RELEASE } from './release.js';
 
 /** Base error for all ADT-related errors */
 export class AdtError extends Error {
+  /** A create request failed without establishing whether SAP committed it. */
+  creationOutcome?: 'unknown';
+
   constructor(message: string) {
     super(message);
     this.name = 'AdtError';
+  }
+}
+
+/** A bounded data-preview response crossed the configured decompressed-byte ceiling. */
+export class AdtResponseLimitError extends AdtError {
+  readonly code = 'DATA_RESPONSE_TOO_LARGE';
+  readonly retryable = false;
+
+  constructor(
+    public readonly limitBytes: number,
+    public readonly observedBytes: number,
+    public readonly endpointFamily: string,
+    public readonly requestId?: string,
+  ) {
+    super(`ADT ${endpointFamily} response exceeded the configured ${limitBytes}-byte limit.`);
+    this.name = 'AdtResponseLimitError';
   }
 }
 
@@ -47,7 +66,8 @@ export interface SapErrorClassification {
     | 'bdef-base-not-extensible'
     | 'include-not-initialized'
     | 'data-view-not-authorized'
-    | 'package-create-invalid';
+    | 'package-create-invalid'
+    | 'ddls-view-extend-restriction';
   hint: string;
   transaction?: string;
   details?: Record<string, string>;
@@ -74,6 +94,14 @@ export class AdtApiError extends AdtError {
    * "what happened → diagnostics → how to fix".
    */
   extraHint?: string;
+
+  /**
+   * Handler-owned result of the metadata probe after a failed post-lock DELETE.
+   * Only a probe 404 proves absence; other probe failures are explicitly unknown.
+   * Lets generic formatting avoid claiming an object is absent without teaching it
+   * the handler's request sequence.
+   */
+  resourceExistenceAfterDelete?: 'exists' | 'absent' | 'unknown';
 
   constructor(
     message: string,
@@ -607,6 +635,29 @@ export function classifySapDomainError(
     };
   }
 
+  // DDLS006 source-type restriction for legacy `extend view`. SAP Note 3567464 says DDIC-based CDS
+  // extends require Standard ABAP and improves this diagnostic on corrected systems. Live testing on
+  // SAP_BASIS 758 confirmed that cloudDevelopment rejects the source while Standard ABAP accepts it,
+  // but #614 also reports DDLS006 from an older FPS01 system whose package is already Standard ABAP.
+  // Keep the remediation broad enough for both cases; this is not a missing ARC-1 object subtype.
+  const viewExtendProperties = statusCode === 400 ? AdtApiError.extractProperties(bodyRaw) : {};
+  const viewExtendMessageNumber = viewExtendProperties['T100KEY-NO'] ?? viewExtendProperties['T100KEY-MSGNO'];
+  const hasViewExtendT100 =
+    viewExtendMessageNumber === '006' && /^view extend$/i.test(viewExtendProperties['T100KEY-V1']?.trim() ?? '');
+  if (
+    statusCode === 400 &&
+    (hasViewExtendT100 || /object type\s+view extend\s+is not allowed in this system/i.test(bodyRaw))
+  ) {
+    return {
+      category: 'ddls-view-extend-restriction',
+      hint:
+        'Legacy CDS `extend view` already uses SAPWrite type="DDLS" (ADT DDLS/DF); SAP DDLS006 rejected the View Extend source type. ' +
+        'Verify that the target package and base object use Standard ABAP. If they already do, ask the Basis team whether SAP Note 3567464 or its containing support package is installed. ' +
+        'Do not use a separate ARC-1 object type; changing to `extend view entity` is valid only for a compatible view-entity base and is not a general workaround.',
+      details: typeId ? { exceptionType: typeId } : undefined,
+    };
+  }
+
   const lockPattern =
     /\blocked by\b|\bbeing edited by\b|\bcurrently editing\b|\bresource is locked\b|\balready locked\b/i.test(bodyRaw);
 
@@ -775,7 +826,7 @@ export function classifySapDomainError(
   if ((typeId === 'ExceptionResourceCreationFailure' || resourceExistsPattern) && objectExistsPattern) {
     return {
       category: 'object-exists',
-      hint: 'An object with this name already exists. Recovery path: rerun the same payload with SAPWrite(action="update") to overwrite source/content, instead of retrying create.',
+      hint: 'An object with this name already exists. Inspect its identity, package and source with SAPRead before deciding whether an explicit update is appropriate. Do not blindly repeat create or overwrite an existing object.',
       details: typeId ? { exceptionType: typeId } : undefined,
     };
   }

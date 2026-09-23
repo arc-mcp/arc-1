@@ -7,19 +7,17 @@
  * 3. Sort (custom objects first)
  * 4. Limit to maxDeps
  * 5. Fetch dependency sources (parallel, bounded to MAX_CONCURRENT)
- *    → With caching layer: check cache first, only fetch on miss
+ *    → With caching layer: revalidate each source with its ETag
  * 6. Extract contracts (public API only) (contract.ts)
  * 7. If depth > 1, recurse on each dependency's source
  * 8. Format output prologue
- * 9. Cache the resolved dep graph (keyed by source hash)
  */
 
 import type { Version } from '@abaplint/core';
 import type { AdtClient, SourceReadResult } from '../adt/client.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsDependencies } from './cds-deps.js';
-import { extractContract } from './contract.js';
-import { extractDependencies } from './deps.js';
+import { parseContract, parseDependencies } from './parse-cache.js';
 import type { CdsDependency, ContextResult, Contract, Dependency } from './types.js';
 
 const DEFAULT_MAX_DEPS = 20;
@@ -64,7 +62,7 @@ function readResultSource(result: SourceReadResult | string): string {
  * @param maxDeps - Maximum number of dependencies to resolve (default 20)
  * @param depth - Dependency expansion depth 1-3 (default 1)
  * @param abaplintVersion - abaplint parser version (detected from SAP system, defaults to Cloud)
- * @param cachingLayer - Optional caching layer for source and contract caching
+ * @param cachingLayer - Optional ETag-validated source caching layer
  */
 export async function compressContext(
   client: AdtClient,
@@ -79,36 +77,12 @@ export async function compressContext(
   const effectiveDepth = Math.min(Math.max(depth, 1), MAX_DEPTH);
   const seen = new Set<string>([objectName.toUpperCase()]);
   const allContracts: Contract[] = [];
-  let totalFiltered = 0;
 
-  const deps = extractDependencies(source, objectName, true, abaplintVersion);
-  totalFiltered = deps.length; // extractDependencies already filters, but we track the count
+  const deps = parseDependencies(source, objectName, abaplintVersion, cachingLayer);
 
   await resolveDepthLevel(client, deps, maxDeps, effectiveDepth, seen, allContracts, abaplintVersion, cachingLayer);
 
-  const result = formatResult(objectName, objectType, deps.length, allContracts, totalFiltered);
-
-  // Cache the resolved dep graph keyed by source hash.
-  // Cache even when allContracts is empty — avoids re-resolving on every call
-  // for objects with no resolvable dependencies.
-  if (cachingLayer) {
-    cachingLayer.putDepGraph(
-      source,
-      objectName,
-      objectType,
-      allContracts.map((c) => ({
-        name: c.name,
-        type: c.type,
-        methodCount: c.methodCount,
-        source: c.source,
-        fullSource: c.fullSource,
-        success: c.success,
-        error: c.error,
-      })),
-    );
-  }
-
-  return result;
+  return formatResult(objectName, objectType, deps, allContracts);
 }
 
 /**
@@ -144,12 +118,8 @@ async function resolveDepthLevel(
     for (const contract of fetched) {
       if (contract.success && (contract.fullSource || contract.source)) {
         // Extract deps from the full source (not compressed contract) for accuracy
-        const subDeps = extractDependencies(
-          contract.fullSource || contract.source,
-          contract.name,
-          true,
-          abaplintVersion,
-        );
+        const subSource = contract.fullSource || contract.source;
+        const subDeps = parseDependencies(subSource, contract.name, abaplintVersion, cachingLayer);
         const unseenSubDeps = subDeps.filter((d) => !seen.has(d.name.toUpperCase()));
         if (unseenSubDeps.length > 0) {
           await resolveDepthLevel(
@@ -195,7 +165,8 @@ async function fetchSingleContract(
   try {
     const objectType = inferObjectType(dep);
     const source = await fetchSource(client, dep.name, objectType, cachingLayer);
-    const contract = extractContract(source, dep.name, objectType, abaplintVersion);
+    // Retrieve under the caller's source/cache policy BEFORE consulting a content-addressed parse result.
+    const contract = parseContract(source, dep.name, objectType, abaplintVersion, cachingLayer);
     // Store full source for recursive dependency extraction
     contract.fullSource = source;
     return contract;
@@ -306,9 +277,8 @@ async function fetchSource(
 function formatResult(
   objectName: string,
   objectType: string,
-  depsFound: number,
+  rootDependencies: Dependency[],
   contracts: Contract[],
-  _totalFiltered: number,
 ): ContextResult {
   const successful = contracts.filter((c) => c.success);
   const failed = contracts.filter((c) => !c.success);
@@ -317,7 +287,7 @@ function formatResult(
   lines.push(
     `* === Dependency context for ${objectName} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) ===`,
   );
-  lines.push('');
+  lines.push('* Source-derived dependency contracts; not complete dependency coverage or runtime evidence.', '');
 
   for (const contract of successful) {
     const typeLabel = contract.type.toLowerCase();
@@ -328,28 +298,39 @@ function formatResult(
   }
 
   if (failed.length > 0) {
-    lines.push('* --- Failed dependencies ---');
+    lines.push('* --- Failed dependencies (attempted source reads; not proof of absence as another SAP type) ---');
     for (const f of failed) {
       lines.push(`* ${f.name}: ${f.error}`);
     }
     lines.push('');
   }
 
-  const totalLines = lines.length;
-  lines.push(
-    `* Stats: ${depsFound} deps found, ${successful.length} resolved, ${failed.length} failed, ${totalLines} lines`,
-  );
-
   return {
     objectName,
     objectType,
-    depsFound,
-    depsResolved: successful.length,
-    depsFiltered: depsFound - contracts.length,
-    depsFailed: failed.length,
-    totalLines,
-    output: lines.join('\n'),
+    ...appendContextStats(lines, rootDependencies, contracts),
   };
+}
+
+/** Root candidates and recursive attempts have different scopes; never subtract their totals. */
+function appendContextStats(
+  lines: string[],
+  rootDependencies: readonly { name: string }[],
+  attempts: readonly { name: string; success: boolean }[],
+) {
+  const attemptedNames = new Set(attempts.map((entry) => entry.name.toUpperCase()));
+  const depsFound = rootDependencies.length;
+  const depsFiltered = rootDependencies.filter((entry) => !attemptedNames.has(entry.name.toUpperCase())).length;
+  const depsResolved = attempts.filter((entry) => entry.success).length;
+  const depsFailed = attempts.length - depsResolved;
+  lines.push(
+    '* Coverage is not complete: source-derived, filtered and depth/count-limited; deeper unexpanded work is not counted.',
+  );
+  lines.push(
+    `* Stats: ${depsFound} root candidates after filtering; ${depsFiltered} root candidates not fetched; across explored levels: ${depsResolved} resolved, ${depsFailed} failed.`,
+  );
+  const output = lines.join('\n');
+  return { depsFound, depsFiltered, depsResolved, depsFailed, totalLines: output.split('\n').length, output };
 }
 
 // ─── CDS Context Compression ───────────────────────────────────────
@@ -394,7 +375,7 @@ export async function compressCdsContext(
 
   await resolveCdsDepthLevel(client, deps, maxDeps, effectiveDepth, seen, allResolved, cachingLayer);
 
-  return formatCdsResult(objectName, deps.length, allResolved);
+  return formatCdsResult(objectName, deps, allResolved);
 }
 
 /**
@@ -486,7 +467,11 @@ async function fetchCdsDependency(
 /**
  * Format CDS context result with prologue.
  */
-function formatCdsResult(objectName: string, depsFound: number, resolved: CdsResolvedDep[]): ContextResult {
+function formatCdsResult(
+  objectName: string,
+  rootDependencies: CdsDependency[],
+  resolved: CdsResolvedDep[],
+): ContextResult {
   const successful = resolved.filter((r) => r.success);
   const failed = resolved.filter((r) => !r.success);
 
@@ -494,7 +479,7 @@ function formatCdsResult(objectName: string, depsFound: number, resolved: CdsRes
   lines.push(
     `* === CDS dependency context for ${objectName} (${successful.length} deps resolved${failed.length > 0 ? `, ${failed.length} failed` : ''}) ===`,
   );
-  lines.push('');
+  lines.push('* Source-derived CDS dependencies; not complete dependency coverage or runtime evidence.', '');
 
   for (const r of successful) {
     lines.push(`* --- ${r.name} (${r.resolvedType}, ${r.kind}) ---`);
@@ -503,26 +488,16 @@ function formatCdsResult(objectName: string, depsFound: number, resolved: CdsRes
   }
 
   if (failed.length > 0) {
-    lines.push('* --- Failed dependencies ---');
+    lines.push('* --- Failed dependencies (attempted source reads; not proof of absence as another SAP type) ---');
     for (const f of failed) {
       lines.push(`* ${f.name}: ${f.error}`);
     }
     lines.push('');
   }
 
-  const totalLines = lines.length;
-  lines.push(
-    `* Stats: ${depsFound} deps found, ${successful.length} resolved, ${failed.length} failed, ${totalLines} lines`,
-  );
-
   return {
     objectName,
     objectType: 'DDLS',
-    depsFound,
-    depsResolved: successful.length,
-    depsFiltered: depsFound - resolved.length,
-    depsFailed: failed.length,
-    totalLines,
-    output: lines.join('\n'),
+    ...appendContextStats(lines, rootDependencies, resolved),
   };
 }

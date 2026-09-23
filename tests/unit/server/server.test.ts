@@ -2,12 +2,19 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BTPConfig } from '@arc-mcp/xsuaa-auth/btp';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  ToolListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { AdtApiError } from '../../../src/adt/errors.js';
+import * as adtFeatures from '../../../src/adt/features.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
@@ -15,18 +22,28 @@ import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { defineTool } from '../../../src/public/index.js';
+import { SYSTEM_LABEL_MAX_LENGTH } from '../../../src/server/config.js';
+import { opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
+import { DestinationRegistry, targetConnectionFingerprint } from '../../../src/server/destination-registry.js';
 import { logger } from '../../../src/server/logger.js';
+import { MULTI_TARGET_SERVER_INSTRUCTIONS } from '../../../src/server/multi-target-server.js';
 import { registerPluginTool } from '../../../src/server/plugin-loader.js';
+import { dataResultAdmissionEnvelope, runtimeMemoryEnvelope } from '../../../src/server/runtime-memory.js';
 import {
   buildAdtConfig,
+  canUseSharedSingleTargetCredentials,
   createCachingLayer,
   createServer,
   filterToolsByAuthScope,
   formatStartupAuthPreflightToolError,
   getConfiguredToolDefinitions,
   logAuthSummary,
+  probeClientFeatures,
   resolveNullableOptionals,
+  resolvePpDestinationName,
+  resolveSingleTargetOverlapState,
   runStartupAuthPreflight,
+  runStartupAuthPreflightWithClient,
   VERSION,
 } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -43,14 +60,193 @@ function requestHandler(server: Server, method: string): RequestHandler {
   return handler;
 }
 
+async function initializeServer(
+  config: Parameters<typeof createServer>[0],
+  options: Parameters<typeof createServer>[1] = {},
+) {
+  const server = createServer(config, options);
+  const client = new Client({ name: 'arc1-server-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    return { version: client.getServerVersion(), instructions: client.getInstructions() };
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
 describe('MCP Server', () => {
-  it('creates a server instance with correct name and version', () => {
-    const server = createServer(DEFAULT_CONFIG);
-    expect(server).toBeDefined();
+  it('computes the data-result admission envelope without unsafe-number rounding', () => {
+    expect(dataResultAdmissionEnvelope(2 * 1024 * 1024, 2)).toBe(4 * 1024 * 1024);
+    expect(dataResultAdmissionEnvelope(Number.MAX_SAFE_INTEGER, 2)).toBe('18014398509481982');
+  });
+
+  it('reports the non-secret Cloud Foundry memory inputs and effective V8 heap limit', () => {
+    expect(runtimeMemoryEnvelope({ MEMORY_AVAILABLE: '512', OPTIMIZE_MEMORY: 'true' }, 396 * 1024 * 1024)).toEqual({
+      cfMemoryAvailableMiB: 512,
+      optimizeMemory: true,
+      v8HeapSizeLimitMiB: 396,
+    });
+    expect(runtimeMemoryEnvelope({ MEMORY_AVAILABLE: 'invalid' }, 4 * 1024 * 1024 * 1024)).toEqual({
+      cfMemoryAvailableMiB: undefined,
+      optimizeMemory: false,
+      v8HeapSizeLimitMiB: 4096,
+    });
+  });
+
+  it.each([
+    ['default', DEFAULT_CONFIG, 'arc-1'],
+    ['custom', { ...DEFAULT_CONFIG, serverName: 'arc1-erp-dev' }, 'arc1-erp-dev'],
+  ])('advertises the %s server name and version in the initialize handshake', async (_label, config, expectedName) => {
+    expect((await initializeServer(config)).version).toEqual({ name: expectedName, version: VERSION });
+  });
+
+  it('prepends a system label to the single-target instructions without changing their body', async () => {
+    const baseline = (await initializeServer(DEFAULT_CONFIG)).instructions;
+    const labeled = (await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'ERP production (read-only)' }))
+      .instructions;
+
+    expect(baseline).toMatch(/^ARC-1 gives this SAP ABAP system/);
+    expect(baseline).not.toContain('Connected SAP system:');
+    expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
+  });
+
+  it.each(['standard', 'hyperfocused'] as const)(
+    'preserves evidence-led reviews and targeted method reads in %s',
+    async (toolMode) => {
+      const { instructions } = await initializeServer({ ...DEFAULT_CONFIG, toolMode });
+      expect(instructions).toContain('Understanding an object: SAPContext(action="deps") returns available KTD');
+      expect(instructions).toContain('Native relationship maps: SAPNavigate(action="relations") when listed');
+      expect(instructions).toContain(
+        'Use SAPRead afterwards for exact implementation, method bodies or known references',
+      );
+      expect(instructions).toContain('One method: SAPRead(type="CLAS", method="name")');
+      expect(instructions).toContain('Source behavior is not a specification');
+      expect(instructions).toContain(
+        'For draft reviews/test design, first SAPContext(action="deps") for available KTD (type+name), unless requirements are supplied',
+      );
+      expect(instructions).toContain(
+        'Test expectations follow those requirements; show current behavior separately, even when it is a defect',
+      );
+      expect(instructions).toContain('If a targeted requirements lookup yields no evidence or lead');
+      expect(instructions).toContain('finish with observed source behavior and unverified intent/compliance');
+      expect(instructions).toContain('Do not broaden the policy search');
+      expect(instructions).toContain('Unavailable or failed syntax/ATC/test checks are not passes');
+    },
+  );
+
+  it('keeps the maximum system label below the client instruction ceiling', async () => {
+    const instructions = (
+      await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })
+    ).instructions;
+    expect(instructions?.length).toBeLessThan(2_048);
+  });
+
+  it('rejects an overlong system label even when ServerConfig is constructed directly', () => {
+    expect(() => createServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH + 1) })).toThrow(
+      `ARC1_SYSTEM_LABEL must be at most ${SYSTEM_LABEL_MAX_LENGTH} characters`,
+    );
+  });
+
+  it('keeps multi-target instructions authoritative over a single-target system label', async () => {
+    const registry = DestinationRegistry.unavailable({
+      code: 'REGISTRY_DISCOVERY_ERROR',
+      message: 'safe test failure',
+    });
+    const metadata = await initializeServer(
+      { ...DEFAULT_CONFIG, systemLabel: 'SHOULD NOT APPEAR' },
+      { multiTarget: { mode: 'aggregate', registry, instanceConfig: DEFAULT_CONFIG } },
+    );
+
+    expect(metadata.instructions).toBe(MULTI_TARGET_SERVER_INSTRUCTIONS);
+    expect(metadata.instructions).not.toContain('SHOULD NOT APPEAR');
   });
 
   it('has a valid version string', () => {
     expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  // tools/list must never wait on SAP. Clients cancel it on their own schedule (Cline at ~5s) and
+  // a probe against a real system can outlast that, which left the client with zero tools.
+  it('answers tools/list without waiting for the startup probe', async () => {
+    const neverResolves = new Promise<void>(() => {});
+    const server = createServer(DEFAULT_CONFIG, { startupProbePromise: neverResolves });
+    const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+
+    const result = await Promise.race([
+      handler({ method: 'tools/list', params: {} }, {}),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('tools/list blocked')), 250)),
+    ]);
+
+    // Unprobed answer is the superset — SAPGit included, not dropped while discovery is pending.
+    // tests/unit/handlers/tool-surface-superset.test.ts holds the general invariant.
+    expect((result.tools as { name: string }[]).map((t) => t.name)).toContain('SAPGit');
+  });
+
+  it('advertises listChanged and notifies the client once the startup probe resolves', async () => {
+    let resolveProbe: () => void = () => {};
+    const startupProbePromise = new Promise<void>((resolve) => {
+      resolveProbe = resolve;
+    });
+    const server = createServer(DEFAULT_CONFIG, { startupProbePromise });
+    const client = new Client({ name: 'arc1-listchanged-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    let notified = 0;
+
+    try {
+      client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+        notified += 1;
+      });
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+
+      expect(client.getServerCapabilities()?.tools).toEqual({ listChanged: true });
+      expect(notified).toBe(0);
+
+      resolveProbe();
+      await vi.waitFor(() => expect(notified).toBe(1));
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it('does not wire the notification on HTTP, where each request builds its own server', async () => {
+    let resolveProbe: () => void = () => {};
+    const startupProbePromise = new Promise<void>((resolve) => {
+      resolveProbe = resolve;
+    });
+    const server = createServer({ ...DEFAULT_CONFIG, transport: 'http-streamable' }, { startupProbePromise });
+    const sendSpy = vi.spyOn(server, 'sendToolListChanged');
+
+    resolveProbe();
+    await startupProbePromise;
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(sendSpy).not.toHaveBeenCalled();
+    sendSpy.mockRestore();
+  });
+
+  it('survives a probe that resolves before any client connected', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+
+    // Never connected: the SDK's sendToolListChanged() rejects, and that must stay non-fatal.
+    createServer(DEFAULT_CONFIG, { startupProbePromise: Promise.resolve() });
+
+    await vi.waitFor(() =>
+      expect(debugSpy).toHaveBeenCalledWith(
+        'Skipped tools/list_changed notification after startup probe',
+        expect.objectContaining({ error: expect.any(String) }),
+      ),
+    );
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    debugSpy.mockRestore();
   });
 
   it('resolves schema nullable optionals off by default in auto mode', () => {
@@ -280,14 +476,8 @@ describe('createServer request handlers', () => {
   });
 
   it('blocks tool calls before SAP access when startup auth preflight failed', async () => {
-    const server = createServer(
-      DEFAULT_CONFIG,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      Promise.resolve({
+    const server = createServer(DEFAULT_CONFIG, {
+      startupAuthPreflightPromise: Promise.resolve({
         status: 'failed',
         blocking: true,
         endpoint: '/sap/bc/adt/core/discovery',
@@ -295,7 +485,7 @@ describe('createServer request handlers', () => {
         statusCode: 403,
         reason: 'Access forbidden (403) during startup auth preflight.',
       }),
-    );
+    });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
     const result = await handler({ method: 'tools/call', params: { name: 'SAPRead', arguments: {} } }, {});
@@ -426,8 +616,7 @@ describe('createServer request handlers', () => {
           ppStrict: false,
           ppStrictExplicit: true,
         },
-        undefined,
-        {} as BTPConfig,
+        { btpConfig: {} as BTPConfig },
       );
       const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
@@ -490,7 +679,7 @@ describe('createServer request handlers', () => {
       statusCode: 401,
       reason: 'stale cookie file',
     });
-    const server = createServer(DEFAULT_CONFIG, undefined, undefined, undefined, undefined, undefined, startupAuth);
+    const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise: startupAuth });
     const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
 
     await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
@@ -670,6 +859,20 @@ describe('buildAdtConfig', () => {
     expect(cfg.disableSaml).toBe(true);
   });
 
+  it('propagates gzipDataPreviewBody into ADT config', () => {
+    const enabled = buildAdtConfig({
+      ...DEFAULT_CONFIG,
+      gzipDataPreviewBody: true,
+    });
+    const disabled = buildAdtConfig({
+      ...DEFAULT_CONFIG,
+      gzipDataPreviewBody: false,
+    });
+
+    expect(enabled.gzipDataPreviewBody).toBe(true);
+    expect(disabled.gzipDataPreviewBody).toBe(false);
+  });
+
   it('passes cookieFile and cookieString through to shared ADT config', () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
     const cfg = buildAdtConfig({
@@ -706,6 +909,82 @@ describe('buildAdtConfig', () => {
     } finally {
       fixture.cleanup();
     }
+  });
+});
+
+describe('single-target shared credential reachability', () => {
+  it('distinguishes strict PP from an actually reachable shared /mcp client', () => {
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [{ key: 'k', profile: 'viewer' }], ppEnabled: true, ppStrict: true, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [{ key: 'k', profile: 'viewer' }], ppEnabled: true, ppStrict: false, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(true);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: false, ppStrict: false, ppStrictExplicit: false },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(true);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: true, ppStrict: false, ppStrictExplicit: true },
+        'TECH_USER',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+    expect(
+      canUseSharedSingleTargetCredentials(
+        { apiKeys: [], ppEnabled: false, ppStrict: false, ppStrictExplicit: false },
+        '',
+        'PASSWORD',
+      ),
+    ).toBe(false);
+  });
+
+  it('derives the bare /mcp overlap from direct SAP_URL credentials', () => {
+    const config = {
+      ...DEFAULT_CONFIG,
+      url: 'https://sap.internal:443/',
+      client: '100',
+      username: 'TECH_USER',
+      password: 'PASSWORD',
+    };
+
+    const overlap = resolveSingleTargetOverlapState(config, undefined, false);
+
+    expect(overlap).toEqual({
+      usesSharedBasic: true,
+      connectionFingerprint: targetConnectionFingerprint({
+        urlFingerprint: opaqueDestinationValue('https://sap.internal/'),
+        client: '100',
+      }),
+    });
+  });
+
+  it('does not classify a bearer-backed bare /mcp connection as shared Basic', () => {
+    const overlap = resolveSingleTargetOverlapState(
+      {
+        ...DEFAULT_CONFIG,
+        url: 'https://sap.internal',
+        username: 'STALE_USER',
+        password: 'STALE_PASSWORD',
+      },
+      undefined,
+      true,
+    );
+
+    expect(overlap.usesSharedBasic).toBe(false);
+    expect(overlap.connectionFingerprint).toBeDefined();
   });
 });
 
@@ -789,6 +1068,23 @@ describe('logAuthSummary', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('rejects API-key MCP tool calls'));
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('supported mixed operation'));
   });
+
+  it('labels a Basic-capable multi-target deployment with its per-target identity modes', () => {
+    delete process.env.SAP_BTP_DESTINATION;
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+
+    logAuthSummary({
+      ...DEFAULT_CONFIG,
+      xsuaaAuth: true,
+      ppEnabled: true,
+      multiTargetEndpoints: true,
+      multiTargetAllowBasicAuth: true,
+    });
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      'auth: MCP=[xsuaa] SAP=destination+pp/basic-shared (multi-target) (per-target: PP per-user or Basic shared)',
+    );
+  });
 });
 
 describe('startup auth preflight', () => {
@@ -837,7 +1133,7 @@ describe('startup auth preflight', () => {
   });
 
   it('returns blocking failure on 401/403 auth errors', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'Unauthorized'),
     );
 
@@ -854,8 +1150,26 @@ describe('startup auth preflight', () => {
     expect(result.statusCode).toBe(401);
   });
 
+  it('can run on an existing client so direct callers retain its auth state', async () => {
+    const fetchCsrfToken = vi.fn(async () => '/sap/bc/adt/discovery');
+    const client = { http: { fetchCsrfToken } } as unknown as import('../../../src/adt/client.js').AdtClient;
+
+    const result = await runStartupAuthPreflightWithClient(
+      {
+        ...DEFAULT_CONFIG,
+        ppEnabled: false,
+        url: 'http://sap.example.com:8000',
+      },
+      client,
+    );
+
+    expect(result.status).toBe('ok');
+    expect(fetchCsrfToken).toHaveBeenCalledOnce();
+    expect(result.endpoint).toBe('/sap/bc/adt/discovery');
+  });
+
   it('returns inconclusive and non-blocking on non-auth failures', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(new Error('connect ECONNREFUSED'));
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(new Error('connect ECONNREFUSED'));
 
     const result = await runStartupAuthPreflight({
       ...DEFAULT_CONFIG,
@@ -871,7 +1185,7 @@ describe('startup auth preflight', () => {
 
   it('downgrades 401 to inconclusive (non-blocking) when in cookie-auth mode', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 
@@ -894,7 +1208,7 @@ describe('startup auth preflight', () => {
 
   it('keeps 403 blocking even in cookie-auth mode', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', 'forbidden'),
     );
 
@@ -915,7 +1229,7 @@ describe('startup auth preflight', () => {
   });
 
   it('keeps 401 blocking when not in cookie-auth mode', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'wrong creds'),
     );
 
@@ -937,7 +1251,7 @@ describe('startup auth preflight', () => {
   // promising "no restart needed" would be a lie. Only SAP_COOKIE_FILE gets
   // the non-blocking downgrade.
   it('keeps 401 blocking when only cookieString is set (no hot-reload promise)', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 
@@ -959,7 +1273,7 @@ describe('startup auth preflight', () => {
 
   it('downgrade applies even when both cookieFile and cookieString are set (file wins)', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 
@@ -979,5 +1293,44 @@ describe('startup auth preflight', () => {
     } finally {
       fixture.cleanup();
     }
+  });
+});
+
+describe('direct client feature bootstrap', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('installs discovery evidence on the exact client that was probed', async () => {
+    const discoveryMap = new Map([['/sap/bc/adt/programs/programs', ['application/vnd.sap.adt.programs.v2+xml']]]);
+    vi.spyOn(adtFeatures, 'probeFeatures').mockResolvedValue({ discoveryMap } as ResolvedFeatures);
+    const setDiscoveryMap = vi.fn();
+    const client = { http: { setDiscoveryMap } } as unknown as import('../../../src/adt/client.js').AdtClient;
+
+    await probeClientFeatures(DEFAULT_CONFIG, client);
+
+    expect(setDiscoveryMap).toHaveBeenCalledOnce();
+    expect(setDiscoveryMap).toHaveBeenCalledWith(discoveryMap);
+  });
+});
+
+describe('resolvePpDestinationName', () => {
+  afterEach(() => {
+    delete process.env.SAP_BTP_PP_DESTINATION;
+    delete process.env.SAP_BTP_DESTINATION;
+  });
+
+  it('single-destination mode: SAP_BTP_PP_DESTINATION wins, SAP_BTP_DESTINATION is the fallback', () => {
+    expect(resolvePpDestinationName(DEFAULT_CONFIG)).toBeUndefined();
+    process.env.SAP_BTP_DESTINATION = 'S4_SHARED';
+    expect(resolvePpDestinationName(DEFAULT_CONFIG)).toBe('S4_SHARED');
+    process.env.SAP_BTP_PP_DESTINATION = 'S4_PP';
+    expect(resolvePpDestinationName(DEFAULT_CONFIG)).toBe('S4_PP');
+  });
+
+  it('discovered target runtime: its destination name wins and global env vars never leak in', () => {
+    process.env.SAP_BTP_PP_DESTINATION = 'GLOBAL_PP';
+    const cfg = { ...DEFAULT_CONFIG, destinationName: 'S4D' };
+    expect(resolvePpDestinationName(cfg)).toBe('S4D');
   });
 });

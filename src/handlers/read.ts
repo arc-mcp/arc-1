@@ -3,14 +3,23 @@
  * preview. Exports version helpers shared with the write handler.
  */
 
-import type { AdtClient, SourceReadResult } from '../adt/client.js';
-import { decodeKtdText } from '../adt/ddic-xml.js';
+import { resolveBspNameAndPath } from '../adt/bsp-path.js';
+import type { AdtClient, SourceReadResult, TextElementPart } from '../adt/client.js';
+import { DataSourcePolicyError } from '../adt/data-source-policy.js';
+import { decodeKtdText, formatKtdNodeIndex, formatKtdShortTexts, KTD_META_MARKER } from '../adt/ddic-xml.js';
 import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
+import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
+import { describePackageListing } from '../adt/package-contents.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
-import { getServerDrivenObject, isServerDrivenObjectType, supportsServerDrivenObject } from '../adt/server-driven.js';
-import type { InactiveObject } from '../adt/types.js';
+import {
+  ensureServerDrivenSupport,
+  getServerDrivenObject,
+  isServerDrivenObjectType,
+  serverDrivenUnavailableMessage,
+} from '../adt/server-driven.js';
+import type { FunctionModuleProperties, InactiveObject } from '../adt/types.js';
 import { getAppInfo } from '../adt/ui5-repository.js';
 import { getVersionDiff } from '../adt/version-diff.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
@@ -19,9 +28,14 @@ import { grepSource } from '../context/grep.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
-import { cachedFeatures, isBtpSystem } from './feature-cache.js';
-import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
-import { errorResult, type ToolResult, textResult } from './shared.js';
+import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
+import {
+  detectLocalHandlerInclude,
+  inferObjectType,
+  normalizeObjectType,
+  objectUrlForTypeRaw,
+} from './object-types.js';
+import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 const BTP_HINTS: Record<string, string> = {
   PROG: 'Executable programs (reports) are not available on BTP ABAP Environment. Use CLAS with IF_OO_ADT_CLASSRUN for console applications.',
@@ -126,11 +140,27 @@ function sourceVersionWarning(effectiveVersion: SourceVersion, draft?: InactiveO
   return undefined;
 }
 
+/**
+ * SWOTLV is a declared internal source and BOR method resolution has no alternative in ARC-1, so a
+ * policy denial must name the affected feature rather than surfacing a bare policy error.
+ */
+async function swotlv<T>(minimalErrors: boolean, run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof DataSourcePolicyError) {
+      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error, minimalErrors)) };
+    }
+    throw error;
+  }
+}
+
 export async function handleSAPRead(
   client: AdtClient,
   args: Record<string, unknown>,
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
+  minimalErrors: boolean,
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -160,6 +190,23 @@ export async function handleSAPRead(
         fromLabel,
         toLabel,
       });
+      if (args.format === 'structured') {
+        return textResult(
+          toolJson({
+            type,
+            name,
+            from,
+            to,
+            fromLabel: fromDisplay,
+            toLabel: toDisplay,
+            identical: r.identical,
+            hasDifferences: !r.identical,
+            added: r.added,
+            removed: r.removed,
+            diff: r.diff,
+          }),
+        );
+      }
       if (r.identical) {
         return textResult(`No differences between ${fromDisplay} and ${toDisplay} for ${type} ${name}.`);
       }
@@ -177,19 +224,16 @@ export async function handleSAPRead(
   }
 
   // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, COTA, …
-  // share one AFF generic-object contract (blue:blueSource metadata + AFF JSON source), read
+  // share one AFF generic-object contract (blue:blueSource metadata + JSON or DDL-text source), read
   // via the discovery-gated generic engine instead of the per-type switch below. They bypass
   // the version/draft/cache machinery (no /source/main text; JSON output).
   if (isServerDrivenObjectType(type)) {
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
-    if (supportsServerDrivenObject(client.http, type) === false) {
-      return errorResult(
-        `SAPRead type=${type} (server-driven object) requires SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025). ` +
-          'This system does not expose this object type.',
-      );
+    if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
+      return errorResult(serverDrivenUnavailableMessage('SAPRead', type));
     }
     const sdo = await getServerDrivenObject(client.http, client.safety, type, name);
-    return textResult(JSON.stringify(sdo, null, 2));
+    return textResult(toolJson(sdo));
   }
 
   // Class text symbols (Textelemente): include=text_symbols reads a class's maintained text symbols
@@ -243,9 +287,11 @@ export async function handleSAPRead(
     return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
   };
 
-  // Structured format is only supported for CLAS type
-  if (args.format === 'structured' && type !== 'CLAS') {
-    return errorResult('The "structured" format is only supported for CLAS type. Other types return text format.');
+  // Structured ordinary reads: class metadata or a package listing envelope.
+  if (args.format === 'structured' && type !== 'CLAS' && type !== 'DEVC') {
+    return errorResult(
+      'For ordinary reads, format="structured" supports CLAS and DEVC. Retry this read with format="text" or omit format; DDIC metadata is returned by its normal reader.',
+    );
   }
 
   switch (type) {
@@ -287,9 +333,8 @@ export async function handleSAPRead(
             )
           ).source;
         }
-        const abaplintVer = cachedFeatures?.abapRelease
-          ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-          : undefined;
+        const probedAbapRelease = getCachedFeatures()?.abapRelease;
+        const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         // MethodInfo is a structural superset of grepSource's MethodRange — pass through directly.
         const listing = listMethods(clasSource, name, abaplintVer);
         const g = grepSource(clasSource, String(args.grep), listing.success ? { methods: listing.methods } : undefined);
@@ -300,24 +345,58 @@ export async function handleSAPRead(
       // Structured format: return JSON with metadata + decomposed source
       if (args.format === 'structured') {
         const structured = await client.getClassStructured(name);
-        return textResult(JSON.stringify(structured, null, 2));
+        return textResult(toolJson(structured));
       }
       const methodParam = args.method as string | undefined;
-      if (methodParam && !args.include) {
-        // Method-level read — fetch full source then extract (no cache indicator for derived results)
-        const { source: fullSource } = await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
-          client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
-        );
-        const abaplintVer = cachedFeatures?.abapRelease
-          ? mapSapReleaseToAbaplintVersion(cachedFeatures.abapRelease)
-          : undefined;
+      if (methodParam) {
+        // An explicit include is authoritative, including `main`. Only an omitted include may be
+        // inferred from a qualified local-class name (the same convention used by edit_method).
+        const requestedInclude = (args.include as string | undefined)?.toLowerCase();
+        const resolvedInclude =
+          requestedInclude === undefined
+            ? detectLocalHandlerInclude(methodParam)
+            : requestedInclude === 'main'
+              ? undefined
+              : requestedInclude;
+        let methodSource: string;
+        if (resolvedInclude) {
+          // Include reads bypass the source cache: its key has no class-section dimension, so a
+          // cached MAIN body must never satisfy an implementations/testclasses request.
+          try {
+            methodSource = (
+              await client.getClassInclude(name, resolvedInclude, {
+                version: effectiveVersion,
+              })
+            ).source;
+          } catch (err) {
+            if (isNotFoundError(err)) {
+              return errorResult(
+                `Include "${resolvedInclude}" is not available for class ${name}, so method "${methodParam}" cannot be read from it.`,
+              );
+            }
+            throw err;
+          }
+        } else {
+          methodSource = (
+            await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
+              client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
+            )
+          ).source;
+        }
+        const probedAbapRelease = getCachedFeatures()?.abapRelease;
+        const abaplintVer = probedAbapRelease ? mapSapReleaseToAbaplintVersion(probedAbapRelease) : undefined;
         if (methodParam === '*') {
-          const listing = listMethods(fullSource, name, abaplintVer);
+          const listing = listMethods(methodSource, name, abaplintVer);
           return textResult(formatMethodListing(listing));
         }
-        const extracted = extractMethod(fullSource, name, methodParam, abaplintVer);
+        const extracted = extractMethod(methodSource, name, methodParam, abaplintVer);
         if (!extracted.success) {
-          return errorResult(extracted.error ?? `Method "${methodParam}" not found in ${name}.`);
+          const location = resolvedInclude ? ` (read from include=${resolvedInclude})` : '';
+          const hint =
+            requestedInclude === undefined && !resolvedInclude
+              ? ' Methods of class-local classes live in an include: qualify the method as "lhc_x~method" (or "ltc_x~method" for testclasses), or pass include= explicitly.'
+              : '';
+          return errorResult(`${extracted.error ?? `Method "${methodParam}" not found in ${name}.`}${location}${hint}`);
         }
         return cachedTextResult(extracted.methodSource, false, false, versionWarning);
       }
@@ -370,11 +449,24 @@ export async function handleSAPRead(
           raising: [],
         };
         for (const p of parsed.params) grouped[p.kind].push(p);
+        // processingType/updateTaskKind live in the fmodule metadata document, not in the source —
+        // without them a caller can set RFC-enablement but never verify it. Best-effort: a metadata
+        // hiccup must not break signature reading, which callers already depend on.
+        let properties: FunctionModuleProperties | undefined;
+        let propertiesError: string | undefined;
+        try {
+          properties = await client.getFunctionModuleProperties(group, name);
+        } catch (err) {
+          propertiesError = err instanceof Error ? err.message : String(err);
+        }
         const payload = {
           source,
           signature: grouped,
+          ...(properties?.processingType ? { processingType: properties.processingType } : {}),
+          ...(properties?.updateTaskKind ? { updateTaskKind: properties.updateTaskKind } : {}),
+          ...(propertiesError ? { propertiesError } : {}),
         };
-        return textResult(JSON.stringify(payload, null, 2));
+        return textResult(toolJson(payload));
       }
       if (args.grep) return grepText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
@@ -398,7 +490,7 @@ export async function handleSAPRead(
         return textResult(parts.join('\n\n'));
       }
       const fg = await client.getFunctionGroup(name);
-      return textResult(JSON.stringify(fg, null, 2));
+      return textResult(toolJson(fg));
     }
     case 'INCL': {
       const { source, cacheHit, revalidated } = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
@@ -479,9 +571,27 @@ export async function handleSAPRead(
         const { source, cacheHit, revalidated } = await cachedGet('SKTD', name, effectiveVersion, (ifNoneMatch) =>
           client.getKtd(name, { ifNoneMatch, version: effectiveVersion }),
         );
-        const markdown = decodeKtdText(source);
+        // Full reads use the reversible route-safe representation so their output can
+        // be pasted into SAPWrite. Grep searches the stored Markdown without escapes.
+        const markdown = decodeKtdText(source, { routeSafe: !args.grep });
         if (args.grep) return grepText(markdown);
-        return cachedTextResult(markdown, cacheHit, revalidated, versionWarning);
+        // List copyable names for every writable node, including empty nodes omitted from Markdown.
+        // The labels use the same resolver as SAPWrite.
+        const index = formatKtdNodeIndex(source);
+        const readOnlyContext = [
+          versionWarning,
+          cacheHit && revalidated ? '[cached:revalidated]' : undefined,
+          formatKtdShortTexts(source) || undefined,
+          index || undefined,
+        ]
+          .filter((entry): entry is string => Boolean(entry))
+          .join('\n\n');
+        const text = readOnlyContext
+          ? [markdown || undefined, `${KTD_META_MARKER}\n${readOnlyContext}`]
+              .filter((entry): entry is string => Boolean(entry))
+              .join('\n\n')
+          : markdown;
+        return textResult(text);
       } catch (err) {
         if (isNotFoundError(err)) {
           return textResult(
@@ -510,19 +620,21 @@ export async function handleSAPRead(
     }
     case 'DOMA': {
       const domain = await client.getDomain(name);
-      return textResult(JSON.stringify(domain, null, 2));
+      return textResult(toolJson(domain));
     }
     case 'DTEL': {
-      const dtel = await client.getDataElement(name);
-      return textResult(JSON.stringify(dtel, null, 2));
+      // SAP's version-less developer view exposes pending drafts for omitted and `auto` reads.
+      const dtelVersion = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+      const dtel = await client.getDataElement(name, dtelVersion);
+      return textResult(toolJson(dtel));
     }
     case 'TTYP': {
       const ttyp = await client.getTableType(name);
-      return textResult(JSON.stringify(ttyp, null, 2));
+      return textResult(toolJson(ttyp));
     }
     case 'AUTH': {
       const authField = await client.getAuthorizationField(name);
-      return textResult(JSON.stringify(authField, null, 2));
+      return textResult(toolJson(authField));
     }
     case 'FTG2':
     case 'FEATURE_TOGGLE': {
@@ -536,11 +648,11 @@ export async function handleSAPRead(
         });
       }
       const toggle = await client.getFeatureToggle(name);
-      return textResult(JSON.stringify(toggle, null, 2));
+      return textResult(toolJson(toggle));
     }
     case 'ENHO': {
       const enhancement = await client.getEnhancementImplementation(name);
-      return textResult(JSON.stringify(enhancement, null, 2));
+      return textResult(toolJson(enhancement));
     }
     case 'VERSIONS': {
       const include = typeof args.include === 'string' ? args.include : undefined;
@@ -561,7 +673,7 @@ export async function handleSAPRead(
 
       try {
         const revisions = await client.getRevisions(objectType, name, { include, group });
-        return textResult(JSON.stringify(revisions, null, 2));
+        return textResult(toolJson(revisions));
       } catch (err) {
         if (isNotFoundError(err)) {
           return textResult(
@@ -593,6 +705,7 @@ export async function handleSAPRead(
     case 'TRAN': {
       const tran = await client.getTransaction(name);
       // Enrich with program name via SQL — only if free SQL is allowed by safety config
+      let tranWarning: string | undefined;
       if (isOperationAllowed(client.safety, OperationType.FreeSQL)) {
         try {
           const safeName = name.toUpperCase().replace(/[^A-Z0-9_/]/g, '');
@@ -600,11 +713,16 @@ export async function handleSAPRead(
           if (data.rows.length > 0) {
             tran.program = String(data.rows[0]!.PGMNA ?? '').trim();
           }
-        } catch {
-          // SQL failed (e.g., TSTC not found on BTP) — still return metadata
+        } catch (error) {
+          // Optional enrichment: still return the transaction metadata, but say the program name is
+          // missing rather than letting the model read its absence as "this transaction has none".
+          if (error instanceof DataSourcePolicyError) {
+            tranWarning = internalOperationWarning('tran_program_enrichment', error.code);
+          }
+          // Other failures (e.g. TSTC absent on BTP) keep the existing silent-metadata behaviour.
         }
       }
-      return textResult(JSON.stringify(tran, null, 2));
+      return textResult(toolJson(tranWarning ? { ...tran, warning: tranWarning } : tran));
     }
     case 'API_STATE': {
       // Determine object type for URL construction — use explicit objectType, infer from name, or error
@@ -618,12 +736,12 @@ export async function handleSAPRead(
       // Use raw URI (no name encoding) — getApiReleaseState encodes the full URI as a single path segment
       const objectUri = objectUrlForTypeRaw(inferredType, name);
       const releaseState = await client.getApiReleaseState(objectUri);
-      return textResult(JSON.stringify(releaseState, null, 2));
+      return textResult(toolJson(releaseState));
     }
     case 'TABLE_CONTENTS': {
       const maxRows = Number(args.maxRows ?? 100);
       const data = await client.getTableContents(name, maxRows, args.sqlFilter as string | undefined);
-      return textResult(JSON.stringify(data, null, 2));
+      return textResult(toolJson(data));
     }
     case 'TABLE_QUERY': {
       const maxRows = Number(args.maxRows ?? 100);
@@ -633,7 +751,7 @@ export async function handleSAPRead(
         : undefined;
       try {
         const data = await client.runTableQuery(name, { columns, where, maxRows });
-        return textResult(JSON.stringify(data, null, 2));
+        return textResult(toolJson(data));
       } catch (err) {
         // Self-correct an unknown-column error (a bad entry in `columns`/`where`) by listing the
         // table's real columns (best-effort).
@@ -661,10 +779,13 @@ export async function handleSAPRead(
       }
       if (safeMethod) {
         // Read specific BOR method implementation via SWOTLV lookup
-        const data = await client.runQuery(
-          `SELECT PROGNAME, FORMNAME FROM SWOTLV WHERE LOBJTYPE = '${safeName}' AND VERB = '${safeMethod}'`,
-          1,
+        const data = await swotlv(minimalErrors, () =>
+          client.runQuery(
+            `SELECT PROGNAME, FORMNAME FROM SWOTLV WHERE LOBJTYPE = '${safeName}' AND VERB = '${safeMethod}'`,
+            1,
+          ),
         );
+        if ('policyDenial' in data) return data.policyDenial;
         if (data.rows.length > 0) {
           const prog = String(data.rows[0]!.PROGNAME ?? '').trim();
           if (!prog) {
@@ -680,25 +801,29 @@ export async function handleSAPRead(
         );
       }
       // List all methods for this BOR object
-      const methods = await client.runQuery(
-        `SELECT VERB, PROGNAME, FORMNAME, DESCRIPT FROM SWOTLV WHERE LOBJTYPE = '${safeName}'`,
-        100,
+      const methods = await swotlv(minimalErrors, () =>
+        client.runQuery(`SELECT VERB, PROGNAME, FORMNAME, DESCRIPT FROM SWOTLV WHERE LOBJTYPE = '${safeName}'`, 100),
       );
+      if ('policyDenial' in methods) return methods.policyDenial;
       if (methods.rows.length === 0) {
         return errorResult(`No BOR methods found for object type "${name}". Verify the BOR object type name.`);
       }
-      return textResult(JSON.stringify(methods, null, 2));
+      return textResult(toolJson(methods));
     }
     case 'DEVC': {
       const maxResults = args.maxResults != null ? Number(args.maxResults) : undefined;
       const contents = await client.getPackageContents(name, maxResults);
-      return textResult(JSON.stringify(contents, null, 2));
+      const listing = describePackageListing(contents.length, maxResults);
+      if (args.format === 'structured') return textResult(toolJson({ objects: contents, listing }));
+      const result = textResult(toolJson(contents));
+      result.content.push({ type: 'text', text: toolJson({ listing }) });
+      return result;
     }
     case 'SYSTEM':
       return textResult(await client.getSystemInfo());
     case 'COMPONENTS': {
       const components = await client.getInstalledComponents();
-      return textResult(JSON.stringify(components, null, 2));
+      return textResult(toolJson(components));
     }
     case 'MESSAGES':
     case 'MSAG': {
@@ -713,41 +838,45 @@ export async function handleSAPRead(
       }
       try {
         const mcInfo = await client.getMessageClassInfo(name);
-        return textResult(JSON.stringify(mcInfo, null, 2));
+        return textResult(toolJson(mcInfo));
       } catch {
         // Fall back to legacy endpoint if messageclass endpoint unavailable
         return textResult(await client.getMessages(name));
       }
     }
-    case 'TEXT_ELEMENTS':
-      return textResult(await client.getTextElements(name));
+    case 'TEXT_ELEMENTS': {
+      // objectType picks the textelements collection (PROG default, also CLAS/FUGR); include picks
+      // one subobject (symbols | selections | headings) instead of the whole pool.
+      const part = (args.include as string | undefined)?.toLowerCase() as TextElementPart | undefined;
+      return textResult(
+        await client.getTextElements(name, {
+          objectType: (args.objectType as string | undefined) ?? 'PROG',
+          part,
+        }),
+      );
+    }
     case 'VARIANTS':
       return textResult(await client.getVariants(name));
     case 'BSP': {
-      if (cachedFeatures?.ui5 && !cachedFeatures.ui5.available) {
+      const ui5Feature = getCachedFeatures()?.ui5;
+      if (ui5Feature && !ui5Feature.available) {
         return errorResult(
           'UI5/Fiori BSP Filestore is not available on this SAP system. Run SAPManage(action="probe") ' +
             'for the reason (often a missing S_ADT_RES authorization), or set SAP_FEATURE_UI5=on to force it on.',
         );
       }
-      const include = args.include as string | undefined;
       if (!name) {
         // List all BSP apps (optional search via query param not used here since name is empty)
         const apps = await client.listBspApps();
-        return textResult(JSON.stringify(apps, null, 2));
+        return textResult(toolJson(apps));
       }
-      if (!include) {
-        // Browse root structure of the app
-        return textResult(JSON.stringify(await client.getBspAppStructure(name), null, 2));
-      }
-      // If include contains a dot, treat as file read; otherwise browse subfolder
-      if (include.includes('.')) {
-        return textResult(await client.getBspFileContent(name, include));
-      }
-      return textResult(JSON.stringify(await client.getBspAppStructure(name, `/${include}`), null, 2));
+      const { appName, path } = resolveBspNameAndPath(name, args.include as string | undefined);
+      const content = await client.getBspPathContent(appName, path);
+      return content.kind === 'folder' ? textResult(toolJson(content.nodes)) : textResult(content.content);
     }
     case 'BSP_DEPLOY': {
-      if (cachedFeatures?.ui5repo && !cachedFeatures.ui5repo.available) {
+      const ui5repoFeature = getCachedFeatures()?.ui5repo;
+      if (ui5repoFeature && !ui5repoFeature.available) {
         return errorResult(
           'ABAP Repository OData Service is not available on this SAP system. Run SAPManage(action="probe") ' +
             'for the reason, or set SAP_FEATURE_UI5REPO=on to force it on.',
@@ -760,15 +889,15 @@ export async function handleSAPRead(
       if (!info) {
         return textResult(`App "${name}" not found in ABAP Repository.`);
       }
-      return textResult(JSON.stringify(info, null, 2));
+      return textResult(toolJson(info));
     }
     case 'INACTIVE_OBJECTS': {
       const objects = await client.getInactiveObjects();
-      return textResult(JSON.stringify({ count: objects.length, objects }, null, 2));
+      return textResult(toolJson({ count: objects.length, objects }));
     }
     default:
       return errorResult(
-        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
+        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TTYP, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
           'Tip: Type aliases are auto-normalized (e.g., DDLS/DF → DDLS, DCLS/DL → DCLS, CLAS/OC → CLAS, PROG/P → PROG). ' +
           'Do not pass a URI — use the "type" and "name" parameters instead.',
       );

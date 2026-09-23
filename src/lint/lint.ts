@@ -16,7 +16,7 @@
 
 import { type Config, Edits, MemoryFile, Registry, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from './abaplint-config-cache.js';
-import { buildPreWriteConfig, type LintConfigOptions } from './config-builder.js';
+import { buildPreWriteConfig, getLintSyntaxVersion, type LintConfigOptions } from './config-builder.js';
 import { inspectTablSource } from './pre-write-hints.js';
 
 /** Lint result from @abaplint/core */
@@ -44,6 +44,8 @@ export interface LintFixResult {
 
 /** Result of pre-write validation */
 export interface PreWriteResult {
+  /** Syntax from the same config used for validation, after custom overrides. */
+  syntaxVersion: ReturnType<typeof getLintSyntaxVersion>;
   /** Whether the write should proceed */
   pass: boolean;
   /** Errors that block the write */
@@ -162,6 +164,7 @@ export function validateBeforeWrite(
 
   return {
     pass: errors.length === 0,
+    syntaxVersion: getLintSyntaxVersion(config),
     errors,
     warnings,
   };
@@ -184,13 +187,17 @@ export function detectFilename(source: string, objectName: string): string {
   if (upper.startsWith('REPORT') || upper.startsWith('PROGRAM')) return `${name}.prog.abap`;
 
   // CDS/DDL types — check the first structural keyword (may be preceded by annotations)
-  // Strip leading annotations (@...\n) to find the actual define/annotate keyword
+  // Strip leading annotations (@...\n) to find the actual define/extend/annotate keyword
   const afterAnnotations = upper.replace(/^(\s*@[^\n]*\n)*/m, '').trimStart();
   if (afterAnnotations.startsWith('DEFINE TABLE')) return `${name}.tabl.astabl`;
   if (afterAnnotations.startsWith('DEFINE SERVICE')) return `${name}.srvd.asrvd`;
   if (afterAnnotations.startsWith('ANNOTATE VIEW') || afterAnnotations.startsWith('ANNOTATE ENTITY'))
     return `${name}.ddlx.asddlx`;
-  if (afterAnnotations.startsWith('DEFINE VIEW') || afterAnnotations.startsWith('DEFINE ROOT VIEW'))
+  if (
+    afterAnnotations.startsWith('DEFINE VIEW') ||
+    afterAnnotations.startsWith('DEFINE ROOT VIEW') ||
+    afterAnnotations.startsWith('EXTEND VIEW')
+  )
     return `${name}.ddls.asddls`;
   // Fallback: source starts with @ but keyword not matched — assume CDS view (most common)
   if (upper.startsWith('@')) return `${name}.ddls.asddls`;

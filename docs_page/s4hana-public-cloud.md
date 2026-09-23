@@ -101,8 +101,11 @@ Also enable **Use default JDK truststore** so the public S/4HANA Cloud TLS certi
 ARC-1 needs **XSUAA** (MCP-client login) and **Destination** only — no Connectivity service, because
 there is no Cloud Connector for a cloud-to-cloud call:
 
+For a manual non-MTA deployment, first create the route-specific XSUAA file described in
+[XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+
 ```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
 cf create-service destination lite arc1-destination
 ```
 

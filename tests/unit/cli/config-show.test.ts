@@ -28,6 +28,7 @@ describe('config show — resolver contract', () => {
     const { config, sources } = resolveConfig([]);
     expect(config.allowWrites).toBe(false);
     expect(config.allowedPackages).toEqual(['$TMP']);
+    expect(config.blockedDataSources).toEqual([]);
     expect(sources.allowWrites).toBe('default');
     expect(sources.allowedPackages).toBe('default');
     expect(sources.denyActions).toBe('default');
@@ -36,11 +37,14 @@ describe('config show — resolver contract', () => {
   it('attributes env-set values to { env: SAP_* }', () => {
     process.env.SAP_ALLOW_WRITES = 'true';
     process.env.SAP_ALLOWED_PACKAGES = '$TMP,Z*';
+    process.env.SAP_BLOCKED_DATA_SOURCES = 'USR02';
     const { config, sources } = resolveConfig([]);
     expect(config.allowWrites).toBe(true);
     expect(sources.allowWrites).toEqual({ env: 'SAP_ALLOW_WRITES' });
     expect(config.allowedPackages).toEqual(['$TMP', 'Z*']);
     expect(sources.allowedPackages).toEqual({ env: 'SAP_ALLOWED_PACKAGES' });
+    expect(config.blockedDataSources).toEqual(['USR02']);
+    expect(sources.blockedDataSources).toEqual({ env: 'SAP_BLOCKED_DATA_SOURCES' });
   });
 
   it('attributes flag-set values to { flag: --* }', () => {

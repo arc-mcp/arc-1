@@ -1,0 +1,12 @@
+{
+  "Name": "ARC1_QAS_001_STARTUP",
+  "Type": "HTTP",
+  "URL": "http://qas-startup.example.invalid:8080",
+  "ProxyType": "OnPremise",
+  "Authentication": "BasicAuthentication",
+  "User": "<owner-supplied-startup-user>",
+  "Password": "<owner-supplied-managed-secret>",
+  "sap-sysid": "QAS",
+  "sap-client": "001",
+  "Description": "QAS client 001 - single-target startup only"
+}

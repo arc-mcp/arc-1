@@ -34,8 +34,9 @@ export type ReadOnlyAdtClient = Omit<
 >;
 
 /**
- * Named, privileged operations a plugin can invoke (e.g. executing a console class). Each op is
- * gated server-side; calling one when its gate is closed throws `AdtSafetyError`.
+ * Named, privileged operations a plugin can invoke (e.g. executing a class or report). Each op is
+ * gated server-side; calling one when its gate is closed throws `AdtSafetyError`. SAP may represent
+ * execution errors as text in an HTTP 200 response; these operations return that text verbatim.
  */
 export interface PluginRunOps {
   /**
@@ -47,6 +48,16 @@ export interface PluginRunOps {
    * the user still needs execute authorization. The class name is validated (no path injection).
    */
   classRun(className: string): Promise<string>;
+
+  /**
+   * Run an active executable ABAP **report** (`PROG`) and return its classic list output as plain
+   * text. Wraps `POST /sap/bc/adt/programs/programrun/{program}`. Runtime selection parameters and
+   * variants are not supported by this ADT endpoint.
+   *
+   * Gated identically to {@link classRun}: `SAP_ALLOW_PLUGIN_EXECUTE=true`,
+   * `SAP_ALLOW_WRITES=true`, and a `write`-scoped tool. The program name is validated.
+   */
+  programRun(programName: string): Promise<string>;
 }
 
 /** Minimal structured logger handed to plugins (stderr only — never `console.log`). */
@@ -61,7 +72,7 @@ export interface ToolContext {
   readonly client: ReadOnlyAdtClient; // high-level reads only — `.http`/`.safety` blocked at runtime too
   readonly http: SafeHttpClient; // the ONLY low-level HTTP path — gated. GET/HEAD always; POST/PUT/DELETE
   // to NON-ADT (OData/ICF) paths only when the admin sets SAP_ALLOW_PLUGIN_RAW_WRITES (+ allowWrites + write scope).
-  readonly run: PluginRunOps; // named privileged ops (e.g. classRun) — each gated server-side
+  readonly run: PluginRunOps; // named privileged ops (classRun/programRun) — each gated server-side
   readonly logger: PluginLogger;
   readonly authInfo?: { userName?: string; scopes: string[]; clientId?: string };
   readonly requestId: string;
