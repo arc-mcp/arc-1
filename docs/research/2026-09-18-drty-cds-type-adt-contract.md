@@ -193,9 +193,8 @@ under a valid stateful lock returned 415; source was unchanged. Both additional 
 deleted and confirmed absent. The focused read integration test executed on 758/816; 750 skipped
 through the capability gate, which is absence evidence rather than positive read coverage.
 
-The 816 contributor’s dependent-delete orphan finding above was not independently repeated.
-Independent tests used types without consumers. Track the shared deletion gap separately;
-remove consumers before their type and verify absence. BTP runtime was not tested in this pass.
+The contributor's dependent-delete orphan finding was not independently repeated; the probes used
+types without consumers. BTP runtime was not tested.
 
 ### Cross-checks against primary sources
 

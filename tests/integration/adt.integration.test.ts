@@ -2460,7 +2460,7 @@ describe('ADT Integration Tests', () => {
       // Demo package names differ between 758 and 816. Search the type directly.
       const objects = await client.searchObject('*', 10, 'DRTY/STY');
       const drty = objects.find((o) => o.objectType === 'DRTY/STY');
-      requireOrSkip(ctx, drty, `${SkipReason.BACKEND_UNSUPPORTED}: no visible DRTY instance`);
+      requireOrSkip(ctx, drty, `${SkipReason.NO_FIXTURE}: no visible DRTY instance`);
       const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'DRTY', drty.objectName);
       expect(r.type).toBe('DRTY/STY');
       expect(typeof r.package).toBe('string');
