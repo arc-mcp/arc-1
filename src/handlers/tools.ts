@@ -597,7 +597,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit']),
+              ...(btp ? [] : ['edit_unit', 'edit_content']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -615,7 +615,9 @@ export function getToolDefinitions(
             description:
               'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
-              (btp ? '' : 'edit_unit: replace one FORM or MODULE block inside a PROG/INCL. ') +
+              (btp
+                ? ''
+                : 'edit_unit: replace one FORM or MODULE block inside a PROG/INCL. edit_content: replace unique oldContent with newContent (empty deletes); no-op if already applied. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
@@ -670,10 +672,11 @@ export function getToolDefinitions(
           ...(btp
             ? {}
             : {
-                unit: {
-                  type: 'string',
-                  description: 'edit_unit FORM/MODULE name in a PROG or INCL (case-insensitive).',
-                },
+                unit: { type: 'string', description: 'edit_unit FORM/MODULE name (case-insensitive).' },
+                oldContent: { type: 'string', description: 'Exact text to replace (no line prefix, plain SAPRead).' },
+                newContent: { type: 'string' },
+                lineStart: { type: 'integer', description: 'Search scope (not a replace range); pairs with lineEnd.' },
+                lineEnd: { type: 'integer' },
               }),
           visibility: {
             type: 'string',
@@ -733,7 +736,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
+              'For FUNC, and INCL when it is a FUGR structural include: parent function-group name. Required for FUNC create (FUGR must exist first). Auto-resolved via search if omitted.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
