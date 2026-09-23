@@ -39,6 +39,8 @@ important `0.7.0` authorization migration retained below.
 | Concurrent procedural edits ([#831](https://github.com/arc-mcp/arc-1/pull/831)) | `edit_unit` reads editable source under the SAP lock, preserving drafts and changes completed before the lock. Class-method and class-definition surgery are outside this fix. | `none` |
 | Bounded ST22 history ([#835](https://github.com/arc-mcp/arc-1/pull/835)) | Dump reads can window and page the feed beyond SAP’s 100-entry response ceiling and report coverage limits. | Check the returned completeness and continuation information; see [diagnostics](tools.md#sapdiagnose). |
 
+| Concurrent HTTP tests ([#836](https://github.com/arc-mcp/arc-1/pull/836)) | Local tests keep each request on its own server, preventing cross-test port interference. No production behavior changes. | `none` |
+
 ## 1.3.0 — CI, safer writes, and runtime fixes (2026-09-17)
 
 Adds quality gates, bounded relations, safer authoring, and clearer partial-result evidence. Defaults need
