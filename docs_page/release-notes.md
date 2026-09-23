@@ -22,7 +22,11 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
-## 1.4.0 — extension reports, safer writes, and diagnostics (unreleased)
+## 1.4.0 — CDS types, safer writes, and diagnostics (2026-09-23)
+
+Adds CDS type authoring, extension report execution, and paged ST22 diagnostics.
+BTP/XSUAA operators should read the [1.4.0 upgrade guidance](updating.md#xsuaa-callback-hardening)
+before deploying.
 
 | Change | Impact | Action |
 |---|---|---|
