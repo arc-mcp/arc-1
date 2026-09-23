@@ -597,8 +597,11 @@ limits and the module's `parameters.memory` value as one reviewed deployment dec
 The base MTA also sets `OPTIMIZE_MEMORY=true`; do not replace its `exec sh ./bin/start-cf.sh` launcher
 with a fixed `node --max-old-space-size=...` command in the extension. The launcher validates the
 buildpack-provided `MEMORY_AVAILABLE`, derives old-space from the durable CF allocation (384 MiB at
-512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. Verify the `Runtime
-memory envelope` and `Data-result safety envelope` startup logs after every memory or limit change.
+512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. The `sh` prefix also
+matters on its own: an MTAR built on Windows stores every file as `0666` regardless of the mode Git
+records, so a script started directly (`./bin/start-cf.sh`) fails with `Permission denied`,
+exit 126, in a crash loop. Verify the `Runtime memory envelope` and `Data-result safety envelope`
+startup logs after every memory or limit change.
 
 ## 11. Handover and ongoing operation
 
@@ -656,7 +659,10 @@ buildpack push does not create the seven MTA role collections for you.
 | Role collection missing/empty | Perform full MTA deploy, inspect roles, remove/recreate orphaned collection if needed, then reassign |
 | OAuth `invalid_client` after deploy | Restore the intended DCR signing key or re-register clients; do not invent a new key on every deploy |
 | OAuth `invalid_scope` after a grant | On the failure page choose **Role assigned? Refresh access**, then reconnect the MCP client; verify the user's IdP origin if it persists |
-| SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |
+| SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01; the Cloud Connector mapping must not allow the system certificate for user logon |
+| SAP `502` `not mutually authenticated` through PP | STRUST lacks the direct issuing CA of the Cloud Connector system certificate, or the trusted-reverse-proxy DN was truncated by RZ10/SMICM; see [Certificate trust (STRUST)](principal-propagation-setup.md#certificate-trust-strust) |
+| Crash loop `Permission denied`, exit 126 | The launcher was replaced by a direct script call; MTARs built on Windows store files as `0666`, so invoke scripts through `sh` as the base `exec sh ./bin/start-cf.sh` does |
+| Non-interactive `cf deploy` prints nothing and never finishes | A previous `ERROR` operation waits for confirmation; inspect and abort it with [cf mta-ops](updating.md#btp-cloud-foundry), and end both the hanging `cf` process and its `multiapps` child before retrying |
 | SAP `403` after PP login | Check the actual propagated user's SAP authorizations |
 | Destination change appears ignored | Restart every ARC-1 instance; only discovered multi-target Basic username/password fields are hot |
 | `BTP Audit Log sink disabled` at startup | The selected premium binding is incomplete; recreate/rebind it with the X.509 instance and binding parameters from step 4 |

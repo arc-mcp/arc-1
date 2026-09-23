@@ -284,7 +284,9 @@ cf deploy -i <operation-id> -a abort
 ```
 
 Do not use `-f` to bypass this check: first inspect the operation and confirm that aborting it is
-safe for the target space.
+safe for the target space. On Windows the stalled `cf.exe` keeps a `multiapps.exe` child running;
+end both before retrying. Deploying the same or an older MTA version additionally requires
+`--version-rule ALL`.
 
 ### Single-target or PP-only multi-target
 
