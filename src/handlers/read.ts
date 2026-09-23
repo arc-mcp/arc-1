@@ -223,10 +223,9 @@ export async function handleSAPRead(
     }
   }
 
-  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, COTA, …
-  // share one AFF generic-object contract (blue:blueSource metadata + JSON or DDL-text source), read
-  // via the discovery-gated generic engine instead of the per-type switch below. They bypass
-  // the version/draft/cache machinery (no /source/main text; JSON output).
+  // Types in SDO_REGISTRY use the discovery-gated engine for metadata and JSON or DDL-text source.
+  // This early return bypasses the version/draft/cache machinery below: explicit versions are
+  // currently ignored and SAP's unversioned developer view is returned.
   if (isServerDrivenObjectType(type)) {
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
     if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {

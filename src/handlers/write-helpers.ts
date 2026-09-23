@@ -843,8 +843,8 @@ export async function handleServerDrivenObjectWrite(
     invalidateInactiveList(cachingLayer, client, cacheSecurity);
   };
 
-  // SDO source is AFF JSON for most types but DDL text for others (DTSC, DSFD, DTDC) — only parse-validate
-  // the JSON ones. Validating DDL text as JSON would reject every valid source.
+  // Only parse-validate entries whose sourceFormat is 'json'. Validating DDL text as JSON
+  // would reject every valid source.
   const validateSource = (): { ok: true; source: string } | { ok: false; result: ToolResult } => {
     const src = String(args.source ?? '');
     if (serverDrivenSourceFormat(type) === 'json') {

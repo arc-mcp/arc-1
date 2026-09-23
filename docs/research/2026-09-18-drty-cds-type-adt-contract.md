@@ -54,18 +54,7 @@ even though the LOCK itself returned 200 with a handle.
 This is byte-for-byte the shape the existing SDO engine already builds for the blue family — no new
 builder is required.
 
-## Registry entry
-
-```ts
-DRTY: {
-  href: '/sap/bc/adt/ddic/drty/sources',
-  label: 'CDS Type (scalar type / enum)',
-  createType: 'DRTY/STY',
-  metadataContentType: BLUES_V1,
-  ...BLUE_METADATA,
-  sourceFormat: 'text',
-},
-```
+## Source media type
 
 `sourceFormat: 'text'` is **not** a guess. Negative test: the same PUT under a valid lock with
 `Content-Type: application/json` returns **415 `ExceptionUnsupportedMediaType`**. It also matches the
@@ -107,7 +96,7 @@ object.
 ## Follow-up boundaries
 
 1. Explicit active/inactive version selection is not implemented for SDO reads. The unversioned
-   developer view returns a draft when present (independently verified below).
+   developer view returns a draft when present; tracked in [#840](https://github.com/arc-mcp/arc-1/issues/840).
 2. `$elementinfo` / `$navigation` and `SAPContext` dependency walking remain outside this PR.
 3. Generic `SAPDiagnose`/`SAPTransport` routing is still tracked by ARCH-02.
 
@@ -130,7 +119,7 @@ landed. Every case below was executed against the live trial; nothing is inferre
 | Hyperfocused mode (`SAP action=read`) | works |
 | `SAPRead type=VERSIONS objectType=DRTY` | clean "Unsupported object type DRTY for revisions" — no revision URL builder, expected |
 | `SAPContext action=usages` | resolves `DRTY/STY` via search, 6 usages |
-| `SAPNavigate action=references type=DRTY` | **was `total: 0` — wrong.** See "Findings" |
+| `SAPNavigate action=references type=DRTY` | 6 references after the shared routing fix in [#809](https://github.com/arc-mcp/arc-1/pull/809) |
 
 ### Writes
 
@@ -164,20 +153,7 @@ landed. Every case below was executed against the live trial; nothing is inferre
 
 ### Findings
 
-**1. `SAPNavigate(references, type=<SDO>)` returned a silent, wrong `0` — fixed separately.**
-`resolveWhereUsedUri` built the URI through `objectUrlForType`, whose default branch falls back to
-`/sap/bc/adt/programs/programs/` for types it does not know. SAP was asked for the usages of a
-non-existent program and answered with an empty list. The fix routes server-driven types through
-`serverDrivenObjectUrl`. Live: `DEMO_CDS_ENUM_WEEKDAY` 0 → 6, `CALENDAR_OPERATION` (DSFD) 0 → 5.
-The bug predates DRTY and affected every SDO type; DRTY merely made it visible — which is why it
-shipped as its own change (upstream [arc-mcp/arc-1#809](https://github.com/arc-mcp/arc-1/pull/809))
-rather than riding along with the new type. Its regression test is parameterised over `SDO_TYPES`,
-so registering DRTY extends the coverage automatically. `resolveWhereUsedUri` was the only caller
-fixed; the same fallback still affects `SAPTransport` (`check`, `history`) and single-object
-`SAPDiagnose`, tracked as [ARCH-02](../../docs_page/roadmap.md#arch-02). DRTY inherits that gap like
-every other registered server-driven type.
-
-**2. Deleting a DDIC type that another object still references leaves an orphan, and ARC-1
+**Deleting a CDS type that another object still references leaves an orphan, and ARC-1
 reports success.** Sequence on 816: `ZARC1_DRTY_BASE` active, `ZARC1_DRTY_CHILD : zarc1_drty_base`
 active. `SAPWrite delete BASE` → SAP answers **200** → ARC-1 prints `Deleted DRTY ZARC1_DRTY_BASE`.
 Afterwards: TADIR row gone, metadata GET still **200** with `version="active"` and **no
@@ -198,28 +174,12 @@ that exists) worked on this trial.
 This is SAP-side behaviour — a type without dependents deletes cleanly and reads 404 afterwards, as
 the same matrix shows — but ARC-1's SDO delete does no readback, so the partial deletion surfaces as
 a plain success. The existing `resourceExistenceAfterDelete` follow-up probe in
-`src/handlers/write/update-delete.ts` only runs when DELETE *fails* with 404. Not fixed here: it is
-engine-level (every SDO type, plausibly every DDIC type) and needs a decision between a pre-delete
-where-used refusal (Eclipse's approach; prevents the orphan) and a post-delete existence check
-(reports it). Tracked in [#839](https://github.com/arc-mcp/arc-1/issues/839).
+`src/handlers/write/update-delete.ts` only runs when DELETE *fails* with 404. The shared deletion
+path needs investigation; this DRTY observation does not establish the same backend defect on
+other types or releases. Compare SAP's dependency checks with a post-delete readback that reports
+a surviving object or an unconfirmed outcome. Tracked in [#839](https://github.com/arc-mcp/arc-1/issues/839).
 
-**3. Package gate wording.** With `SAP_ALLOWED_PACKAGES=*` the gate still refuses an object whose
-metadata carries no `packageRef`, with "Fail-closed because allowedPackages is restricted". The
-refusal is right (the package cannot be verified); the wording is misleading when the allowlist is
-`*`. Cosmetic, noted only.
-
-### Test-object hygiene
-
-All `ZARC1_DRTY_*` objects created by the matrix were deleted and confirmed absent — including
-`ZARC1_DRTY_BASE` after the TADIR repair described in finding 2. The only remaining trace is the
-TADIR row of `ZARC1_DRTY_B3` with `DELFLAG=X`,
-which is the normal state of a deletion recorded in an unreleased transport (`A4HK900162`).
-
-## Independent review and reproduction — 2026-09-23
-
-Build: #832 `a4a3a350` merged with main `9ca2c093`, run from TypeScript through
-`handleToolCall` on Node 22.21.1. Both A4H targets used Basic authentication, client 001;
-758 used the TLS reverse proxy at `https://a4h.marianzeis.de`. Credentials stayed local.
+## Cross-release verification — 2026-09-23
 
 | Target | DRTY discovery/read | Dispatcher lifecycle | Cleanup |
 |---|---|---|---|
@@ -250,18 +210,3 @@ remove consumers before their type and verify absence. BTP runtime was not teste
   small registry entry here rather than a new DRTY client module.
 - [abaplint’s DRTY object](https://github.com/abaplint/abaplint/blob/main/packages/core/src/objects/cds_type.ts)
   supplies type/name metadata. ARC-1’s pre-write lint does not currently handle this object.
-
-### Review findings addressed
-
-- Original read integration coverage depended on one demo package, absent/different on the tested
-  releases. It now uses bounded ADT search restricted to `DRTY/STY`.
-- A read returning text does not prove the write MIME type: the existing generic reader attempts
-  JSON parsing regardless of `sourceFormat`. Dispatcher tests now assert the actual create metadata,
-  source PUT `text/plain`, lock order, discovery refusal and write/package ceilings.
-- The original plan duplicated the evidence and presented completed work as future work. It is now
-  a concise design/acceptance record; the detailed wire evidence remains here.
-
-Local validation: 7,112 unit tests passed, plus typecheck, lint, policy, build, file/schema budgets
-and strict MkDocs. Temporarily changing DRTY to JSON source format made three dispatcher tests
-fail, including both source-write cases; the mutation was reverted. GitHub CI was not used as
-acceptance evidence for this review.

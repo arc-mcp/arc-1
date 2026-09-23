@@ -14,7 +14,7 @@
  *             metadata body (blue:blueSource / dtdc:dtdcSource; adtcore:type/name/description + packageRef) → 201.
  *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… → unlock. The Content-Type is
  *             per-type (registry `sourceFormat`): application/json for the AFF-JSON types,
- *             text/plain for the DDL-text ones (DTSC, DSFD, DTDC, DRTY). The wrong one is a hard 415.
+ *             text/plain for entries with sourceFormat='text'. The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
  * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
@@ -46,7 +46,7 @@ export interface SdoRegistryEntry {
   createType: string;
   /**
    * Metadata content-type for BOTH the metadata GET (Accept) and the create POST (Content-Type).
-   * Most types use `application/vnd.sap.adt.blues.vN+xml` (EVTO is v2, the rest v1); DTDC uses its
+   * Most types use `application/vnd.sap.adt.blues.vN+xml` (version set per entry); DTDC uses its
    * own `application/vnd.sap.adt.ddic.dtdc.v1+xml`. Matched by `discoveryMarker` in the gate.
    */
   metadataContentType: string;
@@ -70,7 +70,7 @@ export interface SdoRegistryEntry {
   discoveryMarker: string;
   /**
    * Source flavor — drives BOTH the client-side validation and the PUT Content-Type. NOT uniform:
-   * the AFF-JSON types 415 on text/plain, and the DDL-text types (DTSC, DSFD, DTDC, DRTY) 415 on
+   * the AFF-JSON types 415 on text/plain, and the DDL-text types 415 on
    * application/json. Live-verified per type on 816.
    */
   sourceFormat: SdoSourceFormat;
@@ -80,7 +80,7 @@ export interface SdoRegistryEntry {
 export type SdoSourceFormat = 'json' | 'text';
 
 /**
- * Shared metadata-format fields for the "blue" family (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD) — every
+ * Shared metadata-format fields for registry entries using the "blue" family — every
  * blue type has the identical root element/namespace/discovery marker; only its content-type version
  * (v1/v2) and source flavor differ. Spread into each blue entry so the shape can't drift.
  */
@@ -397,7 +397,7 @@ export async function createServerDrivenObject(
 /**
  * Write the source of a server-driven object: lock → PUT …/source/main → unlock (guaranteed via
  * try-finally). The Content-Type comes from the type's declared sourceFormat — AFF-JSON types take
- * application/json, DDL-text types (DTSC, DSFD) take text/plain; sending the wrong one is a 415.
+ * application/json, entries with sourceFormat='text' take text/plain; the wrong one is a 415.
  * Auto-propagates the lock's corrNr when no explicit transport is supplied (same contract as
  * crud.ts safeUpdateSource).
  */
