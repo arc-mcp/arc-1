@@ -11,6 +11,7 @@ import type { AdtClient } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import {
   AdtApiError,
+  AdtError,
   AdtNetworkError,
   AdtResponseLimitError,
   AdtSafetyError,
@@ -40,7 +41,7 @@ import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate
 import { formatClientInfo } from '../server/trace-context.js';
 import type { ServerConfig } from '../server/types.js';
 import { handleSAPActivate } from './activate.js';
-import { buildCacheSecurityContext } from './cache-security.js';
+import { buildCacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { handleSAPContext } from './context.js';
 import { handleSAPDiagnose } from './diagnose.js';
 import { getCachedFeatures } from './feature-cache.js';
@@ -168,6 +169,22 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtError && err.creationOutcome === 'unknown') {
+    const detail = config.minimalErrors
+      ? err instanceof AdtApiError
+        ? formatMinimalAdtError(err)
+        : 'Create request failed. Use the request ID to correlate server-side logs.'
+      : message;
+    let inspection =
+      'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version, before updating an existing object.';
+    if (tool === 'SAPTransport') {
+      inspection = 'Use SAPTransport to list requests and inspect their owner, description and contents.';
+    } else if (tool === 'SAPManage' && String(args.action).startsWith('flp_')) {
+      inspection =
+        'Use SAPManage flp_list_catalogs/flp_list_groups/flp_list_tiles to inspect catalogs, groups and catalog tiles. Inspect group membership in SAP Fiori Launchpad Designer.';
+    }
+    return `${detail}\nCreate completion is unconfirmed. ${inspection} Do not blindly repeat create.`;
+  }
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
     return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
   }
@@ -357,7 +374,7 @@ function formatMinimalAdtError(err: AdtApiError): string {
   return (
     `ADT API error: status ${err.statusCode}.${category}\n\n` +
     'Hint: Detailed SAP error text is hidden because ARC1_MINIMAL_ERRORS=true. ' +
-    'Use the request ID to correlate server-side audit and SAP-native logs, or retry in a trusted admin session with minimal errors disabled.'
+    'Use the request ID to correlate server-side audit and SAP-native logs.'
   );
 }
 
@@ -958,9 +975,8 @@ export async function handleToolCall(
       tracestate: inherited?.tracestate,
     },
     async () => {
+      const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
       try {
-        const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
-
         // FEAT-61: inner dispatch is owned by the ToolRegistry (built-ins + plugin Custom_* tools).
         // The shared pipeline above (rate-limit, scope, deny, Zod, audit) is unchanged; the registry
         // only replaces the former `switch (toolName)`. See extension-framework-spec.md §4.
@@ -1019,6 +1035,17 @@ export async function handleToolCall(
 
         return result;
       } catch (err) {
+        if (err instanceof AdtError && err.creationOutcome === 'unknown') {
+          try {
+            if (toolName === 'SAPWrite' && args.type && args.name) {
+              invalidateInactiveList(cachingLayer, client, cacheSecurity);
+              cachingLayer?.invalidate(canonicalTablType(String(args.type)), String(args.name), 'all');
+            }
+            if (toolName === 'SAPManage' && args.action === 'create_package') client.invalidatePackageHierarchy();
+          } catch {
+            // Best-effort cleanup must not replace the creation error or prevent its audit event.
+          }
+        }
         const message = err instanceof Error ? err.message : String(err);
         const auditErrorMessage =
           err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)

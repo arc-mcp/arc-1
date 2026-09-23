@@ -180,6 +180,7 @@ describe('FLP OData client', () => {
         JSON.stringify({ domainId: 'ZARC1_TEST', title: 'Test', type: 'CATALOG_PAGE' }),
         'application/json',
         expect.objectContaining({ Accept: 'application/json' }),
+        { retryTransientErrors: false },
       );
     });
 
@@ -283,6 +284,7 @@ describe('FLP OData client', () => {
         JSON.stringify({ id: 'ZARC1_GROUP', title: 'ARC1 Group', catalogId: '/UI2/FLPD_CATALOG', layout: '' }),
         'application/json',
         expect.objectContaining({ Accept: 'application/json' }),
+        { retryTransientErrors: false },
       );
     });
   });

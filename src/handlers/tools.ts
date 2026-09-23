@@ -1140,7 +1140,7 @@ export function getToolDefinitions(
         '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
         '- "quickfix": proposals at name+type+source+line (optional column/sourceUri).\n' +
         '- "apply_quickfix": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n' +
-        '- "dumps": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n' +
+        '- "dumps": list/read ST22 short dumps (no id = list, newest first, user/from/to/maxResults; id = read; includeFullText, sections).\n' +
         '- "traces": list profiler traces; id+analysis analyzes one.\n' +
         '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on).\n' +
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
@@ -1279,16 +1279,16 @@ export function getToolDefinitions(
           authObject: { type: 'string', description: 'Authorization object filter, e.g. S_TCODE.' },
           from: {
             type: 'string',
-            description: 'system_messages/gateway_errors lower time bound.',
+            description: 'Inclusive lower time bound for dumps/system_messages/gateway_errors; ISO or YYYYMMDDHHMMSS.',
           },
           to: {
             type: 'string',
-            description: 'system_messages/gateway_errors upper time bound.',
+            description: 'Inclusive upper time bound for dumps/system_messages/gateway_errors; ISO or YYYYMMDDHHMMSS.',
           },
           maxResults: {
             type: 'number',
             description:
-              'Result limit: dumps/system_messages/gateway_errors default 50; authorization_trace 100. Capped.',
+              'Result limit (default 50; authorization_trace 100). Caps: dumps 500, system_messages/gateway_errors 200, authorization_trace 10000.',
           },
           sections: {
             type: 'array',

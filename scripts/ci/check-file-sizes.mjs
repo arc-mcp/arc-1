@@ -52,7 +52,10 @@ const BUDGETS = {
   'src/adt/xml-parser.ts': 1820,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
-  'src/adt/diagnostics.ts': 1845,
+  // +88 for dump paging: SAP caps the dumps feed at 100 entries and ignores $skip, so listDumps walks
+  // the inclusive `to` bound, refuses to guess when a second holds a full page, and rejects bounds
+  // SAP would silently discard or roll over to another day.
+  'src/adt/diagnostics.ts': 1933,
   // The ADT client facade aggregates every read/write op; set_api_state (#506) + runQueryWithMetrics
   // (SAPQuery metrics) + getEffectiveUser (BTP JWT-derived user, G-5) + getSourceAtObjectUrl
   // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past

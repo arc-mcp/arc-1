@@ -1076,7 +1076,9 @@ export async function handleSAPDiagnose(
 
       const user = args.user as string | undefined;
       const maxResults = args.maxResults ? Number(args.maxResults) : undefined;
-      const dumps = await listDumps(client.http, client.safety, { user, maxResults });
+      const from = args.from as string | undefined;
+      const to = args.to as string | undefined;
+      const dumps = await listDumps(client.http, client.safety, { user, maxResults, from, to });
       return textResult(toolJson(dumps));
     }
     case 'traces': {

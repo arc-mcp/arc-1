@@ -373,6 +373,16 @@ Create or update ABAP source code. Handles lock/modify/unlock automatically.
 | `objects` | array | No | For `batch_create`: ordered list of objects (see below) |
 | `activateAtEnd` | boolean | No | For `batch_create` only. Default `false` (per-object inline activation). When `true`, ARC-1 writes inactive drafts for every object then issues one terminal batch-activate — SAP's activator resolves cross-references between siblings in a single pass. Use this for interdependent objects (composition-linked DDLS, RAP behavior stacks where parent references not-yet-active child). Partial-failure semantics are unchanged: a write-phase failure still breaks the loop and only the already-written subset is batch-activated. |
 
+**Unconfirmed creation:** Repository-object and package creation, class-include initialization,
+and transport creation do not automatically replay after HTTP 429/5xx or a lost response.
+SAP may already have created the object even though ARC-1 reports an error. Inspect its identity,
+package and source with `SAPRead`/`SAPSearch` (including `version="inactive"`) before deciding
+whether to resume a source update; never overwrite an unrelated existing object. For transport
+requests, use `SAPTransport` to list and inspect the request before creating another. Batch
+results retain unknown creation outcomes. Existing authentication/CSRF and MIME-rejection
+recovery remains; read requests retain their retry behavior. ARC-1 does not roll back or
+complete an uncertain creation automatically.
+
 **DDIC metadata writes:** `DOMA`, `DTEL`, `MSAG`, and `SRVB` use structured XML payloads and do **not** use `/source/main`. On DTEL create, an omitted label length is derived from its label text, or defaults to the field's maximum when the label is absent; omitted `deactivateInputHistory` defaults to `false`. On DTEL update, omitted fields keep their stored values, including lengths, the history flag, the SET/GET parameter, the change-document and bidi flags, and the search-help parameter while the search help is unchanged. Changing a label without supplying its length derives a new length from that label. Every DTEL create sends a follow-up metadata PUT because SAP's create POST drops the description, labels, and custom lengths. `MSAG` writes use the `/sap/bc/adt/messageclass/` endpoint and accept a `messages` array of `{number, shortText, longText?}` entries. `SRVB` create uses wildcard content type (`application/*`) and SRVB update uses vendor type (`application/vnd.sap.adt.businessservices.servicebinding.v2+xml`).
 
 **Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` write source via `/source/main`. `SKTD`/`KTD` instead GETs the complete `<sktd:docu>` envelope and PUTs it back with the v2 KTD media type, changing only addressed Base64 long-text bodies and existing short-text attributes. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one KTD-capable ABAP object; `KTD` is accepted as a friendly alias. Create requires `refObjectType` and uses `name` as the documented object name. ARC-1 supports KTD creates for parent types with verified ADT parent URI routing, including `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `SRVB/SVB`, and `DEVC/K`. `CLAS/OC`, `INTF/OI`, and `PROG/P` were not registered for KTD DOCUMENTATION scope on the tested SAP_BASIS 758 and 816 systems; use ABAP Doc for those code objects. Other SAP-registered KTD parent types require ARC-1 parent URI routing before create is enabled.
@@ -645,7 +655,7 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
 
 ### Procedural unit surgery
 
-[Issue #558](https://github.com/arc-mcp/arc-1/issues/558). On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. ARC-1 reads the latest active or inactive-draft source directly from SAP, finds the block with abaplint's structure tree, validates that the replacement has the same kind and name, splices it, then uses the normal package gate and lock/modify/unlock write path.
+[Issue #558](https://github.com/arc-mcp/arc-1/issues/558). On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. ARC-1 checks the write/package gates, acquires the SAP lock, then reads the current editable source in that same stateful session. It uses SAP's default source version (the inactive draft when present, otherwise active source), bypassing source and inactive-list caches. It finds the block with abaplint's structure tree, validates the replacement's kind/name and resulting source, and writes before unlocking. This preserves surrounding edits completed before the lock was acquired; validation or read failures perform no PUT, and ARC-1 always attempts to unlock.
 
 Pass the complete replacement block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. The action is case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
 
@@ -1665,6 +1675,8 @@ SAPDiagnose(action="quickfix", type="CLAS", name="ZCL_ORDER", source="<current_s
 SAPDiagnose(action="apply_quickfix", type="CLAS", name="ZCL_ORDER", source="<current_source>", line=42, column=1, proposalUri="/sap/bc/adt/quickfixes/...", proposalUserContent="<opaque_state>")
 SAPDiagnose(action="dumps")
 SAPDiagnose(action="dumps", user="DEVELOPER", maxResults=10)
+SAPDiagnose(action="dumps", from="2026-09-15", to="2026-09-20T23:59:59Z")
+SAPDiagnose(action="dumps", maxResults=500)  # SAP serves 100 per request; ARC-1 pages the rest
 SAPDiagnose(action="dumps", id="20260409_123456_DUMP_ID")
 SAPDiagnose(action="traces")
 SAPDiagnose(action="traces", id="TRACE123", analysis="hitlist")
@@ -1715,6 +1727,12 @@ classic FLP lifecycle operations, and set an object's API release contract.
 - `flp_create_tile` — Create a tile in an FLP catalog.
 - `flp_add_tile_to_group` — Assign a catalog tile instance into a group.
 - `flp_delete_catalog` — Delete an FLP designer catalog.
+
+**Unconfirmed FLP creation:** Catalog/group/tile creation and tile assignment do not
+replay after HTTP 429/5xx or response loss. SAP may already have created the entry;
+inspect it before another create. Use `flp_list_catalogs`, `flp_list_groups` and
+`flp_list_tiles` for catalogs, groups and catalog tiles. These actions do not list
+group membership; inspect a group's tiles in SAP Fiori Launchpad Designer.
 
 **Parameters:**
 

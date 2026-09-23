@@ -19,6 +19,9 @@ import { parseReleaseNumber, STATEFUL_SESSION_MIN_RELEASE } from './release.js';
 
 /** Base error for all ADT-related errors */
 export class AdtError extends Error {
+  /** A create request failed without establishing whether SAP committed it. */
+  creationOutcome?: 'unknown';
+
   constructor(message: string) {
     super(message);
     this.name = 'AdtError';
@@ -823,7 +826,7 @@ export function classifySapDomainError(
   if ((typeId === 'ExceptionResourceCreationFailure' || resourceExistsPattern) && objectExistsPattern) {
     return {
       category: 'object-exists',
-      hint: 'An object with this name already exists. Recovery path: rerun the same payload with SAPWrite(action="update") to overwrite source/content, instead of retrying create.',
+      hint: 'An object with this name already exists. Inspect its identity, package and source with SAPRead before deciding whether an explicit update is appropriate. Do not blindly repeat create or overwrite an existing object.',
       details: typeId ? { exceptionType: typeId } : undefined,
     };
   }

@@ -12,25 +12,7 @@ const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/ha
 
 type FetchCall = { method: string; url: string; body?: string };
 
-function inactiveObjects(name: string, type: 'PROG' | 'INCL', hasDraft: boolean, adtTypeOverride?: string): string {
-  if (!hasDraft) {
-    return '<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects"/>';
-  }
-  const adtType = adtTypeOverride ?? (type === 'PROG' ? 'PROG/P' : 'PROG/I');
-  return `<?xml version="1.0"?>
-<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/inactiveObjects" xmlns:adtcore="http://www.sap.com/adt/core">
-  <ioc:entry><ioc:object><adtcore:objectReference adtcore:type="${adtType}" adtcore:name="${name}" adtcore:uri="/source"/></ioc:object></ioc:entry>
-</ioc:inactiveObjects>`;
-}
-
-function mockEditUnitFlow(opts: {
-  type: 'PROG' | 'INCL';
-  name: string;
-  objectPath: string;
-  activeSource: string;
-  inactiveSource?: string;
-  inactiveAdtType?: string;
-}): FetchCall[] {
+function mockEditUnitFlow(opts: { objectPath: string; activeSource: string; inactiveSource?: string }): FetchCall[] {
   const calls: FetchCall[] = [];
   mockFetch.mockReset();
   mockFetch.mockImplementation((url: string | URL, request?: { method?: string; body?: string | Buffer | null }) => {
@@ -39,17 +21,7 @@ function mockEditUnitFlow(opts: {
     const parsed = new URL(urlString);
     calls.push({ method, url: urlString, body: typeof request?.body === 'string' ? request.body : undefined });
 
-    if (method === 'GET' && parsed.pathname === '/sap/bc/adt/activation/inactiveobjects') {
-      return Promise.resolve(
-        mockResponse(
-          200,
-          inactiveObjects(opts.name, opts.type, opts.inactiveSource !== undefined, opts.inactiveAdtType),
-          {
-            'x-csrf-token': 'TOKEN',
-          },
-        ),
-      );
-    }
+    if (method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'TOKEN' }));
     if (method === 'GET' && parsed.pathname === opts.objectPath) {
       return Promise.resolve(
         mockResponse(
@@ -61,9 +33,9 @@ function mockEditUnitFlow(opts: {
     }
     if (method === 'GET' && parsed.pathname === `${opts.objectPath}/source/main`) {
       const body =
-        parsed.searchParams.get('version') === 'inactive'
-          ? (opts.inactiveSource ?? opts.activeSource)
-          : opts.activeSource;
+        parsed.searchParams.get('version') === 'active'
+          ? opts.activeSource
+          : (opts.inactiveSource ?? opts.activeSource);
       return Promise.resolve(mockResponse(200, body, { 'x-csrf-token': 'TOKEN' }));
     }
     if (method === 'POST' && parsed.pathname === opts.objectPath && parsed.searchParams.get('_action') === 'LOCK') {
@@ -137,8 +109,6 @@ describe('SAPWrite edit_unit', () => {
   ENDDO.
 ENDFORM.`;
       const calls = mockEditUnitFlow({
-        type: 'PROG',
-        name,
         objectPath: `/sap/bc/adt/programs/programs/${name}`,
         activeSource: `REPORT zarc1_lint.\n${surrounding}\nFORM target.\n WRITE 'old'.\nENDFORM.`,
       });
@@ -189,8 +159,6 @@ ENDFORM.`;
     const name = 'ZARC1_UNIT';
     const objectPath = `/sap/bc/adt/programs/programs/${name}`;
     const calls = mockEditUnitFlow({
-      type: 'PROG',
-      name,
       objectPath,
       activeSource: `REPORT zarc1_unit.
 FORM alpha.
@@ -222,8 +190,6 @@ ENDFORM.`,
     const name = 'ZARC1_DRAFT';
     const objectPath = `/sap/bc/adt/programs/programs/${name}`;
     const calls = mockEditUnitFlow({
-      type: 'PROG',
-      name,
       objectPath,
       activeSource: "REPORT zarc1_draft.\nFORM first.\n  WRITE 'active'.\nENDFORM.\nFORM second.\nENDFORM.",
       inactiveSource: "REPORT zarc1_draft.\nFORM first.\n  WRITE 'draft change'.\nENDFORM.\nFORM second.\nENDFORM.",
@@ -237,18 +203,15 @@ ENDFORM.`,
       lintBeforeWrite: false,
     });
     expect(result.isError).toBeUndefined();
-    expect(calls.some((call) => call.method === 'GET' && call.url.includes('version=inactive'))).toBe(true);
     const put = calls.find((call) => call.method === 'PUT');
     expect(put?.body).toContain("WRITE 'draft change'.");
     expect(put?.body).toContain("WRITE 'second change'.");
   });
 
-  it('recognizes an inactive INCL draft reported by ADT as PROG/I', async () => {
+  it('preserves the editable draft of a standalone INCL', async () => {
     const name = 'ZARC1_INCLUDE';
     const objectPath = `/sap/bc/adt/programs/includes/${name}`;
     const calls = mockEditUnitFlow({
-      type: 'INCL',
-      name,
       objectPath,
       activeSource: "FORM first.\n  WRITE 'active'.\nENDFORM.\nFORM second.\nENDFORM.",
       inactiveSource: "FORM first.\n  WRITE 'draft change'.\nENDFORM.\nFORM second.\nENDFORM.",
@@ -262,7 +225,6 @@ ENDFORM.`,
       lintBeforeWrite: false,
     });
     expect(result.isError).toBeUndefined();
-    expect(calls.some((call) => call.method === 'GET' && call.url.includes('version=inactive'))).toBe(true);
     const put = calls.find((call) => call.method === 'PUT');
     expect(put?.body).toContain("WRITE 'draft change'.");
     expect(put?.body).toContain("WRITE 'second change'.");
@@ -273,8 +235,6 @@ ENDFORM.`,
     const group = 'ZARC1';
     const objectPath = `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${name.toLowerCase()}`;
     const calls = mockEditUnitFlow({
-      type: 'INCL',
-      name,
       objectPath,
       activeSource: "MODULE status_0100 OUTPUT.\n  SET PF-STATUS 'OLD'.\nENDMODULE.",
     });
@@ -294,17 +254,14 @@ ENDFORM.`,
     expect(put?.body).toContain("SET PF-STATUS 'NEW'.");
   });
 
-  it('splices into a FUGR/I inactive draft instead of overwriting it with active source', async () => {
+  it('preserves a function-group include draft without consulting worklist aliases', async () => {
     const name = 'LZARC1TOP';
     const group = 'ZARC1';
     const objectPath = `/sap/bc/adt/functions/groups/${group.toLowerCase()}/includes/${name.toLowerCase()}`;
     const calls = mockEditUnitFlow({
-      type: 'INCL',
-      name,
       objectPath,
       activeSource: "FORM first.\n  WRITE 'active'.\nENDFORM.\nFORM second.\nENDFORM.",
       inactiveSource: "FORM first.\n  WRITE 'draft change'.\nENDFORM.\nFORM second.\nENDFORM.",
-      inactiveAdtType: 'FUGR/I',
     });
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'edit_unit',
@@ -316,7 +273,6 @@ ENDFORM.`,
       lintBeforeWrite: false,
     });
     expect(result.isError).toBeUndefined();
-    expect(calls.some((call) => call.method === 'GET' && call.url.includes('version=inactive'))).toBe(true);
     const put = calls.find((call) => call.method === 'PUT');
     expect(put?.body).toContain("WRITE 'draft change'.");
     expect(put?.body).toContain("WRITE 'second change'.");
