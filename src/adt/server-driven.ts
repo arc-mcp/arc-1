@@ -1,6 +1,6 @@
 /**
  * Generic "server-driven object" (SDO) read/write path. Most SDO types need ABAP Platform 2025
- * (SAP_BASIS 8.16+), but some (DTDC, DSFD, EVTB) also ship on S/4HANA 2023 (758) — availability is
+ * (SAP_BASIS 8.16+), but some (DTDC, DSFD, DRTY, EVTB) also ship on S/4HANA 2023 (758) — availability is
  * discovery-gated per type, never a hardcoded release.
  *
  * These repository object types share ONE AFF generic-object contract:
@@ -14,7 +14,7 @@
  *             metadata body (blue:blueSource / dtdc:dtdcSource; adtcore:type/name/description + packageRef) → 201.
  *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… → unlock. The Content-Type is
  *             per-type (registry `sourceFormat`): application/json for the AFF-JSON types,
- *             text/plain for the DDL-text ones (DTSC, DSFD, DTDC). The wrong one is a hard 415.
+ *             text/plain for the DDL-text ones (DTSC, DSFD, DTDC, DRTY). The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
  * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
@@ -70,7 +70,7 @@ export interface SdoRegistryEntry {
   discoveryMarker: string;
   /**
    * Source flavor — drives BOTH the client-side validation and the PUT Content-Type. NOT uniform:
-   * the AFF-JSON types 415 on text/plain, and the DDL-text types (DTSC, DSFD, DTDC) 415 on
+   * the AFF-JSON types 415 on text/plain, and the DDL-text types (DTSC, DSFD, DTDC, DRTY) 415 on
    * application/json. Live-verified per type on 816.
    */
   sourceFormat: SdoSourceFormat;
@@ -208,7 +208,7 @@ export const SDO_REGISTRY = {
     sourceFormat: 'json',
   },
   // Plain blue sibling of DSFD. DRTY/STY covers scalar types AND enums, so create needs no subtype
-  // routing. DDL-text source (JSON PUT = 415). Verified 816: docs/research/2026-09-18-drty-cds-type-adt-contract.md
+  // routing. DDL-text source (JSON PUT = 415). Verified 758/816: docs/research/2026-09-18-drty-cds-type-adt-contract.md
   DRTY: {
     href: '/sap/bc/adt/ddic/drty/sources',
     label: 'CDS Type (scalar type / enum)',

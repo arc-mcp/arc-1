@@ -429,18 +429,13 @@ media types and activation behavior before adding schemas.
 **Idea.** Extend the server-driven registry to DRAS and DSFI if their live contracts are stable
 enough for ARC-1.
 
-**Why it remains.** The registry already covers DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC,
-UIAD, and — since 2026-09-18 — DRTY, which shipped as a one-row `SDO_REGISTRY` entry
-(`/sap/bc/adt/ddic/drty/sources`, `DRTY/STY`, blues v1, `sourceFormat: 'text'`) verified end to end
-on 8.16 across create, update, activate, read, and delete; its contract is recorded in
-[docs/research/2026-09-18-drty-cds-type-adt-contract.md](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-18-drty-cds-type-adt-contract.md).
-DRAS and DSFI still lack complete live create/update evidence, and every added type also consumes
-model-facing schema budget.
+**Why it remains.** DRAS and DSFI lack complete live create/update evidence. DRTY now uses the
+existing registry; its [verified contract](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-18-drty-cds-type-adt-contract.md)
+is a reference for researching the remaining candidates, not a guarantee they share its format.
 
-**Resume with.** Live probes that give discovery markers, media types, metadata roots, source
-format, create/update/delete behavior, and read-back fixtures for each remaining type. `createType`
-is not derivable (EVTB=`EVTB/EVB`, DSFD=`DSFD/SCF`, DRTY=`DRTY/STY`), so each needs its own `$TMP`
-create probe. Add candidates independently; do not ship them as an all-or-nothing bundle.
+**Resume with.** Discovery markers, metadata/source media types, create subtype, stateful CRUD,
+activation and read-back evidence for each remaining type. Measure schema cost and add candidates
+independently; do not infer their create subtype or source format from the family.
 
 ## Diagnostics, data, and code intelligence
 

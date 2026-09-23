@@ -218,7 +218,7 @@ the on-premise `adtcore:masterSystem` / `adtcore:responsible` and adds
 | RAP stack — BDEF, SRVD, SRVB create | Live-verified; SRVB `update` too (a full metadata replace merged over the existing binding, so a description-only edit keeps the bound `serviceDefinition`) |
 | Server-driven objects (DESD, DTSC, CSNM, EVTB, EVTO, COTA) | Live-verified; their minimal `blue:blueSource` body carries no owner/system attributes by construction |
 | DSFD, DTDC | Registered and `btp`-capable, but live-verified only on on-premise 7.58 / 8.16; discovery-gated like every server-driven type |
-| DRTY | Registered and `btp`-capable, but live-verified only on on-premise 8.16; discovery-gated like every server-driven type |
+| DRTY | Registered and `btp`-capable, but live-verified only on on-premise 7.58 / 8.16; discovery-gated like every server-driven type |
 | UIAD (launchpad app descriptor item) | Read in practice — SAP refuses `create` on on-premise ("LADI edits need the ABAP Cloud language version"); writing it on the ABAP Environment is unverified |
 
 Two prerequisites:

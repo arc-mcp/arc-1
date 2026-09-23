@@ -841,11 +841,11 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
 
   // ─── BTP-Specific: SDO (server-driven) object-create path ──────────────
   //
-  // The registered 8.16+ server-driven types (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC/DRTY) create via a minimal
+  // The discovery-gated server-driven types (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC/DRTY) create via a minimal
   // <blue:blueSource> body (buildServerDrivenMetadataXml) that — by construction — carries NO adtcore:responsible,
-  // masterSystem, or abapLanguageVersion, so it needs no cloudify. Live-verified on BTP 919: every type's
-  // body deserializes and reaches package-assignment (structure package → 409 "cannot contain development
-  // objects"; DTSC → 403 resource-auth). A wrong body would 400 at the create simple-transformation.
+  // masterSystem, or abapLanguageVersion, so it needs no cloudify. Earlier BTP 919 probes reached
+  // package-assignment (structure package → 409 "cannot contain development objects"; DTSC → 403
+  // resource-auth). DRTY has not yet been run on BTP. A wrong body would 400 at deserialization.
   describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC/DRTY — UIAD excluded)', () => {
     const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
     const writablePkg = process.env.TEST_BTP_PACKAGE;

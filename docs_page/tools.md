@@ -45,7 +45,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY` where the system advertises them — ABAP Platform 2025 / 8.16+, plus `EVTB` on S/4HANA 2023) |
+| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY` where the system advertises them — release-dependent; `DRTY` is verified on SAP_BASIS 758 and 816) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
 | `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL` (CDS views are `DDLS`; classic DDIC `VIEW` is unsupported — it has no plain-text source). Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
 | `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or its canonical source/revision URI. URI inputs use the same endpoint, authority, traversal, query, fragment, and control-character checks as `versionUri`. |
@@ -105,7 +105,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `DSFD` | CDS Scalar Function Definition — server-driven object. JSON metadata + **DDL text** source (`define scalar function …`). Available on S/4HANA 2023 (758) and 8.16+. |
 | `UIAD` | Launchpad App Descriptor Item (LADI) — server-driven object. Discovery-gated; available on 8.16 and supported 758 backports. The successor to the deprecated tile/target-mapping model and the unit SAP Build Work Zone content exposure v2 federates. AFF JSON source carries `generalInformation` (appType, catalogId, transaction), `navigation` (targetMappingId, semanticObject, action, form factors) and `tiles[]`. Find names via `SAPRead type=DEVC` on the owning package (listed as `UIAD/TYP` — pass the bare `UIAD`). |
 | `DTDC` | CDS Dynamic Cache — server-driven object with its OWN metadata format (`<dtdc:dtdcSource>`, not `blue:blueSource`). JSON metadata + **DDL text** source (`define dynamic cache …`). Available on S/4HANA 2023 (758) and 8.16+. |
-| `DRTY` | CDS Type — server-driven object. JSON metadata + **DDL text** source (`define type …`). Covers scalar types and enumerated types alike; both report `DRTY/STY`. Live-verified on 8.16. |
+| `DRTY` | CDS Type — server-driven object. JSON metadata + **DDL text** source (`define type …`). Covers scalar types and enumerated types alike; both report `DRTY/STY`. Live-verified on 7.58 and 8.16. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore. List apps without `name`; browse or read with `name="<app>"` and optional case-sensitive `include="<path>"`. `name="<app>/<path>"` is also accepted. |
@@ -393,12 +393,12 @@ Keep edits above the read-only metadata marker in a complete SAPRead result. For
 
 #### Server-driven object writes
 
-`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `UIAD`, and `DRTY` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, and `DRTY` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
 
 - **`create`** posts a minimal `<blue:blueSource>` metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. Most types are left **inactive**; follow with `SAPActivate(type=..., name=...)`. UIAD source saves are active immediately on the verified system; see its validation contract below.
-- **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC`, `DSFD` and `DRTY` instead take **DDL text** (`define static cache …`, `define scalar function …`, `define type …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
+- **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC`, `DSFD`, `DTDC` and `DRTY` instead take **DDL text** (`define static cache …`, `define scalar function …`, `define dynamic cache …`, `define type …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
 - **`update`** requires `source` (AFF JSON or DDL text, per the type); **`delete`** uses the standard lock → delete flow. Both honor the `allowedPackages` ceiling against the object's real package.
-- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition) and `DTDC` (CDS Dynamic Cache) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). NetWeaver 7.50 exposes none of them.
+- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition), `DTDC` (CDS Dynamic Cache), and `DRTY` (CDS Type) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). NetWeaver 7.50 exposes none of them.
 
 | Type | Object | Notes |
 |------|--------|-------|
@@ -414,6 +414,22 @@ Keep edits above the read-only metadata marker in a complete SAPRead result. For
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
 
 Other actions (`edit_method`, surgery, `batch_create`, RAP scaffolding) are not supported for server-driven types and return a clear error.
+
+**DRTY create/update:** Use canonical `type="DRTY"` with plain `define type` source, for example:
+
+```json
+{"action":"create","type":"DRTY","name":"Z_ORDER_STATUS","package":"$TMP","source":"define type Z_ORDER_STATUS : abap.int1 enum { unknown = initial; open = 1; closed = 2; }"}
+```
+
+Follow with `SAPActivate(type="DRTY", name="Z_ORDER_STATUS")`. DRTY is verified on 7.58 and 8.16;
+availability is discovered per system. Saves remain inactive and may contain invalid DDL until
+activation checks them. SDO reads return the unversioned developer view, including a draft when
+present; `version` does not select an SDO version. Use `DRTY`, not the search result's `DRTY/STY`
+slash code. Generic syntax/ATC/transport helpers still have the [ARCH-02 routing limitation](roadmap.md#arch-02).
+
+Delete consumers before their CDS type and verify absence afterward. On the contributor's 8.16
+system, deleting a referenced type returned success while leaving an orphan; see the
+[tracked deletion issue #839](https://github.com/arc-mcp/arc-1/issues/839).
 
 **UIAD create/update:** Supply complete AFF JSON in `source`. ARC-1 checks the target's
 matching schema, then sends the exact candidate to SAP before metadata creation or locking.

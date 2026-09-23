@@ -19,8 +19,7 @@ is advertised in ADT discovery under the `Dictionary` workspace as:
   <app:accept>text/html</app:accept>
 ```
 
-The title is the generic word `Type`, which is why a text search for "DRTY"/"CDS type" over the
-discovery document does not surface it. The sibling sub-resources (`$metadata`, `$navigation`,
+The title is the generic word `Type`, so searching titles alone for "DRTY"/"CDS type" misses it; the full href does contain `drty`. The sibling sub-resources (`$metadata`, `$navigation`,
 `$codecompletion`, `$formatter`, `$elementinfo`, `$outlineconfiguration`, `$occurrencemarkers`,
 `validation`) all say `for type DRTY` explicitly and confirm the collection identity.
 
@@ -96,22 +95,21 @@ object.
 - Annotations precede the definition: `@EndUserText.label` / `.heading` / `.quickInfo`.
 - Enum members use `NAME = initial;` for the initial value and quoted or unquoted literals
   thereafter, each optionally annotated with its own `@EndUserText.label`.
-- The body is a single statement terminated by `;` — abaplint has no DRTY grammar, so pre-write lint
-  must stay off for this type (same posture as the other DDL-text SDO types).
+- The body is a single statement terminated by `;` — ARC-1 does not integrate DRTY linting, so SAP activation remains the syntax authority
+  (same posture as the other DDL-text SDO types). abaplint recognizes the DRTY object class;
+  that alone does not establish parser/semantic coverage.
 
 ## Test corpus on the trial
 
 384 `DRTY` rows in TADIR. Useful read fixtures live in `SABAP_DEMOS_ABAP_CDS_CLOUD` (`DEMO_*`),
 `SD_CDS_TYPES` (`DD_DRTY_ST_ENUM_*`), and `SABAP_DEMOS_ABAP_LANGU_CLOUD`.
 
-## Open questions for the implementation phase
+## Follow-up boundaries
 
-1. Whether `SAPRead`'s existing SDO path needs the `version=inactive` handling that KTD required
-   (`getKtd()` omits `version` so inactive drafts accumulate) — not yet probed for DRTY.
-2. Whether the `$elementinfo` / `$navigation` sub-resources are worth surfacing for `SAPContext`
-   dependency walking of types referenced by CDS entities.
-3. Availability on 7.58 — the collection was verified present on 816 only; the discovery gate makes a
-   missing collection degrade cleanly, but the release floor should be recorded once probed.
+1. Explicit active/inactive version selection is not implemented for SDO reads. The unversioned
+   developer view returns a draft when present (independently verified below).
+2. `$elementinfo` / `$navigation` and `SAPContext` dependency walking remain outside this PR.
+3. Generic `SAPDiagnose`/`SAPTransport` routing is still tracked by ARCH-02.
 
 ## End-to-end matrix through ARC-1 (2026-09-18, SAP_BASIS 816)
 
@@ -203,7 +201,7 @@ a plain success. The existing `resourceExistenceAfterDelete` follow-up probe in
 `src/handlers/write/update-delete.ts` only runs when DELETE *fails* with 404. Not fixed here: it is
 engine-level (every SDO type, plausibly every DDIC type) and needs a decision between a pre-delete
 where-used refusal (Eclipse's approach; prevents the orphan) and a post-delete existence check
-(reports it). Left as a follow-up.
+(reports it). Tracked in [#839](https://github.com/arc-mcp/arc-1/issues/839).
 
 **3. Package gate wording.** With `SAP_ALLOWED_PACKAGES=*` the gate still refuses an object whose
 metadata carries no `packageRef`, with "Fail-closed because allowedPackages is restricted". The
@@ -216,3 +214,54 @@ All `ZARC1_DRTY_*` objects created by the matrix were deleted and confirmed abse
 `ZARC1_DRTY_BASE` after the TADIR repair described in finding 2. The only remaining trace is the
 TADIR row of `ZARC1_DRTY_B3` with `DELFLAG=X`,
 which is the normal state of a deletion recorded in an unreleased transport (`A4HK900162`).
+
+## Independent review and reproduction — 2026-09-23
+
+Build: #832 `a4a3a350` merged with main `9ca2c093`, run from TypeScript through
+`handleToolCall` on Node 22.21.1. Both A4H targets used Basic authentication, client 001;
+758 used the TLS reverse proxy at `https://a4h.marianzeis.de`. Credentials stayed local.
+
+| Target | DRTY discovery/read | Dispatcher lifecycle | Cleanup |
+|---|---|---|---|
+| SAP_BASIS 758 SP02 | Present; `DEMO_CDS_ENUM_WEEKDAY` is DRTY/STY in SABAPDEMOS | scalar create/activate; replace with enum draft; read draft while explicit raw `version=active` still returns scalar; activate enum; invalid DDL saves but activation refuses; repair own draft | DELETE then metadata 404 |
+| SAP_BASIS 816 SP01 | Present; same enum in SABAP_DEMOS_ABAP_LANGU_CLOUD | same complete sequence | DELETE then metadata 404 |
+| SAP_BASIS 750 SP02 | Collection absent; existing discovery gate returns unavailable | no mutation attempted | none created |
+
+On both 758 and 816, separate negative probes confirmed the write-disabled ceiling and real-package
+refusals for update, delete and activation despite a forged package argument. A JSON source PUT
+under a valid stateful lock returned 415; source was unchanged. Both additional fixtures were
+deleted and confirmed absent. The focused read integration test executed on 758/816; 750 skipped
+through the capability gate, which is absence evidence rather than positive read coverage.
+
+The 816 contributor’s dependent-delete orphan finding above was not independently repeated.
+Independent tests used types without consumers. Track the shared deletion gap separately;
+remove consumers before their type and verify absence. BTP runtime was not tested in this pass.
+
+### Cross-checks against primary sources
+
+- [SAP CDS feature table](https://help.sap.com/docs/ABAP_Cloud/abap-cloud-docs_abap-keyword-documentation_abap-for-cloud-development/abencds_language_elements.html)
+  lists both `DEFINE TYPE` and `DEFINE TYPE ... ENUM` on on-premise 7.58. Runtime discovery remains
+  the gate; this is not a reason to add a release-number conditional.
+- [SAP’s DRTY file format](https://github.com/SAP/abap-file-formats/tree/main/file-formats/drty)
+  has separate `.drty.json` metadata and `.drty.acds` source. An AFF file format does not mean the
+  ADT `/source/main` accepts JSON.
+- [abapGit’s DRTY implementation](https://github.com/abapGit/abapGit/blob/main/src/objects/aff/zcl_abapgit_object_drty.clas.abap)
+  reuses its common AFF object machinery and adds the `.acds` source extension; this supports a
+  small registry entry here rather than a new DRTY client module.
+- [abaplint’s DRTY object](https://github.com/abaplint/abaplint/blob/main/packages/core/src/objects/cds_type.ts)
+  supplies type/name metadata. ARC-1’s pre-write lint does not currently handle this object.
+
+### Review findings addressed
+
+- Original read integration coverage depended on one demo package, absent/different on the tested
+  releases. It now uses bounded ADT search restricted to `DRTY/STY`.
+- A read returning text does not prove the write MIME type: the existing generic reader attempts
+  JSON parsing regardless of `sourceFormat`. Dispatcher tests now assert the actual create metadata,
+  source PUT `text/plain`, lock order, discovery refusal and write/package ceilings.
+- The original plan duplicated the evidence and presented completed work as future work. It is now
+  a concise design/acceptance record; the detailed wire evidence remains here.
+
+Local validation: 7,112 unit tests passed, plus typecheck, lint, policy, build, file/schema budgets
+and strict MkDocs. Temporarily changing DRTY to JSON source format made three dispatcher tests
+fail, including both source-write cases; the mutation was reverted. GitHub CI was not used as
+acceptance evidence for this review.

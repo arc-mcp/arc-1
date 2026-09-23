@@ -1,132 +1,47 @@
-# DRTY (CDS Type) read and write
+# DRTY support — reviewed implementation plan
 
-## Plan
+## Decision and evidence
 
-`DRTY` is a plain "blue" server-driven object, structurally identical to `DSFD`. The SDO engine in
-`src/adt/server-driven.ts` already implements metadata read, source read, create, source update and
-delete generically, `SAPActivate` already routes SDO types, and the `SAPRead`/`SAPWrite` type tables
-in `src/handlers/tool-registry.ts` derive from `SDO_TYPES`. Registering the type is therefore the
-only functional step; there is no new code path.
+Keep #832 and its shared-engine registry entry. DRTY is a separate CDS type object at
+`/sap/bc/adt/ddic/drty/sources`, not DDLS. Metadata is `blue:blueSource` with
+`application/vnd.sap.adt.blues.v1+xml`, subtype `DRTY/STY`; source writes are `text/plain`.
+The existing stateful SDO engine supplies CRUD, package gates and activation without another layer.
+See the [wire contract and independent verification](../research/2026-09-18-drty-cds-type-adt-contract.md).
 
-Append `'DRTY'` to `SDO_TYPES` and add the entry:
+Independent probes on 2026-09-23 found the collection on SAP_BASIS 758 SP02 and 816 SP01,
+and absent on 750 SP02. SAP's feature table independently lists scalar and enum CDS types on 7.58.
+Dispatcher lifecycles on both 758 and 816 verified scalar and enum creation, active/draft separation,
+invalid-source activation refusal, and deletion followed by 404.
 
-```ts
-DRTY: {
-  href: '/sap/bc/adt/ddic/drty/sources',
-  label: 'CDS Type (scalar type / enum)',
-  createType: 'DRTY/STY',
-  metadataContentType: BLUES_V1,
-  ...BLUE_METADATA,
-  sourceFormat: 'text',
-},
-```
+## Changes
 
-Scope is the registry entry only. No `DRTY/STY` slash alias, no `SAPContext` dependency walking, no
-lint integration, and no hardcoded minimum release. The wire contract behind every field is recorded
-in [docs/research/2026-09-18-drty-cds-type-adt-contract.md](../research/2026-09-18-drty-cds-type-adt-contract.md).
+1. Retain the one registry entry, shared type-table derivation, existing scope/package gates,
+   and discovery gating. Merge current main to retain the create replay protection from #830.
+2. Replace the package-specific integration fixture search with a bounded DRTY object search.
+   Add focused dispatcher regression coverage for the actual URL/body/content type, unavailable
+   collections, and write/package refusals. Test malformed source through SAP activation, not an
+   invented local DRTY parser.
+3. Correct documentation to include 7.58; explain canonical `type=DRTY`, plain `define type`
+   source, unversioned developer reads, inactive saves, separate activation, and deletion order.
+   Keep measured wire-contract evidence; remove duplicated narrative and stale test claims.
+4. Narrow FEAT-73 to DRAS/DSFI. Preserve ARCH-02's unimplemented generic diagnostics/transport
+   routing gap. Do not imply DRTY is supported by every tool that accepts a free-text type.
 
-## Why it looked unsupported
+## Plan review
 
-Earlier attempts read DRTY through the DDLS endpoint, which 404s: a CDS type is not a DDL source.
-The real collection is `/sap/bc/adt/ddic/drty/sources`, advertised in ADT discovery under the
-`Dictionary` workspace with the generic title `Type` — which is why searching the discovery document
-for "DRTY" or "CDS type" does not surface it. The sibling sub-resources (`$metadata`, `$formatter`,
-`$elementinfo`, …) name DRTY explicitly and confirm the identity.
+- No new abstraction, format switch, automatic repair, dependency crawler or release pin is needed.
+- The original integration test did not pin the write MIME type: the shared reader attempts JSON
+  parsing regardless of the registry format. Pin the real source PUT instead of overstating coverage.
+- `version=active/inactive` is currently ignored by SDO reads. Document this existing contract;
+  explicit version support needs a separate coherent change across SDOs.
+- `DRTY/STY` slash alias support stays out of scope with the other SDO aliases; show `DRTY` in examples.
+- The contributor's 816 dependent-delete orphan finding is material. Document child-first deletion
+  and track the shared-engine gap in #839; do not intentionally orphan an object during routine tests.
+- No BTP runtime claim follows from an on-prem cloud-language object or a generated BTP schema.
 
-## What kept the roadmap entry blocked
+## Acceptance
 
-FEAT-73 holds DRTY, DRAS and DSFI as blocked on two grounds: incomplete live create/update evidence,
-and the model-facing schema budget every added type consumes. DRTY clears both. The wire contract is
-verified end to end (see the research document), and the cost is measured, not estimated: with DRTY
-registered the worst write scenario `standard-full-git` sits at 72 573 bytes against a
-`WRITE_WIRE_WALL` of 74 000, and `SAPWrite` at 22 040 against a per-tool wall of 23 000 — 1 427 and
-960 bytes of headroom, for a DRTY cost of 48 bytes. Narrow the entry to DRAS and DSFI in the same
-change: left alone it will cause the next reader to discard the feature again.
-
-An earlier revision of this plan argued against a specific 68 000-byte ceiling quoted in the old
-roadmap. That prose is gone — the roadmap was rewritten as an idea inventory in
-[#808](https://github.com/arc-mcp/arc-1/pull/808) — and the ceiling is now 74 000. The measurement
-above replaces it.
-
-## Source format is the one place a slip breaks runtime
-
-Four description strings in `src/handlers/tools.ts` — the `SAPRead` and `SAPWrite` type descriptions,
-each in a BTP and an on-prem variant — enumerate the server-driven types and call out which take DDL
-text rather than AFF JSON (today `DTSC/DSFD/DTDC`). DRTY belongs to the text group. An LLM told
-otherwise sends JSON and SAP answers with a hard 415. Keep the wording terse to stay inside the
-budget headroom above.
-
-`sourceFormat: 'text'` is not inferred from the family: a PUT with `application/json` under a valid
-lock returns 415 `ExceptionUnsupportedMediaType`, and the collection's `$formatter` sub-resource
-advertises `text/plain`.
-
-## One subtype covers scalar types and enums
-
-Both report `adtcore:type="DRTY/STY"`. Six objects sampled live cover a type over a builtin, over a
-data element, over another CDS type, and three enums with int1, char and numc base types; all carry
-the same subtype. Create needs no subtype routing, unlike TABL `/DT` versus `/DS` (#285). The probe
-object created in `$TMP` on on-prem 816 came back `abapLanguageVersion="standard"`, so DRTY is not
-restricted to ABAP Cloud.
-
-## Inactive drafts need no special handling
-
-The SDO read path never sends a `version` parameter; it GETs the plain URL. That is the behaviour
-KTD had to be corrected *to* — `getKtd()` omits `version` so inactive drafts accumulate — so DRTY
-inherits it correctly by construction. Verified live: after a source PUT the read returned the new
-source while the object was still inactive.
-
-## Availability
-
-No minimum release is pinned. The SDO engine is discovery-gated per type, so a system that does not
-expose `/sap/bc/adt/ddic/drty/sources` degrades with a clean unavailable error. This matches the
-module's documented posture of gating on discovery rather than a hardcoded release. The full write
-round trip is verified on 8.16 only. 7.58 is untested because no such system was reachable here,
-not because it was ruled out — see open question 3 in the research document. Nothing in the entry
-claims a floor either way: the discovery gate, not a release check, is what protects a system that
-lacks the collection, so a 7.58 probe would confirm the floor rather than change the code.
-
-## Slash alias stays out of scope
-
-`SAPSearch` returns `objectType: "DRTY/STY"`, which `SAPRead` rejects. The gap is shared by every SDO
-type — `DSFD/SCF` behaves identically today — so fixing it for DRTY alone would be inconsistent, and
-fixing it for all of them is a separate cross-cutting change. The validation error already lists the
-accepted types, so a model recovers on the next call.
-
-## Verification
-
-Unit coverage goes into the parameterized lists in `tests/unit/adt/server-driven.test.ts`, the way
-DSFD and every other plain blue type is covered — blues marker, `text/plain` source, cloud-safe
-create body, absolute href. A dedicated block is reserved for a type that breaks the family contract
-(DTDC, the only non-blue one); DRTY does not. Two things still need a hand: one `it` pinning the
-collection and `DRTY/STY` as read live, and the hardcoded list in the `masterLanguage` assertion.
-`tests/unit/handlers/registry-sync.test.ts` needs no change; it validates the derivation itself.
-
-Adding a type changes the frozen LLM surface in `tests/fixtures/tool-definitions/` (7 of the 11
-files, locked by `tool-definitions-snapshot.test.ts`; the hyperfocused and live-relations-navigate
-variants do not carry the type enums). Regenerate with `vitest -u` and review the diff: it must
-contain the DRTY enum members and the prose additions and nothing else.
-
-Then run the full round trip through ARC-1's own code path against the live trial — create, update,
-activate, read, delete — not only the by-hand HTTP probe already recorded in the research document.
-
-Documentation to update: `AGENTS.md` and `docs/dev-guide.md` (the server-driven rows enumerate the
-`sourceFormat: 'text'` types, so both go stale the moment one is added), `docs_page/tools.md` (type
-tables and the server-driven writes section, where DRTY joins the DDL-text list),
-`docs_page/btp-abap-environment.md` (SAPRead type inventory), and the roadmap entry above.
-
-## Live facts
-
-On SAP_BASIS 8.16 the full cycle was verified by hand: create POST returned 201 with
-`version="inactive"` and an empty source; lock, PUT `text/plain`, unlock stored the DDL and echoed it
-back; the generic activation endpoint returned `activationExecuted="true"` and the metadata flipped
-to `version="active"`; delete under a lock returned 200 and the subsequent GET 404. The probe object
-was removed and its absence confirmed.
-
-Lock, modify and unlock require `X-sap-adt-sessiontype: stateful`. Without it the LOCK still returns
-200 with a handle and the PUT then fails 423 `ExceptionResourceInvalidLockHandle`. ARC-1's
-`withStatefulSession` already sends it; the behaviour is recorded because it misleads anyone probing
-the contract by hand.
-
-The trial carries 384 `DRTY` objects in TADIR. Read fixtures live in `SABAP_DEMOS_ABAP_CDS_CLOUD`
-(`DEMO_SIMPLE_TYPE`, `DEMO_CDS_ENUM_WEEKDAY`, …), `SD_CDS_TYPES` (`DD_DRTY_ST_ENUM_*`) and
-`SABAP_DEMOS_ABAP_LANGU_CLOUD`.
+Run full unit tests, typecheck, lint, policy, build, file/schema budgets and strict docs. Exercise
+scalar and enum CRUD through the dispatcher on disposable test objects, verify active/draft state,
+invalid activation, safety refusals, and cleanup. Run the focused integration read on 758/816 and
+verify the unavailable path on 750. Record exact coverage and remaining gaps in the PR.

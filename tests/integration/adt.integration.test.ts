@@ -2455,16 +2455,13 @@ describe('ADT Integration Tests', () => {
       expect(src.navigation).toBeDefined();
     });
 
-    // DRTY is the second DDL-text type to reach this path (DSFD was the first). The read is what
-    // proves the text flavor live: a JSON-flavored type returns a parsed object here, so asserting a
-    // string carrying `define type` pins the distinction that a wrong content type turns into a 415
-    // on write. Instance names are release-dependent, so discover one instead of hardcoding it.
-    it('reads a DRTY (CDS Type) as DDL text, not AFF JSON', async (ctx) => {
+    it('reads a DRTY (CDS Type) as DDL text', async (ctx) => {
       await gateOrSkip(ctx, 'DRTY');
-      const pkg = await client.getPackageContents('SABAP_DEMOS_ABAP_CDS_CLOUD');
-      const drty = pkg.find((o) => o.type === 'DRTY/STY');
-      requireOrSkip(ctx, drty, `${SkipReason.BACKEND_UNSUPPORTED}: no DRTY instance in SABAP_DEMOS_ABAP_CDS_CLOUD`);
-      const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'DRTY', drty.name);
+      // Demo package names differ between 758 and 816. Search the type directly.
+      const objects = await client.searchObject('*', 10, 'DRTY/STY');
+      const drty = objects.find((o) => o.objectType === 'DRTY/STY');
+      requireOrSkip(ctx, drty, `${SkipReason.BACKEND_UNSUPPORTED}: no visible DRTY instance`);
+      const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'DRTY', drty.objectName);
       expect(r.type).toBe('DRTY/STY');
       expect(typeof r.package).toBe('string');
       expect(r.source).toBeTypeOf('string');
