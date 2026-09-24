@@ -25,6 +25,17 @@ import {
 import type { AdtClient, SourceReadOptions, SourceReadResult } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import {
+  addBreakpoint,
+  attachDebugger,
+  type DebugStep,
+  deleteBreakpoint,
+  detachDebugger,
+  getDebuggerStack,
+  getDebuggerVariables,
+  listenDebugger,
+  stepDebugger,
+} from '../adt/debugger.js';
+import {
   applyFixProposal,
   getAtcSystemDefaultVariant,
   getCdsTestCases,
@@ -58,6 +69,7 @@ import {
 } from '../adt/diagnostics.js';
 import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
+import { checkDebugger } from '../adt/safety.js';
 import type {
   DumpDetail,
   FixAffectedObject,
@@ -640,13 +652,103 @@ export async function handleSAPDiagnose(
   client: AdtClient,
   args: Record<string, unknown>,
   minimalErrors: boolean,
-  options: { deadline?: number; signal?: AbortSignal } = {},
+  options: { deadline?: number; signal?: AbortSignal; debuggerSupported?: boolean } = {},
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
   const name = String(args.name ?? '');
   const type = normalizeObjectType(String(args.type ?? ''));
+  const withDebugSession = async <T>(opName: string, fn: (http: typeof client.http) => Promise<T>): Promise<T> => {
+    checkDebugger(client.safety, opName);
+    if (options.debuggerSupported !== true) {
+      throw new Error(
+        'Native debugger sessions are available only over stdio; HTTP deployments require a per-user session registry.',
+      );
+    }
+    return client.withDebuggerSession(fn);
+  };
+  const terminalId = `arc1-${client.username || 'local'}`;
 
   switch (action) {
+    case 'debug_set_breakpoint': {
+      const kind = String(args.breakpointKind ?? 'line') as 'line' | 'statement' | 'exception';
+      if (!['line', 'statement', 'exception'].includes(kind))
+        return errorResult('breakpointKind must be line, statement, or exception.');
+      if (kind === 'line' && (!name || !type || !Number.isInteger(args.line) || Number(args.line) < 1))
+        return errorResult('Line breakpoints require name, type, and positive integer line.');
+      if (kind === 'statement' && !args.statement) return errorResult('Statement breakpoints require statement.');
+      if (kind === 'exception' && !args.exception) return errorResult('Exception breakpoints require exception.');
+      const breakpoints = await withDebugSession('DebugSetBreakpoint', (http) =>
+        addBreakpoint(
+          http,
+          {
+            kind,
+            ...(kind === 'line'
+              ? {
+                  uri: sourceUrlForType(type, name),
+                  line: Number(args.line),
+                  condition: args.condition as string | undefined,
+                }
+              : {}),
+            ...(kind === 'statement' ? { statement: String(args.statement) } : {}),
+            ...(kind === 'exception' ? { exception: String(args.exception) } : {}),
+          },
+          client.username,
+          terminalId,
+        ),
+      );
+      client.setDebuggerBreakpoints(breakpoints);
+      return textResult(
+        toolJson({ breakpoints, next: 'Call debug_listen, then execute the code in another SAP session.' }),
+      );
+    }
+    case 'debug_list_breakpoints':
+      checkDebugger(client.safety, 'DebugListBreakpoints');
+      return textResult(toolJson({ breakpoints: client.getDebuggerBreakpoints(), scope: 'this ARC-1 session only' }));
+    case 'debug_listen': {
+      const timeout = Math.min(240, Math.max(1, Number(args.timeoutSeconds ?? 60)));
+      const caught = await withDebugSession('DebugListen', (http) =>
+        listenDebugger(http, client.username, terminalId, timeout),
+      );
+      if (!caught.debuggeeId) return textResult(toolJson({ timeout: true, timeoutSeconds: timeout }));
+      const attached = await withDebugSession('DebugAttach', (http) =>
+        attachDebugger(http, caught.debuggeeId!, client.username),
+      );
+      const stack = await withDebugSession('DebugGetStack', getDebuggerStack);
+      return textResult(toolJson({ debuggeeId: caught.debuggeeId, attached, stack }));
+    }
+    case 'debug_delete_breakpoint': {
+      const id = String(args.id ?? '');
+      if (!id) return errorResult('debug_delete_breakpoint requires id.');
+      await withDebugSession('DebugDeleteBreakpoint', (http) =>
+        deleteBreakpoint(http, id, client.username, terminalId),
+      );
+      client.setDebuggerBreakpoints(client.getDebuggerBreakpoints().filter((breakpoint) => breakpoint.id !== id));
+      return textResult(toolJson({ deleted: id }));
+    }
+    case 'debug_stack':
+      return textResult(toolJson(await withDebugSession('DebugGetStack', getDebuggerStack)));
+    case 'debug_variables': {
+      const ids = Array.isArray(args.variableIds) ? args.variableIds.map(String).slice(0, 50) : ['@ROOT'];
+      return textResult(
+        toolJson(await withDebugSession('DebugGetVariables', (http) => getDebuggerVariables(http, ids))),
+      );
+    }
+    case 'debug_step': {
+      const step = String(args.step ?? '') as DebugStep;
+      if (!['stepInto', 'stepOver', 'stepReturn', 'stepContinue', 'stepRunToLine', 'stepJumpToLine'].includes(step))
+        return errorResult(
+          'debug_step requires stepInto, stepOver, stepReturn, stepContinue, stepRunToLine, or stepJumpToLine.',
+        );
+      return textResult(
+        toolJson(
+          await withDebugSession('DebugStep', (http) => stepDebugger(http, step, args.uri as string | undefined)),
+        ),
+      );
+    }
+    case 'debug_detach':
+      await withDebugSession('DebugDetach', detachDebugger);
+      await client.closeDebuggerSession();
+      return textResult(toolJson({ detached: true }));
     case 'syntax': {
       const objectUrl = objectUrlForType(type, name);
       const version = args.version === 'inactive' ? 'inactive' : args.version === 'active' ? 'active' : undefined;

@@ -935,6 +935,14 @@ export const SAPDiagnoseSchema = z
       'set_sql_trace_state',
       'sql_trace_directory',
       'authorization_trace',
+      'debug_set_breakpoint',
+      'debug_list_breakpoints',
+      'debug_listen',
+      'debug_delete_breakpoint',
+      'debug_stack',
+      'debug_variables',
+      'debug_step',
+      'debug_detach',
     ]),
     name: z.string().optional(),
     url: z.string().optional(),
@@ -980,6 +988,13 @@ export const SAPDiagnoseSchema = z
     configuration: z.string().min(1).max(128).optional(),
     failOnSeverity: z.enum(['error', 'warning', 'info']).optional(),
     includeReportXml: looseOptionalBoolean,
+    breakpointKind: z.enum(['line', 'statement', 'exception']).optional(),
+    statement: z.string().max(100).optional(),
+    exception: z.string().max(100).optional(),
+    condition: z.string().max(500).optional(),
+    variableIds: z.array(z.string().min(1).max(256)).max(50).optional(),
+    step: z.enum(['stepInto', 'stepOver', 'stepReturn', 'stepContinue', 'stepRunToLine', 'stepJumpToLine']).optional(),
+    uri: z.string().max(1000).optional(),
   })
   .strict()
   .superRefine((input, ctx) => {

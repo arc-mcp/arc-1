@@ -1149,6 +1149,7 @@ export function getToolDefinitions(
         '- "authorization_trace": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n' +
         '- "cds_sql": show the native SQL a CDS view compiles to (name; read-only).\n' +
         '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; needs SAP_ALLOW_WRITES) / "sql_trace_directory": ST05 SQL-trace control.\n' +
+        '- "debug_set_breakpoint" / "debug_list_breakpoints" / "debug_delete_breakpoint" / "debug_listen" / "debug_stack" / "debug_variables" / "debug_step" / "debug_detach": native external ABAP debugger (stdio only; needs SAP_ALLOW_DEBUGGER).\n' +
         'Quickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.',
       inputSchema: {
         type: 'object',
@@ -1179,6 +1180,14 @@ export function getToolDefinitions(
               'set_sql_trace_state',
               'sql_trace_directory',
               'authorization_trace',
+              'debug_set_breakpoint',
+              'debug_list_breakpoints',
+              'debug_listen',
+              'debug_delete_breakpoint',
+              'debug_stack',
+              'debug_variables',
+              'debug_step',
+              'debug_detach',
             ],
           },
           name: {
@@ -1360,6 +1369,16 @@ export function getToolDefinitions(
             description: 'trace_start label.',
           },
           ...SAPDIAGNOSE_ADDITIONAL_INPUTS,
+          breakpointKind: { type: 'string', enum: ['line', 'statement', 'exception'] },
+          statement: { type: 'string', maxLength: 100 },
+          exception: { type: 'string', maxLength: 100 },
+          condition: { type: 'string', maxLength: 500 },
+          variableIds: { type: 'array', maxItems: 50, items: { type: 'string', minLength: 1, maxLength: 256 } },
+          step: {
+            type: 'string',
+            enum: ['stepInto', 'stepOver', 'stepReturn', 'stepContinue', 'stepRunToLine', 'stepJumpToLine'],
+          },
+          uri: { type: 'string', maxLength: 1000 },
         },
         required: ['action'],
       },

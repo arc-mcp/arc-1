@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { PackageHierarchyResolver } from '../../../src/adt/package-hierarchy.js';
 import {
+  checkDebugger,
   checkGit,
   checkOperation,
   checkPackage,
@@ -28,6 +29,7 @@ describe('Safety System', () => {
     it('defaultSafetyConfig is restrictive (all allow* false, $TMP only)', () => {
       const cfg = defaultSafetyConfig();
       expect(cfg.allowWrites).toBe(false);
+      expect(cfg.allowDebugger).toBe(false);
       expect(cfg.allowDataPreview).toBe(false);
       expect(cfg.allowFreeSQL).toBe(false);
       expect(cfg.allowTransportWrites).toBe(false);
@@ -41,11 +43,24 @@ describe('Safety System', () => {
     it('unrestrictedSafetyConfig enables everything', () => {
       const cfg = unrestrictedSafetyConfig();
       expect(cfg.allowWrites).toBe(true);
+      expect(cfg.allowDebugger).toBe(true);
       expect(cfg.allowDataPreview).toBe(true);
       expect(cfg.allowFreeSQL).toBe(true);
       expect(cfg.allowTransportWrites).toBe(true);
       expect(cfg.allowGitWrites).toBe(true);
       expect(cfg.allowedPackages).toEqual([]);
+    });
+  });
+
+  describe('debugger gate', () => {
+    it('requires both ordinary writes and the separate debugger opt-in', () => {
+      expect(() => checkDebugger(config({ allowDebugger: false }), 'DebugSetBreakpoint')).toThrow(
+        /SAP_ALLOW_DEBUGGER=false/,
+      );
+      expect(() => checkDebugger(config({ allowWrites: false, allowDebugger: true }), 'DebugSetBreakpoint')).toThrow(
+        /allowWrites=false blocks mutations/,
+      );
+      expect(() => checkDebugger(config(), 'DebugSetBreakpoint')).not.toThrow();
     });
   });
 

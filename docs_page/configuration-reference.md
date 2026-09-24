@@ -196,6 +196,7 @@ ARC-1 starts **fully restrictive**. Every capability below is a positive opt-in.
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
 | `--allow-writes` | `SAP_ALLOW_WRITES` | `false` | Master switch for every mutation: `SAPWrite` (create/update/delete), `SAPActivate`, package CRUD, FLP mutations. When `false`, every mutating tool call is rejected at the safety layer regardless of caller scopes. Also required (in addition to the specific flag below) for transport and git writes. |
+| `--allow-debugger` | `SAP_ALLOW_DEBUGGER` | `false` | Enables the native external ABAP debugger actions in `SAPDiagnose`. **Requires `SAP_ALLOW_WRITES=true`** and is currently limited to the local stdio transport; HTTP deployments refuse it because a debugger requires a persistent, per-user ADT session. It can suspend an SAP work process, so use only on an authorized development system and always finish with `debug_detach`. |
 | `--allow-data-preview` | `SAP_ALLOW_DATA_PREVIEW` | `false` | Enables `SAPRead(type=TABLE_CONTENTS)` and the structured `TABLE_QUERY` path. When off, those data reads are rejected; ordinary object/source reads still work. |
 | `--allow-free-sql` | `SAP_ALLOW_FREE_SQL` | `false` | Enables `SAPQuery` (freestyle ABAP SQL via `/sap/bc/adt/datapreview/freestyle`). When off, `SAPQuery` is rejected. |
 | `--blocked-data-sources` | `SAP_BLOCKED_DATA_SOURCES` | empty (off) | **Experimental.** Exact comma-separated table/CDS identities denied on `SAPQuery`, `TABLE_QUERY` and `TABLE_CONTENTS`, directly and transitively. Unset, empty and ASCII-whitespace-only mean off; once non-empty, **every comma-separated field is mandatory** (`,` `,,,` `,USR02` `USR02,` `USR02,,PA0002` all fail startup). Entries are validated as raw ASCII before case folding, uppercased, deduplicated preserving first-occurrence order, limited to 128 characters, and never silently stripped. A non-empty list activates strict SQL parsing plus live CDS/replacement lineage checks before every data request; direct or transitive matches are denied and unresolved/unsupported lineage fails closed. Allowed-table proof needs the ADT table-source resource available from SAP_BASIS 7.52 onward; older targets return `DATA_POLICY_UNAVAILABLE` before data execution. See [Authorization & Roles](authorization.md#experimental-data-source-blocklist). |
@@ -218,6 +219,7 @@ ARC-1 starts **fully restrictive**. Every capability below is a positive opt-in.
 | Writes confined to one team's DEVCLASS subtree | `SAP_ALLOW_WRITES=true SAP_ALLOWED_PACKAGES='$TMP,ZFOO/**'` (uses `TDEVC.PARENTCL` — names of children don't need to share a prefix) |
 | Writes + CTS transports | `SAP_ALLOW_WRITES=true SAP_ALLOW_TRANSPORT_WRITES=true` |
 | Writes + Git mutations | `SAP_ALLOW_WRITES=true SAP_ALLOW_GIT_WRITES=true` |
+| Local external debugging | `SAP_ALLOW_WRITES=true SAP_ALLOW_DEBUGGER=true` |
 | Full local dev (everything) | All `SAP_ALLOW_*=true`, `SAP_ALLOWED_PACKAGES='*'` |
 | Block specific mutations even with writes on | `SAP_DENY_ACTIONS=SAPWrite.delete,SAPManage.flp_*` |
 

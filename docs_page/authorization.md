@@ -238,6 +238,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Run freestyle SQL | `sql` | `SAP_ALLOW_FREE_SQL=true` | High risk on productive systems |
 | Apply exact source blocklist (experimental) | Existing `data`/`sql` scope | `SAP_BLOCKED_DATA_SOURCES=...` | Further restricts all three data paths; cannot enable access, and unresolved lineage is denied |
 | Create / update / delete objects | `write` | `SAP_ALLOW_WRITES=true` | `SAP_ALLOWED_PACKAGES` applies; supports exact (`ZFOO`), prefix (`Z*`), and DEVCLASS subtree (`ZFOO/**`) patterns. Subtree resolution is fail-closed on SAP errors. |
+| External debugger | `write` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_DEBUGGER=true` | `SAPDiagnose` debugger actions; local stdio only because SAP attach state must remain in a persistent per-user ADT session. This controls runtime execution rather than an ABAP repository object, so SAP authorization remains the target-level control. |
 | Activate objects | `write` | `SAP_ALLOW_WRITES=true` | Activation is a mutation |
 | Package / FLP mutations | `write` | `SAP_ALLOW_WRITES=true` | FLP list actions are reads; FLP create/delete actions are writes |
 | Create / release / delete transports | `write` + `transports` | `SAP_ALLOW_WRITES=true` + `SAP_ALLOW_TRANSPORT_WRITES=true` | `SAP_ALLOWED_TRANSPORTS` can further restrict CTS IDs |

@@ -24,6 +24,7 @@ import { type DataResponseBudget, DataResultScope } from './data-result-context.
 import { canonicalDataSourceName } from './data-source-name.js';
 import { CDS_DEPENDENCY_GRAPH_PATH, DataSourceBlocklistGuard } from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
+import type { DebugBreakpoint } from './debugger.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
@@ -275,6 +276,11 @@ export class AdtClient {
    *  allowedPackages rule is hit. Shared across `withSafety()` clones because the
    *  hierarchy is a property of the SAP system, not of the current safety scope. */
   private packageHierarchyResolverHolder: { resolver: PackageHierarchyResolver | null } = { resolver: null };
+  /** Stateful ADT debugger context, shared only by stdio's one local client. */
+  private debuggerSessionHolder: { session: AdtHttpClient | null; breakpoints: DebugBreakpoint[] } = {
+    session: null,
+    breakpoints: [],
+  };
 
   constructor(options: Partial<AdtClientConfig> = {}) {
     const config = { ...defaultAdtClientConfig(), ...options };
@@ -334,6 +340,29 @@ export class AdtClient {
    */
   withSafety(safety: SafetyConfig): AdtClient {
     return Object.assign(Object.create(AdtClient.prototype) as AdtClient, this, { safety });
+  }
+
+  /** Run a debugger operation on the persistent stateful ADT context. */
+  async withDebuggerSession<T>(fn: (http: AdtHttpClient) => Promise<T>): Promise<T> {
+    if (!this.debuggerSessionHolder.session) this.debuggerSessionHolder.session = this.http.openStatefulSession();
+    return fn(this.debuggerSessionHolder.session);
+  }
+
+  /** Release the debugger context after detach or process shutdown. */
+  async closeDebuggerSession(): Promise<void> {
+    const session = this.debuggerSessionHolder.session;
+    this.debuggerSessionHolder.session = null;
+    this.debuggerSessionHolder.breakpoints = [];
+    await session?.closeStatefulSessionNow();
+  }
+
+  /** ADT does not return a list; retain only breakpoints registered through this client. */
+  getDebuggerBreakpoints(): DebugBreakpoint[] {
+    return [...this.debuggerSessionHolder.breakpoints];
+  }
+
+  setDebuggerBreakpoints(breakpoints: DebugBreakpoint[]): void {
+    this.debuggerSessionHolder.breakpoints = [...breakpoints];
   }
 
   /**
