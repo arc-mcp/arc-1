@@ -56,6 +56,8 @@ export interface ServerConfig {
 
   // --- Safety (positive opt-ins; defaults restrictive) ---
   allowWrites: boolean;
+  /** Explicit opt-in for native external debugging; disabled by default. */
+  allowDebugger?: boolean;
   allowDataPreview: boolean;
   allowFreeSQL: boolean;
   allowTransportWrites: boolean;
@@ -269,6 +271,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   uiAddr: '127.0.0.1:8711',
   uiOpen: false,
   allowWrites: false,
+  allowDebugger: false,
   allowDataPreview: false,
   allowFreeSQL: false,
   allowTransportWrites: false,

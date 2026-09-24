@@ -62,6 +62,8 @@ function displayAllowList(list: string[]): string {
 
 export interface SafetyConfig {
   allowWrites: boolean;
+  /** External debugger sessions can suspend another SAP work process; default off. */
+  allowDebugger?: boolean;
   allowDataPreview: boolean;
   allowFreeSQL: boolean;
   allowTransportWrites: boolean;
@@ -82,6 +84,7 @@ export interface SafetyConfig {
 export function defaultSafetyConfig(): SafetyConfig {
   return {
     allowWrites: false,
+    allowDebugger: false,
     allowDataPreview: false,
     allowFreeSQL: false,
     allowTransportWrites: false,
@@ -97,6 +100,7 @@ export function defaultSafetyConfig(): SafetyConfig {
 export function unrestrictedSafetyConfig(): SafetyConfig {
   return {
     allowWrites: true,
+    allowDebugger: true,
     allowDataPreview: true,
     allowFreeSQL: true,
     allowTransportWrites: true,
@@ -133,6 +137,14 @@ export function checkOperation(config: SafetyConfig, op: OperationTypeCode, opNa
     throw new AdtSafetyError(
       `Operation '${opName}' (type ${op}) is blocked by safety configuration (${explainOperationBlock(config, op)})`,
     );
+  }
+}
+
+/** Debugger operations are separately opt-in even when ordinary writes are enabled. */
+export function checkDebugger(config: SafetyConfig, opName: string): void {
+  checkOperation(config, OperationType.Update, opName);
+  if (config.allowDebugger !== true) {
+    throw new AdtSafetyError(`Debugger operation '${opName}' is blocked: SAP_ALLOW_DEBUGGER=false.`);
   }
 }
 

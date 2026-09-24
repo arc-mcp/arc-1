@@ -164,6 +164,14 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPDiagnose.sql_trace_state': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.set_sql_trace_state': { scope: 'write', opType: OperationType.Update },
   'SAPDiagnose.sql_trace_directory': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.debug_set_breakpoint': { scope: 'write', opType: OperationType.Update },
+  'SAPDiagnose.debug_delete_breakpoint': { scope: 'write', opType: OperationType.Update },
+  'SAPDiagnose.debug_listen': { scope: 'write', opType: OperationType.Update },
+  'SAPDiagnose.debug_step': { scope: 'write', opType: OperationType.Update },
+  'SAPDiagnose.debug_detach': { scope: 'write', opType: OperationType.Update },
+  'SAPDiagnose.debug_list_breakpoints': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.debug_stack': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.debug_variables': { scope: 'read', opType: OperationType.Read },
 
   // ── SAPTransport ─────────────────────────────────────────────────
   // CLASSIFICATION BUG FIX: check/history/list/get are reads; previously required write

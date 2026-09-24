@@ -296,17 +296,7 @@ export class AdtHttpClient {
    * shares the main client's request state, and closes the backend context.
    */
   async withStatefulSession<T>(fn: (client: AdtHttpClient) => Promise<T>): Promise<T> {
-    const sessionConfig: AdtHttpConfig = {
-      ...this.config,
-      sessionType: 'stateful',
-    };
-    const sessionClient = new AdtHttpClient(sessionConfig, this.authenticationAttemptState);
-    // Share CSRF token and cookies so we don't need to re-fetch
-    sessionClient.csrfToken = this.csrfToken;
-    sessionClient.cookieJar = new Map(this.cookieJar);
-    sessionClient.discoveryMap = this.discoveryMap;
-    sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
-    sessionClient.reuseStatefulProxyClient = true;
+    const sessionClient = this.openStatefulSession();
 
     try {
       return await fn(sessionClient);
@@ -317,6 +307,36 @@ export class AdtHttpClient {
       } catch {
         logger.warn('Failed to close stateful Connectivity proxy client.');
       }
+    }
+  }
+
+  /**
+   * Open a stateful ADT session whose lifetime is controlled by the caller.
+   *
+   * This is intentionally narrow: the external debugger keeps its attach state in
+   * SAP's stateful context across several MCP calls. Normal lock/write flows must
+   * keep using withStatefulSession(), which closes immediately in a finally block.
+   */
+  openStatefulSession(): AdtHttpClient {
+    const sessionClient = new AdtHttpClient(
+      { ...this.config, sessionType: 'stateful' },
+      this.authenticationAttemptState,
+    );
+    sessionClient.csrfToken = this.csrfToken;
+    sessionClient.cookieJar = new Map(this.cookieJar);
+    sessionClient.discoveryMap = this.discoveryMap;
+    sessionClient.negotiatedHeaders = new Map(this.negotiatedHeaders);
+    sessionClient.reuseStatefulProxyClient = true;
+    return sessionClient;
+  }
+
+  /** Close a session returned by openStatefulSession(). Safe to call more than once. */
+  async closeStatefulSessionNow(): Promise<void> {
+    await this.closeStatefulSession();
+    try {
+      await this.statefulProxyClient?.close();
+    } catch {
+      logger.warn('Failed to close stateful Connectivity proxy client.');
     }
   }
 

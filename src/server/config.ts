@@ -89,6 +89,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'ui-port', valueName: 'port', description: 'Admin UI port override' },
   { name: 'ui-open', valueName: 'boolean', description: 'Open the local admin UI in a browser (true/false)' },
   { name: 'allow-writes', valueName: 'boolean', description: 'Enable SAP mutations (true/false)' },
+  { name: 'allow-debugger', valueName: 'boolean', description: 'Enable external ABAP debugging (true/false)' },
   { name: 'allow-data-preview', valueName: 'boolean', description: 'Enable table data preview (true/false)' },
   { name: 'allow-free-sql', valueName: 'boolean', description: 'Enable freestyle SQL (true/false)' },
   {
@@ -634,6 +635,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
 
   // ── Safety (positive opt-ins) ──────────────────────────────────────
   config.allowWrites = resolveBool('allow-writes', 'SAP_ALLOW_WRITES', false, 'allowWrites');
+  config.allowDebugger = resolveBool('allow-debugger', 'SAP_ALLOW_DEBUGGER', false, 'allowDebugger');
   config.allowDataPreview = resolveBool('allow-data-preview', 'SAP_ALLOW_DATA_PREVIEW', false, 'allowDataPreview');
   config.allowFreeSQL = resolveBool('allow-free-sql', 'SAP_ALLOW_FREE_SQL', false, 'allowFreeSQL');
   config.allowTransportWrites = resolveBool(

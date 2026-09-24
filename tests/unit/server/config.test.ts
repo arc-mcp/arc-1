@@ -114,16 +114,19 @@ describe('parseArgs', () => {
   });
 
   it('parses boolean flags', () => {
-    const config = parseArgs(['--allow-writes', 'true', '--verbose', 'true']);
+    const config = parseArgs(['--allow-writes', 'true', '--allow-debugger', 'true', '--verbose', 'true']);
     expect(config.allowWrites).toBe(true);
+    expect(config.allowDebugger).toBe(true);
     expect(config.verbose).toBe(true);
   });
 
   it('parses boolean env vars', () => {
     process.env.SAP_ALLOW_WRITES = 'true';
+    process.env.SAP_ALLOW_DEBUGGER = 'true';
     process.env.SAP_ALLOW_FREE_SQL = '1';
     const config = parseArgs([]);
     expect(config.allowWrites).toBe(true);
+    expect(config.allowDebugger).toBe(true);
     expect(config.allowFreeSQL).toBe(true);
   });
 
