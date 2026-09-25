@@ -180,9 +180,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Post-trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
       // Package CI adds five bounded controls; description trims retain pre-CI token ratchets.
       // The 50 KB read and 74 KB write wire ceilings are unchanged.
+      // +2 descriptions for SAPRead lineStart/lineEnd (raw line-range read, #585).
       schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 184,
+      descriptionCount: 186,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -205,9 +206,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
+      // +2 descriptions for SAPRead lineStart/lineEnd (raw line-range read, #585).
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 276,
+      descriptionCount: 278,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -222,9 +224,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
+      // +2 descriptions for SAPRead lineStart/lineEnd (raw line-range read, #585).
       schemaTokenEstimate: 17_350,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 270,
+      descriptionCount: 272,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -250,9 +253,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: LIVE_RELATIONS_FEATURES,
     budget: {
+      // +2 descriptions for SAPRead lineStart/lineEnd (raw line-range read, #585).
       schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 184,
+      descriptionCount: 186,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -263,9 +267,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: LIVE_RELATIONS_FEATURES,
     budget: {
+      // +2 descriptions for SAPRead lineStart/lineEnd (raw line-range read, #585).
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 276,
+      descriptionCount: 278,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -276,9 +281,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: { ...LIVE_RELATIONS_FEATURES, systemType: 'btp' },
     budget: {
+      // +2 descriptions for SAPRead lineStart/lineEnd (raw line-range read, #585).
       schemaTokenEstimate: 17_350,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 270,
+      descriptionCount: 272,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
