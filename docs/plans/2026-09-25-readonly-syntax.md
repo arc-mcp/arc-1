@@ -17,6 +17,7 @@ address the reported development workflow with writes enabled.
 ## Plan and review
 
 1. Extract the existing syntax handler without changing its wire/result behavior and reuse it.
+   Empty/whitespace source retains the shared normalizer's omitted-source behavior.
 2. Add the read type and optional inline source to both schemas and model-facing guidance. Refuse
    unrelated read options and `version:auto` instead of silently ignoring them.
 3. Preserve existing `SAPDiagnose`/`SAPDiagnose.syntax` deny rules on the new alias, including tool

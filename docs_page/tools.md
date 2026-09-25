@@ -80,7 +80,8 @@ execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..
 
 Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `objectType` are required;
 `version="auto"`, include/method selection, diff, and output-format options are refused.
-An explicit empty `source` checks empty text, rather than falling back to stored source.
+Empty or whitespace-only `source` is normalized as omitted, matching the legacy route; use
+non-empty text for an unsaved-source check.
 
 The standard `SAPRead` tool advertises `readOnlyHint:true`; clients decide whether that affects
 approval. No client override or new server setting is needed. `SAPDiagnose` remains mixed and

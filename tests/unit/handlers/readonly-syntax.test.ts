@@ -32,7 +32,7 @@ describe('read-only syntax entry point', () => {
     { label: 'stored active', options: {} },
     { label: 'stored draft', options: { version: 'inactive' } },
     { label: 'unsaved text', options: { source: "REPORT ztest. WRITE 'unsaved'." } },
-    { label: 'empty unsaved text', options: { source: '' } },
+    { label: 'empty source treated as omitted', options: { source: '' } },
   ])('preserves the legacy request and result for $label without write scope', async ({ options }) => {
     const audit = vi.spyOn(logger, 'emitAudit');
     const current = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPRead', { ...args, ...options }, reader);
@@ -59,8 +59,13 @@ describe('read-only syntax entry point', () => {
     expect(legacySent[0][0]).toEqual(sent[0][0]);
     expect(legacySent[0][1]?.body).toEqual(sent[0][1]?.body);
     expect(sent[0][1]?.body).toContain(`chkrun:version="${options.version ?? 'active'}"`);
-    if (options.source !== undefined)
+    if (options.source?.trim()) {
+      expect(sent[0][1]?.body).toContain('<chkrun:artifacts>');
       expect(sent[0][1]?.body).toContain(Buffer.from(options.source).toString('base64'));
+    } else {
+      expect(sent[0][1]?.body).not.toContain('<chkrun:artifacts>');
+      expect(String(sent[0][0])).not.toContain('reporters=');
+    }
   });
 
   it.each(['SAPDiagnose', 'SAPDiagnose.syntax', 'SAPDiagnose.synt*', 'SAPRead.SYNTAX'])(
