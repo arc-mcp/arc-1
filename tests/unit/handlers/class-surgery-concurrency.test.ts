@@ -171,6 +171,20 @@ it.each(['write', 'unlock'] as const)(
   },
 );
 
+it.each([200, 400])('preserves the SAP write outcome when cache cleanup throws (HTTP %s)', async (status) => {
+  const state = backend(status === 200 ? {} : { putStatus: status });
+  const cache = new CachingLayer(new MemoryCache());
+  vi.spyOn(cache, 'invalidate').mockImplementation(() => {
+    throw new Error('SQLITE_BUSY');
+  });
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', args, undefined, undefined, cache);
+  expect(Boolean(result.isError)).toBe(status !== 200);
+  expect(result.content[0]?.text).not.toContain('SQLITE_BUSY');
+  if (status !== 200) expect(result.content[0]?.text).toContain('400');
+  expect(state.sends.filter((s) => s.url.searchParams.get('_action') === 'UNLOCK')).toHaveLength(1);
+  expect(state.locked).toBe(false);
+});
+
 it('does not read source, PUT or unlock when the lock is refused', async () => {
   const state = backend({ lockStatus: 423 });
   const result = await handleToolCall(createClient(), config, 'SAPWrite', args);

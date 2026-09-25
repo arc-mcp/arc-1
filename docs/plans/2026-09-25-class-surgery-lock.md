@@ -24,13 +24,14 @@ does not prove that the selected version is correct.
 
 Applies to `edit_method`, MAIN `edit_class_definition`, `edit_method_signature`, `add_method`,
 `delete_method`, and `change_method_visibility`. Whole-source replacements and RAP scaffolding
-retain their own contracts. No tool-schema, activation, or unlock-policy redesign.
+retain their own contracts. Cache invalidation is best-effort so a cache failure cannot replace the SAP write/unlock outcome.
+No tool-schema, activation, or unlock-policy redesign.
 
 No roadmap impact: this repairs existing class edits. ARCH-02 concerns object URL routing.
 
 ## Validation
 
-- On main `c3fcf3df3`, the new dispatcher regressions fail 15 cases; after the fix all 19 pass.
+- On main `c3fcf3df3`, the new dispatcher regressions fail 15 cases; after the fix all 19 pass; two added cache-failure cases also pass.
   Full suite: 7,124 tests; typecheck, lint, policy, file/schema budgets, build and strict docs pass.
 - Direct HTTPS/Basic, two clients using the same test user, owned `$TMP` classes:
 

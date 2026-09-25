@@ -4,6 +4,7 @@ import type { AdtHttpClient } from '../../adt/http.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import type { ClassStructure } from '../../adt/types.js';
 import { parseClassStructure } from '../../adt/xml-parser.js';
+import { logger } from '../../server/logger.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import type { ToolResult } from '../shared.js';
 import type { SapWriteContext } from './context.js';
@@ -55,7 +56,13 @@ export async function withClassEdit(
       try {
         await unlockObject(session, objectUrl, lock.lockHandle);
       } finally {
-        if (writeAttempted) invalidateWrittenObject('CLAS', name);
+        if (writeAttempted) {
+          try {
+            invalidateWrittenObject('CLAS', name);
+          } catch {
+            logger.warn('Class surgery cache invalidation failed after a write attempt.');
+          }
+        }
       }
     }
   });
