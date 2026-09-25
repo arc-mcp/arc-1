@@ -2455,6 +2455,19 @@ describe('ADT Integration Tests', () => {
       expect(src.navigation).toBeDefined();
     });
 
+    it('reads a DRTY (CDS Type) as DDL text', async (ctx) => {
+      await gateOrSkip(ctx, 'DRTY');
+      // Demo package names differ between 758 and 816. Search the type directly.
+      const objects = await client.searchObject('*', 10, 'DRTY/STY');
+      const drty = objects.find((o) => o.objectType === 'DRTY/STY');
+      requireOrSkip(ctx, drty, `${SkipReason.NO_FIXTURE}: no visible DRTY instance`);
+      const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'DRTY', drty.objectName);
+      expect(r.type).toBe('DRTY/STY');
+      expect(typeof r.package).toBe('string');
+      expect(r.source).toBeTypeOf('string');
+      expect(r.source as string).toMatch(/define\s+type/i);
+    });
+
     it('reads an EVTB (RAP Event Binding) with a populated events array', async (ctx) => {
       await gateOrSkip(ctx, 'EVTB');
       const r = await getServerDrivenObject(

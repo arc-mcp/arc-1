@@ -28,7 +28,7 @@ const SAPWRITE_BODY_ONPREM =
   'edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. ' +
   'edit_unit: replace one FORM/MODULE block in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +
-  'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. ' +
+  'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC/DRTY take DDL text — create/update/delete, then SAPActivate. ' +
   'edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one "@MaxLength:NN\\nNNN=text" per symbol, blank-line separated), selections ("PARAM=Label") or headings. CLAS: symbols only. Immediately active; needs ADT textelements. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
@@ -40,7 +40,7 @@ const SAPWRITE_BODY_BTP =
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   'edit_method: replace one CLAS method body via source. Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=). ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers via rootEntityRef and activates by default). ' +
-  'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. ' +
+  'Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in "source"; DTSC/DSFD/DTDC/DRTY take DDL text — create/update/delete, then SAPActivate. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
 // Appended to both SAPWrite descriptions (see the composition at the bottom). The schema lists every

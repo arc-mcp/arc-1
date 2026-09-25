@@ -83,7 +83,7 @@ sequence.
 | [FEAT-62](#feat-62) | Transaction source and write support | P3 | M | Blocked | Object coverage |
 | [FEAT-70](#feat-70) | Table technical settings | P2 | M | Needs research | Object coverage |
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
-| [FEAT-73](#feat-73) | Additional server-driven object types | P3 | M | Blocked | Object coverage |
+| [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
 | [FEAT-69](#feat-69) | Mass syntax check | P2 | S | Ready | Diagnostics |
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
@@ -423,19 +423,19 @@ media types and activation behavior before adding schemas.
 <a id="feat-73"></a>
 ### FEAT-73 — Additional server-driven object types
 
-- **Priority / effort / status:** P3 / M / Blocked
+- **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Object coverage
 
-**Idea.** Extend the server-driven registry to DRTY, DRAS, and DSFI if their live contracts are
-stable enough for ARC-1.
+**Idea.** Extend the server-driven registry to DRAS and DSFI if their live contracts are stable
+enough for ARC-1.
 
-**Why it remains.** The registry already covers DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC,
-and UIAD. The remaining candidates lack complete live create/update evidence, and every added type
-also consumes model-facing schema budget.
+**Why it remains.** DRAS and DSFI lack complete live create/update evidence. DRTY now uses the
+existing registry; its [verified contract](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-18-drty-cds-type-adt-contract.md)
+is a reference for researching the remaining candidates, not a guarantee they share its format.
 
-**Unblock when.** Live probes provide discovery markers, media types, metadata roots, source format,
-create/update/delete behavior, and read-back fixtures for each type. Add candidates independently;
-do not ship them as an all-or-nothing bundle.
+**Resume with.** Discovery markers, metadata/source media types, create subtype, stateful CRUD,
+activation and read-back evidence for each remaining type. Measure schema cost and add candidates
+independently; do not infer their create subtype or source format from the family.
 
 ## Diagnostics, data, and code intelligence
 

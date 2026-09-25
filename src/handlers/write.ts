@@ -98,11 +98,8 @@ export async function handleSAPWrite(
     );
   }
 
-  // Server-driven objects (mostly SAP_BASIS 8.16+): DESD, EVTB, DTSC, CSNM, EVTO, COTA, DSFD, DTDC
-  // share one AFF generic-object write contract (POST metadata (blue:blueSource / dtdc:dtdcSource) → PUT source (JSON or DDL text per type)
-  // → activate). They route through the dedicated engine instead of the per-type switch below —
-  // objectBasePath(<sdo>) throws, so this MUST come before the objectUrl computation. Mirrors the
-  // server-driven branch in handleSAPRead.
+  // Types in SDO_REGISTRY use the shared engine (POST metadata → PUT source → activate).
+  // objectBasePath(<sdo>) throws, so this MUST precede the objectUrl computation.
   if (isServerDrivenObjectType(type)) {
     if (type === 'UIAD' && (action === 'create' || action === 'update')) {
       return writeUiad(client, action, name, args, config, cachingLayer, cacheSecurity);

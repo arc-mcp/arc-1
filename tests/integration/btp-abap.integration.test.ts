@@ -841,12 +841,12 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
 
   // ─── BTP-Specific: SDO (server-driven) object-create path ──────────────
   //
-  // The registered 8.16+ server-driven types (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC) create via a minimal
-  // <blue:blueSource> body (buildServerDrivenMetadataXml) that — by construction — carries NO adtcore:responsible,
-  // masterSystem, or abapLanguageVersion, so it needs no cloudify. Live-verified on BTP 919: every type's
-  // body deserializes and reaches package-assignment (structure package → 409 "cannot contain development
-  // objects"; DTSC → 403 resource-auth). A wrong body would 400 at the create simple-transformation.
-  describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC — UIAD excluded)', () => {
+  // Registered server-driven types other than UIAD create via minimal metadata
+  // built by buildServerDrivenMetadataXml, with no adtcore:responsible,
+  // masterSystem, or abapLanguageVersion, so it needs no cloudify. Earlier BTP 919 probes reached
+  // package-assignment (structure package → 409 "cannot contain development objects"; DTSC → 403
+  // resource-auth). A wrong body would 400 at deserialization; registry membership is not live coverage.
+  describe('BTP object-create path for every registered SDO type except UIAD', () => {
     const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
     const writablePkg = process.env.TEST_BTP_PACKAGE;
     // UIAD is excluded: SAP refuses LADI edits outside the ABAP Cloud language version

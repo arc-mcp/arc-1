@@ -5,6 +5,33 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.4.0](https://github.com/arc-mcp/arc-1/compare/v1.3.0...v1.4.0) (2026-09-23)
+
+
+### Features
+
+* add DRTY (CDS Type) read and write support ([#832](https://github.com/arc-mcp/arc-1/issues/832)) ([0cf57f1](https://github.com/arc-mcp/arc-1/commit/0cf57f14f28d1a9f901719be53268628012c028b))
+* add extension report execution ([#829](https://github.com/arc-mcp/arc-1/issues/829)) ([1af57ea](https://github.com/arc-mcp/arc-1/commit/1af57ead00f8455adbc900ff5169adfe5da066c6))
+* **dumps:** window and page the ST22 feed past SAP's 100-entry ceiling ([#835](https://github.com/arc-mcp/arc-1/issues/835)) ([06967ae](https://github.com/arc-mcp/arc-1/commit/06967aef4cbcbc663568f621af7c43d49db00525))
+
+
+### Bug Fixes
+
+* align edit_unit lint fallback and report configuration ([#597](https://github.com/arc-mcp/arc-1/issues/597)) ([c624445](https://github.com/arc-mcp/arc-1/commit/c6244452d925a51993deef2427331a828509d841))
+* **deploy:** drop custom-scheme redirect URIs that XSUAA rejects ([#813](https://github.com/arc-mcp/arc-1/issues/813)) ([57843fc](https://github.com/arc-mcp/arc-1/commit/57843fcfd7e44e1475c42c725b80374185c43442))
+* inspect publication failures and prevent transient replays ([#795](https://github.com/arc-mcp/arc-1/issues/795)) ([4253d00](https://github.com/arc-mcp/arc-1/commit/4253d00bb87e2787960a3f356d421e7545ba8d2a))
+* **navigate:** resolve server-driven types to their own URI in where-used ([#809](https://github.com/arc-mcp/arc-1/issues/809)) ([c95840f](https://github.com/arc-mcp/arc-1/commit/c95840fc4035f8f6557367cff13681de2b84652d))
+* preserve concurrent changes during edit_unit ([#831](https://github.com/arc-mcp/arc-1/issues/831)) ([674ac69](https://github.com/arc-mcp/arc-1/commit/674ac69e9f5ba2e57385178dc4fa408a814c317f))
+* prevent replay of ambiguously completed creates ([#830](https://github.com/arc-mcp/arc-1/issues/830)) ([3f78ea8](https://github.com/arc-mcp/arc-1/commit/3f78ea8b0464f4a772d7b27afe398dec88981c6b))
+* restrict OAuth callbacks to deployment-owned routes ([#678](https://github.com/arc-mcp/arc-1/issues/678)) ([ef9f61b](https://github.com/arc-mcp/arc-1/commit/ef9f61bf25097e0539b7cc8b9bc892df7dad1dc7))
+* reuse Connectivity proxy client for stateful sessions ([#807](https://github.com/arc-mcp/arc-1/issues/807)) ([2940971](https://github.com/arc-mcp/arc-1/commit/2940971f1330f7c8a52cbe011d782c0a6971a8f0))
+* support legacy ADT discovery on older ABAP backends ([#828](https://github.com/arc-mcp/arc-1/issues/828)) ([4111754](https://github.com/arc-mcp/arc-1/commit/4111754be698e99babd91458c5fc59ae81c489f8))
+
+
+### Tests
+
+* keep supertest requests on their own server ([#836](https://github.com/arc-mcp/arc-1/issues/836)) ([9ca2c09](https://github.com/arc-mcp/arc-1/commit/9ca2c0933863e7fcf3a2e82f77f1e2a56b469e85))
+
 ## [1.3.0](https://github.com/arc-mcp/arc-1/compare/v1.2.0...v1.3.0) (2026-09-17)
 
 

@@ -22,16 +22,27 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
-## 1.4.0 — extension reports and compatibility fixes (2026-09-21)
+## 1.4.0 — CDS types, safer writes, and diagnostics (2026-09-23)
+
+Adds CDS type authoring, extension report execution, and paged ST22 diagnostics.
+BTP/XSUAA operators should read the [1.4.0 upgrade guidance](updating.md#xsuaa-callback-hardening)
+before deploying.
 
 | Change | Impact | Action |
 |---|---|---|
+| CDS type authoring ([#832](https://github.com/arc-mcp/arc-1/pull/832)) | Adds discovery-gated `DRTY` reads, creates, source updates, deletion and activation through the existing server-driven engine; verified on SAP_BASIS 758 and 816. | Use plain `define type` source and activate after saving. Read the [SDO limitations and deletion guidance](tools.md#server-driven-object-writes). |
 | Extension report execution ([#829](https://github.com/arc-mcp/arc-1/pull/829)) | Extensions can call `ctx.run.programRun(name)` to run an active classic ABAP report and return its list output. Selection parameters and variants are not supported. | Optional: requires `SAP_ALLOW_PLUGIN_EXECUTE=true`, `SAP_ALLOW_WRITES=true`, and a `write`-scoped tool; see [Extensions](extensions.md). |
 | XSUAA redirect URIs ([#813](https://github.com/arc-mcp/arc-1/pull/813)) | `xs-security.json` no longer lists the `cursor://` and `vscode://` redirect URIs that XSUAA now rejects on `cf create-service` and `cf update-service` (`Malformed redirect URIs detected`). IDE callback validation remains in ARC-1. | MTA: rebuild and redeploy. Manual XSUAA: remove those entries from the complete landscape descriptor before creating or updating the service; preserve the other settings. |
 | OAuth callback hardening ([#678](https://github.com/arc-mcp/arc-1/pull/678)) | XSUAA callbacks are restricted to your deployment. Clients using the shared manual client ID can no longer redirect to arbitrary CF/BAS tenants. | Follow the [upgrade table](xsuaa-setup.md#upgrading-an-existing-deployment) before a full deployment: register custom public callbacks, preserve existing UI routes, and use DCR for custom CF/BAS clients. |
 | Connectivity session reuse ([#807](https://github.com/arc-mcp/arc-1/pull/807)) | One Connectivity proxy client is kept for the whole stateful SAP operation, including the closing request, preventing premature client disposal from causing `Service cannot be reached` during these writes. | Upgrade the deployed server; no configuration change. |
 | Server-driven where-used ([#809](https://github.com/arc-mcp/arc-1/pull/809)) | `SAPNavigate(action="references")` now queries the correct object URI for server-driven types such as `DSFD`, avoiding misleading empty results from a program lookup. | `none` |
 | Older ADT backends ([#828](https://github.com/arc-mcp/arc-1/pull/828)) | Authentication/CSRF bootstrap can fall back to legacy discovery. Empty or unexpected CTS responses now produce an explanatory error instead of claiming no transports or a missing request. | No configuration change. Consumers must handle the CTS error; successful bootstrap does not establish support for every tool on an older backend. |
+| Procedural edit lint ([#597](https://github.com/arc-mcp/arc-1/pull/597)) | With no probed or configured release, `edit_unit` uses the parser’s supported ceiling for both lookup and pre-write lint, avoiding false rejection of unchanged modern syntax. Explicit release and custom lint settings still apply. | `none`; see [lint configuration](configuration-reference.md). |
+| Publication failure diagnostics ([#795](https://github.com/arc-mcp/arc-1/pull/795)) | Failed service-binding publication is not automatically replayed for transient errors. A bounded, read-only state check helps explain whether publication succeeded; it does not repair or republish. | Inspect the returned state before taking further action. The existing one-time 403 token-refresh replay remains. |
+| Unconfirmed creates ([#830](https://github.com/arc-mcp/arc-1/pull/830)) | Repository, package, transport and FLP creates no longer replay automatically after ambiguous transient failures. Errors explain that the object may already exist. | Read or search for the object before repeating a create; a reported error does not prove nothing was saved. |
+| Concurrent procedural edits ([#831](https://github.com/arc-mcp/arc-1/pull/831)) | `edit_unit` reads editable source under the SAP lock, preserving drafts and changes completed before the lock. Class-method and class-definition surgery are outside this fix. | `none` |
+| Bounded ST22 history ([#835](https://github.com/arc-mcp/arc-1/pull/835)) | Dump reads can window and page the feed beyond SAP’s 100-entry response ceiling and report coverage limits. | Check the returned completeness and continuation information; see [diagnostics](tools.md#sapdiagnose). |
+| Concurrent HTTP tests ([#836](https://github.com/arc-mcp/arc-1/pull/836)) | Local tests keep each request on its own server, preventing cross-test port interference. No production behavior changes. | `none` |
 
 ## 1.3.0 — CI, safer writes, and runtime fixes (2026-09-17)
 

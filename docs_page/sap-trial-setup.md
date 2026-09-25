@@ -2,8 +2,8 @@
 
 This document describes how to run the SAP ABAP Platform Trial 2023 Docker
 container on a Linux server (e.g. Hetzner Cloud), configure it for ADT access,
-connect it to SAP BTP via Cloud Connector, and wire up the integration test
-suite and GitHub Actions CI.
+connect it to SAP BTP via Cloud Connector, wire up the integration test
+suite and GitHub Actions CI, and use it as a principal propagation backend.
 
 > **Security note:** This guide intentionally omits the server IP/hostname.
 > Never commit connection URLs, credentials, or license keys to the repository.
@@ -88,6 +88,7 @@ image and runs as a separate Java process inside the same container.
    - [GitHub Secrets Setup](#github-secrets-setup)
    - [CI-Specific Considerations](#ci-specific-considerations)
 9. [Troubleshooting](#troubleshooting)
+10. [Principal Propagation via Cloud Connector](#principal-propagation-via-cloud-connector)
 
 ---
 
@@ -961,21 +962,156 @@ export SAP_INSECURE=true
 or use the plain HTTP URL (`http://server-ip:50000`). Let's Encrypt certificates
 do not require `SAP_INSECURE`.
 
+### Container fails to start after saving a profile in RZ10
+
+Saving in RZ10 regenerates `DEFAULT.PFL` from the profile copy in the database, which still names
+the image's build hosts. The dispatcher then stops with:
+
+```
+DpTriggerMsAttach: hostname 'vhcala4hcs' of parameter 'rdisp/mshost' unknown
+```
+
+Fix the file inside the container while it retries the start (`docker start a4h` first if it has
+exited, then `docker exec -it a4h bash`):
+
+```bash
+P=/usr/sap/A4H/SYS/profile/DEFAULT.PFL
+cp -p $P $P.bak-$(date +%Y%m%d%H%M%S)
+sed -i -e 's/vhcala4hcs/vhcala4hci/g' -e 's/^SAPDBHOST = vhcalhdbdb/SAPDBHOST = vhcala4hci/' \
+  -e '/^SAPFQDN = dummy.nodomain/d' -e '/^SAPLOCALHOSTFULL = /d' $P
+```
+
+Then restart the container (`docker stop -t 7200 a4h && docker start a4h`). With principal
+propagation, repeat the [certificate install](#3-https-certificate-and-trust) afterwards.
+
+Change profiles by editing the files directly, as in [Work Process Tuning](#work-process-tuning), or
+use RZ11 for dynamic parameters (RZ11 changes last until the next restart).
+
 ---
 
-## Certificate-Based SAP Setup (for Cloud Connector Principal Propagation)
+<a id="certificate-based-sap-setup-for-cloud-connector-principal-propagation"></a>
 
-ARC-1 supports principal propagation via BTP Destination Service and Cloud Connector. The following local flags do **not** exist:
+## Principal Propagation via Cloud Connector
 
-- `--client-cert` / `--client-key` / `--ca-cert`
-- `--pp-ca-key` / `--pp-ca-cert` / `--pp-cert-ttl`
+Use this trial as a principal propagation (PP) backend: each MCP user reaches SAP as their own SAP
+user through BTP and the bundled Cloud Connector. The generic
+[Principal Propagation Setup](principal-propagation-setup.md) explains every layer; this section
+covers only the values and pitfalls specific to this container. It adds an HTTPS mapping next to
+the HTTP mapping from [Adding a System Mapping](#adding-a-system-mapping).
 
-If you use this trial system as the SAP backend for principal propagation testing:
+### 1. Cloud Connector
 
-1. Keep the SAP-side certificate trust and user mapping setup (STRUST + CERTRULE/VUSREXTID)
-2. Configure Cloud Connector principal propagation
-3. Configure ARC-1 with BTP destinations and `SAP_PP_ENABLED=true`
+Follow [Step 2 of the generic guide](principal-propagation-setup.md#step-2-configure-cloud-connector):
+trust the subaccount identity provider, create the system and CA certificates, and set the subject
+pattern `CN=${email}`. Then add a mapping under **Cloud to On-Premises**:
 
-See:
-- [Principal Propagation Setup](principal-propagation-setup.md)
-- [BTP Destination Setup](btp-destination-setup.md)
+| Field | Value |
+|-------|-------|
+| Back-end Type / Protocol | `ABAP System` / `HTTPS` |
+| Internal Host / Port | `localhost` / `50001` (Cloud Connector runs inside the container) |
+| Virtual Host / Port | `a4h-abap` / `50001` |
+| Principal Type | `X.509 Certificate`; leave **System Certificate for Logon** unchecked (`X509_RESTRICTED` in the Cloud Connector API) |
+| Resource | `/sap/bc/adt`, **Path and all sub-paths** |
+
+Download the system certificate and the CA certificate (**Configuration > On Premises**), convert
+DER downloads with `openssl x509 -inform der -in scc-ca.der -out scc-ca.pem`, and combine both on
+the host: `cat scc-system.pem scc-ca.pem > trust.pem`.
+
+### 2. Profile parameters
+
+Edit the profile files directly, as in [Work Process Tuning](#work-process-tuning). Do not save
+profiles in RZ10 on this image: see
+[Container fails to start after saving a profile in RZ10](#container-fails-to-start-after-saving-a-profile-in-rz10).
+
+```ini
+# /usr/sap/A4H/SYS/profile/A4H_D00_vhcala4hci: append VCLIENT=1 to the existing HTTPS entry
+icm/server_port_1 = PROT=HTTPS, PORT=50001, ..., VCLIENT=1
+
+# /usr/sap/A4H/SYS/profile/DEFAULT.PFL
+login/certificate_mapping_rulebased = 1
+icm/trusted_reverse_proxy_0 = SUBJECT="CN=scc-system, OU=IT, O=Example, C=XX", ISSUER="CN=scc-system, OU=IT, O=Example, C=XX"
+```
+
+`icm/trusted_reverse_proxy_0` takes the subject and issuer of the Cloud Connector **system**
+certificate in SAP's DN form ([ICM parameters](principal-propagation-setup.md#icm-parameters)). A
+self-signed system certificate has the same subject and issuer, as above. Restart the instance as
+in [Session Timeout Tuning](#session-timeout-tuning).
+
+### 3. HTTPS certificate and trust
+
+The image's SSL server PSE holds a placeholder certificate for `*.dummy.nodomain`. Cloud Connector
+checks the backend host name, so the mapping to `localhost` fails with HTTP 502
+`Invalid server certificate` until ICM presents a certificate for `localhost`. Create it once on
+the host and add `server.crt` to the Cloud Connector **Backend Trust Store**
+(**Configuration > On Premises**):
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost" -keyout server.key -out server.crt
+openssl pkcs12 -export -inkey server.key -in server.crt -out server.p12 -passout 'pass:<p12-password>'
+```
+
+Install it, together with the Cloud Connector certificates, into the PSE:
+
+```bash
+docker cp server.p12 a4h:/tmp/server.p12
+docker cp trust.pem a4h:/tmp/trust.pem
+docker exec a4h chown a4hadm:sapsys /tmp/server.p12 /tmp/trust.pem
+
+# As a4hadm: build the new PSE, back up the active one, replace it
+docker exec -u a4hadm -e USER=a4hadm -e SECUDIR=/usr/sap/A4H/D00/sec a4h bash -c '
+  set -e
+  G=/usr/sap/A4H/D00/exe/sapgenpse
+  rm -f /tmp/SAPSSLS.new.pse
+  $G import_p12 -x "<pse-pin>" -z "<p12-password>" -p /tmp/SAPSSLS.new.pse /tmp/server.p12
+  $G maintain_pk -m /tmp/trust.pem -y -x "<pse-pin>" -p /tmp/SAPSSLS.new.pse
+  cp -p $SECUDIR/SAPSSLS.pse $SECUDIR/SAPSSLS.pse.bak-$(date +%Y%m%d%H%M%S)
+  cp /tmp/SAPSSLS.new.pse $SECUDIR/SAPSSLS.pse
+  $G seclogin -p $SECUDIR/SAPSSLS.pse -x "<pse-pin>" -O a4hadm'
+
+# Restart only ICM so it loads the new PSE; the dispatcher starts it again within seconds
+docker exec a4h bash -c 'kill $(pgrep -f "[i]cman" | head -1)'
+```
+
+Check what ICM serves and what the PSE trusts:
+
+```bash
+docker exec a4h bash -c 'echo | openssl s_client -connect localhost:50001 -servername localhost 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName'
+docker exec -u a4hadm -e USER=a4hadm -e SECUDIR=/usr/sap/A4H/D00/sec a4h \
+  /usr/sap/A4H/D00/exe/sapgenpse maintain_pk -l -p /usr/sap/A4H/D00/sec/SAPSSLS.pse
+```
+
+Expect `localhost` as subject and DNS SAN, and both Cloud Connector certificates in the list.
+
+**Repeat the install after every SAP or container restart.** The container recreates the SSL
+server PSE on restart, so ICM falls back to the placeholder and Cloud Connector fails again. Keep
+`server.p12` and `trust.pem` on the host and re-run only the install block once SAP is up
+([Verifying the Container is Up](#verifying-the-container-is-up)), for example from the script that
+[starts Cloud Connector](#starting-cloud-connector); skip it when the check already shows
+`localhost`. Do not re-run the `openssl` commands: a new certificate is not in the Backend Trust
+Store. Avoid maintaining this PSE in STRUST afterwards: STRUST keeps its own database copy of the
+PSE and can write it back over the file.
+
+### 4. User mapping
+
+In client `001`, create the CERTRULE rule and the SU01 e-mail addresses as in
+[Certificate mapping](principal-propagation-setup.md#certificate-mapping-certrule-or-vusrextid).
+If CERTRULE dumps with `STRING_OFFSET_TOO_LARGE`, table `USRCERTRULE` holds a corrupt rule. On a
+disposable trial, delete the client's rules as `a4hadm` (`hdbsql -U DEFAULT -d HDB`):
+
+```sql
+DELETE FROM SAPA4H.USRCERTRULE WHERE CLIENT = '001';
+```
+
+Then restart the container (`docker stop -t 7200 a4h && docker start a4h`), repeat the
+[certificate install](#3-https-certificate-and-trust), and create the rule again.
+
+### 5. Destination and ARC-1
+
+Create the destination as in
+[Step 1 of the generic guide](principal-propagation-setup.md#step-1-create-the-btp-destination)
+with URL `http://a4h-abap:50001`, proxy type `OnPremise`, authentication `PrincipalPropagation` and
+`sap-client` `001`. For single-target `/mcp`, point the least-privileged Basic startup destination
+at the HTTP mapping `http://a4h-abap:50000`. Then
+[configure ARC-1](principal-propagation-setup.md#step-4-configure-arc-1) and
+[test](principal-propagation-setup.md#step-5-test) one boundary at a time.
