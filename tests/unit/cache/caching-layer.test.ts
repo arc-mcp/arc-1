@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AdtClient } from '../../../src/adt/client.js';
+import { AdtClient } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
@@ -10,6 +10,7 @@ function makeMockClient() {
     getClass: vi.fn(),
     getInterface: vi.fn(),
     searchObject: vi.fn(),
+    resolveFunctionGroup: AdtClient.prototype.resolveFunctionGroup,
   } as unknown as AdtClient;
 }
 
@@ -258,6 +259,27 @@ describe('CachingLayer', () => {
   // ─── Function Group Resolution ───────────────────────────────────────
 
   describe('function group resolution', () => {
+    it('caches the decoded group for the exact namespaced function, ignoring an earlier unrelated hit', async () => {
+      vi.mocked(client.searchObject).mockResolvedValue([
+        {
+          objectType: 'FUGR/FF',
+          objectName: '/TEST/OTHER',
+          description: '',
+          packageName: '$TMP',
+          uri: '/sap/bc/adt/functions/groups/wrong/fmodules/%2ftest%2fother',
+        },
+        {
+          objectType: 'FUGR/FF',
+          objectName: '/TEST/FM',
+          description: '',
+          packageName: '$TMP',
+          uri: '/sap/bc/adt/functions/groups/%2ftest%2fgroup/fmodules/%2ftest%2ffm',
+        },
+      ]);
+      expect(await layer.resolveFuncGroup(client, '/TEST/FM')).toBe('/TEST/GROUP');
+      expect(await layer.resolveFuncGroup(client, '/TEST/FM')).toBe('/TEST/GROUP');
+      expect(client.searchObject).toHaveBeenCalledTimes(1);
+    });
     it('resolves function group from search and caches it', async () => {
       (client.searchObject as ReturnType<typeof vi.fn>).mockResolvedValue([
         {

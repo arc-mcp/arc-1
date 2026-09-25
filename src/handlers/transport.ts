@@ -30,7 +30,7 @@ import { diffTransportObject, type LogicalTransportObject, rollupTransportObject
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
-import { objectUrlForType } from './object-types.js';
+import { functionGroupObjectUrl, functionModuleObjectUrl, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 /** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
@@ -207,10 +207,9 @@ async function resolveTransportObjectUrl(
     if (!parent)
       throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
   }
-  if ((type === 'FUNC' || type === 'INCL') && parent) {
-    const collection = type === 'FUNC' ? 'fmodules' : 'includes';
-    return `/sap/bc/adt/functions/groups/${encodeURIComponent(parent.toLowerCase())}/${collection}/${encodeURIComponent(name.toLowerCase())}`;
-  }
+  if (type === 'FUNC' && parent) return functionModuleObjectUrl(parent, name);
+  if (type === 'INCL' && parent)
+    return `${functionGroupObjectUrl(parent)}/includes/${encodeURIComponent(name.toLowerCase())}`;
   return objectUrlForType(type, name);
 }
 
