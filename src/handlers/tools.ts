@@ -1646,7 +1646,7 @@ export function getToolDefinitions(
           },
           group: {
             type: 'string',
-            description: 'check/history: parent group for new FUNC or INCL (L<group>…); existing FUNC auto-resolves.',
+            description: 'check/history: parent group for INCL L<group>… or a new FUNC; existing FUNC auto-resolves.',
           },
           pgmid: {
             type: 'string',
