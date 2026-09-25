@@ -1049,7 +1049,7 @@
         },
         "group": {
           "type": "string",
-          "description": "check/history: parent group (FUNC auto-resolves; needed for a FUGR structural INCL)."
+          "description": "check/history: parent group for new FUNC or INCL (L<group>…); existing FUNC auto-resolves."
         },
         "pgmid": {
           "type": "string",

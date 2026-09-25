@@ -733,7 +733,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'FUNC: group name (required for create, else auto-resolved). INCL: parent group for structural includes; omit for standalone.',
+              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: group for L<group>…; omit for standalone.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
@@ -1646,7 +1646,7 @@ export function getToolDefinitions(
           },
           group: {
             type: 'string',
-            description: 'check/history: parent group (FUNC auto-resolves; needed for a FUGR structural INCL).',
+            description: 'check/history: parent group for new FUNC or INCL (L<group>…); existing FUNC auto-resolves.',
           },
           pgmid: {
             type: 'string',
