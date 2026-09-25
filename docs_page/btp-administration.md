@@ -360,7 +360,8 @@ Work from the outer layer inward:
 3. **Registry:** Admin `SAPTargets`, destination marker/fields, duplicates, shadows, revision.
 4. **Destination/Connectivity:** binding, lookup, Cloud Connector location and resource exposure.
 5. **SAP authentication:** certificate generated, STRUST, trusted proxy, CERTRULE/SU01 or Basic credential.
-6. **SAP authorization:** propagated/technical user has only required ADT permissions.
+6. **SAP authorization:** propagated/technical user has only required ADT permissions (for the
+   startup user, see [Startup user authorizations](btp-destination-setup.md#startup-user-authorizations)).
 7. **ARC-1 policy:** instance ceiling, destination data/SQL narrowing, user scope, deny actions.
 
 Do not “fix” a downstream failure by widening an upstream boundary. For example, a SAP `403` after

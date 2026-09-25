@@ -116,7 +116,10 @@ destination is not required.
 For the current single-target on-premise `/mcp` runtime, configure both
 `SAP_BTP_DESTINATION=<least-privileged-startup-destination>` and
 `SAP_BTP_PP_DESTINATION=<principal-propagation-destination>`. The startup destination supplies the
-URL/client and supports feature discovery before a JWT exists. With `SAP_PP_ENABLED=true` and
+URL/client and supports feature discovery before a JWT exists; its SAP user needs only two
+authorization objects, see
+[Startup user authorizations](btp-destination-setup.md#startup-user-authorizations). With
+`SAP_PP_ENABLED=true` and
 `SAP_PP_STRICT=true`, authenticated tool calls use only the PP destination; a PP failure never falls
 back to the startup user. See [BTP Destination Reference](btp-destination-setup.md#per-user-pp-mcp).
 

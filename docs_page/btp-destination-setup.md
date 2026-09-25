@@ -121,6 +121,37 @@ IDs, but they must represent the intended same SAP system/client.
 Complete the certificate chain and mapping using
 [Principal Propagation Setup](principal-propagation-setup.md).
 
+### Startup user authorizations
+
+The startup destination's technical user runs only the feature probe at process start: ADT
+discovery, system components, the repository information system, CTS request listing, DDL sources,
+HANA system information, abapGit repositories, the AMDP debugger endpoint, and the UI5/BSP file
+store. Authenticated tool calls never use it. Two authorization objects are sufficient, and both are
+actually checked (verified with `STAUTHTRACE` on SAP_BASIS 750: 328 checks within 45 ms of the
+process start, all under the technical user):
+
+| Object | Field | Value |
+|---|---|---|
+| `S_ADT_RES` | `URI` | `/sap/bc/adt/*` |
+| `S_DEVELOP` | `ACTVT` | `03` |
+| `S_DEVELOP` | `DEVCLASS`, `OBJTYPE`, `OBJNAME`, `P_GROUP` | `*` |
+
+Ten URIs below `/sap/bc/adt/` were checked; restricting `S_ADT_RES` to exactly those works today
+but breaks when a release adds a probe. The wildcards on `S_DEVELOP` are required because the
+generic ADT authorization check (`CL_ADT_REST_AUTHORIZATION_DEVL`) calls it with empty field
+values, and the BSP file-store probe checks display access on every BSP application in the system.
+
+Do **not** add what the probe also touches but does not need: `S_USER_GRP`, `S_TRANSPRT`,
+`S_SYS_RWBO`, `S_ADMI_FCD` (`ST0M`), `S_DYNLGPTS`, and `S_DEVELOP` with `ACTVT` `02` or `16`.
+Those checks fail for the startup user (return codes 4 and 12) while ARC-1 still reports search and
+transport access as available, because the ADT endpoints themselves answer. `S_RFC` and `S_TCODE`
+are not checked at all.
+
+To verify on your own release, activate `STAUTHTRACE` filtered to the technical user and recording
+all checks (not only failures), start ARC-1 from a stopped state, then deactivate and evaluate.
+`SU53` is not useful here: it shows only the last failed check. Writes never run under this user,
+so this role says nothing about developer authorizations.
+
 ## Multi-target destination
 
 Create one subaccount destination per SAP system/client. PP is the recommended template:
