@@ -44,5 +44,5 @@ PROG update/edit_unit, CLAS update/edit_method and local-include edit_method all
 read-back retained the competing change. Re-reading, reconciling and supplying the new hash succeeded;
 a second client could relock. Both objects on each system were deleted and metadata returned 404.
 No BTP/PP or live FUNC/CDS/interface test is claimed. Unit tests cover routing and refusal boundaries.
-Removing the hash assertion makes both cross-call dispatcher regressions fail. The one additional
-property raises only the description-count ratchet by one; wire/token ceilings remain unchanged.
+Removing the hash assertion makes both cross-call dispatcher regressions fail. The description-count ratchet reserves both this property and the concurrent #855 read-only
+syntax property, so either merge order passes; wire/token ceilings remain unchanged.
