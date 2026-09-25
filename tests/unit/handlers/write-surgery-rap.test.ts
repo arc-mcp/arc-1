@@ -61,8 +61,8 @@ describe('SAPWrite handler — class surgery / RAP', () => {
 
     /**
      * Build a mock that satisfies the edit_method flow against a CCIMP
-     * include: GET class metadata (for package check), GET include source,
-     * POST lock, PUT new source, POST unlock. Returns the captured call
+     * include: GET class metadata (for package check), POST lock,
+     * GET include source, PUT new source, POST unlock. Returns the captured call
      * trace so tests can assert URL routing.
      */
     function mockEditMethodIncludeFlow(opts: {
@@ -70,11 +70,7 @@ describe('SAPWrite handler — class surgery / RAP', () => {
       includeName: string;
       includeSource: string;
       /**
-       * When set, simulates an inactive draft: GET `?version=inactive` returns
-       * this body; GET `?version=active` (or no version) returns
-       * `opts.includeSource` (the active baseline). The inactive-list endpoint
-       * also reports a draft for the class so `resolveVersionAndDraftInfo`
-       * picks the inactive branch.
+       * Omitted version returns the editable draft; explicit active returns the baseline.
        */
       inactiveIncludeSource?: string;
       packageName?: string;
@@ -86,6 +82,9 @@ describe('SAPWrite handler — class surgery / RAP', () => {
           const method = fetchOpts?.method ?? 'GET';
           const urlStr = String(url);
           calls.push({ method, url: urlStr, body: typeof fetchOpts?.body === 'string' ? fetchOpts.body : undefined });
+          if ((method === 'GET' || method === 'HEAD') && urlStr.includes('/discovery')) {
+            return Promise.resolve(mockResponse(200, '<service/>', { 'x-csrf-token': 'T' }));
+          }
           // Inactive-object list (used by resolveVersionAndDraftInfo to decide
           // whether the class has any unactivated draft). Format matches
           // tests/fixtures/xml/inactive-objects.xml — parseInactiveObjects
@@ -119,8 +118,8 @@ describe('SAPWrite handler — class surgery / RAP', () => {
             urlStr.includes(`/sap/bc/adt/oo/classes/${opts.className}/includes/${opts.includeName}`)
           ) {
             // Version-aware: when an inactiveIncludeSource is provided, return
-            // it for ?version=inactive and the regular source for active.
-            const wantsInactive = urlStr.includes('version=inactive');
+            // it unless active was explicitly requested (verified on SAP 7.58).
+            const wantsInactive = !urlStr.includes('version=active');
             const body =
               wantsInactive && opts.inactiveIncludeSource !== undefined
                 ? opts.inactiveIncludeSource
@@ -380,11 +379,7 @@ ENDCLASS.`,
     });
 
     it('reads inactive CCIMP when an inactive draft exists (PR-D review fix)', async () => {
-      // Reproduces the RUN-NOTES Run 3 scenario: after `update include=` or
-      // `scaffold_rap_handlers`, the real handler body lives in the inactive
-      // CCIMP draft, while the active CCIMP is still the empty placeholder
-      // shipped with class creation. Without `version=inactive`, edit_method
-      // would read the active placeholder and report "method not found".
+      // An inactive CCIMP must be edited even when the active include is only a placeholder.
       const calls = mockEditMethodIncludeFlow({
         className: 'ZBP_DM_PROJECT',
         includeName: 'implementations',
@@ -413,9 +408,9 @@ ENDCLASS.`,
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('include: implementations');
 
-      // Must have asked for ?version=inactive
+      // Omitted version selects the editable draft directly under the class lock.
       const inactiveGets = calls.filter(
-        (c) => c.method === 'GET' && c.url.includes('/includes/implementations') && c.url.includes('version=inactive'),
+        (c) => c.method === 'GET' && c.url.includes('/includes/implementations') && !c.url.includes('version='),
       );
       expect(inactiveGets.length).toBe(1);
 
@@ -448,9 +443,8 @@ ENDCLASS.`,
 
       expect(result.isError).toBeUndefined();
       const includeGets = calls.filter((c) => c.method === 'GET' && c.url.includes('/includes/implementations'));
-      // One GET reads the include for method splicing; the second is the locked
-      // existence probe in safeUpdateClassInclude. Neither comes from the cache.
-      expect(includeGets.length).toBe(2);
+      // One fresh read under the lock also proves the include exists.
+      expect(includeGets.length).toBe(1);
     });
   });
 
