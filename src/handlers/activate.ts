@@ -16,7 +16,6 @@ import {
   ensureServerDrivenSupport,
   isServerDrivenObjectType,
   serverDrivenMetadataContentType,
-  serverDrivenObjectUrl,
   serverDrivenUnavailableMessage,
 } from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
@@ -229,10 +228,7 @@ export async function handleSAPActivate(
 
   if (args.objects && Array.isArray(args.objects)) {
     const rawObjects = args.objects as Array<Record<string, unknown>>;
-    // Server-driven types need the registry href — objectBasePath(<sdo>) has no case and its
-    // default arm maps unknown non-slash types to the PROGRAM path, so an ungated batch entry
-    // silently addressed /sap/bc/adt/programs/programs/<name>. Gate once per DISTINCT type
-    // (the resolver below runs per object, and the gate may fetch discovery).
+    // Gate availability once per distinct server-driven type before resolving batch URLs.
     const batchSdoTypes = [
       ...new Set(
         rawObjects.map((o) => normalizeObjectType(String(o.type ?? type))).filter((t) => isServerDrivenObjectType(t)),
@@ -280,9 +276,6 @@ export async function handleSAPActivate(
           const group = String(o.group ?? args.group).trim();
           const groupLc = encodeURIComponent(group.toLowerCase());
           url = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(objName.toLowerCase())}`;
-        } else if (isServerDrivenObjectType(objType)) {
-          // Availability already gated per distinct type above.
-          url = serverDrivenObjectUrl(objType, objName);
         } else {
           url = objectUrlForType(objType, objName);
         }
@@ -384,15 +377,11 @@ export async function handleSAPActivate(
     const groupLc = encodeURIComponent(String(args.group).trim().toLowerCase());
     objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
   } else if (isServerDrivenObjectType(type)) {
-    // Server-driven objects: objectBasePath(<sdo>) has no case and its default arm would route to
-    // the program path, so use the registry href. The batch resolver above does the same (EVTB/EVTO
-    // are RAP objects, so they legitimately appear in a RAP-stack batch).
-    // The generic activate() endpoint handles SDO (verified: activate(DESD) → ok).
-    // Gated like the SAPRead/SAPWrite branches so unsupported releases get the release message.
+    // A registered path does not prove the target supports activation for this type.
     if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
       return errorResult(serverDrivenUnavailableMessage('SAPActivate', type));
     }
-    objectUrl = serverDrivenObjectUrl(type, name);
+    objectUrl = objectUrlForType(type, name);
   } else {
     objectUrl = objectUrlForType(type, name);
   }

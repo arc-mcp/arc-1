@@ -99,7 +99,6 @@ export async function handleSAPWrite(
   }
 
   // Types in SDO_REGISTRY use the shared engine (POST metadata → PUT source → activate).
-  // objectBasePath(<sdo>) throws, so this MUST precede the objectUrl computation.
   if (isServerDrivenObjectType(type)) {
     if (type === 'UIAD' && (action === 'create' || action === 'update')) {
       return writeUiad(client, action, name, args, config, cachingLayer, cacheSecurity);

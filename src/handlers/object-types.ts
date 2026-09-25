@@ -1,9 +1,11 @@
 /**
- * Object-type normalization + ADT URL building (pure utilities, no project-internal imports).
+ * Object-type normalization + ADT URL building (static utilities, with server-driven paths from the shared registry).
  *
  * Slash-form alias maps, friendly aliases, canonical-type normalization, the objectBasePath/URL builders,
  * LLM arg-stripping, and class-include helpers.
  */
+
+import { SDO_REGISTRY } from '../adt/server-driven.js';
 
 // ─── Object URL Mapping ──────────────────────────────────────────────
 
@@ -127,6 +129,7 @@ export const KNOWN_BASE_TYPES = new Set([
   'VIEW',
   'SKTD',
   'TTYP',
+  ...Object.keys(SDO_REGISTRY),
 ]);
 
 /** Normalize ADT type codes and aliases to ARC-1 canonical short types. */
@@ -398,6 +401,7 @@ export function functionModuleObjectUrl(group: string, name: string): string {
 }
 
 export function objectBasePath(type: string): string {
+  if (Object.hasOwn(SDO_REGISTRY, type)) return `${SDO_REGISTRY[type as keyof typeof SDO_REGISTRY].href}/`;
   switch (type) {
     case 'PROG':
       return '/sap/bc/adt/programs/programs/';

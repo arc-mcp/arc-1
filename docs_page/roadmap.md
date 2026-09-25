@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-09-18
+**Last reviewed:** 2026-09-25
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -66,7 +66,7 @@ sequence.
 | ID | Idea | Priority | Effort | Status | Category |
 |---|---|---:|---:|---|---|
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
-| [ARCH-02](#arch-02) | Server-driven types in generic object-URL callers | P2 | S | Ready | Architecture |
+| [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
@@ -118,22 +118,19 @@ Preserve known-good fallbacks, cache discovery per target, and prove behavior on
 releases.
 
 <a id="arch-02"></a>
-### ARCH-02 — Server-driven types in generic object-URL callers
+### ARCH-02 — Server-driven source-state version verification
 
-- **Priority / effort / status:** P2 / S / Ready
+- **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Architecture
 
-**Idea.** Resolve `SDO_REGISTRY` types to their registered collection in generic object-URL callers.
+**Remaining gap.** Generic URLs now use SDO_REGISTRY, but `SAPDiagnose object_state` refuses
+server-driven types: live 758/816 source GETs substitute the active body for a missing inactive
+version, so status 200 and matching hashes cannot prove two version identities. Explicit
+`SAPRead version` provides a narrower alternative; it does not make the multi-read snapshot atomic.
 
-**Why it remains.** After [#809](https://github.com/arc-mcp/arc-1/pull/809), `objectBasePath()` still
-maps these types to program URLs in `SAPTransport` (`check`, `history`) and single-object
-`SAPDiagnose` (`syntax`, `atc`, `unittest`). On SAP_BASIS 758 SP02, syntax checking DSFD
-`CALENDAR_OPERATION` reports "The REPORT/PROGRAM statement is missing". ATC batches reject these
-types in `ATC_BATCH_TYPES` before dispatch; they are not an exposed instance of this defect.
-
-**Resume with.** Derive generic paths from `SDO_REGISTRY`, remove redundant per-caller guards,
-and preserve `SAPActivate`'s discovery gate. Verify every affected tool on a real system;
-a valid object URL does not establish support for each operation.
+**Resume with.** Reuse verified version metadata while preserving object_state's ETags/hashes and
+honest missing-version results. Reproduce active-only, inactive-only and divergent drafts on two
+releases before enabling it. See [routing evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-09-25-server-driven-generic-routing.md).
 
 <a id="feat-59"></a>
 ### FEAT-59 — Embeddable multi-tenant server API

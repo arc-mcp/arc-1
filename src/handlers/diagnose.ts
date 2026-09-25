@@ -58,6 +58,7 @@ import {
 } from '../adt/diagnostics.js';
 import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
+import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type {
   DumpDetail,
   FixAffectedObject,
@@ -971,6 +972,11 @@ export async function handleSAPDiagnose(
       return textResult(toolJson(payload));
     }
     case 'object_state': {
+      if (isServerDrivenObjectType(type)) {
+        return errorResult(
+          'object_state cannot verify active/inactive version identity for server-driven objects. SAP may substitute another version. Use SAPRead with an explicit version instead.',
+        );
+      }
       if (!name || !type) return errorResult('"name" and "type" are required for "object_state" action.');
       const sections =
         type === 'CLAS'
