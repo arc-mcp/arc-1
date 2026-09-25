@@ -33,7 +33,6 @@ import {
   runAtcCheck,
   runUnitTests,
   supportsCdsTestCases,
-  syntaxCheck,
 } from '../adt/devtools.js';
 import {
   createTraceRequest,
@@ -72,6 +71,7 @@ import { handleCiQuality } from './diagnose-ci.js';
 import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
+import { handleSyntaxCheck } from './syntax.js';
 
 const AUNIT_SOURCE_MAX_BLOCKS = 80;
 const AUNIT_SOURCE_MAX_DEPTH = 5;
@@ -648,39 +648,8 @@ export async function handleSAPDiagnose(
   const type = normalizeObjectType(String(args.type ?? ''));
 
   switch (action) {
-    case 'syntax': {
-      const objectUrl = objectUrlForType(type, name);
-      const version = args.version === 'inactive' ? 'inactive' : args.version === 'active' ? 'active' : undefined;
-      const content = typeof args.source === 'string' ? (args.source as string) : undefined;
-      const opts: { version?: 'active' | 'inactive'; content?: string } = {};
-      if (version) opts.version = version;
-      if (content !== undefined) opts.content = content;
-      const result = await syntaxCheck(
-        client.http,
-        client.safety,
-        objectUrl,
-        Object.keys(opts).length > 0 ? opts : undefined,
-      );
-      // Fail closed: SAP checked nothing (object does not exist yet) → never report "clean", or
-      // callers read hasErrors:false as "SAP will accept this source".
-      if (!result.checked) {
-        return textResult(
-          toolJson({
-            ...result,
-            hasErrors: true,
-            messages: [
-              {
-                severity: 'error',
-                text: `Not checked — ${(result.statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated; create the object first (SAPWrite action="create"), then re-run the syntax check.`,
-                line: 0,
-                column: 0,
-              },
-            ],
-          }),
-        );
-      }
-      return textResult(toolJson(result));
-    }
+    case 'syntax':
+      return handleSyntaxCheck(client, args);
     case 'unittest': {
       const coverage = args.coverage === true;
       const resultFormat = String(args.resultFormat ?? 'legacy');
