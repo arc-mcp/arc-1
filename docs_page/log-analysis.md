@@ -256,7 +256,11 @@ elicitation events remain in stderr/file logs. Forwarded events are categorized 
 - **data-modifications**: tool calls that write data (SAPWrite, SAPManage)
 - **configuration-changes**: transport and activation operations (SAPTransport, SAPActivate)
 
-View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**.
+View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**. For
+programmatic verification or scheduled reviews, read the same records through the Audit Log Retrieval
+API; see [Audit Log delivery evidence](btp-administration.md#audit-log-delivery-evidence). Tool-call
+records carry `object.type = "MCP Tool Call"` and the tool arguments in `args`, truncated at
+500 characters.
 
 ## Docker Volume Mount Example
 
