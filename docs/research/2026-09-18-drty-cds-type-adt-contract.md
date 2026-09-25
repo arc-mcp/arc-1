@@ -96,7 +96,7 @@ object.
 ## Follow-up boundaries
 
 1. Explicit active/inactive selection now checks the returned metadata version; omitted/auto
-   preserves the developer view. See [the version contract](../plans/2026-09-25-server-driven-versions.md) (#840).
+   preserves the developer view. See [the version contract](../plans/completed/2026-09-25-server-driven-versions.md) (#840).
 2. `$elementinfo` / `$navigation` and `SAPContext` dependency walking remain outside this PR.
 3. Generic `SAPDiagnose`/`SAPTransport` routing is still tracked by ARCH-02.
 
