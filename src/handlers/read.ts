@@ -177,6 +177,11 @@ export async function handleSAPRead(
   // See docs/research/2026-06-15-version-diff-saved-read-action.md.
   if (args.action === 'diff') {
     if (!name) return errorResult('SAPRead action="diff" requires a "name".');
+    if (isServerDrivenObjectType(type)) {
+      return errorResult(
+        'SAPRead action="diff" does not support server-driven types; read version="active" and version="inactive" separately.',
+      );
+    }
     const from = typeof args.from === 'string' && args.from ? args.from : 'active';
     const to = typeof args.to === 'string' && args.to ? args.to : 'inactive';
     const fromLabel = typeof args.fromLabel === 'string' && args.fromLabel ? args.fromLabel : undefined;

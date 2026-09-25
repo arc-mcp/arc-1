@@ -414,7 +414,7 @@ Keep edits above the read-only metadata marker in a complete SAPRead result. For
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
 
 - **Read versions:** SDO reads return SAP's unversioned developer view, including a draft when present. Explicit `version` is currently ignored ([#840](https://github.com/arc-mcp/arc-1/issues/840)).
-- **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers use the registered URL; SAP may still return incomplete ATC results. `SAPDiagnose object_state` refuses server-driven types until [version verification](roadmap.md#arch-02) is supported. Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
+- **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers use the registered URL; SAP may still return incomplete ATC results. `SAPDiagnose object_state` and `SAPRead action="diff"` refuse server-driven types; read `version="active"` and `version="inactive"` separately to compare them. [Version verification](roadmap.md#arch-02) remains required for `object_state`. Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
 
 **DRTY create/update:** Use canonical `type="DRTY"` with plain `define type` source, for example:
 

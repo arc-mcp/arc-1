@@ -38,6 +38,8 @@ proof of general SDO support. Unit is schema-refused without any SAP call.
 The generic source-state caller exposed a separate correctness limit: active and
 inactive source requests both returned active content when no draft existed. Refuse
 SDO object_state before SAP traffic until it verifies version identity; retain this
-specific gap in ARCH-02. Raw/encoded API-state URLs inherit the registry correction,
+specific gap in ARCH-02. `SAPRead action="diff"` also refuses SDOs with guidance to read explicit
+versions separately; this ARC-1 validation stays visible in minimal-error mode. Land #846 first
+so these explicit reads verify version identity. Raw/encoded API-state URLs inherit the registry correction,
 but no live API-release mutation was performed. Quickfix availability and AFF syntax
 reporters remain SAP/type dependent; this change grants no new capability.

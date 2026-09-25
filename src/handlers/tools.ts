@@ -1137,7 +1137,7 @@ export function getToolDefinitions(
         '- "atc": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
         '- "atc_ci": package ATC CI; requires available API and verified selection.\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
-        '- "object_state": active/inactive ETags, hashes and divergence (name+type; CLAS includes). Server-driven types unsupported.\n' +
+        '- "object_state": active/inactive ETags, hashes and divergence (name+type; CLAS: all includes). Server-driven types unsupported.\n' +
         '- "quickfix": proposals at name+type+source+line (optional column/sourceUri).\n' +
         '- "apply_quickfix": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n' +
         '- "dumps": list/read ST22 short dumps (no id = list, newest first, user/from/to/maxResults; id = read; includeFullText, sections).\n' +

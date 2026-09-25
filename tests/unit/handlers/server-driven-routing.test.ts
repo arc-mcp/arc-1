@@ -67,4 +67,15 @@ describe('shared server-driven routing', () => {
     expect(result.isError).toBe(true);
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])('explains how to compare SDO versions with minimalErrors=%s', async (minimalErrors) => {
+    const result = await handleToolCall(client(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPRead', {
+      action: 'diff',
+      type: 'DRTY',
+      name: 'ZORDER_TYPE',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('read version="active" and version="inactive" separately');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });
