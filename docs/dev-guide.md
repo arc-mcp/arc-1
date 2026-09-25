@@ -258,6 +258,7 @@ npm run btp:validate
 | Add feature-gated write guard | `src/handlers/write/rap.ts` (checkRapAvailable pattern), `src/adt/features.ts` |
 | Add E2E test | `tests/e2e/`, helpers in `tests/e2e/helpers.ts`, fixtures in `tests/e2e/fixtures.ts` |
 | Add/modify E2E fixture | `tests/e2e/fixtures.ts` (define object), `tests/fixtures/abap/` (source file), `tests/e2e/setup.ts` (sync logic) |
+| Guard source writes across tool calls (#850) | `src/handlers/editable-source.ts`, `src/adt/source-precondition.ts`, `src/adt/crud.ts`, `src/handlers/write/{class-edit,unit-surgery}.ts`. `SAPRead format=editable` hashes fresh whole source/include; optional `expectedSourceHash` is checked under the write lock. Unsupported paths refuse it; omitted hashes retain unconditional behavior. See [source preconditions](../docs_page/tools.md#source-preconditions). |
 | Modify source caching / ETag revalidation | `src/cache/caching-layer.ts`, `src/cache/cache.ts`, `src/cache/memory.ts`, `src/cache/sqlite.ts`, `src/adt/client.ts` |
 | Modify inactive-draft source awareness | `src/cache/inactive-list-cache.ts`, `src/handlers/read.ts`, `src/adt/client.ts`, `src/adt/xml-parser.ts`, `src/adt/types.ts` |
 | Change source caching | `src/cache/caching-layer.ts`, `src/cache/{cache,memory,sqlite}.ts`; preserve ETag revalidation |

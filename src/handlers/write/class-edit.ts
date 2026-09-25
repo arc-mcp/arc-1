@@ -2,6 +2,7 @@
 import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import type { AdtHttpClient } from '../../adt/http.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
+import { assertSourceHash } from '../../adt/source-precondition.js';
 import type { ClassStructure } from '../../adt/types.js';
 import { parseClassStructure } from '../../adt/xml-parser.js';
 import { logger } from '../../server/logger.js';
@@ -25,11 +26,13 @@ export async function withClassEdit(
   return client.http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
     let writeAttempted = false;
-    const read = async (url: string) => {
+    const read = async (url: string, checkSource = true) => {
       checkOperation(client.safety, OperationType.Read, 'GetSource');
       // SAP returns the editable draft (active when none exists). Both endpoints must use
       // this same selection under the lock; caches and inactive worklists can be stale.
-      return (await session.get(url, { 'Cache-Control': 'no-cache' })).body;
+      const source = (await session.get(url, { 'Cache-Control': 'no-cache' })).body;
+      if (checkSource) assertSourceHash(source, ctx.args.expectedSourceHash as string | undefined);
+      return source;
     };
     try {
       return await edit({
@@ -37,7 +40,7 @@ export async function withClassEdit(
         read,
         async readMainAndStructure() {
           const main = await read(srcUrl);
-          const structure = parseClassStructure(await read(`${objectUrl}/objectstructure`), name);
+          const structure = parseClassStructure(await read(`${objectUrl}/objectstructure`, false), name);
           return { main, structure };
         },
         async save(url, source) {
