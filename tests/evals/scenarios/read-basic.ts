@@ -23,7 +23,6 @@ export const SCENARIOS: EvalScenario[] = [
     })),
     requireFullParameters: true,
     maxToolCalls: 1,
-    mockResponses: { SAPRead: 'define type ZORDER_TYPE : abap.char(10);' },
   },
 
   {
