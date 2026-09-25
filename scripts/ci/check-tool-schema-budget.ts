@@ -180,9 +180,12 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Post-trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
       // Package CI adds five bounded controls; description trims retain pre-CI token ratchets.
       // The 50 KB read and 74 KB write wire ceilings are unchanged.
-      schemaTokenEstimate: 12_000,
+      // Raised 12_000 -> 12_050 and descriptions 184 -> 187 for SAPRead CLUSTER_READ (data-cluster
+      // decode — BALDAT/INDX/STXL): its own layout/schemaOnly/lang properties, on-prem only. Wire
+      // payload stays well under the read wall (~48 KB against 50 KB).
+      schemaTokenEstimate: 12_050,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 184,
+      descriptionCount: 187,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -205,9 +208,11 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
+      // Descriptions 276 -> 279 for SAPRead CLUSTER_READ's three on-prem-only properties
+      // (layout/schemaOnly/lang); schema tokens stay under 18_500.
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 276,
+      descriptionCount: 279,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -250,9 +255,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: LIVE_RELATIONS_FEATURES,
     budget: {
-      schemaTokenEstimate: 12_000,
+      // Kept in sync with 'standard-default' above (same CLUSTER_READ additions).
+      schemaTokenEstimate: 12_050,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 184,
+      descriptionCount: 187,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -263,9 +269,10 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: LIVE_RELATIONS_FEATURES,
     budget: {
+      // Kept in sync with 'standard-full-git' above (same CLUSTER_READ additions).
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 276,
+      descriptionCount: 279,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },

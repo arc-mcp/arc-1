@@ -82,6 +82,10 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'TTYP', btp: false },
   { type: 'TABLE_CONTENTS', btp: true },
   { type: 'TABLE_QUERY', btp: true },
+  // Decodes ABAP data-cluster tables (BALDAT, INDX, STXL, ...) — EXPORT ... TO DATABASE's binary
+  // format, which ADT's data preview shows as raw CLUSTD hex and never decodes. On-prem only:
+  // BTP ABAP Environment does not expose these classic kernel tables. See src/adt/cluster-read.ts.
+  { type: 'CLUSTER_READ', btp: false },
   { type: 'DEVC', btp: true },
   { type: 'SOBJ', btp: false },
   { type: 'SYSTEM', btp: true },
