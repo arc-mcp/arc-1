@@ -41,3 +41,6 @@ without changing stored source. An invalid saved draft failed while the active v
 Missing programs returned native errors (`checked:true` on these systems); explicit `notProcessed`
 is regression-tested separately. Disposable `$TMP` reports were deleted and metadata returned 404.
 No live BTP/PP, native client approval or token-saving measurement is claimed.
+
+The description-count budget includes this property and #853’s source precondition so either
+merge order passes. Existing wire/token ceilings are unchanged; repeated type prose was shortened.
