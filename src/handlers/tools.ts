@@ -1,11 +1,6 @@
 /**
  * Tool definitions for ARC-1's 12 intent-based MCP tools.
  *
- * Each tool has:
- * - name: The MCP tool name (SAPRead, SAPWrite, etc.)
- * - description: Rich LLM-friendly description
- * - inputSchema: JSON Schema for tool arguments
- *
  * Group operations by intent, with a `type` parameter for object routing.
  * This keeps the LLM's tool selection simple and the context window small.
  *
@@ -496,9 +491,9 @@ export function getToolDefinitions(
               }),
           format: {
             type: 'string',
-            enum: ['text', 'structured'],
+            enum: ['text', 'structured', 'editable'],
             description:
-              'Default "text" (TABL/TTYP/DTEL/DOMA/INTF metadata included). DEVC: array in first text block + listing metadata in second; "structured" returns {objects, listing}. CLAS "structured": metadata + all includes; prefer method/grep for targeted reads. action="diff": "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default is a patch.',
+              'Default text. editable: fresh {source, sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include. structured: CLAS metadata+includes, DEVC {objects,listing}, or action=diff JSON. DEVC text returns the array then listing metadata; diff text returns a patch.',
           },
           version: {
             type: 'string',
@@ -637,6 +632,12 @@ export function getToolDefinitions(
             description: btp
               ? 'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).'
               : 'Object name (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
+          },
+          expectedSourceHash: {
+            type: 'string',
+            pattern: '^[a-f0-9]{64}$',
+            description:
+              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted: no cross-call protection.',
           },
           source: {
             type: 'string',

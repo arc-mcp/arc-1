@@ -3,6 +3,7 @@
 import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
+import { assertSourceHash } from '../../adt/source-precondition.js';
 import { spliceUnit } from '../../context/unit-surgery.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
@@ -49,6 +50,7 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
       // Omit version: SAP returns the editable draft, or active source when no draft exists.
       // Read after locking, without source or inactive-list caches.
       const currentSource = (await session.get(srcUrl, { 'Cache-Control': 'no-cache' })).body;
+      assertSourceHash(currentSource, args.expectedSourceHash as string | undefined);
       const spliced = spliceUnit(currentSource, name, unit, source, abaplintVersion);
       if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 

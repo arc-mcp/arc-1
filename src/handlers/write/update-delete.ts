@@ -110,6 +110,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
       source,
       transport,
       getCachedFeatures()?.abapRelease,
+      args.expectedSourceHash as string | undefined,
     );
     invalidateWrittenObject(type, name);
     const initNote = initialized ? ` (initialised the ${include} include first)` : '';
@@ -273,6 +274,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     effectiveSource,
     transport,
     getCachedFeatures()?.abapRelease,
+    args.expectedSourceHash as string | undefined,
   );
   invalidateWrittenObject(type, name);
   const msg = `Successfully updated ${type} ${name}.`;

@@ -25,6 +25,7 @@ import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
+import { sourcePreconditionError } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
@@ -208,7 +209,7 @@ export const SAPReadSchema = z
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     expand_includes: looseOptionalBoolean,
-    format: z.enum(['text', 'structured']).optional(),
+    format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep omission observable: source handlers still default it to active, while DTEL
     // uses SAP's version-less developer view for read-after-write consistency.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
@@ -247,7 +248,7 @@ export const SAPReadSchemaBtp = z
     group: z.string().optional(),
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
-    format: z.enum(['text', 'structured']).optional(),
+    format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep this aligned with the on-prem schema; the handler owns the per-type default.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
@@ -404,9 +405,12 @@ function validateSapWriteInput(
     processingType?: string;
     updateTaskKind?: string;
     shortTexts?: unknown[];
+    expectedSourceHash?: string;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  const preconditionError = sourcePreconditionError(input.type ?? '', input.action, input.expectedSourceHash);
+  if (preconditionError) ctx.addIssue({ code: 'custom', path: ['expectedSourceHash'], message: preconditionError });
   // Treat empty/whitespace include as "not provided" — some MCP clients serialize
   // an omitted optional string as "" and shouldn't trip the include validation.
   if (input.include && input.include.trim() !== '') {
@@ -628,6 +632,10 @@ export const SAPWriteSchema = z
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
+    expectedSourceHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
@@ -740,6 +748,10 @@ export const SAPWriteSchemaBtp = z
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
+    expectedSourceHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),

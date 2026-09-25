@@ -14,6 +14,7 @@ import { postCreate } from './create-request.js';
 import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { assertSourceHash } from './source-precondition.js';
 /** Lock result from SAP */
 export interface LockResult {
   lockHandle: string;
@@ -226,11 +227,18 @@ export async function safeUpdateSource(
   source: string,
   transport?: string,
   abapRelease?: string,
+  expectedSourceHash?: string,
 ): Promise<void> {
+  checkOperation(safety, OperationType.Update, 'UpdateSource');
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
     try {
+      if (expectedSourceHash !== undefined) {
+        checkOperation(safety, OperationType.Read, 'GetSource');
+        const current = await session.get(sourceUrl, { 'Cache-Control': 'no-cache' });
+        assertSourceHash(current.body, expectedSourceHash);
+      }
       await updateSource(session, safety, sourceUrl, source, lock.lockHandle, effectiveTransport);
     } finally {
       await unlockObject(session, objectUrl, lock.lockHandle);
@@ -302,7 +310,9 @@ export async function safeUpdateClassInclude(
   source: string,
   transport?: string,
   abapRelease?: string,
+  expectedSourceHash?: string,
 ): Promise<{ initialized: boolean }> {
+  checkOperation(safety, OperationType.Update, 'UpdateSource');
   return await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, classObjectUrl, 'MODIFY', abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
@@ -311,9 +321,11 @@ export async function safeUpdateClassInclude(
       // Probe whether the include exists. 404 → not initialised yet.
       let exists = true;
       try {
-        await session.get(includeUrl, undefined, { suppressNotFoundLog: true });
+        checkOperation(safety, OperationType.Read, 'GetClassInclude');
+        const current = await session.get(includeUrl, { 'Cache-Control': 'no-cache' }, { suppressNotFoundLog: true });
+        assertSourceHash(current.body, expectedSourceHash);
       } catch (err) {
-        if (isNotFoundError(err)) {
+        if (isNotFoundError(err) && expectedSourceHash === undefined) {
           exists = false;
         } else {
           throw err;

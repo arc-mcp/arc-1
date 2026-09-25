@@ -14,6 +14,7 @@ import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
+import { sourcePreconditionError } from './editable-source.js';
 import {
   isDomainsEndpointAvailable,
   isTablesEndpointAvailable,
@@ -95,6 +96,9 @@ export async function handleSAPWrite(
         `(e.g. for DDLS: name="${name.toUpperCase()}" but source can contain "define view entity ${name}").`,
     );
   }
+
+  const preconditionError = sourcePreconditionError(type, action, args.expectedSourceHash);
+  if (preconditionError) return errorResult(preconditionError);
 
   // Types in SDO_REGISTRY use the shared engine (POST metadata → PUT source → activate).
   if (isServerDrivenObjectType(type)) {

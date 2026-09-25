@@ -173,6 +173,7 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
       spliced,
       transport,
       getCachedFeatures()?.abapRelease,
+      args.expectedSourceHash as string | undefined,
     );
     invalidateWrittenObject(type, name);
     const initNote = initialized.initialized ? ` Initialised the ${include} include first.` : '';
