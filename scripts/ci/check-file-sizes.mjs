@@ -40,7 +40,9 @@ const BUDGETS = {
   // +5 for the optional relations projection hook; its implementation stays in relation-tool.ts.
   // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
-  'src/handlers/tools.ts': 1782,
+  // +18 for CLUSTER_READ (data-cluster decode — BALDAT/INDX/STXL): one type-list mention plus its
+  // three own properties (layout/schemaOnly/lang, on-prem only), reusing TABLE_QUERY's where/columns.
+  'src/handlers/tools.ts': 1800,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -68,7 +70,9 @@ const BUDGETS = {
   // belongs on the facade; the two parts that did not were extracted first (lineage evaluation to
   // data-source-policy.ts, the statement-execution loop to table-query.ts).
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
-  'src/adt/client.ts': 1734,
+  // +3 for readClusterTable, a thin forwarder to adt/cluster-read.ts (data-cluster decode —
+  // BALDAT/INDX/STXL — over the same runTableQuery path TABLE_QUERY uses).
+  'src/adt/client.ts': 1737,
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.

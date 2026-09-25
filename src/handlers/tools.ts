@@ -104,7 +104,7 @@ function isBtpMode(config: ServerConfig): boolean {
 
 const SAPREAD_DESC_ONPREM =
   'Read SAP ABAP source or metadata. For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
-  'Types: PROG, CLAS, INTF, FUNC, FUGR (expand_includes=true for all include sources), INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (covers both transparent tables AND DDIC structures — no separate STRU type), TTYP, VIEW, DOMA, DTEL, TRAN, TABLE_CONTENTS (single-column filter), TABLE_QUERY (multi-column WHERE via the freestyle endpoint; gated by allowDataPreview; CDS views need SAP_BASIS 752+), DEVC, SOBJ (BOR — method param reads one method), SYSTEM, COMPONENTS, MSAG, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/VERSION_SOURCE are on-prem only. ' +
+  'Types: PROG, CLAS, INTF, FUNC, FUGR (expand_includes=true for all include sources), INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (covers both transparent tables AND DDIC structures — no separate STRU type), TTYP, VIEW, DOMA, DTEL, TRAN, TABLE_CONTENTS (single-column filter), TABLE_QUERY (multi-column WHERE via the freestyle endpoint; gated by allowDataPreview; CDS views need SAP_BASIS 752+), CLUSTER_READ (decodes EXPORT-cluster tables — BALDAT, INDX, STXL; layout/schemaOnly/lang params; on-prem only), DEVC, SOBJ (BOR — method param reads one method), SYSTEM, COMPONENTS, MSAG, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/VERSION_SOURCE and CLUSTER_READ are on-prem only. ' +
   'CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. Details: docs_page SAPRead. ' +
   'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS. ' +
   'Optional version parameter: source types default active; "inactive" requests the draft (SAP may return active if none); "auto" uses the developer view. DTEL omitted/auto uses its developer view; explicit values pass through. Active source reads note when a draft exists.';
@@ -567,6 +567,24 @@ export function getToolDefinitions(
               required: ['field', 'op'],
             },
           },
+          ...(btp
+            ? {}
+            : {
+                layout: {
+                  type: 'string',
+                  description:
+                    'CLUSTER_READ: "applog" (BALDAT as BAL_S_MSG messages), "stxl" (STXL as SAPscript text — default for name=STXL), a DDIC structure applied to every object, or "OBJ=STRUCT,OBJ2=STRUCT2". Omit for numbered fields.',
+                },
+                schemaOnly: {
+                  type: 'boolean',
+                  description: 'CLUSTER_READ: field types/counts only, no decoded row values.',
+                },
+                lang: {
+                  type: 'string',
+                  description:
+                    'CLUSTER_READ layout="applog": T100 message-text language (ISO code or SAP key); default English.',
+                },
+              }),
         },
         required: ['type'],
       },

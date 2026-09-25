@@ -18,6 +18,7 @@
 
 import { getCurrentContext } from '../server/context.js';
 import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
+import { type ClusterReadOptions, type ClusterReadResult, performClusterRead } from './cluster-read.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
 import { type DataResponseBudget, DataResultScope } from './data-result-context.js';
@@ -1513,6 +1514,17 @@ export class AdtClient {
     return this.withDataResultScope(async (budget, signal) =>
       parseTableContents(await this.postFreestyleQuery(sql, maxRows, budget, signal)),
     );
+  }
+
+  /**
+   * Reads and decodes an ABAP data cluster table — BALDAT, INDX, STXL, or any Z table built the
+   * same way (`EXPORT ... TO DATABASE`). ADT's data preview reads the raw CLUSTD fragments but
+   * will not decode them; this joins them per key (via `runTableQuery`, so the same `data` scope
+   * and safety gates as TABLE_QUERY apply — no free SQL) and decodes the SAP-internal binary
+   * format. See `./cluster-read.ts`.
+   */
+  async readClusterTable(opts: ClusterReadOptions): Promise<ClusterReadResult> {
+    return performClusterRead(this, opts);
   }
 
   // ─── System Information ────────────────────────────────────────────

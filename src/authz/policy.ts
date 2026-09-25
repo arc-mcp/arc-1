@@ -62,6 +62,9 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   // TABLE_QUERY builds the SELECT server-side (no user SQL injection) — same gate as TABLE_CONTENTS.
   // Uses the freestyle endpoint internally to support multi-column WHERE and CDS views.
   'SAPRead.TABLE_QUERY': { scope: 'data', opType: OperationType.Query },
+  // CLUSTER_READ reads a data-cluster table's raw fragments through the same runTableQuery path
+  // as TABLE_QUERY (server-built SELECT, no user SQL) and decodes them client-side — same gate.
+  'SAPRead.CLUSTER_READ': { scope: 'data', opType: OperationType.Query },
 
   // ── SAPSearch ────────────────────────────────────────────────────
   SAPSearch: { scope: 'read', opType: OperationType.Search },

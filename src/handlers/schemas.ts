@@ -154,6 +154,16 @@ function validateSapReadInput(
     }
   }
 
+  if (input.type === 'CLUSTER_READ') {
+    if (!('name' in input) || !input.name) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['name'],
+        message: 'CLUSTER_READ requires a cluster table name (BALDAT, INDX, STXL, ...).',
+      });
+    }
+  }
+
   if (input.type === 'TABLE_CONTENTS' && input.sqlFilter) {
     const sqlFilter = input.sqlFilter.trim();
     if (/^select\b/i.test(sqlFilter)) {
@@ -223,8 +233,14 @@ export const SAPReadSchema = z
     includeSignature: looseOptionalBoolean,
     /** For TABLE_QUERY: columns to select (default: all). */
     columns: z.array(z.string()).optional(),
-    /** For TABLE_QUERY: structured WHERE conditions ANDed together. */
+    /** For TABLE_QUERY: structured WHERE conditions ANDed together. Also used by CLUSTER_READ to filter cluster keys (e.g. RELID/LOG_HANDLE). */
     where: z.array(TableQueryWhereItemSchema).optional(),
+    /** For CLUSTER_READ: "applog" (BAL_S_MSG over BALDAT), "stxl" (TLINE text; default for table=STXL), a DDIC structure name applied to every object, or "OBJ=STRUCT,OBJ2=STRUCT2" per object name. */
+    layout: z.string().optional(),
+    /** For CLUSTER_READ: return field types/counts without decoded row values. */
+    schemaOnly: looseOptionalBoolean,
+    /** For CLUSTER_READ layout="applog": language for T100 message texts (ISO code or SAP key). Defaults to English. */
+    lang: z.string().optional(),
   })
   .strict()
   .superRefine((input, ctx) => validateSapReadInput(input, ctx));

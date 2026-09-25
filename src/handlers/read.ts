@@ -766,6 +766,20 @@ export async function handleSAPRead(
         throw err;
       }
     }
+    case 'CLUSTER_READ': {
+      const where = Array.isArray(args.where)
+        ? (args.where as Array<{ field: string; op: string; value?: string }>)
+        : undefined;
+      const data = await client.readClusterTable({
+        table: name,
+        where,
+        layout: typeof args.layout === 'string' ? args.layout : undefined,
+        maxRows: Number(args.maxRows ?? 200),
+        schemaOnly: args.schemaOnly === true,
+        lang: typeof args.lang === 'string' ? args.lang : undefined,
+      });
+      return textResult(toolJson(data));
+    }
     case 'SOBJ': {
       const method = String(args.method ?? '');
       // Sanitize inputs to prevent SQL injection — BOR names are alphanumeric + underscore only
@@ -896,7 +910,7 @@ export async function handleSAPRead(
     }
     default:
       return errorResult(
-        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TTYP, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
+        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TTYP, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, TABLE_QUERY, CLUSTER_READ, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
           'Tip: Type aliases are auto-normalized (e.g., DDLS/DF → DDLS, DCLS/DL → DCLS, CLAS/OC → CLAS, PROG/P → PROG). ' +
           'Do not pass a URI — use the "type" and "name" parameters instead.',
       );
