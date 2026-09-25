@@ -32,6 +32,7 @@ import { AdtClient, mockFetch } from './setup-undici-mock.js';
 /** Minimal valid SAPRead input per type — shared by the Zod-accept and dispatch-coverage blocks. */
 function readArgs(type: string): Record<string, unknown> {
   const base: Record<string, unknown> = { type, name: 'ZARC1_X' };
+  if (type === 'SYNTAX') return { type, objectType: 'CLAS', name: 'ZCL_TEST' };
   if (type === 'VERSION_SOURCE') {
     base.versionUri = '/sap/bc/adt/programs/programs/ZTEST/source/main/versions/1/00000/content';
   }

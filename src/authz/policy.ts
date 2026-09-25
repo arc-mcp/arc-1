@@ -57,6 +57,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   // ── SAPRead ──────────────────────────────────────────────────────
   // Tool-level default — applies to all SAP object reads (PROG, CLAS, etc.)
   SAPRead: { scope: 'read', opType: OperationType.Read },
+  'SAPRead.SYNTAX': { scope: 'read', opType: OperationType.Read },
   // Per-type overrides
   'SAPRead.TABLE_CONTENTS': { scope: 'data', opType: OperationType.Query },
   // TABLE_QUERY builds the SELECT server-side (no user SQL injection) — same gate as TABLE_CONTENTS.

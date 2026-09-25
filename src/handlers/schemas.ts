@@ -22,11 +22,12 @@ import {
 } from '../adt/atc-batch.js';
 import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
+import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
-import { CLASS_WRITE_INCLUDES } from './object-types.js';
+import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
 import {
   ATC_BATCH_TYPES_BTP,
@@ -77,9 +78,42 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
 function validateSapReadInput(
-  input: { type: string; name?: string; action?: string; include?: string; versionUri?: string; sqlFilter?: string },
+  input: {
+    type: string;
+    name?: string;
+    action?: string;
+    include?: string;
+    versionUri?: string;
+    sqlFilter?: string;
+    objectType?: string;
+    source?: string;
+    version?: string;
+  },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  if (input.type === 'SYNTAX') {
+    for (const key of ['name', 'objectType'] as const) {
+      if (!input[key]?.trim()) ctx.addIssue({ code: 'custom', path: [key], message: `SYNTAX requires ${key}.` });
+    }
+    if (input.objectType && !KNOWN_BASE_TYPES.has(input.objectType) && !isServerDrivenObjectType(input.objectType)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['objectType'],
+        message: 'SYNTAX requires a supported repository object type.',
+      });
+    }
+    const allowed = new Set(['type', 'name', 'objectType', 'version', 'source']);
+    for (const [key, value] of Object.entries(input)) {
+      if (value !== undefined && !allowed.has(key)) {
+        ctx.addIssue({ code: 'custom', path: [key], message: `SYNTAX does not accept ${key}.` });
+      }
+    }
+    if (input.version === 'auto')
+      ctx.addIssue({ code: 'custom', path: ['version'], message: 'SYNTAX version must be active or inactive.' });
+  } else if (input.source !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['source'], message: 'SAPRead source is only supported for type=SYNTAX.' });
+  }
+
   if (input.action === 'diff' && !input.name) {
     ctx.addIssue({ code: 'custom', path: ['name'], message: 'SAPRead action="diff" requires a "name".' });
   }
@@ -218,6 +252,7 @@ export const SAPReadSchema = z
     maxResults: z.coerce.number().optional(),
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
+    source: z.string().optional(),
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: looseOptionalBoolean,
@@ -256,6 +291,7 @@ export const SAPReadSchemaBtp = z
     maxResults: z.coerce.number().optional(),
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
+    source: z.string().optional(),
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: looseOptionalBoolean,
