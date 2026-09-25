@@ -40,7 +40,8 @@ const BUDGETS = {
   // +5 for the optional relations projection hook; its implementation stays in relation-tool.ts.
   // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
-  'src/handlers/tools.ts': 1782,
+  // +10 for SAPRead lineStart/lineEnd (raw line-range read, #585).
+  'src/handlers/tools.ts': 1792,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -73,6 +74,9 @@ const BUDGETS = {
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
   'tests/integration/adt.integration.test.ts': 3100,
+  // SAPRead's unit suite crossed the default test budget with the lineStart/lineEnd coverage
+  // (raw line-range read, #585). Split by read-mode before raising again.
+  'tests/unit/handlers/read.test.ts': 3170,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   'src/adt/http.ts': 1553, // #817: smaller shared probe retains the #807 session-owned proxy lifecycle.
