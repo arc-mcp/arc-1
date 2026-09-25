@@ -27,7 +27,7 @@ import { logger } from '../server/logger.js';
 import { postCreate } from './create-request.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
-import { AdtApiError } from './errors.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { ServerDrivenObjectResult } from './types.js';
@@ -312,22 +312,33 @@ export function serverDrivenUnavailableMessage(tool: string, code: string): stri
 /**
  * Read a server-driven object: its metadata (blue:blueSource or dtdc:dtdcSource) + source (AFF JSON
  * or DDL text). The source is JSON-parsed when possible (raw text otherwise). Throws AdtApiError 404
- * for a nonexistent object. Gate availability with supportsServerDrivenObject() on unknown systems.
+ * for a nonexistent object. Explicit versions must match the returned metadata; omission keeps
+ * SAP's developer view. Gate availability with supportsServerDrivenObject() on unknown systems.
  */
 export async function getServerDrivenObject(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
   name: string,
+  version?: 'active' | 'inactive',
 ): Promise<ServerDrivenObjectResult> {
   checkOperation(safety, OperationType.Read, 'GetServerDrivenObject');
   const entry = sdoEntry(code);
   const objUrl = serverDrivenObjectUrl(code, name);
 
-  const metaResp = await http.get(objUrl, { Accept: entry.metadataContentType });
+  const query = version ? `?version=${version}` : '';
+  const metaResp = await http.get(`${objUrl}${query}`, { Accept: entry.metadataContentType });
   const metadata = parseServerDrivenMetadata(metaResp.body, entry.metadataRootLocalName);
 
-  const srcResp = await http.get(`${objUrl}/source/main`, { Accept: 'application/json, */*' });
+  // SAP can substitute the other version when the requested one does not exist.
+  if (version && metadata.version !== version) {
+    throw new AdtError(
+      `Cannot confirm ${version} version of ${code} ${name}: SAP metadata reports ${metadata.version || 'no version'}. ` +
+        'No source returned. Use version="auto" for the available developer view.',
+    );
+  }
+
+  const srcResp = await http.get(`${objUrl}/source/main${query}`, { Accept: 'application/json, */*' });
   let source: unknown = srcResp.body;
   try {
     source = JSON.parse(srcResp.body);

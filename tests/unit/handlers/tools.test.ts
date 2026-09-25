@@ -365,7 +365,7 @@ describe('Tool Definitions', () => {
     const schema = sapRead.inputSchema as Record<string, any>;
     expect(schema.properties.version.enum).toEqual(['active', 'inactive', 'auto']);
     expect(schema.properties.force_refresh.type).toBe('boolean');
-    expect(sapRead.description).toContain('version parameter');
+    expect(sapRead.description).toContain('Explicit SDO versions must match metadata');
   });
 
   it('SAPRead schema exposes includeSignature flag for FUNC (issue #252)', () => {

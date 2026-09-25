@@ -218,7 +218,14 @@ Source-bearing types accept a `version` parameter to choose between the activate
 | `inactive` | Reads the user's draft directly. If no draft exists, SAP falls back to the active source and the response is prefixed with: *"No inactive draft exists for this object on the server. Returning the active version."* |
 | `auto` | Resolves client-side via the cached inactive-objects list: returns the draft if one exists, otherwise active. No warning is prefixed (the caller explicitly opted into "show me my view"). |
 
-The default preserves all existing caller behaviour; `version` is an opt-in extension.
+Server-driven types (such as DRTY, DESD, DTDC and UIAD) preserve their developer view when
+`version` is omitted or `auto`: SAP selects the draft when available, otherwise active. They bypass
+source and inactive-list caches. Explicit `active`/`inactive` is sent to both metadata and source;
+if metadata reports another version or no version, ARC-1 returns an error without source. This
+includes an inactive-only new object requested as active, and an active-only object requested as
+inactive. UIAD saves are immediately active on the verified 816 system, so use `active` or `auto`.
+Version-query errors propagate; ARC-1 does not retry a different version. The two reads are not an
+atomic snapshot against concurrent activation.
 
 DTEL metadata uses SAP's version-less developer view when `version` is omitted or set to `auto`, so a
 plain read after `SAPWrite` returns the pending draft. Pass `active` to request the last activated metadata or
