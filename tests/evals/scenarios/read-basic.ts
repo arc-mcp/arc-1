@@ -11,6 +11,21 @@ import type { EvalScenario } from '../types.js';
 
 export const SCENARIOS: EvalScenario[] = [
   {
+    id: 'read-server-driven-compare',
+    description: 'Start an SDO comparison with an explicit version read, not diff or object_state',
+    prompt: 'Compare the active and inactive source versions of CDS type ZORDER_TYPE.',
+    category: 'read',
+    tags: ['server-driven', 'versions', 'first-call'],
+    optimal: ['active', 'inactive'].map((version) => ({
+      tool: 'SAPRead',
+      requiredArgs: { type: 'DRTY', name: 'ZORDER_TYPE', version },
+      argumentPatterns: { action: { forbidden: [/^diff$/i] } },
+    })),
+    requireFullParameters: true,
+    maxToolCalls: 1,
+  },
+
+  {
     id: 'read-program',
     description: 'Read an ABAP program by name',
     prompt: 'Read the source code of ABAP program ZHELLO_WORLD',

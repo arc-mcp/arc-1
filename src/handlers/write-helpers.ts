@@ -905,8 +905,15 @@ export async function handleServerDrivenObjectWrite(
     }
     case 'delete': {
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
-      await deleteServerDrivenObject(client.http, client.safety, type, name, { transport });
-      invalidate();
+      try {
+        await deleteServerDrivenObject(client.http, client.safety, type, name, { transport });
+      } finally {
+        try {
+          invalidate();
+        } catch {
+          // Best-effort cleanup must not mask partial deletion or prevent the audit event.
+        }
+      }
       return textResult(`Deleted ${type} ${name}.`);
     }
     default:

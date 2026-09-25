@@ -182,7 +182,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // The 50 KB read and 74 KB write wire ceilings are unchanged.
       schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 184,
+      descriptionCount: 185,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -207,7 +207,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 276,
+      descriptionCount: 277,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -224,7 +224,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
       schemaTokenEstimate: 17_350,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 270,
+      descriptionCount: 271,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -252,7 +252,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
-      descriptionCount: 184,
+      descriptionCount: 185,
       maxTotalWireBytes: READ_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -265,7 +265,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 276,
+      descriptionCount: 277,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -278,7 +278,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 17_350,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 270,
+      descriptionCount: 271,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
