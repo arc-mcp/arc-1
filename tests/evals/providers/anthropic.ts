@@ -36,16 +36,13 @@ function toAnthropicMessages(messages: Message[]): {
     }
 
     if (msg.role === 'tool') {
-      apiMessages.push({
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: msg.toolCallId ?? 'call_0',
-            content: msg.content ?? '',
-          },
-        ],
-      });
+      const result = { type: 'tool_result', tool_use_id: msg.toolCallId, content: msg.content ?? '' };
+      const previous = apiMessages.at(-1);
+      if (previous?.role === 'user' && Array.isArray(previous.content)) {
+        previous.content.push(result);
+      } else {
+        apiMessages.push({ role: 'user', content: [result] });
+      }
       continue;
     }
 
@@ -57,7 +54,7 @@ function toAnthropicMessages(messages: Message[]): {
       for (const tc of msg.toolCalls) {
         content.push({
           type: 'tool_use',
-          id: `toolu_${Math.random().toString(36).slice(2, 10)}`,
+          id: tc.id,
           name: tc.name,
           input: tc.arguments,
         });
@@ -134,6 +131,7 @@ export function createAnthropicProvider(model: string): LLMProvider {
           content = (content ?? '') + block.text;
         } else if (block.type === 'tool_use' && block.name && block.input) {
           toolCalls.push({
+            id: block.id,
             name: block.name,
             arguments: block.input,
           });
