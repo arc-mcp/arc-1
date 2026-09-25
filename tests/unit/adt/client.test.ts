@@ -2081,22 +2081,6 @@ describe('AdtClient', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('uses loaded discovery to refuse missing replacement metadata before table source or data preview', async () => {
-      mockFetch.mockResolvedValue(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
-      const client = createClient({ safety: strictSafety(['USR02']) });
-      // A non-table entry means discovery is loaded while proving the table collection is absent.
-      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/ddic/structures', ['text/plain']]]));
-
-      await expect(client.runTableQuery('SCARR')).rejects.toMatchObject({
-        code: 'DATA_POLICY_UNAVAILABLE',
-        sourcePath: ['SCARR'],
-      });
-      const urls = mockFetch.mock.calls.map((call) => String(call[0]));
-      expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(true);
-      expect(urls.some((url) => url.includes('/ddic/tables/SCARR/source/main'))).toBe(false);
-      expect(urls.some((url) => url.includes('/datapreview/'))).toBe(false);
-    });
-
     // Phase 3 invariant: the identifier ARC-1 authorizes is byte-for-byte the identifier it sends.
     // The old builder stripped anything outside [\w/], so `USR02$` was checked as USR02$ and
     // executed as USR02. Identifier handling must not depend on whether the blocklist is active.
@@ -2158,13 +2142,13 @@ describe('AdtClient', () => {
 
       const allowMocks = () => {
         mockFetch.mockReset();
-        mockFetch.mockImplementation(async (url: string) => {
+        mockFetch.mockImplementation(async (url: string, opts: RequestInit) => {
           const u = String(url);
           if (u.includes('/repository/informationsystem/search')) {
             return objectSearchResponses([{ uri: '/sap/bc/adt/ddic/tables/scarr', type: 'TABL/DT', name: 'SCARR' }]);
           }
-          if (u.includes('/ddic/tables/')) {
-            return mockResponse(200, 'define table scarr { key mandt : abap.clnt; }', { 'x-csrf-token': 'T' });
+          if (String(opts.body).includes('FROM DD02L AS d')) {
+            return mockResponse(200, loadFixture('replacement-catalog-scarr.xml'), { 'x-csrf-token': 'T' });
           }
           return mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' });
         });
@@ -2177,11 +2161,13 @@ describe('AdtClient', () => {
         await client.runQueryBatch(chunks, 100);
 
         const urls = mockFetch.mock.calls.map((call) => String(call[0]));
-        // One search and one table-source read for the single distinct source across all chunks.
+        // One search and one catalog read for the single distinct source across all chunks.
         expect(urls.filter((u) => u.includes('/repository/informationsystem/search'))).toHaveLength(1);
-        expect(urls.filter((u) => u.includes('/ddic/tables/'))).toHaveLength(1);
+        expect(mockFetch.mock.calls.filter(([, opts]) => String(opts.body).includes('FROM DD02L AS d'))).toHaveLength(
+          1,
+        );
         // …but every chunk still executes.
-        expect(urls.filter((u) => u.includes('/datapreview/freestyle'))).toHaveLength(chunks.length);
+        expect(urls.filter((u) => u.includes('/datapreview/freestyle'))).toHaveLength(chunks.length + 1);
       });
 
       it('covers the union of all chunk sources, not just the first chunk', async () => {
@@ -2221,7 +2207,7 @@ describe('AdtClient', () => {
           .filter((call) => String(call[0]).includes('/datapreview/freestyle'))
           .map((call) => (call[4] as { responseBudget?: unknown } | undefined)?.responseBudget);
 
-        expect(budgets).toHaveLength(chunks.length);
+        expect(budgets).toHaveLength(chunks.length + 1);
         expect(budgets.every((budget) => budget !== undefined)).toBe(true);
         // Same object for every chunk — cumulative, not reset per chunk.
         expect(new Set(budgets).size).toBe(1);
@@ -2251,7 +2237,7 @@ describe('AdtClient', () => {
         const client = createClient({ safety: strictSafety(['USR02']) });
         await client.runQuery('SELECT * FROM SCARR');
         const first = mockFetch.mock.calls.filter((c) => String(c[0]).includes('/datapreview/freestyle')).length;
-        expect(first).toBe(1);
+        expect(first).toBe(2);
 
         const withMetrics = await client.runQueryWithMetrics('SELECT * FROM SCARR');
         expect(withMetrics.columns.length).toBeGreaterThan(0);
@@ -2291,12 +2277,12 @@ describe('AdtClient', () => {
 
     it('allows an unrelated static table query only after exact lookup and replacement inspection', async () => {
       mockFetch.mockReset();
-      mockFetch.mockImplementation((url: string) => {
+      mockFetch.mockImplementation((url: string, opts: RequestInit) => {
         if (url.includes('/repository/informationsystem/search')) {
           return Promise.resolve(objectSearchResponse('/sap/bc/adt/ddic/tables/SCARR', 'TABL/DT', 'SCARR'));
         }
-        if (url.includes('/ddic/tables/SCARR/source/main')) {
-          return Promise.resolve(mockResponse(200, 'define table scarr { key mandt : abap.clnt; }'));
+        if (String(opts.body).includes('FROM DD02L AS d')) {
+          return Promise.resolve(mockResponse(200, loadFixture('replacement-catalog-scarr.xml')));
         }
         return Promise.resolve(mockResponse(200, loadFixture('table-contents.xml'), { 'x-csrf-token': 'T' }));
       });
@@ -2304,7 +2290,7 @@ describe('AdtClient', () => {
       await expect(client.runQuery('SELECT * FROM SCARR')).resolves.toMatchObject({ columns: expect.any(Array) });
       const urls = mockFetch.mock.calls.map((call) => String(call[0]));
       expect(urls.some((url) => url.includes('/repository/informationsystem/search'))).toBe(true);
-      expect(urls.some((url) => url.includes('/ddic/tables/SCARR/source/main'))).toBe(true);
+      expect(mockFetch.mock.calls.some(([, opts]) => String(opts.body).includes('FROM DD02L AS d'))).toBe(true);
       expect(urls.some((url) => url.includes('/datapreview/freestyle'))).toBe(true);
     });
 
@@ -2379,16 +2365,14 @@ describe('AdtClient', () => {
 
     it('expands a DDIC replacement object before allowing the request', async () => {
       mockFetch.mockReset();
-      mockFetch.mockImplementation((url: string) => {
+      mockFetch.mockImplementation((url: string, opts: RequestInit) => {
         if (url.includes('query=DEMO_SUMDIST')) {
           return Promise.resolve(
             objectSearchResponse('/sap/bc/adt/ddic/tables/DEMO_SUMDIST', 'TABL/DT', 'DEMO_SUMDIST'),
           );
         }
-        if (url.includes('/ddic/tables/DEMO_SUMDIST/source/main')) {
-          return Promise.resolve(
-            mockResponse(200, "@AbapCatalog.replacementObject: 'demo_cds_sumdist'\ndefine table demo_sumdist"),
-          );
+        if (String(opts.body).includes('FROM DD02L AS d')) {
+          return Promise.resolve(mockResponse(200, loadFixture('replacement-catalog-demo_sumdist.xml')));
         }
         if (url.includes('query=DEMO_CDS_SUMDIST')) {
           return Promise.resolve(
@@ -2406,9 +2390,9 @@ describe('AdtClient', () => {
       });
       const client = createClient({ safety: strictSafety(['SCARR']) });
       await expect(client.runTableQuery('DEMO_SUMDIST')).rejects.toMatchObject({
-        sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUMDIST', 'SCARR'],
+        sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUDI', 'DEMO_CDS_SUMDIST', 'SCARR'],
       });
-      expect(mockFetch.mock.calls.some((call) => String(call[0]).includes('/datapreview/'))).toBe(false);
+      expect(mockFetch.mock.calls.filter(([, opts]) => opts.method === 'POST')).toHaveLength(1);
     });
 
     it('fails closed for a classic view and does not reach data preview', async () => {

@@ -649,7 +649,8 @@ export const SAPWriteSchema = z
     package: z.string().optional(),
     transport: z.string().optional(),
     // Required for FUNC create (the parent function-group name); optional for FUNC
-    // update/delete (auto-resolved via search). Ignored for other types.
+    // update/delete (auto-resolved via search). Also used by INCL to address a
+    // FUGR structural include (see tools.ts description) — ignored for all other types.
     group: z.string().optional(),
     /** FUNC creation kind as represented by ADT: normal, RFC-enabled, or update task. */
     processingType: functionProcessingTypeSchema.optional(),
@@ -1116,6 +1117,8 @@ export const SAPTransportSchema = z
     user: z.string().optional(),
     status: z.string().optional(),
     type: z.string().optional(),
+    // Parent FUGR for FUNC or group-scoped INCL check/history.
+    group: z.string().optional(),
     operation: z.enum(['create', 'modify']).optional(),
     owner: z.string().optional(),
     // looseOptionalBoolean (not z.boolean()) so GPT/OpenAI clients sending stringified

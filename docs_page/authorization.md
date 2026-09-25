@@ -114,7 +114,7 @@ Order matters and does not change:
    `SAP_ALLOW_FREE_SQL`, plus the caller's `data`/`sql` scope.
 2. **Blocklist policy** — this feature. It can only ever *narrow* an already-enabled capability; it
    can never enable or widen data access.
-3. **SAP request.**
+3. **Requested data query.** Policy evaluation may itself read metadata.
 
 Because the capability gate runs first, turning both data flags off means no governed data request is
 reachable at all — external *or* internal — and startup says so.
@@ -123,8 +123,7 @@ With an active list, one logical request is decided exactly once:
 
 - direct exact matches are denied with **zero SAP calls**;
 - otherwise free SQL is parsed locally, each direct source is resolved through exact ADT search, CDS
-  roots are expanded through SAP's active SQL dependency graph, and DDIC
-  `@AbapCatalog.replacementObject` chains are followed;
+  roots are expanded through SAP's active SQL dependency graph, and DDIC replacement chains are followed through active `DD02L`/`DDLDEPENDENCY` catalog rows;
 - every repository/entity/database alias of every node is compared against the list;
 - IN-list chunking does **not** re-decide: the union of all chunks is authorized once and the
   already-authorized statements are then executed.
@@ -134,11 +133,11 @@ With an active list, one logical request is decided exactly once:
 | Code | Meaning |
 |---|---|
 | `DATA_SOURCE_BLOCKED` | An exact configured rule matched, directly or transitively. |
-| `DATA_POLICY_UNAVAILABLE` | The target lacks the table-source metadata required to enforce replacement lineage safely, or discovery was unavailable and its canonical table-source request returned `404` (normally SAP_BASIS 7.50/7.51). |
+| `DATA_POLICY_UNAVAILABLE` | The fixed replacement-catalog request returned `404`; required data-preview metadata is unavailable. |
 | `DATA_LINEAGE_UNRESOLVED` | Identity, dependency-graph or replacement lineage could not be proven. |
 | `DATA_SQL_UNSUPPORTED` | The statement is outside the strict accepted SQL grammar. |
 
-All four mean the SAP data request was **not executed**. Each carries `executed=false` and an opaque
+All four mean the requested data query was **not executed**; metadata reads may have run. Each carries `executed=false` and an opaque
 `decisionId` that also appears in the audit log.
 
 ### What is deliberately unsupported
@@ -161,11 +160,12 @@ Joins, unions, nested subqueries, CTEs, parameterized CDS roots, hierarchy sourc
 
 ### Impact on ARC-1's own features
 
-ARC-1 reads six metadata tables for its own features. These reads are governed like any other, so
-blocking one really does disable the feature that reads it:
+ARC-1 declares its internal metadata sources in one registry. Blocking a source disables
+the feature that needs it:
 
 | Blocked source | Affected feature | Behaviour |
 |---|---|---|
+| `DD02L` + `DDLDEPENDENCY` | Blocklist replacement lineage | Denied before catalog access; the policy cannot prove table lineage without both |
 | `TADIR` | `SAPSearch(tadir_lookup, source="db"\|"both")` | Denied; retry with `source="adt"` (which cannot see orphan/ghost TADIR rows) |
 | `SEOMETAREL` | `SAPNavigate(action="hierarchy")` | Denied; use `SAPRead(type="CLAS", include="definitions")` |
 | `SEOMETAREL` | Interface-implementer where-used augmentation | Returns native results **with an explicit incompleteness warning** |
@@ -183,19 +183,25 @@ activation takes effect immediately and no stale decision can be reused. Directl
 stay cheap and local. The check and the query are separate SAP requests, so the pair is not
 transactionally atomic (a TOCTOU window remains).
 
-Replacement-object proof for a transparent table needs SAP's canonical ADT table-source resource,
-available from SAP_BASIS 7.52 onward. If loaded discovery proves the resource absent, ARC-1 returns
-`DATA_POLICY_UNAVAILABLE` without requesting it; if discovery is unknown, a canonical source `404`
-produces the same code after that one metadata request. The SAP data request is never executed. Direct
-matches and blocked aliases visible in a CDS graph retain `DATA_SOURCE_BLOCKED`, while other unsupported
-source kinds retain `DATA_LINEAGE_UNRESOLVED`. A `404` from a resource advertised by discovery also
-remains unresolved because it can indicate an object or authorization problem. ARC-1 does not assume a
-transparent table has no replacement object: replacement objects exist on 7.50, so that fallback would
-weaken the blocklist.
+Replacement proof uses one fixed catalog query per distinct transparent table, on every release.
+For supported DDIC-based replacements, `DD02L.VIEWREF` identifies the SQL view; active
+`DDLDEPENDENCY` maps it to its DDLS source.
+Missing/ambiguous rows, an error flag or an unmapped replacement fail closed. The graph must identify
+the SQL view, and both identities are checked against the blocklist. No DDL-source resource or release
+number is used to infer the absence of replacements. Classic DDIC views, CDS view-entity replacements,
+and pooled/clustered tables (common on older ECC systems) are unsupported and fail closed.
+These are policy limitations, not evidence that SAP cannot query those objects.
 
-Under principal propagation the metadata reads run as the calling SAP user, so a user who lacks read
-authorization on a DDL source can get `DATA_LINEAGE_UNRESOLVED` for a query SAP itself would have
-authorized. That is fail-closed and intended.
+This private query reads authorization metadata and cannot recursively authorize itself. It runs only
+after the enclosing Query/FreeSQL capability and caller-scope checks, under the same SAP identity,
+with direct block checks for both catalog tables. It selects only fixed metadata fields for one exact
+name and at most two rows, shares the caller's cumulative response budget, and never returns catalog
+rows to the model. There is no caller-controlled bypass. A caller's own query of these tables still
+receives the full normal lineage check.
+
+The policy requires `/sap/bc/adt/datapreview/freestyle`; without it, requests needing catalog metadata
+return `DATA_POLICY_UNAVAILABLE`. Missing SAP authorization for catalog or graph reads also fails
+closed, even if the original query would be allowed.
 
 Out of scope in v1: generic extension `ctx.http.get()` calls are **not** governed by this policy, so a
 plugin can read a blocked source. Object source, dumps and traces are likewise outside the boundary.

@@ -165,14 +165,25 @@ describe('SAPWrite handler — create / batch_create', () => {
       expect(callMatching('POST', '/sap/bc/adt/programs/programs')).toBeUndefined();
     });
 
-    it('delete locks then issues a DELETE on the SDO URL', async () => {
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+    it('deletes an SDO on a known target without the optional precheck and confirms absence', async () => {
+      const client = createClient();
+      client.http.setDiscoveryMap(new Map([['/sap/bc/adt/csn/csnm', ['application/vnd.sap.adt.blues.v1+xml']]]));
+      mockFetch.mockImplementation(async (url, options) =>
+        mockResponse(
+          options?.method === 'GET' && String(url).includes('/csn/csnm/ZARC1_CSN') ? 404 : 200,
+          '<asx:abap><LOCK_HANDLE>L1</LOCK_HANDLE></asx:abap>',
+          { 'x-csrf-token': 'T' },
+        ),
+      );
+      const result = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', {
         action: 'delete',
         type: 'CSNM',
         name: 'ZARC1_CSN',
       });
+      expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('Deleted CSNM ZARC1_CSN');
       expect(callMatching('DELETE', '/sap/bc/adt/csn/csnm/ZARC1_CSN')).toBeDefined();
+      expect(callMatching('GET', '/sap/bc/adt/csn/csnm/ZARC1_CSN')).toBeDefined();
     });
 
     it('rejects an unsupported action for a server-driven type', async () => {

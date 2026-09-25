@@ -10,6 +10,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { DataSourcePolicyError } from '../../src/adt/data-source-policy.js';
 import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
+import { AdtApiError } from '../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../src/adt/safety.js';
 import { SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
@@ -17,6 +18,7 @@ import { getTestClient, requireSapCredentials } from './helpers.js';
 describe('experimental data-source blocklist live contract', () => {
   let client: AdtClient;
   let basisRelease = 0;
+  let dataPreviewAvailable = false;
 
   beforeAll(async () => {
     requireSapCredentials();
@@ -27,6 +29,12 @@ describe('experimental data-source blocklist live contract', () => {
     ]);
     client.http.setDiscoveryMap(map);
     basisRelease = Number.parseInt(components.find((component) => component.name === 'SAP_BASIS')?.release ?? '0', 10);
+    try {
+      await client.runQuery('SELECT CARRID FROM SCARR', 1);
+      dataPreviewAvailable = true;
+    } catch (error) {
+      if (!(error instanceof AdtApiError && error.statusCode === 404)) throw error;
+    }
   });
 
   afterEach(() => vi.restoreAllMocks());
@@ -56,24 +64,21 @@ describe('experimental data-source blocklist live contract', () => {
     });
   });
 
-  it('expands the live DDIC replacement object before deciding', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(
-        ctx,
-        `${SkipReason.BACKEND_UNSUPPORTED}: canonical table source omits replacement metadata on SAP_BASIS 750`,
-      );
-    }
+  it('expands the live DDIC replacement object or refuses unavailable catalog access', async () => {
     const strict = withBlocked(['SCARR']);
-
-    await expect(strict.runTableQuery('DEMO_SUMDIST')).rejects.toMatchObject({
-      code: 'DATA_SOURCE_BLOCKED',
-      sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUMDIST', 'SCARR'],
-    });
+    await expect(strict.runTableQuery('DEMO_SUMDIST')).rejects.toMatchObject(
+      dataPreviewAvailable
+        ? {
+            code: 'DATA_SOURCE_BLOCKED',
+            sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUDI', 'DEMO_CDS_SUMDIST', 'SCARR'],
+          }
+        : { code: 'DATA_POLICY_UNAVAILABLE', sourcePath: ['DEMO_SUMDIST'] },
+    );
   });
 
-  it('denies an unrelated table before 7.52 and allows it afterwards', async () => {
+  it('allows an unrelated table only when the catalog endpoint is available', async () => {
     const strict = withBlocked(['USR02']);
-    if (basisRelease < 752) {
+    if (!dataPreviewAvailable) {
       await expect(strict.runQuery('SELECT CARRID FROM SCARR')).rejects.toMatchObject({
         code: 'DATA_POLICY_UNAVAILABLE',
         sourcePath: ['SCARR'],
@@ -85,8 +90,8 @@ describe('experimental data-source blocklist live contract', () => {
   });
 
   it('restores zero-analysis behavior when the list is empty', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: /datapreview is unbound on the live SAP_BASIS 750 target`);
+    if (!dataPreviewAvailable) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: freestyle data preview returns 404 on this target`);
     }
     const off = withBlocked([]);
     const searchSpy = vi.spyOn(off, 'searchObject');
@@ -99,7 +104,7 @@ describe('experimental data-source blocklist live contract', () => {
     // Regression for the prototype: I_BUSINESSPARTNER carries an auxiliary
     // RELATED_OBJECTS_TREE -> ... -> DCLS/DL branch that was mistaken for an unknown data node.
     if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: this standard CDS fixture is not verified on the pre-752 test target`);
     }
     const strict = withBlocked(['USR02']);
     await expect(strict.runTableQuery('I_BUSINESSPARTNER', { maxRows: 1 })).resolves.toBeDefined();
@@ -107,7 +112,7 @@ describe('experimental data-source blocklist live contract', () => {
 
   it('denies a blocked table reached through the access-controlled standard view', async (ctx) => {
     if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: this standard CDS fixture is not verified on the pre-752 test target`);
     }
     const strict = withBlocked(['BUT000']);
     await expect(strict.runTableQuery('I_BUSINESSPARTNER', { maxRows: 1 })).rejects.toMatchObject({
@@ -118,7 +123,7 @@ describe('experimental data-source blocklist live contract', () => {
 
   it('fails closed on a live CDS table-function graph', async (ctx) => {
     if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: the v3 dependency graph is unavailable on SAP_BASIS 750`);
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: this standard CDS fixture is not verified on the pre-752 test target`);
     }
     const strict = withBlocked(['USR02']);
     await expect(strict.runTableQuery('CdsFrwk_flight_booking', { maxRows: 1 })).rejects.toMatchObject({
@@ -127,8 +132,8 @@ describe('experimental data-source blocklist live contract', () => {
   });
 
   it('authorizes an IN-list chunked request once', async (ctx) => {
-    if (basisRelease < 752) {
-      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: /datapreview is unbound on the live SAP_BASIS 750 target`);
+    if (!dataPreviewAvailable) {
+      skipTest(ctx, `${SkipReason.BACKEND_UNSUPPORTED}: freestyle data preview returns 404 on this target`);
     }
     const strict = withBlocked(['USR02']);
     const searchSpy = vi.spyOn(strict, 'searchObject');

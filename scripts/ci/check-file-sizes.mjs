@@ -28,7 +28,7 @@ const BUDGETS = {
   // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
-  'src/handlers/write.ts': 360,
+  'src/handlers/write.ts': 300,
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.
@@ -40,7 +40,8 @@ const BUDGETS = {
   // +5 for the optional relations projection hook; its implementation stays in relation-tool.ts.
   // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
-  'src/handlers/tools.ts': 1782,
+  // +4: parent function group for SAPTransport check/history.
+  'src/handlers/tools.ts': 1786,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.

@@ -67,10 +67,13 @@ sequence.
 |---|---|---:|---:|---|---|
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
+| [ARCH-03](#arch-03) | Preserve drafts during RAP scaffold application | P2 | S | Ready | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
+| [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
+| [COMPAT-08](#compat-08) | Pooled and clustered table policy support | P2 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -131,6 +134,19 @@ version, so status 200 and matching hashes cannot prove two version identities. 
 **Resume with.** Reuse verified version metadata while preserving object_state's ETags/hashes and
 honest missing-version results. Reproduce active-only, inactive-only and divergent drafts on two
 releases before enabling it. See [routing evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-09-25-server-driven-generic-routing.md).
+
+<a id="arch-03"></a>
+### ARCH-03 — Preserve drafts during RAP scaffold application
+
+- **Priority / effort / status:** P2 / S / Ready
+- **Category:** Architecture
+
+**Remaining gap.** `SAPWrite scaffold_rap_handlers autoApply=true` reads class includes before
+acquiring its write lock (`src/handlers/write/rap.ts`). A completed competing edit can be overwritten;
+[#845](https://github.com/arc-mcp/arc-1/pull/845) fixes surgical edits, not this separate path.
+
+**Resume with.** Reproduce an intervening include edit, derive the scaffold from fresh reads under the
+class lock, and verify untouched source, refusal paths and multi-include failure handling live.
 
 <a id="feat-59"></a>
 ### FEAT-59 — Embeddable multi-tenant server API
@@ -219,6 +235,31 @@ misleading.
 **Resume with.** Use the existing
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/http-forward-proxy-env-support.md);
 test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and BTP isolation.
+
+<a id="compat-07"></a>
+### COMPAT-07 — CDS view-entity replacement lineage
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** [#848](https://github.com/arc-mcp/arc-1/pull/848) maps DDIC-based replacement
+SQL views through `DDLDEPENDENCY OBJECTTYPE=VIEW`. SAP also permits CDS view-entity replacements;
+these remain unmapped and fail closed.
+
+**Resume with.** A live table using a CDS view-entity replacement, verified `VIEWREF`/`STOB` identities,
+and graph-alias/blocklist regressions before broadening the catalog join.
+
+<a id="compat-08"></a>
+### COMPAT-08 — Pooled and clustered table policy support
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** [#848](https://github.com/arc-mcp/arc-1/pull/848) requires an active transparent
+table row. Pooled/clustered ECC tables fail closed even when no replacement is assigned.
+
+**Resume with.** An authorized ECC fixture and catalog/graph evidence for these table classes; prove
+safe no-replacement handling without weakening unsupported-view or ambiguous-metadata refusals.
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening

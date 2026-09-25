@@ -1,0 +1,21 @@
+<abapsource:objectStructureElement xml:base="/sap/bc/adt/oo/classes/ZRACE/objectstructure?version=active&amp;sap-client=001&amp;sap-language=EN" adtcore:name="ZRACE" visibility="public" final="true" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="./../zrace/source/main#start=1,6;end=1,27"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationIdentifier" href="./../zrace/source/main#start=6,6;end=6,27"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./../zrace/source/main#start=1,0;end=5,8"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./../zrace/source/main#start=6,0;end=13,8"/>
+<abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="TARGET" level="instance" clif_name="ZRACE" visibility="public">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="./../zrace/source/main#start=3,12;end=3,18" type="CLAS/OM"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationIdentifier" href="./../zrace/source/main#start=7,9;end=7,15"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./../zrace/source/main#start=3,4;end=3,18"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./../zrace/source/main#start=7,2;end=9,11"/>
+</abapsource:objectStructureElement>
+<abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="OTHER" level="instance" clif_name="ZRACE" visibility="public">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="./../zrace/source/main#start=4,12;end=4,17" type="CLAS/OM"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationIdentifier" href="./../zrace/source/main#start=10,9;end=10,14"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./../zrace/source/main#start=4,4;end=4,17"/>
+<atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./../zrace/source/main#start=10,2;end=12,11"/>
+</abapsource:objectStructureElement>
+<abapsource:objectStructureElement adtcore:type="CLAS/OCX" adtcore:name="ZRACE" isExternalRef="true" description="Text Elements">
+<atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="/sap/bc/adt/textelements/classes/zrace"/>
+</abapsource:objectStructureElement>
+</abapsource:objectStructureElement>

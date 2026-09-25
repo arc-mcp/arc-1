@@ -30,7 +30,7 @@ import { diffTransportObject, type LogicalTransportObject, rollupTransportObject
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
-import { objectUrlForType } from './object-types.js';
+import { functionGroupObjectUrl, functionModuleObjectUrl, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 
 /** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
@@ -192,6 +192,25 @@ function summarizeTransport(t: TransportRequest) {
       objectCount: task.objects.length,
     })),
   };
+}
+
+/** FUNC and structural INCL objects use a parent-group collection. */
+async function resolveTransportObjectUrl(
+  client: AdtClient,
+  type: string,
+  name: string,
+  group: string | undefined,
+): Promise<string> {
+  let parent = group?.trim();
+  if (type === 'FUNC' && !parent) {
+    parent = (await client.resolveFunctionGroup(name)) ?? undefined;
+    if (!parent)
+      throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
+  }
+  if (type === 'FUNC' && parent) return functionModuleObjectUrl(parent, name);
+  if (type === 'INCL' && parent)
+    return `${functionGroupObjectUrl(parent)}/includes/${encodeURIComponent(name.toLowerCase())}`;
+  return objectUrlForType(type, name);
 }
 
 export async function handleSAPTransport(
@@ -564,7 +583,12 @@ export async function handleSAPTransport(
       if (!objectType || !objectName) return errorResult('"type" and "name" are required for "check" action.');
       if (!pkg) return errorResult('"package" is required for "check" action.');
 
-      const objectUrl = objectUrlForType(objectType, objectName);
+      const objectUrl = await resolveTransportObjectUrl(
+        client,
+        objectType,
+        objectName,
+        args.group as string | undefined,
+      );
       const operation = args.operation === 'modify' ? 'modify' : 'create';
       const info = await getTransportInfo(
         client.http,
@@ -624,7 +648,12 @@ export async function handleSAPTransport(
         return errorResult('"type" and "name" are required for "history" action.');
       }
 
-      const objectUrl = objectUrlForType(objectType, objectName);
+      const objectUrl = await resolveTransportObjectUrl(
+        client,
+        objectType,
+        objectName,
+        args.group as string | undefined,
+      );
       const primary = await getObjectTransports(client.http, client.safety, objectUrl);
       let candidateTransports = primary.candidateTransports;
 
