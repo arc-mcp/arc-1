@@ -194,35 +194,22 @@ function summarizeTransport(t: TransportRequest) {
   };
 }
 
-/**
- * Resolve the object URL for check/history, group-aware for FUNC and FUGR-scoped INCL —
- * mirrors the routing in write.ts/activate.ts (FEAT-18 sibling). Without this, `objectUrlForType`
- * either throws for FUNC (objectBasePath's deliberate PR #223 guard) or, for INCL, silently
- * resolves the wrong standalone /programs/includes/ path — the package/transport lookup then
- * comes back empty and misleadingly reports the object as local (2026-07-14 finding).
- */
+/** FUNC and structural INCL objects use a parent-group collection. */
 async function resolveTransportObjectUrl(
   client: AdtClient,
   type: string,
   name: string,
   group: string | undefined,
 ): Promise<string> {
-  const trimmedGroup = String(group ?? '').trim();
-  if (type === 'FUNC') {
-    let g = trimmedGroup;
-    if (!g) {
-      const resolved = await client.resolveFunctionGroup(name);
-      if (!resolved) {
-        throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
-      }
-      g = resolved;
-    }
-    const groupLc = encodeURIComponent(g.toLowerCase());
-    return `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
+  let parent = group?.trim();
+  if (type === 'FUNC' && !parent) {
+    parent = (await client.resolveFunctionGroup(name)) ?? undefined;
+    if (!parent)
+      throw new Error(`Cannot resolve function group for FM "${name}". Provide the "group" parameter explicitly.`);
   }
-  if (type === 'INCL' && trimmedGroup) {
-    const groupLc = encodeURIComponent(trimmedGroup.toLowerCase());
-    return `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+  if ((type === 'FUNC' || type === 'INCL') && parent) {
+    const collection = type === 'FUNC' ? 'fmodules' : 'includes';
+    return `/sap/bc/adt/functions/groups/${encodeURIComponent(parent.toLowerCase())}/${collection}/${encodeURIComponent(name.toLowerCase())}`;
   }
   return objectUrlForType(type, name);
 }
@@ -662,12 +649,12 @@ export async function handleSAPTransport(
         return errorResult('"type" and "name" are required for "history" action.');
       }
 
-      let objectUrl: string;
-      try {
-        objectUrl = await resolveTransportObjectUrl(client, objectType, objectName, args.group as string | undefined);
-      } catch (err) {
-        return errorResult(err instanceof Error ? err.message : String(err));
-      }
+      const objectUrl = await resolveTransportObjectUrl(
+        client,
+        objectType,
+        objectName,
+        args.group as string | undefined,
+      );
       const primary = await getObjectTransports(client.http, client.safety, objectUrl);
       let candidateTransports = primary.candidateTransports;
 

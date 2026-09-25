@@ -552,7 +552,7 @@ export class AdtClient {
     for (const r of results) {
       if (r.objectName.toUpperCase() === fmName.toUpperCase() && r.uri.includes('/groups/')) {
         const match = r.uri.match(/\/groups\/([^/]+)\//);
-        if (match) return match[1]!.toUpperCase();
+        if (match) return decodeURIComponent(match[1]!).toUpperCase();
       }
     }
     return null;

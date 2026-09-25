@@ -1062,7 +1062,7 @@ truncated per part with `diffTruncated: true`; `added`/`removed` still reflect t
 | `user` | string | No | SAP username to filter by (for list). Defaults to the current SAP user. Use `*` to list all users. |
 | `status` | string | No | Transport status filter (for list). `D`=modifiable (default), `L`=modifiable/protected, `O`=release started, `P`=release preparation, `R`=released, `N`=released with import protection, `*`=all statuses. |
 | `type` | string | No | Object type for `check`/`history`/`remove_object` actions (`PROG`, `CLAS`, `DDLS`, etc.). For `remove_object` it is the CTS/E071 object type exactly as shown by `get` (e.g. `PROG`, `DEVC`). Not used by `create`, which creates a Workbench (K) request. |
-| `group` | string | No | Parent function group for `FUNC` or a group-scoped `INCL` in `check`/`history`. FUNC resolves its group through search when omitted; pass the group explicitly for structural includes. |
+| `group` | string | No | Parent function group for `FUNC` or a group-scoped `INCL` in `check`/`history`. Existing FUNC resolves its group through search when omitted; a new FUNC needs an explicit group. Pass the group for structural includes; omit it for standalone INCL. |
 | `operation` | string | No | For `check`: `create` (default, sends ADT operation `I`) or `modify` (sends the empty modify operation). |
 | `pgmid` | string | No | Program ID for `remove_object`: `R3TR` (whole object) or `LIMU` (sub-object). Required for `remove_object` — the object type alone does not determine `pgmid`. |
 | `owner` | string | No | New owner SAP username (required for reassign) |

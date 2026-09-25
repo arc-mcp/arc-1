@@ -1024,7 +1024,7 @@
         },
         "group": {
           "type": "string",
-          "description": "check/history: FUNC auto, INCL required."
+          "description": "check/history: parent group (FUNC auto-resolves; needed for a FUGR structural INCL)."
         },
         "pgmid": {
           "type": "string",

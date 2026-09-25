@@ -1019,81 +1019,104 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(result.content[0]?.text).toContain('"type" and "name" are required');
     });
 
-    // ─── FUGR structural include (INCL) group-routing gap (2026-07-14 finding) ───
-    // Without `group`, check/history silently resolved the wrong standalone
-    // /programs/includes/ URL for a FUGR-scoped include — the lookup then came back
-    // empty and misleadingly reported the object as local. Mirrors the SAPWrite/
-    // SAPActivate FEAT-18-sibling fix.
-    it('history resolves the group-scoped URI for a FUGR structural include (INCL) when group is provided', async () => {
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
-        action: 'history',
-        type: 'INCL',
-        name: 'LZFUGR_TESTP01',
-        group: 'ZFUGR_TEST',
-      });
-      expect(result.isError).toBeUndefined();
-      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
-      expect(parsed.object.uri).toBe('/sap/bc/adt/functions/groups/zfugr_test/includes/lzfugr_testp01');
-    });
-
-    it('history falls back to the standalone /programs/includes/ URI for INCL when no group is given', async () => {
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
-        action: 'history',
-        type: 'INCL',
-        name: 'ZSTANDALONE_INCL',
-      });
-      expect(result.isError).toBeUndefined();
-      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
-      expect(parsed.object.uri).toBe('/sap/bc/adt/programs/includes/ZSTANDALONE_INCL');
-    });
-
-    it('check resolves the group-scoped URI for a FUGR structural include (INCL) when group is provided', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse(
-          200,
-          '<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0"><asx:values><DATA><DEVCLASS>ZFUGR_TEST_PKG</DEVCLASS><RECORDING>X</RECORDING></DATA></asx:values></asx:abap>',
-          { 'x-csrf-token': 'T' },
-        ),
-      );
-      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
-        action: 'check',
-        type: 'INCL',
-        name: 'LZFUGR_TESTP01',
-        group: 'ZFUGR_TEST',
-        package: 'ZFUGR_TEST_PKG',
-      });
-      expect(result.isError).toBeUndefined();
-      const checkCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('/transportchecks'));
-      const checkBody = String((checkCall?.[1] as RequestInit)?.body ?? '');
-      expect(checkBody).toContain('/sap/bc/adt/functions/groups/zfugr_test/includes/lzfugr_testp01');
-    });
-
-    it('history resolves a FUNC via the group-scoped fmodules URI when group is provided', async () => {
-      mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
-        action: 'history',
+    const groupCases = [
+      {
+        label: 'FUNC explicit',
         type: 'FUNC',
-        name: 'Z_MY_FM',
-        group: 'ZFUGR_TEST',
-      });
-      expect(result.isError).toBeUndefined();
-      const parsed = JSON.parse(result.content[0]?.text ?? '{}');
-      expect(parsed.object.uri).toBe('/sap/bc/adt/functions/groups/zfugr_test/fmodules/z_my_fm');
-    });
-
-    it('history returns a clear error when FUNC group cannot be resolved', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse(200, '<?xml version="1.0"?><adtcore:objectReferences/>', { 'x-csrf-token': 'T' }),
-      );
-      const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
-        action: 'history',
+        name: 'Z_FM',
+        group: ' ZGROUP ',
+        uri: '/sap/bc/adt/functions/groups/zgroup/fmodules/z_fm',
+      },
+      {
+        label: 'FUNC auto namespace',
         type: 'FUNC',
-        name: 'Z_UNRESOLVABLE_FM',
+        name: '/TEST/FM',
+        uri: '/sap/bc/adt/functions/groups/%2Ftest%2Fgroup/fmodules/%2Ftest%2Ffm',
+      },
+      {
+        label: 'structural include',
+        type: 'INCL',
+        name: 'LZGROUPTOP',
+        group: 'ZGROUP',
+        uri: '/sap/bc/adt/functions/groups/zgroup/includes/lzgrouptop',
+      },
+      {
+        label: 'namespaced include',
+        type: 'INCL',
+        name: '/TEST/LTOP',
+        group: '/TEST/GROUP',
+        uri: '/sap/bc/adt/functions/groups/%2Ftest%2Fgroup/includes/%2Ftest%2Fltop',
+      },
+      { label: 'standalone include', type: 'INCL', name: 'ZINCLUDE', uri: '/sap/bc/adt/programs/includes/ZINCLUDE' },
+    ];
+    describe.each(['check', 'history'])('%s group routing', (action) => {
+      it.each(groupCases)('$label reaches the correct SAP URI', async ({ label: _label, uri, ...object }) => {
+        mockFetch.mockImplementation(async (url: string) => {
+          if (String(url).includes('/informationsystem/search'))
+            return mockResponse(
+              200,
+              '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="/TEST/FM" adtcore:type="FUNC/FF" adtcore:uri="/sap/bc/adt/functions/groups/%2ftest%2fgroup/fmodules/%2ftest%2ffm"/></adtcore:objectReferences>',
+            );
+          return mockResponse(
+            200,
+            '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><DEVCLASS>ZPKG</DEVCLASS><RECORDING>X</RECORDING><CORRNR>DEVK900001</CORRNR></DATA></asx:values></asx:abap>',
+            { 'x-csrf-token': 'T' },
+          );
+        });
+        const result = await handleToolCall(
+          createTransportClient({ ...unrestrictedSafetyConfig(), allowWrites: false, allowTransportWrites: false }),
+          DEFAULT_CONFIG,
+          'SAPTransport',
+          { action, ...object, package: 'ZPKG', operation: 'modify' },
+        );
+        expect(result.isError).toBeUndefined();
+        const parsed = JSON.parse(result.content[0]?.text ?? '{}');
+        if (action === 'history') {
+          expect(parsed.object.uri).toBe(uri);
+          expect(mockFetch.mock.calls.some(([url]) => new URL(String(url)).pathname === `${uri}/transports`)).toBe(
+            true,
+          );
+        } else {
+          const body = mockFetch.mock.calls.find(([url]) => String(url).includes('/transportchecks'))?.[1].body;
+          expect(body).toContain(`<URI>${uri}</URI>`);
+          expect(body).toContain('<OPERATION></OPERATION>');
+          expect(parsed.operation).toBe('modify');
+          expect(parsed.transportRequired).toBe(true);
+        }
       });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('Cannot resolve function group');
+
+      it('requires an explicit group when FUNC search has no match', async () => {
+        mockFetch.mockResolvedValue(mockResponse(200, '<adtcore:objectReferences/>'));
+        const result = await handleToolCall(createTransportClient(), DEFAULT_CONFIG, 'SAPTransport', {
+          action,
+          type: 'FUNC',
+          name: 'Z_NEW_FM',
+          package: 'ZPKG',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Provide the "group" parameter');
+        expect(
+          mockFetch.mock.calls.some(
+            ([url]) => String(url).includes('/transportchecks') || String(url).includes('/transports'),
+          ),
+        ).toBe(false);
+      });
+
+      it('keeps group search failures inside central minimal error handling', async () => {
+        mockFetch.mockResolvedValue(mockResponse(403, 'SECRET_LOOKUP_DETAIL'));
+        const audit = vi.spyOn(logger, 'emitAudit');
+        const result = await handleToolCall(
+          createTransportClient(),
+          { ...DEFAULT_CONFIG, minimalErrors: true },
+          'SAPTransport',
+          { action, type: 'FUNC', name: 'Z_FM', package: 'ZPKG' },
+        );
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).not.toContain('SECRET_LOOKUP_DETAIL');
+        expect(result.content[0]?.text).toContain('403');
+        expect(audit.mock.calls.some(([event]) => event.event === 'tool_call_end')).toBe(true);
+        audit.mockRestore();
+      });
     });
   });
 
