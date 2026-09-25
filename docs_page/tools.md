@@ -218,7 +218,14 @@ Source-bearing types accept a `version` parameter to choose between the activate
 | `inactive` | Reads the user's draft directly. If no draft exists, SAP falls back to the active source and the response is prefixed with: *"No inactive draft exists for this object on the server. Returning the active version."* |
 | `auto` | Resolves client-side via the cached inactive-objects list: returns the draft if one exists, otherwise active. No warning is prefixed (the caller explicitly opted into "show me my view"). |
 
-The default preserves all existing caller behaviour; `version` is an opt-in extension.
+Server-driven types (such as DRTY, DESD, DTDC and UIAD) preserve their developer view when
+`version` is omitted or `auto`: SAP selects the draft when available, otherwise active. They bypass
+source and inactive-list caches. Explicit `active`/`inactive` is sent to both metadata and source;
+if metadata reports another version or no version, ARC-1 returns an error without source. This
+includes an inactive-only new object requested as active, and an active-only object requested as
+inactive. UIAD saves are immediately active on the verified 816 system, so use `active` or `auto`.
+Version-query errors propagate; ARC-1 does not retry a different version. The two reads are not an
+atomic snapshot against concurrent activation.
 
 DTEL metadata uses SAP's version-less developer view when `version` is omitted or set to `auto`, so a
 plain read after `SAPWrite` returns the pending draft. Pass `active` to request the last activated metadata or
@@ -414,7 +421,7 @@ Keep edits above the read-only metadata marker in a complete SAPRead result. For
 | `UIAD` | Launchpad App Descriptor Item (LADI) | Manual Cloud-language items support create/update, including on-prem 816. Full-source validation and read-only configuration checks run before mutation. Generated items follow their application deployment lifecycle. See below. |
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
 
-- **Read versions:** SDO reads return SAP's unversioned developer view, including a draft when present. Explicit `version` is currently ignored ([#840](https://github.com/arc-mcp/arc-1/issues/840)).
+- **Read versions:** Omitted/`auto` returns SAP's developer view, including a draft when present. Explicit `active`/`inactive` requests return an error if SAP cannot confirm that version in metadata. See [SAPRead](#sapread).
 - **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers still have the [ARCH-02 routing limitation](roadmap.md#arch-02). Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
 
 **DRTY create/update:** Use canonical `type="DRTY"` with plain `define type` source, for example:
@@ -689,7 +696,7 @@ Event blocks such as `START-OF-SELECTION` and `AT SELECTION-SCREEN` are intentio
 
 [Issue #303](https://github.com/arc-mcp/arc-1/issues/303). Four token-efficient `SAPWrite` actions for editing a global ABAP class without re-sending the full `/source/main` body. All require `type=CLAS` and use SAP's existing `/sap/bc/adt/oo/classes/{name}/objectstructure` endpoint to locate the precise line ranges to splice — no client-side ABAP parsing of the existing source is needed.
 
-Backing pattern for main-source surgery: GET `/objectstructure` → fetch active or inactive-draft `/source/main` → splice → PUT under lock → no auto-activate. Caller runs `SAPActivate` next. For `edit_class_definition include=...`, ARC-1 whole-replaces the class-local include directly and auto-initializes a missing include under the same parent class lock before the PUT.
+Backing pattern for class surgery: lock the class → read fresh editable source and matching `/objectstructure` when needed → splice → PUT → unlock. These reads bypass source and inactive-list caches, preserving draft changes completed before the lock. No auto-activation. Caller runs `SAPActivate` next. For `edit_class_definition include=...`, ARC-1 whole-replaces the class-local include directly and auto-initializes a missing include under the same parent class lock before the PUT.
 
 #### `action="edit_class_definition"` — replace the DEFINITION block whole
 

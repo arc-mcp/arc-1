@@ -67,6 +67,7 @@ sequence.
 |---|---|---:|---:|---|---|
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven types in generic object-URL callers | P2 | S | Ready | Architecture |
+| [ARCH-03](#arch-03) | Preserve drafts during RAP scaffold application | P2 | S | Ready | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
@@ -134,6 +135,19 @@ types in `ATC_BATCH_TYPES` before dispatch; they are not an exposed instance of 
 **Resume with.** Derive generic paths from `SDO_REGISTRY`, remove redundant per-caller guards,
 and preserve `SAPActivate`'s discovery gate. Verify every affected tool on a real system;
 a valid object URL does not establish support for each operation.
+
+<a id="arch-03"></a>
+### ARCH-03 — Preserve drafts during RAP scaffold application
+
+- **Priority / effort / status:** P2 / S / Ready
+- **Category:** Architecture
+
+**Remaining gap.** `SAPWrite scaffold_rap_handlers autoApply=true` reads class includes before
+acquiring its write lock (`src/handlers/write/rap.ts`). A completed competing edit can be overwritten;
+[#845](https://github.com/arc-mcp/arc-1/pull/845) fixes surgical edits, not this separate path.
+
+**Resume with.** Reproduce an intervening include edit, derive the scaffold from fresh reads under the
+class lock, and verify untouched source, refusal paths and multi-include failure handling live.
 
 <a id="feat-59"></a>
 ### FEAT-59 — Embeddable multi-tenant server API

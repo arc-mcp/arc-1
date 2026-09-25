@@ -224,14 +224,14 @@ export async function handleSAPRead(
   }
 
   // Types in SDO_REGISTRY use the discovery-gated engine for metadata and JSON or DDL-text source.
-  // This early return bypasses the version/draft/cache machinery below: explicit versions are
-  // currently ignored and SAP's unversioned developer view is returned.
+  // Preserve the unversioned developer view for omitted/auto; explicit selection is checked by SAP metadata.
   if (isServerDrivenObjectType(type)) {
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
     if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
       return errorResult(serverDrivenUnavailableMessage('SAPRead', type));
     }
-    const sdo = await getServerDrivenObject(client.http, client.safety, type, name);
+    const version = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+    const sdo = await getServerDrivenObject(client.http, client.safety, type, name, version);
     return textResult(toolJson(sdo));
   }
 

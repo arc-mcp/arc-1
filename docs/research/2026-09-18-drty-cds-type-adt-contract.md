@@ -95,8 +95,8 @@ object.
 
 ## Follow-up boundaries
 
-1. Explicit active/inactive version selection is not implemented for SDO reads. The unversioned
-   developer view returns a draft when present; tracked in [#840](https://github.com/arc-mcp/arc-1/issues/840).
+1. Explicit active/inactive selection now checks the returned metadata version; omitted/auto
+   preserves the developer view. See [the version contract](../plans/completed/2026-09-25-server-driven-versions.md) (#840).
 2. `$elementinfo` / `$navigation` and `SAPContext` dependency walking remain outside this PR.
 3. Generic `SAPDiagnose`/`SAPTransport` routing is still tracked by ARCH-02.
 

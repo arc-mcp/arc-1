@@ -28,7 +28,7 @@ const BUDGETS = {
   // write.ts is now a thin SAPWrite orchestrator (prologue + ctx + action dispatch) after the
   // Stage D split into src/handlers/write/{create,update-delete,class-surgery,rap}.ts. The action
   // submodules ride the default src budget; keep this tight so the dispatcher can't reabsorb them.
-  'src/handlers/write.ts': 360,
+  'src/handlers/write.ts': 300,
   // tools.ts holds every tool's JSON schema. The #520 description trim (write-mode tools/list
   // 87→66 KB to clear the Copilot-for-Eclipse gateway limit) shrank it; lowered to match. The
   // CLIENT-SAFETY size guard is scripts/ci/check-tool-schema-budget.ts — trim there before raising this.

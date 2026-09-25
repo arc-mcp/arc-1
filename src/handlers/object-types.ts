@@ -586,8 +586,3 @@ export function detectLocalHandlerInclude(method: string): ClassWriteInclude | u
   if (/^ltc_/.test(lhs)) return 'testclasses';
   return undefined;
 }
-
-/** Strip the leading "=== <include> ===\n" header that `client.getClass(name, include)` prepends. */
-export function stripIncludeHeader(source: string): string {
-  return source.replace(/^=== \w+ ===\n/, '');
-}
