@@ -27,12 +27,12 @@ Applies to `edit_method`, MAIN `edit_class_definition`, `edit_method_signature`,
 retain their own contracts. Cache invalidation is best-effort so a cache failure cannot replace the SAP write/unlock outcome.
 No tool-schema, activation, or unlock-policy redesign.
 
-No roadmap impact: this repairs existing class edits. ARCH-02 concerns object URL routing.
+Roadmap: ARCH-03 tracks the separate read-before-lock gap in RAP scaffold application.
 
 ## Validation
 
-- On main `c3fcf3df3`, the new dispatcher regressions fail 15 cases; the final suite has 20 cases, including successful/failed PUT with cache failure.
-  Initial full suite: 7,124 tests; final focused cache cases pass (7,125 total); typecheck, lint, policy, file/schema budgets, build and strict docs pass.
+- Dispatcher regressions cover draft preservation, refusal/cleanup and cache failures. Missing local
+  includes receive include-specific guidance while releasing the class lock without a PUT.
 - Direct HTTPS/Basic, two clients using the same test user, owned `$TMP` classes:
 
   | SAP_BASIS | Source/structure contract | Surgery and cleanup |

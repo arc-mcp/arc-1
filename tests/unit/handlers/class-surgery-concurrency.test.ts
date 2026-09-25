@@ -112,6 +112,17 @@ it('preserves an intervening draft while reading and writing under the same lock
   expect(mutation[2]!.url.searchParams.get('corrNr')).toBe('DEVK900001');
 });
 
+it('names a missing local include without claiming the class is missing, and releases the lock', async () => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...args, method: 'ltc_x~test' });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('Include "testclasses" does not exist in ZRACE');
+  expect(result.content[0]?.text).toContain('action="update"');
+  expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
+  expect(state.sends.some((s) => s.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
+  expect(state.locked).toBe(false);
+});
+
 it('ignores cached draft absence, cached source and recent activation when selecting editable bytes', async () => {
   const state = backend();
   const client = createClient();

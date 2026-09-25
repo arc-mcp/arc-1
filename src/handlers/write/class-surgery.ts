@@ -19,6 +19,7 @@ import {
   spliceMethodSignature,
 } from '../../adt/class-structure.js';
 import { safeUpdateClassInclude } from '../../adt/crud.js';
+import { isNotFoundError } from '../../adt/errors.js';
 import { mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { spliceMethod } from '../../context/method-surgery.js';
 import { getCachedFeatures } from '../feature-cache.js';
@@ -74,7 +75,15 @@ export async function writeActionEditMethod(ctx: SapWriteContext): Promise<ToolR
 
   return withClassEdit(ctx, async (edit) => {
     const writeUrl = resolvedInclude ? classIncludeUrl(name, resolvedInclude) : srcUrl;
-    const currentSource = await edit.read(writeUrl);
+    let currentSource: string;
+    try {
+      currentSource = await edit.read(writeUrl);
+    } catch (error) {
+      if (!resolvedInclude || !isNotFoundError(error)) throw error;
+      return errorResult(
+        `Include "${resolvedInclude}" does not exist in ${name}. Create it with SAPWrite(action="update", type="CLAS", name="${name}", include="${resolvedInclude}", source=...) before editing a method in it.`,
+      );
+    }
 
     // Use detected ABAP version from probe if available
     const probedAbapRelease = getCachedFeatures()?.abapRelease;
