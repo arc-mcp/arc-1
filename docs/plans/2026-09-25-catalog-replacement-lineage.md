@@ -48,4 +48,7 @@ checks allowed all three query entrypoints and denied the replacement SQL-view,
 DDLS and SPFLI leaf; catalog blocks produced zero POSTs and direct blocks zero SAP
 calls. Sanitized live column datasets are committed as fixtures. Customer PP,
 750 SP23 and real S/4 redirected business tables need independent confirmation.
+The integration file passes 11 cases on both 758 and 816; 750 SP02 passes six and
+skips five unavailable-endpoint or unverified-fixture cases. Endpoint availability
+is probed directly, and replacement paths include both SQL-view and DDLS identities.
 No roadmap impact: this completes the issue's existing policy compatibility gap.
