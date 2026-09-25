@@ -216,5 +216,5 @@ The dependent-type orphan was independently reproduced on 816 and recovered usin
 fixed-name repair helper. SAP's deletion precheck returned `isDeletable=false` before the raw DELETE
 that caused the orphan. The shared path now consults that advertised check under the lock and
 verifies metadata absence afterward; it reports surviving and unconfirmed outcomes separately.
-See the [deletion investigation](../plans/2026-09-25-server-driven-deletion.md). No automatic directory
+See the [deletion investigation](../plans/completed/2026-09-25-server-driven-deletion.md). No automatic directory
 repair is part of ARC-1.

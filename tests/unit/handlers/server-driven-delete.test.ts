@@ -50,6 +50,7 @@ function backend(
 beforeEach(() => vi.resetAllMocks());
 it('checks under the lock and confirms absence after DELETE and unlock', async () => {
   const sends = backend();
+  const audit = vi.spyOn(logger, 'emitAudit');
   const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', args);
   expect(result.isError, result.content[0]?.text).toBeUndefined();
   const flow = sends.filter((s) => s.url.pathname === uri || s.url.pathname === checkPath);
@@ -64,6 +65,12 @@ it('checks under the lock and confirms absence after DELETE and unlock', async (
   expect(flow[1]?.headers['X-sap-adt-sessiontype']).toBe('stateful');
   expect(flow.at(-1)?.headers['Cache-Control']).toBe('no-cache');
   expect(flow.at(-1)?.headers.Accept).toBe('application/vnd.sap.adt.blues.v1+xml');
+  expect(audit).not.toHaveBeenCalledWith(
+    expect.objectContaining({ event: 'http_request', level: 'warn', statusCode: 404 }),
+  );
+  expect(audit).toHaveBeenCalledWith(
+    expect.objectContaining({ event: 'http_request', level: 'debug', statusCode: 404 }),
+  );
 });
 it.each([
   { label: 'dependent object', check: allowed.replace('isDeletable="true"', 'isDeletable="false"') },

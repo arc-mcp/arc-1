@@ -499,7 +499,11 @@ export async function deleteServerDrivenObject(
   });
   checkOperation(safety, OperationType.Read, 'ConfirmDeletion');
   try {
-    await http.get(objUrl, { Accept: serverDrivenMetadataContentType(code), 'Cache-Control': 'no-cache' });
+    await http.get(
+      objUrl,
+      { Accept: serverDrivenMetadataContentType(code), 'Cache-Control': 'no-cache' },
+      { suppressNotFoundLog: true },
+    );
   } catch (error) {
     if (error instanceof AdtApiError && error.isNotFound) return;
     // A failed confirmation is not proof of absence; keep SAP details out of this guidance.
