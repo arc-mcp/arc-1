@@ -60,7 +60,7 @@
             "UIAD",
             "DRTY"
           ],
-          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD. SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). Deprecated: MESSAGES→MSAG, FTG2→FEATURE_TOGGLE."
+          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD. SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD external schema; EVTB/EVTO RAP events; CSNM CSN model; COTA communication target; DTSC/DTDC caches; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type. Deprecated: MESSAGES→MSAG, FTG2→FEATURE_TOGGLE."
         },
         "name": {
           "type": "string",

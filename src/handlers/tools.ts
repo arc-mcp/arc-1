@@ -70,11 +70,8 @@ export interface ToolDefinitionOptions {
  * Read-only / destructive hints for standard tools. Clients decide approval policy.
  * Hyperfocused mode stays unannotated because it can both read and write.
  *
- * These MUST agree with ACTION_POLICY (src/authz/policy.ts): a tool is read-only iff none of
- * its actions mutate (opType ∉ MUTATING_OPS), and destructive iff it has a delete action.
- * tool-annotations.test.ts derives the expected values from ACTION_POLICY and fails on drift —
- * e.g. SAPLint is NOT read-only because action=set_formatter_settings PUTs ADT settings, and
- * SAPWrite/SAPTransport/SAPGit are destructive because they can delete/unlink/overwrite objects.
+ * Keep hints consistent with ACTION_POLICY; tool-annotations.test.ts derives expected values.
+ * Read-only means no mutating operations; destructive means any delete action.
  */
 const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   // Read-only: every action is non-mutating.
@@ -422,7 +419,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPREAD_TYPES_BTP : SAPREAD_TYPES_ONPREM,
             description:
-              'Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD. SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). Deprecated: MESSAGES→MSAG, FTG2→FEATURE_TOGGLE.',
+              'Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD. SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD external schema; EVTB/EVTO RAP events; CSNM CSN model; COTA communication target; DTSC/DTDC caches; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type. Deprecated: MESSAGES→MSAG, FTG2→FEATURE_TOGGLE.',
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
           action: {
