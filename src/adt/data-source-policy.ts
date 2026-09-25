@@ -5,6 +5,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { logger } from '../server/logger.js';
 import { canonicalDataSourceName, DataSourceNameError, dataSourcePolicyFingerprint } from './data-source-name.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
+import { INTERNAL_DATA_OPERATIONS } from './internal-data-operations.js';
 import { analyzeSqlDataSources } from './sql-source-analyzer.js';
 
 const MAX_GRAPH_XML_CHARS = 5_000_000;
@@ -13,10 +14,6 @@ const MAX_GRAPH_NODES = 1_000;
 const MAX_DIRECT_SOURCES = 64;
 const MAX_REPLACEMENT_SOURCES = 256;
 const MAX_RESOLUTION_ROOTS = 64;
-const TABLE_SOURCE_UNAVAILABLE_REASON =
-  'the connected SAP system does not advertise the transparent-table source metadata required to prove replacement-object lineage; the standard ADT resource is available from SAP_BASIS 7.52 onward';
-const TABLE_SOURCE_UNKNOWN_404_REASON =
-  'ADT discovery was unavailable and the canonical transparent-table source request returned HTTP 404, so replacement-object lineage support could not be established; the standard ADT resource is available from SAP_BASIS 7.52 onward';
 
 const graphParser = new XMLParser({
   ignoreAttributes: false,
@@ -62,7 +59,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
   readonly decisionId: string;
   readonly matchedSource?: string;
   readonly reason: string;
-  /** Always false: every policy denial happens before the SAP data request is submitted. */
+  /** Always false: the requested data query has not run; metadata reads may have run. */
   readonly executed = false;
 
   constructor(
@@ -76,7 +73,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
     const decisionId = options.decisionId ?? newDecisionId();
     const operatorAction =
       code === 'DATA_POLICY_UNAVAILABLE'
-        ? 'Keep data access disabled until this target can supply the canonical table-source metadata (normally SAP_BASIS 7.52 or newer). Clearing SAP_BLOCKED_DATA_SOURCES leaves every otherwise authorized source eligible and requires security approval.'
+        ? 'Keep data access disabled until this target can supply the required catalog metadata. Clearing SAP_BLOCKED_DATA_SOURCES leaves every otherwise authorized source eligible and requires security approval.'
         : 'Use a permitted static source, or change SAP_BLOCKED_DATA_SOURCES only after security review.';
     super(
       `${code}: request denied before data execution (executed=false, decisionId=${decisionId}). ` +
@@ -104,8 +101,8 @@ export class DataSourcePolicyError extends AdtSafetyError {
   clientMessage(minimalErrors: boolean): string {
     if (!minimalErrors) return this.message;
     return (
-      `${this.code}: the request was denied by the administrator's data-source policy before any SAP ` +
-      `data request was executed (executed=false, decisionId=${this.decisionId}). ` +
+      `${this.code}: the request was denied by the administrator's data-source policy before the requested SAP ` +
+      `data query was executed (executed=false, decisionId=${this.decisionId}). ` +
       `${this.safeAlternative()} Details are recorded in the server audit log; ask an operator to ` +
       'correlate the decision id.'
     );
@@ -117,7 +114,7 @@ export class DataSourcePolicyError extends AdtSafetyError {
       case 'DATA_SQL_UNSUPPORTED':
         return 'Rewrite the request as one complete static SELECT/WITH without comments, host expressions or dynamic sources, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
       case 'DATA_POLICY_UNAVAILABLE':
-        return 'This SAP target did not supply the metadata the policy needs (normally SAP_BASIS 7.52 or newer). Retrying unchanged will be denied; ask an operator.';
+        return 'This SAP target did not supply the metadata the policy needs. Retrying unchanged will be denied; ask an operator.';
       case 'DATA_LINEAGE_UNRESOLVED':
         return 'Query a source whose lineage ARC-1 can resolve, or use the structured SAPRead(type="TABLE_QUERY") parameters.';
       default:
@@ -170,9 +167,7 @@ export type ResolvedDirectDataSource =
 
 export interface DataSourcePolicyResolver {
   resolveDirectSource(name: string): Promise<ResolvedDirectDataSource>;
-  /** True = advertised, false = absent from loaded discovery, undefined = discovery unknown. */
-  canonicalTableSourceAvailable?: boolean;
-  readTableSource(name: string): Promise<string>;
+  readTableReplacement(name: string): Promise<TableReplacement | undefined>;
   readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode>;
 }
 
@@ -181,8 +176,7 @@ export interface DataSourcePolicyBackend {
     name: string,
     maxResults: number,
   ): Promise<Array<{ objectName: string; objectType: string; uri: string }>>;
-  canonicalTableSourceAvailable: boolean | undefined;
-  readTableSource(name: string): Promise<string>;
+  readTableReplacement(name: string): Promise<TableReplacement | undefined>;
   dependencyGraphAccept(): string | undefined;
   readDependencyGraph(path: string, accept: string): Promise<string>;
 }
@@ -348,10 +342,9 @@ export class DataSourceBlocklistGuard {
   private async evaluate(directSources: string[]): Promise<void> {
     await enforceBlockedDataSources(directSources, this.blockedSources, {
       resolveDirectSource: (name) => this.resolveDirectSource(name),
-      canonicalTableSourceAvailable: this.backend.canonicalTableSourceAvailable,
-      readTableSource: (name) => {
+      readTableReplacement: (name) => {
         this.metadataRequests += 1;
-        return this.backend.readTableSource(name);
+        return this.backend.readTableReplacement(name);
       },
       readCdsDependencyGraph: (ddlSource) => this.readCdsDependencyGraph(ddlSource),
     });
@@ -611,103 +604,29 @@ export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
   }
 }
 
-interface DdlStringSpan {
-  start: number;
-  value: string;
+/** The SQL view identifies the graph root; the DDLS source selects its graph resource. */
+export interface TableReplacement {
+  name: string;
+  ddlSource: string;
 }
 
-/**
- * Mask comments and quoted literals while retaining their original offsets.
- * Authorization annotations are then found only in active DDL syntax.
- */
-function scanDdlStructure(source: string): { structural: string; strings: DdlStringSpan[] } {
-  const structural = source.split('');
-  const strings: DdlStringSpan[] = [];
-  let cursor = 0;
-
-  const mask = (index: number): void => {
-    if (structural[index] !== '\n' && structural[index] !== '\r') structural[index] = ' ';
-  };
-
-  while (cursor < source.length) {
-    if (source[cursor] === '/' && source[cursor + 1] === '/') {
-      mask(cursor++);
-      mask(cursor++);
-      while (cursor < source.length && source[cursor] !== '\n' && source[cursor] !== '\r') mask(cursor++);
-      continue;
-    }
-    if (source[cursor] === '/' && source[cursor + 1] === '*') {
-      mask(cursor++);
-      mask(cursor++);
-      let closed = false;
-      while (cursor < source.length) {
-        if (source[cursor] === '*' && source[cursor + 1] === '/') {
-          mask(cursor++);
-          mask(cursor++);
-          closed = true;
-          break;
-        }
-        mask(cursor++);
-      }
-      if (!closed) throw new DataSourceLineageError('table DDL contains an unterminated block comment');
-      continue;
-    }
-    if (source[cursor] === "'") {
-      const start = cursor;
-      let value = '';
-      let closed = false;
-      mask(cursor++);
-      while (cursor < source.length) {
-        const char = source[cursor]!;
-        if (char === '\\' && cursor + 1 < source.length) {
-          value += source[cursor + 1]!;
-          mask(cursor++);
-          mask(cursor++);
-          continue;
-        }
-        if (char === "'") {
-          mask(cursor++);
-          if (source[cursor] === "'") {
-            value += "'";
-            mask(cursor++);
-            continue;
-          }
-          closed = true;
-          break;
-        }
-        value += char;
-        mask(cursor++);
-      }
-      if (!closed) throw new DataSourceLineageError('table DDL contains an unterminated string literal');
-      strings.push({ start, value });
-      continue;
-    }
-    cursor += 1;
+/** A bounded catalog result must prove one active transparent table and at most one replacement. */
+export function parseTableReplacement(table: string, rows: Record<string, string>[]): TableReplacement | undefined {
+  const row = rows[0];
+  const fields = ['TABNAME', 'TABCLASS', 'VIEWREF', 'VIEWREF_ERR', 'DDLNAME'];
+  if (rows.length !== 1 || !row || fields.some((field) => typeof row[field] !== 'string')) {
+    throw new DataSourceLineageError('replacement catalog returned missing or ambiguous metadata');
   }
-
-  return { structural: structural.join(''), strings };
-}
-
-/** Return a table's active CDS replacement object; malformed or duplicate annotations fail closed. */
-export function extractReplacementObject(source: string): string | undefined {
-  const { structural, strings } = scanDdlStructure(source);
-  const markers = [...structural.matchAll(/@\s*AbapCatalog\s*\.\s*replacementObject\b/gi)];
-  if (markers.length === 0) return undefined;
-  const annotations = [...structural.matchAll(/@\s*AbapCatalog\s*\.\s*replacementObject\s*:/gi)];
-  if (markers.length !== 1 || annotations.length !== 1 || markers[0]!.index !== annotations[0]!.index) {
-    throw new DataSourceLineageError('replacementObject annotation is duplicated or malformed');
+  if (row.TABNAME!.trim() !== table || row.TABCLASS!.trim() !== 'TRANSP' || row.VIEWREF_ERR!.trim()) {
+    throw new DataSourceLineageError('replacement catalog did not confirm a valid active transparent table');
   }
-
-  const annotation = annotations[0]!;
-  const valueStart = annotation.index + annotation[0].length;
-  const valueSpan = strings.find((span) => span.start >= valueStart);
-  if (!valueSpan || structural.slice(valueStart, valueSpan.start).trim().length > 0) {
-    throw new DataSourceLineageError('replacementObject annotation is present but malformed');
-  }
+  const name = row.VIEWREF!.trim();
+  const ddlSource = row.DDLNAME!.trim();
+  if (!name && !ddlSource) return undefined;
   try {
-    return canonicalDataSourceName(valueSpan.value);
+    return { name: canonicalDataSourceName(name), ddlSource: canonicalDataSourceName(ddlSource) };
   } catch {
-    throw new DataSourceLineageError('replacementObject annotation value is not an exact technical name');
+    throw new DataSourceLineageError('replacement catalog did not supply exact SQL-view and DDLS identities');
   }
 }
 
@@ -744,7 +663,7 @@ export async function enforceBlockedDataSources(
   }
   if (roots.length === 0) throw unresolved('UNKNOWN', [], 'no direct source was supplied');
 
-  const replacementCache = new Map<string, string | undefined>();
+  const replacementCache = new Map<string, TableReplacement | undefined>();
   const activeResolution = new Set<string>();
 
   const checkBlocked = (directSource: string, path: string[], aliases: string[]): void => {
@@ -768,33 +687,46 @@ export async function enforceBlockedDataSources(
     throw unresolved(roots[0]!, [roots[0]!], `request exceeds direct-source limit ${MAX_DIRECT_SOURCES}`);
   }
 
-  const replacementFor = async (table: string): Promise<string | undefined> => {
+  const replacementFor = async (table: string): Promise<TableReplacement | undefined> => {
     if (replacementCache.has(table)) return replacementCache.get(table);
     if (replacementCache.size >= MAX_REPLACEMENT_SOURCES) {
       throw new DataSourceLineageError(`replacement inspection exceeds source limit ${MAX_REPLACEMENT_SOURCES}`);
     }
-    const replacement = extractReplacementObject(await resolver.readTableSource(table));
+    const replacement = await resolver.readTableReplacement(table);
     replacementCache.set(table, replacement);
     return replacement;
   };
 
-  const replacementAt = async (directSource: string, table: string, path: string[]): Promise<string | undefined> => {
-    if (resolver.canonicalTableSourceAvailable === false) {
-      throw new DataSourcePolicyError('DATA_POLICY_UNAVAILABLE', directSource, path, TABLE_SOURCE_UNAVAILABLE_REASON);
-    }
+  const replacementAt = async (
+    directSource: string,
+    table: string,
+    path: string[],
+  ): Promise<TableReplacement | undefined> => {
     try {
+      for (const source of INTERNAL_DATA_OPERATIONS.replacement_lineage.sources) {
+        checkBlocked(directSource, [...path, source], [source]);
+      }
       return await replacementFor(table);
     } catch (error) {
       if (error instanceof DataSourcePolicyError) throw error;
-      if (
-        resolver.canonicalTableSourceAvailable === undefined &&
-        error instanceof AdtApiError &&
-        error.statusCode === 404
-      ) {
-        throw new DataSourcePolicyError('DATA_POLICY_UNAVAILABLE', directSource, path, TABLE_SOURCE_UNKNOWN_404_REASON);
+      if (error instanceof AdtApiError && error.statusCode === 404) {
+        throw new DataSourcePolicyError(
+          'DATA_POLICY_UNAVAILABLE',
+          directSource,
+          path,
+          'SAP did not provide the data-preview endpoint needed to read replacement catalog metadata',
+        );
       }
       throw unresolved(directSource, path, safeLineageFailureReason(error));
     }
+  };
+
+  const evaluateReplacement = async (
+    directSource: string,
+    replacement: TableReplacement,
+    path: string[],
+  ): Promise<void> => {
+    await evaluateRoot(directSource, replacement.name, [...path, replacement.name], { kind: 'cds', ...replacement });
   };
 
   const evaluateResolved = async (
@@ -806,7 +738,7 @@ export async function enforceBlockedDataSources(
     if (resolved.kind === 'table') {
       const table = canonicalDataSourceName(resolved.name);
       const replacement = await replacementAt(directSource, table, path);
-      if (replacement) await evaluateRoot(directSource, replacement, [...path, replacement]);
+      if (replacement) await evaluateReplacement(directSource, replacement, path);
       return;
     }
     if (resolved.kind !== 'cds') {
@@ -817,6 +749,7 @@ export async function enforceBlockedDataSources(
       );
     }
 
+    checkBlocked(directSource, path, [canonicalDataSourceName(resolved.ddlSource)]);
     const graph = await resolver.readCdsDependencyGraph(canonicalDataSourceName(resolved.ddlSource));
     const normalizedGraphAliases = graph.aliases.map((alias) => canonicalDataSourceName(alias));
     if (!normalizedGraphAliases.includes(canonicalDataSourceName(resolved.name))) {
@@ -863,15 +796,14 @@ export async function enforceBlockedDataSources(
       }
       for (const child of node.children) validateGraph(child, [...nodePath, child.name], false);
     };
-    // Check the complete graph before any table-source reads. This preserves the
-    // strongest denial on old releases where canonical replacement metadata may
-    // be unavailable for an earlier sibling table.
+    // Check the complete graph before catalog reads so a blocked sibling wins
+    // over unavailable metadata for an earlier table.
     validateGraph(graph, graphPath, true);
 
     const expandReplacements = async (node: CdsDependencyNode, nodePath: string[]): Promise<void> => {
       if (node.kind === 'TABLE') {
         const replacement = await replacementAt(directSource, node.name, nodePath);
-        if (replacement) await evaluateRoot(directSource, replacement, [...nodePath, replacement]);
+        if (replacement) await evaluateReplacement(directSource, replacement, nodePath);
         return;
       }
       for (const child of node.children) await expandReplacements(child, [...nodePath, child.name]);
@@ -879,7 +811,12 @@ export async function enforceBlockedDataSources(
     await expandReplacements(graph, graphPath);
   };
 
-  const evaluateRoot = async (directSource: string, name: string, path: string[]): Promise<void> => {
+  const evaluateRoot = async (
+    directSource: string,
+    name: string,
+    path: string[],
+    replacement?: ResolvedDirectDataSource,
+  ): Promise<void> => {
     checkBlocked(directSource, path, [name]);
     if (activeResolution.size >= MAX_RESOLUTION_ROOTS) {
       throw unresolved(directSource, path, `replacement lineage exceeds depth limit ${MAX_RESOLUTION_ROOTS}`);
@@ -888,7 +825,7 @@ export async function enforceBlockedDataSources(
     if (activeResolution.has(cycleKey)) throw unresolved(directSource, path, `replacement cycle detected at ${name}`);
     activeResolution.add(cycleKey);
     try {
-      const resolved = await resolver.resolveDirectSource(name);
+      const resolved = replacement ?? (await resolver.resolveDirectSource(name));
       await evaluateResolved(directSource, resolved, path);
     } finally {
       activeResolution.delete(cycleKey);

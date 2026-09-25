@@ -5,8 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type DataSourcePolicyResolver,
   enforceBlockedDataSources,
-  extractReplacementObject,
   parseCdsDependencyGraph,
+  parseTableReplacement,
 } from '../../../src/adt/data-source-policy.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 
@@ -16,7 +16,7 @@ const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf
 function resolver(overrides: Partial<DataSourcePolicyResolver> = {}): DataSourcePolicyResolver {
   return {
     resolveDirectSource: vi.fn(async (name: string) => ({ kind: 'table' as const, name })),
-    readTableSource: vi.fn(async () => 'define table scarr { key mandt : abap.clnt; }'),
+    readTableReplacement: vi.fn(async () => undefined),
     readCdsDependencyGraph: vi.fn(async () => parseCdsDependencyGraph(loadFixture('cds-dependency-graph-758.xml'))),
     ...overrides,
   };
@@ -126,37 +126,33 @@ describe('parseCdsDependencyGraph', () => {
   });
 });
 
-describe('extractReplacementObject', () => {
-  it('extracts and normalizes a replacement object', () => {
-    expect(
-      extractReplacementObject("@AbapCatalog.replacementObject: 'demo_cds_sumdist'\ndefine table demo_sumdist"),
-    ).toBe('DEMO_CDS_SUMDIST');
+describe('parseTableReplacement', () => {
+  const row = {
+    TABNAME: 'DEMO_SUMDIST',
+    TABCLASS: 'TRANSP',
+    VIEWREF: 'DEMO_CDS_SUDI',
+    VIEWREF_ERR: '',
+    DDLNAME: 'DEMO_CDS_SUMDIST',
+  };
+  it('keeps SQL-view and DDLS names distinct', () => {
+    expect(parseTableReplacement('DEMO_SUMDIST', [row])).toEqual({
+      name: 'DEMO_CDS_SUDI',
+      ddlSource: 'DEMO_CDS_SUMDIST',
+    });
+    expect(parseTableReplacement('DEMO_SUMDIST', [{ ...row, VIEWREF: '', DDLNAME: '' }])).toBeUndefined();
   });
-
-  it('returns undefined when the annotation is absent and fails on a malformed present annotation', () => {
-    expect(extractReplacementObject('define table scarr')).toBeUndefined();
-    expect(() => extractReplacementObject('@AbapCatalog.replacementObject: demo')).toThrow(/malformed/i);
-  });
-
-  it('ignores annotations in line comments, block comments, and unrelated string literals', () => {
-    const source = `
-// @AbapCatalog.replacementObject: 'SAFE_LINE'
-/* @AbapCatalog.replacementObject: 'SAFE_BLOCK' */
-@EndUserText.label: '@AbapCatalog.replacementObject: ''SAFE_LABEL'''
-@ AbapCatalog /* active separator */ . replacementObject : 'blocked_view'
-define table demo_sumdist`;
-    expect(extractReplacementObject(source)).toBe('BLOCKED_VIEW');
-    expect(extractReplacementObject("// @AbapCatalog.replacementObject: 'SAFE'\ndefine table scarr")).toBeUndefined();
-  });
-
-  it('fails closed for duplicate active annotations and incomplete lexical constructs', () => {
-    expect(() =>
-      extractReplacementObject(
-        "@AbapCatalog.replacementObject: 'ONE'\n@AbapCatalog.replacementObject: 'TWO'\ndefine table demo",
-      ),
-    ).toThrow(/duplicated|malformed/i);
-    expect(() => extractReplacementObject("/* @AbapCatalog.replacementObject: 'ONE'")).toThrow(/unterminated/i);
-    expect(() => extractReplacementObject("@AbapCatalog.replacementObject: 'ONE")).toThrow(/unterminated/i);
+  it.each([
+    [],
+    [row, row],
+    [{}],
+    [{ ...row, TABNAME: 'OTHER' }],
+    [{ ...row, TABCLASS: 'VIEW' }],
+    [{ ...row, VIEWREF_ERR: 'X' }],
+    [{ ...row, DDLNAME: '' }],
+    [{ ...row, VIEWREF: '' }],
+    [{ ...row, DDLNAME: "X' OR 1=1" }],
+  ])('refuses unproven catalog results: %j', (...rows) => {
+    expect(() => parseTableReplacement('DEMO_SUMDIST', rows as Record<string, string>[])).toThrow();
   });
 });
 
@@ -183,105 +179,54 @@ describe('enforceBlockedDataSources', () => {
       sourcePath: ['USR02'],
     });
     expect(r.resolveDirectSource).not.toHaveBeenCalled();
-    expect(r.readTableSource).not.toHaveBeenCalled();
+    expect(r.readTableReplacement).not.toHaveBeenCalled();
   });
 
-  it.each([true, undefined])(
-    'checks replacement metadata before allowing a table when table-source availability is %s',
-    async (canonicalTableSourceAvailable) => {
-      const r = resolver({ canonicalTableSourceAvailable });
-      await enforceBlockedDataSources(['SCARR'], ['USR02'], r);
-      expect(r.resolveDirectSource).toHaveBeenCalledWith('SCARR');
-      expect(r.readTableSource).toHaveBeenCalledWith('SCARR');
-    },
-  );
-
-  it('reports unavailable policy metadata before reading an undiscovered table source', async () => {
-    const r = resolver({
-      canonicalTableSourceAvailable: false,
-    });
-    await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_POLICY_UNAVAILABLE',
-      sourcePath: ['SCARR'],
-    });
-    expect(r.resolveDirectSource).toHaveBeenCalledWith('SCARR');
-    expect(r.readTableSource).not.toHaveBeenCalled();
+  it('checks replacement metadata before allowing a table', async () => {
+    const r = resolver();
+    await enforceBlockedDataSources(['SCARR'], ['USR02'], r);
+    expect(r.readTableReplacement).toHaveBeenCalledWith('SCARR');
   });
-
-  it('reports unavailable policy metadata when discovery is unknown and the canonical source returns 404', async () => {
-    const r = resolver({
-      canonicalTableSourceAvailable: undefined,
-      readTableSource: vi.fn(async () => {
-        throw new AdtApiError('not found', 404, '/sap/bc/adt/ddic/tables/SCARR/source/main');
-      }),
-    });
-    await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_POLICY_UNAVAILABLE',
-      sourcePath: ['SCARR'],
-    });
-    expect(r.readTableSource).toHaveBeenCalledWith('SCARR');
-  });
-
-  it('keeps a canonical source 404 unresolved when discovery advertised the resource', async () => {
-    const r = resolver({
-      canonicalTableSourceAvailable: true,
-      readTableSource: vi.fn(async () => {
-        throw new AdtApiError('not found', 404, '/sap/bc/adt/ddic/tables/SCARR/source/main');
-      }),
-    });
-    await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_LINEAGE_UNRESOLVED',
-      sourcePath: ['SCARR'],
-    });
-  });
-
-  it.each([true, false, undefined])(
-    'denies a blocked graph alias before replacement inspection when table-source availability is %s',
-    async (canonicalTableSourceAvailable) => {
-      const r = resolver({
-        resolveDirectSource: vi.fn(async () => ({
-          kind: 'cds' as const,
-          name: 'DEMO_CDS_SUMDIST',
-          ddlSource: 'DEMO_CDS_SUMDIST',
-        })),
-        canonicalTableSourceAvailable,
-        readTableSource: vi.fn(async () => {
-          throw new Error('canonical table source unavailable');
-        }),
-      });
-      await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['SPFLI'], r)).rejects.toMatchObject({
-        code: 'DATA_SOURCE_BLOCKED',
-        sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
-      });
-      expect(r.readTableSource).not.toHaveBeenCalled();
-    },
-  );
 
   it.each([
-    [true, 'DATA_LINEAGE_UNRESOLVED'],
-    [false, 'DATA_POLICY_UNAVAILABLE'],
-    [undefined, 'DATA_LINEAGE_UNRESOLVED'],
-  ] as const)(
-    'preserves the graph path when table-source availability is %s',
-    async (canonicalTableSourceAvailable, code) => {
-      const r = resolver({
-        resolveDirectSource: vi.fn(async () => ({
-          kind: 'cds' as const,
-          name: 'DEMO_CDS_SUMDIST',
-          ddlSource: 'DEMO_CDS_SUMDIST',
-        })),
-        canonicalTableSourceAvailable,
-        readTableSource: vi.fn(async () => {
-          throw new Error('canonical table source unavailable');
-        }),
-      });
-      await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['USR02'], r)).rejects.toMatchObject({
-        code,
-        sourcePath: ['DEMO_CDS_SUMDIST', 'SCARR'],
-      });
-      expect(r.readTableSource).toHaveBeenCalledTimes(canonicalTableSourceAvailable === false ? 0 : 1);
-    },
-  );
+    [404, 'DATA_POLICY_UNAVAILABLE'],
+    [403, 'DATA_LINEAGE_UNRESOLVED'],
+  ])('fails closed on catalog HTTP %s', async (status, code) => {
+    const r = resolver({
+      readTableReplacement: vi.fn(async () => {
+        throw new AdtApiError('SECRET', Number(status), '/sap/bc/adt/datapreview/freestyle');
+      }),
+    });
+    await expect(enforceBlockedDataSources(['SCARR'], ['USR02'], r)).rejects.toMatchObject({
+      code,
+      sourcePath: ['SCARR'],
+    });
+  });
+
+  it('denies a blocked graph alias before replacement inspection', async () => {
+    const r = resolver({
+      resolveDirectSource: vi.fn(async () => ({
+        kind: 'cds' as const,
+        name: 'DEMO_CDS_SUMDIST',
+        ddlSource: 'DEMO_CDS_SUMDIST',
+      })),
+    });
+    await expect(enforceBlockedDataSources(['DEMO_CDS_SUMDIST'], ['SPFLI'], r)).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      sourcePath: ['DEMO_CDS_SUMDIST', 'SPFLI'],
+    });
+    expect(r.readTableReplacement).not.toHaveBeenCalled();
+  });
+
+  it.each(['DD02L', 'DDLDEPENDENCY'])('honors the catalog block %s before reading it', async (source) => {
+    const r = resolver();
+    await expect(enforceBlockedDataSources(['SCARR'], [source], r)).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      sourcePath: ['SCARR', source],
+      matchedSource: source,
+    });
+    expect(r.readTableReplacement).not.toHaveBeenCalled();
+  });
 
   it('expands a transparent-table replacement object', async () => {
     const resolveDirectSource = vi.fn(async (name: string) =>
@@ -291,13 +236,11 @@ describe('enforceBlockedDataSources', () => {
     );
     const r = resolver({
       resolveDirectSource,
-      readTableSource: vi.fn(
-        async () => "@AbapCatalog.replacementObject: 'demo_cds_sumdist'\ndefine table demo_sumdist",
-      ),
+      readTableReplacement: vi.fn(async () => ({ name: 'DEMO_CDS_SUDI', ddlSource: 'DEMO_CDS_SUMDIST' })),
     });
     await expect(enforceBlockedDataSources(['DEMO_SUMDIST'], ['SCARR'], r)).rejects.toMatchObject({
       code: 'DATA_SOURCE_BLOCKED',
-      sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUMDIST', 'SCARR'],
+      sourcePath: ['DEMO_SUMDIST', 'DEMO_CDS_SUDI', 'DEMO_CDS_SUMDIST', 'SCARR'],
     });
   });
 
@@ -340,7 +283,7 @@ describe('enforceBlockedDataSources', () => {
         ddlSource: 'I_BUSINESSPARTNER',
       })),
       readCdsDependencyGraph: vi.fn(async () => graph),
-      readTableSource: vi.fn(async () => 'define table but000 { key client : abap.clnt; }'),
+      readTableReplacement: vi.fn(async () => undefined),
     });
     await expect(enforceBlockedDataSources(['I_BUSINESSPARTNER'], ['USR02'], r)).resolves.toBeUndefined();
   });
@@ -415,15 +358,42 @@ describe('enforceBlockedDataSources', () => {
     await expect(result).rejects.not.toThrow(/SECRETUSER|DEVK900001|informationsystem/i);
   });
 
-  it('fails closed on a replacement cycle', async () => {
+  it('fails closed on a table -> CDS -> same table replacement cycle', async () => {
     const r = resolver({
-      readTableSource: vi.fn(async (name: string) =>
-        name === 'TABLE_A' ? "@AbapCatalog.replacementObject: 'TABLE_B'" : "@AbapCatalog.replacementObject: 'TABLE_A'",
+      readTableReplacement: vi.fn(async () => ({ name: 'VIEW_A', ddlSource: 'DDL_A' })),
+      readCdsDependencyGraph: vi.fn(async () => ({
+        name: 'VIEW_A',
+        aliases: ['VIEW_A'],
+        kind: 'CDS_VIEW' as const,
+        accessControlled: false,
+        children: [
+          { name: 'TABLE_A', aliases: ['TABLE_A'], kind: 'TABLE' as const, accessControlled: false, children: [] },
+        ],
+      })),
+    });
+    await expect(enforceBlockedDataSources(['TABLE_A'], ['USR02'], r)).rejects.toThrow(/cycle/);
+  });
+
+  it('uses the DDLS name for lookup and SQL-view alias for graph identity', async () => {
+    const r = resolver({
+      readTableReplacement: vi.fn(async (name: string) =>
+        name === 'DEMO_SUMDIST' ? { name: 'DEMO_CDS_SUDI', ddlSource: 'DIFFERENT_DDLS' } : undefined,
       ),
     });
-    await expect(enforceBlockedDataSources(['TABLE_A'], ['USR02'], r)).rejects.toMatchObject({
-      code: 'DATA_LINEAGE_UNRESOLVED',
+    await expect(enforceBlockedDataSources(['DEMO_SUMDIST'], ['USR02'], r)).resolves.toBeUndefined();
+    expect(r.readCdsDependencyGraph).toHaveBeenCalledWith('DIFFERENT_DDLS');
+    expect(r.resolveDirectSource).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['DEMO_CDS_SUDI', 'DIFFERENT_DDLS'])('blocks either identity of a replacement: %s', async (blocked) => {
+    const r = resolver({
+      readTableReplacement: vi.fn(async () => ({ name: 'DEMO_CDS_SUDI', ddlSource: 'DIFFERENT_DDLS' })),
     });
+    await expect(enforceBlockedDataSources(['DEMO_SUMDIST'], [blocked], r)).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      matchedSource: blocked,
+    });
+    expect(r.readCdsDependencyGraph).not.toHaveBeenCalled();
   });
 
   it('bounds the number of direct sources before resolver traffic', async () => {
