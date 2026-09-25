@@ -28,7 +28,10 @@ function mockWriteHttp(overrides: { putThrows?: boolean; unlockThrows?: boolean 
 } {
   const calls: Array<{ method: string; path: string; body?: string; contentType?: string }> = [];
   const lockBody = '<asx:abap><LOCK_HANDLE>LH123</LOCK_HANDLE><CORRNR></CORRNR></asx:abap>';
+  let deleted = false;
   const http = {
+    discoveryAcceptFor: () => undefined,
+    hasDiscoveryData: () => true,
     post: vi.fn(async (path: string, body?: string, contentType?: string) => {
       calls.push({ method: 'POST', path, body, contentType });
       if (path.includes('_action=LOCK')) return { statusCode: 200, headers: {}, body: lockBody };
@@ -42,10 +45,12 @@ function mockWriteHttp(overrides: { putThrows?: boolean; unlockThrows?: boolean 
     }),
     delete: vi.fn(async (path: string) => {
       calls.push({ method: 'DELETE', path });
+      deleted = true;
       return { statusCode: 200, headers: {}, body: '' };
     }),
     get: vi.fn(async (path: string) => {
       calls.push({ method: 'GET', path });
+      if (deleted) throw new AdtApiError('Not found', 404, path);
       return { statusCode: 200, headers: {}, body: '' };
     }),
     withStatefulSession: vi.fn(async (cb: (s: unknown) => Promise<unknown>) => cb(http)),

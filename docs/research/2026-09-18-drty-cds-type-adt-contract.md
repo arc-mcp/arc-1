@@ -209,3 +209,12 @@ types without consumers. BTP runtime was not tested.
   small registry entry here rather than a new DRTY client module.
 - [abaplint’s DRTY object](https://github.com/abaplint/abaplint/blob/main/packages/core/src/objects/cds_type.ts)
   supplies type/name metadata. ARC-1’s pre-write lint does not currently handle this object.
+
+### Deletion follow-up — 2026-09-25
+
+The dependent-type orphan was independently reproduced on 816 and recovered using an owned,
+fixed-name repair helper. SAP's deletion precheck returned `isDeletable=false` before the raw DELETE
+that caused the orphan. The shared path now consults that advertised check under the lock and
+verifies metadata absence afterward; it reports surviving and unconfirmed outcomes separately.
+See the [deletion investigation](../plans/2026-09-25-server-driven-deletion.md). No automatic directory
+repair is part of ARC-1.

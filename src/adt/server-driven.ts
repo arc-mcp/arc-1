@@ -27,11 +27,11 @@ import { logger } from '../server/logger.js';
 import { postCreate } from './create-request.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
-import { AdtApiError } from './errors.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { ServerDrivenObjectResult } from './types.js';
-import { escapeXmlAttr, parseServerDrivenMetadata } from './xml-parser.js';
+import { escapeXmlAttr, parseServerDrivenMetadata, parseXml } from './xml-parser.js';
 
 /** Registry entry for a curated server-driven object type. */
 export interface SdoRegistryEntry {
@@ -438,10 +438,40 @@ export async function updateServerDrivenObjectSource(
   });
 }
 
-/**
- * Delete a server-driven object: lock → http.delete(…?lockHandle=…) → best-effort unlock.
- * The unlock is swallowed on failure (the object is already gone after the delete).
- */
+/** Check only when advertised; older targets still receive the post-delete absence check. */
+async function checkServerDrivenDeletion(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  objUrl: string,
+  lockHandle: string,
+): Promise<void> {
+  const path = '/sap/bc/adt/deletion/check';
+  const contentType = 'application/vnd.sap.adt.deletion.check.request.v1+xml';
+  checkOperation(safety, OperationType.Read, 'CheckDeletion');
+  let advertised = http.discoveryAcceptFor(path);
+  if (!http.hasDiscoveryData()) {
+    const { map } = await fetchDiscoveryDocument(http);
+    if (map.size === 0) throw new AdtError('Deletion check availability could not be determined. No DELETE was sent.');
+    advertised = resolveAcceptType(map, path);
+  }
+  if (!(advertised ?? '').includes(contentType)) return;
+  const response = await http.post(
+    path,
+    `<del:checkRequest xmlns:del="http://www.sap.com/adt/deletion" xmlns:adtcore="http://www.sap.com/adt/core"><del:object adtcore:uri="${escapeXmlAttr(objUrl)}"><del:lockHandle>${escapeXmlAttr(lockHandle)}</del:lockHandle></del:object></del:checkRequest>`,
+    contentType,
+    { Accept: 'application/vnd.sap.adt.deletion.check.response.v1+xml' },
+  );
+  const root = parseXml(response.body).checkResponse as Record<string, unknown> | undefined;
+  const objects = Array.isArray(root?.object) ? root.object : root?.object ? [root.object] : [];
+  const object = objects[0] as Record<string, unknown> | undefined;
+  if (objects.length !== 1 || object?.['@_uri'] !== objUrl || object?.['@_isDeletable'] !== 'true') {
+    throw new AdtError(
+      'SAP did not confirm that this object can be deleted. Review its deletion check in ADT and resolve dependencies or other refusals. No DELETE was sent.',
+    );
+  }
+}
+
+/** Delete under a lock, then verify canonical metadata absence in a fresh request. */
 export async function deleteServerDrivenObject(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -455,6 +485,7 @@ export async function deleteServerDrivenObject(
     const lock = await lockObject(session, safety, objUrl, 'MODIFY');
     const transport = opts.transport ?? (lock.corrNr || undefined);
     try {
+      await checkServerDrivenDeletion(session, safety, objUrl, lock.lockHandle);
       let url = `${objUrl}?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
       if (transport) url += `&corrNr=${encodeURIComponent(transport)}`;
       await session.delete(url);
@@ -462,8 +493,21 @@ export async function deleteServerDrivenObject(
       try {
         await unlockObject(session, objUrl, lock.lockHandle);
       } catch {
-        // Object already deleted — unlock failure is expected.
+        // Best-effort cleanup: deleted objects can reject unlock. The session closes next.
       }
     }
   });
+  checkOperation(safety, OperationType.Read, 'ConfirmDeletion');
+  try {
+    await http.get(objUrl, { Accept: serverDrivenMetadataContentType(code), 'Cache-Control': 'no-cache' });
+  } catch (error) {
+    if (error instanceof AdtApiError && error.isNotFound) return;
+    // A failed confirmation is not proof of absence; keep SAP details out of this guidance.
+    throw new AdtError(
+      `SAP accepted DELETE for ${code} ${name}, but absence could not be verified. Inspect the object in ADT before taking further action; do not blindly repeat DELETE.`,
+    );
+  }
+  throw new AdtError(
+    `SAP accepted DELETE for ${code} ${name}, but the object still exists. Deletion is incomplete. Inspect dependencies and its package entry in ADT; do not blindly repeat DELETE.`,
+  );
 }
