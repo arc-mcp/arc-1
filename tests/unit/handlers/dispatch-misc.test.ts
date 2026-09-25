@@ -3,6 +3,7 @@
  * The undici mock + AdtClient + createClient live in ./setup-undici-mock.ts — import that helper
  * and keep all other src-module imports dynamic (see its header for the ordering rules).
  */
+import { readFileSync } from 'node:fs';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
@@ -13,6 +14,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { features, featuresOff } from './handler-test-config.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
+const catalog = readFileSync(new URL('../../fixtures/xml/replacement-catalog-scarr.xml', import.meta.url), 'utf8');
 const { handleToolCall, hasRequiredScope, TOOL_SCOPES } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { normalizeObjectType, stripLlmEmptyValues, normalizeTypeArgsForValidation } = await import(
@@ -522,11 +524,14 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     });
 
     it('explains unavailable policy metadata safely in minimal-error mode', async () => {
-      mockFetch.mockResolvedValue(
-        mockResponse(
-          200,
-          '<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/SCARR" adtcore:type="TABL/DT" adtcore:name="SCARR"/></adtcore:objectReferences>',
-        ),
+      mockFetch.mockImplementation(async (url: string) =>
+        String(url).includes('/datapreview/')
+          ? mockResponse(404, 'unavailable')
+          : mockResponse(
+              200,
+              '<?xml version="1.0"?><adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/tables/SCARR" adtcore:type="TABL/DT" adtcore:name="SCARR"/></adtcore:objectReferences>',
+              { 'x-csrf-token': 'T' },
+            ),
       );
       const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };
       const client = new AdtClient({ baseUrl: 'http://sap:8000', safety });
@@ -549,7 +554,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
 
       expect(result.isError).toBe(true);
       expect(text).toContain('DATA_POLICY_UNAVAILABLE');
-      expect(text).toContain('7.52');
+      expect(text).not.toContain('7.52');
       expect(text).toContain('executed=false');
       expect(text).toContain('Retrying unchanged');
       expect(text).not.toMatch(/SCARR|USR02|SAP_BLOCKED_DATA_SOURCES|\/ddic\/tables/i);
@@ -631,7 +636,7 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       const auditSpy = vi.spyOn(logger, 'emitAudit');
       try {
         mockFetch.mockReset();
-        mockFetch.mockImplementation(async (url: string) => {
+        mockFetch.mockImplementation(async (url: string, opts: RequestInit) => {
           const u = String(url);
           if (u.includes('/repository/informationsystem/search')) {
             return mockResponse(
@@ -641,10 +646,11 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
                 '</adtcore:objectReferences>',
             );
           }
-          if (u.includes('/ddic/tables/')) return mockResponse(200, 'define table scarr { key mandt : abap.clnt; }');
+          if (String(opts.body).includes('FROM DD02L AS d')) return mockResponse(200, catalog);
           return mockResponse(
             200,
             '<?xml version="1.0"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"/>',
+            { 'x-csrf-token': 'T' },
           );
         });
         const safety = { ...unrestrictedSafetyConfig(), blockedDataSources: ['USR02'] };

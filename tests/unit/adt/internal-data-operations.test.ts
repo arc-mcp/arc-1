@@ -27,7 +27,16 @@ describe('internal data-operation registry', () => {
   });
 
   it('inventories exactly the sources ARC-1 reads for its own features', () => {
-    expect(internalDataSources()).toEqual(['SEOMETAREL', 'SUAUTHVALTRC', 'SWOTLV', 'TADIR', 'TOBJ', 'TSTC']);
+    expect(internalDataSources()).toEqual([
+      'DD02L',
+      'DDLDEPENDENCY',
+      'SEOMETAREL',
+      'SUAUTHVALTRC',
+      'SWOTLV',
+      'TADIR',
+      'TOBJ',
+      'TSTC',
+    ]);
   });
 
   // Guards the guard: if someone adds a fixed internal read without registering it, the operator

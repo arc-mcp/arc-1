@@ -8,7 +8,8 @@
  *
  * This registry is NOT a bypass. Every entry still goes through the same
  * `checkOperation(Query|FreeSQL)` capability gate, the same caller scopes, and the same data-source
- * blocklist, in that order. There is deliberately no `internal=true` argument, no caller-settable
+ * blocklist, in that order. The replacement-lineage entry is the fixed catalog read
+ * that implements the policy itself: it checks direct catalog blocks without recursive lineage. There is deliberately no `internal=true` argument, no caller-settable
  * flag, and nothing here is reachable from an MCP tool schema — blocking a table listed below really
  * does disable the feature that reads it, which is the intended, documented behaviour.
  *
@@ -24,6 +25,7 @@
 import type { DataSourcePolicyError } from './data-source-policy.js';
 
 export type InternalDataOperationId =
+  | 'replacement_lineage'
   | 'tadir_lookup_db'
   | 'tran_program_enrichment'
   | 'class_hierarchy'
@@ -42,6 +44,13 @@ export interface InternalDataOperation {
 }
 
 export const INTERNAL_DATA_OPERATIONS: Record<InternalDataOperationId, InternalDataOperation> = {
+  replacement_lineage: {
+    sources: ['DD02L', 'DDLDEPENDENCY'],
+    consumer: 'Data-source policy replacement lineage',
+    criticality: 'core',
+    guidance:
+      'The policy needs both catalog tables to prove replacement lineage. Keep data access disabled if these metadata reads are not permitted.',
+  },
   tadir_lookup_db: {
     sources: ['TADIR'],
     consumer: 'SAPSearch(searchType="tadir_lookup", source="db"|"both")',

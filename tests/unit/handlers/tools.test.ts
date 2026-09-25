@@ -365,7 +365,7 @@ describe('Tool Definitions', () => {
     const schema = sapRead.inputSchema as Record<string, any>;
     expect(schema.properties.version.enum).toEqual(['active', 'inactive', 'auto']);
     expect(schema.properties.force_refresh.type).toBe('boolean');
-    expect(sapRead.description).toContain('version parameter');
+    expect(schema.properties.version.description).toContain('Server-driven types return an error');
   });
 
   it('SAPRead schema exposes includeSignature flag for FUNC (issue #252)', () => {
@@ -749,7 +749,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('traces');
     expect(actionEnum).toContain('system_messages');
     expect(actionEnum).toContain('gateway_errors');
-    expect(sapDiagnose.description).toContain('active vs inactive source versions');
+    expect(sapDiagnose.description).toContain('Server-driven types unsupported');
     expect(schema.properties.source).toBeDefined();
     expect(schema.properties.sourceUri).toBeDefined();
     expect(schema.properties.line).toBeDefined();

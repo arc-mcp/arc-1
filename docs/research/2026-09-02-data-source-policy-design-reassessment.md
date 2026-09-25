@@ -175,7 +175,7 @@ resolution is ambiguous, the active policy denies rather than guessing.
 - Each raw trimmed token must be 1–128 ASCII characters, contain at least one ASCII letter or digit, and
   use only `A-Z`, `a-z`, `0-9`, `_`, `/`, or `$`; its normalized stored form is uppercase ASCII.
 - The same canonicalizer must be used for caller roots, decoded repository identities, dependency-graph
-  names/aliases, and replacement annotations. A value from SAP metadata is evidence, not trusted input;
+  names/aliases, and replacement catalog identities. A value from SAP metadata is evidence, not trusted input;
   if it cannot be canonicalized without Unicode folding or lossy rewriting, lineage is unresolved.
 - Exact names only in v1. Do not add glob, prefix, regex, negation, type-prefix, quoting, escaping, or
   policy-file syntax until their matching behavior is separately designed and tested.
@@ -365,8 +365,10 @@ When it is on, one logical caller request should follow this pipeline exactly on
 4. Resolve unblocked roots through exact repository metadata.
 5. For CDS roots, request SAP's active SQL Dependency Graph without metrics and traverse only the SQL
    dependency portion of the response.
-6. For transparent tables, inspect `@AbapCatalog.replacementObject` and recursively evaluate the
-   replacement lineage.
+6. For transparent tables, resolve active replacement metadata with the fixed DD02L/DDLDEPENDENCY
+   query under the caller's SAP identity and shared response budget; recursively evaluate the
+   mapped SQL-view/DDLS lineage. Missing, ambiguous or unsupported metadata fails closed. CDS
+   view-entity replacements and pooled/clustered tables remain unsupported.
 7. Deduplicate all roots and dependencies, enforce depth/node/body limits, and deny on incomplete,
    unknown, cyclic, ambiguous, or unsupported lineage.
 8. Record the decision and only then submit the original query.
