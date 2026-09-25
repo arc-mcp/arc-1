@@ -5,6 +5,18 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.4.1](https://github.com/arc-mcp/arc-1/compare/v1.4.0...v1.4.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* honor explicit server-driven read versions ([#846](https://github.com/arc-mcp/arc-1/issues/846)) ([e7a3087](https://github.com/arc-mcp/arc-1/commit/e7a3087604606e8db4b29e308f3ba71cddf05dd7))
+* precheck and confirm server-driven deletions ([#847](https://github.com/arc-mcp/arc-1/issues/847)) ([5f80e23](https://github.com/arc-mcp/arc-1/commit/5f80e237db422e31549587495b155b680bd03c61))
+* preserve class drafts throughout surgical edits ([#845](https://github.com/arc-mcp/arc-1/issues/845)) ([056f416](https://github.com/arc-mcp/arc-1/commit/056f4160193ea209e69cfa32c0255aca12b1c1b5))
+* resolve function-group objects in transport checks and history ([#576](https://github.com/arc-mcp/arc-1/issues/576)) ([4d00479](https://github.com/arc-mcp/arc-1/commit/4d0047919cea1a406eaca5a1d6badf6baec96554))
+* resolve replacement lineage through the active DDIC catalog ([#848](https://github.com/arc-mcp/arc-1/issues/848)) ([e6314ab](https://github.com/arc-mcp/arc-1/commit/e6314ab2a50b43f47b91a8b17c7ebe3939b05004))
+* route generic server-driven calls through the registry ([#849](https://github.com/arc-mcp/arc-1/issues/849)) ([202ad56](https://github.com/arc-mcp/arc-1/commit/202ad5668e00f8cd8c9c828dd56d54dbb7c1d9f5))
+
 ## [1.4.0](https://github.com/arc-mcp/arc-1/compare/v1.3.0...v1.4.0) (2026-09-23)
 
 
