@@ -31,8 +31,8 @@ No roadmap impact: this repairs existing class edits. ARCH-02 concerns object UR
 
 ## Validation
 
-- On main `c3fcf3df3`, the new dispatcher regressions fail 15 cases; after the fix all 19 pass; two added cache-failure cases also pass.
-  Full suite: 7,124 tests; typecheck, lint, policy, file/schema budgets, build and strict docs pass.
+- On main `c3fcf3df3`, the new dispatcher regressions fail 15 cases; the final suite has 20 cases, including successful/failed PUT with cache failure.
+  Initial full suite: 7,124 tests; final focused cache cases pass (7,125 total); typecheck, lint, policy, file/schema budgets, build and strict docs pass.
 - Direct HTTPS/Basic, two clients using the same test user, owned `$TMP` classes:
 
   | SAP_BASIS | Source/structure contract | Surgery and cleanup |

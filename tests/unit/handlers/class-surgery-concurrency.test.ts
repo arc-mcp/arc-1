@@ -211,18 +211,6 @@ it('preserves an explicitly requested transport instead of the lock default', as
   expect(state.sends.find((s) => s.method === 'PUT')?.url.searchParams.get('corrNr')).toBe('DEVK900002');
 });
 
-it('attempts unlock even if cache invalidation throws', async () => {
-  const state = backend();
-  const cache = new CachingLayer(new MemoryCache());
-  vi.spyOn(cache, 'invalidate').mockImplementation(() => {
-    throw new Error('Cache unavailable');
-  });
-  const result = await handleToolCall(createClient(), config, 'SAPWrite', args, undefined, undefined, cache);
-  expect(result.isError).toBe(true);
-  expect(state.sends.some((s) => s.method === 'PUT')).toBe(true);
-  expect(state.locked).toBe(false);
-});
-
 it('uses the lock session for the optional SAP syntax check', async () => {
   const state = backend();
   const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...args, checkBeforeWrite: true });
