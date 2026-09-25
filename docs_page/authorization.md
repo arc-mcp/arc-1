@@ -184,10 +184,13 @@ stay cheap and local. The check and the query are separate SAP requests, so the 
 transactionally atomic (a TOCTOU window remains).
 
 Replacement proof uses one fixed catalog query per distinct transparent table, on every release.
-`DD02L.VIEWREF` names the replacement SQL view; active `DDLDEPENDENCY` maps it to its DDLS source.
+For supported DDIC-based replacements, `DD02L.VIEWREF` identifies the SQL view; active
+`DDLDEPENDENCY` maps it to its DDLS source.
 Missing/ambiguous rows, an error flag or an unmapped replacement fail closed. The graph must identify
 the SQL view, and both identities are checked against the blocklist. No DDL-source resource or release
-number is used to infer the absence of replacements. Classic DDIC views remain unsupported.
+number is used to infer the absence of replacements. Classic DDIC views, CDS view-entity replacements,
+and pooled/clustered tables (common on older ECC systems) are unsupported and fail closed.
+These are policy limitations, not evidence that SAP cannot query those objects.
 
 This private query reads authorization metadata and cannot recursively authorize itself. It runs only
 after the enclosing Query/FreeSQL capability and caller-scope checks, under the same SAP identity,
@@ -196,9 +199,9 @@ name and at most two rows, shares the caller's cumulative response budget, and n
 rows to the model. There is no caller-controlled bypass. A caller's own query of these tables still
 receives the full normal lineage check.
 
-The catalog path was verified on 758 and 816; #834 reports customer 750 SP23 PP evidence. Our 750 SP02
-test system lacks freestyle data preview and remains unavailable. Missing SAP authorization for
-catalog or graph reads is an intended fail-closed denial, even if the original query would be allowed.
+The policy requires `/sap/bc/adt/datapreview/freestyle`; without it, requests needing catalog metadata
+return `DATA_POLICY_UNAVAILABLE`. Missing SAP authorization for catalog or graph reads also fails
+closed, even if the original query would be allowed.
 
 Out of scope in v1: generic extension `ctx.http.get()` calls are **not** governed by this policy, so a
 plugin can read a blocked source. Object source, dumps and traces are likewise outside the boundary.

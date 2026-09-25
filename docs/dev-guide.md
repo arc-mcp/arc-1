@@ -284,7 +284,7 @@ Spec: [docs/research/2026-09-02-data-source-policy-design-reassessment.md](resea
 
 | Concern | Where |
 |---|---|
-| Canonical identity + CSV grammar + fingerprint | `src/adt/data-source-name.ts` — the ONE normalizer for config, caller roots, parser results, search results, decoded URIs, graph names/aliases and replacement annotations |
+| Canonical identity + CSV grammar + fingerprint | `src/adt/data-source-name.ts` — the ONE normalizer for config, caller roots, parser results, search results, decoded URIs, graph names/aliases and replacement catalog identities |
 | Strict SQL subset | `src/adt/sql-source-analyzer.ts` — pre-parse lexer then `@abaplint/core`; pinned grammar |
 | Graph classification + lineage | `src/adt/data-source-policy.ts` |
 | Structured TABLE_QUERY builder | `src/adt/table-query.ts` |

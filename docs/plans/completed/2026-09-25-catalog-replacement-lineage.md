@@ -15,7 +15,7 @@ returned these mappings on 758 and 816 (2026-09-25):
 
 SCARR, T000, DD02L and DDLDEPENDENCY returned one active row without a replacement;
 a nonexistent name returned none. Issue #834 supplies separate 750 SP23 customer
-PP evidence. Our 750 SP02 target returns 404 for freestyle data preview itself;
+PP evidence for the catalog fields and individual SELECTs, not execution of the exact joined query. Our 750 SP02 target returns 404 for freestyle data preview itself;
 it cannot verify the positive SP23 case. No release-number shortcut is justified.
 
 ## Implementation plan and review
@@ -51,4 +51,6 @@ calls. Sanitized live column datasets are committed as fixtures. Customer PP,
 The integration file passes 11 cases on both 758 and 816; 750 SP02 passes six and
 skips five unavailable-endpoint or unverified-fixture cases. Endpoint availability
 is probed directly, and replacement paths include both SQL-view and DDLS identities.
-No roadmap impact: this completes the issue's existing policy compatibility gap.
+Roadmap: COMPAT-07 tracks CDS view-entity replacement mapping; COMPAT-08 tracks pooled/clustered
+tables. Both remain fail-closed until live evidence supports expanding the resolver. SAP
+[documents view entities as replacement objects](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENDDIC_REPLACEMENT_OBJECTS.html).
