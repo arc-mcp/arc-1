@@ -129,7 +129,6 @@ export const KNOWN_BASE_TYPES = new Set([
   'VIEW',
   'SKTD',
   'TTYP',
-  ...Object.keys(SDO_REGISTRY),
 ]);
 
 /** Normalize ADT type codes and aliases to ARC-1 canonical short types. */

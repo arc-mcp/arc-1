@@ -98,7 +98,8 @@ object.
 1. Explicit active/inactive version selection is not implemented for SDO reads. The unversioned
    developer view returns a draft when present; tracked in [#840](https://github.com/arc-mcp/arc-1/issues/840).
 2. `$elementinfo` / `$navigation` and `SAPContext` dependency walking remain outside this PR.
-3. Generic `SAPDiagnose`/`SAPTransport` routing is still tracked by ARCH-02.
+3. Generic `SAPDiagnose`/`SAPTransport` routing is resolved by #849. ARCH-02 now tracks
+   server-driven `object_state` version verification; incomplete ATC remains incomplete.
 
 ## End-to-end matrix through ARC-1 (2026-09-18, SAP_BASIS 816)
 

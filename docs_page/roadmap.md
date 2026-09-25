@@ -130,7 +130,7 @@ version, so status 200 and matching hashes cannot prove two version identities. 
 
 **Resume with.** Reuse verified version metadata while preserving object_state's ETags/hashes and
 honest missing-version results. Reproduce active-only, inactive-only and divergent drafts on two
-releases before enabling it. See [routing evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-09-25-server-driven-generic-routing.md).
+releases before enabling it. See [routing evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-09-25-server-driven-generic-routing.md).
 
 <a id="feat-59"></a>
 ### FEAT-59 — Embeddable multi-tenant server API

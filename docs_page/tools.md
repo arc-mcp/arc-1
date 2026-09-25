@@ -414,7 +414,7 @@ Keep edits above the read-only metadata marker in a complete SAPRead result. For
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
 
 - **Read versions:** SDO reads return SAP's unversioned developer view, including a draft when present. Explicit `version` is currently ignored ([#840](https://github.com/arc-mcp/arc-1/issues/840)).
-- **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers still have the [ARCH-02 routing limitation](roadmap.md#arch-02). Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
+- **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers use the registered URL; SAP may still return incomplete ATC results. `SAPDiagnose object_state` refuses server-driven types until [version verification](roadmap.md#arch-02) is supported. Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
 
 **DRTY create/update:** Use canonical `type="DRTY"` with plain `define type` source, for example:
 
@@ -1651,10 +1651,8 @@ Both CI actions are excluded from multi-target mode. Software-component selectio
 
 - **`atc_variants`** — List the ATC check variants this system offers, plus the system default variant (the one `atc` binds when no `variant` is passed). Read-only. The `variant` parameter doubles as an optional name filter (`*` = all; e.g. `variant="ABAP_CLOUD*"`). Returns `{ systemDefault, filter, count, variants: [{ name, description }] }`. Use it to discover the exact `variant` string to pass to `action="atc"`.
 - **`cds_testcases`** — Get SAP-suggested ABAP Unit test cases for a CDS entity (CDS Test Double Framework). Requires `name` (the CDS entity / DDLS source name; no `type`). Returns one suggestion per testable semantic — the whole view (`semanticType: "NONE"`), each calculated field (`"CALCULATION"` + `calculatedField`), and `"CAST"`/`"JOIN"`/`"CASE"` expressions — each with a suggested `testMethod` name + `description`, plus a `hint` for scaffolding a `cl_cds_test_environment` test class. **Read-only.** Available on **SAP_BASIS 8.16+ (ABAP Platform 2025 / S/4HANA 2025)** only — discovery-gated, so older releases return a clear "needs 8.16+" message. The AI-backed test-data / test-method *generation* (Joule for Developers) is intentionally **not** exposed.
-For server-driven types, generic diagnostics and transport checks use the registered object
-collection. This does not imply every SAP operation supports the type: live DSFD syntax checks
-worked on 758/816, while the tested ATC variant supplied no complete object coverage. Treat
-incomplete ATC evidence as incomplete. ABAP Unit and ATC batches keep their existing type allowlists.
+
+- **Server-driven types:** Syntax/ATC and transport check/history use the registered URL; ATC may remain incomplete. ABAP Unit and ATC batches reject these types. `object_state` refuses them until version identity can be verified.
 
 - **`object_state`** — Compare active and inactive source versions for one object. For `CLAS`, ARC-1 checks main, definitions, implementations, macros, and testclasses includes (up to 10 parallel reads per class; sequence calls when sweeping many classes). Returns ETags, byte lengths, SHA-256 hashes, and divergence flags without returning full source. Useful for diagnosing activation failures where active and inactive class includes disagree. Server-driven types are refused because SAP may substitute one version for another; matching hashes alone cannot prove version identity. Use `SAPRead` with an explicit `version` for those types.
 - **`quickfix`** — Get SAP quickfix proposals for a specific source position (`name`, `type`, `source`, `line`, optional `column`). Returns proposal entries with `uri`, `type`, `name`, `description`, `userContent`.

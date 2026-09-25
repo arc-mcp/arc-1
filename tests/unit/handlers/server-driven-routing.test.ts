@@ -6,9 +6,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-const { objectBasePath, objectUrlForType, objectUrlForTypeRaw, sourceUrlForType } = await import(
-  '../../../src/handlers/object-types.js'
-);
+const { objectBasePath, objectUrlForType, sourceUrlForType } = await import('../../../src/handlers/object-types.js');
 const uri = '/sap/bc/adt/ddic/dsfd/sources/CALENDAR_OPERATION';
 const client = () => new AdtClient({ baseUrl: 'http://sap:8000', safety: defaultSafetyConfig() });
 
@@ -35,11 +33,10 @@ beforeEach(() => {
 });
 
 describe('shared server-driven routing', () => {
-  it('derives every registered path and preserves encoded versus raw names', () => {
+  it('derives every registered path and encodes namespaced names', () => {
     for (const [type, entry] of Object.entries(SDO_REGISTRY)) {
       expect(objectBasePath(type)).toBe(`${entry.href}/`);
       expect(objectUrlForType(type, '/TEST/NAME')).toBe(serverDrivenObjectUrl(type, '/TEST/NAME'));
-      expect(objectUrlForTypeRaw(type, '/TEST/NAME')).toBe(`${entry.href}//TEST/NAME`);
       expect(sourceUrlForType(type, '/TEST/NAME')).toBe(`${entry.href}/%2FTEST%2FNAME/source/main`);
     }
   });
