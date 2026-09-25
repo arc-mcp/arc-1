@@ -162,8 +162,13 @@ export async function runScenario(
       break;
     }
 
-    // Process tool calls
-    for (const toolCall of response.toolCalls) {
+    // Assign IDs once and keep parallel calls in their original assistant turn.
+    const toolCalls = response.toolCalls.slice(0, maxCalls - callCount).map((call, index) => ({
+      ...call,
+      id: call.id ?? `call_${callCount + index + 1}`,
+    }));
+    messages.push({ role: 'assistant', content: response.content, toolCalls });
+    for (const toolCall of toolCalls) {
       trace.push(toolCall);
       callCount++;
 
@@ -182,17 +187,11 @@ export async function runScenario(
         toolContent = getMockResponse(scenario, toolCall);
       }
 
-      // Add assistant message with tool call
-      messages.push({
-        role: 'assistant',
-        toolCalls: [toolCall],
-      });
-
       // Add tool result
       messages.push({
         role: 'tool',
         content: toolContent,
-        toolCallId: `call_${callCount}`,
+        toolCallId: toolCall.id,
         toolName: toolCall.name,
       });
     }
