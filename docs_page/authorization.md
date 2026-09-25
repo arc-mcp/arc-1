@@ -406,6 +406,11 @@ SAP_DENY_ACTIONS='SAPWrite.delete,SAPManage.flp_*'
 SAP_DENY_ACTIONS='./deny-actions.json'  # ["SAPWrite.delete", "SAPManage.flp_*"]
 ```
 
+On Windows, a drive-letter absolute path accepts either separator (`C:\arc1\deny-actions.json`
+or `C:/arc1/deny-actions.json`). For relative paths, use `./deny-actions.json`, not a bare filename.
+Unreadable files, invalid JSON and invalid patterns abort startup; they never disable the deny list.
+
+
 ARC-1 fails fast if a deny entry references an unknown tool/action, has invalid grammar, or points to an unreadable file. That is intentional: typoed security config should not silently start.
 
 ---
