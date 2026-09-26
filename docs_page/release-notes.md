@@ -22,6 +22,25 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## 1.5.0 — guarded source edits and verified reads (unreleased)
+
+Adds optional source preconditions and read-only syntax checks. No new server settings are required;
+refresh your client's tool list after upgrading.
+
+| Change | Impact | Action |
+|---|---|---|
+| Safer source edits ([#845](https://github.com/arc-mcp/arc-1/pull/845), [#853](https://github.com/arc-mcp/arc-1/pull/853)) | Class surgery reads drafts under lock. Optional source hashes prevent overwriting changes made since a previous read. Blank source updates are refused; FUNC parameter-only updates preserve the body and stop on unreadable source. | Use `SAPRead(format="editable")` and pass `sourceHash` as `expectedSourceHash`; reconcile refusals. See [source preconditions](tools.md#source-preconditions). |
+| Read-only syntax checks ([#855](https://github.com/arc-mcp/arc-1/pull/855)) | `SAPRead(type="SYNTAX", objectType=...)` checks existing objects or proposed source without saving. Legacy deny rules still apply. | Check `checked`; missing findings alone do not establish successful validation. |
+| Explicit read versions ([#846](https://github.com/arc-mcp/arc-1/pull/846), [#856](https://github.com/arc-mcp/arc-1/pull/856)) | Server-driven reads verify requested versions; hyperfocused `SAP` accepts and forwards source versions to reads. | Omitted/`auto` server-driven reads retain SAP's developer view. An unconfirmed explicit version now fails. |
+| Server-driven deletion and routing ([#847](https://github.com/arc-mcp/arc-1/pull/847), [#849](https://github.com/arc-mcp/arc-1/pull/849)) | Deletion honors advertised prechecks and verifies absence. Generic helpers use registered object URLs; unverified state/diff comparisons refuse. | Inspect incomplete deletion before retrying. Compare explicit versions separately; see [limitations](tools.md#server-driven-object-writes). |
+| Blocklist lineage ([#848](https://github.com/arc-mcp/arc-1/pull/848)) | Replacement checks use active DDIC catalog metadata, including on older systems. Missing authorization or unsupported lineage fails closed. | Review the [catalog requirements](authorization.md#impact-on-arc-1s-own-features) when using `SAP_BLOCKED_DATA_SOURCES`. |
+| Function-group transports ([#576](https://github.com/arc-mcp/arc-1/pull/576)) | Checks/history resolve FUNC parents and group-owned includes. | Pass `group` for structural includes; FUNC can resolve it automatically. |
+| Windows policy paths ([#598](https://github.com/arc-mcp/arc-1/pull/598), [#599](https://github.com/arc-mcp/arc-1/pull/599)) | Deny-action files accept absolute drive-letter paths with either separator; test exclusions normalize Windows paths. | `none` |
+| Evaluation conversations ([#854](https://github.com/arc-mcp/arc-1/pull/854)) | The eval harness preserves provider call IDs and groups results from the same assistant turn. | Rerun affected evaluations; production tool behavior is unchanged. |
+
+Source hashes remain optional; unguarded writes do not protect against edits between tool calls.
+Separate server-driven version reads are not an atomic snapshot.
+
 ## 1.4.0 — CDS types, safer writes, and diagnostics (2026-09-23)
 
 Adds CDS type authoring, extension report execution, and paged ST22 diagnostics.
