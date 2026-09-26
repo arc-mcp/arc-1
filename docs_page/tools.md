@@ -643,6 +643,10 @@ Consumers should inspect `isError` and parse the second block individually when 
 - Supports dry-run listing (`autoApply=false`, default) and write-back mode (`autoApply=true`)
 - Helps recover from generic behavior-pool save errors by generating exact signatures for actions/determinations/validations/authorization handlers
 
+Both scaffolding actions acquire the class lock before reading the editable source and deriving changes.
+Previews remain read-only. Separate include writes are not atomic: after a save or unlock error, read
+the current class sections before retrying; an earlier include may already have been saved.
+
 ```
 SAPWrite(action="batch_create", package="ZDEV", transport="K900123", objects=[
   {type:"TABL", name:"ZTRAVEL", source:"define table ztravel {...}"},

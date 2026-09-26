@@ -67,7 +67,6 @@ sequence.
 |---|---|---:|---:|---|---|
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
-| [ARCH-03](#arch-03) | Preserve drafts during RAP scaffold application | P2 | S | Ready | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
@@ -134,19 +133,6 @@ version, so status 200 and matching hashes cannot prove two version identities. 
 **Resume with.** Reuse verified version metadata while preserving object_state's ETags/hashes and
 honest missing-version results. Reproduce active-only, inactive-only and divergent drafts on two
 releases before enabling it. See [routing evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-09-25-server-driven-generic-routing.md).
-
-<a id="arch-03"></a>
-### ARCH-03 — Preserve drafts during RAP scaffold application
-
-- **Priority / effort / status:** P2 / S / Ready
-- **Category:** Architecture
-
-**Remaining gap.** `SAPWrite scaffold_rap_handlers autoApply=true` reads class includes before
-acquiring its write lock (`src/handlers/write/rap.ts`). A completed competing edit can be overwritten;
-[#845](https://github.com/arc-mcp/arc-1/pull/845) fixes surgical edits, not this separate path.
-
-**Resume with.** Reproduce an intervening include edit, derive the scaffold from fresh reads under the
-class lock, and verify untouched source, refusal paths and multi-include failure handling live.
 
 <a id="feat-59"></a>
 ### FEAT-59 — Embeddable multi-tenant server API

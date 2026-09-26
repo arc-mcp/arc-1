@@ -129,7 +129,13 @@ function makeClient(state: MockState): {
       writes.push({ uri: path, bodyLength: body.length });
       return { status: 200, body: '', headers: {} };
     }),
-    get: vi.fn(async () => ({ status: 200, body: '', headers: {} })),
+    get: vi.fn(async (path: string) => {
+      const section = path.split('/').at(-1);
+      if (section !== 'main' && section !== 'definitions' && section !== 'implementations') {
+        throw new Error(`Unexpected source read: ${path}`);
+      }
+      return { status: 200, body: state.structuredResponse[section] ?? '', headers: {} };
+    }),
   };
 
   const http = {
