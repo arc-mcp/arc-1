@@ -305,6 +305,11 @@ Every match in the result set is stamped with an `_origin: 'adt' | 'db'` field s
 
 Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
+Text-source updates require a non-blank replacement. Omitted/blank source and FUNC input reduced
+to nothing by SAPGUI comment stripping are refused before locking or writing. Signature-only FUNC
+updates read the existing body under the lock; metadata updates and explicit text-symbol clearing
+keep their separate behavior.
+
 > **NetWeaver < 7.51:** ADT writes over HTTP require a stateful session that older releases
 > don't honor, so writes fail with `423 invalid lock handle` until the `abapfs_extensions`
 > enhancement is installed on the SAP system. This is *not* SAP Note 2727890 (a separate
@@ -678,11 +683,6 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
   - If the pre-flight check fails (older system, permissions), ARC-1 proceeds and lets SAP handle the error.
 
 **Note:** Not available by default (read-only mode). Enable with `SAP_ALLOW_WRITES=true` / `--allow-writes=true`. Write access is restricted to package `$TMP` by default; to write to other packages, set `SAP_ALLOWED_PACKAGES='$TMP,Z*'` (quote in shell so `$TMP` isn't expanded).
-
-Text-source updates require a non-blank replacement. Omitted/blank source and FUNC input reduced
-to nothing by SAPGUI comment stripping are refused before locking or writing. Signature-only FUNC
-updates read the existing body under the lock; metadata updates and explicit text-symbol clearing
-keep their separate behavior.
 
 ### Source preconditions
 
