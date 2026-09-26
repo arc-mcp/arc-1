@@ -380,7 +380,7 @@ function addParamFromLine(params: FmParameter[], kind: FmParameterKind, lineCont
  * Replace the signature region of an FM source with a new clause built from
  * `params`. The body (between the signature-terminator `.` and `ENDFUNCTION.`)
  * is preserved verbatim. Throws when `source` does not start with a `FUNCTION`
- * keyword — caller is expected to fall back to the user's raw source.
+ * keyword or the signature/body boundaries cannot be found.
  */
 export function spliceFmSignature(source: string, fmName: string, params: FmParameter[]): string {
   if (!/^\s*FUNCTION\s+/i.test(source)) {
@@ -388,6 +388,9 @@ export function spliceFmSignature(source: string, fmName: string, params: FmPara
   }
 
   const parsed = parseFmSignature(source);
+  if (parsed.bodyStart > parsed.bodyEnd || parsed.bodyEnd === source.length) {
+    throw new Error('Cannot locate the FUNCTION signature terminator and ENDFUNCTION; source was not changed');
+  }
   const body = source.slice(parsed.bodyStart, parsed.bodyEnd);
   const upperName = fmName.toUpperCase();
 

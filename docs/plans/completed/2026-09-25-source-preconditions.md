@@ -27,7 +27,9 @@ An explicit hash avoids hidden per-user read history, eviction semantics and cac
 No lock crosses a tool call. The hash is a content comparison, not an authorization token or an ABA
 change-history detector. Exact UTF-8 source is hashed without whitespace/line-ending normalization.
 Read and write must address the same object/include/group; mismatch errors name the checked URL.
-Function-module parameter-only updates derive source under the lock and abort on read failure.
+Function-module parameter-only updates derive source under the lock and abort on failed, empty
+or unparseable reads; fetched bytes are never wrapped into a replacement skeleton. Ordinary
+source updates reject missing/blank replacements before locking, after FUNC comment stripping.
 Their parser recognizes SAP’s template comment before an empty signature’s bare terminator;
 missing this terminator previously discarded the body despite a successful read. Hash matching
 is conservative for unit edits: it covers the containing source, not only one FORM or method.

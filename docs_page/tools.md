@@ -508,7 +508,8 @@ Round-trip: `SAPRead({type: "FUNC", name: "Z_GREET", group: "ZARC1_FG", includeS
 
 For an update with `parameters` but no `source`, ARC-1 reads the current developer-view source
 under the function-module lock, changes only its signature, and preserves the body. A failed
-source read aborts without writing. Optional `expectedSourceHash` is checked against this same source.
+source read, empty response or unparseable FUNCTION envelope aborts without writing. Optional
+`expectedSourceHash` is checked against this same source.
 
 Backward-compat: when `parameters` is omitted, the existing source-only PUT path runs unchanged. When `includeSignature` is omitted on read, the response is plain text source.
 
@@ -679,6 +680,11 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
 **Note:** Not available by default (read-only mode). Enable with `SAP_ALLOW_WRITES=true` / `--allow-writes=true`. Write access is restricted to package `$TMP` by default; to write to other packages, set `SAP_ALLOWED_PACKAGES='$TMP,Z*'` (quote in shell so `$TMP` isn't expanded).
 
 ### Source preconditions
+
+Text-source updates require a non-blank replacement. Omitted/blank source and FUNC input reduced
+to nothing by SAPGUI comment stripping are refused before locking or writing. Signature-only FUNC
+updates read the existing body under the lock; metadata updates and explicit text-symbol clearing
+keep their separate behavior.
 
 Before editing existing text source, read `SAPRead(type=..., name=..., format="editable")`.
 This returns JSON `{source, sourceHash}` from a fresh, uncached developer-view read: the editable

@@ -1204,7 +1204,10 @@ describe('SAPWrite handler — create / batch_create', () => {
       expect(put!.body).toContain('ev_output = iv_input');
     });
 
-    it('FUNC update with structured parameters: splices into source preserving body', async () => {
+    it.each([
+      { label: 'full source', source: 'FUNCTION z_fm.\n  cv_flag = cv_flag + 1.\nENDFUNCTION.\n' },
+      { label: 'body only', source: '  cv_flag = cv_flag + 1.\n' },
+    ])('FUNC update with structured parameters preserves $label', async ({ source }) => {
       const calls = captureFetch();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'update',
@@ -1215,7 +1218,7 @@ describe('SAPWrite handler — create / batch_create', () => {
           { kind: 'importing', name: 'IV_INPUT', type: 'STRING', byValue: true },
           { kind: 'changing', name: 'CV_FLAG', type: 'I' },
         ],
-        source: 'FUNCTION z_fm.\n  cv_flag = cv_flag + 1.\nENDFUNCTION.\n',
+        source,
       });
       expect(result.isError).toBeUndefined();
       const put = calls.find((c) => c.method === 'PUT' && c.url.includes('/source/main'));

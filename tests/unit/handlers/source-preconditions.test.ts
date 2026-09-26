@@ -381,3 +381,44 @@ it('identifies the auto-routed local include and accepts a hash re-read from tha
   expect(state.source).toContain("'new'");
   expect(state.locked).toBe(false);
 });
+
+it.each([
+  { type: 'PROG' },
+  { type: 'INCL', source: ' \r\n\t' },
+  { type: 'CLAS', source: null },
+  { type: 'DDLS', source: '' },
+  { type: 'FUNC', group: 'ZGROUP' },
+  { type: 'FUNC', group: 'ZGROUP', source: '*" IMPORTING IV_X TYPE I\n' },
+])('refuses a source update with no usable replacement: %j', async (extra) => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+    action: 'update',
+    name: 'ZGUARD',
+    ...extra,
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]!.text).toContain('"source" is required');
+  expect(state.calls.some((c) => c.method === 'POST' || c.method === 'PUT')).toBe(false);
+  expect(state.source).toBe(initial);
+});
+
+it.each(['', '<html>Unexpected response</html>', 'FUNCTION zguard\nENDFUNCTION.', 'FUNCTION zguard.\n WRITE 1.'])(
+  'refuses an unexpected successful FUNC source read instead of making a skeleton: %j',
+  async (current) => {
+    const state = backend({ initialSource: current });
+    const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+      action: 'update',
+      type: 'FUNC',
+      name: 'ZGUARD',
+      group: 'ZGROUP',
+      parameters: [{ kind: 'importing', name: 'IV_X', type: 'I' }],
+      expectedSourceHash: hash(current),
+    });
+    expect(result.isError).toBe(true);
+    expect(state.calls.filter((c) => c.method === 'GET' && c.locked)).toHaveLength(1);
+    expect(state.calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(state.calls.some((c) => c.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
+    expect(state.source).toBe(current);
+    expect(state.locked).toBe(false);
+  },
+);

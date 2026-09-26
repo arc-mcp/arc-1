@@ -219,25 +219,14 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   //
   // Issue #252: when `parameters` is supplied as a structured array, splice
   // it into the FM source as ABAP-source-based signature syntax. If `source`
-  // is omitted entirely, fetch the existing source first to preserve the
+  // is omitted entirely, read the existing source under the lock to preserve the
   // body. The structured clause replaces any existing signature region.
   let effectiveSource = source;
   let fmParamStripWarning: string | undefined;
-  let fmParamMergeWarning: string | undefined;
   const parameters = args.parameters as FmParameter[] | undefined;
   const needsCurrentFunctionSource = type === 'FUNC' && parameters !== undefined && !source.trim();
   const prepareFunctionSource = (baseSource: string): string => {
-    if (parameters !== undefined) {
-      if (!/^\s*FUNCTION\s+/i.test(baseSource)) {
-        baseSource = `FUNCTION ${name}.\n${baseSource}\nENDFUNCTION.\n`;
-      }
-      try {
-        baseSource = spliceFmSignature(baseSource, name, parameters);
-      } catch {
-        fmParamMergeWarning =
-          'Could not splice structured parameters: source did not start with FUNCTION keyword. Used the supplied source verbatim.';
-      }
-    }
+    if (parameters !== undefined) baseSource = spliceFmSignature(baseSource, name, parameters);
     const stripped = stripFmParamCommentBlock(baseSource);
     if (stripped.wasStripped) {
       fmParamStripWarning =
@@ -245,7 +234,14 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     }
     return stripped.source;
   };
-  if (type === 'FUNC' && !needsCurrentFunctionSource) effectiveSource = prepareFunctionSource(source);
+  if (type === 'FUNC' && !needsCurrentFunctionSource) {
+    // Only caller-supplied body text may be wrapped. A fetched source must contain the real FUNCTION envelope.
+    const bodyOnly = parameters !== undefined && !/^\s*FUNCTION\s+/i.test(source);
+    effectiveSource = prepareFunctionSource(bodyOnly ? `FUNCTION ${name}.\n${source}\nENDFUNCTION.\n` : source);
+  }
+  if (!needsCurrentFunctionSource && !effectiveSource.trim()) {
+    return errorResult(`"source" is required for action="update" on ${type} ${name}; no write was made.`);
+  }
 
   // Pre-write lint validation (uses sanitized source for FUNC)
   const lintWarnings = runPreWriteLint(effectiveSource, type, name, config, lintOverride);
@@ -291,7 +287,6 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     checkNotes,
     cdsUpdateHint,
     fmParamStripWarning,
-    fmParamMergeWarning,
   );
   return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
 }
