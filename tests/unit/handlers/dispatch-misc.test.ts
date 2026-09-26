@@ -1256,11 +1256,42 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
     it('routes SAP(search) with params', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAP', {
         action: 'search',
+        version: 'auto',
         params: { query: 'ZCL*' },
       });
       // Should succeed (mock returns data)
       expect(result.isError).toBeUndefined();
     });
+
+    it.each([
+      { version: 'active', serviceVersion: undefined, expected: '0001' },
+      { version: 'auto', serviceVersion: '0002', expected: '0002' },
+    ])(
+      'keeps read version=$version separate from service version=$expected',
+      async ({ version, serviceVersion, expected }) => {
+        mockFetch.mockImplementation(async (url) =>
+          String(url).includes('/publishjobs')
+            ? mockResponse(
+                200,
+                '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>OK</SEVERITY></DATA></asx:values></asx:abap>',
+              )
+            : mockResponse(200, '<serviceBinding published="true" bindingCreated="true"/>', { 'x-csrf-token': 'T' }),
+        );
+        const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, toolMode: 'hyperfocused' }, 'SAP', {
+          action: 'activate',
+          type: 'SRVB',
+          name: 'ZUI_TEST_O4',
+          version,
+          params: { action: 'publish_srvb', service_type: 'odatav4', version: serviceVersion },
+        });
+        expect(result.isError, result.content[0]?.text).toBeUndefined();
+        const posts = mockFetch.mock.calls.filter(
+          ([url, options]) => options?.method === 'POST' && String(url).includes('/publishjobs'),
+        );
+        expect(posts).toHaveLength(1);
+        expect(new URL(String(posts[0]![0])).searchParams.get('serviceversion')).toBe(expected);
+      },
+    );
   });
 
   describe('normalizeObjectType', () => {

@@ -71,7 +71,7 @@ export function expandHyperfocusedArgs(args: Record<string, unknown>):
   // Copy standard top-level fields
   if (args.type !== undefined) expandedArgs.type = args.type;
   if (args.name !== undefined) expandedArgs.name = args.name;
-  if (args.version !== undefined) expandedArgs.version = args.version;
+  if (args.version !== undefined && toolName === 'SAPRead') expandedArgs.version = args.version;
 
   // For write/activate, copy action from params if not already set
   // (the real SAPWrite has its own "action" field like "create"/"update"/"delete")

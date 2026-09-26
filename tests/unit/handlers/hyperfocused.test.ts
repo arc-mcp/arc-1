@@ -34,19 +34,21 @@ describe('hyperfocused mode', () => {
       }
     });
 
-    it('routes write action to SAPWrite', () => {
+    it('routes write action to SAPWrite without overriding the service version', () => {
       const result = expandHyperfocusedArgs({
         action: 'write',
-        type: 'CLAS',
-        name: 'ZCL_TEST',
-        params: { action: 'update', source: 'CLASS zcl_test...' },
+        type: 'SRVB',
+        name: 'ZSB_TEST',
+        version: 'active',
+        params: { action: 'update', serviceDefinition: 'ZSD_TEST', version: '0002' },
       });
       expect('error' in result).toBe(false);
       if (!('error' in result)) {
         expect(result.toolName).toBe('SAPWrite');
-        expect(result.expandedArgs.type).toBe('CLAS');
+        expect(result.expandedArgs.type).toBe('SRVB');
         expect(result.expandedArgs.action).toBe('update');
-        expect(result.expandedArgs.source).toBe('CLASS zcl_test...');
+        expect(result.expandedArgs.serviceDefinition).toBe('ZSD_TEST');
+        expect(result.expandedArgs.version).toBe('0002');
       }
     });
 
