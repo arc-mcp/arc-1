@@ -8,7 +8,7 @@ it drops native IDs and serializes every separate assistant call as `call_0`. Th
 a parallel assistant turn into separate assistant messages. A local captured-payload reproduction
 on `202ad566` proves the mismatch without an API request.
 
-## Plan and review
+## Implementation
 
 1. Carry an optional provider ID on `LLMToolCall`; preserve it in both HTTP adapters. The harness
    assigns a deterministic ID once when a provider supplies none, before storing conversation history.
@@ -24,7 +24,7 @@ requires results to refer to their tool-use IDs. Local payload assertions direct
 they are not evidence of a live provider/API run. ID-less providers use the shared fallback; CLI integration adapters are unchanged.
 This is eval-only; production SAP handlers and tool schemas do not change. Roadmap checked: no impact.
 
-Validation: all four new regressions fail on original main and pass after the fix. Full suite:
-7,194 tests / 238 files; typecheck, lint, policy, size budgets, build and strict docs pass. No live
+Validation: the original correlation regressions fail on main and pass after the fix; remaining
+allowance, fractional limits, empty IDs and assistant text are covered by outgoing-payload tests. No live
 Anthropic run: the local environment has no ANTHROPIC_API_KEY. HTTP payload tests cover both
 Anthropic and Ollama; no live Ollama result is claimed.

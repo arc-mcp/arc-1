@@ -163,9 +163,9 @@ export async function runScenario(
     }
 
     // Assign IDs once and keep parallel calls in their original assistant turn.
-    const toolCalls = response.toolCalls.slice(0, maxCalls - callCount).map((call, index) => ({
+    const toolCalls = response.toolCalls.slice(0, Math.ceil(maxCalls - callCount)).map((call, index) => ({
       ...call,
-      id: call.id ?? `call_${callCount + index + 1}`,
+      id: call.id || `call_${callCount + index + 1}`,
     }));
     messages.push({ role: 'assistant', content: response.content, toolCalls });
     for (const toolCall of toolCalls) {

@@ -48,7 +48,7 @@ function toAnthropicMessages(messages: Message[]): {
 
     if (msg.role === 'assistant' && msg.toolCalls?.length) {
       const content: Array<Record<string, unknown>> = [];
-      if (msg.content) {
+      if (msg.content?.trim()) {
         content.push({ type: 'text', text: msg.content });
       }
       for (const tc of msg.toolCalls) {

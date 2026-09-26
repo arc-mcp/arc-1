@@ -18,16 +18,14 @@ runs two shapes of eval against your scenarios:
   with either mock or live MCP responses. Good for model comparison and
   offline runs; less realistic than the integration modes.
 
-For direct HTTP providers, tool-call IDs survive every conversation turn: assistant calls and
-results use the same ID, including parallel calls. The harness assigns IDs once for ID-less
-providers and caps execution at the scenario's remaining `maxToolCalls` allowance. Local contract
-regressions run with `npx vitest run tests/unit/evals`; these capture outgoing payloads with fixture
-responses and do not make model API or SAP requests.
-
 Either way the point is to catch regressions in **how LLMs route intent
 through our tool descriptions** — the same class of bug we found in FEAT-33
 where LLMs text-scanned `DDDDLSRC` via `SAPQuery` instead of calling
 `SAPContext(action="impact")`.
+
+Direct HTTP providers retain call/result IDs across parallel turns. The trace counts executed calls
+within `maxToolCalls` (fractional limits round up); calls beyond it are not executed or scored.
+Payload-only regression tests: `npx vitest run tests/unit/evals` (no API/SAP requests).
 
 ---
 

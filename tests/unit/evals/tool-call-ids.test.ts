@@ -14,7 +14,7 @@ const scenario: EvalScenario = {
 };
 type WireMessage = {
   role: string;
-  content?: string | Array<{ type: string; id?: string; tool_use_id?: string }>;
+  content?: string | Array<{ type: string; id?: string; tool_use_id?: string; text?: string }>;
   tool_calls?: Array<{ id: string }>;
   tool_call_id?: string;
 };
@@ -78,11 +78,13 @@ it.each(['anthropic', 'ollama'] as const)(
     expect(assistant).toHaveLength(1);
     if (kind === 'anthropic') {
       const blocks = assistant[0]!.content as Exclude<WireMessage['content'], string | undefined>;
+      expect(blocks[0]).toEqual({ type: 'text', text: 'Inspection.' });
       expect(blocks.filter((b) => b.type === 'tool_use').map((b) => b.id)).toEqual(['native_first', 'native_parallel']);
       const results = messages.at(-1)!;
       expect(results.role).toBe('user');
       expect((results.content as typeof blocks).map((b) => b.tool_use_id)).toEqual(['native_first', 'native_parallel']);
     } else {
+      expect(assistant[0]!.content).toBe('Inspection.');
       expect(assistant[0]!.tool_calls?.map((call) => call.id)).toEqual(['native_first', 'native_parallel']);
       expect(messages.filter((msg) => msg.role === 'tool').map((msg) => msg.tool_call_id)).toEqual([
         'native_first',
@@ -96,7 +98,7 @@ it.each(['anthropic', 'ollama'] as const)(
 it('assigns fallback IDs once without mutating an ID-less provider response', async () => {
   const calls = [
     { name: 'SAPRead', arguments: {} },
-    { name: 'SAPSearch', arguments: {} },
+    { name: 'SAPSearch', arguments: {}, id: '' },
   ];
   const history: Message[][] = [];
   const provider: LLMProvider = {
@@ -111,10 +113,14 @@ it('assigns fallback IDs once without mutating an ID-less provider response', as
   expect(score.trace.map((call) => call.id)).toEqual(['call_1', 'call_2', 'call_3', 'call_4']);
   expect(history[2]!.filter((m) => m.role === 'tool').map((m) => m.toolCallId)).toEqual(score.trace.map((c) => c.id));
   expect(history[2]!.slice(0, history[1]!.length)).toEqual(history[1]);
-  expect(calls.every((call) => !('id' in call))).toBe(true);
+  expect(calls.map((call) => call.id)).toEqual([undefined, '']);
 });
 
-it('does not execute parallel calls beyond the scenario allowance', async () => {
+it.each([
+  { maxToolCalls: 1, executed: 1, turns: 1 },
+  { maxToolCalls: 3, executed: 3, turns: 2 },
+  { maxToolCalls: 1.5, executed: 2, turns: 1 },
+])('caps execution across turns at $maxToolCalls calls', async ({ maxToolCalls, executed, turns }) => {
   const provider: LLMProvider = {
     name: 'fixture',
     model: 'fixture',
@@ -127,8 +133,30 @@ it('does not execute parallel calls beyond the scenario allowance', async () => 
     }),
   };
   const liveExecutor = vi.fn().mockResolvedValue('fixture');
-  const result = await runScenario(provider, { ...scenario, maxToolCalls: 1 }, [], { liveExecutor });
-  expect(liveExecutor).toHaveBeenCalledExactlyOnceWith('SAPRead', {});
-  expect(provider.chat).toHaveBeenCalledTimes(1);
-  expect(result.toolCallCount).toBe(1);
+  const result = await runScenario(provider, { ...scenario, maxToolCalls }, [], { liveExecutor });
+  expect(liveExecutor).toHaveBeenCalledTimes(executed);
+  expect(provider.chat).toHaveBeenCalledTimes(turns);
+  expect(result.toolCallCount).toBe(executed);
+});
+
+it('omits whitespace-only Anthropic assistant text while retaining its tool call', async () => {
+  vi.stubEnv('ANTHROPIC_API_KEY', 'local-fixture-no-network');
+  const fetch = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(
+        JSON.stringify({ content: [], stop_reason: 'end_turn', usage: { input_tokens: 0, output_tokens: 0 } }),
+      ),
+    );
+  vi.stubGlobal('fetch', fetch);
+  await createAnthropicProvider('fixture').chat(
+    [
+      { role: 'user', content: 'Inspect.' },
+      { role: 'assistant', content: '\n\t ', toolCalls: [{ id: 'native', name: 'SAPRead', arguments: {} }] },
+      { role: 'tool', toolCallId: 'native', content: 'Source' },
+    ],
+    [],
+  );
+  const request = JSON.parse(fetch.mock.calls[0]![1].body);
+  expect(request.messages[1].content).toEqual([{ type: 'tool_use', id: 'native', name: 'SAPRead', input: {} }]);
 });
