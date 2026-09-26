@@ -292,6 +292,7 @@ export class AdtClient {
       password: config.password,
       client: config.client,
       language: config.language,
+      userAgent: config.userAgent,
       insecure: config.insecure,
       gzipDataPreviewBody: config.gzipDataPreviewBody,
       cookies: config.cookies,

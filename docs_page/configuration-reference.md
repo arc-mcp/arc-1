@@ -51,7 +51,17 @@ The bare minimum needed to reach a SAP system. None of these affect what tool ca
 | `--insecure` | `SAP_INSECURE` | `false` | When `true`, skips TLS certificate verification on the SAP HTTP client. **Dev only** — masks man-in-the-middle attacks and corp-CA misconfiguration in production. |
 | `--gzip-datapreview-body` | `SAP_GZIP_DATAPREVIEW_BODY` | `false` | Compatibility fallback for a reverse proxy/WAF that falsely blocks legitimate SQL-shaped request bodies. When explicitly enabled, gzip-encodes only non-empty POST bodies on the exact ADT collection paths `/sap/bc/adt/datapreview/freestyle` and `/sap/bc/adt/datapreview/ddic`, and sends `Content-Encoding: gzip`. Request decompression is verified on SAP_BASIS 758 and 816; the available 750 test system advertises but does not bind data preview, so validate with one query after enabling on another release. ARC-1 never enables or retries with gzip automatically. This does not enable data preview/free SQL or bypass ARC-1 scopes/SAP authorization, but it can make these bodies opaque to a WAF that scans raw bytes; prefer an approved, narrowly scoped gateway rule exclusion and enable this only with the security owner's approval. In multi-target mode this is one global server policy and therefore applies to every destination. |
 | `--system-type` | `SAP_SYSTEM_TYPE` | `auto` | Forces ARC-1's release/feature gating to behave as if the target is `btp` (Steampunk/Public Cloud) or `onprem`. `auto` (default) lets ARC-1 detect via probes. Override when auto-detection is wrong (e.g. mirrored systems). |
+| `--user-agent` | `SAP_USER_AGENT` | `arc-1/<version>` | Outbound SAP HTTP User-Agent, including CSRF bootstrap and stateful/proxy requests. Optional deployment identifier; printable ASCII, at most 256 characters, surrounding spaces trimmed. Unset/empty uses the default. No caller identity is added. |
 | `--abap-release` | `SAP_ABAP_RELEASE` | — | Manual `SAP_BASIS` release override for local tooling that needs a release number (e.g. abaplint's syntax-feature gating). Examples: `758` for S/4HANA 2023, `816` for ABAP Platform 2025 (SAP renumbered 75x→8xx). ARC-1's runtime probe still wins when available — this is the fallback. |
+
+For SAP ICM request logs, the Basis team can include `%{user-agent}i` in an existing
+[HTTP logging format](https://help.sap.com/saphelp_em92/helpdata/en/48/442541e0804bb8e10000000a42189b/content.htm).
+For example, set `SAP_USER_AGENT=arc-1/team-dev` in local environment configuration,
+or `SAP_USER_AGENT: "arc-1/team-dev"` in CF `.mtaext` properties, and restart/redeploy.
+This identifies ARC-1 traffic; it is caller-controlled metadata, never an authorization
+signal. Do not include credentials or personal data. Inbound MCP client identification
+in ARC-1 audit logs is a separate field. This option applies to ARC-1's SAP HTTP transport,
+not OAuth token requests made by authentication libraries.
 
 ### TLS / proxy notes
 

@@ -1,6 +1,4 @@
 /**
- * MCP Server for ARC-1.
- *
  * Creates and starts the MCP server with 12 intent-based tools.
  * Supports two transports:
  * - stdio (default): for local MCP clients (Claude Desktop, Claude Code, Cursor)
@@ -33,6 +31,7 @@ import {
 } from '../handlers/feature-cache.js';
 import type { ToolResult } from '../handlers/shared.js';
 import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
+import { VERSION } from '../version.js';
 import { logAuthSummary } from './auth-summary.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId } from './context.js';
@@ -78,8 +77,7 @@ import type { ServerConfig } from './types.js';
 import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
-/** ARC-1 version */
-export const VERSION = '1.4.0'; // x-release-please-version
+export { VERSION } from '../version.js';
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's
@@ -221,6 +219,7 @@ export function buildAdtConfig(
     baseUrl: config.url,
     client: config.client,
     language: config.language,
+    userAgent: config.userAgent,
     insecure: config.insecure,
     gzipDataPreviewBody: config.gzipDataPreviewBody,
     disableSaml: config.disableSaml2,

@@ -8,6 +8,8 @@
  * 4. Defaults (all `allow*` flags false — restrictive by default)
  */
 
+import { DEFAULT_USER_AGENT } from '../adt/user-agent.js';
+
 /** MCP transport type */
 export type TransportType = 'stdio' | 'http-streamable';
 
@@ -31,6 +33,7 @@ export interface ServerConfig {
   password: string;
   client: string;
   language: string;
+  userAgent: string;
   insecure: boolean;
   /** Gzip non-empty ADT data-preview POST bodies for approved WAF compatibility. */
   gzipDataPreviewBody: boolean;
@@ -259,6 +262,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   password: '',
   client: '100',
   language: 'EN',
+  userAgent: DEFAULT_USER_AGENT,
   insecure: false,
   gzipDataPreviewBody: false,
   transport: 'stdio',

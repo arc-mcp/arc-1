@@ -1,31 +1,9 @@
 /**
- * ADT HTTP Transport for ARC-1.
- *
- * Handles all HTTP communication with SAP ADT REST API:
- * - CSRF token lifecycle (fetch, cache, refresh on 403)
- * - Cookie-based and Basic auth
- * - Stateful sessions (lock → modify → unlock must share session)
- * - Automatic retry on session expiry
- *
- * Design decisions:
- *
- * 1. CSRF token fetch uses HEAD /sap/bc/adt/core/discovery with "X-CSRF-Token: fetch".
- *    HEAD is ~5s vs ~56s for GET on slow systems (learned from Go version benchmarks).
- *
- * 2. Modifying requests (POST/PUT/DELETE/PATCH) auto-include CSRF token.
- *    On 403, token is refreshed and request is retried once.
- *    (Pattern from both abap-adt-api and fr0ster implementations.)
- *
- * 3. Stateful sessions use "X-sap-adt-sessiontype: stateful" header.
- *    Lock/modify/unlock must use the same session cookies.
- *    withStatefulSession() ensures session isolation and closes the backend
- *    context when the operation finishes.
- *
- * 4. sap-client and sap-language are added to every request as query params.
- *    This is an SAP convention, not ADT-specific.
- *
- * 5. Uses native fetch() with undici dispatchers for proxy and TLS configuration.
- *    No external HTTP dependencies — undici ships with Node.js 22+.
+ * SAP ADT HTTP transport: authentication, cookies, CSRF and bounded retries.
+ * Modifying requests fetch a token when needed and refresh it once on HTTP 403.
+ * Stateful writes share cookies and one proxy connection through lock/save/unlock,
+ * then close their SAP context. Requests carry the configured client and language.
+ * Uses undici dispatchers for direct, proxy and custom-TLS connections.
  */
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
@@ -49,6 +27,7 @@ import {
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import { fetchWithAttemptBudget } from './request-attempt-budget.js';
 import type { Semaphore } from './semaphore.js';
+import { resolveSapUserAgent } from './user-agent.js';
 
 export type { AdtRequestOptions } from './http-deadline.js';
 
@@ -127,6 +106,7 @@ export interface AdtHttpConfig {
   password?: string;
   client?: string;
   language?: string;
+  userAgent?: string;
   insecure?: boolean;
   /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
   gzipDataPreviewBody?: boolean;
@@ -191,6 +171,7 @@ interface AuthenticationAttemptState {
 export class AdtHttpClient {
   private discoveryMap: Map<string, string[]> = new Map();
   private negotiatedHeaders: Map<string, { accept?: string; contentType?: string }> = new Map();
+  private readonly userAgent: string;
   private csrfToken = '';
   private dispatcher: Dispatcher | undefined;
   private longOperationDispatcher: Dispatcher | undefined;
@@ -218,6 +199,7 @@ export class AdtHttpClient {
   private readonly authenticationAttemptState: AuthenticationAttemptState;
   constructor(config: AdtHttpConfig, authenticationAttemptState?: AuthenticationAttemptState) {
     this.config = config;
+    this.userAgent = resolveSapUserAgent(config.userAgent);
     this.authenticationAttemptState = authenticationAttemptState ?? { rejected: false, tail: Promise.resolve() };
 
     // Set up undici dispatcher for TLS configuration (non-proxy mode only).
@@ -434,7 +416,7 @@ export class AdtHttpClient {
       await this.fetchCsrfToken(withoutResponseBudget(options));
     }
 
-    const headers: Record<string, string> = { Accept: '*/*' };
+    const headers: Record<string, string> = { Accept: '*/*', 'User-Agent': this.userAgent };
     const negotiationKey = this.normalizeHeaderCacheKey(path);
 
     if (!extraHeaders?.Accept) {
@@ -1031,6 +1013,7 @@ export class AdtHttpClient {
     let path = '/sap/bc/adt/core/discovery';
     const headers: Record<string, string> = {
       'X-CSRF-Token': 'fetch',
+      'User-Agent': this.userAgent,
       Accept: '*/*',
     };
 

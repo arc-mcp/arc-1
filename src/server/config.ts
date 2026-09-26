@@ -18,6 +18,7 @@
 
 import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
 import type { SafetyConfig } from '../adt/safety.js';
+import { resolveSapUserAgent } from '../adt/user-agent.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
 import type {
@@ -66,6 +67,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'password', valueName: 'password', description: 'SAP password (prefer SAP_PASSWORD in CI)' },
   { name: 'client', valueName: 'client', description: 'SAP client' },
   { name: 'language', valueName: 'language', description: 'SAP logon and object master language' },
+  { name: 'user-agent', valueName: 'value', description: 'Outbound SAP User-Agent (default: arc-1/version)' },
   { name: 'insecure', valueName: 'boolean', description: 'Disable SAP TLS verification (true/false)' },
   {
     name: 'gzip-datapreview-body',
@@ -563,6 +565,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   config.password = resolveStr('password', 'SAP_PASSWORD', '', 'password');
   config.client = resolveStr('client', 'SAP_CLIENT', '100', 'client');
   config.language = resolveStr('language', 'SAP_LANGUAGE', 'EN', 'language');
+  config.userAgent = resolveSapUserAgent(resolveOptionalStr('user-agent', 'SAP_USER_AGENT', 'userAgent'));
   config.insecure = resolveBool('insecure', 'SAP_INSECURE', false, 'insecure');
   config.gzipDataPreviewBody = resolveBool(
     'gzip-datapreview-body',

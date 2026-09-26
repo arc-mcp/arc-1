@@ -85,6 +85,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | Variable / Flag | Description |
 |-----------------|-------------|
 | `SAP_URL`, `SAP_USER`, `SAP_PASSWORD`, `SAP_CLIENT` | SAP connection (client default 100) |
+| `SAP_USER_AGENT` / `--user-agent` | Outbound SAP HTTP identifier (default `arc-1/<version>`); printable ASCII, max 256 chars; never put secrets or user identities here |
 | `SAP_LANGUAGE` | Request language AND master language of created objects (default EN, #343) |
 | `SAP_INSECURE` | Skip TLS verification (default false) |
 | `SAP_GZIP_DATAPREVIEW_BODY` | Default-off WAF compatibility: gzip only non-empty POST bodies on exact `/datapreview/{freestyle,ddic}` collection paths; prefer a scoped gateway rule exclusion and require security approval |

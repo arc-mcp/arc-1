@@ -54,6 +54,8 @@ export interface AdtClientConfig {
   client: string;
   /** SAP language (default: "EN") */
   language: string;
+  /** Outbound SAP User-Agent; omitted uses arc-1/version. */
+  userAgent?: string;
   /** Skip TLS verification */
   insecure: boolean;
   /** Gzip non-empty data-preview POST bodies for approved WAF compatibility. */
