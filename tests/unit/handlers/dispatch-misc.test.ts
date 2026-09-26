@@ -1232,6 +1232,19 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(result.content[0]?.text).toBeTruthy();
     });
 
+    it('forwards the advertised top-level version to SAPRead', async () => {
+      // 'inactive', not 'active': an omitted version also defaults to ?version=active.
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, toolMode: 'hyperfocused' }, 'SAP', {
+        action: 'read',
+        type: 'PROG',
+        name: 'ZHELLO',
+        version: 'inactive',
+      });
+      expect(result.isError).toBeUndefined();
+      const sourceCall = mockFetch.mock.calls.find((call: any[]) => String(call[0]).includes('/source/main'));
+      expect(String(sourceCall?.[0])).toContain('/programs/programs/ZHELLO/source/main?version=inactive');
+    });
+
     it('returns error for unknown SAP action', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAP', {
         action: 'invalid_action',

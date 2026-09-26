@@ -1302,6 +1302,7 @@ export const SAPHyperfocusedSchema = z
     action: z.string(),
     type: z.string().optional(),
     name: z.string().optional(),
+    version: z.enum(['active', 'inactive', 'auto']).optional(),
     params: z.record(z.string(), z.any()).optional(),
   })
   .strict();

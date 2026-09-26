@@ -8,6 +8,7 @@ import {
   getHyperfocusedScope,
   getHyperfocusedToolDefinition,
 } from '../../../src/handlers/hyperfocused.js';
+import { SAPHyperfocusedSchema } from '../../../src/handlers/schemas.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -206,5 +207,9 @@ describe('hyperfocused mode', () => {
     const tool = tools[0]!;
     expect(tool.name).toBe('SAP');
     expect((tool.inputSchema as Record<string, unknown>).additionalProperties).toBe(false);
+    // schema-key-sync.test.ts covers only the 12 standard tools; an advertised key missing here was rejected.
+    expect(Object.keys((tool.inputSchema as { properties: object }).properties).sort()).toEqual(
+      Object.keys(SAPHyperfocusedSchema.shape).sort(),
+    );
   });
 });
