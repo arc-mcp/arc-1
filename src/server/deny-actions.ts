@@ -142,7 +142,11 @@ function globToRegex(glob: string): RegExp {
 export function isActionDenied(tool: string, action: string | undefined, patterns: string[]): boolean {
   if (patterns.length === 0) return false;
   // The read-only syntax alias must not bypass existing administrator restrictions.
-  if (tool === 'SAPRead' && action === 'SYNTAX' && isActionDenied('SAPDiagnose', 'syntax', patterns)) {
+  if (
+    tool === 'SAPRead' &&
+    action === 'SYNTAX' &&
+    (isActionDenied('SAPDiagnose', 'syntax', patterns) || isActionDenied('SAP', 'diagnose', patterns))
+  ) {
     return true;
   }
   const fullKey = action ? `${tool}.${action}` : tool;

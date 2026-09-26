@@ -79,14 +79,16 @@ means SAP did not validate it, even if there are no native findings. This does n
 execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..., name=...)` route.
 
 Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `objectType` are required;
-`version="auto"`, include/method selection, diff, and output-format options are refused.
+`version="auto"`, include/method selection, diff, and non-default output formats are refused.
+Harmless strict-client filler (false flags, empty arrays, `format="text"`, `maxResults=0`) is ignored.
 Empty or whitespace-only `source` is normalized as omitted, matching the legacy route; use
-non-empty text for an unsaved-source check.
+non-empty text for an unsaved-source check. The alias inherits the legacy type limitations:
+FUNC syntax routing is unsupported, and inline JSON server-driven objects may return not-processed
+instead of findings; this route adds no new backend type support.
 
 The standard `SAPRead` tool advertises `readOnlyHint:true`; clients decide whether that affects
-approval. No client override or new server setting is needed. `SAPDiagnose` remains mixed and
-hyperfocused `SAP` remains unannotated. Existing `SAP_DENY_ACTIONS` rules for `SAPDiagnose` or
-`SAPDiagnose.syntax` also block this alias. `SAPRead.SYNTAX` can block the alias alone.
+approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated. Existing `SAP_DENY_ACTIONS` rules for `SAPDiagnose` or
+`SAPDiagnose.syntax`, including hyperfocused `SAP.diagnose`, also block this alias. `SAPRead.SYNTAX` can block the alias alone.
 
 **Supported types:**
 

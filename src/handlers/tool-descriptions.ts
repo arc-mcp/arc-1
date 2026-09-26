@@ -12,7 +12,7 @@ const SAPWRITE_LEAD =
   'Change ABAP objects in the SAP system: create, update, delete, and targeted source edits. Use it ' +
   'when the request is to PERSIST a change — write, add, implement, refactor, or remove ABAP code ' +
   'or DDIC metadata. Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext; ' +
-  'checking or formatting source without saving it is SAPLint or SAPDiagnose. ';
+  'local lint/formatting is SAPLint; SAP syntax checks use SAPRead(type="SYNTAX"). ';
 
 const SAPWRITE_BODY_ONPREM =
   // The purpose and supported types already live in SAPWRITE_LEAD and the type property.

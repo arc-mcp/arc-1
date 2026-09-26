@@ -526,8 +526,8 @@ appends `sap-client` on every hop, so paging must keep rebuilding the `to` curso
 - **Priority / effort / status:** P2 / S / Ready
 - **Category:** Diagnostics
 
-**Idea.** Check a bounded list of objects in one `SAPDiagnose` call and return per-object findings
-without stopping at the first failure.
+**Idea.** Extend the read-only `SAPRead(type="SYNTAX")` route to check a bounded list of objects
+and return per-object findings without stopping at the first failure.
 
 **Why it remains.** The current syntax action accepts one object. ATC can cover packages or object
 sets, but it is heavier and semantically different from a direct syntax check.

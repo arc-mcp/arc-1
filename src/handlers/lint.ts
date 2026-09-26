@@ -106,7 +106,7 @@ export async function handleSAPLint(
     }
     default:
       return errorResult(
-        `Unknown SAPLint action: "${action}". Supported: lint, lint_and_fix, list_rules, format, get_formatter_settings, set_formatter_settings. For atc/syntax/unittest, use SAPDiagnose instead.`,
+        `Unknown SAPLint action: "${action}". Supported: lint, lint_and_fix, list_rules, format, get_formatter_settings, set_formatter_settings. For syntax use SAPRead(type="SYNTAX"); for atc/unittest use SAPDiagnose.`,
       );
   }
 }

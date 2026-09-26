@@ -68,7 +68,7 @@ describe('read-only syntax entry point', () => {
     }
   });
 
-  it.each(['SAPDiagnose', 'SAPDiagnose.syntax', 'SAPDiagnose.synt*', 'SAPRead.SYNTAX'])(
+  it.each(['SAPDiagnose', 'SAPDiagnose.syntax', 'SAPDiagnose.synt*', 'SAPRead.SYNTAX', 'SAP.diagnose'])(
     'honors %s in both dispatch and listing',
     async (denial) => {
       validateDenyActions([denial]);
@@ -92,6 +92,62 @@ describe('read-only syntax entry point', () => {
     },
   );
 
+  it.each(['CLAS', 'clas/oc'])('checks the class URI for objectType=%s', async (objectType) => {
+    const result = await handleToolCall(
+      client(),
+      DEFAULT_CONFIG,
+      'SAPRead',
+      { ...args, objectType, name: 'ZCL_X' },
+      reader,
+    );
+    expect(result.isError).toBeUndefined();
+    const sends = mockFetch.mock.calls.filter(([, options]) => options?.method === 'POST');
+    expect(sends).toHaveLength(1);
+    expect(sends[0]![1]?.body).toContain('adtcore:uri="/sap/bc/adt/oo/classes/ZCL_X"');
+  });
+
+  it.each(['read', 'diagnose'])('preserves SAP.diagnose denial through hyperfocused %s', async (action) => {
+    const result = await handleToolCall(
+      client(),
+      { ...DEFAULT_CONFIG, denyActions: ['SAP.diagnose'] },
+      'SAP',
+      {
+        action,
+        type: action === 'read' ? 'SYNTAX' : 'PROG',
+        name: 'ZTEST',
+        params: action === 'read' ? { objectType: 'PROG' } : { action: 'syntax' },
+      },
+      reader,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('denied by server policy');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('accepts harmless strict-client defaults without changing the syntax request', async () => {
+    const baseline = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPRead', args, reader);
+    const before = mockFetch.mock.calls.filter(([, options]) => options?.method === 'POST')[0]![1]?.body;
+    mockFetch.mockClear();
+    const result = await handleToolCall(
+      client(),
+      DEFAULT_CONFIG,
+      'SAPRead',
+      {
+        ...args,
+        force_refresh: false,
+        expand_includes: false,
+        includeSignature: false,
+        format: 'text',
+        maxResults: 0,
+        columns: [],
+        where: [],
+      },
+      reader,
+    );
+    expect(result).toEqual(baseline);
+    expect(mockFetch.mock.calls.filter(([, options]) => options?.method === 'POST')[0]![1]?.body).toEqual(before);
+  });
+
   it('requires read scope before contacting SAP', async () => {
     const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPRead', args, { ...reader, scopes: [] });
     expect(result.content[0].text).toContain('Insufficient scope');
@@ -105,6 +161,8 @@ describe('read-only syntax entry point', () => {
     { action: 'diff' },
     { action: 'trace_start' },
     { include: 'testclasses' },
+    { force_refresh: true },
+    { columns: ['NAME'] },
     { format: 'structured' },
     { type: 'PROG', source: 'REPORT ztest.' },
     { objectType: 'NO_SUCH_TYPE' },

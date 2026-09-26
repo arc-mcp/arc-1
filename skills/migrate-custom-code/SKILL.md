@@ -208,7 +208,7 @@ SAPWrite(action="update", type="<type>", name="<object_name>", source="<fixed_so
 ### 5b. Validate after each batch of fixes
 
 ```
-SAPDiagnose(action="syntax", type="<type>", name="<object_name>")
+SAPRead(type="SYNTAX", objectType="<type>", name="<object_name>")
 ```
 
 If syntax errors are introduced: revert by writing back the original source and report the issue.

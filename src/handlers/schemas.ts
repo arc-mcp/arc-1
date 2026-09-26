@@ -103,8 +103,14 @@ function validateSapReadInput(
       });
     }
     const allowed = new Set(['type', 'name', 'objectType', 'version', 'source']);
-    for (const [key, value] of Object.entries(input)) {
-      if (value !== undefined && !allowed.has(key)) {
+    for (const [key, value] of Object.entries<unknown>(input)) {
+      // Ignore strict-client filler, but reject options that would change the requested check.
+      const filler =
+        value === false ||
+        (Array.isArray(value) && value.length === 0) ||
+        (key === 'format' && value === 'text') ||
+        (key === 'maxResults' && value === 0);
+      if (value !== undefined && !allowed.has(key) && !filler) {
         ctx.addIssue({ code: 'custom', path: [key], message: `SYNTAX does not accept ${key}.` });
       }
     }
