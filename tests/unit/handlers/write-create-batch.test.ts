@@ -1204,6 +1204,22 @@ describe('SAPWrite handler — create / batch_create', () => {
       expect(put!.body).toContain('ev_output = iv_input');
     });
 
+    it('FUNC create reports an incomplete signature envelope without misidentifying the FUNCTION keyword', async () => {
+      const calls = captureFetch();
+      const source = 'FUNCTION z_fm.\n  WRITE / 1.\n';
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'create',
+        type: 'FUNC',
+        name: 'Z_FM',
+        group: 'ZFG',
+        source,
+        parameters: [{ kind: 'importing', name: 'IV_INPUT', type: 'STRING' }],
+      });
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('Could not splice structured parameters into the FUNCTION source');
+      expect(calls.find((c) => c.method === 'PUT' && c.url.includes('/source/main'))?.body).toBe(source);
+    });
+
     it.each([
       { label: 'full source', source: 'FUNCTION z_fm.\n  cv_flag = cv_flag + 1.\nENDFUNCTION.\n' },
       { label: 'body only', source: '  cv_flag = cv_flag + 1.\n' },

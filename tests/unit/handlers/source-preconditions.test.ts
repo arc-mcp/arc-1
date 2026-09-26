@@ -129,7 +129,7 @@ it.each([
   { type: 'CLAS', action: 'change_method_visibility', method: 'run', visibility: 'private' },
   { type: 'CLAS', action: 'update', include: 'testclasses' },
   { type: 'CLAS', action: 'edit_class_definition', include: 'definitions' },
-])('guards $action $include before splice, structure or write', async (args) => {
+])('guards %j before splice, structure or write', async (args) => {
   const state = backend({ drift: true });
   const result = await handleToolCall(createClient(), config, 'SAPWrite', {
     name: 'ZGUARD',
@@ -156,7 +156,7 @@ it.each([
   { type: 'BDEF', path: '/bo/behaviordefinitions/ZGUARD/source/main' },
   { type: 'SRVD', path: '/ddic/srvd/sources/ZGUARD/source/main' },
   { type: 'DDLX', path: '/ddic/ddlx/sources/ZGUARD/source/main' },
-])('hashes raw editable $type $include source without using cached versions', async ({ path, ...args }) => {
+])('hashes raw editable source for %j without using cached versions', async ({ path, ...args }) => {
   const state = backend({ sourcePath: `/sap/bc/adt${path}` });
   const cache = new CachingLayer(new MemoryCache());
   cache.markActivated('PROG', 'ZGUARD', 'stale cache');

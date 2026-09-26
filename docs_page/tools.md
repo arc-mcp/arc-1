@@ -679,12 +679,12 @@ SAPWrite(action="generate_behavior_implementation", type="CLAS", name="ZBP_DM_PR
 
 **Note:** Not available by default (read-only mode). Enable with `SAP_ALLOW_WRITES=true` / `--allow-writes=true`. Write access is restricted to package `$TMP` by default; to write to other packages, set `SAP_ALLOWED_PACKAGES='$TMP,Z*'` (quote in shell so `$TMP` isn't expanded).
 
-### Source preconditions
-
 Text-source updates require a non-blank replacement. Omitted/blank source and FUNC input reduced
 to nothing by SAPGUI comment stripping are refused before locking or writing. Signature-only FUNC
 updates read the existing body under the lock; metadata updates and explicit text-symbol clearing
 keep their separate behavior.
+
+### Source preconditions
 
 Before editing existing text source, read `SAPRead(type=..., name=..., format="editable")`.
 This returns JSON `{source, sourceHash}` from a fresh, uncached developer-view read: the editable

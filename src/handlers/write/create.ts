@@ -111,7 +111,7 @@ function prepareFunctionModuleCreateSource(
     } catch {
       prepared = baseSource;
       warnings.push(
-        'Could not splice structured parameters: source did not start with FUNCTION keyword. Used the supplied source verbatim.',
+        'Could not splice structured parameters into the FUNCTION source. Used the source without structured parameter changes.',
       );
     }
   }
