@@ -200,6 +200,15 @@ describe('spliceFmSignature', () => {
     expect(result).not.toContain('name TYPE c');
   });
 
+  it('preserves the body after SAP’s template comment and bare signature terminator', () => {
+    const source =
+      "FUNCTION z_fm\r\n \" You can use the template 'functionModuleParameter' to add here the signature!\r\n.\r\n\r\n DATA lv_guard TYPE i.\r\n lv_guard = 17.\r\nENDFUNCTION.";
+    const result = spliceFmSignature(source, 'Z_FM', [{ kind: 'importing', name: 'IV_X', type: 'I' }]);
+    expect(result).toContain('IV_X TYPE I.');
+    expect(result).toContain('DATA lv_guard TYPE i.\r\n lv_guard = 17.');
+    expect(parseFmSignature(source).params).toEqual([]);
+  });
+
   it('inserts signature into bare stub', () => {
     const source = 'FUNCTION x.\nENDFUNCTION.\n';
     const result = spliceFmSignature(source, 'X', [{ kind: 'importing', name: 'IV_X', type: 'STRING', byValue: true }]);

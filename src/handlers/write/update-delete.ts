@@ -24,6 +24,7 @@ import {
 } from '../../adt/ddic-xml.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
+import type { AdtHttpClient } from '../../adt/http.js';
 import {
   buildCdsDeleteDependencyHint,
   buildCdsUpdateCrudHint,
@@ -223,46 +224,51 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   let effectiveSource = source;
   let fmParamStripWarning: string | undefined;
   let fmParamMergeWarning: string | undefined;
-  if (type === 'FUNC') {
-    const parameters = args.parameters as FmParameter[] | undefined;
+  const parameters = args.parameters as FmParameter[] | undefined;
+  const needsCurrentFunctionSource = type === 'FUNC' && parameters !== undefined && !source.trim();
+  const prepareFunctionSource = (baseSource: string): string => {
     if (parameters !== undefined) {
-      // If caller passed parameters but no source, fetch the current source so
-      // the body is preserved (the parameters array re-emits only the signature).
-      let baseSource = source;
-      if (!baseSource || baseSource.trim() === '') {
-        const groupName = String(args.group ?? '');
-        const fetched = await client.getFunction(groupName, name).catch(() => null);
-        baseSource = fetched?.source ?? `FUNCTION ${name}.\nENDFUNCTION.\n`;
-      } else if (!/^\s*FUNCTION\s+/i.test(baseSource)) {
-        // Body-only source: wrap in FUNCTION/ENDFUNCTION so the splicer has
-        // something to work with. Common shape from LLMs: just the body.
+      if (!/^\s*FUNCTION\s+/i.test(baseSource)) {
         baseSource = `FUNCTION ${name}.\n${baseSource}\nENDFUNCTION.\n`;
       }
       try {
-        effectiveSource = spliceFmSignature(baseSource, name, parameters);
+        baseSource = spliceFmSignature(baseSource, name, parameters);
       } catch {
-        // No FUNCTION token in the supplied source — fall back to user's source.
-        effectiveSource = baseSource;
         fmParamMergeWarning =
           'Could not splice structured parameters: source did not start with FUNCTION keyword. Used the supplied source verbatim.';
       }
     }
-    // Defense-in-depth: strip *" comment blocks even after splicing — the
-    // user's body may contain them (e.g. pasted from SAPGUI).
-    const stripped = stripFmParamCommentBlock(effectiveSource);
-    effectiveSource = stripped.source;
+    const stripped = stripFmParamCommentBlock(baseSource);
     if (stripped.wasStripped) {
       fmParamStripWarning =
         'Stripped *"…IMPORTING/EXPORTING…*" parameter comment blocks (SAP rejects them on PUT — pass `parameters` as a structured array instead).';
     }
-  }
+    return stripped.source;
+  };
+  if (type === 'FUNC' && !needsCurrentFunctionSource) effectiveSource = prepareFunctionSource(source);
 
   // Pre-write lint validation (uses sanitized source for FUNC)
   const lintWarnings = runPreWriteLint(effectiveSource, type, name, config, lintOverride);
   if (lintWarnings.blocked) return lintWarnings.result!;
 
   // Pre-write server-side syntax check (opt-in; never blocks — warnings only).
-  const checkNotes = await runPreWriteSyntaxCheck(client, type, effectiveSource, objectUrl, config, checkOverride);
+  let checkNotes = '';
+  const checkSource = async (candidate: string, http = client.http): Promise<string> => {
+    checkNotes = await runPreWriteSyntaxCheck(
+      { http, safety: client.safety },
+      type,
+      candidate,
+      objectUrl,
+      config,
+      checkOverride,
+    );
+    return candidate;
+  };
+  // A signature-only FUNC edit derives its replacement from fresh bytes under the lock.
+  // A failed read aborts; there is no empty-body fallback or unlocked source read.
+  const replacement = needsCurrentFunctionSource
+    ? (current: string, session: AdtHttpClient) => checkSource(prepareFunctionSource(current), session)
+    : await checkSource(effectiveSource);
 
   // If safeUpdateSource throws (lock conflict, network error, etc.), checkNotes
   // is intentionally discarded — pre-check warnings only matter when the write succeeded.
@@ -271,7 +277,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     client.safety,
     objectUrl,
     srcUrl,
-    effectiveSource,
+    replacement,
     transport,
     getCachedFeatures()?.abapRelease,
     args.expectedSourceHash as string | undefined,

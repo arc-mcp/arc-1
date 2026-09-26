@@ -4,6 +4,7 @@ import { checkOperation, OperationType } from '../adt/safety.js';
 import { sourceHash } from '../adt/source-precondition.js';
 import {
   classIncludeUrl,
+  functionGroupIncludeObjectUrl,
   functionModuleObjectUrl,
   normalizeClassWriteInclude,
   sourceUrlForType,
@@ -57,11 +58,11 @@ export async function readEditableSource(
     return errorResult('format="editable" supports only CLAS source includes (or main).');
   let url: string;
   if (type === 'FUNC') {
-    const group = String(args.group ?? '') || (await client.resolveFunctionGroup(name));
+    const group = String(args.group ?? '').trim() || (await client.resolveFunctionGroup(name));
     if (!group) return errorResult('Cannot resolve function group; provide group for the editable FUNC read.');
     url = `${functionModuleObjectUrl(group, name)}/source/main`;
-  } else if (type === 'INCL' && args.group) {
-    url = `/sap/bc/adt/functions/groups/${encodeURIComponent(String(args.group).toLowerCase())}/includes/${encodeURIComponent(name.toLowerCase())}`;
+  } else if (type === 'INCL' && String(args.group ?? '').trim()) {
+    url = `${functionGroupIncludeObjectUrl(String(args.group), name)}/source/main`;
   } else {
     url = include ? classIncludeUrl(name, include) : sourceUrlForType(type, name);
   }

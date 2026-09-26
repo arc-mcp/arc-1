@@ -635,9 +635,8 @@ export function getToolDefinitions(
           },
           expectedSourceHash: {
             type: 'string',
-            pattern: '^[a-f0-9]{64}$',
             description:
-              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted: no cross-call protection.',
+              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection.',
           },
           source: {
             type: 'string',

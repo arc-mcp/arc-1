@@ -50,7 +50,7 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
       // Omit version: SAP returns the editable draft, or active source when no draft exists.
       // Read after locking, without source or inactive-list caches.
       const currentSource = (await session.get(srcUrl, { 'Cache-Control': 'no-cache' })).body;
-      assertSourceHash(currentSource, args.expectedSourceHash as string | undefined);
+      assertSourceHash(currentSource, args.expectedSourceHash as string | undefined, srcUrl);
       const spliced = spliceUnit(currentSource, name, unit, source, abaplintVersion);
       if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 

@@ -31,7 +31,7 @@ export async function withClassEdit(
       // SAP returns the editable draft (active when none exists). Both endpoints must use
       // this same selection under the lock; caches and inactive worklists can be stale.
       const source = (await session.get(url, { 'Cache-Control': 'no-cache' })).body;
-      if (checkSource) assertSourceHash(source, ctx.args.expectedSourceHash as string | undefined);
+      if (checkSource) assertSourceHash(source, ctx.args.expectedSourceHash as string | undefined, url);
       return source;
     };
     try {

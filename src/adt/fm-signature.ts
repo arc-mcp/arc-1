@@ -179,6 +179,12 @@ export function parseFmSignature(source: string): {
     const codeOnly = stripInlineComment(line);
     const codeTrimmed = codeOnly.trim();
 
+    // SAP inserts a template comment before the bare terminator of an empty signature.
+    if (codeTrimmed === '.') {
+      bodyStart = computeBodyStartOffset(source, lineStartOffset, codeOnly, codeOnly, 0);
+      break;
+    }
+
     // Keyword line?
     const kwMatch = KEYWORD_RE.exec(codeOnly);
     if (kwMatch) {

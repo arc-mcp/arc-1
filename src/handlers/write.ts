@@ -22,6 +22,7 @@ import {
 } from './feature-cache.js';
 import {
   canonicalTablType,
+  functionGroupIncludeObjectUrl,
   functionModuleObjectUrl,
   normalizeClassWriteInclude,
   normalizeWriteObjectType,
@@ -182,8 +183,7 @@ export async function handleSAPWrite(
         );
       }
     }
-    const groupLc = encodeURIComponent(group.toLowerCase());
-    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+    objectUrl = functionGroupIncludeObjectUrl(group, name);
     srcUrl = `${objectUrl}/source/main`;
   } else if (type === 'INCL' && (action === 'create' || action === 'delete') && name.toUpperCase().startsWith('L')) {
     // SAP rejects L* names on /programs/includes ("reserved for function group includes"), but as a

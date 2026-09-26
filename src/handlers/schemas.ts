@@ -632,10 +632,7 @@ export const SAPWriteSchema = z
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
-    expectedSourceHash: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .optional(),
+    expectedSourceHash: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
@@ -748,10 +745,7 @@ export const SAPWriteSchemaBtp = z
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
-    expectedSourceHash: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .optional(),
+    expectedSourceHash: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),

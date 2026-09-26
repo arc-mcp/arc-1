@@ -184,13 +184,12 @@ export function canonicalTablType(type: string): string {
  * value (a `null` is still stripped — the handlers treat null as omitted):
  *  - `target` — SAPTransport create rejects a "provided but empty" target as a caller
  *    mistake (vs omitted → local); see `targetProvided` in handleSAPTransport.
- *  - `expectedSourceHash` — an explicitly empty precondition must be rejected, never silently disabled.
  *  - `proposalUserContent` — SAPDiagnose apply_quickfix forwards an empty
  *    `<userContent></userContent>` verbatim.
  * Keep this set minimal: it only needs entries where a handler distinguishes ""-present
  * from absent. Empty strings on enums/numbers/everything-else are safe to strip.
  */
-const EMPTY_STRING_MEANINGFUL_FIELDS = new Set(['target', 'proposalUserContent', 'expectedSourceHash']);
+const EMPTY_STRING_MEANINGFUL_FIELDS = new Set(['target', 'proposalUserContent']);
 
 /**
  * Strip GPT/OpenAI "overpopulation" pollution before Zod validation:
@@ -394,6 +393,10 @@ export function functionGroupObjectUrl(group: string): string {
     throw new Error('functionGroupObjectUrl requires a function group.');
   }
   return `/sap/bc/adt/functions/groups/${encodeURIComponent(normalizedGroup.toLowerCase())}`;
+}
+
+export function functionGroupIncludeObjectUrl(group: string, name: string): string {
+  return `${functionGroupObjectUrl(group)}/includes/${encodeURIComponent(name.toLowerCase())}`;
 }
 
 export function functionModuleObjectUrl(group: string, name: string): string {

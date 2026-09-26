@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { CachingLayer } from '../../../src/cache/caching-layer.js';
@@ -14,6 +15,7 @@ const fixture = (file: string) =>
   readFileSync(new URL(`../../fixtures/class-surgery/${file}`, import.meta.url), 'utf8');
 const initial = fixture('active.abap');
 const external = fixture('draft.abap');
+const sourceHash = createHash('sha256').update(external).digest('hex');
 const config = { ...DEFAULT_CONFIG, abapRelease: '758' };
 const args = {
   action: 'edit_method',
@@ -140,7 +142,7 @@ it('ignores cached draft absence, cached source and recent activation when selec
 
 it('unlocks and refuses the write when the protected source read fails', async () => {
   const state = backend({ readStatus: 403 });
-  const result = await handleToolCall(createClient(), config, 'SAPWrite', args);
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...args, expectedSourceHash: sourceHash });
   expect(result.isError).toBe(true);
   expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
   expect(state.locked).toBe(false);
@@ -198,7 +200,7 @@ it.each([200, 400])('preserves the SAP write outcome when cache cleanup throws (
 
 it('does not read source, PUT or unlock when the lock is refused', async () => {
   const state = backend({ lockStatus: 423 });
-  const result = await handleToolCall(createClient(), config, 'SAPWrite', args);
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', { ...args, expectedSourceHash: sourceHash });
   expect(result.isError).toBe(true);
   expect(
     state.sends.filter((s) => s.url.pathname.startsWith(objectPath)).map((s) => s.url.searchParams.get('_action')),
@@ -242,7 +244,12 @@ it.each([
   { action: 'change_method_visibility', method: 'target', visibility: 'public' },
 ])('uses current source and structure under the lock for $action', async (edit) => {
   const state = backend();
-  const result = await handleToolCall(createClient(), config, 'SAPWrite', { type: 'CLAS', name: 'ZRACE', ...edit });
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+    type: 'CLAS',
+    name: 'ZRACE',
+    ...edit,
+    expectedSourceHash: sourceHash,
+  });
   expect(result.isError, result.content[0]?.text).toBeUndefined();
   expect(state.source).toContain('draft-other');
   expect(state.source).toContain('METHODS added.');

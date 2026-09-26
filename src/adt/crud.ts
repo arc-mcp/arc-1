@@ -217,14 +217,14 @@ export async function deleteObject(
 
 /**
  * High-level: update source with guaranteed unlock.
- * lock → updateSource → unlock (in try-finally)
+ * lock → optional fresh read/transform and hash check → updateSource → unlock (in try-finally)
  */
 export async function safeUpdateSource(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
   sourceUrl: string,
-  source: string,
+  source: string | ((current: string, session: AdtHttpClient) => Promise<string>),
   transport?: string,
   abapRelease?: string,
   expectedSourceHash?: string,
@@ -234,12 +234,16 @@ export async function safeUpdateSource(
     const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
     try {
-      if (expectedSourceHash !== undefined) {
+      let replacement: string;
+      if (expectedSourceHash !== undefined || typeof source === 'function') {
         checkOperation(safety, OperationType.Read, 'GetSource');
         const current = await session.get(sourceUrl, { 'Cache-Control': 'no-cache' });
-        assertSourceHash(current.body, expectedSourceHash);
+        assertSourceHash(current.body, expectedSourceHash, sourceUrl);
+        replacement = typeof source === 'function' ? await source(current.body, session) : source;
+      } else {
+        replacement = source;
       }
-      await updateSource(session, safety, sourceUrl, source, lock.lockHandle, effectiveTransport);
+      await updateSource(session, safety, sourceUrl, replacement, lock.lockHandle, effectiveTransport);
     } finally {
       await unlockObject(session, objectUrl, lock.lockHandle);
     }
@@ -323,7 +327,7 @@ export async function safeUpdateClassInclude(
       try {
         checkOperation(safety, OperationType.Read, 'GetClassInclude');
         const current = await session.get(includeUrl, { 'Cache-Control': 'no-cache' }, { suppressNotFoundLog: true });
-        assertSourceHash(current.body, expectedSourceHash);
+        assertSourceHash(current.body, expectedSourceHash, includeUrl);
       } catch (err) {
         if (isNotFoundError(err) && expectedSourceHash === undefined) {
           exists = false;

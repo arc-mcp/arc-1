@@ -23,7 +23,7 @@ import { activationDetailMatchesObject } from './activation-results.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { buildCdsActivationDependencyHint } from './cds-hints.js';
 import { isTablesEndpointAvailable } from './feature-cache.js';
-import { normalizeObjectType, objectUrlForType } from './object-types.js';
+import { functionGroupIncludeObjectUrl, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { inspectServiceBindingPublishFailure } from './publish-failure.js';
 import { errorResult, type ToolResult, textResult } from './shared.js';
 import {
@@ -274,8 +274,7 @@ export async function handleSAPActivate(
           url = `/sap/bc/adt/functions/groups/${groupLc}/fmodules/${encodeURIComponent(objName.toLowerCase())}`;
         } else if (objType === 'INCL' && String(o.group ?? args.group ?? '').trim()) {
           const group = String(o.group ?? args.group).trim();
-          const groupLc = encodeURIComponent(group.toLowerCase());
-          url = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(objName.toLowerCase())}`;
+          url = functionGroupIncludeObjectUrl(group, objName);
         } else {
           url = objectUrlForType(objType, objName);
         }
@@ -374,8 +373,7 @@ export async function handleSAPActivate(
     // 7.50 ("Select a master program"), while activating the FUGR container
     // can report success without promoting the include on SAP_BASIS 7.58.
     // The structural URI is portable across both releases.
-    const groupLc = encodeURIComponent(String(args.group).trim().toLowerCase());
-    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+    objectUrl = functionGroupIncludeObjectUrl(String(args.group), name);
   } else if (isServerDrivenObjectType(type)) {
     // A registered path does not prove the target supports activation for this type.
     if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {

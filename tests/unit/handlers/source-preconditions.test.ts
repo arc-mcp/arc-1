@@ -14,9 +14,18 @@ const replacement = "FORM target.\n WRITE 'new'.\nENDFORM.";
 const hash = (source: string) => createHash('sha256').update(source).digest('hex');
 const base = { type: 'PROG', name: 'ZGUARD' };
 
-function backend(options: { drift?: boolean; readStatus?: number; missingInclude?: boolean } = {}) {
+function backend(
+  options: {
+    drift?: boolean;
+    readStatus?: number;
+    missingInclude?: boolean;
+    sourcePath?: string;
+    initialSource?: string;
+    mainSource?: string;
+  } = {},
+) {
   const state = {
-    source: initial,
+    source: options.initialSource ?? initial,
     locked: false,
     calls: [] as Array<{ method: string; url: URL; locked: boolean; headers: Record<string, string> }>,
   };
@@ -38,8 +47,21 @@ function backend(options: { drift?: boolean; readStatus?: number; missingInclude
       state.locked = false;
       return respond(200);
     }
-    if (method === 'GET' && (url.pathname.includes('/source/') || url.pathname.includes('/includes/'))) {
-      return respond(options.missingInclude ? 404 : state.locked ? (options.readStatus ?? 200) : 200, state.source);
+    if (
+      method === 'GET' &&
+      (options.sourcePath
+        ? url.pathname.toLowerCase() === options.sourcePath.toLowerCase()
+        : url.pathname.endsWith('/source/main') ||
+          /^\/sap\/bc\/adt\/oo\/classes\/[^/]+\/includes\/(testclasses|definitions|implementations)$/.test(
+            url.pathname,
+          ))
+    ) {
+      return respond(
+        options.missingInclude ? 404 : state.locked ? (options.readStatus ?? 200) : 200,
+        url.pathname === '/sap/bc/adt/oo/classes/ZGUARD/source/main'
+          ? (options.mainSource ?? state.source)
+          : state.source,
+      );
     }
     if (method === 'GET')
       return respond(
@@ -124,7 +146,7 @@ it.each([
 it.each([
   { type: 'PROG/P', path: '/programs/programs/ZGUARD/source/main' },
   { type: 'INCL', path: '/programs/includes/ZGUARD/source/main' },
-  { type: 'INCL', group: 'ZGROUP', path: '/functions/groups/zgroup/includes/zguard' },
+  { type: 'INCL', group: ' ZGROUP ', path: '/functions/groups/zgroup/includes/zguard/source/main' },
   { type: 'CLAS/OC', include: 'implementations', path: '/oo/classes/zguard/includes/implementations' },
   { type: 'CLAS', path: '/oo/classes/ZGUARD/source/main' },
   { type: 'INTF', path: '/oo/interfaces/ZGUARD/source/main' },
@@ -135,7 +157,7 @@ it.each([
   { type: 'SRVD', path: '/ddic/srvd/sources/ZGUARD/source/main' },
   { type: 'DDLX', path: '/ddic/ddlx/sources/ZGUARD/source/main' },
 ])('hashes raw editable $type $include source without using cached versions', async ({ path, ...args }) => {
-  const state = backend();
+  const state = backend({ sourcePath: `/sap/bc/adt${path}` });
   const cache = new CachingLayer(new MemoryCache());
   cache.markActivated('PROG', 'ZGUARD', 'stale cache');
   const result = await handleToolCall(
@@ -163,10 +185,12 @@ it('does not initialize a missing include when a precondition was supplied', asy
     type: 'CLAS',
     name: 'ZGUARD',
     include: 'testclasses',
-    source: '',
+    source: '* candidate\n',
     expectedSourceHash: hash(''),
   });
   expect(result.isError).toBe(true);
+  expect(state.calls.filter((c) => c.method === 'GET' && c.locked)).toHaveLength(1);
+  expect(state.calls.some((c) => c.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
   expect(state.calls.filter((c) => c.method === 'POST').every((c) => c.url.searchParams.has('_action'))).toBe(true);
   expect(state.calls.some((c) => c.method === 'PUT')).toBe(false);
   expect(state.locked).toBe(false);
@@ -229,7 +253,7 @@ it('keeps the write safety ceiling ahead of the protected read and lock', async 
   expect(state.calls.some((c) => c.method === 'PUT' || c.method === 'POST')).toBe(false);
 });
 
-it.each(['', 'not-a-hash'])(
+it.each(['not-a-hash'])(
   'rejects malformed supplied preconditions rather than silently dropping them: %j',
   async (expectedSourceHash) => {
     backend();
@@ -243,3 +267,117 @@ it.each(['', 'not-a-hash'])(
     expect(mockFetch).not.toHaveBeenCalled();
   },
 );
+
+it.each(['', '  ', null])('treats an empty optional hash as omitted: %j', async (expectedSourceHash) => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+    ...base,
+    action: 'update',
+    source: initial,
+    expectedSourceHash,
+  });
+  expect(result.isError, result.content[0]!.text).toBeUndefined();
+  expect(state.calls.filter((c) => c.method === 'PUT')).toHaveLength(1);
+  expect(state.calls.filter((c) => c.method === 'GET' && c.locked)).toHaveLength(0);
+});
+
+it.each([
+  { type: 'INCL', action: 'update' },
+  { type: 'INCL', action: 'edit_unit' },
+  { type: 'FUNC', action: 'update' },
+])('round trips an editable hash for $type $action in the same group', async ({ type, action }) => {
+  const initialSource = type === 'FUNC' ? "FUNCTION zguard.\n WRITE 'old'.\nENDFUNCTION." : initial;
+  const sourcePath = `/sap/bc/adt/functions/groups/zgroup/${type === 'FUNC' ? 'fmodules' : 'includes'}/zguard/source/main`;
+  const state = backend({ sourcePath, initialSource });
+  const client = createClient();
+  const object = { type, name: 'ZGUARD', group: ' ZGROUP ' };
+  const read = await handleToolCall(client, config, 'SAPRead', { ...object, format: 'editable' });
+  expect(read.isError, read.content[0]!.text).toBeUndefined();
+  const snapshot = JSON.parse(read.content[0]!.text);
+  expect(snapshot.source).toBe(initialSource);
+  const result = await handleToolCall(client, config, 'SAPWrite', {
+    ...object,
+    action,
+    unit: action === 'edit_unit' ? 'target' : undefined,
+    source: action === 'edit_unit' ? replacement : initialSource.replace("'old'", "'new'"),
+    expectedSourceHash: snapshot.sourceHash,
+  });
+  expect(result.isError, result.content[0]!.text).toBeUndefined();
+  expect(state.source).toContain("'new'");
+  expect(state.calls.filter((c) => c.method === 'GET' && c.locked).map((c) => c.url.pathname.toLowerCase())).toEqual([
+    sourcePath,
+  ]);
+});
+
+it.each([false, true])('preserves the locked FUNC body on a parameters-only update (guarded=%s)', async (guarded) => {
+  const initialSource = "FUNCTION zguard\r\n \" SAP signature template\r\n.\r\n WRITE 'precious body'.\r\nENDFUNCTION.";
+  const state = backend({ initialSource });
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+    type: 'FUNC',
+    name: 'ZGUARD',
+    group: 'ZGROUP',
+    action: 'update',
+    parameters: [{ kind: 'importing', name: 'IV_X', type: 'STRING' }],
+    expectedSourceHash: guarded ? hash(initialSource) : undefined,
+  });
+  expect(result.isError, result.content[0]!.text).toBeUndefined();
+  expect(state.source).toContain('IV_X TYPE STRING');
+  expect(state.source).toContain("WRITE 'precious body'");
+  const reads = state.calls.filter((c) => c.method === 'GET' && c.url.pathname.endsWith('/source/main'));
+  expect(reads).toHaveLength(1);
+  expect(reads[0]!.locked).toBe(true);
+  expect(reads[0]!.url.searchParams.has('version')).toBe(false);
+  expect(state.locked).toBe(false);
+});
+
+it.each([false, true])('does not erase a FUNC body when its locked read fails (guarded=%s)', async (guarded) => {
+  const state = backend({ readStatus: 403 });
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', {
+    type: 'FUNC',
+    name: 'ZGUARD',
+    group: 'ZGROUP',
+    action: 'update',
+    parameters: [{ kind: 'importing', name: 'IV_X', type: 'STRING' }],
+    expectedSourceHash: guarded ? hash(initial) : undefined,
+  });
+  expect(result.isError).toBe(true);
+  expect(state.calls.filter((c) => c.method === 'GET' && c.locked)).toHaveLength(1);
+  expect(state.calls.some((c) => c.method === 'PUT')).toBe(false);
+  expect(state.source).toBe(initial);
+  expect(state.locked).toBe(false);
+});
+
+it('identifies the auto-routed local include and accepts a hash re-read from that include', async () => {
+  const local =
+    "CLASS lhc_x DEFINITION. PUBLIC SECTION. METHODS m. ENDCLASS.\nCLASS lhc_x IMPLEMENTATION. METHOD m. WRITE 'old'. ENDMETHOD. ENDCLASS.";
+  const state = backend({
+    initialSource: local,
+    mainSource: 'CLASS zguard DEFINITION PUBLIC. ENDCLASS. CLASS zguard IMPLEMENTATION. ENDCLASS.',
+  });
+  const client = createClient();
+  const object = { type: 'CLAS', name: 'ZGUARD', format: 'editable' };
+  const main = await handleToolCall(client, config, 'SAPRead', object);
+  const edit = {
+    type: 'CLAS',
+    name: 'ZGUARD',
+    action: 'edit_method',
+    method: 'lhc_x~m',
+    source: "METHOD m. WRITE 'new'. ENDMETHOD.",
+  };
+  const refused = await handleToolCall(client, config, 'SAPWrite', {
+    ...edit,
+    expectedSourceHash: JSON.parse(main.content[0]!.text).sourceHash,
+  });
+  expect(refused.isError).toBe(true);
+  expect(refused.content[0]!.text).toContain('/includes/implementations');
+  expect(refused.content[0]!.text).toContain('different object/include');
+  expect(state.calls.some((c) => c.method === 'PUT')).toBe(false);
+  const read = await handleToolCall(client, config, 'SAPRead', { ...object, include: 'implementations' });
+  const accepted = await handleToolCall(client, config, 'SAPWrite', {
+    ...edit,
+    expectedSourceHash: JSON.parse(read.content[0]!.text).sourceHash,
+  });
+  expect(accepted.isError, accepted.content[0]!.text).toBeUndefined();
+  expect(state.source).toContain("'new'");
+  expect(state.locked).toBe(false);
+});
