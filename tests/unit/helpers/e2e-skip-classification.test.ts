@@ -23,7 +23,7 @@ describe('E2E helper skip classification', () => {
       'DDLS UNLOCK',
       'ADT API error: status 400 at /sap/bc/adt/ddic/ddl/sources/ZARC1SKTDMQ265IXA171U?_action=UNLOCK&lockHandle=ABC123: Service cannot be reached',
     ],
-  ])('classifies %s service-unreachable session flake as skippable', (_label, text) => {
+  ])('keeps %s service-unreachable session failure visible', (_label, text) => {
     const result = {
       isError: true,
       content: [
@@ -35,7 +35,7 @@ describe('E2E helper skip classification', () => {
     };
 
     const reason = classifyToolErrorSkip(result);
-    expect(reason).toContain('ADT lock/unlock endpoint intermittently unreachable');
+    expect(reason).toBeNull();
   });
 
   it('does not classify unrelated unlock errors as skippable', () => {

@@ -278,7 +278,7 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 | `tool_call_end` | Tool, duration, success/error status, error class, and result size/preview after central redaction. |
 | `http_request` | SAP HTTP method, ADT path, status, and duration. Optional debug bodies/headers are centrally redacted; authentication response bodies are never logged. |
 | `data_response_limited` | A successful or retry response crossed the configured data-preview byte ceiling. Includes tool, limit/observed bytes, endpoint family, queue wait, request ID, and selected target/identity when applicable; never SQL or response bodies. |
-| `http_csrf_fetch` | CSRF-token fetch success and duration. |
+| `http_csrf_fetch` | One CSRF probe response: method, endpoint, HTTP status, duration, session mode and context-cookie presence. `success` means this response supplied a usable token; a failed probe may recover through a fallback. No token/cookie values or bodies. |
 | `auth_scope_denied` | Tool, required scope, and caller's available scopes when authorization rejects a call. |
 | `auth_pp_created` | Success or failure while creating a per-user Principal Propagation ADT client. |
 | `auth_shared_created` | Successful shared technical-user authentication after the Basic canary. Includes tool and `identity: "shared"`. |

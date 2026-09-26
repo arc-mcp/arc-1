@@ -1,31 +1,9 @@
 /**
- * ADT HTTP Transport for ARC-1.
- *
- * Handles all HTTP communication with SAP ADT REST API:
- * - CSRF token lifecycle (fetch, cache, refresh on 403)
- * - Cookie-based and Basic auth
- * - Stateful sessions (lock → modify → unlock must share session)
- * - Automatic retry on session expiry
- *
- * Design decisions:
- *
- * 1. CSRF token fetch uses HEAD /sap/bc/adt/core/discovery with "X-CSRF-Token: fetch".
- *    HEAD is ~5s vs ~56s for GET on slow systems (learned from Go version benchmarks).
- *
- * 2. Modifying requests (POST/PUT/DELETE/PATCH) auto-include CSRF token.
- *    On 403, token is refreshed and request is retried once.
- *    (Pattern from both abap-adt-api and fr0ster implementations.)
- *
- * 3. Stateful sessions use "X-sap-adt-sessiontype: stateful" header.
- *    Lock/modify/unlock must use the same session cookies.
- *    withStatefulSession() ensures session isolation and closes the backend
- *    context when the operation finishes.
- *
- * 4. sap-client and sap-language are added to every request as query params.
- *    This is an SAP convention, not ADT-specific.
- *
- * 5. Uses native fetch() with undici dispatchers for proxy and TLS configuration.
- *    No external HTTP dependencies — undici ships with Node.js 22+.
+ * SAP ADT HTTP transport: authentication, cookies, CSRF and bounded retries.
+ * Modifying requests fetch a token when needed and refresh it once on HTTP 403.
+ * Stateful writes share cookies and one proxy connection through lock/save/unlock,
+ * then close their SAP context. Requests carry the configured client and language.
+ * Uses undici dispatchers for direct, proxy and custom-TLS connections.
  */
 
 import type { BTPProxyConfig } from '@arc-mcp/xsuaa-auth/btp';
@@ -1075,8 +1053,21 @@ export class AdtHttpClient {
       const cookieHeader = this.composeCookieHeader();
       if (cookieHeader) headers.Cookie = cookieHeader;
       else delete headers.Cookie;
+      const started = Date.now();
       const response = await this.doFetch(this.buildUrl(path), method, headers, undefined, options);
       this.storeCookies(response);
+      logger.emitAudit({
+        timestamp: new Date().toISOString(),
+        level: 'info',
+        event: 'http_csrf_fetch',
+        method,
+        path,
+        statusCode: response.status,
+        durationMs: Date.now() - started,
+        success: !!usableToken(response),
+        adtMode: this.config.sessionType ?? 'unspecified',
+        hasContext: /(?:^|;\s*)sap-contextid=/.test(cookieHeader ?? ''),
+      });
       if (method === 'GET' && response.status === 200 && !usableToken(response)) {
         // Preserve the login-page check even when an old handler reports HTTP 200.
         this.handleResponse(response.status, response.headers, await response.text(), path);

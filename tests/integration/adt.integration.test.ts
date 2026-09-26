@@ -2704,7 +2704,7 @@ describe('BDEF behavior extension create (#10)', () => {
       toolMode: 'standard',
     } as unknown as Parameters<typeof handleToolCall>[1];
     const client = getTestClient();
-    const tab = generateUniqueName('ZARC1_BX');
+    const tab = generateUniqueName('ZARC1B'); // At most 16 characters with a four-letter run ID.
     const root = `ZR_${tab}`;
     const ext = `${root}_X`;
     const W = async (args: Record<string, unknown>) => {

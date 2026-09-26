@@ -320,8 +320,10 @@ Gotchas worth knowing before changing anything here:
 
 ## Testing — concurrent runs, isolation & teardown
 
-Multiple integration/e2e runs can target ONE SAP system at once (several git worktrees, or a local
-run overlapping CI) without interfering. Mechanics and seams:
+Run IDs and local server ports prevent object-name/process collisions, but overlapping runs still
+share SAP work processes, security sessions and locks. CI serializes live jobs; avoid overlapping
+local runs when investigating backend failures. Even consecutive jobs have shown transient 816
+session failures; see the [investigation](research/2026-09-27-sap-816-session-failures.md). Mechanics:
 
 - **Run identity** — `tests/helpers/run-id.ts` exports `RUN_ID`, a short LETTERS-ONLY token
   (`TEST_RUN_ID` env if set — sanitised to A-Z, capped at 4 — else 2 random letters per process;

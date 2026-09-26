@@ -86,9 +86,14 @@ export interface DataResponseLimitedEvent extends AuditEventBase {
   queueWaitMs: number;
 }
 
-/** CSRF token fetch */
+/** One CSRF probe response; an unsuccessful probe can be followed by a successful fallback. */
 export interface HttpCsrfFetchEvent extends AuditEventBase {
   event: 'http_csrf_fetch';
+  method: string;
+  path: string;
+  statusCode: number;
+  adtMode: 'stateful' | 'stateless' | 'unspecified';
+  hasContext: boolean;
   durationMs: number;
   success: boolean;
 }
