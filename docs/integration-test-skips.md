@@ -183,7 +183,7 @@ Several SAPRead types return a human-readable placeholder (not an MCP error) whe
 |---|---|---|
 | **NW 7.50 trial** | ~50 / 122 tests | Cat 2 (release gap), Cat 3 (lock-handle 423), E2E-α (fixture sync partial), Cat 1 (/DMO missing) |
 | **S/4HANA 2023** | 3 / 122 tests | Cat 5 (no transport package / `--allow-git-writes`) |
-| **ABAP Platform 2025** (SAP_BASIS 816) | 4 / 141 default-profile tests when stable | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip). Local 2026-06-06 default-profile baseline: 137 passed / 4 skipped. LOCK/UNLOCK HTTP 400 `Service cannot be reached` now fails the test; see the [session investigation](research/2026-09-27-sap-816-session-failures.md). |
+| **ABAP Platform 2025** (SAP_BASIS 816) | 4 / 141 default-profile tests when stable | Cat 5 + abapGit ADT bridge absent on the trial (SAPGit tests skip). Local 2026-06-06 default-profile baseline: 137 passed / 4 skipped. LOCK/UNLOCK HTTP 400 `Service cannot be reached` (`400 Session not found`) fails the test; it came from bursts of new SAP security sessions, see the [session investigation](research/2026-09-27-sap-816-session-failures.md). |
 | **BTP ABAP** | ~30 / 122 tests | Cat 5 (policy), some of Cat 1 |
 
 Anything over ~5 non-transient skips on S/4HANA is a regression signal — most likely a broken fixture sync or an unintended breaking change to a SAPRead handler output.

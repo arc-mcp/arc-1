@@ -96,6 +96,7 @@ sequence.
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
+| [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
 
@@ -635,6 +636,25 @@ adding Cloud Logging must preserve the audit contract.
 **Resume when.** A production operator needs Cloud Logging or requires migration of an existing
 Application Logging deployment. Define the required signals, retention, service binding, and
 exporter support before implementation.
+
+<a id="ops-06"></a>
+### OPS-06 — Per-user SAP session reuse over HTTP
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Operations
+
+**Idea.** Reuse a principal-propagation user's SAP session across MCP HTTP requests instead of
+logging on again for every tool call.
+
+**Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target client is
+now process-wide, but per-user PP clients and multi-target clients are still built per request, so
+each tool call opens a new SAP security session and CSRF round trip. On SAP_BASIS 816 bursts of new
+security sessions make SAP drop fresh stateful contexts (`400 Session not found`); see the
+[investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-27-sap-816-session-failures.md).
+
+**Resume when.** A PP or multi-target deployment reports `400 Session not found` or failed stateful
+closes under load, or SAP logon volume becomes an operator concern. Key any cache by SAP identity and
+token lifetime, keep users isolated, and keep ADR-0007's request-local Basic credentials.
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener
