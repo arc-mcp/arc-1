@@ -73,6 +73,28 @@ describe('stateful ADT session lifecycle', () => {
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
+  it('audits tokenless stateless responses before rejecting a login page', async () => {
+    const emit = vi.spyOn(logger, 'emitAudit').mockImplementation(() => undefined);
+    mockFetch.mockResolvedValueOnce(mockResponse(200, ''));
+    mockFetch.mockResolvedValueOnce(
+      mockResponse(200, '<html><body>System Logon</body></html>', { 'content-type': 'text/html' }),
+    );
+    await expect(new AdtHttpClient(config).fetchCsrfToken()).rejects.toMatchObject({ statusCode: 401 });
+    const events = emit.mock.calls
+      .map(([event]) => redactAuditEvent(event))
+      .filter((event) => event.event === 'http_csrf_fetch');
+    expect(events).toHaveLength(2);
+    for (const event of events) {
+      expect(event).toMatchObject({
+        level: 'debug',
+        statusCode: 200,
+        success: false,
+        adtMode: 'unspecified',
+        hasContext: false,
+      });
+    }
+  });
+
   it('keeps lock/unlock stateful and closes the same context before returning the result', async () => {
     mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
     mockFetch.mockResolvedValueOnce(mockResponse(200, 'locked', {}, ['sap-contextid=CONTEXT_1; Path=/']));

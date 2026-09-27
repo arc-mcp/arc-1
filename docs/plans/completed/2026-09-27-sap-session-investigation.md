@@ -13,8 +13,8 @@ its cause: the retained logs omit CSRF probe status and session information.
 1. Recheck the historical artifacts and reproduce integration → E2E on 816 where
    available, with unique test objects and owned-server cleanup. Separate injected
    protocol failures from a natural reproduction and note overlapping CI traffic.
-2. Stop classifying generic LOCK/UNLOCK HTTP 400 "Service cannot be reached" as an
-   unsupported feature. It must fail the test; do not disguise a reliability defect.
+2. Stop classifying generic LOCK/UNLOCK HTTP 400 "Service cannot be reached" as skippable
+   backend instability. It must fail the test; do not disguise a reliability defect.
 3. Record secret-free CSRF probe metadata using the existing audit event: endpoint,
    method, status, duration, session mode and whether the request carried a context
    cookie. Never record token, cookie, credential or response body values.
@@ -29,7 +29,7 @@ cause justifies a small additional change. No existing roadmap idea covers it.
 ## Outcome
 
 The local failure and a later passing sequence, including their CI overlaps, are
-recorded in [the research note](../research/2026-09-27-sap-816-session-failures.md).
+recorded in [the research note](../../research/2026-09-27-sap-816-session-failures.md).
 The runtime cause remains unresolved. No transport recovery or timing workaround
-was added. Full local gates pass (7,294 unit tests); a four-letter-run-ID fixture
+was added. Full local gates pass (7,295 unit tests); a four-letter-run-ID fixture
 regression exposed during reproduction was fixed and verified on 816.

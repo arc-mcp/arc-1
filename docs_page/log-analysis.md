@@ -33,7 +33,9 @@ ARC1_LOG_LEVEL=warn   # Only warnings and errors
 ARC1_LOG_LEVEL=error  # Only errors
 ```
 
-The file sink always receives ALL events regardless of stderr level.
+The file sink always receives ALL events regardless of stderr level. E2E runs retain it as
+`mcp-audit.ndjson` beside `mcp-server.log` in the uploaded log directory. CSRF events describe
+each probe: a HEAD 400 followed by GET 200 with a usable token is a healthy fallback.
 
 ## Event Types
 

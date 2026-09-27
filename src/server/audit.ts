@@ -89,7 +89,7 @@ export interface DataResponseLimitedEvent extends AuditEventBase {
 /** One CSRF probe response; an unsuccessful probe can be followed by a successful fallback. */
 export interface HttpCsrfFetchEvent extends AuditEventBase {
   event: 'http_csrf_fetch';
-  method: string;
+  method: 'HEAD' | 'GET';
   path: string;
   statusCode: number;
   adtMode: 'stateful' | 'stateless' | 'unspecified';

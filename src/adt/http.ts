@@ -1049,7 +1049,7 @@ export class AdtHttpClient {
       return response.ok && token && token.toLowerCase() !== 'required' ? token : undefined;
     };
     // Every probe keeps the same identity, current cookies and caller's request budget.
-    const probe = async (method: string): Promise<Response> => {
+    const probe = async (method: 'HEAD' | 'GET'): Promise<Response> => {
       const cookieHeader = this.composeCookieHeader();
       if (cookieHeader) headers.Cookie = cookieHeader;
       else delete headers.Cookie;
@@ -1058,7 +1058,7 @@ export class AdtHttpClient {
       this.storeCookies(response);
       logger.emitAudit({
         timestamp: new Date().toISOString(),
-        level: 'info',
+        level: 'debug',
         event: 'http_csrf_fetch',
         method,
         path,
@@ -1078,6 +1078,7 @@ export class AdtHttpClient {
     };
 
     try {
+      // HEAD avoids downloading discovery when supported; refused HEADs fall back to GET below.
       let response = await probe('HEAD');
 
       // Retry once on 503 — ICM may be temporarily overloaded (thread/MPI exhaustion).

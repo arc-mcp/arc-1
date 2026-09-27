@@ -10,11 +10,11 @@ Historical example: [run 36270329685](https://github.com/arc-mcp/arc-1/actions/r
 The failing server target was SAP_BASIS 816, not the separate 758 system.
 
 On September 26 UTC (September 27 local), a local integration → E2E sequence on
-816 reproduced GET `/sap/bc/adt/core/discovery` HTTP 400 without a usable CSRF token,
+816 observed GET `/sap/bc/adt/core/discovery` HTTP 400 without a usable CSRF token,
 failed stateful close, and subsequent write failures. Fourteen failed GET probes
 occurred from 22:28:58 to 22:29:57 UTC. This was **not isolated**: #857's CI integration
 ran 22:23:15–22:29:11 and its E2E ran 22:29:14–22:36:23. No causal claim about ordering
-can be made from this local run. It confirms that the failure is reproducible outside
+can be made from this local run. It confirms that the failure was observed outside
 GitHub's runner and through the target's HTTPS route.
 
 A second sequence ran integration 22:37:29–22:42:09 and immediately started E2E,
@@ -32,35 +32,22 @@ the local failure window. Its later E2E passed. This broadens the affected clien
 and operations; it does not identify what triggered the shared failure window.
 
 The local integration run had a separate fixture failure: four-letter TEST_RUN_ID
-made the BDEF-extension table name 17 characters (SAP limit 16). Its shorter prefix
-now preserves the entire run ID and uniqueness suffix within the limit. A focused
-live rerun with `TEST_RUN_ID=LONG` passed creation/activation and deleted its four
-objects. Post-run cleanup of the two E2E sequences removed 17 remaining owned
-objects; 57 other addressed create attempts were already absent. Every addressed
-object was confirmed absent by metadata 404; shared fixture names were excluded.
+made the BDEF-extension table name `ZARC1_BX_CSRFJHR3B` 18 characters (SAP limit 16).
+The shorter prefix preserves the run ID and uniqueness suffix within the limit.
 
-## Changes supported by the evidence
-
-- Generic LOCK/UNLOCK `Service cannot be reached` errors are failures, not proof of
-  an unsupported SAP feature. Remove that skip; retain separately documented feature
-  limitations. Five old skip expectations fail before this change.
-- Emit `http_csrf_fetch` for each received probe response: method/path/status,
-  duration, usable-token result, `adtMode`, and `hasContext` (whether the request
-  contained the context cookie, not whether it was valid). These are structured
-  metadata only. Token/cookie values, response bodies and credentials are excluded.
-  Test the final audit redaction too; names containing `session`/`cookie` are removed
-  by the central redactor and would make this diagnostic ineffective.
-- Preserve CSRF fallback, HTTP retries, mutation behavior and job scheduling.
-  A HEAD 400 is normal on the measured systems **when its GET fallback succeeds**;
-  it must not be counted as a terminal failure by itself.
+The patch exposes session failures rather than skipping them and records secret-free
+CSRF probe outcomes at debug level. E2E's file sink retains every probe. Cookie
+presence is not evidence of a valid context, and HEAD 400 alone is not a terminal failure.
 
 ## Hypotheses and next discriminating evidence
 
-SAP binds CSRF tokens to the security session and requires its returned cookies on
-subsequent requests ([SAP authentication guidance](https://help.sap.com/docs/SUPPORT_CONTENT/plm/3472705633.html)).
-That contract makes expired/mismatched authentication state a hypothesis; it does
-not prove that every HTTP 400 is a token problem. Stateful context expiry, backend
-resource pressure and client context reuse also need distinguishing evidence.
+SAP documents that CSRF validity depends on the security session on newer releases
+([ABAP Platform: CSRF Protection](https://help.sap.com/docs/ABAP_PLATFORM_NEW/753088fc00704d0a80e7fbd6803c8adb/5574ed6c93654ee4999b4d07cdda532c.html)).
+[Gateway's CSRF guidance](https://help.sap.com/docs/SAP_NETWEAVER_740/68bf513362174d54b58cddec28794093/b35c22518bc72214e10000000a44176d.html)
+also describes cookie binding and HTTP 403 on failed validation. Our failed discovery
+GETs returned **400**, so that contract does not establish a token-validation failure.
+Stateful context expiry, backend resource pressure and client context reuse remain
+hypotheses needing discriminating evidence.
 
 Read-only inspection of existing 816 ICM/worker traces found unrelated outbound TLS
 errors and generic context messages, but no proven match to these failed requests.
