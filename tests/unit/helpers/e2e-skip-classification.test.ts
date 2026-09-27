@@ -23,7 +23,15 @@ describe('E2E helper skip classification', () => {
       'DDLS UNLOCK',
       'ADT API error: status 400 at /sap/bc/adt/ddic/ddl/sources/ZARC1SKTDMQ265IXA171U?_action=UNLOCK&lockHandle=ABC123: Service cannot be reached',
     ],
-  ])('keeps %s service-unreachable session failure visible', (_label, text) => {
+    [
+      'unrelated unlock',
+      'ADT API error: status 400 at /sap/bc/adt/packages/ZPKG?_action=UNLOCK&lockHandle=ABC123: Authorization failed',
+    ],
+    [
+      'non-session source read',
+      'ADT API error: status 400 at /sap/bc/adt/programs/programs/ZFOO/source/main: Service cannot be reached',
+    ],
+  ])('keeps %s errors visible', (_label, text) => {
     const result = {
       isError: true,
       content: [
@@ -36,33 +44,5 @@ describe('E2E helper skip classification', () => {
 
     const reason = classifyToolErrorSkip(result);
     expect(reason).toBeNull();
-  });
-
-  it('does not classify unrelated unlock errors as skippable', () => {
-    const result = {
-      isError: true,
-      content: [
-        {
-          type: 'text',
-          text: 'ADT API error: status 400 at /sap/bc/adt/packages/ZPKG?_action=UNLOCK&lockHandle=ABC123: Authorization failed',
-        },
-      ],
-    };
-
-    expect(classifyToolErrorSkip(result)).toBeNull();
-  });
-
-  it('does not classify non-session service-unreachable errors as skippable', () => {
-    const result = {
-      isError: true,
-      content: [
-        {
-          type: 'text',
-          text: 'ADT API error: status 400 at /sap/bc/adt/programs/programs/ZFOO/source/main: Service cannot be reached',
-        },
-      ],
-    };
-
-    expect(classifyToolErrorSkip(result)).toBeNull();
   });
 });
