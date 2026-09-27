@@ -634,7 +634,9 @@ Consumers should inspect `isError` and parse the second block individually when 
 
 **Deferred activation for interdependent objects (`activateAtEnd: true`):** By default, each object is created → source written → activated, in order. This works for linear dependency chains but fails when siblings cross-reference each other (e.g. composition-linked DDLS where the parent's `composition [0..*] of ZR_CHILD` references a not-yet-active child). Set `activateAtEnd: true` to write inactive drafts before one terminal `activateBatch` call. SAP's activator sees the supplied graph together. A runtime write failure still stops the loop, and terminal activation runs only over the already-written subset. If overall activation fails, objects without a specific error remain `unknown`; absence of an object-level message is not proof of activation. Confirmed and uncertain mutations invalidate affected caches even when completion fails.
 
-#### RAP handler scaffolding
+<a id="rap-handler-scaffolding"></a>
+
+**RAP handler scaffolding**
 
 `scaffold_rap_handlers` derives required behavior-pool `METHODS ... FOR ...` signatures from an interface BDEF, computes missing signatures, and can optionally create missing local handler skeletons plus inject declarations and empty `METHOD ... ENDMETHOD` stubs into the behavior pool class:
 
