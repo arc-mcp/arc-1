@@ -3,15 +3,15 @@
 ## Root cause and plan
 
 The ADT transport sets no User-Agent, so direct undici fetches identify only as
-`undici`. Ordinary calls and CSRF bootstrap construct headers separately; both
-must use the same value, including stateful copies and Connectivity proxy calls.
+`undici`; the Connectivity proxy path sends no default User-Agent. All requests
+need the same identifier, including retries, stateful copies and proxy calls.
 
 ## Implementation
 
 One admin option (`SAP_USER_AGENT` / `--user-agent`) flows through server configuration,
-AdtClient and both HTTP header builders. The default is `arc-1/<version>`; empty
+AdtClient and the shared outbound fetch boundary. The default is `arc-1/<version>`; empty
 uses that default. Overrides are trimmed printable ASCII, at most 256 characters.
-Programmatic clients use the same validation. Stateful copies inherit the option.
+Programmatic clients use the same validation. Stateful copies and multi-target runtime configurations inherit the option.
 The release-managed VERSION moved to `src/version.ts`, retaining the server export;
 release-please now updates the new location. No runtime package-file lookup or
 arbitrary-header facility was added.

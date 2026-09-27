@@ -18,6 +18,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { VERSION } from '../../../src/version.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
@@ -240,6 +241,7 @@ describe('packaged version sync', () => {
     expect(cursorPlugin.version).toBe(pkg);
     expect(readJson('mcpb-manifest.json').version).toBe(pkg);
     expect(readJson('server.json').version).toBe(pkg);
+    expect(VERSION).toBe(pkg);
   });
 
   it('lets release-please bump every versioned plugin manifest', () => {
@@ -251,6 +253,7 @@ describe('packaged version sync', () => {
       '.cursor-plugin/plugin.json',
       'mcpb-manifest.json',
       'server.json',
+      'src/version.ts',
     ]) {
       expect(paths, path).toContain(path);
     }

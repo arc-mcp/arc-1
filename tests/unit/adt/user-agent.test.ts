@@ -5,11 +5,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from 'vite
 import { AdtClient } from '../../../src/adt/client.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
 import { resolveConfig } from '../../../src/server/config.js';
-import { buildAdtConfig, VERSION } from '../../../src/server/server.js';
+import { buildAdtConfig } from '../../../src/server/server.js';
 
 const version = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version;
 const received: Array<{ method: string; path: string; agent: string | undefined }> = [];
 let posts = 0;
+let fallbackAttempts = 0;
 let baseUrl: string;
 const server = createServer((req, res) => {
   received.push({ method: req.method!, path: req.url!, agent: req.headers['user-agent'] });
@@ -17,6 +18,9 @@ const server = createServer((req, res) => {
   if (req.headers['x-sap-adt-sessiontype'] === 'stateful')
     res.setHeader('set-cookie', 'sap-contextid=TEST_CONTEXT; Path=/');
   if (req.method === 'POST' && ++posts === 1) res.statusCode = 403;
+  if (req.url?.startsWith('/fallback/') && ++fallbackAttempts === 1) {
+    res.statusCode = Number(req.url.split('/').at(-1)?.split('?')[0]);
+  }
   res.end('ok');
 });
 beforeAll(async () => {
@@ -30,32 +34,39 @@ afterAll(async () => {
 beforeEach(() => {
   received.length = 0;
   posts = 0;
+  fallbackAttempts = 0;
   vi.stubEnv('SAP_USER_AGENT', '');
 });
 afterEach(() => vi.unstubAllEnvs());
 
-it.each([undefined, 'arc-1/company-test'])(
-  'sends %s on reads, CSRF refresh, stateful writes and close',
-  async (override) => {
-    if (override) vi.stubEnv('SAP_USER_AGENT', override);
-    const { config } = resolveConfig(['--url', baseUrl]);
-    const client = new AdtClient(buildAdtConfig(config));
-    await client.http.get('/read');
-    if (!override) await new AdtHttpClient({ baseUrl }).get('/direct');
-    await client.http.withStatefulSession((session) => session.post('/write'));
-    expect(posts).toBe(2);
-    expect(received.filter((r) => r.method === 'HEAD')).toHaveLength(2);
-    expect(received.some((r) => r.path.includes('/http/sessions'))).toBe(true);
-    expect(received.map((r) => r.agent)).toEqual(received.map(() => override ?? `arc-1/${version}`));
-    expect(VERSION).toBe(version);
-  },
-);
+it.each([
+  { label: 'default', override: undefined },
+  { label: 'override', override: 'arc-1/company-test' },
+])('sends the $label on reads, CSRF refresh, stateful writes and close', async ({ override }) => {
+  if (override) vi.stubEnv('SAP_USER_AGENT', override);
+  const { config } = resolveConfig(['--url', baseUrl]);
+  const client = new AdtClient(buildAdtConfig(config));
+  await client.http.get('/read');
+  if (!override) await new AdtHttpClient({ baseUrl }).get('/direct');
+  await client.http.withStatefulSession((session) => session.post('/write'));
+  expect(posts).toBe(2);
+  expect(received.filter((r) => r.method === 'HEAD')).toHaveLength(2);
+  expect(received.some((r) => r.path.includes('/http/sessions'))).toBe(true);
+  expect(received.map((r) => r.agent)).toEqual(received.map(() => override ?? `arc-1/${version}`));
+});
 
 it('gives the CLI override precedence and records its configuration source', () => {
   vi.stubEnv('SAP_USER_AGENT', 'arc-1/environment');
   const { config, sources } = resolveConfig(['--user-agent', '  arc-1/cli  ']);
   expect(config.userAgent).toBe('arc-1/cli');
   expect(sources.userAgent).toEqual({ flag: '--user-agent' });
+});
+
+it.each([401, 406])('retains the configured header through HTTP %s recovery', async (status) => {
+  const client = new AdtHttpClient({ baseUrl, userAgent: 'arc-1/recovery' });
+  await client.get(`/fallback/${status}`, { Accept: 'application/vnd.sap.test+xml' });
+  expect(fallbackAttempts).toBe(2);
+  expect(received.map((r) => r.agent)).toEqual(['arc-1/recovery', 'arc-1/recovery']);
 });
 
 it.each(['arc-1/ok\r\nX-Test: injected', 'arc-1/ä', 'x'.repeat(257)])(

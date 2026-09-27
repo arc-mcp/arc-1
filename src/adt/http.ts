@@ -416,7 +416,7 @@ export class AdtHttpClient {
       await this.fetchCsrfToken(withoutResponseBudget(options));
     }
 
-    const headers: Record<string, string> = { Accept: '*/*', 'User-Agent': this.userAgent };
+    const headers: Record<string, string> = { Accept: '*/*' };
     const negotiationKey = this.normalizeHeaderCacheKey(path);
 
     if (!extraHeaders?.Accept) {
@@ -1013,7 +1013,6 @@ export class AdtHttpClient {
     let path = '/sap/bc/adt/core/discovery';
     const headers: Record<string, string> = {
       'X-CSRF-Token': 'fetch',
-      'User-Agent': this.userAgent,
       Accept: '*/*',
     };
 
@@ -1334,7 +1333,7 @@ export class AdtHttpClient {
     // Empty unless the MCP client sent a valid `traceparent`; ARC-1 never originates a trace.
     // Injected here because doFetch is the single outbound choke point (the proxy branch below
     // spreads these headers too).
-    const outbound = { ...headers, ...traceHeaders(getCurrentContext()) };
+    const outbound = { ...headers, 'User-Agent': this.userAgent, ...traceHeaders(getCurrentContext()) };
 
     let response: Response;
     if (this.config.btpProxy) {
