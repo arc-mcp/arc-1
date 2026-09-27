@@ -330,6 +330,7 @@ export async function generateBehaviorImplementation(
     return result;
   };
   if (dryRun) return scaffold(client.http);
+  // Even activation-only reruns need the lock to establish that no source change is needed.
   const result = await client.http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY');
     try {

@@ -2,7 +2,6 @@
  * SAPWrite actions — RAP behavior scaffolding.
  */
 
-import { type LockResult, lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import type { AdtHttpClient } from '../../adt/http.js';
 import {
   generateBehaviorImplementation,
@@ -16,27 +15,14 @@ import {
   findMissingRapHandlerImplementationStubs,
   findMissingRapHandlerRequirements,
 } from '../../adt/rap-handlers.js';
-import { getCachedFeatures } from '../feature-cache.js';
 import { classIncludeUrl } from '../object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from '../shared.js';
 import { mergePreWriteWarnings, type PreWriteLintResult, runPreWriteLint } from '../write-helpers.js';
+import { withClassEdit } from './class-edit.js';
 import type { SapWriteContext } from './context.js';
 
 export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Promise<ToolResult> {
-  const {
-    client,
-    args,
-    config,
-    cachingLayer,
-    type,
-    name,
-    transport,
-    lintOverride,
-    objectUrl,
-    srcUrl,
-    invalidateWrittenObject,
-    enforcePackageForExistingObject,
-  } = ctx;
+  const { client, args, config, cachingLayer, type, name, lintOverride, srcUrl, enforcePackageForExistingObject } = ctx;
   // What this action does:
   //   Given a behavior-pool class (ZBP_*) and its interface BDEF, inspect
   //   the class for every `lhc_<alias>` local handler class and make
@@ -69,10 +55,12 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
     await enforcePackageForExistingObject();
   }
 
-  let writeAttempted = false;
-  const scaffold = async (session: AdtHttpClient, lock?: LockResult): Promise<ToolResult> => {
+  const scaffold = async (
+    session: AdtHttpClient,
+    save?: (url: string, source: string) => Promise<void>,
+  ): Promise<ToolResult> => {
     const classStructured = await readRapClassSources(session, client.safety, name);
-    const classMainSource = classStructured.main ?? '';
+    const classMainSource = classStructured.main;
     const classDefinitionsSource = classStructured.definitions ?? '';
     const classImplementationsSource = classStructured.implementations ?? '';
     const classCombinedSource = [classMainSource, classDefinitionsSource, classImplementationsSource]
@@ -115,7 +103,7 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
       missingImplementationStubs,
     };
 
-    if (!lock || (missing.length === 0 && missingImplementationStubs.length === 0)) {
+    if (!save || (missing.length === 0 && missingImplementationStubs.length === 0)) {
       return textResult(toolJson({ ...summary, applied: false }));
     }
 
@@ -177,33 +165,13 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
       lintWarningsImplementations = runPreWriteLint(finalImplementationsSource, type, name, config, lintOverride);
       if (lintWarningsImplementations.blocked) return lintWarningsImplementations.result!;
     }
-    // Separate PUTs can partially succeed; the caller invalidates even after a later failure.
-    const effectiveTransport = transport ?? (lock.corrNr || undefined);
-    if (changed.main) {
-      writeAttempted = true;
-      await updateSource(session, client.safety, srcUrl, finalMainSource, lock.lockHandle, effectiveTransport);
-    }
+    // The shared class lifecycle invalidates caches even after a partial save.
+    if (changed.main) await save(srcUrl, finalMainSource);
     if (changed.definitions && finalDefinitionsSource) {
-      writeAttempted = true;
-      await updateSource(
-        session,
-        client.safety,
-        classIncludeUrl(name, 'definitions'),
-        finalDefinitionsSource,
-        lock.lockHandle,
-        effectiveTransport,
-      );
+      await save(classIncludeUrl(name, 'definitions'), finalDefinitionsSource);
     }
     if (changed.implementations && finalImplementationsSource) {
-      writeAttempted = true;
-      await updateSource(
-        session,
-        client.safety,
-        classIncludeUrl(name, 'implementations'),
-        finalImplementationsSource,
-        lock.lockHandle,
-        effectiveTransport,
-      );
+      await save(classIncludeUrl(name, 'implementations'), finalImplementationsSource);
     }
     const msg =
       `Scaffolded ${scaffoldPlan.insertedSignatureCount} RAP handler signature(s) and ${scaffoldPlan.insertedImplementationStubCount} implementation stub(s) in ${type} ${name} from BDEF ${bdefName}. ` +
@@ -229,18 +197,8 @@ export async function writeActionScaffoldRapHandlers(ctx: SapWriteContext): Prom
     return warnings ? textResult(`${msg}\n\n${warnings}\n\n${details}`) : textResult(`${msg}\n\n${details}`);
   };
   if (!autoApply) return scaffold(client.http);
-  return client.http.withStatefulSession(async (session) => {
-    const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
-    try {
-      return await scaffold(session, lock);
-    } finally {
-      try {
-        await unlockObject(session, objectUrl, lock.lockHandle);
-      } finally {
-        if (writeAttempted) invalidateWrittenObject();
-      }
-    }
-  });
+  // Even unchanged auto-apply calls need the lock to establish a current no-op.
+  return withClassEdit(ctx, ({ http, save }) => scaffold(http, save));
 }
 
 export async function writeActionGenerateBehaviorImplementation(ctx: SapWriteContext): Promise<ToolResult> {

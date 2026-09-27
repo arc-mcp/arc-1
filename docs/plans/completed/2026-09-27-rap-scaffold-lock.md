@@ -20,7 +20,8 @@ abstraction, rollback, new configuration, tool parameter or schema bytes.
 ## Review constraints
 
 Use the existing class read, scaffold transforms and stateful lock lifecycle.
-No new tool/configuration, cross-call lock, transaction abstraction or schema bytes.
+Even unchanged mutation calls require the class lock; use previews under contention.
+The handler reuses `withClassEdit`; the ADT generator keeps its own layer-local lifecycle.
 BDEF is input to scaffolding, not modified or locked by this operation; concurrent
 BDEF changes can still require a new scaffold/activation attempt.
 ARCH-03 is removed from the roadmap after fixing both paths.

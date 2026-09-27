@@ -75,7 +75,7 @@ function makeClient(state: MockState): {
   };
   const writes = state.writes;
 
-  // Stub: AdtHttpClient interface — we only need withStatefulSession + post + put.
+  // One session owns the source reads and writes.
   const session = {
     post: vi.fn(async (path: string) => {
       // Lock POST: return XML carrying the lockHandle the lockObject parser expects.
@@ -149,7 +149,6 @@ function makeClient(state: MockState): {
     http,
     safety,
     getClassMetadata: vi.fn(async () => state.metadataResponse),
-    getClassStructured: vi.fn(async () => state.structuredResponse),
     getBdef: vi.fn(async () => state.bdefResponse),
   };
 

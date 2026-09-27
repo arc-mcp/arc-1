@@ -53,6 +53,7 @@ function backend(options: Options = {}) {
     state.calls.push({ method, url, locked: state.locked, headers: init?.headers ?? {} });
     const respond = (status: number, body = '') => mockResponse(status, body, { 'x-csrf-token': 'T' });
     if (method === 'HEAD') return respond(200);
+    if (method === 'POST' && url.pathname === '/sap/bc/adt/activation') return respond(200);
     if (method === 'POST' && url.searchParams.get('_action') === 'LOCK') {
       if (options.lockStatus) return respond(options.lockStatus, 'locked by colleague');
       if (options.drift) state.includes.implementations += `\n${manual}`;
@@ -94,7 +95,7 @@ beforeEach(() => {
   resetCachedFeatures();
 });
 
-function call(action: string, cache?: CachingLayer, preview = false) {
+function call(action: string, cache?: CachingLayer, preview = false, activate = false) {
   return handleToolCall(
     createClient(),
     DEFAULT_CONFIG,
@@ -106,7 +107,7 @@ function call(action: string, cache?: CachingLayer, preview = false) {
       bdefName: 'ZI_LOCK_TEST',
       autoApply: !preview,
       dryRun: preview,
-      activate: false,
+      activate,
       lintBeforeWrite: false,
     },
     undefined,
@@ -127,7 +128,13 @@ it.each(actions)('%s preserves an edit completed before LOCK and reads source un
   );
   expect(reads.length).toBeGreaterThanOrEqual(3);
   expect(
-    reads.every((c) => c.locked && !c.url.searchParams.has('version') && c.headers['Cache-Control'] === 'no-cache'),
+    reads.every(
+      (c) =>
+        c.locked &&
+        !c.url.searchParams.has('version') &&
+        c.headers['Cache-Control'] === 'no-cache' &&
+        c.headers['X-sap-adt-sessiontype'] === 'stateful',
+    ),
   ).toBe(true);
   expect(state.locked).toBe(false);
 });
@@ -201,4 +208,15 @@ it.each(actions)('%s verifies an unchanged second run under lock without another
   expect(state.calls.some((c) => c.url.searchParams.get('_action') === 'LOCK')).toBe(true);
   expect(state.calls.some((c) => c.method === 'PUT')).toBe(false);
   expect(state.locked).toBe(false);
+});
+
+it('activates generated behavior only after releasing the class lock', async () => {
+  const state = backend();
+  const result = await call('generate_behavior_implementation', undefined, false, true);
+  expect(result.isError, result.content[0]?.text).toBeUndefined();
+  const activation = state.calls.findIndex((c) => c.url.pathname === '/sap/bc/adt/activation');
+  const unlock = state.calls.findIndex((c) => c.url.searchParams.get('_action') === 'UNLOCK');
+  expect(unlock).toBeGreaterThan(-1);
+  expect(activation).toBeGreaterThan(unlock);
+  expect(state.calls[activation]?.locked).toBe(false);
 });
