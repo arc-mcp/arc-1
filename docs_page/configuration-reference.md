@@ -59,8 +59,7 @@ For SAP ICM request logs, the Basis team can include `%{user-agent}i` in an exis
 For example, set `SAP_USER_AGENT=arc-1/team-dev` in local environment configuration,
 or `SAP_USER_AGENT: "arc-1/team-dev"` in CF `.mtaext` properties, and restart/redeploy.
 This identifies ARC-1 traffic; it is sender-supplied, spoofable metadata, never an authorization
-signal. Do not include credentials or personal data. Inbound MCP client identification
-in ARC-1 audit logs is a separate field. This option applies to ARC-1's SAP HTTP transport,
+signal. Do not include credentials or personal data. This option applies to ARC-1's SAP HTTP transport,
 not OAuth token requests made by authentication libraries. Proxy header forwarding is unit-tested;
 end-to-end Cloud Connector forwarding and SAP ICM log capture remain unverified.
 

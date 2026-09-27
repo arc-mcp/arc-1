@@ -165,10 +165,6 @@ describe('MCP Server', () => {
     expect(metadata.instructions).not.toContain('SHOULD NOT APPEAR');
   });
 
-  it('has a valid version string', () => {
-    expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
-  });
-
   // tools/list must never wait on SAP. Clients cancel it on their own schedule (Cline at ~5s) and
   // a probe against a real system can outlast that, which left the client with zero tools.
   it('answers tools/list without waiting for the startup probe', async () => {

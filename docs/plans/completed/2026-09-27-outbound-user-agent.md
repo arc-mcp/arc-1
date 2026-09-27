@@ -25,12 +25,11 @@ Roadmap checked: no existing idea is changed.
 ## Verification — 2026-09-27
 
 A real local HTTP receiver confirms the default and override on ordinary reads,
-CSRF bootstrap/403 refresh, stateful writes and close. Removing both header additions
-makes the two wire cases fail with observed `undici`; configuration rejection and
+CSRF bootstrap, authentication/Accept retries, stateful writes and close. Removing the
+outbound header injection makes the wire assertions fail; configuration rejection and
 precedence cases remain separate. Connectivity proxy forwarding is unit-tested.
 
-All 7,299 unit tests plus typecheck/lint/policy/sizes/build/strict docs passed.
-After the standalone-client assertion, the focused HTTP suite passed 193 tests.
+The full unit suite plus typecheck/lint/policy/sizes/build/strict docs passed.
 Read-only SAP 758 and 816 checks accepted bootstrap and class reads with both
 settings. ICM log configuration and live BTP proxy forwarding were not tested.
 
