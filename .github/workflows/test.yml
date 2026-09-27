@@ -143,9 +143,7 @@ jobs:
           retention-days: 7
         continue-on-error: true
 
-  # Cheap guard that runs before any SAP-serialized job. Stale PR runs should
-  # finish their unit/security checks, but they must not wait for or consume the
-  # repository-wide live SAP concurrency slot after a newer PR head exists.
+  # Reject stale PRs before the SAP queue, then repeat the same check after waiting.
   sap-run-guard:
     runs-on: ubuntu-latest
     needs: [test, gate]
@@ -157,37 +155,24 @@ jobs:
        needs.test.result == 'success')
     outputs:
       current: ${{ steps.current.outputs.current }}
-      reason: ${{ steps.current.outputs.reason }}
     steps:
-      - name: Check PR head freshness
+      - &check-sap-pr-head
+        name: Check PR head freshness
         id: current
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT_NAME: ${{ github.event_name }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ "${EVENT_NAME}" != "pull_request" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-            echo "reason=workflow_dispatch" >> "$GITHUB_OUTPUT"
-            echo "Manual workflow dispatch: SAP jobs are allowed."
-            exit 0
-          fi
-
-          latest_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          echo "event_head_sha=${EVENT_HEAD_SHA}"
-          echo "latest_head_sha=${latest_head_sha}"
-          if [ "${latest_head_sha}" = "${EVENT_HEAD_SHA}" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-            echo "reason=current" >> "$GITHUB_OUTPUT"
-            echo "This PR run is current: SAP jobs are allowed."
-          else
-            echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "reason=stale:${EVENT_HEAD_SHA}->${latest_head_sha}" >> "$GITHUB_OUTPUT"
-            echo "This PR run is stale: SAP jobs will be skipped before entering live SAP concurrency."
-          fi
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('current', 'true');
+              return;
+            }
+            const eventPr = context.payload.pull_request;
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo, pull_number: eventPr.number,
+            });
+            const current = pr.state === 'open' && pr.head.sha === eventPr.head.sha;
+            core.info(`PR #${eventPr.number}: ${pr.state}; event=${eventPr.head.sha}; latest=${pr.head.sha}`);
+            core.setOutput('current', String(current));
 
   # Run on internal PRs and manual dispatch; skip external fork PRs (no secrets)
   integration:
@@ -195,6 +180,7 @@ jobs:
     concurrency:
       group: ${{ github.repository }}-sap-live-a4h
       cancel-in-progress: false
+      queue: max
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
@@ -205,19 +191,24 @@ jobs:
     needs: [test, gate, sap-run-guard]
 
     steps:
+      - *check-sap-pr-head
       - uses: actions/checkout@v7
+        if: steps.current.outputs.current == 'true'
 
       - name: Setup Node.js
+        if: steps.current.outputs.current == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
+        if: steps.current.outputs.current == 'true'
         run: npm ci
 
       - name: SAP auth preflight (integration)
         id: sap_auth
+        if: steps.current.outputs.current == 'true'
         shell: bash
         env:
           SAP_CI_TARGET_LABEL: ${{ env.SAP_CI_TARGET_LABEL }}
@@ -263,7 +254,7 @@ jobs:
           TEST_SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
       - name: Upload integration test results
-        if: always()
+        if: always() && steps.current.outputs.current == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: test-results-integration
@@ -274,7 +265,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Integration reliability summary
-        if: always()
+        if: always() && steps.current.outputs.current == 'true'
         run: node scripts/ci/collect-test-reliability.mjs --results-dir test-results
         continue-on-error: true
 
@@ -286,6 +277,7 @@ jobs:
     concurrency:
       group: ${{ github.repository }}-sap-live-a4h
       cancel-in-progress: false
+      queue: max
     if: >
       always() &&
       needs.gate.result == 'success' &&
@@ -298,19 +290,24 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - *check-sap-pr-head
       - uses: actions/checkout@v7
+        if: steps.current.outputs.current == 'true'
 
       - name: Setup Node.js
+        if: steps.current.outputs.current == 'true'
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: 'npm'
 
       - name: Install dependencies
+        if: steps.current.outputs.current == 'true'
         run: npm ci
 
       - name: SAP auth preflight (e2e)
         id: sap_auth
+        if: steps.current.outputs.current == 'true'
         shell: bash
         env:
           SAP_CI_TARGET_LABEL: ${{ env.SAP_CI_TARGET_LABEL }}
@@ -371,7 +368,7 @@ jobs:
           SAP_INSECURE: ${{ secrets.TEST_SAP_INSECURE }}
 
       - name: Upload E2E JSON test results
-        if: always()
+        if: always() && steps.current.outputs.current == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: test-results-e2e
@@ -382,16 +379,16 @@ jobs:
           if-no-files-found: warn
 
       - name: E2E reliability summary
-        if: always()
+        if: always() && steps.current.outputs.current == 'true'
         run: node scripts/ci/collect-test-reliability.mjs --results-dir test-results
         continue-on-error: true
 
       - name: Stop MCP server
-        if: always()
+        if: always() && steps.current.outputs.current == 'true'
         run: npm run test:e2e:stop
 
       - name: Upload E2E logs
-        if: always()
+        if: always() && steps.current.outputs.current == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-logs
@@ -399,7 +396,7 @@ jobs:
           retention-days: 7
 
       - name: Upload JUnit results
-        if: always()
+        if: always() && steps.current.outputs.current == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: e2e-junit

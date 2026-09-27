@@ -49,6 +49,7 @@ jobs:
     concurrency:
       group: ${{ github.repository }}-sap-live-a4h
       cancel-in-progress: false
+      queue: max
 
     steps:
       - uses: actions/checkout@v7

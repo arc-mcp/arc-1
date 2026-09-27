@@ -325,6 +325,15 @@ share the SAP user, work processes, session capacity and lock table. CI serializ
 local runs when investigating backend failures. Even consecutive jobs have shown transient 816
 session failures; see the [investigation](research/2026-09-27-sap-816-session-failures.md). Mechanics:
 
+- **Live CI queue** — integration, E2E and manual slow profiles share `…-sap-live-a4h` with
+  `queue: max` and `cancel-in-progress: false`: one running job, up to 100 waiting jobs.
+  Without `queue: max`, GitHub replaces the single pending job when another arrives.
+  PR jobs check that the PR is open and its head still matches both before queuing and after
+  waiting; stale jobs skip all SAP steps. A successful guard-only job is not a passed SAP suite.
+  API lookup failure stops the job before SAP access. Manual dispatch deliberately tests the
+  selected revision. Once a job starts SAP work, later pushes do not interrupt its teardown.
+  Runs started from older workflow revisions retain their old settings; this queue does not
+  coordinate local runs or fix the SAP 816 incident. See [GitHub's queue contract](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 - **Run identity** — `tests/helpers/run-id.ts` exports `RUN_ID`, a short LETTERS-ONLY token
   (`TEST_RUN_ID` env if set — sanitised to A-Z, capped at 4 — else 2 random letters per process;
   letters-only so one token works for both the alphanumeric `uniqueName` and the BDEF/CDS-safe

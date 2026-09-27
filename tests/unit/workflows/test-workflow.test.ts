@@ -1,16 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
+import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 const WORKFLOW = readFileSync(join(import.meta.dirname, '../../../.github/workflows/test.yml'), 'utf8');
 
 type WorkflowStep = {
+  id?: string;
+  if?: string;
+  with?: { script?: string };
   env?: Record<string, unknown>;
   run?: unknown;
 };
 
 type WorkflowJob = {
+  concurrency?: Record<string, unknown>;
   steps?: WorkflowStep[];
 };
 
@@ -19,6 +24,33 @@ type Workflow = {
 };
 
 const PARSED_WORKFLOW = parse(WORKFLOW) as Workflow;
+const SLOW_WORKFLOW = parse(
+  readFileSync(join(import.meta.dirname, '../../../.github/workflows/sap-slow-tests.yml'), 'utf8'),
+) as Workflow;
+
+function currentStep(job: string): WorkflowStep {
+  const step = PARSED_WORKFLOW.jobs?.[job]?.steps?.find((step) => step.id === 'current');
+  expect(step, `${job} must check PR freshness`).toBeDefined();
+  return step!;
+}
+
+function guardFixture(eventName: string, state: string, head: string) {
+  const get = vi.fn().mockResolvedValue({ data: { state, head: { sha: head } } });
+  const core = { setOutput: vi.fn(), info: vi.fn() };
+  const script = currentStep('sap-run-guard').with?.script;
+  expect(script).toBeTypeOf('string');
+  const run = () =>
+    runInNewContext(`(async () => { ${script} })()`, {
+      github: { rest: { pulls: { get } } },
+      context: {
+        eventName,
+        repo: { owner: 'arc-mcp', repo: 'arc-1' },
+        payload: eventName === 'pull_request' ? { pull_request: { number: 123, head: { sha: 'event-head' } } } : {},
+      },
+      core,
+    });
+  return { get, core, run };
+}
 
 function jobBlock(jobName: string): string {
   const match = WORKFLOW.match(new RegExp(`\\n  ${jobName}:\\n([\\s\\S]*?)(?=\\n  [a-zA-Z0-9_-]+:\\n|\\n$)`));
@@ -53,7 +85,7 @@ describe('test workflow gate behavior', () => {
     expect(sapRunGuardJob).toContain('needs: [test, gate]');
     expect(sapRunGuardJob).toContain("needs.gate.result == 'success'");
     expect(sapRunGuardJob).toContain("needs.test.result == 'success'");
-    expect(sapRunGuardJob).toContain('gh api "repos/$' + '{REPOSITORY}/pulls/$' + '{PR_NUMBER}"');
+    expect(sapRunGuardJob).toContain('actions/github-script@');
 
     expect(integrationJob).toContain('needs: [test, gate, sap-run-guard]');
     expect(integrationJob).toContain("needs.gate.result == 'success'");
@@ -79,18 +111,58 @@ describe('test workflow gate behavior', () => {
     expect(gateJob).toContain('echo "pr_title=$' + '{PR_TITLE}"');
   });
 
-  it('serializes only SAP-heavy jobs repository-wide without cancellation', () => {
+  it('queues every live SAP job in one shared group without replacing pending jobs', () => {
     const preJobs = WORKFLOW.split('\njobs:')[0];
-    const integrationJob = jobBlock('integration');
-    const e2eJob = jobBlock('e2e');
-    const sapConcurrencyGroup = 'group: $' + '{{ github.repository }}-sap-live-a4h';
 
     expect(preJobs).not.toContain('\nconcurrency:');
-    for (const job of [integrationJob, e2eJob]) {
-      expect(job).toContain('concurrency:');
-      expect(job).toContain(sapConcurrencyGroup);
-      expect(job).toContain('cancel-in-progress: false');
+    for (const job of [
+      PARSED_WORKFLOW.jobs?.integration,
+      PARSED_WORKFLOW.jobs?.e2e,
+      SLOW_WORKFLOW.jobs?.['sap-slow'],
+    ]) {
+      expect(job?.concurrency).toEqual({
+        group: '$' + '{{ github.repository }}-sap-live-a4h',
+        'cancel-in-progress': false,
+        queue: 'max',
+      });
     }
+  });
+
+  it.each(['integration', 'e2e'])('%s rechecks freshness after waiting and gates all later steps', (job) => {
+    const steps = PARSED_WORKFLOW.jobs?.[job]?.steps ?? [];
+    expect(steps[0]).toEqual(currentStep('sap-run-guard'));
+    const current = "steps.current.outputs.current == 'true'";
+    for (const step of steps.slice(1)) {
+      // auth_ok can only be set by the preflight, which itself requires the new freshness check.
+      if (step.id === 'sap_auth') expect(step.if).toBe(current);
+      else expect([current, `always() && ${current}`, "steps.sap_auth.outputs.auth_ok == 'true'"]).toContain(step.if);
+    }
+  });
+
+  it.each([
+    ['open', 'event-head', 'true'],
+    ['open', 'new-head', 'false'],
+    ['closed', 'event-head', 'false'],
+  ])('permits only a current open PR (%s, %s)', async (state, head, expected) => {
+    const { get, core, run } = guardFixture('pull_request', state, head);
+    await run();
+    expect(get).toHaveBeenCalledWith({ owner: 'arc-mcp', repo: 'arc-1', pull_number: 123 });
+    expect(core.setOutput).toHaveBeenCalledWith('current', expected);
+  });
+
+  it('allows an explicit manual dispatch without looking up a PR', async () => {
+    const { get, core, run } = guardFixture('workflow_dispatch', 'closed', 'new-head');
+    await run();
+    expect(get).not.toHaveBeenCalled();
+    expect(core.setOutput).toHaveBeenCalledWith('current', 'true');
+  });
+
+  it('fails closed when GitHub cannot confirm the PR head', async () => {
+    const { get, core, run } = guardFixture('pull_request', 'open', 'event-head');
+    get.mockRejectedValueOnce(new Error('GitHub API unavailable'));
+    await expect(run()).rejects.toThrow('GitHub API unavailable');
+    expect(core.setOutput).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledOnce();
   });
 
   it('does not claim e2e runs on push to main', () => {
