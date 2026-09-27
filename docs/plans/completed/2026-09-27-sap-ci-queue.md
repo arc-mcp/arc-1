@@ -35,4 +35,10 @@ The probe used isolated concurrency groups, no checkout and no SAP credentials; 
 
 All seven local gates passed, including 7,328 unit tests in 242 files and strict docs.
 Four deliberate regressions (missing slow-job queue, accepting closed PRs, missing queued check, and unguarded SAP preflight)
-each failed the workflow tests. The retained limits above still apply; real SAP CI will run on the PR head.
+each failed the workflow tests. Review follow-up adds a stale-job notice and protects the fork gates, post-failure cleanup
+and E2E execution after integration failure; all six additional mutations are caught.
+Full integration and E2E passed on `0c259643`; the notice/test follow-up retains the same scheduling and SAP behavior.
+
+A separate [timeout probe](https://github.com/arc-mcp/arc-1/actions/runs/36307424948) queued a one-minute job behind a 150-second
+holder in an isolated group: it waited 87 seconds, then passed in four seconds. Queue waiting did not consume the job
+timeout in this GitHub-hosted test, so the existing timeout stays. Neither probe used SAP or repository checkout.

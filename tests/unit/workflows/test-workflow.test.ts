@@ -7,6 +7,7 @@ import { parse } from 'yaml';
 const WORKFLOW = readFileSync(join(import.meta.dirname, '../../../.github/workflows/test.yml'), 'utf8');
 
 type WorkflowStep = {
+  name?: string;
   id?: string;
   if?: string;
   with?: { script?: string };
@@ -36,7 +37,7 @@ function currentStep(job: string): WorkflowStep {
 
 function guardFixture(eventName: string, state: string, head: string) {
   const get = vi.fn().mockResolvedValue({ data: { state, head: { sha: head } } });
-  const core = { setOutput: vi.fn(), info: vi.fn() };
+  const core = { setOutput: vi.fn(), info: vi.fn(), notice: vi.fn() };
   const script = currentStep('sap-run-guard').with?.script;
   expect(script).toBeTypeOf('string');
   const run = () =>
@@ -96,6 +97,11 @@ describe('test workflow gate behavior', () => {
     expect(e2eJob).toContain("needs.gate.result == 'success'");
     expect(e2eJob).toContain("needs.test.result == 'success'");
     expect(e2eJob).toContain("needs.sap-run-guard.outputs.current == 'true'");
+    expect(e2eJob).toMatch(/if: >\s+always\(\) &&/);
+    expect(e2eJob).not.toContain('needs.integration.result');
+    for (const job of [sapRunGuardJob, integrationJob, e2eJob]) {
+      expect(job).toContain('github.event.pull_request.head.repo.full_name == github.repository');
+    }
   });
 
   it('does not interpolate untrusted PR titles directly into shell scripts', () => {
@@ -136,6 +142,13 @@ describe('test workflow gate behavior', () => {
       // auth_ok can only be set by the preflight, which itself requires the new freshness check.
       if (step.id === 'sap_auth') expect(step.if).toBe(current);
       else expect([current, `always() && ${current}`, "steps.sap_auth.outputs.auth_ok == 'true'"]).toContain(step.if);
+      if (
+        step.name?.startsWith('Upload ') ||
+        step.name?.endsWith('reliability summary') ||
+        step.name === 'Stop MCP server'
+      ) {
+        expect(step.if).toBe(`always() && ${current}`);
+      }
     }
   });
 
@@ -148,6 +161,11 @@ describe('test workflow gate behavior', () => {
     await run();
     expect(get).toHaveBeenCalledWith({ owner: 'arc-mcp', repo: 'arc-1', pull_number: 123 });
     expect(core.setOutput).toHaveBeenCalledWith('current', expected);
+    if (expected === 'false') {
+      expect(core.notice).toHaveBeenCalledWith(
+        'SAP tests skipped: PR is closed or its head changed. This is not a passed SAP suite.',
+      );
+    } else expect(core.notice).not.toHaveBeenCalled();
   });
 
   it('allows an explicit manual dispatch without looking up a PR', async () => {

@@ -172,6 +172,7 @@ jobs:
             });
             const current = pr.state === 'open' && pr.head.sha === eventPr.head.sha;
             core.info(`PR #${eventPr.number}: ${pr.state}; event=${eventPr.head.sha}; latest=${pr.head.sha}`);
+            if (!current) core.notice('SAP tests skipped: PR is closed or its head changed. This is not a passed SAP suite.');
             core.setOutput('current', String(current));
 
   # Run on internal PRs and manual dispatch; skip external fork PRs (no secrets)
