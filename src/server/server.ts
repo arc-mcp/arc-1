@@ -668,7 +668,16 @@ export interface CreateServerOptions {
   dataResultSemaphore?: Semaphore;
   mcpRateLimiter?: McpRateLimiter;
   multiTarget?: MultiTargetServerOptions;
+  /**
+   * Process-wide client for the shared single-target identity. HTTP builds a Server per request;
+   * without this each tool call opens a new SAP security session (logon + CSRF fetch), and bursts
+   * of new sessions make SAP drop fresh stateful contexts ("400 Session not found").
+   */
+  defaultClient?: AdtClient;
 }
+
+// Clients already told that their startup cookies are stale (at most once per client).
+const staleCookieClients = new WeakSet<AdtClient>();
 
 export function createServer(config: ServerConfig, options: CreateServerOptions = {}): Server {
   const {
@@ -699,9 +708,10 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   // time) share the same Layer 3 concurrency cap.
   const defaultClient = multiTarget
     ? undefined
-    : new AdtClient(
+    : (options.defaultClient ??
+      new AdtClient(
         buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
-      );
+      ));
 
   // Cookie-auth preflight propagation: when startup preflight returned a non-blocking
   // 401 in SAP_COOKIE_FILE mode, the throwaway preflight client marked itself stale —
@@ -709,8 +719,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   // startup and is unaware. Without explicit propagation, the first real tool call would
   // re-emit the same stale cookies and hit 401 again before the lazy reload triggers,
   // wasting one round-trip per startup-stale-cookie cycle. We propagate the stale state
-  // once on first tool call — idempotent flag keeps later calls O(1).
-  let preflightStalePropagated = false;
+  // once per client on its first tool call; a shared HTTP client must not be re-marked per request.
   let schemaNullableAutoClientInfoLogged = false;
 
   // Register tool listing — filtered by user's scopes when auth is active
@@ -821,10 +830,15 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
       }
       // Non-blocking 401 from cookie-auth preflight → mark the runtime client's cookies
       // stale so its first call goes straight to the lazy reload path instead of repeating
-      // the failure. Fires once per process; subsequent calls early-return.
-      if (!preflightStalePropagated && startupAuth.status === 'inconclusive' && startupAuth.statusCode === 401) {
-        defaultClient?.http.markCookiesStale();
-        preflightStalePropagated = true;
+      // the failure. Fires once per client; subsequent calls early-return.
+      if (
+        defaultClient &&
+        !staleCookieClients.has(defaultClient) &&
+        startupAuth.status === 'inconclusive' &&
+        startupAuth.statusCode === 401
+      ) {
+        defaultClient.http.markCookiesStale();
+        staleCookieClients.add(defaultClient);
       }
     }
 
@@ -1361,6 +1375,10 @@ export async function createAndStartServer(
       })()
     : Promise.resolve();
 
+  // One client for every per-request HTTP Server, so the shared identity keeps one SAP security session.
+  const defaultClient = new AdtClient(
+    buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
+  );
   const buildDefaultServer = () =>
     createServer(config, {
       btpProxy,
@@ -1372,6 +1390,7 @@ export async function createAndStartServer(
       adtSemaphore,
       dataResultSemaphore,
       mcpRateLimiter,
+      defaultClient,
     });
   const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
   const buildAggregateServer =

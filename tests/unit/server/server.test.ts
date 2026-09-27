@@ -13,6 +13,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { AdtClient } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import * as adtFeatures from '../../../src/adt/features.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
@@ -682,6 +683,29 @@ describe('createServer request handlers', () => {
     await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
 
     expect(markSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses one provided default client across per-request HTTP servers', async () => {
+    const markSpy = vi.spyOn(AdtHttpClient.prototype, 'markCookiesStale').mockImplementation(() => undefined);
+    const defaultClient = new AdtClient({ baseUrl: 'http://sap:8000', username: 'admin', password: 'secret' });
+    const startupAuthPreflightPromise = Promise.resolve({
+      status: 'inconclusive' as const,
+      blocking: false,
+      endpoint: '/sap/bc/adt/core/discovery',
+      checkedAt: '2026-09-27T00:00:00.000Z',
+      statusCode: 401,
+      reason: 'stale cookie file',
+    });
+
+    // HTTP builds one Server per request; both must drive the same client (one SAP security session).
+    for (let request = 0; request < 2; request++) {
+      const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise, defaultClient });
+      const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+      await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
+    }
+
+    expect(markSpy).toHaveBeenCalledTimes(1);
+    expect(markSpy.mock.contexts[0]).toBe(defaultClient.http);
   });
 });
 
