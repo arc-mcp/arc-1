@@ -32,7 +32,7 @@
  */
 
 import type { AdtClient } from './client.js';
-import { type LockResult, lockObject, unlockObject, updateSource } from './crud.js';
+import { lockObject, unlockObject, updateSource } from './crud.js';
 import { activateBatch } from './devtools.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
@@ -214,7 +214,10 @@ export async function generateBehaviorImplementation(
   const bdefRead = await client.getBdef(bdefName);
   const bdefSource = bdefRead.source;
   const objectUrl = classObjectUrl(cleanClassName);
-  const scaffold = async (session: AdtHttpClient, lock?: LockResult): Promise<RapGenerateResult> => {
+  const scaffold = async (
+    session: AdtHttpClient,
+    save?: (url: string, source: string) => Promise<void>,
+  ): Promise<RapGenerateResult> => {
     // Read the editable view through the locked session before deriving replacements.
     const structured = await readRapClassSources(session, client.safety, cleanClassName);
     const mainSource = structured.main;
@@ -295,37 +298,15 @@ export async function generateBehaviorImplementation(
       dryRun,
     };
 
-    if (!lock) return result;
-    const effectiveTransport = transport ?? (lock.corrNr || undefined);
+    if (!save) return result;
     if (scaffoldPlan.changed.main && scaffoldPlan.sections.main !== mainSource) {
-      await updateSource(
-        session,
-        client.safety,
-        classMainSourceUrl(cleanClassName),
-        scaffoldPlan.sections.main,
-        lock.lockHandle,
-        effectiveTransport,
-      );
+      await save(classMainSourceUrl(cleanClassName), scaffoldPlan.sections.main);
     }
     if (scaffoldPlan.changed.definitions && scaffoldPlan.sections.definitions) {
-      await updateSource(
-        session,
-        client.safety,
-        classIncludeUrlFor(cleanClassName, 'definitions'),
-        scaffoldPlan.sections.definitions,
-        lock.lockHandle,
-        effectiveTransport,
-      );
+      await save(classIncludeUrlFor(cleanClassName, 'definitions'), scaffoldPlan.sections.definitions);
     }
     if (scaffoldPlan.changed.implementations && scaffoldPlan.sections.implementations) {
-      await updateSource(
-        session,
-        client.safety,
-        classIncludeUrlFor(cleanClassName, 'implementations'),
-        scaffoldPlan.sections.implementations,
-        lock.lockHandle,
-        effectiveTransport,
-      );
+      await save(classIncludeUrlFor(cleanClassName, 'implementations'), scaffoldPlan.sections.implementations);
     }
     return result;
   };
@@ -334,7 +315,9 @@ export async function generateBehaviorImplementation(
   const result = await client.http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY');
     try {
-      return await scaffold(session, lock);
+      return await scaffold(session, (url, source) =>
+        updateSource(session, client.safety, url, source, lock.lockHandle, transport ?? (lock.corrNr || undefined)),
+      );
     } finally {
       await unlockObject(session, objectUrl, lock.lockHandle);
     }
