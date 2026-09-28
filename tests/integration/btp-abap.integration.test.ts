@@ -869,7 +869,8 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
           supportsServerDrivenObject(client.http, code) === false ? null : true,
           SkipReason.BACKEND_UNSUPPORTED,
         );
-        const name = generateUniqueName(`ZARC1_SDO_${code}`);
+        // Short prefix: APLO names hold at most 20 characters (BALOBJ-OBJECT); ZA1_<code>_<run><tail> <= 18.
+        const name = generateUniqueName(`ZA1_${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         // The blue body must carry no cloud-hostile attrs — the owner comes from the JWT on cloud.
         const body = buildServerDrivenMetadataXml(code, name, structurePkg, `ARC-1 BTP ${code} body check`);
@@ -919,7 +920,8 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
           SkipReason.BACKEND_UNSUPPORTED,
         );
         const pkg = writablePkg as string;
-        const name = generateUniqueName(`ZARC1_SDO_${code}`);
+        // Short prefix: APLO names hold at most 20 characters (BALOBJ-OBJECT); ZA1_<code>_<run><tail> <= 18.
+        const name = generateUniqueName(`ZA1_${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         let created = false;
         try {
