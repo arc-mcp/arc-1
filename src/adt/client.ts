@@ -266,11 +266,6 @@ export class AdtClient {
    *  /tables/, structure at /structures/). Populated by getTabl() via the
    *  /tables/→/structures/ 404 fallback. */
   private readonly tablUrlCache = new Map<string, string>();
-  /** Per-client cache of resolved TABL URLs for **writes / activates / deletes**.
-   *  Populated by `resolveTablObjectUrlForWrite()` after asking SAP for the
-   *  actual `adtcore:type` (TABL/DT vs TABL/DS). Separate from `tablUrlCache`
-   *  so the two contracts don't contaminate each other. See issue #285. */
-  private readonly tablWriteUrlCache = new Map<string, string>();
   /** Lazily-instantiated DEVCLASS hierarchy resolver — only built when a subtree
    *  allowedPackages rule is hit. Shared across `withSafety()` clones because the
    *  hierarchy is a property of the SAP system, not of the current safety scope. */
@@ -324,7 +319,7 @@ export class AdtClient {
    * the constructor — which must be skipped, since the ctor would build a fresh AdtHttpClient with
    * a new cookie jar and break the shared session. Object.assign then copies whatever own fields
    * `this` has, so a NEW AdtClient field rides along automatically: there is no hand-maintained
-   * re-attach list to forget (that list was issue #333 — a missing `tablWriteUrlCache` left it
+   * re-attach list to forget (that list was issue #333 — a cache field missing from it was
    * `undefined` on the clone and crashed TABL writes on every authenticated path). Each field's
    * sharing rationale lives at its declaration above; a structural test in client.test.ts enforces
    * "every field except safety is shared by reference".
@@ -817,32 +812,13 @@ export class AdtClient {
    *       read-path resolver. The caller is creating something new or the object
    *       was just renamed; subsequent ADT calls will surface the real error.
    *
-   *  Caches separately from the read resolver so the two contracts don't
-   *  contaminate each other. */
+   *  Never cached: SAP can replace a structure with a table between calls of a long-lived
+   *  client, and a remembered /structures/ route would skip the refusal above. */
   async resolveTablObjectUrlForWrite(
     name: string,
     options: { tablesEndpointAvailable?: boolean } = {},
   ): Promise<string> {
     const upper = name.toUpperCase();
-    const cached = this.tablWriteUrlCache.get(upper);
-    if (cached) {
-      // Defense-in-depth: a cached /tables/ URL must still respect the current
-      // discovery state. The cache stores resolutions, but the availability of
-      // /sap/bc/adt/ddic/tables/ is a per-system property — if it ever resolves
-      // to "missing", the cached entry must not silently bypass the guard.
-      if (cached.startsWith('/sap/bc/adt/ddic/tables/') && options.tablesEndpointAvailable === false) {
-        throw new AdtSafetyError(
-          `Transparent table writes via ADT REST are not available on this system ` +
-            `(/sap/bc/adt/ddic/tables/ is not exposed — NW 7.50/7.51 ship the DDIC ` +
-            `structures endpoint only; the table editor was added in NW 7.52). ` +
-            `Use SE11 in SAPGUI to modify transparent table "${name}", or connect ` +
-            `ARC-1 to an SAP_BASIS ≥ 7.52 system. Writing to /sap/bc/adt/ddic/structures/ ` +
-            `would silently flip DD02L-TABCLASS to INTTAB and corrupt the table.`,
-        );
-      }
-      return cached;
-    }
-
     let actualType: string | undefined;
     try {
       const results = await this.searchObject(name, 5);
@@ -876,17 +852,14 @@ export class AdtClient {
             `would silently flip DD02L-TABCLASS to INTTAB and corrupt the table.`,
         );
       }
-      this.tablWriteUrlCache.set(upper, tableUrl);
       return tableUrl;
     }
-    if (actualType === 'TABL/DS') {
-      this.tablWriteUrlCache.set(upper, structUrl);
-      return structUrl;
-    }
+    if (actualType === 'TABL/DS') return structUrl;
 
     // Unknown / not-yet-existing object — fall back to the read-path resolver.
     // For create paths the caller has already checked tablesEndpointAvailable
-    // separately (no existing object to search for).
+    // separately (no existing object to search for). Re-probe: a cached read route may be stale.
+    this.tablUrlCache.delete(upper);
     return this.resolveTablObjectUrl(name);
   }
 

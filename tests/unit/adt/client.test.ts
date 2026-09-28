@@ -568,16 +568,6 @@ describe('AdtClient', () => {
       expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
     });
 
-    it('caches the resolved write URL — second call hits no HTTP', async () => {
-      mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(searchResponse('/sap/bc/adt/ddic/tables/T000', 'TABL/DT', 'T000'));
-      const client = createClient();
-      const url1 = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
-      const url2 = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
-      expect(url1).toBe(url2);
-      expect(mockFetch.mock.calls).toHaveLength(1);
-    });
-
     it('SE11 hint mentions NW 7.50/7.51 + the table editor landing in 7.52', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(
@@ -621,6 +611,20 @@ describe('AdtClient', () => {
       const client = createClient();
       const url = await client.resolveTablObjectUrlForWrite('ZNEW_TABLE', { tablesEndpointAvailable: true });
       expect(url).toBe('/sap/bc/adt/ddic/tables/ZNEW_TABLE');
+    });
+
+    it('re-probes instead of trusting a cached read route when the search finds nothing', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '<?xml version="1.0"?><error/>')); // read: /tables/ source
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'define structure zswap {}')); // read: /structures/ source
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>'),
+      ); // write: search finds nothing
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>')); // write: fresh /tables/ probe
+      const client = createClient();
+      await client.getTabl('ZSWAP'); // caches /structures/ZSWAP for reads; SAP then recreates it as a table
+      const url = await client.resolveTablObjectUrlForWrite('ZSWAP', { tablesEndpointAvailable: true });
+      expect(url).toBe('/sap/bc/adt/ddic/tables/ZSWAP');
     });
   });
 
@@ -1944,12 +1948,11 @@ describe('AdtClient', () => {
     });
 
     // Regression: issue #333 — withSafety() must share EVERY AdtClient instance field
-    // (the clone skips the constructor via Object.create). A missing `tablWriteUrlCache`
-    // once left it `undefined` on the clone, crashing TABL writes/activates with
-    // "Cannot read properties of undefined (reading 'get')" on every authenticated HTTP
-    // path (XSUAA/OIDC scopes or API-key profile). These named-field checks complement
-    // the structural guard above.
-    type CacheView = { tablWriteUrlCache?: Map<string, string>; tablUrlCache?: Map<string, string> };
+    // (the clone skips the constructor via Object.create). A cache field missing from the
+    // clone once crashed TABL writes/activates with "Cannot read properties of undefined
+    // (reading 'get')" on every authenticated HTTP path (XSUAA/OIDC scopes or API-key
+    // profile). These named-field checks complement the structural guard above.
+    type CacheView = { tablUrlCache?: Map<string, string> };
     const searchResponse = (uri: string, type: string, name: string) =>
       mockResponse(
         200,
@@ -1958,15 +1961,6 @@ describe('AdtClient', () => {
   <adtcore:objectReference adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}"/>
 </adtcore:objectReferences>`,
       );
-
-    it('shares the same tablWriteUrlCache Map instance with the clone (issue #333)', () => {
-      const client = createClient();
-      const derived = client.withSafety(unrestrictedSafetyConfig());
-      const original = (client as unknown as CacheView).tablWriteUrlCache;
-      const clone = (derived as unknown as CacheView).tablWriteUrlCache;
-      expect(clone).toBeInstanceOf(Map);
-      expect(clone).toBe(original);
-    });
 
     it('shares the same tablUrlCache Map instance with the clone', () => {
       const client = createClient();
@@ -1985,22 +1979,6 @@ describe('AdtClient', () => {
       // Before the fix this threw TypeError: Cannot read properties of undefined (reading 'get').
       const url = await derived.resolveTablObjectUrlForWrite('BAPIRET2', { tablesEndpointAvailable: false });
       expect(url).toBe('/sap/bc/adt/ddic/structures/BAPIRET2');
-    });
-
-    it('clone shares cached write-URL resolutions with the original (shared Map, not a copy)', async () => {
-      mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(searchResponse('/sap/bc/adt/ddic/tables/T000', 'TABL/DT', 'T000'));
-      const client = createClient();
-      // Clone created BEFORE the original populates the cache: only a SHARED Map
-      // (not a copy taken at clone time) lets the clone see the later resolution.
-      const derived = client.withSafety(unrestrictedSafetyConfig());
-      const url1 = await client.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
-      expect(url1).toBe('/sap/bc/adt/ddic/tables/T000');
-      expect(mockFetch.mock.calls).toHaveLength(1);
-      // Clone resolves the same name from the shared cache — no second HTTP call.
-      const url2 = await derived.resolveTablObjectUrlForWrite('T000', { tablesEndpointAvailable: true });
-      expect(url2).toBe('/sap/bc/adt/ddic/tables/T000');
-      expect(mockFetch.mock.calls).toHaveLength(1);
     });
   });
 
