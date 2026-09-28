@@ -749,7 +749,7 @@ export class AdtClient {
    *  TADIR groups them under R3TR TABL, distinguished only by DD02L-TABCLASS
    *  (TRANSP/CLUSTER/POOL → /tables/, INTTAB/APPEND → /structures/).
    *  Tries /tables/ first, falls back to /structures/ on 404. Caches the resolved
-   *  URL on the client for subsequent write/activate operations. */
+   *  URL for later read-path lookups (where-used, structure hierarchy) — never for mutations. */
   async getTabl(name: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
     checkOperation(this.safety, OperationType.Read, 'GetTabl');
     const upper = name.toUpperCase();
@@ -797,9 +797,8 @@ export class AdtClient {
   }
 
   /** Resolve the canonical ADT URL for a TABL name on the **write/activate/delete**
-   *  path. Unlike `resolveTablObjectUrl()`, this never falls back blindly to
-   *  /structures/ — it asks SAP what the object actually is (via repository search)
-   *  and refuses transparent-table writes on systems where /sap/bc/adt/ddic/tables/
+   *  path. Unlike `resolveTablObjectUrl()`, it first asks SAP what the object actually is
+   *  (via repository search) and refuses transparent-table writes on systems where /sap/bc/adt/ddic/tables/
    *  is absent (NW 7.50 ships /ddic/structures/ only; the table editor was added
    *  in NW 7.52). Returning /structures/ for a TABL/DT object would let a PUT
    *  silently flip DD02L-TABCLASS to INTTAB on the inactive draft (issue #285).
@@ -809,8 +808,8 @@ export class AdtClient {
    *       or throw AdtSafetyError with SE11 hint.
    *    2. Search returns `TABL/DS` → return /structures/<n> (always allowed).
    *    3. Search returns nothing (or a different type) → fall through to the
-   *       read-path resolver. The caller is creating something new or the object
-   *       was just renamed; subsequent ADT calls will surface the real error.
+   *       read-path resolver. Known gap: on 7.50 that ends at /structures/ even for an
+   *       unverified transparent table (e.g. search not authorized) — not a safe default.
    *
    *  Never cached: SAP can replace a structure with a table between calls of a long-lived
    *  client, and a remembered /structures/ route would skip the refusal above. */

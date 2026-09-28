@@ -69,7 +69,7 @@ const BUDGETS = {
   // belongs on the facade; the two parts that did not were extracted first (lineage evaluation to
   // data-source-policy.ts, the statement-execution loop to table-query.ts).
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
-  'src/adt/client.ts': 1702, // TABL write-route cache removed (never cache subtype routes for mutations).
+  'src/adt/client.ts': 1701, // TABL write-route cache removed (never cache subtype routes for mutations).
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.

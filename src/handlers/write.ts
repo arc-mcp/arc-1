@@ -110,8 +110,8 @@ export async function handleSAPWrite(
   }
 
   // For TABL update/delete/edit_method, the existing object may live at /tables/
-  // (transparent) or /structures/ (DDIC structure). Resolve once via the client's
-  // cached URL probe. For 'create' the default /tables/ URL is correct (we only
+  // (transparent) or /structures/ (DDIC structure). Resolve it fresh from SAP on every
+  // mutation (resolveTablObjectUrlForWrite). For 'create' the default /tables/ URL is correct (we only
   // create transparent tables today; structure creation is out of scope).
   //
   // For FUNC, the URL has the parent function group baked into the path:
