@@ -30,7 +30,8 @@ cause justifies a small additional change. No existing roadmap idea covers it.
 
 The local failure and a later passing sequence, including their CI overlaps, are
 recorded in [the research note](../../research/2026-09-27-sap-816-session-failures.md).
-The runtime cause was unresolved here; the follow-up found it (bursts of new SAP security sessions,
-see the research note). No transport recovery or timing workaround
-was added. Full local gates pass (7,295 unit tests); a four-letter-run-ID fixture
+The follow-up associated failures with bursts of new SAP logons and verified transport reuse
+as a mitigation; the SAP-internal cause remains inferred (see the research note).
+This observability change added no transport recovery or timing workaround.
+Full local gates pass (7,295 unit tests); a four-letter-run-ID fixture
 regression exposed during reproduction was fixed and verified on 816.

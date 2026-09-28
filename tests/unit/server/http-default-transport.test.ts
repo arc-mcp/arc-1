@@ -299,6 +299,37 @@ function deferred() {
   return { promise, resolve };
 }
 
+it('shares the SAP concurrency limit across transport rollover', async () => {
+  const entered = deferred();
+  const resume = deferred();
+  const requests: string[] = [];
+  mockFetch.mockImplementation(async (url: string) => {
+    requests.push(String(url));
+    if (String(url).includes('/ZPENDING/')) {
+      entered.resolve();
+      await resume.promise;
+    }
+    return mockResponse(200, 'REPORT ztest.', { 'x-csrf-token': 'T' });
+  });
+  const f = await startRotationFactory({ maxConcurrent: 1 });
+  expect((await f.read('ZWARM')).isError).not.toBe(true);
+  const pending = f.read('ZPENDING');
+  await entered.promise;
+  f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
+  const beforeReplacement = requests.length;
+  const replacement = f.read('ZNEW');
+  try {
+    // Let the new tool call reach its SAP request while the old request holds the only slot.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(requests).toHaveLength(beforeReplacement);
+  } finally {
+    resume.resolve();
+    const results = await Promise.all([pending, replacement]);
+    for (const result of results) expect(result.isError, result.content[0]?.text).not.toBe(true);
+  }
+  expect(requests.some((url) => url.includes('/ZNEW/'))).toBe(true);
+});
+
 it('keeps a delayed old response out of the replacement transport', async () => {
   const entered = deferred();
   const resume = deferred();
