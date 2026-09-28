@@ -75,6 +75,37 @@ runs directly after integration and 0 of 11 after E2E (2026-09-21..27). Integrat
 session churn and leaves no contexts or locks behind, so the ordering effect is not fully explained;
 the fix removes the burst in either order.
 
+## Authentication and side-effect review (2026-09-28)
+
+The independent live review reports that either `SAP_SESSIONID` or `MYSAPSSO2` alone authenticated
+requests on 758/816 despite a Basic header naming a nonexistent user. This verifies cookie
+precedence, **not** an actual password-change or account-lock test. It is consistent with
+[SAP's security-session contract](https://help.sap.com/saphelp_gbt10/helpdata/en/c9/71e72f422b455993c47b132c408ef5/content.htm):
+an existing session permits access without another logon. The measured 816 idle timeout and
+ticket lifetime are system configuration, not product-wide guarantees. Operator consequences
+and the retained credential-freshness risk are documented in
+[R21](../security-model.md#r21-shared-login-credential-freshness).
+
+The proposed ten-minute cookie reset is not included. Expiring a shared jar during an active
+call can split its authentication state; late responses can restore the old cookies, and clearing
+runtime cookies does not invalidate an explicitly configured SSO ticket. A bounded transport
+lifetime needs a separate concurrency-safe design and a stated credential policy.
+
+Other effects remain deliberately scoped:
+
+- Only transport state is shared. Factory regressions check fresh TABL resolution and refusal
+  after a package leaves the allowed subtree. PP requests neither inherit nor replace the shared
+  login, and failed PP exchanges never fall back to it.
+- A 401/CSRF/database-retry reset affects concurrent calls using the shared parent transport.
+  Existing retries may recover; they do not guarantee success or exactly-once writes. Stateful
+  children keep separate cookie maps for lock/save/unlock and close within the tool call.
+- Same-host cookies from non-ADT SAP services also persist. Restricting collection to ADT URLs
+  would change OData/FLP/plugin authentication and is not justified by a demonstrated defect.
+  Cookie path/expiry handling remains a separate limitation; no hostile-service scenario was tested.
+- MIME-negotiation entries now live for the process. They contain header choices, not object
+  contents, but have no numeric capacity bound. Shared technical-user attribution relies on
+  ARC-1's per-call audit, not distinct SAP login sessions.
+
 ## Earlier observations (2026-09-22..26)
 
 Five historical CI failures followed integration; a test-only branch failed too, and the first

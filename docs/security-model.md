@@ -241,6 +241,23 @@ Added by the 2026-06-09 deep review (Track A/B). All verified in code; R8 verifi
 
 ---
 
+### R21 — Shared-login credential freshness
+
+**Medium, single-target shared identity over HTTP (#871); existing behavior in stdio.** The
+transport retains SAP security-session cookies and SSO tickets across tool calls. Valid cookies
+can authenticate without a new Basic password check. There is no ARC-1 absolute login-age cap;
+SAP's idle timeout does not bound continuous use. Password rotation alone is therefore not an
+immediate revocation control. This does not merge PP users' identities: their transports remain
+request-local, protected by `http-default-transport.test.ts`. Both PP and multi-target Basic
+credential sanitizers discard injected transports as well as conflicting credentials.
+
+**Status: documented residual risk.** Follow the
+[rotation/revocation procedure](../docs_page/security-guide.md#shared-sap-login-lifetime-and-credential-rotation).
+The live review established cookie precedence on 758/816, not the outcome of a real password
+change or user lock. A future bounded-reuse policy must retire a transport between tool calls,
+leave in-flight locked operations intact, prevent old responses repopulating the new login, and
+define cookie-auth behavior. A timer that only clears the shared jar is insufficient.
+
 ## 6. Per-PR security review checklist
 
 Run the invariant(s) for whatever the change touches. This is the operational core of the model.

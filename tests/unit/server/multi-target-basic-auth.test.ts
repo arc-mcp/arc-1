@@ -310,6 +310,7 @@ describe('multi-target shared Basic authentication', () => {
     const target = current.targets[0];
     const sharedAuthState = new MultiTargetSharedAuthState();
     resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+    const sharedHttp = new AdtHttpClient({ baseUrl: 'https://other-sap.invalid', cookies: { MYSAPSSO2: 'shared' } });
 
     await sharedAuthState.runExclusive(target.target, async (lease) => {
       const prepared = await prepareSharedBasicClient({
@@ -318,6 +319,7 @@ describe('multi-target shared Basic authentication', () => {
         target,
         lease,
         buildClientConfig: () => ({
+          http: sharedHttp,
           cookies: { SECRET_COOKIE: 'must-not-survive' },
           cookieFile: '/tmp/must-not-survive',
           cookieString: 'SECRET_COOKIE=must-not-survive',
@@ -333,6 +335,7 @@ describe('multi-target shared Basic authentication', () => {
         }
       ).config;
 
+      expect(prepared.client.http).not.toBe(sharedHttp);
       expect(httpConfig).toMatchObject({
         baseUrl: canonicalDestinationUrl(BASE_DESTINATION.URL),
         username: BASE_DESTINATION.User,

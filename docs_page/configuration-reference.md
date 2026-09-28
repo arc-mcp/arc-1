@@ -105,6 +105,10 @@ Pick one primary method. Combining methods that conflict (e.g. basic + cookies +
 | `--user` | `SAP_USER` | Username sent in `Authorization: Basic` on shared-client ADT requests. With `SAP_PP_ENABLED=true`, API-key / non-JWT requests may still use this technical user unless `SAP_PP_STRICT=true` was set explicitly. A failed JWT PP request never falls back to this identity. |
 | `--password` | `SAP_PASSWORD` | Password for the above. Redacted from ARC-1 logs; prefer the environment variable because command-line argv is outside that redaction boundary. |
 
+Single-target HTTP mode reuses SAP login cookies across calls. Changing the SAP password alone
+does not ensure the next call re-authenticates; follow
+[shared-login credential rotation](security-guide.md#shared-sap-login-lifetime-and-credential-rotation).
+
 #### B2. Cookie auth (dev-only SSO bridge)
 
 | Flag | Env var | Effect |

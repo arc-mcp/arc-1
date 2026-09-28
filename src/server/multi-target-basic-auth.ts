@@ -193,6 +193,7 @@ export async function prepareSharedBasicClient(
     adtConfig.username = credentials.username;
     adtConfig.password = credentials.password;
     adtConfig.cookies = {};
+    adtConfig.http = undefined; // The selected destination needs its own login and 401 guard.
     adtConfig.cookieFile = undefined;
     adtConfig.cookieString = undefined;
     adtConfig.bearerTokenProvider = undefined;

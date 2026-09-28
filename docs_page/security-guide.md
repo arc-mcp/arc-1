@@ -225,6 +225,30 @@ used when per-user SAP authorization or horizontal scaling is required. See
 [ADR-0007](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md)
 and [Multi-System Setup](multi-target-setup.md).
 
+### Shared SAP login lifetime and credential rotation
+
+Single-target HTTP deployments reuse the shared identity's SAP login cookies and CSRF token
+across tool calls (#871), as stdio already does. Each call still gets fresh object/package caches
+and its own scope restrictions. JWT principal-propagation clients and multi-target clients do
+not receive this shared transport.
+
+**A password change is not session revocation.** SAP can authenticate an existing security
+session or SSO ticket without checking the accompanying Basic password. ARC-1 has no fixed
+maximum age for this shared login; do not assume the next call checks the password again.
+SAP session/ticket policy controls validity, and an idle timeout does not bound continuous use.
+See SAP's [HTTP security session documentation](https://help.sap.com/saphelp_gbt10/helpdata/en/c9/71e72f422b455993c47b132c408ef5/content.htm).
+
+For planned technical-user credential rotation, update ARC-1's configured credentials or shared
+destination and restart **every instance** so subsequent calls use the new configuration. For
+urgent revocation, first stop access through ARC-1 and have the SAP administrator terminate the
+affected sessions and address outstanding SSO tickets under the system's incident procedure.
+Restarting ARC-1 discards its in-memory cookies; it does not revoke tickets copied elsewhere.
+Replace configured cookie files/strings too if using the development SSO bridge. ARC-1's existing
+401 recovery is not a revocation mechanism and does not guarantee automatic recovery of a write.
+
+SAP sees the shared technical user across calls. Use ARC-1's per-call audit records for MCP-user
+attribution, or use principal propagation when SAP must authorize and audit each human separately.
+
 ### Destination Service
 
 BTP Destination Service centralizes SAP connection details and credentials. ARC-1 resolves the destination at runtime. Use `SAP_BTP_DESTINATION` for shared-user destinations or the BTP ABAP `OAuth2UserTokenExchange` per-user destination. Use `SAP_BTP_PP_DESTINATION` when an on-premise shared startup destination and PrincipalPropagation destination must be separate.

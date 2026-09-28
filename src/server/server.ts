@@ -423,6 +423,7 @@ export function applyPerUserAuthTokens(
   }
   adtConfig.username = displayUsername;
   adtConfig.password = undefined;
+  adtConfig.http = undefined; // An existing transport can carry another identity's login cookies.
   return adtConfig;
 }
 
@@ -672,8 +673,7 @@ export interface CreateServerOptions {
   defaultHttp?: AdtClient['http'];
 }
 
-// A non-blocking cookie-file 401 at startup marks each transport's cookies stale once (not per HTTP
-// request), so its first call reloads the file instead of replaying the dead cookies.
+// Mark startup-401 cookies stale once per transport, preserving cookies refreshed by earlier HTTP calls.
 const staleCookieTransports = new WeakSet<AdtClient['http']>();
 
 export function createServer(config: ServerConfig, options: CreateServerOptions = {}): Server {

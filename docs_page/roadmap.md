@@ -655,6 +655,9 @@ coincided with fresh stateful contexts failing (`400 Session not found`); see th
 **Resume when.** A PP or multi-target deployment reports `400 Session not found` or failed stateful
 closes under load, or SAP logon volume becomes an operator concern. Key any cache by SAP identity and
 token lifetime, keep users isolated, and keep ADR-0007's request-local Basic credentials.
+Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
+the single-target transport's current limitation is documented in
+[security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener
