@@ -80,6 +80,7 @@ sequence.
 | [FEAT-23](#feat-23) | Recursive program include reading | P2 | M | Needs research | Developer workflow |
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
 | [FEAT-66](#feat-66) | Interactive confirmation for destructive actions | P3 | L | Blocked | Safety / UX |
+| [FEAT-75](#feat-75) | Delete mutually-referencing objects as one set | P2 | S | Ready | Developer workflow |
 | [FEAT-22](#feat-22) | Safe gCTS mutation workflows | P3 | L | Needs research | Integration |
 | [FEAT-34](#feat-34) | Translation workflows beyond text symbols | P3 | L | Needs research | Localization |
 | [FEAT-62](#feat-62) | Transaction source and write support | P3 | M | Blocked | Object coverage |
@@ -362,6 +363,24 @@ Confirmation must also survive retries without creating duplicate mutations.
 **Unblock when.** The ADR's migration triggers are met and supported clients have verified
 confirmation UX. Design intent binding, expiry, idempotency, and non-interactive refusal before
 implementation. Complete confirmation before acquiring an ADT lock.
+
+<a id="feat-75"></a>
+### FEAT-75 — Delete mutually-referencing objects as one set
+
+- **Priority / effort / status:** P2 / S / Ready
+- **Category:** Developer workflow
+
+**Idea.** Let `SAPWrite` delete a bounded object set in one ADT mass-deletion request, so a RAP
+composition parent and its `association to parent` child can be removed without editing source.
+
+**Why it remains.** Deleting either side of such a pair returns 400 (DDIC 039) on 758 and 816, and
+the delete hint suggests a circular order ("delete the other first") for both. The only product path
+today is strip the composition, activate, then delete. `POST /sap/bc/adt/deletion/delete` removed a
+live pair in one call on both releases; the integration suite uses it for cleanup. 7.50 lacks it.
+
+**Resume with.** Reuse the verified request shape in `deleteObjectSet`
+(`tests/integration/crud-harness.ts`). Enforce the package gate for every object before sending,
+report SAP's per-object `isDeleted` result, gate on discovery, and stop suggesting circular orders.
 
 ## Integration and localization
 
