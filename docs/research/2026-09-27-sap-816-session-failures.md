@@ -45,9 +45,11 @@ file (60 such responses over its ~6 min run).
 
 **Fix.** Build the shared identity's SAP transport (`AdtHttpClient`: login cookies, CSRF token) once
 per process and pass it to the per-request factory (`createServer` option `defaultHttp`), as the
-semaphores already are. Each request still builds its own `AdtClient`, so object-resolution caches
-stay request-local: sharing the whole client (first revision of #871) let a structure replaced by a
-transparent table between calls be written through `/ddic/structures/`, bypassing the #285 refusal.
+semaphores already are. Each request still builds its own `AdtClient`, so its caches keep their
+per-request lifetime: sharing the whole client (first revision of #871) let a structure replaced by
+a transparent table between calls be written through `/ddic/structures/` (the TABL write-route cache
+is now removed in all modes, #873), and it would have kept the 10-minute package-hierarchy cache
+behind `SAP_ALLOWED_PACKAGES` subtree rules alive across HTTP requests.
 Startup preflight/probe clients and parallel cold requests still log on separately, so this cuts
 repeated logons rather than guaranteeing one session. Per-user PP clients and multi-target clients
 stay per request (roadmap OPS-06).
