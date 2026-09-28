@@ -869,8 +869,9 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
           supportsServerDrivenObject(client.http, code) === false ? null : true,
           SkipReason.BACKEND_UNSUPPORTED,
         );
-        // Short prefix: APLO names hold at most 20 characters (BALOBJ-OBJECT); ZA1_<code>_<run><tail> <= 18.
-        const name = generateUniqueName(`ZA1_${code}`);
+        // APLO names hold at most 20 characters (BALOBJ-OBJECT): ZARC1<code>_<run><tail> <= 19, and the
+        // ZARC1 prefix keeps leaked objects inside the janitor's TEST_OBJECT_PREFIXES namespace.
+        const name = generateUniqueName(`ZARC1${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         // The blue body must carry no cloud-hostile attrs — the owner comes from the JWT on cloud.
         const body = buildServerDrivenMetadataXml(code, name, structurePkg, `ARC-1 BTP ${code} body check`);
@@ -920,8 +921,9 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
           SkipReason.BACKEND_UNSUPPORTED,
         );
         const pkg = writablePkg as string;
-        // Short prefix: APLO names hold at most 20 characters (BALOBJ-OBJECT); ZA1_<code>_<run><tail> <= 18.
-        const name = generateUniqueName(`ZA1_${code}`);
+        // APLO names hold at most 20 characters (BALOBJ-OBJECT): ZARC1<code>_<run><tail> <= 19, and the
+        // ZARC1 prefix keeps leaked objects inside the janitor's TEST_OBJECT_PREFIXES namespace.
+        const name = generateUniqueName(`ZARC1${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         let created = false;
         try {
