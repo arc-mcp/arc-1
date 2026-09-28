@@ -425,6 +425,14 @@ complete an uncertain creation automatically.
 
 Keep edits above the read-only metadata marker in a complete SAPRead result. For a root-only H2 edit, keep that context so the root heading is distinguishable from a visible Markdown title. When only the root has documentation, a bare body without its routing H2 also works. Ordinary unmatched headings remain prose and are reported; a node-shaped typo aborts the update. Prefix a reserved prose heading with one backslash (`\## …`) to keep it inside the current node.
 
+Metadata updates for DOMA, DTEL, MSAG and SRVB, and node edits for SKTD/KTD,
+read the current editable metadata after acquiring the SAP lock, then merge and
+save in that session. Omitted supported fields are preserved. Supplied collections
+(such as MSAG messages or DOMA fixed values) still replace that collection; read
+first when extending one. SKTD `dryRun` validates without a lock and does not
+reserve the previewed state. Live SKTD validation uses the locked envelope, so an
+invalid node edit can briefly take a lock but never writes.
+
 #### Server-driven object writes
 
 `DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, and `DRTY` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:

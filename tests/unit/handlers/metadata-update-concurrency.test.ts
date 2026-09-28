@@ -1,0 +1,162 @@
+import { readFileSync } from 'node:fs';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
+import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { mockResponse } from '../../helpers/mock-fetch.js';
+import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
+
+const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { buildCreateXml } = await import('../../../src/handlers/write-helpers.js');
+const fixture = (name: string) => readFileSync(new URL(`../../fixtures/xml/${name}`, import.meta.url), 'utf8');
+const ktd = `<sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZDOC" adtcore:description="Original">
+<adtcore:packageRef adtcore:name="$TMP"/><sktd:element><sktd:id>ZDOC</sktd:id><sktd:text>${Buffer.from('Original prose').toString('base64')}</sktd:text><adtcore:objectReference/></sktd:element></sktd:docu>`;
+const cases = [
+  {
+    type: 'DOMA',
+    name: 'BUKRS',
+    path: '/ddic/domains/BUKRS',
+    xml: fixture('domain-metadata.xml'),
+    patch: { lowercase: true },
+  },
+  {
+    type: 'DTEL',
+    name: 'BUKRS',
+    path: '/ddic/dataelements/BUKRS',
+    xml: fixture('dataelement-metadata.xml'),
+    patch: { shortLabel: 'New' },
+  },
+  {
+    type: 'MSAG',
+    name: 'ZMSG',
+    path: '/messageclass/ZMSG',
+    xml: buildCreateXml('MSAG', 'ZMSG', '$TMP', 'Original', { messages: [{ number: '001', shortText: 'Original' }] }),
+    patch: { messages: [{ number: '001', shortText: 'New' }] },
+  },
+  {
+    type: 'SRVB',
+    name: 'ZBIND',
+    path: '/businessservices/bindings/ZBIND',
+    xml: fixture('service-binding.xml'),
+    patch: { serviceDefinition: 'ZNEW' },
+  },
+  { type: 'SKTD', name: 'ZDOC', path: '/documentation/ktd/documents/zdoc', xml: ktd, patch: { source: 'New prose' } },
+];
+
+function sap(row: (typeof cases)[number], failure?: 'lock' | 'read' | 'put' | 'unlock') {
+  let current = row.xml;
+  let locked = false;
+  const calls: Array<{ method: string; url: string; body: string; stateful: boolean; locked: boolean }> = [];
+  mockFetch.mockImplementation(
+    async (url: string | URL, opts?: { method?: string; body?: unknown; headers?: Record<string, string> }) => {
+      const method = opts?.method ?? 'GET';
+      const path = String(url);
+      const call = {
+        method,
+        url: path,
+        body: String(opts?.body ?? ''),
+        stateful: opts?.headers?.['X-sap-adt-sessiontype'] === 'stateful',
+        locked,
+      };
+      calls.push(call);
+      if (method === 'POST' && path.includes('_action=LOCK')) {
+        if (failure === 'lock') return mockResponse(423, 'locked by another user');
+        // A colleague saves and releases their lock before ours is granted.
+        current = current.replace(/adtcore:description="[^"]*"/, 'adtcore:description="Colleague description"');
+        locked = true;
+        return mockResponse(200, '<asx:values><LOCK_HANDLE>LH</LOCK_HANDLE><CORRNR>REQ1</CORRNR></asx:values>');
+      }
+      if (method === 'POST' && path.includes('_action=UNLOCK')) {
+        locked = false;
+        return mockResponse(failure === 'unlock' ? 400 : 200, 'unlock');
+      }
+      if (method === 'GET' && path.includes(row.path)) return mockResponse(failure === 'read' ? 400 : 200, current);
+      if (method === 'PUT') return mockResponse(failure === 'put' ? 400 : 200, 'write');
+      return mockResponse(200, '', { 'x-csrf-token': 'T' });
+    },
+  );
+  return calls;
+}
+
+describe('metadata updates preserve edits committed before the lock', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    resetCachedFeatures();
+  });
+
+  it('stateful facade preserves every field except its isolated HTTP session', async () => {
+    const client = createClient();
+    const originalHttp = client.http;
+    await client.withStatefulSession(async (current) => {
+      expect(current).toBeInstanceOf(AdtClient);
+      expect(current.http).not.toBe(originalHttp);
+      for (const key of Object.keys(client).filter((key) => key !== 'http')) {
+        expect(Reflect.get(current, key), key).toBe(Reflect.get(client, key));
+      }
+      expect(client.http).toBe(originalHttp);
+    });
+    expect(client.http).toBe(originalHttp);
+  });
+
+  it.each(cases)('$type reads and merges in the locked session', async (row) => {
+    const calls = sap(row);
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: row.type,
+      name: row.name,
+      ...row.patch,
+    });
+    expect(result.isError, JSON.stringify(result)).toBeUndefined();
+    const put = calls.find((c) => c.method === 'PUT');
+    expect(put?.body).toContain('adtcore:description="Colleague description"');
+    expect(put?.url).toContain('corrNr=REQ1');
+    const reads = calls.filter((c) => c.method === 'GET' && c.url.includes(row.path));
+    expect(reads.some((c) => c.locked && c.stateful)).toBe(true);
+    expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+  });
+
+  it.each(['lock', 'read', 'put', 'unlock'] as const)(
+    'reports %s failure and releases any acquired lock',
+    async (failure) => {
+      const row = cases[0]!;
+      const calls = sap(row, failure);
+      const cache = new CachingLayer(new MemoryCache());
+      const invalidate = vi.spyOn(cache, 'invalidate');
+      const result = await handleToolCall(
+        createClient(),
+        DEFAULT_CONFIG,
+        'SAPWrite',
+        {
+          action: 'update',
+          type: row.type,
+          name: row.name,
+          ...row.patch,
+        },
+        undefined,
+        undefined,
+        cache,
+      );
+      expect(invalidate.mock.calls.length > 0).toBe(failure === 'put' || failure === 'unlock');
+      expect(result.isError).toBe(true);
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(failure !== 'lock');
+      expect(calls.some((c) => c.method === 'PUT')).toBe(failure === 'put' || failure === 'unlock');
+      if (failure === 'lock') expect(calls.some((c) => c.method === 'GET' && c.url.includes(row.path))).toBe(false);
+    },
+  );
+
+  it('keeps SKTD dry-run unlocked and unwritten', async () => {
+    const row = cases[4]!;
+    const calls = sap(row);
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: row.type,
+      name: row.name,
+      ...row.patch,
+      dryRun: true,
+    });
+    expect(result.isError, JSON.stringify(result)).toBeUndefined();
+    expect(result.content[0]!.text).toContain('Dry run');
+    expect(calls.some((c) => c.url.includes('_action=LOCK') || c.method === 'PUT')).toBe(false);
+  });
+});

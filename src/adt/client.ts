@@ -310,26 +310,18 @@ export class AdtClient {
     this.http = config.http ?? new AdtHttpClient(httpConfig);
   }
 
-  /**
-   * Create a lightweight copy of this client with a different safety config — for per-request
-   * scopes derived from JWT/profile. Shares the live HTTP client (connection, CSRF token, cookies,
-   * sessions) and every resolution cache **by reference**; only `safety` is swapped.
-   *
-   * Object.create gives the clone the prototype (so methods + `instanceof` work) WITHOUT running
-   * the constructor — which must be skipped, since the ctor would build a fresh AdtHttpClient with
-   * a new cookie jar and break the shared session. Object.assign then copies whatever own fields
-   * `this` has, so a NEW AdtClient field rides along automatically: there is no hand-maintained
-   * re-attach list to forget (that list was issue #333 — a cache field missing from it was
-   * `undefined` on the clone and crashed TABL writes on every authenticated path). Each field's
-   * sharing rationale lives at its declaration above; a structural test in client.test.ts enforces
-   * "every field except safety is shared by reference".
-   *
-   * Caveat for future maintainers: this relies on fields being own-enumerable (plain TS `private`,
-   * which they are). A true `#private` field would NOT be copied by Object.assign — don't introduce
-   * one here without sharing it explicitly.
-   */
+  /** Share identity and caches; only the per-request safety ceiling changes.
+   * Clones skip the constructor to preserve the live connection. All fields must
+   * remain own-enumerable (TypeScript private, never #private); see issue #333. */
   withSafety(safety: SafetyConfig): AdtClient {
     return Object.assign(Object.create(AdtClient.prototype) as AdtClient, this, { safety });
+  }
+
+  /** Run existing readers in one isolated SAP session without mutating this client. */
+  withStatefulSession<T>(action: (client: AdtClient) => Promise<T>): Promise<T> {
+    return this.http.withStatefulSession((http) =>
+      action(Object.assign(Object.create(AdtClient.prototype) as AdtClient, this, { http })),
+    );
   }
 
   /**
