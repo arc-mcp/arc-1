@@ -10,7 +10,7 @@
 import { deleteObject, lockObject } from '../../src/adt/crud.js';
 import { isNotFoundError } from '../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../src/adt/http.js';
-import type { SafetyConfig } from '../../src/adt/safety.js';
+import { checkOperation, OperationType, type SafetyConfig } from '../../src/adt/safety.js';
 import { RUN_ID } from '../helpers/run-id.js';
 
 let nameCounter = 0;
@@ -155,6 +155,15 @@ export async function deleteObjectSet(
   safety: SafetyConfig,
   objects: Array<Pick<RegistryEntry, 'name' | 'objectUrl'>>,
 ): Promise<CleanupReport['failed']> {
+  try {
+    checkOperation(safety, OperationType.Delete, 'DeleteObjectSet');
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const failed = objects.map(({ name }) => ({ name, error }));
+    if (failed.length > 0) console.error('Object set cleanup failed:', failed);
+    return failed;
+  }
+
   const items = objects.map((o) => `<del:object adtcore:uri="${o.objectUrl}"><del:transportNumber/></del:object>`);
   let setError = '';
   try {
@@ -167,15 +176,24 @@ export async function deleteObjectSet(
   } catch (err) {
     setError = ` (set delete failed: ${err instanceof Error ? err.message : String(err)})`;
   }
-  const failed: CleanupReport['failed'] = [];
-  for (const { name, objectUrl } of objects) {
+  // Only a metadata 404 proves absence; other read errors leave existence unknown.
+  const isAbsent = async (objectUrl: string): Promise<boolean> => {
     try {
       await http.get(objectUrl, { 'Cache-Control': 'no-cache' }, { suppressNotFoundLog: true });
+      return false;
     } catch (err) {
-      if (isNotFoundError(err)) continue; // deleted, or never created
+      return isNotFoundError(err);
     }
+  };
+  const failed: CleanupReport['failed'] = [];
+  for (const { name, objectUrl } of objects) {
+    if (await isAbsent(objectUrl)) continue; // deleted, or never created
     const result = await retryDelete(http, safety, objectUrl);
-    if (!result.success) failed.push({ name, error: `${result.lastError ?? 'Unknown error'}${setError}` });
+    // A failed verification read or a lost DELETE response can leave nothing to delete.
+    // Recheck metadata instead of treating a LOCK/DELETE 404 as proof of absence.
+    if (!result.success && !(await isAbsent(objectUrl))) {
+      failed.push({ name, error: `${result.lastError ?? 'Unknown error'}${setError}` });
+    }
   }
   if (failed.length > 0) console.error('Object set cleanup failed:', failed);
   return failed;

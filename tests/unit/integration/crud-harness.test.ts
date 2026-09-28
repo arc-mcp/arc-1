@@ -1,5 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AdtApiError } from '../../../src/adt/errors.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AdtApiError, AdtNetworkError } from '../../../src/adt/errors.js';
+import type { AdtHttpClient } from '../../../src/adt/http.js';
+import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { RUN_ID } from '../../helpers/run-id.js';
 import {
   buildCreateXml,
@@ -168,6 +170,30 @@ describe('deleteObjectSet', () => {
   ];
   const notFound = () => new AdtApiError('not found', 404, '/x');
 
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reports a safety denial without sending any requests', async () => {
+    const http = {
+      post: vi.fn().mockResolvedValue({ statusCode: 200, body: '' }),
+      get: vi.fn().mockRejectedValue(notFound()),
+      withStatefulSession: vi.fn(),
+    };
+
+    const failed = await deleteObjectSet(http as unknown as AdtHttpClient, defaultSafetyConfig(), pair);
+
+    expect(failed).toEqual(pair.map(({ name }) => ({ name, error: expect.stringContaining('allowWrites=false') })));
+    expect(console.error).toHaveBeenCalledWith('Object set cleanup failed:', failed);
+    expect(http.post).not.toHaveBeenCalled();
+    expect(http.get).not.toHaveBeenCalled();
+    expect(http.withStatefulSession).not.toHaveBeenCalled();
+  });
+
   it('deletes the whole set in one mass-deletion request', async () => {
     const http = {
       post: vi.fn(async (_path: string, _body: string) => ({ statusCode: 200, body: '' })),
@@ -176,7 +202,7 @@ describe('deleteObjectSet', () => {
       }),
       withStatefulSession: vi.fn(),
     };
-    expect(await deleteObjectSet(http as any, {} as any, pair)).toEqual([]);
+    expect(await deleteObjectSet(http as any, unrestrictedSafetyConfig(), pair)).toEqual([]);
     expect(http.post).toHaveBeenCalledOnce();
     const [path, body] = http.post.mock.calls[0];
     expect(path).toBe('/sap/bc/adt/deletion/delete');
@@ -186,7 +212,6 @@ describe('deleteObjectSet', () => {
   });
 
   it('retries survivors one by one and reports what is still left', async () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const http = {
       post: vi.fn(async () => {
         throw new Error('no mass deletion endpoint');
@@ -200,12 +225,85 @@ describe('deleteObjectSet', () => {
         throw new Error('DDL source ZPAR could not be deleted');
       }),
     };
-    const failed = await deleteObjectSet(http as any, {} as any, pair);
+    const failed = await deleteObjectSet(http as any, unrestrictedSafetyConfig(), pair);
     expect(failed).toEqual([{ name: 'ZPAR', error: expect.stringContaining('could not be deleted') }]);
     expect(failed[0].error).toContain('no mass deletion endpoint');
     expect(http.withStatefulSession).toHaveBeenCalledOnce();
-    expect(log).toHaveBeenCalled();
-    log.mockRestore();
+    expect(console.error).toHaveBeenCalled();
+  });
+
+  it('confirms absence after a failed verification read and fallback lock', async () => {
+    const http = {
+      post: vi.fn().mockResolvedValue({ statusCode: 200, body: '' }),
+      get: vi
+        .fn()
+        .mockRejectedValueOnce(new AdtApiError('temporary backend failure', 500, pair[0].objectUrl))
+        .mockRejectedValue(notFound()),
+      withStatefulSession: vi.fn().mockRejectedValue(notFound()),
+    };
+
+    expect(await deleteObjectSet(http as unknown as AdtHttpClient, unrestrictedSafetyConfig(), pair)).toEqual([]);
+    expect(http.withStatefulSession).toHaveBeenCalledOnce();
+    expect(http.get.mock.calls.map(([url]) => url)).toEqual([pair[0].objectUrl, pair[0].objectUrl, pair[1].objectUrl]);
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    'cleans up through the fallback when its delete response is lost: %s',
+    async (loseResponse) => {
+      let present = true;
+      const session = {
+        post: vi.fn().mockResolvedValue({ statusCode: 200, body: '<LOCK_HANDLE>H</LOCK_HANDLE>' }),
+        delete: vi.fn(async () => {
+          present = false;
+          if (loseResponse) throw new AdtNetworkError('upstream disconnected');
+          return { statusCode: 204, body: '' };
+        }),
+      };
+      const http = {
+        post: vi.fn().mockRejectedValue(new AdtApiError('endpoint absent', 404, '/sap/bc/adt/deletion/delete')),
+        get: vi.fn(async () => {
+          if (!present) throw notFound();
+          return { statusCode: 200, body: '' };
+        }),
+        withStatefulSession: vi.fn(async (run: (client: AdtHttpClient) => Promise<void>) => {
+          await run(session as unknown as AdtHttpClient);
+        }),
+      };
+
+      expect(await deleteObjectSet(http as unknown as AdtHttpClient, unrestrictedSafetyConfig(), [pair[0]])).toEqual(
+        [],
+      );
+      expect(session.delete).toHaveBeenCalledWith(`${pair[0].objectUrl}?lockHandle=H`);
+      expect(present).toBe(false);
+      expect(console.error).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['exists', undefined],
+    ['forbidden', new AdtApiError('forbidden', 403, pair[0].objectUrl)],
+    ['server error', new AdtApiError('server error', 500, pair[0].objectUrl)],
+    ['network error', new AdtNetworkError('upstream disconnected')],
+  ])('retains a fallback 404 failure when the final metadata probe reports %s', async (_label, probeError) => {
+    const http = {
+      post: vi.fn().mockResolvedValue({ statusCode: 200, body: '' }),
+      get: vi
+        .fn()
+        .mockResolvedValueOnce({ statusCode: 200, body: '' })
+        .mockImplementation(async () => {
+          if (probeError) throw probeError;
+          return { statusCode: 200, body: '' };
+        }),
+      // A DELETE/LOCK 404 alone does not establish absence (notably on SAP 7.50).
+      withStatefulSession: vi.fn().mockRejectedValue(notFound()),
+    };
+
+    const failed = await deleteObjectSet(http as unknown as AdtHttpClient, unrestrictedSafetyConfig(), [pair[0]]);
+
+    expect(failed).toEqual([{ name: pair[0].name, error: expect.stringContaining('status 404') }]);
+    expect(http.get).toHaveBeenCalledTimes(2);
+    expect(console.error).toHaveBeenCalledWith('Object set cleanup failed:', failed);
   });
 });
 
