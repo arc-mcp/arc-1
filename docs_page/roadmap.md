@@ -646,10 +646,10 @@ exporter support before implementation.
 **Idea.** Reuse a principal-propagation user's SAP session across MCP HTTP requests instead of
 logging on again for every tool call.
 
-**Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target client is
-now process-wide, but per-user PP clients and multi-target clients are still built per request, so
-each tool call opens a new SAP security session and CSRF round trip. On SAP_BASIS 816 bursts of new
-security sessions make SAP drop fresh stateful contexts (`400 Session not found`); see the
+**Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target SAP
+transport is now process-wide, but per-user PP clients and multi-target clients are still built per
+request, so each tool call logs on again and refetches a CSRF token. On SAP_BASIS 816 such bursts
+coincided with fresh stateful contexts failing (`400 Session not found`); see the
 [investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-27-sap-816-session-failures.md).
 
 **Resume when.** A PP or multi-target deployment reports `400 Session not found` or failed stateful

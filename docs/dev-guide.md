@@ -323,7 +323,7 @@ Gotchas worth knowing before changing anything here:
 Run IDs and local server ports prevent object-name/process collisions, but overlapping runs still
 share the SAP user, work processes, session capacity and lock table. CI serializes live jobs; avoid overlapping
 local runs when investigating backend failures. On 816, bursts of new SAP security sessions (one per
-HTTP tool call before the shared default client) made fresh stateful contexts fail with
+HTTP tool call before the transport was shared) made fresh stateful contexts fail with
 `400 Session not found`; see the [investigation](research/2026-09-27-sap-816-session-failures.md). Mechanics:
 
 - **Live CI queue** — integration, E2E and manual slow profiles share `…-sap-live-a4h` with

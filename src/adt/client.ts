@@ -312,7 +312,7 @@ export class AdtClient {
       semaphore: config.adtSemaphore ?? (config.maxConcurrent ? new Semaphore(config.maxConcurrent) : undefined),
     };
 
-    this.http = new AdtHttpClient(httpConfig);
+    this.http = config.http ?? new AdtHttpClient(httpConfig);
   }
 
   /**

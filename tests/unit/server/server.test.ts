@@ -685,9 +685,9 @@ describe('createServer request handlers', () => {
     expect(markSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('reuses one provided default client across per-request HTTP servers', async () => {
+  it('marks a shared HTTP transport stale once across per-request servers', async () => {
     const markSpy = vi.spyOn(AdtHttpClient.prototype, 'markCookiesStale').mockImplementation(() => undefined);
-    const defaultClient = new AdtClient({ baseUrl: 'http://sap:8000', username: 'admin', password: 'secret' });
+    const defaultHttp = new AdtClient({ baseUrl: 'http://sap:8000', username: 'admin', password: 'secret' }).http;
     const startupAuthPreflightPromise = Promise.resolve({
       status: 'inconclusive' as const,
       blocking: false,
@@ -697,15 +697,15 @@ describe('createServer request handlers', () => {
       reason: 'stale cookie file',
     });
 
-    // HTTP builds one Server per request; both must drive the same client (one SAP security session).
+    // HTTP builds one Server (and AdtClient) per request over the same transport; mark it only once.
     for (let request = 0; request < 2; request++) {
-      const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise, defaultClient });
+      const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise, defaultHttp });
       const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
       await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
     }
 
     expect(markSpy).toHaveBeenCalledTimes(1);
-    expect(markSpy.mock.contexts[0]).toBe(defaultClient.http);
+    expect(markSpy.mock.contexts[0]).toBe(defaultHttp);
   });
 });
 

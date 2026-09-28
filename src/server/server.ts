@@ -668,13 +668,13 @@ export interface CreateServerOptions {
   dataResultSemaphore?: Semaphore;
   mcpRateLimiter?: McpRateLimiter;
   multiTarget?: MultiTargetServerOptions;
-  /** Process-wide shared-identity client: HTTP builds a Server per request and must not log on per tool call. */
-  defaultClient?: AdtClient;
+  /** Process-wide SAP transport (cookies, CSRF token); each request still gets its own AdtClient and caches. */
+  defaultHttp?: AdtClient['http'];
 }
 
-// A non-blocking cookie-file 401 at startup marks each runtime client's cookies stale once (not per HTTP
+// A non-blocking cookie-file 401 at startup marks each transport's cookies stale once (not per HTTP
 // request), so its first call reloads the file instead of replaying the dead cookies.
-const staleCookieClients = new WeakSet<AdtClient>();
+const staleCookieTransports = new WeakSet<AdtClient['http']>();
 
 export function createServer(config: ServerConfig, options: CreateServerOptions = {}): Server {
   const {
@@ -703,10 +703,10 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   // Default ADT client (startup-time credentials or OAuth bearer); per-user PP clients share its semaphore.
   const defaultClient = multiTarget
     ? undefined
-    : (options.defaultClient ??
-      new AdtClient(
-        buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
-      ));
+    : new AdtClient({
+        ...buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
+        http: options.defaultHttp,
+      });
 
   let schemaNullableAutoClientInfoLogged = false;
 
@@ -817,9 +817,9 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         } as Record<string, unknown>;
       }
       const staleStartupCookies = startupAuth.status === 'inconclusive' && startupAuth.statusCode === 401;
-      if (staleStartupCookies && defaultClient && !staleCookieClients.has(defaultClient)) {
+      if (staleStartupCookies && defaultClient && !staleCookieTransports.has(defaultClient.http)) {
         defaultClient.http.markCookiesStale();
-        staleCookieClients.add(defaultClient);
+        staleCookieTransports.add(defaultClient.http);
       }
     }
 
@@ -1356,9 +1356,9 @@ export async function createAndStartServer(
       })()
     : Promise.resolve();
 
-  const defaultClient = new AdtClient(
+  const defaultHttp = new AdtClient(
     buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
-  );
+  ).http;
   const buildDefaultServer = () =>
     createServer(config, {
       btpProxy,
@@ -1370,7 +1370,7 @@ export async function createAndStartServer(
       adtSemaphore,
       dataResultSemaphore,
       mcpRateLimiter,
-      defaultClient,
+      defaultHttp,
     });
   const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
   const buildAggregateServer =
