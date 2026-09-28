@@ -1,6 +1,6 @@
 /**
  * Live read for DDIC lock objects (ENQU).
- * Verified on S/4HANA SAP_BASIS 8.16 — docs/research/2026-09-28-enqu-lock-object-adt-contract.md.
+ * Verified on S/4HANA SAP_BASIS 8.16 and a BTP trial — docs/research/2026-09-28-enqu-lock-object-adt-contract.md.
  * Instances are system-dependent, so the test searches for one by type instead of hardcoding a name.
  */
 import { beforeAll, describe, expect, it } from 'vitest';

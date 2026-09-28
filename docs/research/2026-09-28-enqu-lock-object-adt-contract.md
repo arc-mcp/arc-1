@@ -2,7 +2,8 @@
 
 Verified 2026-09-28 against an on-premise S/4HANA development system (SAP_BASIS 8.16, S4CORE 109),
 Basic auth, both with raw ADT requests and end to end through ARC-1's own code path
-(`arc1-cli call SAPRead|SAPWrite|SAPActivate`). All test objects were deleted afterwards.
+(`arc1-cli call SAPRead|SAPWrite|SAPActivate`), and on a BTP ABAP Environment trial through
+`handleToolCall` with a named-user token. All test objects were deleted afterwards.
 
 ## Discovery
 
@@ -52,4 +53,11 @@ Design consequences in ARC-1 (`src/adt/lock-object.ts`):
 - `update` merges over the stored definition; a change of the table set without explicit
   `lockParameters` is refused, because SAP's update-time re-derivation silently drops every parameter
   from the `ENQUEUE_` interface.
-- `ENQU` is on-prem only in the tool surface until the BTP ABAP Environment is verified.
+- `ENQU` is offered on-prem and on BTP (verified on both, see below).
+
+## BTP ABAP Environment (trial, 2026-09-28)
+
+Browser OAuth with a named user; objects in a new `ZLOCAL` sub-package, all through `handleToolCall`:
+create with only a primary table → activate → update (lock mode) → activate → read → delete all
+succeed, parameters derived with `parameterWanted=true`. The on-prem create body needs no
+cloud-specific change; the owner comes from the JWT.
