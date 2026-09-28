@@ -669,12 +669,14 @@ export interface CreateServerOptions {
   dataResultSemaphore?: Semaphore;
   mcpRateLimiter?: McpRateLimiter;
   multiTarget?: MultiTargetServerOptions;
-  /** Process-wide SAP transport (cookies, CSRF token); each request still gets its own AdtClient and caches. */
+  /** Shared SAP transport (cookies, CSRF token); each request still gets its own AdtClient and caches. */
   defaultHttp?: AdtClient['http'];
 }
 
 // Mark startup-401 cookies stale once per transport, preserving cookies refreshed by earlier HTTP calls.
 const staleCookieTransports = new WeakSet<AdtClient['http']>();
+/** Maximum age when selecting a shared transport for a new HTTP request; not a ticket lifetime (R21). */
+export const SHARED_TRANSPORT_MAX_AGE_MS = 10 * 60_000;
 
 export function createServer(config: ServerConfig, options: CreateServerOptions = {}): Server {
   const {
@@ -1356,9 +1358,18 @@ export async function createAndStartServer(
       })()
     : Promise.resolve();
 
-  const defaultHttp = new AdtClient(
-    buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
-  ).http;
+  // Retire transport state for new HTTP requests, preserving older requests and their late responses.
+  // Configured cookies are reloaded, not revoked; see R21. Stdio builds its server only once.
+  const newDefaultHttp = () =>
+    new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore))
+      .http;
+  let shared = { http: newDefaultHttp(), since: performance.now() };
+  const defaultHttp = () => {
+    if (performance.now() - shared.since >= SHARED_TRANSPORT_MAX_AGE_MS) {
+      shared = { http: newDefaultHttp(), since: performance.now() };
+    }
+    return shared.http;
+  };
   const buildDefaultServer = () =>
     createServer(config, {
       btpProxy,
@@ -1370,7 +1381,7 @@ export async function createAndStartServer(
       adtSemaphore,
       dataResultSemaphore,
       mcpRateLimiter,
-      defaultHttp,
+      defaultHttp: defaultHttp(),
     });
   const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
   const buildAggregateServer =

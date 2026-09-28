@@ -647,16 +647,16 @@ exporter support before implementation.
 logging on again for every tool call.
 
 **Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target SAP
-transport is now process-wide, but per-user PP clients and multi-target clients are still built per
-request, so each tool call logs on again and refetches a CSRF token. On SAP_BASIS 816 such bursts
-coincided with fresh stateful contexts failing (`400 Session not found`); see the
+transport is reused with ten-minute replacement for new requests, but per-user PP clients and
+multi-target clients are still built per request, so each tool call logs on again and refetches a
+CSRF token. On SAP_BASIS 816 such bursts coincided with fresh stateful contexts failing (`400 Session not found`); see the
 [investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-27-sap-816-session-failures.md).
 
 **Resume when.** A PP or multi-target deployment reports `400 Session not found` or failed stateful
 closes under load, or SAP logon volume becomes an operator concern. Key any cache by SAP identity and
 token lifetime, keep users isolated, and keep ADR-0007's request-local Basic credentials.
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
-the single-target transport's current limitation is documented in
+the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
 
 <a id="feat-07"></a>

@@ -243,20 +243,25 @@ Added by the 2026-06-09 deep review (Track A/B). All verified in code; R8 verifi
 
 ### R21 — Shared-login credential freshness
 
-**Medium, single-target shared identity over HTTP (#871); existing behavior in stdio.** The
-transport retains SAP security-session cookies and SSO tickets across tool calls. Valid cookies
-can authenticate without a new Basic password check. There is no ARC-1 absolute login-age cap;
-SAP's idle timeout does not bound continuous use. Password rotation alone is therefore not an
-immediate revocation control. This does not merge PP users' identities: their transports remain
-request-local, protected by `http-default-transport.test.ts`. Both PP and multi-target Basic
-credential sanitizers discard injected transports as well as conflicting credentials.
+**Medium, mitigated for runtime-cookie-only Basic authentication; residual for configured tickets
+and already-created requests.** Single-target HTTP requests share a SAP transport, which is
+replaced for new requests once it is ten minutes old (monotonic elapsed time). Older requests
+keep their transport, including lock/save/unlock and late responses. Stdio's lifetime is unchanged.
+Per-user PP and multi-target transports remain request-local; both credential sanitizers discard
+injected transports. Factory tests cover these identity boundaries and rollover isolation.
 
-**Status: documented residual risk.** Follow the
+A replacement drops runtime cookies but reloads configured cookie credentials and retains the
+configured bearer provider. An unchanged SSO ticket or configured session cookie can authenticate
+without a new Basic password check. Existing requests may also outlive the transport-age limit.
+This is a reuse boundary, **not a ten-minute revocation guarantee**. SAP's idle timeout does not
+bound continuous use. Repeated fresh logons with stale configured credentials can also lock the
+technical account under SAP's policy; the concurrency limit is not a logon-rate limit.
+
+**Status: partial mitigation; operator revocation procedure still required.** Follow the
 [rotation/revocation procedure](../docs_page/security-guide.md#shared-sap-login-lifetime-and-credential-rotation).
-The live review established cookie precedence on 758/816, not the outcome of a real password
-change or user lock. A future bounded-reuse policy must retire a transport between tool calls,
-leave in-flight locked operations intact, prevent old responses repopulating the new login, and
-define cookie-auth behavior. A timer that only clears the shared jar is insufficient.
+The live cookie-precedence evidence on 758/816 does not establish the outcome of a real password
+change or user lock. Retiring transport objects prevents late responses from refilling the new
+jar; clearing an existing jar in place would not provide that isolation.
 
 ## 6. Per-PR security review checklist
 

@@ -228,23 +228,40 @@ and [Multi-System Setup](multi-target-setup.md).
 ### Shared SAP login lifetime and credential rotation
 
 Single-target HTTP deployments reuse the shared identity's SAP login cookies and CSRF token
-across tool calls (#871), as stdio already does. Each call still gets fresh object/package caches
-and its own scope restrictions. JWT principal-propagation clients and multi-target clients do
-not receive this shared transport.
+across tool calls (#871). Each call still gets fresh object/package caches and its own scope
+restrictions. JWT principal-propagation clients and multi-target clients do not receive this
+shared transport.
 
-**A password change is not session revocation.** SAP can authenticate an existing security
-session or SSO ticket without checking the accompanying Basic password. ARC-1 has no fixed
-maximum age for this shared login; do not assume the next call checks the password again.
-SAP session/ticket policy controls validity, and an idle timeout does not bound continuous use.
+**Transport renewal:** once a transport is ten minutes old, a new HTTP request gets a replacement.
+Requests already created retain the old one, so lock/save/unlock and late responses stay together.
+The age is measured with a monotonic clock. Renewal can add authentication/CSRF requests and latency;
+the amount depends on the workload. `ARC1_MAX_CONCURRENT` limits simultaneous SAP requests, not
+logons per minute. Stdio's existing transport lifetime is unchanged.
+
+**A password change is not session revocation.** A replacement discards runtime cookies and
+re-reads `SAP_COOKIE_FILE`, but can reload the same still-valid ticket. `SAP_COOKIE_STRING` and
+startup-resolved destination credentials do not hot-reload. SAP can accept configured session
+cookies or SSO tickets without checking the accompanying Basic password; existing requests may
+also outlive ten minutes. Renewal is therefore not a fixed credential-revocation deadline.
 See SAP's [HTTP security session documentation](https://help.sap.com/saphelp_gbt10/helpdata/en/c9/71e72f422b455993c47b132c408ef5/content.htm).
 
 For planned technical-user credential rotation, update ARC-1's configured credentials or shared
-destination and restart **every instance** so subsequent calls use the new configuration. For
-urgent revocation, first stop access through ARC-1 and have the SAP administrator terminate the
-affected sessions and address outstanding SSO tickets under the system's incident procedure.
-Restarting ARC-1 discards its in-memory cookies; it does not revoke tickets copied elsewhere.
-Replace configured cookie files/strings too if using the development SSO bridge. ARC-1's existing
-401 recovery is not a revocation mechanism and does not guarantee automatic recovery of a write.
+destination and restart **every instance** so subsequent calls use the new configuration. A still-valid
+session can hide outdated credentials until renewal; repeated rejected logons can then lock the
+technical account under SAP's configured policy. A normal request may retry authentication once,
+whereas a rejected CSRF bootstrap may stop at its first attempt.
+
+For urgent revocation, first stop access through ARC-1 and have the SAP administrator terminate
+the affected HTTP security sessions (SM05) and address outstanding SSO tickets under the system's
+incident procedure. Restarting ARC-1 discards its in-memory cookies; it does not revoke tickets
+copied elsewhere. Replace configured cookie files/strings too if using the development SSO bridge.
+ARC-1's existing 401 recovery is not a revocation mechanism and does not guarantee automatic
+recovery of a write.
+
+SAP recommends `login/create_sso2_ticket=3` to issue assertion tickets without logon tickets, but
+legacy SSO consumers may require `2`. Have the SAP owner assess that landscape-wide setting
+separately; changing issuance does not revoke existing tickets. See
+[SAP's ticket configuration guidance](https://help.sap.com/saphelp_scm700_ehp02/helpdata/en/4e/0a0e6dbce42287e10000000a15822b/content.htm).
 
 SAP sees the shared technical user across calls. Use ARC-1's per-call audit records for MCP-user
 attribution, or use principal propagation when SAP must authorize and audit each human separately.

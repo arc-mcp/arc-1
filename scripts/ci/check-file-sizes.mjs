@@ -80,7 +80,7 @@ const BUDGETS = {
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1507, // Keep the safe CTS explanation in minimal-error mode.
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
-  'src/server/server.ts': 1483, // Shared HTTP default client; comments trimmed to stay within budget.
+  'src/server/server.ts': 1494, // Shared HTTP transport + monotonic renewal for new requests (R21).
 };
 
 const DEFAULT_SRC = 1500;

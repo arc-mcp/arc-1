@@ -43,12 +43,12 @@ file (60 such responses over its ~6 min run).
   `rdisp/tm_max_no=1000`, `login/create_sso2_ticket=2`. No explicit session-count limit is set; the
   threshold is empirical (rate-dependent, ~120 new sessions per minute in the lab).
 
-**Fix.** Build the shared identity's SAP transport (`AdtHttpClient`: login cookies, CSRF token) once
-per process and pass it to the per-request factory (`createServer` option `defaultHttp`), as the
-semaphores already are. Each request still builds its own `AdtClient`, so its caches keep their
+**Fix.** Reuse the shared identity's SAP transport (`AdtHttpClient`: login cookies, CSRF token)
+across HTTP requests (`createServer` option `defaultHttp`), replacing it for new requests after
+ten minutes. Each request still builds its own `AdtClient`, so its caches keep their
 per-request lifetime: sharing the whole client (first revision of #871) let a structure replaced by
 a transparent table between calls be written through `/ddic/structures/` (the TABL write-route cache
-is now removed in all modes, #873), and it would have kept the 10-minute package-hierarchy cache
+is removed in all modes by the separate #873), and it would have kept the 10-minute package-hierarchy cache
 behind `SAP_ALLOWED_PACKAGES` subtree rules alive across HTTP requests.
 Startup preflight/probe clients and parallel cold requests still log on separately, so this cuts
 repeated logons rather than guaranteeing one session. Per-user PP clients and multi-target clients
@@ -59,7 +59,7 @@ it fails on the base (no login reuse) and on the whole-client revision (stale TA
 on the transport-only fix. Live, the same integration → E2E sequence back to back (same user and
 HTTP route, observation hook on undici's `undici:request:headers` channel; it records cookie
 presence only, so a renewal counts like a new session), run on the whole-client revision `238e301d`,
-whose transport behavior the final fix keeps:
+which established the benefit of transport reuse before the ten-minute renewal was added:
 
 | E2E phase | Before fix | With fix |
 |---|---|---|
@@ -73,7 +73,7 @@ expected business 400s).
 **Open.** Failures (including two masked by the since-removed skip rule) appeared in 10 of 33 E2E
 runs directly after integration and 0 of 11 after E2E (2026-09-21..27). Integration adds little
 session churn and leaves no contexts or locks behind, so the ordering effect is not fully explained;
-the fix removes the burst in either order.
+transport reuse reduces logon churn without fully explaining this ordering effect.
 
 ## Authentication and side-effect review (2026-09-28)
 
@@ -86,10 +86,20 @@ ticket lifetime are system configuration, not product-wide guarantees. Operator 
 and the retained credential-freshness risk are documented in
 [R21](../security-model.md#r21-shared-login-credential-freshness).
 
-The proposed ten-minute cookie reset is not included. Expiring a shared jar during an active
-call can split its authentication state; late responses can restore the old cookies, and clearing
-runtime cookies does not invalidate an explicitly configured SSO ticket. A bounded transport
-lifetime needs a separate concurrency-safe design and a stated credential policy.
+The shared transport is replaced for new HTTP requests once it is ten minutes old, using
+monotonic elapsed time. Already-created requests retain their transport, preserving active locks
+and keeping late responses out of the replacement's jar. Factory regressions pause a read and a
+PUT across rollover and verify those properties. Cookie-file tests verify both reload after a
+file change and continued use of an unchanged ticket. Configured credentials are reloaded, not
+revoked; no blanket ten-minute revocation or fixed logon-count guarantee follows.
+
+The rotation follow-up was exercised live on SAP_BASIS 758 and 816 over public HTTPS on
+2026-09-28, through the actual factory/dispatcher with real SAP HTTP calls. The harness advanced
+the process's monotonic clock rather than waiting ten wall-clock minutes. A new request obtained
+a different SAP session while an older request kept its original one. A temporary program update
+held after LOCK completed PUT/UNLOCK across rollover; source readback matched, and deletion was
+verified by HTTP 404 on both systems. No password or SAP-user lock was changed. This targeted
+lifecycle check complements the earlier integration/E2E evidence; it is not a load test.
 
 Other effects remain deliberately scoped:
 
@@ -102,9 +112,9 @@ Other effects remain deliberately scoped:
 - Same-host cookies from non-ADT SAP services also persist. Restricting collection to ADT URLs
   would change OData/FLP/plugin authentication and is not justified by a demonstrated defect.
   Cookie path/expiry handling remains a separate limitation; no hostile-service scenario was tested.
-- MIME-negotiation entries now live for the process. They contain header choices, not object
-  contents, but have no numeric capacity bound. Shared technical-user attribution relies on
-  ARC-1's per-call audit, not distinct SAP login sessions.
+- MIME-negotiation entries live with their transport. Replacement ages them out for new requests,
+  but running requests may retain them longer and there is no numeric capacity bound. Shared
+  technical-user attribution relies on ARC-1's per-call audit, not distinct SAP login sessions.
 
 ## Earlier observations (2026-09-22..26)
 

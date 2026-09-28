@@ -4,11 +4,15 @@
  * from the #871 review reproduction: a structure replaced by a transparent table between calls must be
  * re-resolved (issue #285), and SAP_ALLOWED_PACKAGES subtree rules must see a fresh package hierarchy.
  */
+
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { BTPConfig } from '@arc-mcp/xsuaa-auth/btp';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { afterEach, expect, it, vi } from 'vitest';
-import { DEFAULT_CONFIG } from '../../../src/server/types.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from '../handlers/handler-test-config.js';
 import { mockFetch } from '../handlers/setup-undici-mock.js';
@@ -28,7 +32,9 @@ vi.mock('@arc-mcp/xsuaa-auth/btp', async (importOriginal) => ({
 
 const { lookupDestinationWithUserToken } = await import('@arc-mcp/xsuaa-auth/btp');
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
-const { createAndStartServer, createServer } = await import('../../../src/server/server.js');
+const { createAndStartServer, createServer, SHARED_TRANSPORT_MAX_AGE_MS } = await import(
+  '../../../src/server/server.js'
+);
 const adtFeatures = await import('../../../src/adt/features.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
@@ -46,6 +52,7 @@ async function callTool(server: Server, name: string, args: Record<string, unkno
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   vi.mocked(lookupDestinationWithUserToken).mockReset();
@@ -221,4 +228,185 @@ it('keeps the shared SAP login out of PP requests and never falls back after an 
   await defaultHttp.get('/sap/bc/adt/programs/programs/ZTEST/source/main');
   expect(mockFetch.mock.calls[0]?.[1].headers.Cookie).toContain('shared-session');
   expect(mockFetch.mock.calls[0]?.[1].headers.Cookie).toContain('shared-ticket');
+});
+
+it('replaces an aged shared transport for new requests while previously created requests retain theirs', async () => {
+  let logins = 0;
+  mockFetch.mockImplementation(async (_url: string, options: { headers?: Record<string, string> }) =>
+    mockResponse(
+      200,
+      'REPORT ztest.',
+      {},
+      options.headers?.Cookie?.includes('SAP_SESSIONID') ? [] : [`SAP_SESSIONID_A4H_001=S${++logins}; path=/`],
+    ),
+  );
+  const f = await startRotationFactory();
+  /** Cookie header of the first SAP request a tool call sends ('' = logs on with the configured credentials). */
+  const firstCookie = async (server = runtime.factory!()) => {
+    mockFetch.mockClear();
+    const result = await callTool(server, 'SAPRead', { type: 'PROG', name: 'ZTEST' });
+    expect(result.isError, result.content[0]?.text).not.toBe(true);
+    return String(mockFetch.mock.calls[0]?.[1].headers.Cookie ?? '');
+  };
+
+  expect(await firstCookie()).toBe('');
+  const reused = await firstCookie();
+  expect(reused).toMatch(/SAP_SESSIONID_A4H_001=S\d/);
+  const running = runtime.factory!(); // constructed before rollover, dispatched afterward
+
+  f.advance(SHARED_TRANSPORT_MAX_AGE_MS - 1);
+  expect(await firstCookie()).toBe(reused);
+  f.advance(1);
+  expect(await firstCookie()).toBe('');
+  expect(await firstCookie(running)).toBe(reused);
+});
+
+/** Factory with production dispatch; SAP responses are supplied by each regression below. */
+async function startRotationFactory(overrides: Partial<ServerConfig> = {}) {
+  let now = 0;
+  vi.spyOn(performance, 'now').mockImplementation(() => now);
+  vi.spyOn(adtFeatures, 'probeFeatures').mockResolvedValue({
+    ...featuresOff(),
+    abapRelease: '758',
+    systemType: 'onprem',
+  });
+  const startup = await createAndStartServer({
+    ...DEFAULT_CONFIG,
+    url: 'http://sap:8000',
+    username: 'TECH',
+    password: 'secret',
+    cacheMode: 'none',
+    transport: 'http-streamable',
+    allowWrites: true,
+    allowedPackages: ['$TMP'],
+    lintBeforeWrite: false,
+    ...overrides,
+  });
+  await startup.close();
+  return {
+    read: (name: string) => callTool(runtime.factory!(), 'SAPRead', { type: 'PROG', name }),
+    advance: (milliseconds: number) => {
+      now += milliseconds;
+    },
+  };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+it('keeps a delayed old response out of the replacement transport', async () => {
+  const entered = deferred();
+  const resume = deferred();
+  const cookies = new Map<string, string>();
+  let generation = 'OLD';
+  mockFetch.mockImplementation(async (url: string, options: { headers?: Record<string, string> }) => {
+    const name = new URL(String(url)).pathname.split('/')[6] ?? '';
+    cookies.set(name, options.headers?.Cookie ?? '');
+    if (name === 'ZPENDING') {
+      entered.resolve();
+      await resume.promise;
+      return mockResponse(200, 'REPORT zpending.', {}, ['SAP_SESSIONID_A4H_001=OLD_LATE; path=/']);
+    }
+    return mockResponse(200, 'REPORT ztest.', { 'x-csrf-token': 'T' }, [`SAP_SESSIONID_A4H_001=${generation}; path=/`]);
+  });
+  const f = await startRotationFactory();
+  expect((await f.read('ZWARM')).isError).not.toBe(true);
+  const pending = f.read('ZPENDING');
+  await entered.promise;
+  try {
+    f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
+    generation = 'NEW';
+    expect((await f.read('ZNEW')).isError).not.toBe(true);
+    expect(cookies.get('ZNEW')).toBe('');
+  } finally {
+    resume.resolve();
+  }
+  expect((await pending).isError).not.toBe(true);
+  expect((await f.read('ZVERIFY')).isError).not.toBe(true);
+  expect(cookies.get('ZVERIFY')).toBe('SAP_SESSIONID_A4H_001=NEW');
+});
+
+it('preserves lock, CSRF token and context through UNLOCK when a PUT crosses rollover', async () => {
+  const entered = deferred();
+  const resume = deferred();
+  const seen: Array<{ url: string; cookie: string; token: string }> = [];
+  let generation = 'OLD';
+  mockFetch.mockImplementation(async (url: string, options: { method?: string; headers?: Record<string, string> }) => {
+    seen.push({
+      url: String(url),
+      cookie: options.headers?.Cookie ?? '',
+      token: options.headers?.['X-CSRF-Token'] ?? '',
+    });
+    if (String(url).includes('_action=LOCK')) {
+      return mockResponse(200, '<asx:values><LOCK_HANDLE>LOCK_OLD</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {}, [
+        'sap-contextid=CONTEXT_OLD; path=/',
+      ]);
+    }
+    if (options.method === 'PUT') {
+      entered.resolve();
+      await resume.promise;
+      return mockResponse(200, '', {}, ['SAP_SESSIONID_A4H_001=OLD_LATE; path=/']);
+    }
+    if (String(url).includes('_action=UNLOCK')) return mockResponse(200, '');
+    if (String(url).includes('/core/http/sessions')) return mockResponse(200, '', {}, ['sap-contextid=0; path=/']);
+    const body = new URL(String(url)).pathname.endsWith('/ZWRITE')
+      ? '<adtcore:object xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="$TMP"/></adtcore:object>'
+      : 'REPORT ztest.';
+    return mockResponse(200, body, { 'x-csrf-token': `TOKEN_${generation}` }, [
+      `SAP_SESSIONID_A4H_001=${generation}; path=/`,
+    ]);
+  });
+  const f = await startRotationFactory();
+  expect((await f.read('ZWARM')).isError).not.toBe(true);
+  const pending = callTool(runtime.factory!(), 'SAPWrite', {
+    action: 'update',
+    type: 'PROG',
+    name: 'ZWRITE',
+    source: 'REPORT zwrite.',
+  });
+  await entered.promise;
+  try {
+    f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
+    generation = 'NEW';
+    expect((await f.read('ZNEW')).isError).not.toBe(true);
+  } finally {
+    resume.resolve();
+  }
+  const result = await pending;
+  expect(result.isError, result.content[0]?.text).not.toBe(true);
+  const unlock = seen.find((c) => c.url.includes('_action=UNLOCK'));
+  expect(unlock?.url).toContain('lockHandle=LOCK_OLD');
+  expect(unlock?.cookie).toContain('SAP_SESSIONID_A4H_001=OLD_LATE');
+  expect(unlock?.cookie).toContain('sap-contextid=CONTEXT_OLD');
+  expect(unlock?.token).toBe('TOKEN_OLD');
+  expect(unlock?.cookie).not.toContain('NEW');
+  expect((await f.read('ZVERIFY')).isError).not.toBe(true);
+  expect(seen.find((c) => c.url.includes('/ZVERIFY/'))?.cookie).toBe('SAP_SESSIONID_A4H_001=NEW');
+});
+
+it('reloads the cookie file on rotation without revoking an unchanged configured ticket', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'arc1-cookie-rotation-'));
+  const cookieFile = join(dir, 'cookies.txt');
+  const writeTicket = (ticket: string) =>
+    writeFileSync(cookieFile, `.sap\tTRUE\t/\tFALSE\t0\tMYSAPSSO2\t${ticket}\n`, { mode: 0o600 });
+  mockFetch.mockImplementation(async () => mockResponse(200, 'REPORT ztest.', { 'x-csrf-token': 'T' }));
+  try {
+    writeTicket('STILL_VALID');
+    const f = await startRotationFactory({ cookieFile });
+    expect((await f.read('ZTEST')).isError).not.toBe(true);
+    f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
+    expect((await f.read('ZTEST')).isError).not.toBe(true);
+    expect(mockFetch.mock.lastCall?.[1].headers.Cookie).toBe('MYSAPSSO2=STILL_VALID');
+    writeTicket('REPLACED');
+    f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
+    expect((await f.read('ZTEST')).isError).not.toBe(true);
+    expect(mockFetch.mock.lastCall?.[1].headers.Cookie).toBe('MYSAPSSO2=REPLACED');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
