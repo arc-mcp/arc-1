@@ -12,6 +12,7 @@ import type { BTPConfig } from '@arc-mcp/xsuaa-auth/btp';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { afterEach, expect, it, vi } from 'vitest';
+import { Semaphore } from '../../../src/adt/semaphore.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from '../handlers/handler-test-config.js';
@@ -317,10 +318,20 @@ it('shares the SAP concurrency limit across transport rollover', async () => {
   await entered.promise;
   f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
   const beforeReplacement = requests.length;
+  const atLimiter = deferred();
+  let waiting = 0;
+  const acquire = Semaphore.prototype.acquire;
+  vi.spyOn(Semaphore.prototype, 'acquire').mockImplementationOnce(function (this: Semaphore, signal) {
+    const slot = acquire.call(this, signal);
+    waiting = this.waiting;
+    atLimiter.resolve();
+    return slot;
+  });
   const replacement = f.read('ZNEW');
   try {
-    // Let the new tool call reach its SAP request while the old request holds the only slot.
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    // Observe the real limiter's queue, independent of delays before or after acquisition.
+    await atLimiter.promise;
+    expect(waiting).toBe(1);
     expect(requests).toHaveLength(beforeReplacement);
   } finally {
     resume.resolve();
