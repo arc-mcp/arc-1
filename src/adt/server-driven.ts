@@ -122,7 +122,21 @@ export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
  * here is the ONLY step needed to expose it — `btp: true` by construction (runtime availability is
  * discovery-gated per system, so a type absent on a release degrades cleanly).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD', 'DRTY'] as const;
+export const SDO_TYPES = [
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
+  'DSFD',
+  'DTDC',
+  'UIAD',
+  'DRTY',
+  'APLO',
+  'SAJC',
+  'SAJT',
+] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
@@ -216,6 +230,33 @@ export const SDO_REGISTRY = {
     metadataContentType: BLUES_V1,
     ...BLUE_METADATA,
     sourceFormat: 'text',
+  },
+  // Application Log Object (SLG0 successor for ABAP Cloud): header + subobjects in AFF JSON.
+  APLO: {
+    href: '/sap/bc/adt/applicationlog/objects',
+    label: 'Application Log Object',
+    createType: 'APLO/TYP',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  // Application Job Catalog Entry / Template: blues v2, and SAP reports the bare code (no subtype)
+  // as adtcore:type. Verified 816: docs/research/2026-09-28-aplo-sajc-sajt-adt-contract.md
+  SAJC: {
+    href: '/sap/bc/adt/applicationjob/catalogs',
+    label: 'Application Job Catalog Entry',
+    createType: 'SAJC',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  SAJT: {
+    href: '/sap/bc/adt/applicationjob/templates',
+    label: 'Application Job Template',
+    createType: 'SAJT',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
   },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 

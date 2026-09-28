@@ -44,9 +44,12 @@
             "DSFD",
             "DTDC",
             "UIAD",
-            "DRTY"
+            "DRTY",
+            "APLO",
+            "SAJC",
+            "SAJT"
           ],
-          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type. Deprecated: MESSAGES→MSAG."
+          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO app log; SAJC/SAJT job catalog/template. Deprecated: MESSAGES→MSAG."
         },
         "name": {
           "type": "string",
@@ -248,7 +251,7 @@
   },
   {
     "name": "SAPWrite",
-    "description": "Change ABAP objects in the SAP system: create, update, delete, and targeted source edits. Use it when the request is to PERSIST a change — write, add, implement, refactor, or remove ABAP code or DDIC metadata. Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext; local lint/formatting is SAPLint; SAP syntax checks use SAPRead(type=\"SYNTAX\"). Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Must use ABAP Cloud language version (no classic statements); only Z*/Y* namespace. Type codes are auto-normalized (e.g. \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport). Source objects (CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses for a local include; omit for source/main. Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp; deactivateInputHistory=true disables input history); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API). SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (e.g. \"DDLS/DF\"); \"name\" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type=\"SKTD\"). edit_method: replace one CLAS method body via source. Local-class methods use the qualified specifier (e.g. \"lhc_project~approve_project\"); auto-routing lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=). batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers via rootEntityRef and activates by default). Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in \"source\"; DTSC/DSFD/DTDC/DRTY take DDL text — create/update/delete, then SAPActivate. Full per-type field reference: docs_page SAPWrite. MINIMAL PAYLOAD: send only required fields; omit unrelated empty, null, or placeholder values. Do NOT send `include` unless type=CLAS. Delete needs only {action, type, name} (plus optional transport).  Write access is restricted to packages: ZBTP.",
+    "description": "Change ABAP objects in the SAP system: create, update, delete, and targeted source edits. Use it when the request is to PERSIST a change — write, add, implement, refactor, or remove ABAP code or DDIC metadata. Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext; local lint/formatting is SAPLint; SAP syntax checks use SAPRead(type=\"SYNTAX\"). Create or update ABAP source code and DDIC metadata (BTP ABAP Environment). Handles lock/modify/unlock automatically. Supports CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Must use ABAP Cloud language version (no classic statements); only Z*/Y* namespace. Type codes are auto-normalized (e.g. \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport). Source objects (CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses for a local include; omit for source/main. Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp; deactivateInputHistory=true disables input history); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API). SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (e.g. \"DDLS/DF\"); \"name\" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type=\"SKTD\"). edit_method: replace one CLAS method body via source. Local-class methods use the qualified specifier (e.g. \"lhc_project~approve_project\"); auto-routing lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=). batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers via rootEntityRef and activates by default). Server-driven objects (discovery-gated): \"source\" is AFF JSON, except DDL text for DTSC/DSFD/DTDC/DRTY — create/update/delete, then SAPActivate. Full per-type field reference: docs_page SAPWrite. MINIMAL PAYLOAD: send only required fields; omit unrelated empty, null, or placeholder values. Do NOT send `include` unless type=CLAS. Delete needs only {action, type, name} (plus optional transport).  Write access is restricted to packages: ZBTP.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -298,9 +301,12 @@
             "DSFD",
             "DTDC",
             "UIAD",
-            "DRTY"
+            "DRTY",
+            "APLO",
+            "SAJC",
+            "SAJT"
           ],
-          "description": "Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in \"source\"; DTSC/DSFD/DTDC/DRTY take DDL text — create/update/delete, then SAPActivate. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only."
+          "description": "Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): \"source\" is AFF JSON, except DDL text for DTSC/DSFD/DTDC/DRTY — create/update/delete, then SAPActivate. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only."
         },
         "name": {
           "type": "string",
@@ -696,7 +702,10 @@
                   "DSFD",
                   "DTDC",
                   "UIAD",
-                  "DRTY"
+                  "DRTY",
+                  "APLO",
+                  "SAJC",
+                  "SAJT"
                 ],
                 "description": "Object type (includes TABL for RAP stack bootstrapping)"
               },
