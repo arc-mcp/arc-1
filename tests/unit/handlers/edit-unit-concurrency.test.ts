@@ -208,3 +208,80 @@ it('uses the lock session for the optional SAP syntax check', async () => {
   expect(check?.headers['X-sap-adt-sessiontype']).toBe('stateful');
   expect(state.locked).toBe(false);
 });
+
+const addArgs = {
+  ...args,
+  action: 'add_unit',
+  unit: 'added',
+  source: "FORM added.\n WRITE 'new'.\nENDFORM.",
+  afterUnit: 'target',
+};
+it('add_unit reads the latest draft in the lock session and preserves every existing unit', async () => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', addArgs);
+  expect(result.isError, JSON.stringify(result)).toBeUndefined();
+  expect(state.source).toContain('external-change');
+  expect(state.source).toContain("WRITE 'old'");
+  expect(state.source).toContain(addArgs.source);
+  const calls = state.sends.filter((s) => s.url.pathname.startsWith(objectPath));
+  expect(calls.map((s) => s.url.searchParams.get('_action') ?? s.method)).toEqual(['LOCK', 'GET', 'PUT', 'UNLOCK']);
+  expect(calls.every((s) => s.headers['X-sap-adt-sessiontype'] === 'stateful')).toBe(true);
+  expect(calls[1]?.locked).toBe(true);
+  expect(calls[1]?.headers['Cache-Control']).toBe('no-cache');
+});
+
+it.each([
+  { label: 'concurrent duplicate', options: { sourceAtLock: `${external}\n${addArgs.source}` }, args: addArgs },
+  {
+    label: 'anchor removed',
+    options: { sourceAtLock: external.replace('FORM target.', 'FORM renamed.') },
+    args: addArgs,
+  },
+  { label: 'read failure', options: { readStatus: 403 }, args: addArgs },
+  {
+    label: 'malformed block',
+    options: {},
+    args: { ...addArgs, source: 'FORM added.\n nonsense_statement.\nENDFORM.' },
+  },
+])('add_unit refuses $label and releases the lock without a PUT', async (row) => {
+  const state = backend(row.options);
+  const result = await handleToolCall(createClient(), config, 'SAPWrite', row.args);
+  expect(result.isError).toBe(true);
+  expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
+  expect(state.sends.some((s) => s.url.searchParams.get('_action') === 'UNLOCK')).toBe(true);
+  expect(state.locked).toBe(false);
+});
+
+it.each(['read-only', 'package', 'deny-action'] as const)(
+  'add_unit obeys the %s ceiling before locking',
+  async (mode) => {
+    const state = backend({ packageName: 'ZFORBIDDEN' });
+    const client = createClient();
+    const safety =
+      mode === 'read-only'
+        ? { ...client.safety, allowWrites: false }
+        : mode === 'package'
+          ? { ...client.safety, allowedPackages: ['$TMP'] }
+          : client.safety;
+    const result = await handleToolCall(
+      client.withSafety(safety),
+      mode === 'deny-action' ? { ...config, denyActions: ['SAPWrite.add_unit'] } : config,
+      'SAPWrite',
+      addArgs,
+    );
+    expect(result.isError).toBe(true);
+    expect(state.sends.some((s) => s.method === 'POST' || s.method === 'PUT')).toBe(false);
+  },
+);
+
+it('hyperfocused SAP routes add_unit through the same validated handler', async () => {
+  const state = backend();
+  const result = await handleToolCall(createClient(), { ...config, toolMode: 'hyperfocused' }, 'SAP', {
+    action: 'write',
+    type: 'PROG',
+    name: 'ZRACE',
+    params: addArgs,
+  });
+  expect(result.isError, JSON.stringify(result)).toBeUndefined();
+  expect(state.source).toContain(addArgs.source);
+});

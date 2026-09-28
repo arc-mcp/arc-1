@@ -208,7 +208,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
-      descriptionCount: 279,
+      descriptionCount: 281, // add_unit beforeUnit/afterUnit; wire/token ceilings unchanged.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -266,7 +266,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 18_500,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 279,
+      descriptionCount: 281, // add_unit beforeUnit/afterUnit; wire/token ceilings unchanged.
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },

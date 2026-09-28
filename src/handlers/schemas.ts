@@ -448,9 +448,18 @@ function validateSapWriteInput(
     updateTaskKind?: string;
     shortTexts?: unknown[];
     expectedSourceHash?: string;
+    beforeUnit?: string;
+    afterUnit?: string;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  if ((input.beforeUnit || input.afterUnit) && (input.action !== 'add_unit' || (input.beforeUnit && input.afterUnit))) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['beforeUnit'],
+      message: 'beforeUnit/afterUnit are for add_unit only; choose at most one.',
+    });
+  }
   const preconditionError = sourcePreconditionError(input.type ?? '', input.action, input.expectedSourceHash);
   if (preconditionError) ctx.addIssue({ code: 'custom', path: ['expectedSourceHash'], message: preconditionError });
   // Treat empty/whitespace include as "not provided" — some MCP clients serialize
@@ -661,6 +670,7 @@ export const SAPWriteSchema = z
       'delete',
       'edit_method',
       'edit_unit',
+      'add_unit',
       'edit_class_definition',
       'add_method',
       'edit_method_signature',
@@ -682,8 +692,10 @@ export const SAPWriteSchema = z
     /** For action="edit_text_symbols": which textpool subobject to write. Defaults to symbols. */
     textPart: z.enum(SAPREAD_TEXT_ELEMENT_INCLUDES).optional(),
     method: z.string().optional(),
-    /** For action="edit_unit": FORM or MODULE name to replace. */
+    /** For edit_unit/add_unit: FORM or MODULE name to replace/add. */
     unit: z.string().optional(),
+    beforeUnit: z.string().optional(),
+    afterUnit: z.string().optional(),
     /**
      * Visibility section. For action="add_method": the section to insert into (default 'public').
      * For action="change_method_visibility": the TARGET section to move the method to (required).

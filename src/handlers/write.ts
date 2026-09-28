@@ -42,7 +42,7 @@ import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
 import { writeUiad } from './write/uiad.js';
-import { writeActionEditUnit } from './write/unit-surgery.js';
+import { writeActionUnit } from './write/unit-surgery.js';
 import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
 import {
   DOMA_WRITE_UNAVAILABLE_HINT,
@@ -258,8 +258,9 @@ export async function handleSAPWrite(
       return writeActionCreate(ctx);
     case 'edit_method':
       return writeActionEditMethod(ctx);
+    case 'add_unit':
     case 'edit_unit':
-      return writeActionEditUnit(ctx);
+      return writeActionUnit(ctx);
 
     // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
     case 'edit_class_definition':
@@ -291,7 +292,7 @@ export async function handleSAPWrite(
       return writeActionEditTextSymbols(ctx);
     default:
       return errorResult(
-        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
+        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, add_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
       );
   }
 }

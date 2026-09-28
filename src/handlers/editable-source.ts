@@ -29,7 +29,7 @@ export function sourcePreconditionError(type: string, action: string, hash: unkn
     !TYPES.has(type) ||
     !(
       action === 'update' ||
-      (action === 'edit_unit' && (type === 'PROG' || type === 'INCL')) ||
+      ((action === 'edit_unit' || action === 'add_unit') && (type === 'PROG' || type === 'INCL')) ||
       (type === 'CLAS' && CLASS_EDITS.has(action))
     )
   ) {

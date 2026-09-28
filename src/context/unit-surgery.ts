@@ -2,7 +2,7 @@
  * Token-efficient surgery for procedural ABAP units.
  *
  * Locates named FORM...ENDFORM and MODULE...ENDMODULE blocks with abaplint's
- * structure tree, then replaces exactly one whole block. Event blocks are
+ * structure tree, then replaces or inserts one whole block. Event blocks are
  * deliberately excluded because abaplint does not expose them as structures.
  */
 
@@ -10,7 +10,7 @@ import { MemoryFile, Registry, Structures, type Version } from '@abaplint/core';
 import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 
-// edit_unit is on-prem only. Cloud grammar intentionally rejects classic MODULE
+// Procedural unit surgery is on-prem only. Cloud grammar intentionally rejects classic MODULE
 // blocks, so the no-probe fallback must use the on-prem parser ceiling.
 const DEFAULT_VERSION = mapSapReleaseToAbaplintVersion(String(ABAPLINT_MAX_RELEASE));
 
@@ -75,7 +75,7 @@ export function listEditableUnits(source: string, objectName: string, abaplintVe
       | { getStructure(): AstNode | undefined }
       | undefined;
     const structure = file?.getStructure();
-    if (!structure) continue;
+    if (!structure) throw new Error('Source has an incomplete ABAP structure.');
     units.push(...collectUnits(structure, 'FORM'), ...collectUnits(structure, 'MODULE'));
   }
   return units.sort((a, b) => a.startLine - b.startLine);
@@ -196,4 +196,64 @@ export function spliceUnit(
   if (hasCRLF) newSource = newSource.replace(/\n/g, '\r\n');
 
   return { newSource, oldUnitSource, newUnitSource, unit, success: true };
+}
+
+/** Insert a complete new unit at EOF or a named unit boundary; never reposition INCLUDEs. */
+export function insertUnit(
+  source: string,
+  objectName: string,
+  unitName: string,
+  addition: string,
+  placement: { beforeUnit?: string; afterUnit?: string } = {},
+  abaplintVersion?: Version,
+): UnitSpliceResult {
+  const fail = (error: string): UnitSpliceResult => ({
+    success: false,
+    error,
+    newSource: '',
+    oldUnitSource: '',
+    newUnitSource: '',
+  });
+  if (placement.beforeUnit && placement.afterUnit) return fail('Use only one of beforeUnit or afterUnit.');
+  const normalized = source.replace(/\r\n/g, '\n');
+  let units: EditableUnitInfo[];
+  try {
+    units = listEditableUnits(normalized, objectName, abaplintVersion);
+  } catch (error) {
+    return fail(`Could not parse ${objectName}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (units.some((unit) => unit.name.toUpperCase() === unitName.toUpperCase())) {
+    return fail(`Unit "${unitName}" already exists in ${objectName}; use edit_unit to replace it.`);
+  }
+  const kind = addition
+    .trim()
+    .match(/^(FORM|MODULE)\s/i)?.[1]
+    ?.toUpperCase() as EditableUnitKind | undefined;
+  if (!kind) return fail('source must contain one complete FORM...ENDFORM or MODULE...ENDMODULE block.');
+  const unit: EditableUnitInfo = { name: unitName, kind, startLine: 1, endLine: 1 };
+  const invalid = replacementError(unit, addition, objectName, abaplintVersion);
+  if (invalid) return fail(invalid);
+
+  const lines = normalized.split('\n');
+  let index = normalized.endsWith('\n') || !normalized ? lines.length - 1 : lines.length;
+  const anchorName = placement.beforeUnit ?? placement.afterUnit;
+  if (anchorName) {
+    const matches = units.filter((unit) => unit.name.toUpperCase() === anchorName.toUpperCase());
+    if (matches.length !== 1)
+      return fail(`Anchor "${anchorName}" must identify exactly one existing FORM or MODULE in ${objectName}.`);
+    const anchor = matches[0]!;
+    // Row-based insertion must not include another statement on the same line.
+    const boundary = placement.beforeUnit ? lines[anchor.startLine - 1]! : lines[anchor.endLine - 1]!;
+    const separate = placement.beforeUnit ? /^\s*(FORM|MODULE)\s/i : /^\s*END(FORM|MODULE)\s*\.\s*(?:".*)?$/i;
+    if (!separate.test(boundary)) return fail('Put the anchor boundary on its own line before inserting a unit.');
+    index = placement.beforeUnit ? anchor.startLine - 1 : anchor.endLine;
+  }
+  const newUnitSource = addition.replace(/\r\n/g, '\n').trim();
+  if (index === lines.length) lines.push('');
+  lines.splice(index, 0, newUnitSource);
+  let newSource = lines.join('\n');
+  if (source.includes('\r\n')) newSource = newSource.replace(/\n/g, '\r\n');
+  unit.startLine = index + 1;
+  unit.endLine = index + newUnitSource.split('\n').length;
+  return { success: true, newSource, newUnitSource, oldUnitSource: '', unit };
 }

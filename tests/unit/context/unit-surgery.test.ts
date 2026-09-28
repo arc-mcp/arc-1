@@ -1,6 +1,6 @@
 import { Version } from '@abaplint/core';
 import { describe, expect, it } from 'vitest';
-import { listEditableUnits, spliceUnit } from '../../../src/context/unit-surgery.js';
+import { insertUnit, listEditableUnits, spliceUnit } from '../../../src/context/unit-surgery.js';
 
 const PROGRAM = `REPORT zunit_surgery.
 
@@ -119,5 +119,72 @@ ENDMODULE.`,
     );
     expect(result.success).toBe(false);
     expect(result.error).toContain('exactly one complete FORM beta');
+  });
+});
+
+describe('insertUnit', () => {
+  const addition = 'FORM gamma.\n  WRITE 3.\nENDFORM.';
+  it.each([
+    { placement: {}, marker: PROGRAM, direction: 'after' },
+    { placement: { beforeUnit: 'BETA' }, marker: 'FORM beta.', direction: 'before' },
+    { placement: { afterUnit: 'beta' }, marker: "WRITE 'old beta'.\nENDFORM.", direction: 'after' },
+  ])('inserts at $placement without changing existing lines', ({ placement, marker, direction }) => {
+    const result = insertUnit(PROGRAM, 'ZUNIT', 'gamma', addition, placement);
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource.replace(`${addition}\n`, '')).toBe(
+      placement.beforeUnit || placement.afterUnit ? PROGRAM : `${PROGRAM}\n`,
+    );
+    expect(result.newSource.indexOf(addition) < result.newSource.indexOf(marker)).toBe(direction === 'before');
+  });
+
+  it('appends the first MODULE and leaves trailing INCLUDEs in place, preserving CRLF', () => {
+    const original = 'PROGRAM zmod.\r\nINCLUDE zmod_forms.\r\n';
+    const result = insertUnit(original, 'ZMOD', 'status', 'MODULE status OUTPUT.\nENDMODULE.');
+    expect(result.success, result.error).toBe(true);
+    expect(result.newSource).toContain(original);
+    expect(result.newSource.replace(/\r\n/g, '')).not.toContain('\n');
+    expect(result.newSource.indexOf('MODULE status')).toBeGreaterThan(result.newSource.indexOf('INCLUDE'));
+  });
+
+  it.each([
+    { label: 'duplicate', source: PROGRAM, name: 'ALPHA', block: 'FORM alpha.\nENDFORM.', placement: {} },
+    { label: 'different name', source: PROGRAM, name: 'gamma', block: 'FORM other.\nENDFORM.', placement: {} },
+    {
+      label: 'two units',
+      source: PROGRAM,
+      name: 'gamma',
+      block: 'FORM gamma.\nENDFORM.\nFORM delta.\nENDFORM.',
+      placement: {},
+    },
+    { label: 'missing end', source: PROGRAM, name: 'gamma', block: 'FORM gamma.\nWRITE 1.', placement: {} },
+    { label: 'non-unit', source: PROGRAM, name: 'gamma', block: 'WRITE 1.', placement: {} },
+    { label: 'unclosed original', source: 'FORM alpha.\nWRITE 1.', name: 'gamma', block: addition, placement: {} },
+    { label: 'missing anchor', source: PROGRAM, name: 'gamma', block: addition, placement: { afterUnit: 'absent' } },
+    {
+      label: 'ambiguous anchor',
+      source: 'FORM a.\nENDFORM.\nMODULE a OUTPUT.\nENDMODULE.',
+      name: 'gamma',
+      block: addition,
+      placement: { beforeUnit: 'a' },
+    },
+    {
+      label: 'two anchors',
+      source: PROGRAM,
+      name: 'gamma',
+      block: addition,
+      placement: { beforeUnit: 'alpha', afterUnit: 'beta' },
+    },
+    {
+      label: 'shared boundary line',
+      source: 'FORM a. ENDFORM. WRITE 1.',
+      name: 'gamma',
+      block: addition,
+      placement: { afterUnit: 'a' },
+    },
+  ])('refuses $label without producing replacement source', (row) => {
+    const result = insertUnit(row.source, 'ZUNIT', row.name, row.block, row.placement);
+    expect(result.success).toBe(false);
+    expect(result.newSource).toBe('');
+    expect(result.error).toBeTruthy();
   });
 });
