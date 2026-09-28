@@ -807,9 +807,10 @@ export class AdtClient {
    *    1. Search returns `TABL/DT` → require /tables/ availability, return /tables/<n>
    *       or throw AdtSafetyError with SE11 hint.
    *    2. Search returns `TABL/DS` → return /structures/<n> (always allowed).
-   *    3. Search returns nothing (or a different type) → fall through to the
-   *       read-path resolver. Known gap: on 7.50 that ends at /structures/ even for an
-   *       unverified transparent table (e.g. search not authorized) — not a safe default.
+   *    3. Search fails or finds no TABL → probe fresh via the read-path resolver. A /tables/ hit
+   *       proves a table on any release; a /structures/ hit proves a structure only where
+   *       discovery shows /tables/ exists. Otherwise (7.50/7.51, or discovery not loaded) refuse:
+   *       a /tables/ 404 cannot tell an absent endpoint from a structure.
    *
    *  Never cached: SAP can replace a structure with a table between calls of a long-lived
    *  client, and a remembered /structures/ route would skip the refusal above. */
@@ -824,17 +825,16 @@ export class AdtClient {
       // NPL 7.50 appends a localized suffix to adtcore:name ("T000 (Database Table)",
       // "BAPIRET2 (Structure)"), so strip parenthesized text before matching. A4H
       // and modern releases return just the bare name; both forms must work.
+      // Only TABL hits count: a same-named program must not hide the table's subtype.
       const match = results.find((r) => {
         const bare = String(r.objectName ?? '')
           .replace(/\s*\(.*$/, '')
           .toUpperCase();
-        return bare === upper;
+        return bare === upper && String(r.objectType ?? '').startsWith('TABL');
       });
       actualType = match?.objectType;
     } catch {
-      // Search failure should not block writes — fall through to the read-path
-      // resolver. If the user lacks search authorization the write will still
-      // surface its own error downstream.
+      // Subtype stays unknown; step 3 decides whether the fresh probe alone is trustworthy.
     }
 
     const tableUrl = `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`;
@@ -855,11 +855,20 @@ export class AdtClient {
     }
     if (actualType === 'TABL/DS') return structUrl;
 
-    // Unknown / not-yet-existing object — fall back to the read-path resolver.
-    // For create paths the caller has already checked tablesEndpointAvailable
-    // separately (no existing object to search for). Re-probe: a cached read route may be stale.
+    // Subtype unknown: re-probe (a cached read route may be stale; a missing object throws its 404).
+    // Create paths never get here: they gate on tablesEndpointAvailable themselves.
     this.tablUrlCache.delete(upper);
-    return this.resolveTablObjectUrl(name);
+    const url = await this.resolveTablObjectUrl(name);
+    if (url === tableUrl || options.tablesEndpointAvailable === true) return url;
+    const system =
+      options.tablesEndpointAvailable === false
+        ? 'This system has no /sap/bc/adt/ddic/tables/ (NW 7.50/7.51)'
+        : 'ADT discovery is not loaded, so ARC-1 cannot rule out a system without /sap/bc/adt/ddic/tables/';
+    throw new AdtSafetyError(
+      `Cannot confirm that TABL "${name}" is a structure: the repository search failed or found no TABL. ${system}, ` +
+        'where writing a transparent table through /sap/bc/adt/ddic/structures/ flips DD02L-TABCLASS to INTTAB. ' +
+        'Restore repository-search access for this user, or use SE11 in SAPGUI.',
+    );
   }
 
   /** Get domain metadata (type, length, value table, fixed values) */

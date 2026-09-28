@@ -604,7 +604,7 @@ describe('AdtClient', () => {
       expect(url).toBe('/sap/bc/adt/ddic/tables/ZNEW_TABLE');
     });
 
-    it('treats search failure as fall-through (search auth missing should not block writes)', async () => {
+    it('treats search failure as fall-through where /tables/ exists (search auth must not block writes there)', async () => {
       mockFetch.mockReset();
       mockFetch.mockRejectedValueOnce(new Error('network'));
       mockFetch.mockResolvedValueOnce(mockResponse(200, '<?xml version="1.0"?><tabl/>'));
@@ -625,6 +625,42 @@ describe('AdtClient', () => {
       await client.getTabl('ZSWAP'); // caches /structures/ZSWAP for reads; SAP then recreates it as a table
       const url = await client.resolveTablObjectUrlForWrite('ZSWAP', { tablesEndpointAvailable: true });
       expect(url).toBe('/sap/bc/adt/ddic/tables/ZSWAP');
+    });
+
+    it('reads the subtype from the TABL hit, not from a same-named program listed first', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/programs/programs/zswap" adtcore:type="PROG/P" adtcore:name="ZSWAP"/>
+  <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/structures/zswap" adtcore:type="TABL/DS" adtcore:name="ZSWAP"/>
+</adtcore:objectReferences>`,
+        ),
+      );
+      const url = await createClient().resolveTablObjectUrlForWrite('ZSWAP', { tablesEndpointAvailable: false });
+      expect(url).toBe('/sap/bc/adt/ddic/structures/ZSWAP');
+    });
+
+    it('keeps the /structures/ fallback where discovery shows /tables/ (a 404 there means structure)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockRejectedValueOnce(new Error('network')); // search fails
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '')); // /tables/ probe
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<tabl/>')); // /structures/ probe
+      const url = await createClient().resolveTablObjectUrlForWrite('ZSWAP', { tablesEndpointAvailable: true });
+      expect(url).toBe('/sap/bc/adt/ddic/structures/ZSWAP');
+    });
+
+    it('reports a missing object on 7.50 as 404, not as an unknown subtype', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(200, '<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"/>'),
+      );
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '')); // /tables/ (endpoint absent)
+      mockFetch.mockResolvedValueOnce(mockResponse(404, '')); // /structures/
+      await expect(
+        createClient().resolveTablObjectUrlForWrite('ZGONE', { tablesEndpointAvailable: false }),
+      ).rejects.toMatchObject({ statusCode: 404 });
     });
   });
 
