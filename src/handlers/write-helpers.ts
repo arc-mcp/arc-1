@@ -23,6 +23,14 @@ import {
 } from '../adt/ddic-xml.js';
 import { syntaxCheck } from '../adt/devtools.js';
 import { AdtSafetyError } from '../adt/errors.js';
+import {
+  buildLockObjectXml,
+  getLockObject,
+  LOCKOBJECT_CONTENT_TYPE,
+  type LockObjectDefinition,
+  mergeLockObjectDefinition,
+  parseLockObjectDefinition,
+} from '../adt/lock-object.js';
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
 import { checkPackage } from '../adt/safety.js';
 import {
@@ -101,7 +109,7 @@ const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules
 const FUNCTION_INCLUDE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fincludes.v2+xml';
 
 export function isMetadataWriteType(type: string): boolean {
-  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP';
+  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP' || type === 'ENQU';
 }
 
 /** Types that require a specific vendor content type for creation (not application/*) */
@@ -113,6 +121,7 @@ function needsVendorContentType(type: string): boolean {
     type === 'MSAG' ||
     type === 'SKTD' ||
     type === 'TTYP' ||
+    type === 'ENQU' ||
     type === 'FUGR' ||
     type === 'FUNC'
   );
@@ -149,6 +158,8 @@ export function vendorContentTypeForType(type: string): string {
       return SKTD_V2_CONTENT_TYPE;
     case 'TTYP':
       return TABLETYPE_CONTENT_TYPE;
+    case 'ENQU':
+      return LOCKOBJECT_CONTENT_TYPE;
     case 'FUGR':
       return FUNCTION_GROUP_CONTENT_TYPE;
     case 'FUNC':
@@ -215,6 +226,8 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     // /source/main. Preserve the ADT wire values exactly.
     processingType: input.processingType,
     updateTaskKind: input.updateTaskKind,
+    // ENQU carries its definition as JSON in "source" (the same shape SAPRead returns).
+    lockObjectSource: input.source,
   };
 
   return props;
@@ -306,6 +319,20 @@ export async function mergeMetadataWriteProperties(
       // No public inputs: carry SAP's stored bidi flags through the full-XML replace.
       leftToRightDirection: existing.leftToRightDirection,
       deactivateBIDIFiltering: existing.deactivateBIDIFiltering,
+    };
+  }
+  if (type === 'ENQU') {
+    // Merge over the developer view so consecutive unactivated edits accumulate.
+    const existing = await getLockObject(client.http, client.safety, name);
+    const source = provided.lockObjectSource;
+    const definition =
+      source === undefined || source === null || String(source).trim() === ''
+        ? {}
+        : parseLockObjectDefinition(String(source));
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      lockObjectDefinition: mergeLockObjectDefinition(existing, definition),
     };
   }
   if (type === 'SRVB') {
@@ -630,6 +657,13 @@ function buildCreateXmlBody(
         language: masterLanguage,
         responsible: responsibleUser,
       });
+    }
+    case 'ENQU': {
+      // Update passes the merged definition; create parses the caller's JSON source.
+      const definition =
+        (properties?.lockObjectDefinition as LockObjectDefinition | undefined) ??
+        parseLockObjectDefinition(String(properties?.lockObjectSource ?? '{}'));
+      return buildLockObjectXml({ name, description, package: pkg, definition, masterLanguage, responsibleAttr });
     }
     case 'DTEL': {
       const typeKindRaw = String(properties?.typeKind ?? '');
@@ -1189,6 +1223,11 @@ export const TABL_DT_WRITE_UNAVAILABLE_HINT =
   'Use SE11 in SAPGUI, or connect ARC-1 to an SAP_BASIS ≥ 7.52 system. ' +
   'Writing the source via /sap/bc/adt/ddic/structures/ would silently flip ' +
   'DD02L-TABCLASS to INTTAB and corrupt the table.';
+
+export const ENQU_WRITE_UNAVAILABLE_HINT =
+  'Lock object (ENQU) writes are not available on this system ' +
+  '(/sap/bc/adt/ddic/lockobjects/sources is not exposed by ADT discovery). ' +
+  'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the lock-object endpoint (SAP_BASIS 8.16 verified).';
 
 export const TTYP_WRITE_UNAVAILABLE_HINT =
   'Table type (TTYP) writes are not available on this system ' +

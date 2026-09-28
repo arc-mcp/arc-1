@@ -11,6 +11,7 @@ import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
+import { getLockObject } from '../adt/lock-object.js';
 import { describePackageListing } from '../adt/package-contents.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
@@ -643,6 +644,12 @@ export async function handleSAPRead(
       const ttyp = await client.getTableType(name);
       return textResult(toolJson(ttyp));
     }
+    case 'ENQU': {
+      // Omitted/auto keeps SAP's developer view (a pending inactive edit shows up), like DTEL.
+      const enquVersion = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+      const enqu = await getLockObject(client.http, client.safety, name, enquVersion);
+      return textResult(toolJson(enqu));
+    }
     case 'AUTH': {
       const authField = await client.getAuthorizationField(name);
       return textResult(toolJson(authField));
@@ -908,7 +915,7 @@ export async function handleSAPRead(
     }
     default:
       return errorResult(
-        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TTYP, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
+        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TTYP, ENQU, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
           'Tip: Type aliases are auto-normalized (e.g., DDLS/DF → DDLS, DCLS/DL → DCLS, CLAS/OC → CLAS, PROG/P → PROG). ' +
           'Do not pass a URI — use the "type" and "name" parameters instead.',
       );

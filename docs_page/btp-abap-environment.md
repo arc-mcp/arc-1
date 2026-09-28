@@ -195,7 +195,7 @@ is the default) and the first `tools/list` may still advertise on-premise types.
 
 | Tool | On the ABAP Environment |
 |---|---|
-| `SAPRead` | CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, DOMA, DTEL, MSAG, DEVC, TABLE_CONTENTS, TABLE_QUERY, SYSTEM, COMPONENTS, BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, plus the discovery-gated server-driven types (DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC, UIAD, DRTY, APLO, SAJC, SAJT). Removed: PROG, INCL, VIEW, TRAN, TTYP, SOBJ, TEXT_ELEMENTS, VARIANTS, AUTH, FEATURE_TOGGLE/FTG2, ENHO, VERSIONS, VERSION_SOURCE. |
+| `SAPRead` | CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, DOMA, DTEL, MSAG, DEVC, TABLE_CONTENTS, TABLE_QUERY, SYSTEM, COMPONENTS, BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, plus the discovery-gated server-driven types (DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC, UIAD, DRTY, APLO, SAJC, SAJT). Removed: PROG, INCL, VIEW, TRAN, TTYP, ENQU, SOBJ, TEXT_ELEMENTS, VARIANTS, AUTH, FEATURE_TOGGLE/FTG2, ENHO, VERSIONS, VERSION_SOURCE. |
 | `SAPWrite` | CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL (+ `TABL/DT`, `TABL/DS`), DOMA, DTEL, MSAG, and the server-driven types. The `edit_unit` and `edit_text_symbols` actions are not offered (no PROG/INCL, no class text pool). ABAP Cloud language version and customer namespaces only. |
 | `SAPContext` | CLAS, INTF, DDLS, TABL — `action="impact"` for CDS blast radius. |
 | `SAPSearch` / `SAPNavigate` | Work; scope is released SAP objects plus custom Z/Y objects. Classic programs and includes are not searchable. |

@@ -80,6 +80,8 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'DTEL', btp: true },
   { type: 'TRAN', btp: false },
   { type: 'TTYP', btp: false },
+  // DDIC lock objects: one XML metadata document, returned as JSON. Live-verified on-prem 8.16 only.
+  { type: 'ENQU', btp: false },
   { type: 'TABLE_CONTENTS', btp: true },
   { type: 'TABLE_QUERY', btp: true },
   { type: 'DEVC', btp: true },
@@ -150,6 +152,7 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'DTEL', btp: true },
   { type: 'MSAG', btp: true },
   { type: 'TTYP', btp: false },
+  { type: 'ENQU', btp: false },
   // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
   // Rows derive from SDO_TYPES exactly like the SAPRead table above.
   ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),

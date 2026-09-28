@@ -181,6 +181,8 @@ function tadirObjectUrl(tadirType: string, name: string): string {
       return `/sap/bc/adt/vit/wb/object_type/viewdv/object_name/${encodeURIComponent(name)}`;
     case 'SKTD':
       return `/sap/bc/adt/documentation/ktd/documents/${encodeURIComponent(name.toLowerCase())}`;
+    case 'ENQU':
+      return `/sap/bc/adt/ddic/lockobjects/sources/${encodeURIComponent(name)}`;
     default:
       // FUNC needs a parent group (not addressable by a single base URL); legacy
       // SEGW types (IWSV, IWMO, IWPR, IWBEP) have no ADT handler. Return an

@@ -30,6 +30,7 @@ import { guardCdsSyntax } from '../cds-hints.js';
 import {
   getCachedFeatures,
   isDomainsEndpointAvailable,
+  isLockObjectsEndpointAvailable,
   isTablesEndpointAvailable,
   isTableTypesEndpointAvailable,
 } from '../feature-cache.js';
@@ -48,6 +49,7 @@ import {
   buildCreateXml,
   createContentTypeForType,
   DOMA_WRITE_UNAVAILABLE_HINT,
+  ENQU_WRITE_UNAVAILABLE_HINT,
   getMetadataWriteProperties,
   isMetadataWriteType,
   mergePreWriteWarnings,
@@ -464,6 +466,8 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     srcUrl,
     invalidateWrittenObject,
   } = ctx;
+  // Discovery gate before any SAP call (the TTYP/DOMA gates live in write.ts, which is at its size budget).
+  if (type === 'ENQU' && isLockObjectsEndpointAvailable() === false) return errorResult(ENQU_WRITE_UNAVAILABLE_HINT);
   // FUNC and FUGR structural includes both INHERIT the parent group's package — SAP ignores
   // _package for them — so the allowlist must be checked against the group's real package.
   // Gating on args.package here would let a caller write into a disallowed package by claiming $TMP.
@@ -742,7 +746,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     const followUpHint =
       type === 'SRVB'
         ? `\n\nNext steps:\n1. SAPActivate(type="SRVB", name="${name}")\n2. SAPActivate(action="publish_srvb", name="${name}")`
-        : '';
+        : type === 'ENQU'
+          ? `\n\nNext step: SAPActivate(type="ENQU", name="${name}") — activation generates ENQUEUE_${name}/DEQUEUE_${name} (and derives lock parameters from the key fields if none were given).`
+          : '';
     return textResult(`Created ${type} ${name} in package ${pkg}.\n${result}${followUpHint}`);
   }
 
@@ -867,6 +873,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
         errors.push(TABL_DT_WRITE_UNAVAILABLE_HINT);
       if (plan.type === 'DOMA' && isDomainsEndpointAvailable() === false) errors.push(DOMA_WRITE_UNAVAILABLE_HINT);
       if (plan.type === 'TTYP' && isTableTypesEndpointAvailable() === false) errors.push(TTYP_WRITE_UNAVAILABLE_HINT);
+      if (plan.type === 'ENQU' && isLockObjectsEndpointAvailable() === false) errors.push(ENQU_WRITE_UNAVAILABLE_HINT);
       if (plan.type === 'INCL' && plan.name.startsWith('L')) {
         errors.push(
           'Function-group structural includes require a single SAPWrite create with group; batch_create does not support them.',
