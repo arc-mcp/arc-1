@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AdtApiError } from '../../../src/adt/errors.js';
 import { RUN_ID } from '../../helpers/run-id.js';
 import {
   buildCreateXml,
   CrudRegistry,
   cleanupAll,
+  deleteObjectSet,
   generateUniqueName,
   retryDelete,
 } from '../../integration/crud-harness.js';
@@ -156,6 +158,54 @@ describe('cleanupAll', () => {
     expect(report.failed).toHaveLength(1);
     expect(report.failed[0].name).toBe('ZPROG1');
     expect(report.failed[0].error).toContain('Unexpected server error');
+  });
+});
+
+describe('deleteObjectSet', () => {
+  const pair = [
+    { name: 'ZPAR', objectUrl: '/sap/bc/adt/ddic/ddl/sources/zpar' },
+    { name: 'ZCHD', objectUrl: '/sap/bc/adt/ddic/ddl/sources/zchd' },
+  ];
+  const notFound = () => new AdtApiError('not found', 404, '/x');
+
+  it('deletes the whole set in one mass-deletion request', async () => {
+    const http = {
+      post: vi.fn(async (_path: string, _body: string) => ({ statusCode: 200, body: '' })),
+      get: vi.fn(async () => {
+        throw notFound();
+      }),
+      withStatefulSession: vi.fn(),
+    };
+    expect(await deleteObjectSet(http as any, {} as any, pair)).toEqual([]);
+    expect(http.post).toHaveBeenCalledOnce();
+    const [path, body] = http.post.mock.calls[0];
+    expect(path).toBe('/sap/bc/adt/deletion/delete');
+    expect(body).toContain('adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zpar"');
+    expect(body).toContain('adtcore:uri="/sap/bc/adt/ddic/ddl/sources/zchd"');
+    expect(http.withStatefulSession).not.toHaveBeenCalled();
+  });
+
+  it('retries survivors one by one and reports what is still left', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const http = {
+      post: vi.fn(async () => {
+        throw new Error('no mass deletion endpoint');
+      }),
+      // ZCHD was never created; ZPAR survives the failed set delete.
+      get: vi.fn(async (url: string) => {
+        if (url.endsWith('zchd')) throw notFound();
+        return { statusCode: 200, body: '' };
+      }),
+      withStatefulSession: vi.fn(async () => {
+        throw new Error('DDL source ZPAR could not be deleted');
+      }),
+    };
+    const failed = await deleteObjectSet(http as any, {} as any, pair);
+    expect(failed).toEqual([{ name: 'ZPAR', error: expect.stringContaining('could not be deleted') }]);
+    expect(failed[0].error).toContain('no mass deletion endpoint');
+    expect(http.withStatefulSession).toHaveBeenCalledOnce();
+    expect(log).toHaveBeenCalled();
+    log.mockRestore();
   });
 });
 
