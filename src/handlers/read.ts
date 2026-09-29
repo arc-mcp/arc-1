@@ -496,12 +496,12 @@ export async function handleSAPRead(
         if (args.grep) {
           // Each include on its own, so a line number counts within the include it names.
           const g = grepSourceBlocks(blocks, String(args.grep));
-          if (g.invalidPattern) return errorResult(g.output);
           const note = truncated
             ? '\n\n=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched. ' +
               'Search a known include with SAPRead(type="INCL", name="...", grep="...") or a function module with type="FUNC", group="...", name="...", grep="...".'
             : '';
-          return textResult(`${g.output}${note}`);
+          const output = `${g.output}${note}`;
+          return g.invalidPattern ? errorResult(output) : textResult(output);
         }
         const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
         if (truncated) {

@@ -333,11 +333,9 @@ export function grepSourceBlocks(blocks: GrepBlock[], pattern: string, opts: Gre
   }
 
   const searched = blocks.length - unreadable.length;
-  if (matchCount === 0 && invalid) return invalid;
-
   const out: string[] = [];
   if (matchCount === 0) {
-    out.push(`No matches found for /${pattern}/i in ${searched} source(s).`);
+    out.push(invalid?.output ?? `No matches found for /${pattern}/i in ${searched} source(s).`);
   } else {
     out.push(`${matchCount} match(es) for /${pattern}/i in ${matchedBlocks} of ${searched} source(s):`);
     out.push(...parts);
@@ -346,5 +344,5 @@ export function grepSourceBlocks(blocks: GrepBlock[], pattern: string, opts: Gre
     }
   }
   if (unreadable.length > 0) out.push(`Not searched (could not be read): ${unreadable.join(', ')}.`);
-  return { matchCount, invalidPattern: false, output: out.join('\n\n') };
+  return { matchCount, invalidPattern: matchCount === 0 && invalid !== null, output: out.join('\n\n') };
 }

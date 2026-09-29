@@ -117,6 +117,15 @@ describe('SAPRead FUGR grep', () => {
     expect(text).not.toContain('[Could not read include');
   });
 
+  it('keeps unreadable-source warnings when a literal fallback has no match', async () => {
+    serve(['lzdemou02']);
+    const { isError, text } = await readFugr({ grep: 'nowhere(' });
+
+    expect(isError).toBe(true);
+    expect(text).toContain('Invalid regex pattern: "nowhere("');
+    expect(text).toContain('Not searched (could not be read): lzdemou02.');
+  });
+
   it('says so when the include cap left includes unsearched', async () => {
     const many = Array.from({ length: 100 }, (_, i) => `INCLUDE linc${String(i).padStart(3, '0')}.`).join('\n');
     mockFetch.mockImplementation((url: string) =>
@@ -128,6 +137,15 @@ describe('SAPRead FUGR grep', () => {
     expect(text).toContain(
       'Include expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched.',
     );
+
+    const invalid = await readFugr({ grep: 'nowhere(' });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.text).toContain('Invalid regex pattern: "nowhere("');
+    expect(invalid.text).toContain('some nested includes were not searched.');
+
+    const expanded = await readFugr({ expand_includes: true });
+    expect(expanded.isError).toBeUndefined();
+    expect(expanded.text).toContain('some nested includes were not expanded.');
   });
 
   it('keeps the full expansion when no grep is given', async () => {

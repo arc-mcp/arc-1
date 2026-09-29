@@ -270,11 +270,20 @@ describe('grepSourceBlocks', () => {
     const blocks = Array.from({ length: 3 }, (_, i) => ({ name: `b${i}`, source: 'hit\nhit\nhit' }));
     const r = grepSourceBlocks(blocks, 'hit', { maxMatches: 4, contextLines: 0 });
     expect(r.matchCount).toBe(9);
+    expect(r.output.split('\n')[0]).toBe('9 match(es) for /hit/i in 3 of 3 source(s):');
     expect(r.output).toContain('=== b0 ===');
     expect(r.output).toContain('=== b1 ===');
     expect(r.output).not.toContain('=== b2 ===');
     expect(r.output).toContain('... showing first 4 of 9 matches. Narrow your pattern.');
     expect(r.output.match(/^>/gm)).toHaveLength(4);
+  });
+
+  it('does not claim display truncation at exactly 100 matches', () => {
+    const blocks = Array.from({ length: 2 }, (_, i) => ({ name: `b${i}`, source: Array(50).fill('hit').join('\n') }));
+    const r = grepSourceBlocks(blocks, 'hit', { contextLines: 0 });
+    expect(r.matchCount).toBe(100);
+    expect(r.output.match(/^>/gm)).toHaveLength(100);
+    expect(r.output).not.toContain('showing first');
   });
 
   it('lists unreadable blocks as not searched', () => {
