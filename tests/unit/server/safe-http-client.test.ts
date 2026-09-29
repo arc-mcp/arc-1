@@ -140,7 +140,9 @@ describe('createPluginRunOps.classRun (gated code execution)', () => {
     const u = fakeUnderlying();
     const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
     await expect(run.classRun('ZCL_ARC1_RUN_DEMO')).resolves.toBe('console output');
-    expect(u.post).toHaveBeenCalledWith('/sap/bc/adt/oo/classrun/zcl_arc1_run_demo');
+    expect(u.post).toHaveBeenCalledWith('/sap/bc/adt/oo/classrun/zcl_arc1_run_demo', undefined, undefined, undefined, {
+      retryTransientErrors: false,
+    });
   });
 });
 
@@ -179,7 +181,13 @@ describe('createPluginRunOps.programRun (gated report execution)', () => {
     const u = fakeUnderlying();
     const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
     await expect(run.programRun('/ACME/Z_REPORT$1')).resolves.toBe('console output');
-    expect(u.post).toHaveBeenCalledWith('/sap/bc/adt/programs/programrun/%2Facme%2Fz_report%241');
+    expect(u.post).toHaveBeenCalledWith(
+      '/sap/bc/adt/programs/programrun/%2Facme%2Fz_report%241',
+      undefined,
+      undefined,
+      undefined,
+      { retryTransientErrors: false },
+    );
   });
 });
 

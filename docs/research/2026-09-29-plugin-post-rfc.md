@@ -9,6 +9,10 @@ The inspected [claude-sap-kit source](https://github.com/silvius1996/claude-sap-
 uses `/sap/bc/soap/rfc` for both SmartForm reads and writes. A URL-only read exception would permit
 both bodies. Its regex SOAP helper assumes the legacy operation/response shape; it is useful use-case
 evidence, not a verified contract for modern configured service bindings. No source was copied.
+The [extension sample](https://github.com/arc-mcp/arc-1-extension-sample/tree/d71abdc5a626d6a33abcaaf93bcd31a7dce0aba4/src/tools)
+also has LISA read POSTs with dedicated paths: those are narrower FEAT-77 candidates than a shared
+dispatcher. An approved read-only GET service works with the existing API; a POST-only service
+needs a backend change to use that alternative.
 
 Primary sources checked:
 
@@ -20,9 +24,10 @@ Primary sources checked:
 
 | Probe | Observation | Limit |
 |---|---|---|
-| SAP_BASIS 758, direct HTTPS/Basic, client 001; GET `/sap/bc/soap/wsdl11?services=STFC_CONNECTION&sap-client=001`, 09:25 UTC | HTTP 403 service-inactive HTML; no WSDL | No SOAP execution, service activation or authorization change; no conclusion about other configured bindings |
+| SAP_BASIS 758, direct HTTPS/Basic, client 001; GET `/sap/bc/soap/wsdl11?services=STFC_CONNECTION&sap-client=001`, 09:25 UTC | HTTP 403 service-inactive HTML; no WSDL | Only the WSDL node was probed; dispatcher state and other configured bindings are unknown. No SOAP execution or SAP changes |
 | Actual plugin dispatcher with local HTTP service | Read-scoped POST, disabled raw writes and disabled writes each send zero requests | Local authorization reproduction, not SAP read-only semantics |
 | Actual plugin dispatcher, loopback HTTP service commits then returns 429, 503 or DB-500 | Main sends two POSTs / two simulated executions; fix sends one | Transport reproduction; no claim of a naturally occurring SAP duplicate |
+| Named classRun / programRun, real dispatcher and loopback service, respectively 503 / DB-500 after execution | Before review fix: two POSTs / executions; shared no-transient-replay helper: one, with unconfirmed-completion guidance | Local fault injection, not live ABAP execution |
 | Response disconnect after execution | One POST, but main advises retry; fix reports unconfirmed completion | No exactly-once guarantee |
 
 Do not ship a new generic RFC executor, path-based read bypass, or guessed public SOAP codec.
@@ -30,18 +35,11 @@ A small codec remains a candidate after one supported binding is supplied. Recor
 remaining outcomes as FEAT-76/77; keep both issues open. Pure XML helpers cannot establish SAP
 compatibility, operation authorization, or read-only semantics by themselves.
 
-## Applied plan and review
+## Applied change and limits
 
-Use the existing `retryTransientErrors: false` option only for `ctx.http.post`. Preserve the
-original typed error and tag ambiguous 429/5xx/network outcomes. Render inspection guidance before
-the dispatcher's generic retry hints, including minimal-error mode. Existing permission gates,
-identity, audit and CSRF/auth/negotiation behavior stay intact; no new flag or transport abstraction.
-
-Four regression scenarios fail on main. Real-loopback tests cover committed failures, disconnect,
-success, CSRF recovery, a pre-execution 400, existing gate refusals and terminal audit. The change
-is deliberately limited to the raw plugin POST surface; GET, PUT, DELETE and named execution
-operations retain their current policies. Even POST can resend after auth/CSRF/negotiation errors;
-plugins must not advertise exactly-once execution or automatically retry an ambiguous tool error.
-
-The separate read-facade correction [#886](https://github.com/arc-mcp/arc-1/pull/886) prevents new
-internal client methods from silently becoming plugin capabilities. It does not add RFC support.
+Raw POST, classRun and programRun share the existing `retryTransientErrors: false` option and
+preserve typed errors with `pluginPostOutcome: 'unknown'` for 429/5xx/network outcomes. The
+dispatcher renders inspection guidance; a plugin that catches the error must preserve that warning.
+Auth, any 403 (treated as possible CSRF expiry), and negotiation can still resend. No exactly-once
+claim, new flag, or change to GET/PUT/DELETE and built-in ADT behavior. The separate read facade
+[#886](https://github.com/arc-mcp/arc-1/pull/886) does not add RFC support.

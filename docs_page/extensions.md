@@ -195,37 +195,33 @@ Refused with an `AdtSafetyError` unless **all** hold:
     `denyActions` + the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
     custom service's ABAP handler owns its locking/transport.
 
-`ctx.http.post` does not automatically repeat a request after a transient 429/503 or database
-connection error. A network failure or 429/5xx leaves completion **unconfirmed**: inspect the
-service's result before retrying the tool. Authentication, CSRF refresh and content negotiation
-can still resend a request; this is not an exactly-once guarantee. GET, PUT, DELETE and the named
-`ctx.run` operations retain their existing retry behavior.
+`ctx.http.post`, `ctx.run.classRun` and `ctx.run.programRun` do not automatically repeat a request
+after a transient 429/503 or database connection error. A network failure or 429/5xx leaves
+completion **unconfirmed**: inspect the service's result or business state before retrying the tool.
+Authentication, any **403** (treated as possible CSRF expiry), and content negotiation can still
+resend a request; this is not an exactly-once guarantee. GET, PUT and DELETE retain their existing
+retry behavior. If your plugin catches errors, rethrow the original error so ARC-1 can render this
+guidance, or handle `error.pluginPostOutcome === 'unknown'` explicitly; returning only `error.message`
+loses the completion warning.
 
 ### Parameterized services and read-only POSTs
 
-There is currently no `ctx.run.callFunction`, `ctx.http.postRead`, function-name allowlist or
-read-POST path setting. Calling a function module over HTTP uses the same raw-POST gates above,
-even when that function is intended only to read. Do not enable writes on a read-only deployment
-just to make a read tool work.
+For reads, prefer a supported [OData function](https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_Functions)
+or an SAP-owner-reviewed read-only ICF GET endpoint. These work today with `ctx.http.get` without
+enabling writes; a service exposed only through POST would need a backend change. Business-data
+tools should declare `data` scope; raw GET does not enforce the data-preview/SQL flags (see
+[runtime gates](#security-roles-by-use-case)).
 
-For a new parameterized integration, prefer an existing supported OData/ICF API or a specific
-SOAP service approved by the SAP owner. For SOAP, obtain the **binding WSDL** from SOAMANAGER:
-it defines the operation, namespace, parameter shapes, SOAP version, action and endpoint. Keep
-that contract and endpoint fixed in reviewed plugin code; expose only the required input fields.
-Have the SAP owner verify backend authorizations and side effects under the intended user.
+There is no `ctx.run.callFunction` or `ctx.http.postRead`. All raw POSTs require the write gates
+above, including dedicated read endpoints such as the sample's LISA translation reads. Do not
+enable writes on a read-only deployment just to make them work. A URL exception cannot distinguish
+read/write bodies on shared SOAP or `$batch` endpoints; a dedicated read endpoint is a candidate
+for [FEAT-77](roadmap.md#feat-77) once its semantics and request contract are verified.
 
-Do not activate the generic `/sap/bc/soap/rfc` dispatcher as the recommended setup for a new
-integration. SAP deprecated the SOAP 6.20 processor and recommends its newer ABAP Web Services
-infrastructure. An existing legacy deployment needs its own support and migration assessment.
-[SAP lifecycle guidance](https://help.sap.com/docs/SAP_NETWEAVER_740/f1cccec432514a3181f2852f2b91d306/c84cb8db0b3b43908ae4e987f3a3ade5.html),
-[binding WSDL guidance](https://help.sap.com/docs/SUPPORT_CONTENT/abapconn/3354079866.html).
-
-A URL allowlist alone cannot make a POST read-only: a SOAP dispatcher selects operations from the
-body, and OData `$batch` can include changesets. A function allowlist restricts **which** code runs,
-not whether it changes data; a report name or a `GET_*` naming convention is not evidence of purity.
-A future read-POST API needs a reviewed operation/body contract, scope and data-access rules,
-response limits, and live evidence that rejected payloads never execute. The remaining work is
-tracked in [the roadmap](roadmap.md#feat-77).
+For SOAP, use an SAP-owner-approved service and its configured **binding WSDL**, with fixed
+operations and endpoint in reviewed plugin code. Do not introduce the deprecated generic SOAP
+6.20 dispatcher as a new integration. See [SAP lifecycle guidance](https://help.sap.com/docs/SAP_NETWEAVER_740/f1cccec432514a3181f2852f2b91d306/c84cb8db0b3b43908ae4e987f3a3ade5.html)
+and [binding WSDL guidance](https://help.sap.com/docs/SUPPORT_CONTENT/abapconn/3354079866.html).
 
 ADT **object** create/update/delete (CLAS, DDLS, …) stay on the roadmap as the package-aware v2
 `ctx.write` vocabulary — see `docs/research/2026-06-17-extension-framework-v2-spec.md`.
@@ -291,7 +287,8 @@ framework — **all** of the following must hold, or the call is refused with an
 `classRun` and `programRun` are **named** ops (not raw POSTs), so a plugin can only run a class or
 report **by name** (validated, no path injection) — it cannot reach arbitrary endpoints. That is why
 they have their own dedicated gate, distinct from the raw `ctx.http` write surface; ADT **object**
-writes still wait for the v2 `ctx.write`.
+writes still wait for the v2 `ctx.write`. Both operations use the [POST retry policy](#writing-non-adt-odataicf)
+above: ambiguous failures require inspection before another execution.
 
 ---
 

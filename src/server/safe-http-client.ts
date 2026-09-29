@@ -69,6 +69,27 @@ function isAdtPath(path: string): boolean {
     .startsWith('/sap/bc/adt/');
 }
 
+/** Services and ABAP execution may commit before an error response; callers must apply their gates first. */
+async function postWithoutTransientReplay(
+  underlying: AdtHttpClient,
+  path: string,
+  body?: string,
+  contentType?: string,
+  headers?: Record<string, string>,
+): Promise<AdtResponse> {
+  try {
+    return await underlying.post(path, body, contentType, headers, { retryTransientErrors: false });
+  } catch (error) {
+    if (
+      error instanceof AdtNetworkError ||
+      (error instanceof AdtApiError && (error.statusCode === 429 || error.isServerError))
+    ) {
+      error.pluginPostOutcome = 'unknown';
+    }
+    throw error;
+  }
+}
+
 /**
  * Wrap a per-user `AdtHttpClient` in the gated surface for one tool call.
  *
@@ -122,18 +143,7 @@ export function createSafeHttpClient(
     },
     async post(path, body, contentType, headers) {
       gateWrite(OperationType.Create, path);
-      try {
-        // A generic service may execute before returning an error; never infer idempotency.
-        return await underlying.post(path, body, contentType, headers, { retryTransientErrors: false });
-      } catch (error) {
-        if (
-          error instanceof AdtNetworkError ||
-          (error instanceof AdtApiError && (error.statusCode === 429 || error.isServerError))
-        ) {
-          error.pluginPostOutcome = 'unknown';
-        }
-        throw error;
-      }
+      return postWithoutTransientReplay(underlying, path, body, contentType, headers);
     },
     async put(path, body, contentType, headers) {
       gateWrite(OperationType.Update, path);
@@ -208,7 +218,7 @@ const ABAP_CLASS_NAME = /^[A-Za-z_/][A-Za-z0-9_/]{0,39}$/;
 const ABAP_PROGRAM_NAME = /^(?=.{1,40}$)(?:\/[A-Za-z0-9_]+\/)?[A-Za-z0-9_$]+$/;
 
 /**
- * Build the `ctx.run` named-operation surface. Unlike `ctx.http` (read-only), these EXECUTE — so the
+ * Build the `ctx.run` named-operation surface. These operations EXECUTE arbitrary ABAP, so the
  * gate is the strictest in the framework. Classes and reports can mutate anything, so they require
  * ALL of: the dedicated opt-in
  * `SAP_ALLOW_PLUGIN_EXECUTE`; `allowWrites` (via `checkOperation`, since execution is a mutation
@@ -243,7 +253,10 @@ export function createPluginRunOps(
       if (typeof className !== 'string' || !ABAP_CLASS_NAME.test(className)) {
         throw new AdtSafetyError(`Extension tool '${opLabel}': invalid ABAP class name '${className}'.`);
       }
-      const res = await underlying.post(`/sap/bc/adt/oo/classrun/${encodeURIComponent(className.toLowerCase())}`);
+      const res = await postWithoutTransientReplay(
+        underlying,
+        `/sap/bc/adt/oo/classrun/${encodeURIComponent(className.toLowerCase())}`,
+      );
       return res.body;
     },
     async programRun(programName: string): Promise<string> {
@@ -251,7 +264,8 @@ export function createPluginRunOps(
       if (typeof programName !== 'string' || !ABAP_PROGRAM_NAME.test(programName)) {
         throw new AdtSafetyError(`Extension tool '${opLabel}': invalid ABAP program name '${programName}'.`);
       }
-      const res = await underlying.post(
+      const res = await postWithoutTransientReplay(
+        underlying,
         `/sap/bc/adt/programs/programrun/${encodeURIComponent(programName.toLowerCase())}`,
       );
       return res.body;

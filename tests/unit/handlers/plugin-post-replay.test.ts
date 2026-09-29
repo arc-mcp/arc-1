@@ -28,6 +28,22 @@ for (const scope of ['read', 'write'] as const) {
   );
 }
 
+for (const operation of ['classRun', 'programRun'] as const) {
+  registerPluginTool(
+    getToolRegistry(),
+    'post-test',
+    defineTool({
+      name: `Custom_${operation}`,
+      description: 'Test named execution through the real plugin adapter',
+      schema: z.object({}),
+      policy: { scope: 'write', opType: 'W' },
+      handler: async (_args, ctx) => ({
+        content: [{ type: 'text', text: await ctx.run[operation]('Z_EXECUTION_TEST') }],
+      }),
+    }),
+  );
+}
+
 async function withService(
   status: number | 'disconnect',
   run: (client: AdtClient, state: { requests: number; posts: number; executions: number }) => Promise<void>,
@@ -75,6 +91,25 @@ const config = { ...DEFAULT_CONFIG, allowWrites: true, allowPluginRawWrites: tru
 afterEach(() => vi.restoreAllMocks());
 
 describe('extension POST replay through the dispatcher', () => {
+  it.each([
+    { operation: 'classRun', status: 503 },
+    { operation: 'programRun', status: 500 },
+  ])('does not repeat $operation after execution and HTTP $status', async ({ operation, status }) => {
+    await withService(status, async (client, state) => {
+      const result = await handleToolCall(
+        client,
+        { ...config, allowPluginExecute: true, allowPluginRawWrites: false },
+        `Custom_${operation}`,
+        {},
+      );
+      expect(state.posts).toBe(1);
+      expect(state.executions).toBe(1);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('POST completion is unconfirmed');
+      expect(result.content[0]?.text).not.toContain('wait 10-30 seconds and retry');
+    });
+  });
+
   it.each([
     { status: 503, minimalErrors: false },
     { status: 429, minimalErrors: false },

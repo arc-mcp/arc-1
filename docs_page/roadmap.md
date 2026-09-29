@@ -399,7 +399,9 @@ single-target identity and write ceiling. [Investigation](https://github.com/arc
 
 **Remaining gap.** [#885](https://github.com/arc-mcp/arc-1/issues/885) has a valid read-only service
 use case, but a path-only exception would also authorize write bodies on SOAP and batch endpoints.
-No read-POST exception or function-name purity claim is implemented.
+Dedicated read endpoints, such as the extension sample's LISA POSTs, are narrower candidates.
+Verified read-only GET services already work through `ctx.http.get`; no read-POST exception or
+function-name purity claim is implemented.
 
 **Resume with.** One narrow operation with verified non-mutating semantics and a request contract
 that rejects other operations, changesets and dynamic report/function dispatch before network
