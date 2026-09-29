@@ -250,8 +250,8 @@ describe('grepSourceBlocks', () => {
     const r = grepSourceBlocks(BLOCKS, 'read_entities(');
     expect(r.invalidPattern).toBe(false);
     expect(r.matchCount).toBe(1);
-    // The header shows the pattern actually used: the escaped literal.
-    expect(r.output.split('\n')[0]).toBe('1 match(es) for /read_entities\\(/i in 1 of 3 source(s):');
+    // Summary names the requested pattern; the block shows its escaped literal fallback.
+    expect(r.output.split('\n')[0]).toBe('1 match(es) for /read_entities(/i in 1 of 3 source(s):');
   });
 
   it('is invalid only when no block matched', () => {
@@ -268,12 +268,13 @@ describe('grepSourceBlocks', () => {
 
   it('caps rendered matches across blocks but counts them all', () => {
     const blocks = Array.from({ length: 3 }, (_, i) => ({ name: `b${i}`, source: 'hit\nhit\nhit' }));
-    const r = grepSourceBlocks(blocks, 'hit', { maxMatches: 4 });
+    const r = grepSourceBlocks(blocks, 'hit', { maxMatches: 4, contextLines: 0 });
     expect(r.matchCount).toBe(9);
     expect(r.output).toContain('=== b0 ===');
     expect(r.output).toContain('=== b1 ===');
     expect(r.output).not.toContain('=== b2 ===');
     expect(r.output).toContain('... showing first 4 of 9 matches. Narrow your pattern.');
+    expect(r.output.match(/^>/gm)).toHaveLength(4);
   });
 
   it('lists unreadable blocks as not searched', () => {
@@ -281,5 +282,18 @@ describe('grepSourceBlocks', () => {
     expect(r.output).toBe(
       'No matches found for /NOWHERE/i in 3 source(s).\n\nNot searched (could not be read): lzdemou03.',
     );
+  });
+
+  it('keeps the requested pattern in the summary when blocks use different fallback forms', () => {
+    const r = grepSourceBlocks(
+      [
+        { name: 'regex', source: 'a0' },
+        { name: 'literal', source: 'a[0]' },
+      ],
+      'a[0]',
+    );
+    expect(r.matchCount).toBe(2);
+    expect(r.output.split('\n')[0]).toBe('2 match(es) for /a[0]/i in 2 of 2 source(s):');
+    expect(r.output).toContain('=== literal ===\n1 match(es) for /a\\[0\\]/i:');
   });
 });

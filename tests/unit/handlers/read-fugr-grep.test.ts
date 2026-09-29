@@ -89,7 +89,7 @@ describe('SAPRead FUGR grep', () => {
     const { isError, text } = await readFugr({ expand_includes: true, grep: 'read_entities(' });
 
     expect(isError).toBeUndefined();
-    expect(text).toMatch(/^1 match\(es\) for \/read_entities\\\(\/i in 1 of 5 source\(s\):/);
+    expect(text).toMatch(/^1 match\(es\) for \/read_entities\(\/i in 1 of 5 source\(s\):/);
     expect(text).toContain('=== lzdemou01 ===');
   });
 
@@ -125,14 +125,42 @@ describe('SAPRead FUGR grep', () => {
     const { isError, text } = await readFugr({ expand_includes: true, grep: 'ENQUEUE_EZDEMO' });
 
     expect(isError).toBeUndefined();
-    expect(text).toContain('=== [truncated] ===\nInclude cap reached; some nested includes were not searched.');
+    expect(text).toContain(
+      'Include expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched.',
+    );
   });
 
   it('keeps the full expansion when no grep is given', async () => {
     const { isError, text } = await readFugr({ expand_includes: true });
 
     expect(isError).toBeUndefined();
-    expect(text).toContain('=== lzdemotop ===\nDATA gv_count TYPE i.');
-    expect(text).toContain('=== lzdemou01 ===\nFUNCTION z_demo_a.');
+    expect(text).toBe(
+      Object.entries(SOURCES)
+        .map(([name, source]) => `=== ${name === 'main' ? 'FUGR ZDEMO (main)' : name} ===\n${source}`)
+        .join('\n\n'),
+    );
+  });
+
+  it('passes the requested version to every source read', async () => {
+    await readFugr({ grep: 'ENQUEUE_EZDEMO', version: 'inactive' });
+    expect(mockFetch.mock.calls).toHaveLength(5);
+    for (const [url] of mockFetch.mock.calls) expect(new URL(String(url)).searchParams.get('version')).toBe('inactive');
+  });
+
+  it.each([
+    { tail: 'INCLUDE ldepth6.', incomplete: true },
+    { tail: 'WRITE 1.', incomplete: false },
+    { tail: 'INCLUDE ldepth1.', incomplete: false },
+  ])('reports depth-limited coverage only when an unseen include remains: $tail', async ({ tail, incomplete }) => {
+    mockFetch.mockImplementation((url: string) => {
+      const depth = Number(/\/includes\/ldepth(\d)\//.exec(url)?.[1] ?? 0);
+      return Promise.resolve(mockResponse(200, depth < 5 ? `INCLUDE ldepth${depth + 1}.` : tail));
+    });
+    const { isError, text } = await readFugr({ grep: 'NEEDLE' });
+
+    expect(isError).toBeUndefined();
+    expect(text).toContain('No matches found for /NEEDLE/i in 6 source(s).');
+    expect(text.includes('some nested includes were not searched')).toBe(incomplete);
+    expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/ldepth6/'))).toBe(false);
   });
 });

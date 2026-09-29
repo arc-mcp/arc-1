@@ -498,15 +498,15 @@ export async function handleSAPRead(
           const g = grepSourceBlocks(blocks, String(args.grep));
           if (g.invalidPattern) return errorResult(g.output);
           const note = truncated
-            ? '\n\n=== [truncated] ===\nInclude cap reached; some nested includes were not searched. ' +
-              'Grep them individually with SAPRead(type="INCL" or type="FUNC", grep="...").'
+            ? '\n\n=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched. ' +
+              'Search a known include with SAPRead(type="INCL", name="...", grep="...") or a function module with type="FUNC", group="...", name="...", grep="...".'
             : '';
           return textResult(`${g.output}${note}`);
         }
         const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
         if (truncated) {
           parts.push(
-            '=== [truncated] ===\nInclude cap reached; some nested includes were not expanded. ' +
+            '=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not expanded. ' +
               'Read remaining includes individually with SAPRead(type="INCL", name="...").',
           );
         }

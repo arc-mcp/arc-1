@@ -597,7 +597,7 @@ export class AdtClient {
    * Bounded for safety: a `seen` set (cycle + dedup guard), a depth cap, and a total-block
    * cap so a pathological include graph can't blow up the response. Comment-only INCLUDE
    * lines (leading `*`) are skipped. A block that fails to read is a placeholder, `unreadable`.
-   * `truncated` is true if the block cap was hit.
+   * `truncated` is true if either cap leaves an unseen include unread.
    *
    * Note: dynpros (screens) and GUI status (CUA) are NOT included — ADT does not expose
    * those over REST (they are SAPGUI/SE51/SE41-only; the endpoints return 404). This
@@ -631,11 +631,10 @@ export class AdtClient {
     while (frontier.length > 0 && !truncated) {
       const next: Array<{ src: string; depth: number }> = [];
       for (const { src, depth } of frontier) {
-        if (depth >= MAX_DEPTH) continue;
         for (const incRaw of findIncludes(src)) {
           const key = incRaw.toLowerCase();
           if (seen.has(key)) continue;
-          if (blocks.length >= MAX_BLOCKS) {
+          if (depth >= MAX_DEPTH || blocks.length >= MAX_BLOCKS) {
             truncated = true;
             break;
           }

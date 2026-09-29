@@ -313,22 +313,19 @@ export function grepSourceBlocks(blocks: GrepBlock[], pattern: string, opts: Gre
   let matchCount = 0;
   let matchedBlocks = 0;
   let invalid: GrepResult | null = null;
-  let effectivePattern = pattern;
 
   for (const block of blocks) {
     if (block.unreadable) {
       unreadable.push(block.name);
       continue;
     }
-    const remaining = Math.max(0, maxMatches - Math.min(matchCount, maxMatches));
+    const remaining = Math.max(0, maxMatches - matchCount);
     const g = grepSource(block.source, pattern, { ...opts, maxMatches: remaining });
     if (g.invalidPattern) {
       invalid = g;
       continue;
     }
     if (g.matchCount === 0) continue;
-    const header = /^\d+ match\(es\) for \/(.*)\/i:/.exec(g.output);
-    if (header) effectivePattern = header[1]!;
     matchCount += g.matchCount;
     matchedBlocks += 1;
     // Once the cap is spent, a block only adds to the count; its lines are not rendered.
@@ -340,9 +337,9 @@ export function grepSourceBlocks(blocks: GrepBlock[], pattern: string, opts: Gre
 
   const out: string[] = [];
   if (matchCount === 0) {
-    out.push(`No matches found for /${effectivePattern}/i in ${searched} source(s).`);
+    out.push(`No matches found for /${pattern}/i in ${searched} source(s).`);
   } else {
-    out.push(`${matchCount} match(es) for /${effectivePattern}/i in ${matchedBlocks} of ${searched} source(s):`);
+    out.push(`${matchCount} match(es) for /${pattern}/i in ${matchedBlocks} of ${searched} source(s):`);
     out.push(...parts);
     if (matchCount > maxMatches) {
       out.push(`... showing first ${maxMatches} of ${matchCount} matches. Narrow your pattern.`);

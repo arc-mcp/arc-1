@@ -56,7 +56,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for all of them. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. Falls back to a literal search when the pattern is not valid regex. |
-| `expand_includes` | boolean | No | For FUGR: expand include source inline |
+| `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). |
 | `group` | string | No | For FUNC: function group name |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
 | `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Known TABLE_CONTENTS limitation on 758: SAP can return `N+1`; prefer TABLE_QUERY when an exact cap matters. |
@@ -196,7 +196,7 @@ SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
 SAPRead(type="DDLX", name="ZC_TRAVEL")          — metadata extension with UI annotations
 SAPRead(type="SRVB", name="ZUI_TRAVEL_O4")       — service binding metadata as JSON
 SAPRead(type="KTD", name="ZCL_ORDER")            — read the object's Knowledge Transfer Document as Markdown
-SAPRead(type="FUGR", name="ZUTILS", expand_includes=true)    — function group with all includes expanded
+SAPRead(type="FUGR", name="ZUTILS", expand_includes=true)    — function group with bounded include expansion
 SAPRead(type="FUGR", name="ZUTILS", grep="ENQUEUE_")         — matches per include, not the whole include tree
 SAPRead(type="TABL", name="BAPIRET2")            — DDIC structure (auto-resolved to /structures/)
 SAPRead(type="TABL", name="T000")                — transparent table (auto-resolved to /tables/)
@@ -229,6 +229,21 @@ SAPRead(type="INACTIVE_OBJECTS")                 — list objects pending activa
 For `TABLE_QUERY` on 758, use `op:"<>"` for inequality. Although the current input schema also accepts
 `!=`, ARC-1 sends it unchanged and that backend rejects it; normalization is tracked as a focused
 follow-up.
+
+### Function-group source search
+
+`SAPRead(type="FUGR", name="ZUTILS", grep="ENQUEUE_|AUTHORITY-CHECK")` reads the group
+and its nested includes, then returns matching lines with context. `expand_includes=true`
+is optional when using `grep`. Each source has its own heading and local line numbers;
+the response shows up to 100 matching lines across all sources and counts all matches
+in the sources searched.
+
+Expansion stops at 80 source blocks (main included) or five include levels. The response
+warns when either limit leaves includes unsearched and names includes that could not be
+read. A partial search cannot establish that the whole group has no matches: large groups
+can hit the limit before reaching function-module bodies. Follow up with a known include,
+`SAPRead(type="INCL", name="LZUTILSU01", grep="...")`, or a function module,
+`SAPRead(type="FUNC", group="ZUTILS", name="Z_UTIL", grep="...")`.
 
 ### Active vs Inactive Source
 
