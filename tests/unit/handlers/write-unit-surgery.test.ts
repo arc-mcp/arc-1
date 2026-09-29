@@ -309,7 +309,6 @@ describe('SAPWrite add_unit (#776)', () => {
       name: row.name,
       unit: 'added',
       source: row.block,
-      afterUnit: 'first',
     });
     expect(result.isError, JSON.stringify(result)).toBeUndefined();
     const body = calls.find((c) => c.method === 'PUT')?.body;

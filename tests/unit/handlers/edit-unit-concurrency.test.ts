@@ -214,7 +214,6 @@ const addArgs = {
   action: 'add_unit',
   unit: 'added',
   source: "FORM added.\n WRITE 'new'.\nENDFORM.",
-  afterUnit: 'target',
 };
 it('add_unit reads the latest draft in the lock session and preserves every existing unit', async () => {
   const state = backend();
@@ -233,9 +232,9 @@ it('add_unit reads the latest draft in the lock session and preserves every exis
 it.each([
   { label: 'concurrent duplicate', options: { sourceAtLock: `${external}\n${addArgs.source}` }, args: addArgs },
   {
-    label: 'anchor removed',
-    options: { sourceAtLock: external.replace('FORM target.', 'FORM renamed.') },
-    args: addArgs,
+    label: 'unclosed existing MODULE with lint disabled',
+    options: { sourceAtLock: 'MODULE added OUTPUT.\n WRITE 1.' },
+    args: { ...addArgs, lintBeforeWrite: false },
   },
   { label: 'read failure', options: { readStatus: 403 }, args: addArgs },
   {

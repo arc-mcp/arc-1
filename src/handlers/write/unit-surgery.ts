@@ -54,17 +54,7 @@ export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult>
       const currentSource = (await session.get(srcUrl, { 'Cache-Control': 'no-cache' })).body;
       assertSourceHash(currentSource, args.expectedSourceHash as string | undefined, srcUrl);
       const spliced = adding
-        ? insertUnit(
-            currentSource,
-            name,
-            unit,
-            source,
-            {
-              beforeUnit: args.beforeUnit as string | undefined,
-              afterUnit: args.afterUnit as string | undefined,
-            },
-            abaplintVersion,
-          )
+        ? insertUnit(currentSource, name, unit, source, abaplintVersion)
         : spliceUnit(currentSource, name, unit, source, abaplintVersion);
       if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 

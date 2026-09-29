@@ -22,8 +22,8 @@ describe('add_unit — live', () => {
   });
 
   it.each([
-    { type: 'PROG' as const, kind: 'FORM', direction: '', placement: {} },
-    { type: 'INCL' as const, kind: 'MODULE', direction: ' OUTPUT', placement: { beforeUnit: 'existing' } },
+    { type: 'PROG' as const, kind: 'FORM', direction: '' },
+    { type: 'INCL' as const, kind: 'MODULE', direction: ' OUTPUT' },
   ])(
     'adds a $kind to $type, rejects a duplicate, and activates the preserved source',
     async (row) => {
@@ -36,14 +36,12 @@ describe('add_unit — live', () => {
       const read = await call('SAPRead', { ...object, format: 'editable' });
       const snapshot = JSON.parse(read.content[0]!.text);
       const block = `${row.kind} added${row.direction}.\n  " newly inserted unit\nEND${row.kind}.`;
-      const args = { action: 'add_unit', ...object, ...row.placement, unit: 'added', source: block };
+      const args = { action: 'add_unit', ...object, unit: 'added', source: block };
       await call('SAPWrite', { ...args, expectedSourceHash: snapshot.sourceHash });
       const draft = JSON.parse((await call('SAPRead', { ...object, format: 'editable' })).content[0]!.text);
       // SAP canonicalizes line endings and strips the final newline on read-back.
       const original = snapshot.source.replace(/\r\n/g, '\n').trimEnd();
-      expect(draft.source.replace(/\r\n/g, '\n').trimEnd()).toBe(
-        row.type === 'PROG' ? `${original}\n${block}` : `${block}\n${original}`,
-      );
+      expect(draft.source.replace(/\r\n/g, '\n').trimEnd()).toBe(`${original}\n${block}`);
       const duplicate = await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', args);
       expect(duplicate.isError).toBe(true);
       expect(duplicate.content[0]!.text).toContain('already exists');

@@ -124,17 +124,11 @@ ENDMODULE.`,
 
 describe('insertUnit', () => {
   const addition = 'FORM gamma.\n  WRITE 3.\nENDFORM.';
-  it.each([
-    { placement: {}, marker: PROGRAM, direction: 'after' },
-    { placement: { beforeUnit: 'BETA' }, marker: 'FORM beta.', direction: 'before' },
-    { placement: { afterUnit: 'beta' }, marker: "WRITE 'old beta'.\nENDFORM.", direction: 'after' },
-  ])('inserts at $placement without changing existing lines', ({ placement, marker, direction }) => {
-    const result = insertUnit(PROGRAM, 'ZUNIT', 'gamma', addition, placement);
+  it('appends without changing existing lines or SE80 headers', () => {
+    const original = PROGRAM.replace('FORM beta.', '*& Form beta\nFORM beta.');
+    const result = insertUnit(original, 'ZUNIT', 'gamma', addition);
     expect(result.success, result.error).toBe(true);
-    expect(result.newSource.replace(`${addition}\n`, '')).toBe(
-      placement.beforeUnit || placement.afterUnit ? PROGRAM : `${PROGRAM}\n`,
-    );
-    expect(result.newSource.indexOf(addition) < result.newSource.indexOf(marker)).toBe(direction === 'before');
+    expect(result.newSource).toBe(`${original}\n${addition}\n`);
   });
 
   it('appends the first MODULE and leaves trailing INCLUDEs in place, preserving CRLF', () => {
@@ -147,42 +141,25 @@ describe('insertUnit', () => {
   });
 
   it.each([
-    { label: 'duplicate', source: PROGRAM, name: 'ALPHA', block: 'FORM alpha.\nENDFORM.', placement: {} },
-    { label: 'different name', source: PROGRAM, name: 'gamma', block: 'FORM other.\nENDFORM.', placement: {} },
+    { label: 'duplicate', source: PROGRAM, name: 'ALPHA', block: 'FORM alpha.\nENDFORM.' },
+    { label: 'different name', source: PROGRAM, name: 'gamma', block: 'FORM other.\nENDFORM.' },
     {
       label: 'two units',
       source: PROGRAM,
       name: 'gamma',
       block: 'FORM gamma.\nENDFORM.\nFORM delta.\nENDFORM.',
-      placement: {},
     },
-    { label: 'missing end', source: PROGRAM, name: 'gamma', block: 'FORM gamma.\nWRITE 1.', placement: {} },
-    { label: 'non-unit', source: PROGRAM, name: 'gamma', block: 'WRITE 1.', placement: {} },
-    { label: 'unclosed original', source: 'FORM alpha.\nWRITE 1.', name: 'gamma', block: addition, placement: {} },
-    { label: 'missing anchor', source: PROGRAM, name: 'gamma', block: addition, placement: { afterUnit: 'absent' } },
+    { label: 'missing end', source: PROGRAM, name: 'gamma', block: 'FORM gamma.\nWRITE 1.' },
+    { label: 'non-unit', source: PROGRAM, name: 'gamma', block: 'WRITE 1.' },
+    { label: 'unclosed original', source: 'FORM alpha.\nWRITE 1.', name: 'gamma', block: addition },
     {
-      label: 'ambiguous anchor',
-      source: 'FORM a.\nENDFORM.\nMODULE a OUTPUT.\nENDMODULE.',
+      label: 'unclosed MODULE',
+      source: 'MODULE gamma OUTPUT.\nWRITE 1.',
       name: 'gamma',
-      block: addition,
-      placement: { beforeUnit: 'a' },
-    },
-    {
-      label: 'two anchors',
-      source: PROGRAM,
-      name: 'gamma',
-      block: addition,
-      placement: { beforeUnit: 'alpha', afterUnit: 'beta' },
-    },
-    {
-      label: 'shared boundary line',
-      source: 'FORM a. ENDFORM. WRITE 1.',
-      name: 'gamma',
-      block: addition,
-      placement: { afterUnit: 'a' },
+      block: 'MODULE gamma OUTPUT.\nENDMODULE.',
     },
   ])('refuses $label without producing replacement source', (row) => {
-    const result = insertUnit(row.source, 'ZUNIT', row.name, row.block, row.placement);
+    const result = insertUnit(row.source, 'ZUNIT', row.name, row.block);
     expect(result.success).toBe(false);
     expect(result.newSource).toBe('');
     expect(result.error).toBeTruthy();

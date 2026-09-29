@@ -355,8 +355,6 @@ keep their separate behavior.
 | `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
 | `unit` | string | No | For on-prem `edit_unit`/`add_unit`: existing/new case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
-| `beforeUnit` | string | No | `add_unit` only: insert before this existing FORM/MODULE. Omit `afterUnit`. |
-| `afterUnit` | string | No | `add_unit` only: insert after this existing FORM/MODULE. Omit `beforeUnit`; omit both to append at physical file end. |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
 | `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
@@ -751,7 +749,7 @@ cannot be initialized by a guarded write; its read/precondition must succeed fir
 
 On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. `action="add_unit"` inserts a new block using the same locked read/write lifecycle. ARC-1 checks the write/package gates, acquires the SAP lock, then reads the current editable source in that same stateful session. It uses SAP's default source version (the inactive draft when present, otherwise active source), bypassing source and inactive-list caches. It finds the block with abaplint's structure tree, validates the supplied block's kind/name and resulting source, and writes before unlocking. This preserves surrounding edits completed before the lock was acquired; validation or read failures perform no PUT, and ARC-1 always attempts to unlock.
 
-Pass the complete replacement or new block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. Both actions are case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
+Pass the complete replacement or new block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. Both actions are case-insensitive by unit name, preserve CRLF source files, leave sibling units untouched, and do not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
 
 ```jsonc
 {
@@ -764,11 +762,12 @@ Pass the complete replacement or new block so multi-line FORM signatures and MOD
 }
 ```
 
-To add a block, pass its new name in `unit` and its complete source. With neither anchor,
-ARC-1 appends at the physical end of the selected source; it never moves trailing `INCLUDE`
-statements. Use `beforeUnit` or `afterUnit` when placement matters. The anchor must identify
-exactly one existing unit in that same file, with its insertion boundary on its own line.
-Existing names, missing or ambiguous anchors, and incomplete blocks are refused without a PUT.
+To add a block, pass its new name in `unit` and its complete source. ARC-1 appends
+at the physical end of the selected source; it never moves trailing `INCLUDE`
+statements or existing unit headers. Existing names and incomplete structures are
+refused without a PUT. `SAP_DENY_ACTIONS=SAPWrite.edit_unit` does not deny `add_unit`;
+list both actions (or `SAPWrite`) when both must be blocked. The write/package gates
+apply to both actions.
 
 ```jsonc
 {
@@ -776,7 +775,6 @@ Existing names, missing or ambiguous anchors, and incomplete blocks are refused 
   "type": "PROG",
   "name": "ZPROG_ORDERS",
   "unit": "VALIDATE_ORDERS",
-  "afterUnit": "PROCESS_ORDERS",
   "source": "FORM validate_orders.\n  \" validation logic\nENDFORM."
 }
 ```

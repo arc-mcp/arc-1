@@ -995,21 +995,6 @@ describe('SAPWriteSchema', () => {
     expect(btp.success).toBe(false);
   });
 
-  it.each([
-    { action: 'add_unit', beforeUnit: 'alpha', afterUnit: 'beta' },
-    { action: 'edit_unit', beforeUnit: 'alpha' },
-  ])('rejects invalid unit placement: %j', (placement) => {
-    expect(
-      SAPWriteSchema.safeParse({
-        ...placement,
-        type: 'PROG',
-        name: 'ZTEST',
-        unit: 'new_form',
-        source: 'FORM new_form.\nENDFORM.',
-      }).success,
-    ).toBe(false);
-  });
-
   it('accepts preflightBeforeWrite override', () => {
     const result = SAPWriteSchema.safeParse({
       action: 'update',

@@ -6,7 +6,7 @@
  * deliberately excluded because abaplint does not expose them as structures.
  */
 
-import { MemoryFile, Registry, Structures, type Version } from '@abaplint/core';
+import { MemoryFile, Registry, Statements, Structures, type Version } from '@abaplint/core';
 import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 
@@ -72,11 +72,20 @@ export function listEditableUnits(source: string, objectName: string, abaplintVe
   const units: EditableUnitInfo[] = [];
   for (const object of registry.getObjects()) {
     const file = (object as { getMainABAPFile?: () => unknown }).getMainABAPFile?.() as
-      | { getStructure(): AstNode | undefined }
+      | { getStructure(): AstNode | undefined; getStatements(): { get(): unknown }[] }
       | undefined;
     const structure = file?.getStructure();
     if (!structure) throw new Error('Source has an incomplete ABAP structure.');
-    units.push(...collectUnits(structure, 'FORM'), ...collectUnits(structure, 'MODULE'));
+    const modules = collectUnits(structure, 'MODULE');
+    // abaplint can retain an unterminated MODULE as flat statements in a valid root.
+    // Every MODULE/ENDMODULE statement must belong to a complete structure.
+    const boundaries = file!
+      .getStatements()
+      .filter(
+        (statement) => statement.get() instanceof Statements.Module || statement.get() instanceof Statements.EndModule,
+      );
+    if (boundaries.length !== modules.length * 2) throw new Error('Source has an incomplete MODULE structure.');
+    units.push(...collectUnits(structure, 'FORM'), ...modules);
   }
   return units.sort((a, b) => a.startLine - b.startLine);
 }
@@ -198,13 +207,12 @@ export function spliceUnit(
   return { newSource, oldUnitSource, newUnitSource, unit, success: true };
 }
 
-/** Insert a complete new unit at EOF or a named unit boundary; never reposition INCLUDEs. */
+/** Append a complete new unit at physical EOF; never reposition INCLUDEs. */
 export function insertUnit(
   source: string,
   objectName: string,
   unitName: string,
   addition: string,
-  placement: { beforeUnit?: string; afterUnit?: string } = {},
   abaplintVersion?: Version,
 ): UnitSpliceResult {
   const fail = (error: string): UnitSpliceResult => ({
@@ -214,7 +222,6 @@ export function insertUnit(
     oldUnitSource: '',
     newUnitSource: '',
   });
-  if (placement.beforeUnit && placement.afterUnit) return fail('Use only one of beforeUnit or afterUnit.');
   const normalized = source.replace(/\r\n/g, '\n');
   let units: EditableUnitInfo[];
   try {
@@ -235,19 +242,7 @@ export function insertUnit(
   if (invalid) return fail(invalid);
 
   const lines = normalized.split('\n');
-  let index = normalized.endsWith('\n') || !normalized ? lines.length - 1 : lines.length;
-  const anchorName = placement.beforeUnit ?? placement.afterUnit;
-  if (anchorName) {
-    const matches = units.filter((unit) => unit.name.toUpperCase() === anchorName.toUpperCase());
-    if (matches.length !== 1)
-      return fail(`Anchor "${anchorName}" must identify exactly one existing FORM or MODULE in ${objectName}.`);
-    const anchor = matches[0]!;
-    // Row-based insertion must not include another statement on the same line.
-    const boundary = placement.beforeUnit ? lines[anchor.startLine - 1]! : lines[anchor.endLine - 1]!;
-    const separate = placement.beforeUnit ? /^\s*(FORM|MODULE)\s/i : /^\s*END(FORM|MODULE)\s*\.\s*(?:".*)?$/i;
-    if (!separate.test(boundary)) return fail('Put the anchor boundary on its own line before inserting a unit.');
-    index = placement.beforeUnit ? anchor.startLine - 1 : anchor.endLine;
-  }
+  const index = normalized.endsWith('\n') || !normalized ? lines.length - 1 : lines.length;
   const newUnitSource = addition.replace(/\r\n/g, '\n').trim();
   if (index === lines.length) lines.push('');
   lines.splice(index, 0, newUnitSource);
