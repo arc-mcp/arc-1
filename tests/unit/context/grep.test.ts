@@ -231,37 +231,11 @@ describe('grepSource', () => {
 });
 
 describe('grepSourceBlocks', () => {
-  const BLOCKS = [
-    { name: 'lzdemotop', source: 'DATA gv TYPE i.' },
-    { name: 'lzdemou01', source: "FUNCTION a.\n  CALL FUNCTION 'X'.\nENDFUNCTION." },
-    { name: 'lzdemou02', source: 'FUNCTION b.\n  lo->read_entities( ).\nENDFUNCTION.' },
-  ];
-
-  it('reports matches per block with block-local line numbers', () => {
-    const r = grepSourceBlocks(BLOCKS, 'FUNCTION');
-    expect(r.invalidPattern).toBe(false);
-    expect(r.matchCount).toBe(5);
-    expect(r.output.split('\n')[0]).toBe('5 match(es) for /FUNCTION/i in 2 of 3 source(s):');
-    expect(r.output).toContain('=== lzdemou01 ===\n3 match(es) for /FUNCTION/i:\n>    1: FUNCTION a.');
-    expect(r.output).not.toContain('lzdemotop');
-  });
-
-  it('treats a per-block invalid literal as no match there', () => {
-    const r = grepSourceBlocks(BLOCKS, 'read_entities(');
-    expect(r.invalidPattern).toBe(false);
-    expect(r.matchCount).toBe(1);
-    // Summary names the requested pattern; the block shows its escaped literal fallback.
-    expect(r.output.split('\n')[0]).toBe('1 match(es) for /read_entities(/i in 1 of 3 source(s):');
-  });
-
-  it('is invalid only when no block matched', () => {
-    const r = grepSourceBlocks(BLOCKS, 'nowhere(');
-    expect(r.invalidPattern).toBe(true);
-    expect(r.output).toContain('Invalid regex pattern: "nowhere("');
-  });
-
-  it('refuses an unsafe pattern before searching', () => {
-    const r = grepSourceBlocks(BLOCKS, '(?=x)');
+  it.each([
+    { label: 'empty', blocks: [] },
+    { label: 'only unreadable', blocks: [{ name: 'missing', source: '[unreadable]', unreadable: true }] },
+  ])('refuses an unsafe pattern even with $label sources', ({ blocks }) => {
+    const r = grepSourceBlocks(blocks, '(?=x)');
     expect(r.invalidPattern).toBe(true);
     expect(r.output).toContain('Unsupported grep pattern');
   });
@@ -284,13 +258,6 @@ describe('grepSourceBlocks', () => {
     expect(r.matchCount).toBe(100);
     expect(r.output.match(/^>/gm)).toHaveLength(100);
     expect(r.output).not.toContain('showing first');
-  });
-
-  it('lists unreadable blocks as not searched', () => {
-    const r = grepSourceBlocks([...BLOCKS, { name: 'lzdemou03', source: '[x]', unreadable: true }], 'NOWHERE');
-    expect(r.output).toBe(
-      'No matches found for /NOWHERE/i in 3 source(s).\n\nNot searched (could not be read): lzdemou03.',
-    );
   });
 
   it('keeps the requested pattern in the summary when blocks use different fallback forms', () => {

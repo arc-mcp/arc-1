@@ -292,16 +292,10 @@ export interface GrepBlock {
 }
 
 /**
- * Search several sources for `pattern`, each on its own, and report the matches per block
- * under a `=== <name> ===` header. Line numbers count within their block, so a hit can be
- * followed up by reading that block alone (e.g. `SAPRead type=INCL`).
- *
- * A pattern that is not valid regex is searched literally, and `grepSource` flags
- * `invalidPattern` for each source that lacks the literal text. Across blocks that only
- * means "no match here": the pattern is invalid only when no block matched it. A pattern
- * refused as unsafe is refused before any block is searched.
- *
- * `maxMatches` caps the matches rendered across all blocks; the total is still counted.
+ * Group `grepSource` matches under `=== <name> ===` with block-local line numbers.
+ * `maxMatches` caps displayed matches, not context; counts cover all readable sources.
+ * Reject unsafe patterns before inspecting blocks. An invalid-regex literal miss is an
+ * error only when no block matches. Report unreadable sources separately.
  */
 export function grepSourceBlocks(blocks: GrepBlock[], pattern: string, opts: GrepOptions = {}): GrepResult {
   const unsafeReason = unsafePatternReason(pattern);
@@ -321,10 +315,7 @@ export function grepSourceBlocks(blocks: GrepBlock[], pattern: string, opts: Gre
     }
     const remaining = Math.max(0, maxMatches - matchCount);
     const g = grepSource(block.source, pattern, { ...opts, maxMatches: remaining });
-    if (g.invalidPattern) {
-      invalid = g;
-      continue;
-    }
+    if (g.invalidPattern) invalid = g;
     if (g.matchCount === 0) continue;
     matchCount += g.matchCount;
     matchedBlocks += 1;
