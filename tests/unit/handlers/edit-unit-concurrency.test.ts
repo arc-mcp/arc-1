@@ -186,6 +186,21 @@ it('preserves an explicitly requested transport instead of the lock default', as
   expect(state.sends.find((s) => s.method === 'PUT')?.url.searchParams.get('corrNr')).toBe('DEVK900002');
 });
 
+it('refuses an edit that would absorb an unterminated MODULE draft', async () => {
+  const draft =
+    "PROGRAM zrace.\nMODULE target OUTPUT.\n WRITE 'keep target'.\nMODULE other OUTPUT.\n WRITE 'keep other'.\nENDMODULE.";
+  const state = backend({ sourceAtLock: draft });
+  const result = await handleToolCall(createClient(), { ...config, lintBeforeWrite: false }, 'SAPWrite', {
+    ...args,
+    source: 'MODULE target OUTPUT.\nENDMODULE.',
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('incomplete MODULE');
+  expect(state.sends.some((s) => s.method === 'PUT')).toBe(false);
+  expect(state.source).toBe(draft);
+  expect(state.locked).toBe(false);
+});
+
 it('attempts unlock even if cache invalidation throws', async () => {
   const state = backend();
   const cache = new CachingLayer(new MemoryCache());

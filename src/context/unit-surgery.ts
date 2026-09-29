@@ -241,14 +241,11 @@ export function insertUnit(
   const invalid = replacementError(unit, addition, objectName, abaplintVersion);
   if (invalid) return fail(invalid);
 
-  const lines = normalized.split('\n');
-  const index = normalized.endsWith('\n') || !normalized ? lines.length - 1 : lines.length;
+  const prefix = normalized && !normalized.endsWith('\n') ? `${normalized}\n` : normalized;
   const newUnitSource = addition.replace(/\r\n/g, '\n').trim();
-  if (index === lines.length) lines.push('');
-  lines.splice(index, 0, newUnitSource);
-  let newSource = lines.join('\n');
+  let newSource = `${prefix}${newUnitSource}\n`;
   if (source.includes('\r\n')) newSource = newSource.replace(/\n/g, '\r\n');
-  unit.startLine = index + 1;
-  unit.endLine = index + newUnitSource.split('\n').length;
+  unit.startLine = prefix.split('\n').length;
+  unit.endLine = unit.startLine + newUnitSource.split('\n').length - 1;
   return { success: true, newSource, newUnitSource, oldUnitSource: '', unit };
 }
