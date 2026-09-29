@@ -19,7 +19,7 @@
 // See docs/research/2026-06-17-extension-framework-spec.md §5.
 
 import type { AdtClient } from '../adt/client.js';
-import { AdtSafetyError } from '../adt/errors.js';
+import { AdtApiError, AdtNetworkError, AdtSafetyError } from '../adt/errors.js';
 import type { AdtHttpClient, AdtResponse } from '../adt/http.js';
 import { checkOperation, OperationType, type OperationTypeCode, type SafetyConfig } from '../adt/safety.js';
 import { hasRequiredScope, type Scope } from '../authz/policy.js';
@@ -122,7 +122,18 @@ export function createSafeHttpClient(
     },
     async post(path, body, contentType, headers) {
       gateWrite(OperationType.Create, path);
-      return underlying.post(path, body, contentType, headers);
+      try {
+        // A generic service may execute before returning an error; never infer idempotency.
+        return await underlying.post(path, body, contentType, headers, { retryTransientErrors: false });
+      } catch (error) {
+        if (
+          error instanceof AdtNetworkError ||
+          (error instanceof AdtApiError && (error.statusCode === 429 || error.isServerError))
+        ) {
+          error.pluginPostOutcome = 'unknown';
+        }
+        throw error;
+      }
     },
     async put(path, body, contentType, headers) {
       gateWrite(OperationType.Update, path);

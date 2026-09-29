@@ -170,6 +170,14 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtError && err.pluginPostOutcome === 'unknown') {
+    const detail = config.minimalErrors
+      ? err instanceof AdtApiError
+        ? formatMinimalAdtError(err)
+        : 'Extension POST failed. Use the request ID to correlate server-side logs.'
+      : message;
+    return `${detail}\nPOST completion is unconfirmed. Inspect the service's result or business state before retrying. Do not blindly repeat the extension call.`;
+  }
   if (err instanceof AdtError && err.creationOutcome === 'unknown') {
     const detail = config.minimalErrors
       ? err instanceof AdtApiError

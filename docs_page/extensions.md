@@ -195,6 +195,38 @@ Refused with an `AdtSafetyError` unless **all** hold:
     `denyActions` + the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
     custom service's ABAP handler owns its locking/transport.
 
+`ctx.http.post` does not automatically repeat a request after a transient 429/503 or database
+connection error. A network failure or 429/5xx leaves completion **unconfirmed**: inspect the
+service's result before retrying the tool. Authentication, CSRF refresh and content negotiation
+can still resend a request; this is not an exactly-once guarantee. GET, PUT, DELETE and the named
+`ctx.run` operations retain their existing retry behavior.
+
+### Parameterized services and read-only POSTs
+
+There is currently no `ctx.run.callFunction`, `ctx.http.postRead`, function-name allowlist or
+read-POST path setting. Calling a function module over HTTP uses the same raw-POST gates above,
+even when that function is intended only to read. Do not enable writes on a read-only deployment
+just to make a read tool work.
+
+For a new parameterized integration, prefer an existing supported OData/ICF API or a specific
+SOAP service approved by the SAP owner. For SOAP, obtain the **binding WSDL** from SOAMANAGER:
+it defines the operation, namespace, parameter shapes, SOAP version, action and endpoint. Keep
+that contract and endpoint fixed in reviewed plugin code; expose only the required input fields.
+Have the SAP owner verify backend authorizations and side effects under the intended user.
+
+Do not activate the generic `/sap/bc/soap/rfc` dispatcher as the recommended setup for a new
+integration. SAP deprecated the SOAP 6.20 processor and recommends its newer ABAP Web Services
+infrastructure. An existing legacy deployment needs its own support and migration assessment.
+[SAP lifecycle guidance](https://help.sap.com/docs/SAP_NETWEAVER_740/f1cccec432514a3181f2852f2b91d306/c84cb8db0b3b43908ae4e987f3a3ade5.html),
+[binding WSDL guidance](https://help.sap.com/docs/SUPPORT_CONTENT/abapconn/3354079866.html).
+
+A URL allowlist alone cannot make a POST read-only: a SOAP dispatcher selects operations from the
+body, and OData `$batch` can include changesets. A function allowlist restricts **which** code runs,
+not whether it changes data; a report name or a `GET_*` naming convention is not evidence of purity.
+A future read-POST API needs a reviewed operation/body contract, scope and data-access rules,
+response limits, and live evidence that rejected payloads never execute. The remaining work is
+tracked in [the roadmap](roadmap.md#feat-77).
+
 ADT **object** create/update/delete (CLAS, DDLS, …) stay on the roadmap as the package-aware v2
 `ctx.write` vocabulary — see `docs/research/2026-06-17-extension-framework-v2-spec.md`.
 

@@ -22,6 +22,9 @@ export class AdtError extends Error {
   /** A create request failed without establishing whether SAP committed it. */
   creationOutcome?: 'unknown';
 
+  /** A plugin POST failed without establishing whether its service executed it. */
+  pluginPostOutcome?: 'unknown';
+
   constructor(message: string) {
     super(message);
     this.name = 'AdtError';

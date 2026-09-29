@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-09-25
+**Last reviewed:** 2026-09-29
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -80,6 +80,8 @@ sequence.
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
 | [FEAT-66](#feat-66) | Interactive confirmation for destructive actions | P3 | L | Blocked | Safety / UX |
 | [FEAT-75](#feat-75) | Delete mutually-referencing objects as one set | P2 | S | Ready | Developer workflow |
+| [FEAT-76](#feat-76) | Parameterized extension service calls | P2 | M | Needs research | Integration |
+| [FEAT-77](#feat-77) | Verified read-only POST operations for extensions | P2 | M | Needs research | Integration |
 | [FEAT-22](#feat-22) | Safe gCTS mutation workflows | P3 | L | Needs research | Integration |
 | [FEAT-34](#feat-34) | Translation workflows beyond text symbols | P3 | L | Needs research | Localization |
 | [FEAT-62](#feat-62) | Transaction source and write support | P3 | M | Blocked | Object coverage |
@@ -371,6 +373,40 @@ live pair in one call on both releases; the integration suite uses it for cleanu
 report SAP's per-object `isDeleted` result, gate on discovery, and stop suggesting circular orders.
 
 ## Integration and localization
+
+<a id="feat-76"></a>
+### FEAT-76 — Parameterized extension service calls
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Integration
+
+**Remaining gap.** [#884](https://github.com/arc-mcp/arc-1/issues/884) needs structured parameters
+and results for custom report/SmartForms functions. Existing `ctx.run` operations are name-in,
+text-out; raw HTTP requires explicit write authorization. The contributor's generic SOAP 6.20
+endpoint is deprecated, and no supported binding has been verified for a core helper.
+
+**Resume with.** A redacted binding WSDL and harmless request/response/fault samples from an
+authorized supported service, including table and empty-value behavior, auth route and retry
+semantics. Start with a small transport-independent codec only if that contract supports it; a
+named executor additionally needs explicit operation authorization and bounded results. Keep the
+single-target identity and write ceiling. [Investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-29-plugin-post-rfc.md).
+
+<a id="feat-77"></a>
+### FEAT-77 — Verified read-only POST operations for extensions
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Integration
+
+**Remaining gap.** [#885](https://github.com/arc-mcp/arc-1/issues/885) has a valid read-only service
+use case, but a path-only exception would also authorize write bodies on SOAP and batch endpoints.
+No read-POST exception or function-name purity claim is implemented.
+
+**Resume with.** One narrow operation with verified non-mutating semantics and a request contract
+that rejects other operations, changesets and dynamic report/function dispatch before network
+access. Decide whether its data requires `read`, `data` or `sql` scope; define response limits,
+auditing and safe retry behavior. A SAP-owner-reviewed service and authorized live tests must
+support the claim. Do not use a broad URL/prefix or wildcard FM exception to bypass the ceiling.
+[Investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-29-plugin-post-rfc.md).
 
 <a id="feat-22"></a>
 ### FEAT-22 — Safe gCTS mutation workflows

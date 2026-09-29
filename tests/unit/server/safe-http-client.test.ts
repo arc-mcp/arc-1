@@ -91,7 +91,7 @@ describe('createSafeHttpClient — gated non-ADT writes (SAP_ALLOW_PLUGIN_RAW_WR
     const u = fakeUnderlying();
     const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', true);
     await expect(c.post(ICF, 'payload', 'application/json')).resolves.toBeTruthy();
-    expect(u.post).toHaveBeenCalledWith(ICF, 'payload', 'application/json', undefined);
+    expect(u.post).toHaveBeenCalledWith(ICF, 'payload', 'application/json', undefined, { retryTransientErrors: false });
   });
 
   it('gates PUT and DELETE the same way (allowed to non-ADT when all gates pass)', async () => {
