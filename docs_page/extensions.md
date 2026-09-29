@@ -287,6 +287,11 @@ gated exactly like a built-in. Two layers must both pass: the **user's scope** (
 **and** the **server's safety ceiling** (the admin's `allow*` flags). Per-user **principal propagation**
 means the tool acts as the calling SAP user, so SAP-side auth (`S_DEVELOP`, package checks) applies too.
 
+`ctx.client` exposes an explicit set of plain-read methods. Internal session factories,
+metadata/text writers, SQL methods and client internals are absent at runtime and in the public
+type. New ARC-1 client methods are not automatically added to this surface. Existing plugins
+that used these unintended methods must use a supported, gated operation instead.
+
 Declare `policy: { scope, opType }` to match the operation your tool performs. The user's scope must
 **cover** it (a `read` user never sees a `write`-scoped tool), and the server ceiling must allow it.
 

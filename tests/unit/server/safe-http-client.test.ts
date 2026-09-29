@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AdtClient } from '../../../src/adt/client.js';
+import { AdtClient } from '../../../src/adt/client.js';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
@@ -184,6 +184,31 @@ describe('createPluginRunOps.programRun (gated report execution)', () => {
 });
 
 describe('createReadOnlyAdtClient (runtime escape-hatch guard, review B1)', () => {
+  it.each([
+    'withStatefulSession',
+    'setApiReleaseState',
+    'writeTextElementPart',
+    'writeClassTextSymbols',
+    'lookupObjectsViaDb',
+    'runQueryWithMetrics',
+    'runQueryBatch',
+    'postDataPreview',
+    'postFreestyleQuery',
+  ])('does not expose %s from a real client', (name) => {
+    const client = new AdtClient();
+    const view = createReadOnlyAdtClient(client) as unknown as Record<string, unknown>;
+    expect(view[name]).toBeUndefined();
+    expect(name in view).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(view, name)).toBeUndefined();
+  });
+
+  it('does not automatically expose a newly added client capability', () => {
+    const client = Object.assign(new AdtClient(), { futureMutation: vi.fn() });
+    const view = createReadOnlyAdtClient(client) as unknown as Record<string, unknown>;
+    expect(view.futureMutation).toBeUndefined();
+    expect(Object.keys(view)).not.toContain('futureMutation');
+  });
+
   // A minimal stand-in for AdtClient: a read method that internally needs `this.http`/`this.safety`,
   // plus the escape-hatch members a plugin must never reach.
   function fakeClient() {
