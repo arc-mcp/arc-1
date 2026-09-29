@@ -273,6 +273,7 @@ describe('AdtClient', () => {
         const { blocks } = await client.getFunctionGroupExpanded('ZDEMO');
         const u01 = blocks.find((b) => b.name === 'lzdemou01');
         expect(u01?.source).toContain('[Could not read include "lzdemou01"]');
+        expect(u01?.unreadable).toBe(true);
       });
 
       it('caps blocks and sets truncated=true on a huge include graph', async () => {

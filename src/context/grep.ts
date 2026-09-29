@@ -282,3 +282,72 @@ export function grepSource(source: string, pattern: string, opts: GrepOptions = 
 
   return { matchCount, invalidPattern: false, output: out.join('\n') };
 }
+
+/** One named source of a multi-source object, e.g. an include of a function group. */
+export interface GrepBlock {
+  name: string;
+  source: string;
+  /** The source could not be read, so the block is reported as not searched. */
+  unreadable?: boolean;
+}
+
+/**
+ * Search several sources for `pattern`, each on its own, and report the matches per block
+ * under a `=== <name> ===` header. Line numbers count within their block, so a hit can be
+ * followed up by reading that block alone (e.g. `SAPRead type=INCL`).
+ *
+ * A pattern that is not valid regex is searched literally, and `grepSource` flags
+ * `invalidPattern` for each source that lacks the literal text. Across blocks that only
+ * means "no match here": the pattern is invalid only when no block matched it. A pattern
+ * refused as unsafe is refused before any block is searched.
+ *
+ * `maxMatches` caps the matches rendered across all blocks; the total is still counted.
+ */
+export function grepSourceBlocks(blocks: GrepBlock[], pattern: string, opts: GrepOptions = {}): GrepResult {
+  const unsafeReason = unsafePatternReason(pattern);
+  if (unsafeReason) return grepSource('', pattern);
+
+  const maxMatches = opts.maxMatches ?? DEFAULT_MAX_MATCHES;
+  const parts: string[] = [];
+  const unreadable: string[] = [];
+  let matchCount = 0;
+  let matchedBlocks = 0;
+  let invalid: GrepResult | null = null;
+  let effectivePattern = pattern;
+
+  for (const block of blocks) {
+    if (block.unreadable) {
+      unreadable.push(block.name);
+      continue;
+    }
+    const remaining = Math.max(0, maxMatches - Math.min(matchCount, maxMatches));
+    const g = grepSource(block.source, pattern, { ...opts, maxMatches: remaining });
+    if (g.invalidPattern) {
+      invalid = g;
+      continue;
+    }
+    if (g.matchCount === 0) continue;
+    const header = /^\d+ match\(es\) for \/(.*)\/i:/.exec(g.output);
+    if (header) effectivePattern = header[1]!;
+    matchCount += g.matchCount;
+    matchedBlocks += 1;
+    // Once the cap is spent, a block only adds to the count; its lines are not rendered.
+    if (remaining > 0) parts.push(`=== ${block.name} ===\n${g.output}`);
+  }
+
+  const searched = blocks.length - unreadable.length;
+  if (matchCount === 0 && invalid) return invalid;
+
+  const out: string[] = [];
+  if (matchCount === 0) {
+    out.push(`No matches found for /${effectivePattern}/i in ${searched} source(s).`);
+  } else {
+    out.push(`${matchCount} match(es) for /${effectivePattern}/i in ${matchedBlocks} of ${searched} source(s):`);
+    out.push(...parts);
+    if (matchCount > maxMatches) {
+      out.push(`... showing first ${maxMatches} of ${matchCount} matches. Narrow your pattern.`);
+    }
+  }
+  if (unreadable.length > 0) out.push(`Not searched (could not be read): ${unreadable.join(', ')}.`);
+  return { matchCount, invalidPattern: false, output: out.join('\n\n') };
+}

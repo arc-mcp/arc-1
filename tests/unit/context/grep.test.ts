@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   grepSource,
+  grepSourceBlocks,
   MAX_GREP_LINE_LENGTH,
   MAX_GREP_PATTERN_LENGTH,
   type MethodRange,
@@ -226,5 +227,59 @@ describe('grepSource', () => {
     // the trailing context line must be detached from the method block by a separator,
     // not rendered directly under [lcl=>a] (which would mis-attribute it to method a)
     expect(lines[constIdx - 1]).toBe('--');
+  });
+});
+
+describe('grepSourceBlocks', () => {
+  const BLOCKS = [
+    { name: 'lzdemotop', source: 'DATA gv TYPE i.' },
+    { name: 'lzdemou01', source: "FUNCTION a.\n  CALL FUNCTION 'X'.\nENDFUNCTION." },
+    { name: 'lzdemou02', source: 'FUNCTION b.\n  lo->read_entities( ).\nENDFUNCTION.' },
+  ];
+
+  it('reports matches per block with block-local line numbers', () => {
+    const r = grepSourceBlocks(BLOCKS, 'FUNCTION');
+    expect(r.invalidPattern).toBe(false);
+    expect(r.matchCount).toBe(5);
+    expect(r.output.split('\n')[0]).toBe('5 match(es) for /FUNCTION/i in 2 of 3 source(s):');
+    expect(r.output).toContain('=== lzdemou01 ===\n3 match(es) for /FUNCTION/i:\n>    1: FUNCTION a.');
+    expect(r.output).not.toContain('lzdemotop');
+  });
+
+  it('treats a per-block invalid literal as no match there', () => {
+    const r = grepSourceBlocks(BLOCKS, 'read_entities(');
+    expect(r.invalidPattern).toBe(false);
+    expect(r.matchCount).toBe(1);
+    // The header shows the pattern actually used: the escaped literal.
+    expect(r.output.split('\n')[0]).toBe('1 match(es) for /read_entities\\(/i in 1 of 3 source(s):');
+  });
+
+  it('is invalid only when no block matched', () => {
+    const r = grepSourceBlocks(BLOCKS, 'nowhere(');
+    expect(r.invalidPattern).toBe(true);
+    expect(r.output).toContain('Invalid regex pattern: "nowhere("');
+  });
+
+  it('refuses an unsafe pattern before searching', () => {
+    const r = grepSourceBlocks(BLOCKS, '(?=x)');
+    expect(r.invalidPattern).toBe(true);
+    expect(r.output).toContain('Unsupported grep pattern');
+  });
+
+  it('caps rendered matches across blocks but counts them all', () => {
+    const blocks = Array.from({ length: 3 }, (_, i) => ({ name: `b${i}`, source: 'hit\nhit\nhit' }));
+    const r = grepSourceBlocks(blocks, 'hit', { maxMatches: 4 });
+    expect(r.matchCount).toBe(9);
+    expect(r.output).toContain('=== b0 ===');
+    expect(r.output).toContain('=== b1 ===');
+    expect(r.output).not.toContain('=== b2 ===');
+    expect(r.output).toContain('... showing first 4 of 9 matches. Narrow your pattern.');
+  });
+
+  it('lists unreadable blocks as not searched', () => {
+    const r = grepSourceBlocks([...BLOCKS, { name: 'lzdemou03', source: '[x]', unreadable: true }], 'NOWHERE');
+    expect(r.output).toBe(
+      'No matches found for /NOWHERE/i in 3 source(s).\n\nNot searched (could not be read): lzdemou03.',
+    );
   });
 });
