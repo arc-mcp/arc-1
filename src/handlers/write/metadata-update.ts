@@ -7,6 +7,7 @@ import {
   type KtdWriteReport,
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
+import { checkOperation, OperationType } from '../../adt/safety.js';
 import { logger } from '../../server/logger.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { type ToolResult, textResult } from '../shared.js';
@@ -15,7 +16,6 @@ import {
   getMetadataWriteProperties,
   mergeMetadataWriteProperties,
   resolveWriteSystemType,
-  SKTD_V2_CONTENT_TYPE,
   vendorContentTypeForType,
 } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
@@ -59,6 +59,7 @@ export async function writeMetadataUpdate(ctx: SapWriteContext, existingPackage?
 
   // A preview validates the same transformation without reserving a snapshot.
   if (dryRun) return (await prepare(client)).result;
+  checkOperation(client.safety, OperationType.Update, 'MetadataUpdate');
   return client.withStatefulSession(async (current) => {
     const lock = await lockObject(current.http, current.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
     let writeAttempted = false;
@@ -71,7 +72,7 @@ export async function writeMetadataUpdate(ctx: SapWriteContext, existingPackage?
         objectUrl,
         body,
         lock.lockHandle,
-        type === 'SKTD' ? SKTD_V2_CONTENT_TYPE : vendorContentTypeForType(type),
+        vendorContentTypeForType(type),
         transport ?? (lock.corrNr || undefined),
       );
       return result;

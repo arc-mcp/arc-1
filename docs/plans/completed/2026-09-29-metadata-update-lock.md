@@ -34,10 +34,11 @@ Roadmap checked: no existing item covers this defect; no roadmap impact.
 The five read/merge paths now read through an isolated stateful client after LOCK.
 TTYP still uses its existing full-replacement contract. SKTD validation may briefly
 lock before refusing an edit; dry-run remains unlocked. Failed reads never PUT;
-attempted writes invalidate caches even when PUT or UNLOCK fails.
+attempted writes invalidate caches even when PUT or UNLOCK fails. The Update gate
+runs before LOCK; SKTD dry-run remains available with writes disabled.
 
 Local regression tests fail against the old handler and pass with the fix. The
-full suite passes (7,366 tests), as do typecheck, lint, policy, size budgets, build
+full suite passes, as do typecheck, lint, policy, size budgets, build
 and strict docs. The schema is unchanged.
 
 Live dispatcher reproduction on 2026-09-29: DOMA on SAP_BASIS 758 and 816, direct

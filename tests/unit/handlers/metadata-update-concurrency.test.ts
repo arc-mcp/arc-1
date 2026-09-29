@@ -113,6 +113,7 @@ describe('metadata updates preserve edits committed before the lock', () => {
     expect(put?.url).toContain('corrNr=REQ1');
     const reads = calls.filter((c) => c.method === 'GET' && c.url.includes(row.path));
     expect(reads.some((c) => c.locked && c.stateful)).toBe(true);
+    expect(calls.find((c) => c.url.includes('_action=LOCK'))?.stateful).toBe(true);
     expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
   });
 
@@ -145,16 +146,67 @@ describe('metadata updates preserve edits committed before the lock', () => {
     },
   );
 
+  it('refuses a read-only metadata update before acquiring a lock', async () => {
+    const row = cases[0]!;
+    const calls = sap(row);
+    const client = createClient();
+    const result = await handleToolCall(
+      client.withSafety({ ...client.safety, allowWrites: false }),
+      DEFAULT_CONFIG,
+      'SAPWrite',
+      {
+        action: 'update',
+        type: row.type,
+        name: row.name,
+        ...row.patch,
+      },
+    );
+    expect(result.isError).toBe(true);
+    expect(calls.some((c) => c.method === 'POST' || c.method === 'PUT')).toBe(false);
+  });
+
+  it.each([undefined, 'put'] as const)('cache failure does not replace the %s write outcome', async (failure) => {
+    const row = cases[0]!;
+    sap(row, failure);
+    const cache = new CachingLayer(new MemoryCache());
+    vi.spyOn(cache, 'invalidate').mockImplementation(() => {
+      throw new Error('SQLITE_BUSY');
+    });
+    const result = await handleToolCall(
+      createClient(),
+      DEFAULT_CONFIG,
+      'SAPWrite',
+      {
+        action: 'update',
+        type: row.type,
+        name: row.name,
+        ...row.patch,
+      },
+      undefined,
+      undefined,
+      cache,
+    );
+    expect(result.isError).toBe(failure ? true : undefined);
+    expect(result.content[0]!.text).toContain(failure ? 'status 400' : 'Successfully updated');
+    expect(result.content[0]!.text).not.toContain('SQLITE_BUSY');
+  });
+
   it('keeps SKTD dry-run unlocked and unwritten', async () => {
     const row = cases[4]!;
     const calls = sap(row);
-    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-      action: 'update',
-      type: row.type,
-      name: row.name,
-      ...row.patch,
-      dryRun: true,
-    });
+    const client = createClient();
+    const result = await handleToolCall(
+      client.withSafety({ ...client.safety, allowWrites: false }),
+      DEFAULT_CONFIG,
+      'SAPWrite',
+      {
+        action: 'update',
+        type: row.type,
+        name: row.name,
+        ...row.patch,
+        dryRun: true,
+      },
+    );
     expect(result.isError, JSON.stringify(result)).toBeUndefined();
     expect(result.content[0]!.text).toContain('Dry run');
     expect(calls.some((c) => c.url.includes('_action=LOCK') || c.method === 'PUT')).toBe(false);
