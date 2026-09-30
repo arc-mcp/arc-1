@@ -61,7 +61,7 @@ method returned one harmless parameter; its execute method was empty and was nev
 The dispatcher checks also exercised read-only refusal, actual-package enforcement, malformed
 JSON before creation, repeated APLO saves, and missing-version refusal. A second session holding
 the APLO lock blocked an update; the same update succeeded after unlock without losing content. Templates were deleted
-before catalogs during cleanup, and every created object was confirmed absent with GET 404.
+before catalogs during cleanup, and every application-log, job and class fixture was confirmed absent with GET 404.
 758 allowed deletion of a referenced catalog, whereas 816 refused it: do not rely on uniform
 dependency enforcement. Prefer dependency-order cleanup on every release.
 
@@ -72,6 +72,11 @@ exercised. No job was scheduled.
 BTP catalog cleanup initially returned 400 “Publishing in process”. A later explicit delete succeeded,
 and GET 404 confirmed removal. No automatic mutation replay was added. Both fresh BTP APLO objects
 were deleted successfully; the earlier unexplained 403 below did not recur.
+
+The temporary BTP package itself could not be deleted: SAP returned `PAK/051` (not empty), although
+the repository search listed only the package and virtual-folder enumeration reported zero objects.
+The trial stopped before the discrepancy could be investigated further. Object-level GET 404 checks
+do not establish complete package cleanup; the package remains a tracked test artifact.
 
 ## Earlier BTP trial evidence — 2026-09-28
 
