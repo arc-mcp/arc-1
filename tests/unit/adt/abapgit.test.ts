@@ -344,6 +344,15 @@ describe('abapGit client helpers', () => {
     await expect(pullRepo(http, gitSafety, '000000000001')).rejects.toThrow(/rejecting object messages/);
   });
 
+  it('reports a rejecting object message in full when its text contains angle brackets', async () => {
+    const http = mockHttp(
+      '<abapObjects:abapObjects xmlns:abapObjects="http://www.sap.com/adt/abapgit/abapObjects"><abapObjects:abapObject><abapObjects:type>CLAS</abapObjects:type><abapObjects:name>ZCL_FOO</abapObjects:name><abapObjects:msgType>E</abapObjects:msgType><abapObjects:msgText>Include &lt;ZFOO_TOP&gt; not found; length &lt; 5 &amp; more</abapObjects:msgText></abapObjects:abapObject></abapObjects:abapObjects>',
+    );
+    await expect(pullRepo(http, gitSafety, '000000000001')).rejects.toThrow(
+      'E CLAS ZCL_FOO: Include <ZFOO_TOP> not found; length < 5 & more',
+    );
+  });
+
   it('pullRepo maps bridge XML errors to AdtApiError message with namespace', async () => {
     const http = mockHttp();
     (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(

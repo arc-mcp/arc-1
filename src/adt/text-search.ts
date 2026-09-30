@@ -9,7 +9,7 @@
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { SourceSearchResult } from './types.js';
-import { decodeXmlEntities, findDeepNodes, getNestedArray, parseXml } from './xml-parser.js';
+import { findDeepNodes, getNestedArray, parseXml } from './xml-parser.js';
 
 const MAX_SEARCH_RESULTS = 1_000;
 
@@ -56,7 +56,7 @@ export async function searchSource(
 /** Pull `objectName` out of an ADT proxy-URI mapping. */
 function parseProxyUriObjectName(uri: string): string {
   if (!uri) return '';
-  const content = /[?&]content=([^&]*)/.exec(uri.replace(/&amp;/g, '&'));
+  const content = /[?&]content=([^&]*)/.exec(uri);
   if (!content) return '';
   let decoded = content[1];
   try {
@@ -72,7 +72,7 @@ function parseProxyUriObjectName(uri: string): string {
 /** Pull the 1-based line number out of a text-line proxy URI. */
 function parseTextLineNumber(uri: string): number {
   if (!uri) return 0;
-  let decoded = uri.replace(/&amp;/g, '&');
+  let decoded = uri;
   try {
     decoded = decodeURIComponent(decoded);
   } catch {
@@ -83,7 +83,7 @@ function parseTextLineNumber(uri: string): number {
 }
 
 function cleanTextSearchSnippet(raw: unknown): string {
-  return decodeXmlEntities(String(raw ?? ''))
+  return String(raw ?? '')
     .replace(/<\/?b>/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -104,7 +104,7 @@ export function parseSourceSearchResults(xml: string): SourceSearchResult[] {
       // Ancestor nodes provide navigation context but contain no actual hits.
       if (matches.length === 0) continue;
 
-      const uri = decodeXmlEntities(String(obj['@_uri'] ?? ''));
+      const uri = String(obj['@_uri'] ?? '');
       const mainObject = (obj.adtMainObject ?? {}) as Record<string, unknown>;
       results.push({
         objectType: String(mainObject['@_type'] ?? ''),

@@ -110,6 +110,18 @@ describe('AdtApiError', () => {
       const err = new AdtApiError(shortHtml, 500, '/sap/bc/adt/activation', fullHtml);
       expect(err.message).toContain('Syntax error in program ZC_FBCLUBTP');
     });
+
+    // The tag stripper is for raw SAP bodies. Run over a composed message it deleted "<id>"-style
+    // placeholders and everything after a lone "<".
+    it('keeps angle brackets in a composed plain-text message', () => {
+      const err = new AdtApiError('Include <ZFOO_TOP> not found; length < 5 required', 400, '/p');
+      expect(err.message).toBe('ADT API error: status 400 at /p: Include <ZFOO_TOP> not found; length < 5 required');
+    });
+
+    it('still cleans a raw body that starts with whitespace', () => {
+      const err = new AdtApiError('\n <error><message lang="EN">Syntax error in line 5</message></error>', 400, '/p');
+      expect(err.message).toBe('ADT API error: status 400 at /p: Syntax error in line 5');
+    });
   });
 
   describe('extractAllMessages', () => {
