@@ -4,6 +4,8 @@
  * Verified fixtures:
  * - DEMO_CDS_SUMDIST -> SCARR + SPFLI on SAP_BASIS 750 and 758
  * - SCARR data preview is bound on the 758 target; the available 750 endpoint is unbound
+ * - BSEG is a cluster table in RFBLG on non-HANA ECC 750 SP23 (principal propagation, 2026-09-26);
+ *   cluster cases skip when the target has no active BSEG cluster fixture
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -19,6 +21,7 @@ describe('experimental data-source blocklist live contract', () => {
   let client: AdtClient;
   let basisRelease = 0;
   let dataPreviewAvailable = false;
+  let bsegClusterContainer = '';
 
   beforeAll(async () => {
     requireSapCredentials();
@@ -35,7 +38,20 @@ describe('experimental data-source blocklist live contract', () => {
     } catch (error) {
       if (!(error instanceof AdtApiError && error.statusCode === 404)) throw error;
     }
+    if (dataPreviewAvailable) {
+      const { rows } = await client.runQuery(
+        "SELECT TABCLASS, SQLTAB FROM DD02L WHERE TABNAME = 'BSEG' AND AS4LOCAL = 'A'",
+        2,
+      );
+      if (rows.length === 1 && rows[0]?.TABCLASS?.trim() === 'CLUSTER') bsegClusterContainer = rows[0].SQLTAB!.trim();
+    }
   });
+
+  const requireClusterFixture = (ctx: Parameters<typeof skipTest>[0]): void => {
+    if (!bsegClusterContainer) {
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: BSEG is not an active cluster table on this target`);
+    }
+  };
 
   afterEach(() => vi.restoreAllMocks());
 
@@ -128,6 +144,32 @@ describe('experimental data-source blocklist live contract', () => {
     const strict = withBlocked(['USR02']);
     await expect(strict.runTableQuery('CdsFrwk_flight_booking', { maxRows: 1 })).rejects.toMatchObject({
       code: 'DATA_LINEAGE_UNRESOLVED',
+    });
+  });
+
+  it('allows a live cluster table whose physical container is not blocked', async (ctx) => {
+    requireClusterFixture(ctx);
+    const strict = withBlocked(['USR02']);
+    const result = await strict.runTableQuery('BSEG', { columns: ['BUKRS'], maxRows: 1 });
+    expect(result.columns).toEqual(['BUKRS']);
+  });
+
+  it('denies a live cluster table through its blocked physical container', async (ctx) => {
+    requireClusterFixture(ctx);
+    const strict = withBlocked([bsegClusterContainer]);
+    await expect(strict.runTableQuery('BSEG', { columns: ['BUKRS'], maxRows: 1 })).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      sourcePath: ['BSEG', bsegClusterContainer],
+      matchedSource: bsegClusterContainer,
+    });
+  });
+
+  it('keeps the live physical container itself unresolved', async (ctx) => {
+    requireClusterFixture(ctx);
+    const strict = withBlocked(['USR02']);
+    await expect(strict.runQuery(`SELECT BUKRS FROM ${bsegClusterContainer}`, 1)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      sourcePath: [bsegClusterContainer],
     });
   });
 

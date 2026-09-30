@@ -852,7 +852,9 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
     // UIAD is excluded: SAP refuses LADI edits outside the ABAP Cloud language version
     // (400 'Editing of LADIs with ALV "Standard" not allowed in workbench tools'), which is a
     // different failure class than the 403/409 package outcomes this test asserts.
-    const codes = Object.keys(SDO_REGISTRY).filter((c) => c !== 'UIAD');
+    // Job objects need an existing class/catalog plus additionalCreationProperties, so they cannot
+    // use this metadata-only create fixture. Their read coverage is in app-objects.integration.test.ts.
+    const codes = Object.keys(SDO_REGISTRY).filter((c) => !['UIAD', 'SAJC', 'SAJT'].includes(c));
 
     // Load ADT discovery so SDO availability is gated per type — these collections are 8.16+ and absent
     // on older tenants (where an unconditional POST would 404/405, not the package-assignment we assert).

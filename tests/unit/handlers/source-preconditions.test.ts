@@ -82,7 +82,7 @@ beforeEach(() => {
   resetCachedFeatures();
 });
 
-it.each(['update', 'edit_unit'])(
+it.each(['update', 'edit_unit', 'add_unit'])(
   'refuses %s after an intervening edit, releases the lock, and lets a fresh read recover',
   async (action) => {
     const state = backend({ drift: true });
@@ -93,8 +93,13 @@ it.each(['update', 'edit_unit'])(
     const args = {
       ...base,
       action,
-      unit: action === 'edit_unit' ? 'target' : undefined,
-      source: action === 'edit_unit' ? replacement : initial.replace("'old'", "'new'"),
+      unit: action === 'add_unit' ? 'added' : action === 'edit_unit' ? 'target' : undefined,
+      source:
+        action === 'add_unit'
+          ? "FORM added.\n WRITE 'new'.\nENDFORM."
+          : action === 'edit_unit'
+            ? replacement
+            : initial.replace("'old'", "'new'"),
       expectedSourceHash: snapshot.sourceHash,
     };
     const refused = await handleToolCall(client, config, 'SAPWrite', args);
@@ -284,6 +289,7 @@ it.each(['', '  ', null])('treats an empty optional hash as omitted: %j', async 
 it.each([
   { type: 'INCL', action: 'update' },
   { type: 'INCL', action: 'edit_unit' },
+  { type: 'INCL', action: 'add_unit' },
   { type: 'FUNC', action: 'update' },
 ])('round trips an editable hash for $type $action in the same group', async ({ type, action }) => {
   const initialSource = type === 'FUNC' ? "FUNCTION zguard.\n WRITE 'old'.\nENDFUNCTION." : initial;
@@ -298,8 +304,13 @@ it.each([
   const result = await handleToolCall(client, config, 'SAPWrite', {
     ...object,
     action,
-    unit: action === 'edit_unit' ? 'target' : undefined,
-    source: action === 'edit_unit' ? replacement : initialSource.replace("'old'", "'new'"),
+    unit: action === 'add_unit' ? 'added' : action === 'edit_unit' ? 'target' : undefined,
+    source:
+      action === 'add_unit'
+        ? "FORM added.\n WRITE 'new'.\nENDFORM."
+        : action === 'edit_unit'
+          ? replacement
+          : initialSource.replace("'old'", "'new'"),
     expectedSourceHash: snapshot.sourceHash,
   });
   expect(result.isError, result.content[0]!.text).toBeUndefined();

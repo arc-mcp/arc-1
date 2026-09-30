@@ -97,6 +97,63 @@ describe('SAPWrite handler — create / batch_create', () => {
       expect(callMatching('PUT', '/sap/bc/adt/ddic/desd/ZARC1_SDO/source/main')).toBeDefined();
     });
 
+    it.each([
+      ['APLO', 'applicationlog/objects', 'APLO/TYP', 'v1', undefined],
+      ['SAJC', 'applicationjob/catalogs', 'SAJC', 'v2', 'className'],
+      ['SAJT', 'applicationjob/templates', 'SAJT', 'v2', 'catalogName'],
+    ])(
+      'creates %s through its advertised metadata and JSON contracts',
+      async (type, path, createType, version, reference) => {
+        const source = JSON.stringify({
+          formatVersion: '1',
+          header: { description: 'x', originalLanguage: 'en' },
+          ...(reference ? { generalInformation: { [reference]: 'ZARC1_REF' } } : {}),
+        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type,
+          name: 'ZARC1_APP',
+          package: '$TMP',
+          source,
+        });
+        expect(result.isError).toBeFalsy();
+        const post = callMatching('POST', `/sap/bc/adt/${path}`);
+        expect(post?.[1].body).toContain(`adtcore:type="${createType}"`);
+        expect(post?.[1].headers?.['Content-Type']).toBe(`application/vnd.sap.adt.blues.${version}+xml`);
+        if (reference) expect(post?.[1].body).toContain(`&quot;${reference}&quot;:&quot;ZARC1_REF&quot;`);
+        expect(callMatching('PUT', `/sap/bc/adt/${path}/ZARC1_APP/source/main`)?.[1].body).toBe(source);
+        expect(result.content[0]?.text).toContain(type === 'APLO' ? 'active immediately' : 'Next step: SAPActivate');
+      },
+    );
+
+    it.each(['SAJC', 'SAJT'])('refuses %s without its creation reference before any POST', async (type) => {
+      for (const source of [undefined, '{"generalInformation":{}}']) {
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type,
+          name: 'ZARC1_APP',
+          package: '$TMP',
+          source,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('source.generalInformation.');
+      }
+      expect(mockFetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false);
+    });
+
+    it('reports that APLO updates take effect without activation', async () => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'update',
+        type: 'APLO',
+        name: 'ZARC1_APP',
+        source: '{"formatVersion":"1"}',
+      });
+      expect(result.isError).toBeFalsy();
+      expect(callMatching('PUT', '/sap/bc/adt/applicationlog/objects/ZARC1_APP/source/main')).toBeDefined();
+      expect(result.content[0]?.text).toContain('active immediately');
+      expect(result.content[0]?.text).not.toContain('SAPActivate');
+    });
+
     it('update without source returns an actionable error', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'update',

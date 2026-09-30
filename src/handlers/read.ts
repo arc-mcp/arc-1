@@ -25,7 +25,7 @@ import { getAppInfo } from '../adt/ui5-repository.js';
 import { getVersionDiff } from '../adt/version-diff.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsElements } from '../context/cds-deps.js';
-import { grepSource } from '../context/grep.js';
+import { grepSource, grepSourceBlocks } from '../context/grep.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
@@ -484,7 +484,9 @@ export async function handleSAPRead(
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUGR': {
-      const expand = Boolean(args.expand_includes);
+      // grep searches the include sources, so it implies the expansion; without the
+      // sources there is nothing to search and the metadata would ignore the pattern.
+      const expand = Boolean(args.expand_includes) || Boolean(args.grep);
       if (expand) {
         // Recursive expansion: the function module bodies (FUNCTION…ENDFUNCTION) and
         // PBO/PAI modules live in nested includes (LZ<grp>U01, …O…, …I…) pulled in from
@@ -492,10 +494,20 @@ export async function handleSAPRead(
         // the include graph (depth/count-capped, cycle-guarded). Dynpros + GUI status are
         // not included: ADT doesn't expose them over REST (SAPGUI-only).
         const { blocks, truncated } = await client.getFunctionGroupExpanded(name, { version: effectiveVersion });
+        if (args.grep) {
+          // Each include on its own, so a line number counts within the include it names.
+          const g = grepSourceBlocks(blocks, String(args.grep));
+          const note = truncated
+            ? '\n\n=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched. ' +
+              'Search a known include with SAPRead(type="INCL", name="...", grep="...") or a function module with type="FUNC", group="...", name="...", grep="...".'
+            : '';
+          const output = `${g.output}${note}`;
+          return g.invalidPattern ? errorResult(output) : textResult(output);
+        }
         const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
         if (truncated) {
           parts.push(
-            '=== [truncated] ===\nInclude cap reached; some nested includes were not expanded. ' +
+            '=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not expanded. ' +
               'Read remaining includes individually with SAPRead(type="INCL", name="...").',
           );
         }

@@ -810,6 +810,7 @@ export const NAME_CASE_GUARD_ACTIONS = new Set([
   'update',
   'edit_method',
   'edit_unit',
+  'add_unit',
   'delete',
   'edit_text_symbols',
 ]);
@@ -851,8 +852,8 @@ export async function enforceAllowedPackageForObjectUrl(
  * (create gates the caller-supplied package like every create; update/delete resolve the object's true
  * package under the metadata Accept). The `source` param carries AFF JSON or DDL text per the type's
  * registry sourceFormat — the JSON ones are parse-validated before the
- * PUT; ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply. Create leaves the
- * object inactive — callers follow with SAPActivate (never auto-activated).
+ * PUT; ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply. SAP controls
+ * activation: APLO saves are immediately active; other types need SAPActivate.
  */
 export async function handleServerDrivenObjectWrite(
   client: AdtClient,
@@ -871,6 +872,10 @@ export async function handleServerDrivenObjectWrite(
   const transport = args.transport as string | undefined;
   const objUrl = serverDrivenObjectUrl(type, name);
   const metadataAccept = serverDrivenMetadataContentType(type);
+  const activationHint =
+    type === 'APLO'
+      ? 'APLO changes are active immediately; no activation is required.'
+      : `Next step: SAPActivate(type="${type}", name="${name}").`;
 
   const invalidate = (): void => {
     cachingLayer?.invalidate(type, name, 'all');
@@ -908,10 +913,21 @@ export async function handleServerDrivenObjectWrite(
       // that the caller never asked for and has to clean up by hand.
       const validated = hasSourceArg ? validateSource() : undefined;
       if (validated && !validated.ok) return validated.result;
+      // The job creation wizard requires this reference before the source PUT (notably on 758).
+      let creationProperties: Record<string, string> | undefined;
+      if (type === 'SAJC' || type === 'SAJT') {
+        const field = type === 'SAJC' ? 'className' : 'catalogName';
+        const reference = validated?.ok ? JSON.parse(validated.source)?.generalInformation?.[field] : undefined;
+        if (typeof reference !== 'string' || !reference.trim()) {
+          return errorResult(`Creating ${type} requires source.generalInformation.${field} in the AFF JSON source.`);
+        }
+        creationProperties = { [field]: reference };
+      }
       await createServerDrivenObject(client.http, client.safety, type, name, {
         package: pkg,
         description,
         transport,
+        creationProperties,
       });
       let wroteSource = false;
       if (validated?.ok) {
@@ -920,8 +936,7 @@ export async function handleServerDrivenObjectWrite(
       }
       invalidate();
       return textResult(
-        `Created ${type} ${name} in package ${pkg}${wroteSource ? ' and wrote source' : ''}.\n` +
-          `Next step: SAPActivate(type="${type}", name="${name}").`,
+        `Created ${type} ${name} in package ${pkg}${wroteSource ? ' and wrote source' : ''}.\n${activationHint}`,
       );
     }
     case 'update': {
@@ -935,7 +950,7 @@ export async function handleServerDrivenObjectWrite(
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
       await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.source, { transport });
       invalidate();
-      return textResult(`Updated source of ${type} ${name}.\nNext step: SAPActivate(type="${type}", name="${name}").`);
+      return textResult(`Updated source of ${type} ${name}.\n${activationHint}`);
     }
     case 'delete': {
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);

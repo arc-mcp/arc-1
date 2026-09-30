@@ -42,7 +42,7 @@ import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
 import { writeUiad } from './write/uiad.js';
-import { writeActionEditUnit } from './write/unit-surgery.js';
+import { writeActionUnit } from './write/unit-surgery.js';
 import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
 import {
   DOMA_WRITE_UNAVAILABLE_HINT,
@@ -110,8 +110,8 @@ export async function handleSAPWrite(
   }
 
   // For TABL update/delete/edit_method, the existing object may live at /tables/
-  // (transparent) or /structures/ (DDIC structure). Resolve once via the client's
-  // cached URL probe. For 'create' the default /tables/ URL is correct (we only
+  // (transparent) or /structures/ (DDIC structure). Resolve it fresh from SAP on every
+  // mutation (resolveTablObjectUrlForWrite). For 'create' the default /tables/ URL is correct (we only
   // create transparent tables today; structure creation is out of scope).
   //
   // For FUNC, the URL has the parent function group baked into the path:
@@ -258,8 +258,9 @@ export async function handleSAPWrite(
       return writeActionCreate(ctx);
     case 'edit_method':
       return writeActionEditMethod(ctx);
+    case 'add_unit':
     case 'edit_unit':
-      return writeActionEditUnit(ctx);
+      return writeActionUnit(ctx);
 
     // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
     case 'edit_class_definition':
@@ -291,7 +292,7 @@ export async function handleSAPWrite(
       return writeActionEditTextSymbols(ctx);
     default:
       return errorResult(
-        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
+        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, add_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
       );
   }
 }

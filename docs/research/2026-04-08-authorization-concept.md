@@ -2,7 +2,14 @@
 
 **Date:** 2026-04-07
 **Author:** ralphex / marianfoo
-**Status:** Draft v3
+**Status:** Historical draft v3 — not an operator role template
+
+**Correction (2026-09-29):** `S_ADT_RES` has the `URI` field, no `ACTVT` or
+`HTTP_METHOD` field. The URI permission covers every HTTP method for that resource;
+endpoint-specific SAP checks and ARC-1 policy still apply. The remaining role sketches
+and endpoint inventory below are historical proposals, not verified least-privilege
+roles. Use the current [startup-user guidance](../../docs_page/btp-destination-setup.md#startup-user-authorizations)
+and a trace of the intended operations when configuring a role.
 
 ---
 
@@ -86,7 +93,7 @@ This section documents exactly which SAP authorization objects are needed for ea
 
 | Auth Object | Purpose | Key Fields |
 |-------------|---------|------------|
-| **S_ADT_RES** | ADT HTTP resource access | `ADT_URI` (URI pattern), `ACTVT` (01=Read, 02=Modify) |
+| **S_ADT_RES** | ADT HTTP resource access | `URI` (resource path pattern; all HTTP methods) |
 | **S_DEVELOP** | ABAP Workbench development | `ACTVT` (01=Display, 02=Change, 06=Delete, 07=Activate), `DEVCLASS` (package), `OBJTYPE` (PROG, CLAS, etc.), `OBJNAME` (object name) |
 | **S_TRANSPRT** | Transport Organizer | `ACTVT` (01=Display, 02=Change, 43=Release), `TTYPE` (K=Workbench, W=Customizing) |
 | **S_CTS_ADMI** | CTS Administration | `CTS_ADMFCT` (TABL=List, SYSC=Cross-client) |
@@ -100,46 +107,46 @@ Every HTTP call ARC-1 makes to SAP, with the exact SAP authorization objects che
 
 | ARC-1 Function | ADT Endpoint | HTTP Method | SAP Auth Objects | Notes |
 |----------------|-------------|-------------|------------------|-------|
-| `getProgram()` | `/sap/bc/adt/programs/programs/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=PROG) | |
-| `getClass()` | `/sap/bc/adt/oo/classes/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=CLAS) | Also fetches includes (definitions, implementations, macros, testclasses) |
-| `getInterface()` | `/sap/bc/adt/oo/interfaces/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=INTF) | |
-| `getFunction()` | `/sap/bc/adt/functions/groups/{group}/fmodules/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=FUGR) | |
-| `getFunctionGroup()` | `/sap/bc/adt/functions/groups/{name}` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=FUGR) | Metadata only |
-| `getInclude()` | `/sap/bc/adt/programs/includes/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=PROG) | |
-| `getDdls()` | `/sap/bc/adt/ddic/ddl/sources/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=DDLS) | CDS View |
-| `getBdef()` | `/sap/bc/adt/bo/behaviordefinitions/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=BDEF) | RAP Behavior |
-| `getSrvd()` | `/sap/bc/adt/ddic/srvd/sources/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=SRVD) | Service Definition |
-| `getDdlx()` | `/sap/bc/adt/ddic/ddlx/sources/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=DDLX) | Metadata Extension |
-| `getSrvb()` | `/sap/bc/adt/businessservices/bindings/{name}` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=SRVB) | Service Binding |
-| `getTable()` | `/sap/bc/adt/ddic/tables/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=TABL) | |
-| `getView()` | `/sap/bc/adt/ddic/views/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=VIEW) | On-prem only |
-| `getStructure()` | `/sap/bc/adt/ddic/structures/{name}/source/main` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=STRU) | |
-| `getDomain()` | `/sap/bc/adt/ddic/domains/{name}` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=DOMA) | XML metadata |
-| `getDataElement()` | `/sap/bc/adt/ddic/dataelements/{name}` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=DTEL) | XML metadata |
-| `getTransaction()` | `/sap/bc/adt/vit/wb/object_type/trant/object_name/{name}` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=TRAN) | |
-| `getMessages()` | `/sap/bc/adt/msg/messages/{name}` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01, OBJTYPE=MSAG) | |
-| `getTextElements()` | `/sap/bc/adt/programs/programs/{name}/textelements` | GET | S_ADT_RES (ACTVT=01), S_DEVELOP (ACTVT=01) | |
-| `getVariants()` | `/sap/bc/adt/programs/programs/{name}/variants` | GET | S_ADT_RES (ACTVT=01) | |
+| `getProgram()` | `/sap/bc/adt/programs/programs/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=PROG) | |
+| `getClass()` | `/sap/bc/adt/oo/classes/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=CLAS) | Also fetches includes (definitions, implementations, macros, testclasses) |
+| `getInterface()` | `/sap/bc/adt/oo/interfaces/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=INTF) | |
+| `getFunction()` | `/sap/bc/adt/functions/groups/{group}/fmodules/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=FUGR) | |
+| `getFunctionGroup()` | `/sap/bc/adt/functions/groups/{name}` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=FUGR) | Metadata only |
+| `getInclude()` | `/sap/bc/adt/programs/includes/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=PROG) | |
+| `getDdls()` | `/sap/bc/adt/ddic/ddl/sources/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=DDLS) | CDS View |
+| `getBdef()` | `/sap/bc/adt/bo/behaviordefinitions/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=BDEF) | RAP Behavior |
+| `getSrvd()` | `/sap/bc/adt/ddic/srvd/sources/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=SRVD) | Service Definition |
+| `getDdlx()` | `/sap/bc/adt/ddic/ddlx/sources/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=DDLX) | Metadata Extension |
+| `getSrvb()` | `/sap/bc/adt/businessservices/bindings/{name}` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=SRVB) | Service Binding |
+| `getTable()` | `/sap/bc/adt/ddic/tables/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=TABL) | |
+| `getView()` | `/sap/bc/adt/ddic/views/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=VIEW) | On-prem only |
+| `getStructure()` | `/sap/bc/adt/ddic/structures/{name}/source/main` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=STRU) | |
+| `getDomain()` | `/sap/bc/adt/ddic/domains/{name}` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=DOMA) | XML metadata |
+| `getDataElement()` | `/sap/bc/adt/ddic/dataelements/{name}` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=DTEL) | XML metadata |
+| `getTransaction()` | `/sap/bc/adt/vit/wb/object_type/trant/object_name/{name}` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=TRAN) | |
+| `getMessages()` | `/sap/bc/adt/msg/messages/{name}` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01, OBJTYPE=MSAG) | |
+| `getTextElements()` | `/sap/bc/adt/programs/programs/{name}/textelements` | GET | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01) | |
+| `getVariants()` | `/sap/bc/adt/programs/programs/{name}/variants` | GET | S_ADT_RES (URI covering the endpoint) | |
 
 #### Search & Discovery (Viewer role)
 
 | ARC-1 Function | ADT Endpoint | HTTP Method | SAP Auth Objects | Notes |
 |----------------|-------------|-------------|------------------|-------|
-| `searchObject()` | `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query={q}` | GET | S_ADT_RES (ACTVT=01) | Quick search |
-| `searchSource()` | `/sap/bc/adt/repository/informationsystem/textSearch?searchString={q}` | GET | S_ADT_RES (ACTVT=01) | Source code search |
-| `getPackageContents()` | `/sap/bc/adt/repository/informationsystem/search?packageName={pkg}` | GET | S_ADT_RES (ACTVT=01) | Switched from `nodestructure` POST in 2026-05 — that endpoint returned object descriptions misaligned with names. Search endpoint returns reliable descriptions and avoids the CSRF round-trip. |
-| `getSystemInfo()` | `/sap/bc/adt/core/discovery` | GET | S_ADT_RES (ACTVT=01) | Atom service document |
-| `getInstalledComponents()` | `/sap/bc/adt/system/components` | GET | S_ADT_RES (ACTVT=01) | |
+| `searchObject()` | `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query={q}` | GET | S_ADT_RES (URI covering the endpoint) | Quick search |
+| `searchSource()` | `/sap/bc/adt/repository/informationsystem/textSearch?searchString={q}` | GET | S_ADT_RES (URI covering the endpoint) | Source code search |
+| `getPackageContents()` | `/sap/bc/adt/repository/informationsystem/search?packageName={pkg}` | GET | S_ADT_RES (URI covering the endpoint) | Switched from `nodestructure` POST in 2026-05 — that endpoint returned object descriptions misaligned with names. Search endpoint returns reliable descriptions and avoids the CSRF round-trip. |
+| `getSystemInfo()` | `/sap/bc/adt/core/discovery` | GET | S_ADT_RES (URI covering the endpoint) | Atom service document |
+| `getInstalledComponents()` | `/sap/bc/adt/system/components` | GET | S_ADT_RES (URI covering the endpoint) | |
 
 #### Code Intelligence (Viewer role)
 
 | ARC-1 Function | ADT Endpoint | HTTP Method | SAP Auth Objects | Notes |
 |----------------|-------------|-------------|------------------|-------|
-| `findDefinition()` | `/sap/bc/adt/navigation/target` | **POST** | S_ADT_RES (ACTVT=01,02) | **POST needed for read!** |
-| `findReferences()` | `/sap/bc/adt/repository/informationsystem/usageReferences` | GET | S_ADT_RES (ACTVT=01) | |
-| `findWhereUsed()` | `/sap/bc/adt/repository/informationsystem/usageReferences` | **POST** | S_ADT_RES (ACTVT=01,02) | **POST needed for read!** |
-| `getWhereUsedScope()` | `/sap/bc/adt/repository/informationsystem/usageReferences/scope` | **POST** | S_ADT_RES (ACTVT=01,02) | **POST needed for read!** |
-| `getCompletion()` | `/sap/bc/adt/abapsource/codecompletion/proposals` | **POST** | S_ADT_RES (ACTVT=01,02) | **POST needed for read!** |
+| `findDefinition()` | `/sap/bc/adt/navigation/target` | **POST** | S_ADT_RES (URI covering the endpoint) | **POST needed for read!** |
+| `findReferences()` | `/sap/bc/adt/repository/informationsystem/usageReferences` | GET | S_ADT_RES (URI covering the endpoint) | |
+| `findWhereUsed()` | `/sap/bc/adt/repository/informationsystem/usageReferences` | **POST** | S_ADT_RES (URI covering the endpoint) | **POST needed for read!** |
+| `getWhereUsedScope()` | `/sap/bc/adt/repository/informationsystem/usageReferences/scope` | **POST** | S_ADT_RES (URI covering the endpoint) | **POST needed for read!** |
+| `getCompletion()` | `/sap/bc/adt/abapsource/codecompletion/proposals` | **POST** | S_ADT_RES (URI covering the endpoint) | **POST needed for read!** |
 
 #### Data Preview & SQL (requires `data` or `sql` scope)
 
@@ -147,34 +154,34 @@ These endpoints access **live SAP table data**, not source code. They are separa
 
 | ARC-1 Function | ADT Endpoint | HTTP Method | SAP Auth Objects | Required Scope | Notes |
 |----------------|-------------|-------------|------------------|----------------|-------|
-| `getTableContents()` | `/sap/bc/adt/datapreview/ddic?ddicEntityName={name}` | **POST** | S_ADT_RES (ACTVT=01,02), S_SQL_VIEW | `data` | Named table preview — reads actual business data |
-| `runQuery()` | `/sap/bc/adt/datapreview/freestyle` | **POST** | S_ADT_RES (ACTVT=01,02), S_SQL_VIEW | `sql` | **Freestyle SQL — most privileged data access** |
+| `getTableContents()` | `/sap/bc/adt/datapreview/ddic?ddicEntityName={name}` | **POST** | S_ADT_RES (URI covering the endpoint), S_SQL_VIEW | `data` | Named table preview — reads actual business data |
+| `runQuery()` | `/sap/bc/adt/datapreview/freestyle` | **POST** | S_ADT_RES (URI covering the endpoint), S_SQL_VIEW | `sql` | **Freestyle SQL — most privileged data access** |
 
 #### Diagnostics & Testing (Viewer role)
 
 | ARC-1 Function | ADT Endpoint | HTTP Method | SAP Auth Objects | Notes |
 |----------------|-------------|-------------|------------------|-------|
-| `syntaxCheck()` | `/sap/bc/adt/checkruns` | **POST** | S_ADT_RES (ACTVT=01,02) | POST for read |
-| `runUnitTests()` | `/sap/bc/adt/abapunit/testruns` | **POST** | S_ADT_RES (ACTVT=01,02) | POST for read |
-| `runAtcCheck()` | `/sap/bc/adt/atc/runs?worklistId=1` | **POST** | S_ADT_RES (ACTVT=01,02) | Creates then fetches worklist |
-| `listDumps()` | `/sap/bc/adt/runtime/dumps` | GET | S_ADT_RES (ACTVT=01) | |
-| `getDump()` | `/sap/bc/adt/runtime/dump/{id}` + `/formatted` | GET | S_ADT_RES (ACTVT=01) | |
-| `listTraces()` | `/sap/bc/adt/runtime/traces/abaptraces` | GET | S_ADT_RES (ACTVT=01) | |
-| `getTraceHitlist()` | `/sap/bc/adt/runtime/traces/abaptraces/{id}/hitlist` | GET | S_ADT_RES (ACTVT=01) | |
-| `getTraceStatements()` | `/sap/bc/adt/runtime/traces/abaptraces/{id}/statements` | GET | S_ADT_RES (ACTVT=01) | |
-| `getTraceDbAccesses()` | `/sap/bc/adt/runtime/traces/abaptraces/{id}/dbAccesses` | GET | S_ADT_RES (ACTVT=01) | |
+| `syntaxCheck()` | `/sap/bc/adt/checkruns` | **POST** | S_ADT_RES (URI covering the endpoint) | POST for read |
+| `runUnitTests()` | `/sap/bc/adt/abapunit/testruns` | **POST** | S_ADT_RES (URI covering the endpoint) | POST for read |
+| `runAtcCheck()` | `/sap/bc/adt/atc/runs?worklistId=1` | **POST** | S_ADT_RES (URI covering the endpoint) | Creates then fetches worklist |
+| `listDumps()` | `/sap/bc/adt/runtime/dumps` | GET | S_ADT_RES (URI covering the endpoint) | |
+| `getDump()` | `/sap/bc/adt/runtime/dump/{id}` + `/formatted` | GET | S_ADT_RES (URI covering the endpoint) | |
+| `listTraces()` | `/sap/bc/adt/runtime/traces/abaptraces` | GET | S_ADT_RES (URI covering the endpoint) | |
+| `getTraceHitlist()` | `/sap/bc/adt/runtime/traces/abaptraces/{id}/hitlist` | GET | S_ADT_RES (URI covering the endpoint) | |
+| `getTraceStatements()` | `/sap/bc/adt/runtime/traces/abaptraces/{id}/statements` | GET | S_ADT_RES (URI covering the endpoint) | |
+| `getTraceDbAccesses()` | `/sap/bc/adt/runtime/traces/abaptraces/{id}/dbAccesses` | GET | S_ADT_RES (URI covering the endpoint) | |
 
 #### Write Operations (Developer role)
 
 | ARC-1 Function | ADT Endpoint | HTTP Method | SAP Auth Objects | Notes |
 |----------------|-------------|-------------|------------------|-------|
-| `lockObject()` | `{objectUrl}?_action=LOCK&accessMode=MODIFY` | POST | S_ADT_RES (ACTVT=02), S_DEVELOP (ACTVT=02) | Prerequisite for edit |
-| `unlockObject()` | `{objectUrl}?_action=UNLOCK&lockHandle={h}` | POST | S_ADT_RES (ACTVT=02) | Cleanup after edit |
-| `createObject()` | `{objectUrl}?corrNr={transport}` | POST | S_ADT_RES (ACTVT=02), S_DEVELOP (ACTVT=01,02) | Needs transport if transportable pkg |
-| `updateSource()` | `{sourceUrl}?lockHandle={h}&corrNr={t}` | PUT | S_ADT_RES (ACTVT=02), S_DEVELOP (ACTVT=02) | Needs lock handle |
-| `deleteObject()` | `{objectUrl}?lockHandle={h}&corrNr={t}` | DELETE | S_ADT_RES (ACTVT=02), S_DEVELOP (ACTVT=06) | |
-| `activate()` | `/sap/bc/adt/activation?method=activate` | POST | S_ADT_RES (ACTVT=02), S_DEVELOP (ACTVT=07) | Single object |
-| `activateBatch()` | `/sap/bc/adt/activation?method=activate` | POST | S_ADT_RES (ACTVT=02), S_DEVELOP (ACTVT=07) | Multiple objects |
+| `lockObject()` | `{objectUrl}?_action=LOCK&accessMode=MODIFY` | POST | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=02) | Prerequisite for edit |
+| `unlockObject()` | `{objectUrl}?_action=UNLOCK&lockHandle={h}` | POST | S_ADT_RES (URI covering the endpoint) | Cleanup after edit |
+| `createObject()` | `{objectUrl}?corrNr={transport}` | POST | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=01,02) | Needs transport if transportable pkg |
+| `updateSource()` | `{sourceUrl}?lockHandle={h}&corrNr={t}` | PUT | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=02) | Needs lock handle |
+| `deleteObject()` | `{objectUrl}?lockHandle={h}&corrNr={t}` | DELETE | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=06) | |
+| `activate()` | `/sap/bc/adt/activation?method=activate` | POST | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=07) | Single object |
+| `activateBatch()` | `/sap/bc/adt/activation?method=activate` | POST | S_ADT_RES (URI covering the endpoint), S_DEVELOP (ACTVT=07) | Multiple objects |
 
 #### Transport Operations (Developer role)
 
@@ -189,7 +196,7 @@ These endpoints access **live SAP table data**, not source code. They are separa
 
 | ARC-1 Function | ADT Endpoint | HTTP Method | SAP Auth Objects | Notes |
 |----------------|-------------|-------------|------------------|-------|
-| `fetchCsrfToken()` | `/sap/bc/adt/core/discovery` | HEAD | S_ADT_RES (ACTVT=01) | Automatic, every state-changing request |
+| `fetchCsrfToken()` | `/sap/bc/adt/core/discovery` | HEAD | S_ADT_RES (URI covering the endpoint) | Automatic, every state-changing request |
 
 ### 3.3 Critical Insight: POST Needed for Read-Only Users
 
@@ -205,14 +212,10 @@ These endpoints access **live SAP table data**, not source code. They are separa
 - `getTableContents()` — POST
 - `runQuery()` — POST
 
-**If you restrict S_ADT_RES to ACTVT=01 (GET only), read-only users will not be able to:**
-- Navigate code (go-to-definition)
-- Find where objects are used
-- Get code completion suggestions
-- Run syntax checks or unit tests
-- Preview table contents
-
-**The correct read-only S_ADT_RES configuration is ACTVT=01 AND 02.** The SAP system distinguishes "modify" operations at the S_DEVELOP level, not at the HTTP method level.
+`S_ADT_RES` grants URI access without distinguishing GET from POST. Read-oriented
+operations can require POST, so a gateway that restricts methods can block them.
+Use endpoint-specific SAP authorizations and ARC-1 policy to restrict operations;
+there is no read-only activity value on `S_ADT_RES`.
 
 ### 3.4 Recommended SAP Roles for Technical User
 
@@ -249,10 +252,7 @@ The base role. Required for all ARC-1 users. Grants read access to ABAP source c
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │ S_ADT_RES (ADT Resource Access)                                 │
-│   ADT_URI      = /sap/bc/adt/*                                  │
-│   ACTVT        = 01, 02         ← 02 needed! POST used for     │
-│                                   search, code intel, tests     │
-│   HTTP_METHOD  = GET, POST, HEAD ← HEAD for CSRF token          │
+│   URI          = /sap/bc/adt/* (broad example, all methods)       │
 │                                                                 │
 │ S_DEVELOP (ABAP Workbench)                                      │
 │   ACTVT        = 01, 03         ← Display only                  │
@@ -293,10 +293,7 @@ Adds write capabilities. Always assign together with ZMCP_READ.
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │ S_ADT_RES (ADT Resource Access)                                 │
-│   ADT_URI      = /sap/bc/adt/*                                  │
-│   ACTVT        = 01, 02                                          │
-│   HTTP_METHOD  = GET, POST, PUT, DELETE, HEAD                   │
-│                  ← PUT for source update, DELETE for object del  │
+│   URI          = /sap/bc/adt/* (broad example, all methods)       │
 │                                                                 │
 │ S_DEVELOP (ABAP Workbench)                                      │
 │   ACTVT        = 01, 02, 03, 06, 07                             │
@@ -343,8 +340,8 @@ Additive role for named table preview. Does NOT include freestyle SQL.
 │   ACTVT        = 01                                              │
 │   VIEWNAME     = *              ← or restrict to specific tables │
 │                                                                 │
-│ Note: S_ADT_RES with ACTVT=02 is already in ZMCP_READ          │
-│ (POST is needed for the data preview endpoint)                  │
+│ Note: the example URI wildcard already covers data preview.    │
+│ Endpoint-specific data authorizations must still restrict it.   │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -1076,7 +1073,7 @@ describe('Authorization — ZMCP_VIEWER (read only, no data)', () => {
   });
 
   it('navigates to definition', async () => {
-    // findDefinition uses POST — verifies S_ADT_RES ACTVT=02 for read user
+    // findDefinition uses POST — verify URI access and endpoint authorization
     const result = await client.findDefinition(...);
     expect(result).toBeTruthy();
   });

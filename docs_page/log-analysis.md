@@ -24,17 +24,18 @@ Logging** for a managed observability stack.
 
 ## Log Levels
 
-Control stderr verbosity with `ARC1_LOG_LEVEL`:
+Set `ARC1_LOG_LEVEL` (or `--log-level`) to `debug`, `info`, `warn` or `error` to select
+the minimum level printed by the logger on stderr. The default is `info`;
+`SAP_VERBOSE=true` / `--verbose` forces `debug` even when another level is set.
+Debug includes HTTP requests and CSRF probes. Set the option on the ARC-1 process
+and restart it; on CF, use an `.mtaext` property for a durable setting.
 
-```bash
-ARC1_LOG_LEVEL=debug  # Show everything (HTTP requests, CSRF fetches)
-ARC1_LOG_LEVEL=info   # Default — tool calls, auth events
-ARC1_LOG_LEVEL=warn   # Only warnings and errors
-ARC1_LOG_LEVEL=error  # Only errors
-```
+At `warn` or `error`, INFO tool-call audit events are hidden on stderr. Keep `info`
+if stderr is your only audit destination, or configure a separate audit sink.
 
-The file sink always receives ALL events regardless of stderr level. E2E runs retain it as
-`mcp-audit.ndjson` beside `mcp-server.log` in the uploaded log directory. CSRF events describe
+File audit output is independent of the stderr level; it records emitted audit events,
+not ordinary log messages. E2E runs retain it as `mcp-audit.ndjson` beside `mcp-server.log`
+in the uploaded log directory. CSRF events describe
 each probe: a HEAD 400 followed by GET 200 with a usable token is a healthy fallback.
 
 ## Event Types
@@ -100,7 +101,10 @@ INFO: Authorization probe: transport access is not available — <reason>
 ```
 
 …the SAP **user** is missing an authorization (not an ARC-1 bug). Search/read needs `S_DEVELOP` and
-`S_ADT_RES` (read-only users need `S_ADT_RES` with `ACTVT = 01 AND 02` — several ADT reads are POSTs).
+`S_ADT_RES`. The latter checks allowed URI prefixes and has no `ACTVT` field. A read
+implemented as HTTP POST does not imply create/change authorization; trace the
+backend checks on `S_DEVELOP` and other objects separately. See the
+[SAP authorization guidance](btp-destination-setup.md#startup-user-authorizations).
 See [Authorization](authorization.md) and [Principal Propagation](principal-propagation-setup.md).
 
 ### "Feature not available" is normal, not an error
@@ -111,7 +115,7 @@ active) or `400` — **this is expected and is recorded as data, not an error.**
 logged at `debug`, so they do **not** appear at the default `info` level. A clean startup has **no
 `WARN` lines** from probing.
 
-If you run with `ARC1_LOG_LEVEL=debug`, you'll see them — and they're still harmless:
+If you run with `SAP_VERBOSE=true`, you'll see them — and they're still harmless:
 
 ```
 DEBUG: [http_request] {"method":"GET","path":"/sap/bc/adt/abapgit/repos","statusCode":404,...}
@@ -258,7 +262,11 @@ elicitation events remain in stderr/file logs. Forwarded events are categorized 
 - **data-modifications**: tool calls that write data (SAPWrite, SAPManage)
 - **configuration-changes**: transport and activation operations (SAPTransport, SAPActivate)
 
-View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**.
+View these in the BTP cockpit under **Instances and Subscriptions > Audit Log Viewer**. For
+programmatic verification or scheduled reviews, read the same records through the Audit Log Retrieval
+API; see [Audit Log delivery evidence](btp-administration.md#audit-log-delivery-evidence). Tool-call
+records carry `object.type = "MCP Tool Call"` and, on invocation, redacted arguments in `args` (first 500 characters plus `...`
+when truncated). Completion records carry the outcome.
 
 ## Docker Volume Mount Example
 

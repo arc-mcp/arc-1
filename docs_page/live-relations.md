@@ -14,8 +14,10 @@ native relationship steps before deciding what code to inspect. For exact source
 - SAP must advertise `/sap/bc/adt/objectrelations/network` with
   `application/vnd.sap.adt.objectrelations.request.v1+xml` in ADT discovery.
 - The caller needs ARC-1 `read` scope and SAP authorization for object metadata and Relation
-  Explorer. The lookup is a read-only POST: the relevant SAP ADT resource authorization may need
-  `ACTVT=01` and `02`. No new ARC-1 role, SQL permission, or write permission is required.
+  Explorer. `S_ADT_RES` allows the required URI prefixes; it has no `ACTVT` field.
+  HTTP POST alone does not imply create/change permission. No new ARC-1 role, SQL
+  permission, or write permission is required. See the
+  [SAP authorization guidance](btp-destination-setup.md#startup-user-authorizations).
 - Cloud Connector must permit discovery, objectrelations and metadata paths for the requested types.
   `TABL`, `FUNC` and VIT types also need the read-only
   `/sap/bc/adt/repository/informationsystem/search` resource for exact identity resolution.

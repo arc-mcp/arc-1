@@ -241,6 +241,28 @@ Added by the 2026-06-09 deep review (Track A/B). All verified in code; R8 verifi
 
 ---
 
+### R21 — Shared-login credential freshness
+
+**Medium, mitigated for runtime-cookie-only Basic authentication; residual for configured tickets
+and already-created requests.** Single-target HTTP requests share a SAP transport, which is
+replaced for new requests once it is ten minutes old (monotonic elapsed time). Older requests
+keep their transport, including lock/save/unlock and late responses. Stdio's lifetime is unchanged.
+Per-user PP and multi-target transports remain request-local; both credential sanitizers discard
+injected transports. Factory tests cover these identity boundaries and rollover isolation.
+
+A replacement drops runtime cookies but reloads configured cookie credentials and retains the
+configured bearer provider. An unchanged SSO ticket or configured session cookie can authenticate
+without a new Basic password check. Existing requests may also outlive the transport-age limit.
+This is a reuse boundary, **not a ten-minute revocation guarantee**. SAP's idle timeout does not
+bound continuous use. Repeated fresh logons with stale configured credentials can also lock the
+technical account under SAP's policy; the concurrency limit is not a logon-rate limit.
+
+**Status: partial mitigation; operator revocation procedure still required.** Follow the
+[rotation/revocation procedure](../docs_page/security-guide.md#shared-sap-login-lifetime-and-credential-rotation).
+The live cookie-precedence evidence on 758/816 does not establish the outcome of a real password
+change or user lock. Retiring transport objects prevents late responses from refilling the new
+jar; clearing an existing jar in place would not provide that isolation.
+
 ## 6. Per-PR security review checklist
 
 Run the invariant(s) for whatever the change touches. This is the operational core of the model.

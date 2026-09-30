@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AdtHttpClient } from '../../../src/adt/http.js';
 import { applyPerUserAuthTokens, buildAdtConfig } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -20,8 +21,11 @@ function baseConfig() {
 
 describe('applyPerUserAuthTokens', () => {
   it('wires a destination-exchanged Bearer token (OAuth2UserTokenExchange, cloud-to-cloud) as a bearerTokenProvider', async () => {
-    const cfg = applyPerUserAuthTokens(baseConfig(), { bearerToken: 'abap-user-token' }, 'jdoe@example.com', 'ABAP_PP');
+    const base = baseConfig();
+    base.http = new AdtHttpClient({ baseUrl: base.baseUrl!, cookies: { MYSAPSSO2: 'shared-ticket' } });
+    const cfg = applyPerUserAuthTokens(base, { bearerToken: 'abap-user-token' }, 'jdoe@example.com', 'ABAP_PP');
 
+    expect(cfg.http).toBeUndefined();
     expect(cfg.bearerTokenProvider).toBeDefined();
     await expect(cfg.bearerTokenProvider?.()).resolves.toBe('abap-user-token');
     // Bearer path must clear shared Basic creds and must NOT set the on-prem (Cloud Connector) PP fields.

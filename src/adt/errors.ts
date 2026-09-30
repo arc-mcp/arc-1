@@ -22,6 +22,9 @@ export class AdtError extends Error {
   /** A create request failed without establishing whether SAP committed it. */
   creationOutcome?: 'unknown';
 
+  /** A plugin POST failed without establishing whether its service executed it. */
+  pluginPostOutcome?: 'unknown';
+
   constructor(message: string) {
     super(message);
     this.name = 'AdtError';
@@ -867,17 +870,9 @@ function looksLikeIcfServiceInactivePage(body: string): boolean {
 }
 
 /**
- * Build an endpoint-specific 403 hint for diagnostics endpoints. The dump
- * list and dump detail sit on different SAP authorization objects, so a
- * user can have access to one but not the other; the generic
- * "Authorization error" message hides which auth object is missing.
- * Naming the typical S_ADMI_FCD / S_ADT_RES values for each path lets the
- * LLM tell the user which role to request — and which transaction (ST22,
- * /IWFND/ERROR_LOG) it maps to — without speculating beyond what the tool
- * just tried to read.
- *
- * Returns `undefined` for paths that aren't recognized so the generic
- * authorization hint kicks in for everything else.
+ * Endpoint-specific 403 guidance. S_ADT_RES checks URI access, not activities.
+ * Dump analysis uses S_ABAPDUMP exclusively from SAP_BASIS 7.58 (SAP Note 3229193);
+ * older releases can use legacy checks. Backend checks still need a user-specific trace.
  */
 function describeAuthEndpoint(path?: string): string | undefined {
   if (!path) return undefined;
@@ -887,9 +882,9 @@ function describeAuthEndpoint(path?: string): string | undefined {
     return (
       'Reading the short-dump detail was forbidden, even if listing dumps works. ' +
       'The forbidden resource is `/sap/bc/adt/runtime/dump/{id}` (transaction ST22). ' +
-      'Typical authorization objects to check: `S_ADMI_FCD` with value `ST22` ' +
-      '(ABAP runtime error analysis) and `S_ADT_RES` (ACTVT 03) on the ' +
-      '`/sap/bc/adt/runtime/dump/*` resource path.'
+      'Check `S_ADT_RES` with `URI` covering `/sap/bc/adt/runtime/dump/*`. ' +
+      'On SAP_BASIS 7.58+, check `S_ABAPDUMP` ACTVT 03 and `DUMP_INFO`, with `DUMP_CUSER`/`DUMP_CCLNT` ' +
+      "covering the dump's user/client category. Earlier releases can use legacy checks; confirm with STAUTHTRACE."
     );
   }
 
@@ -897,9 +892,10 @@ function describeAuthEndpoint(path?: string): string | undefined {
   if (/\/sap\/bc\/adt\/runtime\/dumps(\?|$|\/)/.test(path)) {
     return (
       'Listing short dumps was forbidden. The forbidden resource is ' +
-      '`/sap/bc/adt/runtime/dumps` (transaction ST22). Typical authorization ' +
-      'objects to check: `S_ADMI_FCD` with value `ST22` and `S_ADT_RES` ' +
-      '(ACTVT 03) on the `/sap/bc/adt/runtime/dumps` resource path.'
+      '`/sap/bc/adt/runtime/dumps` (transaction ST22). ' +
+      'Check `S_ADT_RES` with `URI` covering `/sap/bc/adt/runtime/dumps`. ' +
+      'On SAP_BASIS 7.58+, check `S_ABAPDUMP` ACTVT 03 for the requested user/client scope. ' +
+      'Earlier releases can use legacy checks; confirm with STAUTHTRACE.'
     );
   }
 
@@ -907,10 +903,10 @@ function describeAuthEndpoint(path?: string): string | undefined {
   if (/\/sap\/bc\/adt\/gw\/errorlog/.test(path)) {
     return (
       'Reading the SAP Gateway error log was forbidden. The forbidden resource is ' +
-      '`/sap/bc/adt/gw/errorlog/*` (transaction `/IWFND/ERROR_LOG`). Typical ' +
-      'authorization objects to check: `S_ADT_RES` (ACTVT 03) on ' +
-      '`/sap/bc/adt/gw/errorlog/*`, plus the OData Gateway role that grants ' +
-      'access to `/IWFND/ERROR_LOG`.'
+      '`/sap/bc/adt/gw/errorlog/*` (transaction `/IWFND/ERROR_LOG`). ' +
+      'Check `S_ADT_RES` with `URI` covering `/sap/bc/adt/gw/errorlog/*`. ' +
+      'Use STAUTHTRACE for the effective SAP user to identify the backend log authorization; ' +
+      'its checks depend on the release and security configuration.'
     );
   }
 

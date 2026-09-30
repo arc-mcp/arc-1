@@ -50,7 +50,7 @@ Live evidence: search with `objectType=TABL/DT` returns tables only; `objectType
 | `src/handlers/intent.ts` `SLASH_TYPE_MAP` | `STRU/DS → TABL` (legacy alias for old prompts) | ✅ legacy-tolerable |
 | `src/handlers/intent.ts` `objectBasePath` | default `/ddic/tables/` (with comment about /structures/ fallback) | ✅ |
 | `src/adt/client.ts` `getTabl` / `resolveTablObjectUrl` | **read path**: tries `/tables/` then falls back to `/structures/` on 404 | ✅ |
-| `src/adt/client.ts` `resolveTablObjectUrlForWrite` (issue #285) | **write/activate/delete path**: search-first, refuses TABL/DT writes when discovery lacks `/ddic/tables` | ✅ |
+| `src/adt/client.ts` `resolveTablObjectUrlForWrite` (issue #285) | **write/activate/delete path**: search-first, refuses TABL/DT writes when discovery lacks `/ddic/tables`; there (and without discovery) a failed or empty search is refused too unless a fresh `/tables/` probe hits, since `/structures/` also serves tables on 7.50 | ✅ |
 | `src/handlers/intent.ts` SAPWrite create/batch_create | refuses bare `TABL` + `TABL/DT` upfront when discovery lacks `/ddic/tables` (issue #285); allows `TABL/DS` because `/ddic/structures` exists on every release (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `normalizeWriteObjectType` | SAPWrite-aware normalizer that preserves `TABL/DT` and `TABL/DS` end-to-end so the create path can route on subtype (follow-up to #285) | ✅ |
 | `src/handlers/intent.ts` `objectBasePath` | `TABL` and `TABL/DT` → `/ddic/tables/`; `TABL/DS` → `/ddic/structures/` (follow-up to #285) | ✅ |

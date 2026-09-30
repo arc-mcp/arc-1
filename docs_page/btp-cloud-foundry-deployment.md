@@ -273,11 +273,30 @@ For a reviewed direct-`cf push` deployment, use SAP's instance and binding comma
 [Audit Log Write API for Customers](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers),
 then restage `arc1-mcp-server`.
 
-`cf bind-service` can return `OK` yet produce a `binding-secret` binding. After deployment, check
-`cf logs arc1-mcp-server --recent`: `BTP Audit Log sink enabled` confirms the required fields are
-present; an `ERROR` names missing X.509 fields. Do not print `cf env` or binding credentials into
-tickets — they contain the private key. Confirm actual delivery with a known audit event; startup
-validation alone does not prove authentication or delivery.
+A deploy can report `Updating service is currently not supported operation` when
+attempting an Audit Log service update. That warning alone does not establish
+whether the existing instance lacks X.509 configuration, and deployment exit 0
+does not prove a usable binding. Inspect the service operation and check
+`cf logs arc1-mcp-server --recent`:
+
+- `BTP Audit Log sink enabled` confirms the required fields are present. Verify
+  delivery of a known event; if it arrives, no replacement is needed.
+- `BTP Audit Log sink disabled` with missing X.509 fields means the binding is
+  incomplete. Inspect the instance and binding configuration against the two
+  required halves above. Correct/recreate the binding first if the instance
+  already supports X.509; `cf bind-service` returning `OK` alone is insufficient.
+
+Only when an instance needs X.509 configuration that its broker cannot update
+should its owner plan replacement. For a **dedicated, disposable ARC-1 instance**,
+inventory app bindings and service keys, schedule the delivery interruption, then
+unbind/delete it and redeploy the activated MTA resource. A shared instance needs
+its owner's migration plan. Verify retained records through the reader before and
+after replacement; this is not a substitute for a retention/archive policy.
+
+Do not print `cf env` or binding credentials into tickets: they contain the private
+key. Startup validation proves neither authentication nor delivery. Follow
+[Audit Log delivery evidence](btp-administration.md#audit-log-delivery-evidence)
+to retrieve a known `MCP Tool Call` record and account for asynchronous ingestion.
 
 For expiry and rebinding, see
 [Audit Log certificate rotation](btp-administration.md#audit-log-certificate-rotation).
@@ -597,8 +616,11 @@ limits and the module's `parameters.memory` value as one reviewed deployment dec
 The base MTA also sets `OPTIMIZE_MEMORY=true`; do not replace its `exec sh ./bin/start-cf.sh` launcher
 with a fixed `node --max-old-space-size=...` command in the extension. The launcher validates the
 buildpack-provided `MEMORY_AVAILABLE`, derives old-space from the durable CF allocation (384 MiB at
-512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. Verify the `Runtime
-memory envelope` and `Data-result safety envelope` startup logs after every memory or limit change.
+512 MiB, 768 MiB at 1 GiB), and `exec`s Node so CF's SIGTERM reaches ARC-1. The `sh` prefix also
+matters on its own: a reported Windows-built MTAR lost the script executable bit despite its Git mode.
+Starting that script directly (`./bin/start-cf.sh`) caused `Permission denied`,
+exit 126; invoking it through `sh` avoids depending on the archive's executable bit. Verify the `Runtime memory envelope` and `Data-result safety envelope`
+startup logs after every memory or limit change.
 
 ## 11. Handover and ongoing operation
 
@@ -656,10 +678,15 @@ buildpack push does not create the seven MTA role collections for you.
 | Role collection missing/empty | Perform full MTA deploy, inspect roles, remove/recreate orphaned collection if needed, then reassign |
 | OAuth `invalid_client` after deploy | Restore the intended DCR signing key or re-register clients; do not invent a new key on every deploy |
 | OAuth `invalid_scope` after a grant | On the failure page choose **Role assigned? Refresh access**, then reconnect the MCP client; verify the user's IdP origin if it persists |
-| SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01 |
+| SAP `401` through PP | Check generated user certificate, STRUST, trusted proxy, ICF logon, CERTRULE, and SU01; for Basic startup + PP, check the Cloud Connector system-certificate logon setting |
+| SAP `502` `not mutually authenticated` through PP | Check that the effective HTTPS port requests a client certificate (`VCLIENT=1`) and its active SSL Server PSE trusts the system certificate's direct issuer; see [Certificate trust (STRUST)](principal-propagation-setup.md#certificate-trust-strust) |
+| Crash loop `Permission denied`, exit 126 | The launcher was replaced by a direct script call; check the executable bit in the archive and invoke scripts through `sh` as the base `exec sh ./bin/start-cf.sh` does |
+| Non-interactive `cf deploy` prints nothing and never finishes | Check for an earlier operation awaiting a decision with [cf mta-ops](updating.md#btp-cloud-foundry); stop only the identified stalled local process and inspect the server-side operation before retrying |
 | SAP `403` after PP login | Check the actual propagated user's SAP authorizations |
 | Destination change appears ignored | Restart every ARC-1 instance; only discovered multi-target Basic username/password fields are hot |
 | `BTP Audit Log sink disabled` at startup | The selected premium binding is incomplete; recreate/rebind it with the X.509 instance and binding parameters from step 4 |
+| `Updating service "arc1-auditlog" failed … Updating service is currently not supported operation` during `cf deploy` | The warning alone does not justify replacement. Check startup binding validation and known-event delivery; follow step 4 only if configuration repair is needed |
+| Sink enabled, but no `MCP Tool Call` record in the Audit Log Viewer | Allow for asynchronous ingestion, then query the [Retrieval API](btp-administration.md#audit-log-delivery-evidence); check that the binding is `x509` and its certificate has not expired |
 | Repeated `BTP Audit Log delivery failed` warning | Check certificate validity, token/API reachability, and service health; rotate the binding before retrying |
 
 ## Official references

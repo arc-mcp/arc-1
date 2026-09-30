@@ -55,8 +55,8 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `format` | string | No | Output format: `"text"` (default), `"structured"`, or `"editable"` (fresh source + SHA-256 for guarded writes; see [Source preconditions](#source-preconditions)). For `action="diff"`, structured returns a machine-readable diff envelope; for ordinary reads, structured supports CLAS metadata and DEVC package listings (see below). |
 | `include` | string | No | For CLAS: `main`, `testclasses`, `definitions`, `implementations`, `macros`. With `method=`, an explicit include selects that exact source (including `main`) before method extraction. For DDLS: `elements` (extract CDS view elements). For TEXT_ELEMENTS: `symbols`, `selections`, or `headings` — one part of the text pool; omit for all of them. |
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
-| `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. Falls back to a literal search when the pattern is not valid regex. |
-| `expand_includes` | boolean | No | For FUGR: expand include source inline |
+| `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. Falls back to a literal search when the pattern is not valid regex. |
+| `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). |
 | `group` | string | No | For FUNC: function group name |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
 | `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Known TABLE_CONTENTS limitation on 758: SAP can return `N+1`; prefer TABLE_QUERY when an exact cap matters. |
@@ -128,9 +128,9 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `UIAD` | Launchpad App Descriptor Item (LADI) — server-driven object. Discovery-gated; available on 8.16 and supported 758 backports. The successor to the deprecated tile/target-mapping model and the unit SAP Build Work Zone content exposure v2 federates. AFF JSON source carries `generalInformation` (appType, catalogId, transaction), `navigation` (targetMappingId, semanticObject, action, form factors) and `tiles[]`. Find names via `SAPRead type=DEVC` on the owning package (listed as `UIAD/TYP` — pass the bare `UIAD`). |
 | `DTDC` | CDS Dynamic Cache — server-driven object with its OWN metadata format (`<dtdc:dtdcSource>`, not `blue:blueSource`). JSON metadata + **DDL text** source (`define dynamic cache …`). Available on S/4HANA 2023 (758) and 8.16+. |
 | `DRTY` | CDS Type — server-driven object. JSON metadata + **DDL text** source (`define type …`). Covers scalar types and enumerated types alike; both report `DRTY/STY`. |
-| `APLO` | Application Log Object — server-driven object. AFF JSON source: `header` + `subobjects[]` (`name`, `description`). Verified on S/4HANA with SAP_BASIS 8.16. |
-| `SAJC` | Application Job Catalog Entry — server-driven object (blues v2). AFF JSON source: `generalInformation.className` (the class implementing `IF_APJ_DT_EXEC_OBJECT`/`IF_APJ_RT_EXEC_OBJECT`) + `parameters[]`. SAP regenerates the parameter list from the class on activation. Verified on 8.16. |
-| `SAJT` | Application Job Template — server-driven object (blues v2). AFF JSON source: `generalInformation.catalogName` + `parameters.singleValueParameters[]` / `valueRangesParameters[]` (default values). Verified on 8.16. |
+| `APLO` | Application Log Object — server-driven object. AFF JSON source: `header` + optional `subobjects[]` (`name`, `description`). Names are limited to 20 characters. Saves are active immediately. Verified on SAP_BASIS 758 and 816. |
+| `SAJC` | Application Job Catalog Entry — server-driven object (blues v2). AFF JSON source: `generalInformation.className` (the class implementing `IF_APJ_DT_EXEC_OBJECT`/`IF_APJ_RT_EXEC_OBJECT`) + `parameters[]`. SAP derives parameters from the class; 758 does not expose that list in its AFF readback. Verified on 758 and 816. |
+| `SAJT` | Application Job Template — server-driven object (blues v2). AFF JSON source: `generalInformation.catalogName` + `parameters.singleValueParameters[]` / `valueRangesParameters[]` (default values). Verified on 758 and 816. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore. List apps without `name`; browse or read with `name="<app>"` and optional case-sensitive `include="<path>"`. `name="<app>/<path>"` is also accepted. |
@@ -200,7 +200,8 @@ SAPRead(type="DCLS", name="ZI_TRAVEL_DCL")       — CDS access control source
 SAPRead(type="DDLX", name="ZC_TRAVEL")          — metadata extension with UI annotations
 SAPRead(type="SRVB", name="ZUI_TRAVEL_O4")       — service binding metadata as JSON
 SAPRead(type="KTD", name="ZCL_ORDER")            — read the object's Knowledge Transfer Document as Markdown
-SAPRead(type="FUGR", name="ZUTILS", expand_includes=true)    — function group with all includes expanded
+SAPRead(type="FUGR", name="ZUTILS", expand_includes=true)    — function group with bounded include expansion
+SAPRead(type="FUGR", name="ZUTILS", grep="ENQUEUE_")         — matches per include, not the whole include tree
 SAPRead(type="TABL", name="BAPIRET2")            — DDIC structure (auto-resolved to /structures/)
 SAPRead(type="TABL", name="T000")                — transparent table (auto-resolved to /tables/)
 SAPRead(type="DOMA", name="BUKRS")               — domain metadata with fixed values
@@ -232,6 +233,21 @@ SAPRead(type="INACTIVE_OBJECTS")                 — list objects pending activa
 For `TABLE_QUERY` on 758, use `op:"<>"` for inequality. Although the current input schema also accepts
 `!=`, ARC-1 sends it unchanged and that backend rejects it; normalization is tracked as a focused
 follow-up.
+
+### Function-group source search
+
+`SAPRead(type="FUGR", name="ZUTILS", grep="ENQUEUE_|AUTHORITY-CHECK")` reads the group
+and its nested includes, then returns matching lines with context. `expand_includes=true`
+is optional when using `grep`. Each source has its own heading and local line numbers;
+the response shows up to 100 matching lines across all sources and counts all matches
+in the sources searched.
+
+Expansion stops at 80 source blocks (main included) or five include levels. The response
+warns when either limit leaves includes unsearched and names includes that could not be
+read. A partial search cannot establish that the whole group has no matches: large groups
+can hit the limit before reaching function-module bodies. Follow up with a known include,
+`SAPRead(type="INCL", name="LZUTILSU01", grep="...")`, or a function module,
+`SAPRead(type="FUNC", group="ZUTILS", name="Z_UTIL", grep="...")`.
 
 ### Active vs Inactive Source
 
@@ -344,9 +360,9 @@ keep their separate behavior.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` surgically replaces one FORM or MODULE in a PROG/INCL; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `ENQU`, `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
-| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update` and `edit_unit`. Ignored for other types. |
+| `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `ENQU`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update`, `edit_unit`, and `add_unit`. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. |
 | `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. |
 | `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
@@ -354,11 +370,11 @@ keep their separate behavior.
 | `parameters` | array | No | FUNC structured signature: `{kind,name,type?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
 | `name` | string | No | Object name (for single object actions) |
 | `expectedSourceHash` | string | No | SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. Omitted/null/blank: no protection against stale replacements across calls. See [Source preconditions](#source-preconditions). |
-| `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`: the complete replacement `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
+| `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
 | `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
-| `unit` | string | No | For on-prem `edit_unit`: case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
+| `unit` | string | No | For on-prem `edit_unit`/`add_unit`: existing/new case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
 | `abstract` | boolean | No | For `add_method`: when `true`, only the METHODS clause is inserted into DEFINITION — no `METHOD/ENDMETHOD` stub is added to IMPLEMENTATION. Default `false`. |
 | `bdefName` | string | No | For `scaffold_rap_handlers`: interface BDEF name used to derive required handler signatures. For `generate_behavior_implementation`: optional override; default discovery reads the class metadata's `<class:rootEntityRef>` to locate the BDEF automatically. |
@@ -429,21 +445,29 @@ complete an uncertain creation automatically.
 
 Keep edits above the read-only metadata marker in a complete SAPRead result. For a root-only H2 edit, keep that context so the root heading is distinguishable from a visible Markdown title. When only the root has documentation, a bare body without its routing H2 also works. Ordinary unmatched headings remain prose and are reported; a node-shaped typo aborts the update. Prefix a reserved prose heading with one backslash (`\## …`) to keep it inside the current node.
 
+Metadata updates for DOMA, DTEL, MSAG and SRVB, and node edits for SKTD/KTD,
+read the current editable metadata after acquiring the SAP lock, then merge and
+save in that session. Omitted supported fields are preserved. Supplied collections
+(such as MSAG messages or DOMA fixed values) still replace that collection; read
+first when extending one. SKTD `dryRun` validates without a lock and does not
+reserve the previewed state. Live SKTD validation uses the locked envelope, so an
+invalid node edit can briefly take a lock but never writes.
+
 #### Server-driven object writes
 
-`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, `DRTY`, `APLO`, `SAJC`, and `SAJT` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, `DRTY`, `APLO`, `SAJC`, and `SAJT` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; use `SAPActivate` when SAP requires activation:
 
-- **`create`** posts a minimal `<blue:blueSource>` metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. Most types are left **inactive**; follow with `SAPActivate(type=..., name=...)`. Saves may contain invalid DDL until SAP activation checks them. UIAD source saves are active immediately on the verified system; see its validation contract below.
+- **`create`** posts the type's metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. Most types are left **inactive**; follow with `SAPActivate(type=..., name=...)`. Saves may contain invalid DDL until SAP activation checks them. APLO and UIAD source saves are active immediately on the verified systems; see its validation contract below.
 - **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC`, `DSFD`, `DTDC` and `DRTY` instead take **DDL text** (`define static cache …`, `define scalar function …`, `define dynamic cache …`, `define type …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
 - **`update`** requires `source` (AFF JSON or DDL text, per the type). Update and delete honor the `allowedPackages` ceiling against the object's real package.
 - **`delete`** checks SAP's advertised deletion precheck under the object lock and refuses negative or inconclusive results. After an accepted DELETE, ARC-1 verifies canonical metadata absence with a fresh GET. A surviving object is reported as incomplete deletion; an unreadable result is reported as unconfirmed. Neither outcome triggers an automatic recovery DELETE. Inspect dependencies and the package entry in ADT before proceeding. If discovery is unavailable, deletion is refused; a known target without the precheck keeps its existing delete path with readback. The check does not lock dependent objects or guarantee an atomic dependency snapshot.
-- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition), `DTDC` (CDS Dynamic Cache), and `DRTY` (CDS Type) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). `APLO`, `SAJC` and `SAJT` are live-verified on S/4HANA with SAP_BASIS 8.16 and on a BTP ABAP Environment trial (create/update/activate/read/delete). NetWeaver 7.50 exposes none of them.
+- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition), `DTDC` (CDS Dynamic Cache), and `DRTY` (CDS Type) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). `APLO`, `SAJC` and `SAJT` are live-verified on SAP_BASIS 758 and 816 and on a BTP ABAP Environment trial. APLO saves are active immediately; job catalogs and templates require activation. NetWeaver 7.50 exposes none of them.
 
 | Type | Object | Notes |
 |------|--------|-------|
 | `DESD` | CDS Logical External Schema | Creates standalone — the reference round-trip type. |
 | `EVTB` | RAP Event Binding | Also on 758. |
-| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type (the others use v1). |
+| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type. |
 | `DTSC` | CDS Static Cache (table-entity buffer) | Source is **DDL text**, not JSON. |
 | `CSNM` | Core Schema Notation Model (CSN) | |
 | `COTA` | Communication Target | |
@@ -451,12 +475,23 @@ Keep edits above the read-only metadata marker in a complete SAPRead result. For
 | `DRTY` | CDS Type (scalar type / enum) | Source is **DDL text**, not JSON. One subtype `DRTY/STY` covers scalar types and enums, so create needs no subtype routing. |
 | `UIAD` | Launchpad App Descriptor Item (LADI) | Manual Cloud-language items support create/update, including on-prem 816. Full-source validation and read-only configuration checks run before mutation. Generated items follow their application deployment lifecycle. See below. |
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
-| `APLO` | Application Log Object | AFF JSON with `subobjects[]`. The package sets the language version; `header.abapLanguageVersion` may be omitted. |
-| `SAJC` | Application Job Catalog Entry | Blues **v2**; `adtcore:type` is the bare `SAJC` (no subtype). The class in `generalInformation.className` must exist; activation regenerates `parameters[]` from it and reports its warnings. |
-| `SAJT` | Application Job Template | Blues **v2**; bare `SAJT`. `generalInformation.catalogName` must name an existing catalog entry — delete templates before their catalog. On BTP, activating a catalog entry starts an asynchronous publishing step; deleting the catalog before it finishes returns 400 "Publishing in process". |
+| `APLO` | Application Log Object | AFF JSON with optional `subobjects[]`. Maximum name length: **20**. Create/update takes effect **immediately**, without `SAPActivate` or an inactive draft. The package sets the language version. |
+| `SAJC` | Application Job Catalog Entry | Blues **v2**; `adtcore:type` is the bare `SAJC` (no subtype). Create requires `source.generalInformation.className` naming an existing active class. SAP calls its `GET_PARAMETERS` method to derive parameters; 758 omits `parameters[]` in AFF readback. Activate the catalog before creating templates. |
+| `SAJT` | Application Job Template | Blues **v2**; bare `SAJT`. Create requires `source.generalInformation.catalogName` naming an active catalog entry. Delete templates before their catalog; dependency enforcement differs by SAP release. On BTP, activating a catalog entry starts an asynchronous publishing step; deleting the catalog before it finishes returns 400 "Publishing in process". |
 
 - **Read versions:** Omitted/`auto` returns SAP's developer view, including a draft when present. Explicit `active`/`inactive` requests return an error if SAP cannot confirm that version in metadata. See [SAPRead](#sapread).
 - **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers use the registered URL; SAP may still return incomplete ATC results. `SAPDiagnose object_state` and `SAPRead action="diff"` refuse server-driven types; read `version="active"` and `version="inactive"` separately to compare them. [Version verification](roadmap.md#arch-02) remains required for `object_state`. Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
+
+Create job objects in dependency order: activate a class implementing `IF_APJ_DT_EXEC_OBJECT` and
+`IF_APJ_RT_EXEC_OBJECT`, create/activate `SAJC`, then create/activate `SAJT`. Pass complete AFF JSON
+in `source`; ARC-1 also sends the class/catalog reference in SAP's creation metadata, as required
+on 758. For example, a template source starts with:
+
+```json
+{"formatVersion":"1","header":{"description":"My job","originalLanguage":"en"},"generalInformation":{"catalogName":"ZMY_CATALOG"}}
+```
+
+These tools maintain repository definitions; they do not schedule or execute a job.
 
 **DRTY create/update:** Use canonical `type="DRTY"` with plain `define type` source, for example:
 
@@ -755,7 +790,7 @@ SAPWrite(action="edit_unit", type="PROG", name="ZREPORT", unit="process_data",
 ```
 
 Supported types: `PROG`, `INCL`, `CLAS`, `INTF`, `FUNC`, `DDLS`, `DCLS`, `BDEF`, `SRVD`, `DDLX`.
-Supported actions: `update`, `edit_unit`, and the CLAS surgery actions. For class-local methods,
+Supported actions: `update`, `edit_unit`, `add_unit`, and the CLAS surgery actions. For class-local methods,
 read the correct `include=implementations|testclasses|definitions|macros` and use that same include
 on the write (or the matching method prefix). The hash covers that entire include. For function-group
 includes pass the same `group`; FUNC can resolve its group or accept it explicitly. Unsupported
@@ -770,9 +805,9 @@ cannot be initialized by a guarded write; its read/precondition must succeed fir
 
 ### Procedural unit surgery
 
-[Issue #558](https://github.com/arc-mcp/arc-1/issues/558). On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. ARC-1 checks the write/package gates, acquires the SAP lock, then reads the current editable source in that same stateful session. It uses SAP's default source version (the inactive draft when present, otherwise active source), bypassing source and inactive-list caches. It finds the block with abaplint's structure tree, validates the replacement's kind/name and resulting source, and writes before unlocking. This preserves surrounding edits completed before the lock was acquired; validation or read failures perform no PUT, and ARC-1 always attempts to unlock.
+On-prem `action="edit_unit"` replaces one named `FORM…ENDFORM` or `MODULE…ENDMODULE` block in a `PROG` or `INCL` without making the caller re-send the full program. `action="add_unit"` inserts a new block using the same locked read/write lifecycle. ARC-1 checks the write/package gates, acquires the SAP lock, then reads the current editable source in that same stateful session. It uses SAP's default source version (the inactive draft when present, otherwise active source), bypassing source and inactive-list caches. It finds the block with abaplint's structure tree, validates the supplied block's kind/name and resulting source, and writes before unlocking. This preserves surrounding edits completed before the lock was acquired; validation or read failures perform no PUT, and ARC-1 always attempts to unlock.
 
-Pass the complete replacement block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. The action is case-insensitive by unit name, preserves CRLF source files, leaves sibling units untouched, and does not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
+Pass the complete replacement or new block so multi-line FORM signatures and MODULE direction (`INPUT`/`OUTPUT`) remain explicit. Both actions are case-insensitive by unit name, preserve CRLF source files, leave sibling units untouched, and do not auto-activate. Run `SAPActivate` afterwards. Function-group structural includes are supported with `type="INCL", group="<FUGR>"`; activate those with the same `type`, `name`, and `group` so ARC-1 addresses the structural include directly on every supported release.
 
 ```jsonc
 {
@@ -784,6 +819,29 @@ Pass the complete replacement block so multi-line FORM signatures and MODULE dir
   "transport": "DEVK900001"
 }
 ```
+
+To add a block, pass its new name in `unit` and its complete source. ARC-1 appends
+at the physical end of the selected source; it never moves trailing `INCLUDE`
+statements or existing unit headers. Existing names and incomplete structures are
+refused without a PUT. `SAP_DENY_ACTIONS=SAPWrite.edit_unit` does not deny `add_unit`;
+list both actions (or `SAPWrite`) when both must be blocked. The write/package gates
+apply to both actions.
+
+```jsonc
+{
+  "action": "add_unit",
+  "type": "PROG",
+  "name": "ZPROG_ORDERS",
+  "unit": "VALIDATE_ORDERS",
+  "source": "FORM validate_orders.\n  \" validation logic\nENDFORM."
+}
+```
+
+Name checks cover this physical source only, not its included sources. Choose an include meant
+for complete processing blocks (such as an F01 or O01 include), rather than one expanded inside
+another block. Adding a FORM/MODULE neither adds a `PERFORM` call nor changes screen flow logic.
+Read back the draft and run `SAPActivate` to validate the whole program. Use `expectedSourceHash`
+when the insertion depends on a previously reviewed snapshot.
 
 Event blocks such as `START-OF-SELECTION` and `AT SELECTION-SCREEN` are intentionally unsupported: abaplint does not expose them as bounded structure nodes, so name-based replacement cannot provide the same safety guarantee. `FUNC` is also out of scope because each function module already has a dedicated `/source/main` resource containing only that function module.
 
@@ -1624,7 +1682,7 @@ an explicit `SAP_SYSTEM_TYPE` override and preserves its `config` origin. A cust
 
 When `--lint-before-write` is enabled (default: true), SAPWrite automatically runs a strict subset of lint rules before writing to SAP. Parser errors and cloud violations block the write. Style issues (keyword case, indentation) never block writes. A blocked-write error includes the actual `abaplint syntax` used for that check, including custom syntax overrides.
 
-`edit_unit` validates the resulting whole source, including unchanged FORMs. When neither probe
+`edit_unit` and `add_unit` validate the resulting whole source, including unchanged FORMs. When neither probe
 nor configuration supplies a release, this action uses the on-prem parser ceiling (currently v758)
 for unit lookup and pre-write validation. This is an operation-specific grammar fallback, not a
 detected SAP release; standalone `SAPLint list_rules` still reports its own v702 fallback in that

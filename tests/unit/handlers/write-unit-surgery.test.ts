@@ -279,3 +279,41 @@ ENDFORM.`,
     expect(result.content[0]?.text).toContain('SAPActivate(type="INCL"');
   });
 });
+
+describe('SAPWrite add_unit (#776)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    resetCachedFeatures();
+  });
+
+  it.each([
+    {
+      type: 'PROG',
+      name: 'ZINSERT',
+      objectPath: '/sap/bc/adt/programs/programs/ZINSERT',
+      source: 'REPORT zinsert.\nFORM first.\nENDFORM.\n',
+      block: 'FORM added.\nENDFORM.',
+    },
+    {
+      type: 'INCL',
+      name: 'ZINSERT_I',
+      objectPath: '/sap/bc/adt/programs/includes/ZINSERT_I',
+      source: 'MODULE first OUTPUT.\nENDMODULE.\n',
+      block: 'MODULE added OUTPUT.\nENDMODULE.',
+    },
+  ])('inserts a new unit in $type through dispatch', async (row) => {
+    const calls = mockEditUnitFlow({ objectPath: row.objectPath, activeSource: row.source });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'add_unit',
+      type: row.type,
+      name: row.name,
+      unit: 'added',
+      source: row.block,
+    });
+    expect(result.isError, JSON.stringify(result)).toBeUndefined();
+    const body = calls.find((c) => c.method === 'PUT')?.body;
+    expect(body).toContain(row.block);
+    expect(body).toContain(row.source.trim());
+    expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+  });
+});

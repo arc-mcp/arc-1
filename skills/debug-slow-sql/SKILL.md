@@ -33,8 +33,8 @@ If you only have a vague "X is slow", get the OData URL or the object name first
 Work top-down. Each rung is cheaper than the next and usually tells you whether to descend.
 
 > **Reachability — don't promise a plan you can't reach.** Rungs 3–4 (profiler, ST05) need `SAP_ALLOW_WRITES`
-> to arm and `S_ADT_RES` (ACTVT 01 **and** 02) to read — and don't exist on NW 7.50. If arming returns *writes
-> disabled* or a `403`, say so and **stop at rung 2**: `odata_perf` + `cds_sql` + `SAPQuery` already pin a
+> to arm, `S_ADT_RES` with `URI` coverage for the trace resources, and the trace tools' backend authorizations
+> (confirm with STAUTHTRACE) — and don't exist on NW 7.50. If arming returns *writes disabled* or a `403`, say so and **stop at rung 2**: `odata_perf` + `cds_sql` + `SAPQuery` already pin a
 > DB-bound root cause GUI-free. Tier-3–4 (the exact statement + execution plan) then depends on Basis/config, so
 > hand the user the precise ST05/SAT steps below instead of pretending you reached the plan.
 

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-
 import { OperationType, type OperationTypeCode } from '../../../src/adt/safety.js';
 import {
   ACTION_POLICY,
@@ -9,6 +8,7 @@ import {
   hasRequiredScope,
   invocationPolicyKey,
 } from '../../../src/authz/policy.js';
+import { validateDenyActions } from '../../../src/server/deny-actions.js';
 
 describe('ACTION_POLICY matrix', () => {
   it('derives one canonical policy key for dispatch and multi-target preflight', () => {
@@ -37,6 +37,11 @@ describe('ACTION_POLICY matrix', () => {
     for (const t of tools) {
       expect(ACTION_POLICY[t]).toBeDefined();
     }
+  });
+
+  it('registers add_unit as an individually deniable update', () => {
+    expect(ACTION_POLICY['SAPWrite.add_unit']).toEqual({ scope: 'write', opType: OperationType.Update });
+    expect(() => validateDenyActions(['SAPWrite.add_unit'])).not.toThrow();
   });
 
   it('SAPRead.TABLE_CONTENTS requires data scope (not read)', () => {
