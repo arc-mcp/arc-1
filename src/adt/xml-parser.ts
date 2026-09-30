@@ -41,6 +41,7 @@ import type {
   ServerDrivenObjectMetadata,
   TransactionInfo,
 } from './types.js';
+import { decodeXmlEntities } from './xml-entities.js';
 
 /**
  * Escape the five predefined XML entities (`& < > " '`) for safe interpolation into XML.
@@ -1173,24 +1174,6 @@ export function parseBspFolderListing(xml: string, appName: string): BspFileNode
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
-
-/**
- * Decode the five predefined XML entities. Module-private: `parseXml` already applies it to
- * every value, so a second call on a parsed value would double-decode.
- *
- * `&amp;` is decoded LAST so chained entities like `&amp;lt;` resolve to the
- * literal `&lt;` rather than `<`. Closes CodeQL alert `js/double-escaping`
- * (alert #8).
- */
-function decodeXmlEntities(s: string): string {
-  if (!s.includes('&')) return s;
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&');
-}
 
 /** Safely get a nested array from parsed XML.
  *  Absent, empty (`<alerts/>` → `''` on 7.50) and single-node containers all collapse to an array. */

@@ -148,8 +148,17 @@ function redactGitText(value: string): string {
   return boundAbapGitString(redacted, value.length);
 }
 
+/**
+ * Classify a bridge error with its message redacted while still entity-encoded: once decoded, a
+ * `<` or `>` would end a credential-bearing URL short of its secret. Callers redact the decoded
+ * message again for what only decoding exposes (quoted values, echoed request XML).
+ */
+function classifyRedactedAbapgitError(body: string): ReturnType<typeof classifyAbapgitError> {
+  return classifyAbapgitError(body, redactGitText);
+}
+
 function sanitizedAbapGitApiError(err: AdtApiError, path: string): AdtApiError {
-  const parsed = classifyAbapgitError(err.responseBody ?? '');
+  const parsed = classifyRedactedAbapgitError(err.responseBody ?? '');
   const detail = [parsed.namespace ? `[${parsed.namespace}]` : undefined, parsed.message].filter(Boolean).join(' ');
   return new AdtApiError(
     redactGitText(detail || err.message),
@@ -878,7 +887,7 @@ export async function checkRepo(
     });
   } catch (err) {
     if (err instanceof AdtApiError) {
-      const parsed = classifyAbapgitError(err.responseBody ?? '');
+      const parsed = classifyRedactedAbapgitError(err.responseBody ?? '');
       if (parsed.namespace === 'org.abapgit.adt') {
         return {
           ok: false,
@@ -894,7 +903,7 @@ export async function checkRepo(
     return { ok: true, message: null };
   }
 
-  const parsed = classifyAbapgitError(resp.body);
+  const parsed = classifyRedactedAbapgitError(resp.body);
   return {
     ok: false,
     message: redactGitText(parsed.message ?? AdtApiError.extractCleanMessage(resp.body)),

@@ -802,6 +802,32 @@ describe('tool dispatch & cross-cutting handler behavior', () => {
       expect(text).not.toContain('WAF');
       expect(text).not.toContain('SAP_GZIP_DATAPREVIEW_BODY');
     });
+
+    it('shows SAP error text entity-decoded, and none of it in minimal-error mode', async () => {
+      const body =
+        '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">' +
+        '<namespace id="com.sap.adt"/><type id="uriMappingError"/>' +
+        '<message lang="EN">Invalid URI: /x?a=1&amp;b=2 &lt;tag&gt;</message>' +
+        '<localizedMessage lang="EN">Invalid URI: /x?a=1&amp;b=2 &lt;tag&gt;</localizedMessage>' +
+        '<localizedMessage lang="EN">Second &amp; &amp;lt;last&amp;gt;</localizedMessage>' +
+        '<properties><entry key="T100KEY-V1">/x?a=1&amp;b=2</entry></properties></exc:exception>';
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(400, body));
+
+      const shown = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', { type: 'PROG', name: 'ZTEST' });
+      const text = shown.content[0]?.text ?? '';
+      expect(text).toContain('Invalid URI: /x?a=1&b=2 <tag>');
+      expect(text).toContain('Second & &lt;last&gt;');
+      expect(text).toContain('V1=/x?a=1&b=2');
+      expect(text).not.toContain('&amp;');
+
+      const hidden = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors: true }, 'SAPRead', {
+        type: 'PROG',
+        name: 'ZTEST',
+      });
+      expect(hidden.content[0]?.text).toContain('ARC1_MINIMAL_ERRORS=true');
+      expect(hidden.content[0]?.text).not.toContain('Invalid URI');
+    });
   });
 
   describe('SAP domain error classification hints', () => {

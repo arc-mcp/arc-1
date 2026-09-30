@@ -449,6 +449,80 @@ describe('abapGit client helpers', () => {
     }
   });
 
+  const bridgeError = (message: string): AdtApiError => {
+    const body = `<?xml version="1.0"?><exc:exception xmlns:exc="x"><namespace id="org.abapgit.adt"/><message>${message}</message></exc:exception>`;
+    return new AdtApiError(body.slice(0, 500), 500, '/sap/bc/adt/abapgit/repos/R/pull', body);
+  };
+
+  it('shows a bridge error entity-decoded exactly once', async () => {
+    const http = mockHttp();
+    (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      bridgeError(
+        'Clone of https://example.com/r.git?a=1&amp;b=2 failed: &lt;unknown&gt; branch, see &amp;lt;docs&amp;gt;',
+      ),
+    );
+
+    // The sanitizer re-wraps the extracted message; that must neither strip `<unknown>` nor decode `&lt;`.
+    await expect(pullRepo(http, gitSafety, 'R')).rejects.toThrow(
+      'ADT API error: status 500 at /sap/bc/adt/abapgit/repos/R/pull: [org.abapgit.adt] ' +
+        'Clone of https://example.com/r.git?a=1&b=2 failed: <unknown> branch, see &lt;docs&gt;',
+    );
+  });
+
+  // The message line and the checkRepo result only. Text that dispatch derives from the response body
+  // (extra messages, properties, DDIC diagnostics) is redacted once, while encoded — a known gap.
+  it.each([
+    // Decoded before redaction, `<` / `>` would end the URL match and leave the rest of the password.
+    ['a URL password containing &lt;', 'Remote failed https://git-user:pa&lt;SENTINEL@example.com/r.git now'],
+    ['a URL password containing &gt;', 'Remote failed https://git-user:pa&gt;SENTINEL@example.com/r.git now'],
+    // Redacted only before decoding, these keep their secret: no literal quote or tag to match.
+    ['an entity-quoted assignment', 'Remote said password=&quot;SENTINEL words&quot; rejected'],
+    [
+      'an echoed request element',
+      'Bad payload &lt;abapgitrepo:remotePassword&gt;SENTINEL&lt;/abapgitrepo:remotePassword&gt; rejected',
+    ],
+  ])('redacts %s from a bridge error message', async (_label, message) => {
+    const thrown = mockHttp();
+    (thrown.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(bridgeError(message));
+    const err = await pullRepo(thrown, gitSafety, 'R').catch((caught: unknown) => caught);
+    expect(err).toBeInstanceOf(AdtApiError);
+    expect((err as AdtApiError).message).toContain('[org.abapgit.adt]');
+    expect((err as AdtApiError).message).not.toContain('SENTINEL');
+
+    const checked = mockHttp();
+    (checked.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(bridgeError(message));
+    const result = await checkRepo(checked, gitSafety, firstRepo());
+    expect(result.ok).toBe(false);
+    expect(result.message).not.toContain('SENTINEL');
+  });
+
+  // The encoded pass runs on the extracted text, never on the raw body: there markup separates a
+  // keyword from its value, and an unbalanced quote makes a quoted-value match swallow the tags after it.
+  it('redacts the extracted text, not the raw body, before decoding', async () => {
+    const siblings =
+      '<html><body><table><tr><td>Authorization: Bearer</td><td>SENTINEL</td></tr></table></body></html>';
+    const http = mockHttp();
+    (http.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdtApiError(siblings, 500, '/sap/bc/adt/abapgit/repos/R/pull', siblings),
+    );
+    await expect(pullRepo(http, gitSafety, 'R')).rejects.toThrow(
+      'ADT API error: status 500 at /sap/bc/adt/abapgit/repos/R/pull: authorization:[REDACTED]',
+    );
+
+    const unbalanced =
+      '<?xml version="1.0"?><exc:exception xmlns:exc="x"><namespace id="org.abapgit.adt"/>' +
+      `<message lang="EN">Login failed, auth_token='</message><localizedMessage lang="EN">Login failed, auth_token='</localizedMessage>` +
+      '<localizedMessage lang="EN">See note 123 for details</localizedMessage></exc:exception>';
+    const checked = mockHttp();
+    (checked.post as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new AdtApiError(unbalanced.slice(0, 500), 500, '/sap/bc/adt/abapgit/repos/R/checks', unbalanced),
+    );
+    expect(await checkRepo(checked, gitSafety, firstRepo())).toEqual({
+      ok: false,
+      message: "Login failed, auth_token='",
+    });
+  });
+
   it('stageRepo throws descriptive error when repository has no stage link', async () => {
     const http = mockHttp(loadFixture('abapgit-staging.xml'));
     const repo = { ...firstRepo(), links: [] };

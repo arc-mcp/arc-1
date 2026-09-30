@@ -16,6 +16,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, '..', '..', 'fixtures', 'xml');
+const PROBE_FIXTURES_DIR = join(__dirname, '..', '..', 'fixtures', 'probe');
 const loadXmlFixture = (name: string): string => readFileSync(join(FIXTURES_DIR, name), 'utf-8');
 
 describe('AdtApiError', () => {
@@ -121,6 +122,121 @@ describe('AdtApiError', () => {
     it('still cleans a raw body that starts with whitespace', () => {
       const err = new AdtApiError('\n <error><message lang="EN">Syntax error in line 5</message></error>', 400, '/p');
       expect(err.message).toBe('ADT API error: status 400 at /p: Syntax error in line 5');
+    });
+  });
+
+  // SAP error bodies never pass through `parseXml`; the raw scanner in errors.ts is their one decode.
+  describe('XML entity decoding', () => {
+    const exception = (inner: string): string =>
+      `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">${inner}</exc:exception>`;
+
+    it('decodes &amp; &lt; &gt; in an exception message', () => {
+      const xml = exception(
+        '<message lang="EN">invalid URI: /sap/bc/adt/x?sap-client=001&amp;x=1 &lt;tag&gt;</message>',
+      );
+      expect(AdtApiError.extractCleanMessage(xml)).toBe('invalid URI: /sap/bc/adt/x?sap-client=001&x=1 <tag>');
+    });
+
+    it('decodes the URI-mapping error recorded live on SAP_BASIS 758', () => {
+      // The recording's own `errorMessage` field predates this decode and still shows `&amp;`.
+      const recorded = JSON.parse(
+        readFileSync(
+          join(
+            PROBE_FIXTURES_DIR,
+            's4hana-2023-onprem-abap-trial/responses/GET__sap_bc_adt_bo_behaviordefinitions.json',
+          ),
+          'utf-8',
+        ),
+      ) as { url: string; statusCode: number; body: string };
+      const uri = '/sap/bc/adt/bo/behaviordefinitions?sap-client=001&';
+
+      const err = new AdtApiError(recorded.body.slice(0, 500), recorded.statusCode, recorded.url, recorded.body);
+      expect(err.message).toBe(
+        `ADT API error: status 400 at /sap/bc/adt/bo/behaviordefinitions: URI-Mapping cannot be performed due to invalid URI: ${uri}`,
+      );
+      expect(AdtApiError.extractProperties(recorded.body)['T100KEY-V1']).toBe(uri);
+    });
+
+    it('keeps a chained &amp;lt; as the literal text &lt;', () => {
+      const xml = exception('<message>a &amp;lt; b &amp;amp; c</message>');
+      expect(AdtApiError.extractCleanMessage(xml)).toBe('a &lt; b &amp; c');
+      expect(new AdtApiError(xml, 400, '/p', xml).message).toBe('ADT API error: status 400 at /p: a &lt; b &amp; c');
+    });
+
+    it('decodes everything the scanner returns: extra messages, property keys and values, DDIC diagnostics', () => {
+      const xml = exception(
+        '<localizedMessage>Save failed</localizedMessage>' +
+          '<localizedMessage>Field &quot;&lt;LS_DATA&gt;&quot; is unknown</localizedMessage>' +
+          '<properties><entry key="T100KEY-MSGID">SBD</entry><entry key="T100KEY-V1">R&amp;D</entry>' +
+          '<entry key="A&amp;B">x &gt; y</entry></properties>',
+      );
+      expect(AdtApiError.extractAllMessages(xml)).toEqual(['Field "<LS_DATA>" is unknown']);
+      expect(AdtApiError.extractProperties(xml)).toEqual({
+        'T100KEY-MSGID': 'SBD',
+        'T100KEY-V1': 'R&D',
+        'A&B': 'x > y',
+      });
+      expect(AdtApiError.formatDdicDiagnostics(xml)).toContain('[SBD/?] V1=R&D: Field "<LS_DATA>" is unknown');
+    });
+
+    it('decodes an HTML error page once, whichever element carries the message', () => {
+      expect(
+        AdtApiError.extractCleanMessage(
+          '<html><head><title>Application Server Error &amp; more</title></head><body><p class="detailText">' +
+            '<span id="msgText">Field &quot;&lt;LS_DATA&gt;&quot; is unknown, see &amp;lt;docs&amp;gt;</span></p></body></html>',
+        ),
+      ).toBe('Application Server Error & more: Field "<LS_DATA>" is unknown, see &lt;docs&gt;');
+      expect(AdtApiError.extractCleanMessage('<html><body><p class="detailText">a &lt; b</p></body></html>')).toBe(
+        'a < b',
+      );
+      expect(AdtApiError.extractCleanMessage('<html><head><title>A &amp; B</title></head></html>')).toBe('A & B');
+      expect(AdtApiError.extractCleanMessage('<html><body><h1>A &gt; &amp;gt; B</h1></body></html>')).toBe(
+        'A > &gt; B',
+      );
+    });
+
+    it('decodes once when the constructor falls back from the truncated page to the full body', () => {
+      const head = `<html><head><title>Application Server Error</title></head><body>${'x'.repeat(400)}`;
+      const full = `${head}<span id="msgText">Unknown &lt;LS_DATA&gt; &amp; &amp;lt;fs&amp;gt;</span></body></html>`;
+      expect(new AdtApiError(head, 500, '/p', full).message).toBe(
+        'ADT API error: status 500 at /p: Application Server Error: Unknown <LS_DATA> & &lt;fs&gt;',
+      );
+    });
+
+    it('decodes the tag-stripping fallback, which a message cut by the 500-character slice takes', () => {
+      const body = exception(`<message lang="EN">a &amp; b &lt;c&gt; &amp;lt; ${'y'.repeat(600)}</message>`);
+      expect(new AdtApiError(body.slice(0, 500), 400, '/p', body).message).toMatch(/ at \/p: a & b <c> &lt; y+$/);
+    });
+
+    it('never rescans text that is not a markup document', () => {
+      // A plain-text body is not XML, so its `&amp;` is literal.
+      expect(AdtApiError.extractCleanMessage('Forbidden &amp; denied')).toBe('Forbidden &amp; denied');
+      // ARC-1's own message keeps its `<placeholder>`.
+      expect(new AdtApiError('Pass group=<function group>.', 400, '/p').message).toBe(
+        'ADT API error: status 400 at /p: Pass group=<function group>.',
+      );
+      // An extracted message fed back in — e.g. re-wrapped in a new AdtApiError — is returned unchanged:
+      // a second pass would strip the literal `<tag>` and turn `&lt;` into `<`.
+      const xml = exception('<message>a &amp;lt; b &lt;tag&gt; c</message>');
+      const message = new AdtApiError(xml, 400, '/p', xml).message;
+      expect(message).toBe('ADT API error: status 400 at /p: a &lt; b <tag> c');
+      expect(new AdtApiError(message, 400, '/p').message).toBe(`ADT API error: status 400 at /p: ${message}`);
+      // The same holds for a direct call, not only through the constructor.
+      expect(AdtApiError.extractCleanMessage(message)).toBe(message);
+    });
+
+    it('hands each extracted text to whileEncoded before decoding it', () => {
+      const seen: string[] = [];
+      const mask = (text: string): string => {
+        seen.push(text);
+        return text.replace('SECRET', '[X]');
+      };
+      expect(AdtApiError.extractCleanMessage(exception('<message>a &lt;SECRET&gt; b</message>'), mask)).toBe(
+        'a <[X]> b',
+      );
+      expect(seen).toEqual(['a &lt;SECRET&gt; b']);
+      // The tag-stripping fallback passes through it as well.
+      expect(AdtApiError.extractCleanMessage('<root><a>x &amp; SECRET</a></root>', mask)).toBe('x & [X]');
     });
   });
 
@@ -850,6 +966,16 @@ describe('AdtApiError', () => {
     it('returns empty object for empty payload', () => {
       expect(classifyAbapgitError('')).toEqual({});
     });
+
+    it('returns the message entity-decoded', () => {
+      const xml =
+        '<exc:exception><namespace id="org.abapgit.adt"/>' +
+        '<message>Clone of https://example.com/r.git?a=1&amp;b=2 failed: &lt;unknown&gt;</message></exc:exception>';
+      expect(classifyAbapgitError(xml)).toEqual({
+        namespace: 'org.abapgit.adt',
+        message: 'Clone of https://example.com/r.git?a=1&b=2 failed: <unknown>',
+      });
+    });
   });
 });
 
@@ -910,6 +1036,11 @@ describe('extractUnknownColumn / formatUnknownColumnHint (FEAT-64)', () => {
 
   it('extracts the column from the live DE unknown-column message', () => {
     expect(extractUnknownColumn(unknownColErr('Unbekannter Spaltenname "NOSUCHCOL".'))).toBe('NOSUCHCOL');
+  });
+
+  it('extracts the column when the quotes arrive entity-encoded', () => {
+    // Not seen on the wire (SAP writes `"` literally in element text); decoding makes it match anyway.
+    expect(extractUnknownColumn(unknownColErr('Unknown column name &quot;NOSUCHCOL&quot;.'))).toBe('NOSUCHCOL');
   });
 
   it.each([
