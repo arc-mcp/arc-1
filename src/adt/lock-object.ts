@@ -25,8 +25,8 @@ import { escapeXmlAttr, getNestedArray, parseXml } from './xml-parser.js';
 export const LOCKOBJECT_CONTENT_TYPE = 'application/vnd.sap.adt.lockobjects.v1+xml';
 export const LOCKOBJECT_COLLECTION = '/sap/bc/adt/ddic/lockobjects/sources';
 
-/** SE11 lock modes: E write (cumulative), S read (shared), X exclusive (non-cumulative), O optimistic. */
-export const LOCK_MODES = ['E', 'S', 'X', 'O'] as const;
+/** Definition defaults: E/S/X, or no lock for a table used only as a foreign-key link. O is runtime-only. */
+export const LOCK_MODES = ['E', 'S', 'X', ''] as const;
 export type LockMode = (typeof LOCK_MODES)[number];
 
 export interface LockTable {
@@ -127,11 +127,16 @@ export async function getLockObject(
 
 const DDIC_NAME_RE = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/;
 /** Keys SAPRead emits that are not writable — accepted (and ignored) so read output round-trips. */
-const READ_ONLY_KEYS = new Set(['name', 'description', 'package', 'version', 'lockModules']);
-const WRITABLE_KEYS = new Set(['allowRFC', 'primaryTable', 'secondaryTables', 'lockParameters']);
+const READ_ONLY_KEYS = ['name', 'description', 'package', 'version', 'lockModules'];
+const WRITABLE_KEYS = ['allowRFC', 'primaryTable', 'secondaryTables', 'lockParameters'];
 
 function invalid(message: string): Error {
   return new Error(`Invalid ENQU source: ${message}`);
+}
+
+function rejectUnknownKeys(rec: Record<string, unknown>, allowed: string[], where: string): void {
+  const unknown = Object.keys(rec).filter((key) => !allowed.includes(key));
+  if (unknown.length) throw invalid(`${where}: unknown key(s) ${unknown.map((key) => `"${key}"`).join(', ')}.`);
 }
 
 function validateName(value: unknown, where: string): string {
@@ -144,9 +149,12 @@ function validateName(value: unknown, where: string): string {
 function validateLockTable(value: unknown, where: string): LockTable {
   const rec = asRecord(value);
   if (!rec) throw invalid(`${where} must be an object {"tableName":"…","lockMode":"E"}.`);
+  rejectUnknownKeys(rec, ['tableName', 'lockMode'], where);
   const lockMode = text(rec.lockMode ?? 'E').toUpperCase();
   if (!(LOCK_MODES as readonly string[]).includes(lockMode)) {
-    throw invalid(`${where}.lockMode "${text(rec.lockMode)}" must be one of ${LOCK_MODES.join(', ')}.`);
+    throw invalid(
+      `${where}.lockMode "${text(rec.lockMode)}" must be one of ${LOCK_MODES.map((mode) => JSON.stringify(mode)).join(', ')}. Optimistic mode O is a runtime option, not a definition default.`,
+    );
   }
   return { tableName: validateName(rec.tableName, `${where}.tableName`), lockMode };
 }
@@ -171,12 +179,7 @@ export function parseLockObjectDefinition(source: string): LockObjectDefinition 
   }
   const rec = asRecord(raw);
   if (!rec) throw invalid('expected a JSON object.');
-  const unknownKeys = Object.keys(rec).filter((k) => !WRITABLE_KEYS.has(k) && !READ_ONLY_KEYS.has(k));
-  if (unknownKeys.length > 0) {
-    throw invalid(
-      `unknown key(s) ${unknownKeys.map((k) => `"${k}"`).join(', ')}. Writable keys: ${[...WRITABLE_KEYS].join(', ')}.`,
-    );
-  }
+  rejectUnknownKeys(rec, [...WRITABLE_KEYS, ...READ_ONLY_KEYS], 'definition');
   const def: LockObjectDefinition = {};
   if (rec.allowRFC !== undefined) def.allowRFC = validateBoolean(rec.allowRFC, 'allowRFC');
   if (rec.primaryTable !== undefined) def.primaryTable = validateLockTable(rec.primaryTable, 'primaryTable');
@@ -190,11 +193,13 @@ export function parseLockObjectDefinition(source: string): LockObjectDefinition 
       const where = `lockParameters[${i}]`;
       const prec = asRecord(p);
       if (!prec) throw invalid(`${where} must be an object.`);
+      rejectUnknownKeys(prec, ['parameterName', 'tableName', 'fieldName', 'parameterWanted'], where);
       return {
         parameterName: validateName(prec.parameterName ?? prec.fieldName, `${where}.parameterName`),
         tableName: validateName(prec.tableName, `${where}.tableName`),
         fieldName: validateName(prec.fieldName, `${where}.fieldName`),
-        parameterWanted: prec.parameterWanted === undefined ? true : validateBoolean(prec.parameterWanted, where),
+        parameterWanted:
+          prec.parameterWanted === undefined ? true : validateBoolean(prec.parameterWanted, `${where}.parameterWanted`),
       };
     });
   }

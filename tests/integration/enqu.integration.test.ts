@@ -33,7 +33,7 @@ describe('ENQU reads', () => {
     const info = await getLockObject(client.http, unrestrictedSafetyConfig(), hit.objectName);
     expect(info.name).toBe(hit.objectName);
     expect(info.primaryTable.tableName).toBeTruthy();
-    expect(['E', 'S', 'X', 'O']).toContain(info.primaryTable.lockMode);
+    expect(['E', 'S', 'X', '']).toContain(info.primaryTable.lockMode);
     expect(Array.isArray(info.lockParameters)).toBe(true);
   });
 });

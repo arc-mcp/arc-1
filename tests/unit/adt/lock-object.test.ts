@@ -84,11 +84,28 @@ describe('parseLockObjectDefinition', () => {
     ]);
   });
 
+  it('preserves an explicitly unlocked secondary table used to reach another table', () => {
+    const def = parseLockObjectDefinition('{"secondaryTables":[{"tableName":"ZLINK","lockMode":""}]}');
+    expect(def.secondaryTables).toEqual([{ tableName: 'ZLINK', lockMode: '' }]);
+  });
+
   it.each([
     ['not JSON', 'nope', /expected a JSON object/],
     ['an array', '[]', /expected a JSON object/],
     ['a typo key', '{"primarytable":{}}', /unknown key\(s\) "primarytable"/],
+    ['a primary-table typo', '{"primaryTable":{"tableName":"ZT","lockmode":"S"}}', /primaryTable.*"lockmode"/],
+    [
+      'a secondary-table typo',
+      '{"secondaryTables":[{"tableName":"ZT","lockmode":"S"}]}',
+      /secondaryTables\[0\].*"lockmode"/,
+    ],
+    [
+      'a parameter typo',
+      '{"lockParameters":[{"tableName":"ZT","fieldName":"K","parameterwanted":false}]}',
+      /lockParameters\[0\].*"parameterwanted"/,
+    ],
     ['an unknown lock mode', '{"primaryTable":{"tableName":"ZT","lockMode":"Q"}}', /lockMode "Q" must be one of/],
+    ['a runtime-only lock mode', '{"primaryTable":{"tableName":"ZT","lockMode":"O"}}', /lockMode "O" must be one of/],
     ['an invalid table name', '{"primaryTable":{"tableName":"Z-T"}}', /not a valid DDIC name/],
     ['a non-array secondaryTables', '{"secondaryTables":{}}', /secondaryTables must be an array/],
     ['a non-boolean allowRFC', '{"allowRFC":"yes"}', /allowRFC must be true or false/],

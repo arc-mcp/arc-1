@@ -1242,7 +1242,7 @@ export const TABL_DT_WRITE_UNAVAILABLE_HINT =
 export const ENQU_WRITE_UNAVAILABLE_HINT =
   'Lock object (ENQU) writes are not available on this system ' +
   '(/sap/bc/adt/ddic/lockobjects/sources is not exposed by ADT discovery). ' +
-  'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the lock-object endpoint (SAP_BASIS 8.16 verified).';
+  'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the lock-object endpoint.';
 
 export const TTYP_WRITE_UNAVAILABLE_HINT =
   'Table type (TTYP) writes are not available on this system ' +

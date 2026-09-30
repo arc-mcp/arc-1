@@ -42,6 +42,13 @@ const cases = [
     patch: { serviceDefinition: 'ZNEW' },
   },
   { type: 'SKTD', name: 'ZDOC', path: '/documentation/ktd/documents/zdoc', xml: ktd, patch: { source: 'New prose' } },
+  {
+    type: 'ENQU',
+    name: 'EMEKKOE',
+    path: '/ddic/lockobjects/sources/EMEKKOE',
+    xml: fixture('lockobject-emekkoe.xml'),
+    patch: { source: '{"allowRFC":true}' },
+  },
 ];
 
 function sap(row: (typeof cases)[number], failure?: 'lock' | 'read' | 'put' | 'unlock') {

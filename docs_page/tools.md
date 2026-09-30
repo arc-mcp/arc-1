@@ -66,7 +66,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`. IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
-| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. For DTEL metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
+| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
@@ -268,7 +268,7 @@ inactive. UIAD saves are immediately active on the verified 816 system, so use `
 Version-query errors propagate; ARC-1 does not retry a different version. The two reads are not an
 atomic snapshot against concurrent activation.
 
-DTEL metadata uses SAP's version-less developer view when `version` is omitted or set to `auto`, so a
+DTEL/ENQU metadata uses SAP's version-less developer view when `version` is omitted or set to `auto`, so a
 plain read after `SAPWrite` returns the pending draft. Pass `active` to request the last activated metadata or
 `inactive` to request the draft explicitly; SAP can return active metadata when no draft exists.
 
@@ -525,18 +525,24 @@ SAP's collection POST creates a normal function-module shell even when it accept
 
 #### Lock object writes (ENQU)
 
-`SAPWrite` supports `create`, `update` and `delete` for DDIC lock objects (on-prem; discovery-gated on `/sap/bc/adt/ddic/lockobjects/sources`). `source` is **JSON in the same shape `SAPRead type="ENQU"` returns**, so a read → edit → write cycle needs no reshaping. Writable keys: `primaryTable`, `secondaryTables`, `lockParameters`, `allowRFC`; the read-only keys (`name`, `description`, `package`, `version`, `lockModules`) are ignored, and any other key is rejected so a typo cannot silently keep the stored value. Lock modes: `E` (write, cumulative), `S` (read, shared), `X` (exclusive, non-cumulative), `O` (optimistic).
+`SAPWrite` supports `create`, `update` and `delete` for DDIC lock objects on on-premise and BTP systems that expose `/sap/bc/adt/ddic/lockobjects/sources`. `source` is **JSON in the shape `SAPRead type="ENQU"` returns**. Writable keys are `primaryTable`, `secondaryTables`, `lockParameters` and `allowRFC`. Read-only keys (`name`, `description`, `package`, `version`, `lockModules`) are ignored; change the short text with the separate `SAPWrite.description` argument. Unknown keys, including those inside tables and parameters, are rejected. Lock modes are `E` (write, cumulative), `S` (read, shared), `X` (exclusive, non-cumulative) or `""` (no lock for a table used only to link other tables). Optimistic mode `O` is a runtime request option; SAP rejects it as a definition default.
 
 - **`create`** needs `primaryTable`. `lockParameters` are optional: when omitted, activation derives one parameter per key field of the lock tables (all passed to `ENQUEUE_`). The object is created **inactive** — follow with `SAPActivate(type="ENQU", name=…)`, which also generates `ENQUEUE_<name>`/`DEQUEUE_<name>`.
-- **`update`** merges the given keys over the stored definition (full-document replace under a lock); `description` updates the short text. Changing `primaryTable` or `secondaryTables` **requires** `lockParameters` for the new tables — without them SAP re-derives the parameters with `parameterWanted=false`, which would leave `ENQUEUE_` without key parameters, so ARC-1 refuses instead.
+- **`update`** reads the developer view under the SAP lock, then merges the supplied top-level keys. Omitted keys preserve existing inactive edits. Supplied table entries and arrays replace their corresponding values; within a supplied entry, `lockMode` defaults to `E` and `parameterWanted` to `true`. Changing the table set **requires** an explicit `lockParameters` list for the new tables. An explicit empty list is accepted, but SAP can re-derive the parameters with `parameterWanted=false` on update, leaving them out of the generated interface. Preserve the list from `SAPRead` unless you intend to change it. Activate after saving.
 - **`delete`** uses the standard lock → DELETE → unlock path.
+
+These operations maintain the repository definition and generate function modules on activation;
+they do not call those modules or acquire locks on business data. The referenced tables must already exist.
+`parameterWanted=false` makes that key generic when the lock is used, broadening the affected rows.
+Changing `allowRFC` changes the generated interface; review existing callers before activation.
+ABAP Cloud code uses `CL_ABAP_LOCK_OBJECT_FACTORY` to acquire runtime locks.
 
 ```json
 {"action":"create","type":"ENQU","name":"EZ_ORDER","package":"$TMP","description":"Order lock",
  "source":"{\"primaryTable\":{\"tableName\":\"ZORDER\",\"lockMode\":\"E\"}}"}
 ```
 
-Verified on S/4HANA (SAP_BASIS 8.16): create (with and without explicit parameters), partial update, table change with parameters, activation, `batch_create`, read back, delete. Verified on a BTP ABAP Environment trial: create, activate, update, read back, delete in a `ZLOCAL` sub-package.
+Create, partial update, table/parameter changes, activation, batch create, concurrent edits and deletion were verified on SAP_BASIS 758/816 and a BTP 920 trial. The collection was absent on the tested 7.50 system. SAP can normalize parameters joined through foreign keys; read back the activated definition before editing it. See the [wire contract and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-enqu-lock-object-adt-contract.md).
 
 #### SAPWrite for FUNC: create / update with structured parameters
 
@@ -634,7 +640,7 @@ Verified on NW 7.50 SP02 and S/4HANA 2023 (758) — the ADT contract is identica
 | `SAPWrite create type="TABL"/"TABL/DT"` | `/sap/bc/adt/ddic/tables` | SE11. Writing the source through `/ddic/structures/` instead would flip `DD02L-TABCLASS` to `INTTAB` and corrupt the table |
 | `SAPWrite create type="DOMA"` | `/sap/bc/adt/ddic/domains` | SE11. Data elements that reference a domain are blocked with it |
 | `SAPWrite create type="TTYP"` | `/sap/bc/adt/ddic/tabletypes` | SE11 |
-| `SAPWrite create type="ENQU"` | `/sap/bc/adt/ddic/lockobjects/sources` | SE11 (present on 758 and 816; 7.50 absence not yet verified) |
+| `SAPWrite create type="ENQU"` | `/sap/bc/adt/ddic/lockobjects/sources` | SE11 (present on tested 758/816 systems; absent on tested 7.50) |
 | `SAPManage action="create_package"` | `/sap/bc/adt/packages` | SE80 / SE21 |
 
 Endpoint absence verified on two independent NW 7.50 systems (a dev edition and an ECC EhP8 7.50 SP31 production system); all four are present on S/4HANA 2023 (758) and ABAP Platform 2025 (816). Structures (`TABL/DS`), data elements, function groups, function modules and includes **do** work on 7.50 — note that DDIC structure source there uses `define type <name> { … }`, not `define structure`.

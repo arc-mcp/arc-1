@@ -1,7 +1,7 @@
 /**
  * ADT Client — main facade for all SAP ADT operations.
  *
- * This is the entry point for all SAP interactions. It wires together:
+ * Entry point for SAP interactions, wiring together:
  * - AdtHttpClient (HTTP transport, CSRF, cookies)
  * - SafetyConfig (operation/package/transport gating)
  * - FeatureConfig (optional feature detection)
@@ -12,10 +12,8 @@
  *
  * Architecture: The client exposes high-level operations grouped by domain.
  * Read operations are directly on the client, while CRUD, DevTools, etc.
- * are imported from their respective modules when needed by handlers.
- * This keeps the client class manageable (not a 2,400-line God class).
+ * are imported from their respective modules by handlers.
  */
-
 import { getCurrentContext } from '../server/context.js';
 import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';

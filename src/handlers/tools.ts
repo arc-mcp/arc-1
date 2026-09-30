@@ -484,7 +484,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['active', 'inactive', 'auto'],
             description:
-              'Source defaults active; inactive requests a draft (SAP may return active if none); auto selects developer view. DTEL/server-driven types default to developer view. Server-driven types return an error if SAP cannot confirm an explicit version (e.g. no draft).',
+              'Source defaults active; inactive requests a draft (SAP may return active if none); auto selects developer view. DTEL/ENQU/server-driven types default to developer view. Server-driven types return an error if SAP cannot confirm an explicit version (e.g. no draft).',
           },
           includeSignature: {
             type: 'boolean',
