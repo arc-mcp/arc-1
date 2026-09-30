@@ -56,7 +56,7 @@ method returned one harmless parameter; its execute method was empty and was nev
 | 750 / NPL | No collections advertised. Read, create and activate refused for all three types; no objects created. |
 | 758 / a4h | Full APLO and class→SAJC→SAJT create/read/update/activate/delete lifecycle passed with creation references. SAJC AFF readback omits `parameters[]`; SAJT parameter defaults still round-trip. |
 | 816 / a4h-2025 | Same lifecycle passed. SAJC readback includes class parameters. Active/inactive template values remain separate until activation. |
-| BTP trial / 920 SP04 | Full APLO and class→SAJC→SAJT lifecycle passed with named-user OAuth in a disposable `ZLOCAL` sub-package. APLO metadata-only creation and an explicit `cloudDevelopment` update also passed, including lock contention and package refusals. |
+| BTP free plan / 920 SP04 | Full APLO and class→SAJC→SAJT lifecycle passed with named-user OAuth in a disposable `ZLOCAL` sub-package. APLO metadata-only creation and an explicit `cloudDevelopment` update also passed, including lock contention and package refusals. |
 
 The dispatcher checks also exercised read-only refusal, actual-package enforcement, malformed
 JSON before creation, repeated APLO saves, and missing-version refusal. A second session holding
@@ -73,10 +73,20 @@ BTP catalog cleanup initially returned 400 “Publishing in process”. A later 
 and GET 404 confirmed removal. No automatic mutation replay was added. Both fresh BTP APLO objects
 were deleted successfully; the earlier unexplained 403 below did not recur.
 
-The temporary BTP package itself could not be deleted: SAP returned `PAK/051` (not empty), although
-the repository search listed only the package and virtual-folder enumeration reported zero objects.
-The trial stopped before the discrepancy could be investigated further. Object-level GET 404 checks
-do not establish complete package cleanup; the package remains a tracked test artifact.
+The temporary BTP package could not be deleted: SAP returned `PAK/051` (not empty), although
+ADT search and virtual folders showed no contained objects. After restoring availability, the
+released `I_CustABAPObjDirectoryEntry` view revealed a `SUSH` entry marked deleted. Its identifier
+matches the deleted test catalog using SAP's `AUTH_TRACE_CALC_HASH` algorithm.
+
+The 920 source trace points to a SAP local-package mismatch: catalog deletion calls
+`SU2X_API_DELETE_APPL` → `CL_SU2X_API=>CTS_SET_WBO_ENTRY_STATUS`. Its local-package check recognizes
+`$TMP` or software component `LOCAL`, but this non-recording package uses `ZLOCAL`; the other branch
+sets the deletion flag instead of removing the directory entry. `CL_PACKAGE` still counts that
+entry when checking whether the package is empty. The object's transport properties were empty,
+and its responsible user had no listed transport requests. This explanation matches the live
+residue but has not been confirmed by SAP. No supported repair was established or directory
+workaround added. Object-level GET 404 checks do not establish complete package cleanup; the
+package remains a tracked test artifact pending SAP guidance.
 
 ## Earlier BTP trial evidence — 2026-09-28
 

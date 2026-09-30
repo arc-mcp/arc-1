@@ -83,7 +83,7 @@ Two input defects were reproduced and corrected:
 | 750 / NPL, HTTPS Basic | Collection absent; single and batch create refused before mutation. |
 | 758 / a4h, HTTPS Basic | 56 dispatcher steps passed, including create/activate/read, repeated inactive edits, E/S/X modes, false flags, explicit empty parameters, table changes, competing edit before LOCK, lock contention, package refusals, secondary tables, batch create and verified deletion. |
 | 816 / a4h-2025, HTTPS Basic | The same 56-step lifecycle passed. |
-| BTP trial / 920 SP04, named-user OAuth | 61 dispatcher steps passed in a disposable `ZLOCAL` sub-package, including the same mutation, version, contention and refusal checks, secondary tables, batch activation and deletion. Private data-element/table fixtures supplied the foreign-key relationship. |
+| BTP free plan / 920 SP04, named-user OAuth | 61 dispatcher steps passed in a disposable `ZLOCAL` sub-package, including the same mutation, version, contention and refusal checks, secondary tables, batch activation and deletion. Private data-element/table fixtures supplied the foreign-key relationship. |
 
 On update, an explicit empty parameter list re-derived parameters with `parameterWanted=false`;
 omitting the list preserved existing values. This distinction remains deliberate and documented.
@@ -93,8 +93,10 @@ On BTP, activation removed a redundant child-table parameter already joined to t
 read back SAP's canonical parameter list before editing it. The fixture needed a data element for
 its foreign-key field, as SAP refused a built-in field type. Neither observation required an ARC-1
 workaround. All fresh cloud lock objects, tables and the data element were deleted with GET 404
-confirmation, including those from failed fixture attempts. The shared temporary package has a
-separate [cleanup limitation](2026-09-28-aplo-sajc-sajt-adt-contract.md) that remains unresolved.
+confirmation, including those from failed fixture attempts. The shared temporary package is still
+blocked by the catalog's deleted `SUSH` directory entry, not an ENQU fixture; the
+[cleanup investigation](2026-09-28-aplo-sajc-sajt-adt-contract.md) records the SAP `ZLOCAL` handling
+evidence and the unresolved repair requirement.
 
 Small private tables made the lifecycle probes fast. A `T000`-based control was slow even on direct
 metadata reads, before an update; an 816 lifecycle still completed. The backend cause was not
