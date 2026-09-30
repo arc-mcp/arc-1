@@ -79,6 +79,19 @@ describe('AdtApiError', () => {
       expect(AdtApiError.extractCleanMessage(raw)).toBe('SAP returned an error (no readable message)');
     });
 
+    // The tag end is found quote-aware, so a quoted run may hold a ">". The attribute parser stopped
+    // at that ">" and never moved on: every one of these bodies hung the process in the constructor.
+    // A regression here shows as a test run that never finishes.
+    it.each([
+      '<a "b>c">',
+      '{"error":{"message":"x < y \\"quoted > text\\" z > w"}}',
+      'Expression a < 5 and "x>y" > 3 failed',
+    ])('returns for a ">" inside a quoted run that is not an attribute value: %s', (raw) => {
+      expect(new AdtApiError(raw, 500, '/p', raw).message).toContain('ADT API error: status 500 at /p: ');
+      expect(AdtApiError.extractProperties(raw)).toEqual({});
+      expect(AdtApiError.extractAllMessages(raw)).toEqual([]);
+    });
+
     it('extracts msgText from SAP HTML 500 error page', () => {
       const html = `<!DOCTYPE html>
 <html><head><title>Application Server Error</title></head><body>
