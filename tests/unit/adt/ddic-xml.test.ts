@@ -1656,13 +1656,34 @@ describe('buildTableTypeXml / parseTableType (FEAT-65)', () => {
     ).toThrow(/is a built-in ABAP row type/);
   });
 
+  const stringtab = readFileSync(join(import.meta.dirname, '../../fixtures/xml/tabletype-stringtab.xml'), 'utf-8');
+
   it('parseTableType extracts row type + access from the REAL captured STRINGTAB response', () => {
-    const fixture = readFileSync(join(import.meta.dirname, '../../fixtures/xml/tabletype-stringtab.xml'), 'utf-8');
-    const info = parseTableType(fixture);
-    expect(info.name).toBe('STRINGTAB');
-    expect(info.rowTypeKind).toBe('predefinedAbapType');
-    expect(info.rowType).toBe('STRING'); // built-in dataType (no typeName)
-    expect(info.accessType).toBe('standard');
+    expect(parseTableType(stringtab)).toEqual({
+      name: 'STRINGTAB',
+      description: 'Tabelle mit Strings',
+      rowType: 'STRING', // built-in dataType (no typeName)
+      rowTypeKind: 'predefinedAbapType',
+      rowTypeLength: '000000',
+      rowTypeDecimals: '000000',
+      accessType: 'standard',
+      keyKind: 'nonUnique',
+      plainStandardTable: true,
+      package: 'SLDAPSYNC',
+    });
+  });
+
+  // Each change is a definition SAP_BASIS 758 returned that buildTableTypeXml cannot write back.
+  it.each([
+    ['an initial row count', '<ttyp:initialRowCount>00000<', '<ttyp:initialRowCount>01000<'],
+    ['a sorted table', '<ttyp:accessType>standard<', '<ttyp:accessType>sorted<'],
+    ['key components', '<ttyp:definition>standard<', '<ttyp:definition>keyComponents<'],
+    ['a unique key', '<ttyp:kind>nonUnique<', '<ttyp:kind>unique<'],
+    ['a key alias', '<ttyp:alias/>', '<ttyp:alias>KEY</ttyp:alias>'],
+    ['further secondary keys', '<ttyp:allowed>notSpecified<', '<ttyp:allowed>allowed<'],
+    ['a secondary key', '</ttyp:secondaryKeys>', '<ttyp:secondaryKey ttyp:identifier="K"/></ttyp:secondaryKeys>'],
+  ])('parseTableType does not report %s as a plain standard table', (_label, stored, changed) => {
+    expect(parseTableType(stringtab.replace(stored, changed)).plainStandardTable).toBe(false);
   });
 
   it('parseTableType throws cleanly for non-table-type XML', () => {

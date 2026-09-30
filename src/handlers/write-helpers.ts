@@ -22,7 +22,7 @@ import {
   type ServiceBindingCreateParams,
 } from '../adt/ddic-xml.js';
 import { syntaxCheck } from '../adt/devtools.js';
-import { AdtSafetyError } from '../adt/errors.js';
+import { AdtError, AdtSafetyError } from '../adt/errors.js';
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
 import { checkPackage } from '../adt/safety.js';
 import {
@@ -319,6 +319,44 @@ export async function mergeMetadataWriteProperties(
       category: provided.category ?? normalizeSrvbCategory(existing.bindingCategory),
       version: provided.version ?? existing.serviceVersion,
       odataVersion: provided.odataVersion ?? existing.odataVersion,
+    };
+  }
+  if (type === 'TTYP') {
+    const existing = await client.getTableType(name).catch((err: unknown) => {
+      // SAP and transport failures are reported as they are; an unreadable shape has to say why the update stops.
+      if (err instanceof AdtError) throw err;
+      throw new Error(
+        `Cannot update TTYP ${name}: ARC-1 could not read its stored metadata ` +
+          `(${err instanceof Error ? err.message : String(err)}) and will not overwrite it blind. ` +
+          'Nothing was written. Change this table type in ADT or SE11.',
+      );
+    });
+    // The two row kinds buildTableTypeXml writes, as rowTypeKind values. Ref and range rows have none.
+    const storedKind =
+      existing.rowTypeKind === 'predefinedAbapType'
+        ? 'builtin'
+        : existing.rowTypeKind === 'dictionaryType'
+          ? 'structure'
+          : undefined;
+    const requested = String(provided.rowType ?? '').trim();
+    // Without rowType the caller keeps the stored definition, so ARC-1 must be able to write it back unchanged.
+    if (!requested && !(storedKind && existing.plainStandardTable)) {
+      const lost = storedKind ? 'its access type, keys or initial row count' : `its ${existing.rowTypeKind} row type`;
+      throw new Error(
+        `Cannot update TTYP ${name} without "rowType": ARC-1 rewrites a table type as a standard table with a ` +
+          `non-unique standard key and cannot keep ${lost}. Nothing was written. ` +
+          'Pass rowType to accept that rewrite, or change this table type in ADT or SE11.',
+      );
+    }
+    // The stored kind and built-in length describe the stored row type: keep them only while it is unchanged.
+    const unchanged = !!storedKind && (!requested || requested.toUpperCase() === existing.rowType.toUpperCase());
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      rowType: requested || existing.rowType,
+      rowTypeKind: provided.rowTypeKind ?? (unchanged ? storedKind : undefined),
+      rowTypeLength: unchanged ? existing.rowTypeLength : undefined,
+      rowTypeDecimals: unchanged ? existing.rowTypeDecimals : undefined,
     };
   }
   return provided;
@@ -627,6 +665,8 @@ function buildCreateXmlBody(
         package: pkg,
         rowType,
         rowTypeKind,
+        rowTypeLength: properties?.rowTypeLength as string | undefined,
+        rowTypeDecimals: properties?.rowTypeDecimals as string | undefined,
         language: masterLanguage,
         responsible: responsibleUser,
       });
