@@ -127,9 +127,9 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `UIAD` | Launchpad App Descriptor Item (LADI) — server-driven object. Discovery-gated; available on 8.16 and supported 758 backports. The successor to the deprecated tile/target-mapping model and the unit SAP Build Work Zone content exposure v2 federates. AFF JSON source carries `generalInformation` (appType, catalogId, transaction), `navigation` (targetMappingId, semanticObject, action, form factors) and `tiles[]`. Find names via `SAPRead type=DEVC` on the owning package (listed as `UIAD/TYP` — pass the bare `UIAD`). |
 | `DTDC` | CDS Dynamic Cache — server-driven object with its OWN metadata format (`<dtdc:dtdcSource>`, not `blue:blueSource`). JSON metadata + **DDL text** source (`define dynamic cache …`). Available on S/4HANA 2023 (758) and 8.16+. |
 | `DRTY` | CDS Type — server-driven object. JSON metadata + **DDL text** source (`define type …`). Covers scalar types and enumerated types alike; both report `DRTY/STY`. |
-| `APLO` | Application Log Object — server-driven object. AFF JSON source: `header` + `subobjects[]` (`name`, `description`). Verified on S/4HANA with SAP_BASIS 8.16. |
-| `SAJC` | Application Job Catalog Entry — server-driven object (blues v2). AFF JSON source: `generalInformation.className` (the class implementing `IF_APJ_DT_EXEC_OBJECT`/`IF_APJ_RT_EXEC_OBJECT`) + `parameters[]`. SAP regenerates the parameter list from the class on activation. Verified on 8.16. |
-| `SAJT` | Application Job Template — server-driven object (blues v2). AFF JSON source: `generalInformation.catalogName` + `parameters.singleValueParameters[]` / `valueRangesParameters[]` (default values). Verified on 8.16. |
+| `APLO` | Application Log Object — server-driven object. AFF JSON source: `header` + optional `subobjects[]` (`name`, `description`). Names are limited to 20 characters. Saves are active immediately. Verified on SAP_BASIS 758 and 816. |
+| `SAJC` | Application Job Catalog Entry — server-driven object (blues v2). AFF JSON source: `generalInformation.className` (the class implementing `IF_APJ_DT_EXEC_OBJECT`/`IF_APJ_RT_EXEC_OBJECT`) + `parameters[]`. SAP derives parameters from the class; 758 does not expose that list in its AFF readback. Verified on 758 and 816. |
+| `SAJT` | Application Job Template — server-driven object (blues v2). AFF JSON source: `generalInformation.catalogName` + `parameters.singleValueParameters[]` / `valueRangesParameters[]` (default values). Verified on 758 and 816. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore. List apps without `name`; browse or read with `name="<app>"` and optional case-sensitive `include="<path>"`. `name="<app>/<path>"` is also accepted. |
@@ -360,7 +360,7 @@ keep their separate behavior.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update`, `edit_unit`, and `add_unit`. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. |
 | `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. |
@@ -454,19 +454,19 @@ invalid node edit can briefly take a lock but never writes.
 
 #### Server-driven object writes
 
-`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, `DRTY`, `APLO`, `SAJC`, and `SAJT` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, `DRTY`, `APLO`, `SAJC`, and `SAJT` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; use `SAPActivate` when SAP requires activation:
 
-- **`create`** posts a minimal `<blue:blueSource>` metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. Most types are left **inactive**; follow with `SAPActivate(type=..., name=...)`. Saves may contain invalid DDL until SAP activation checks them. UIAD source saves are active immediately on the verified system; see its validation contract below.
+- **`create`** posts the type's metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. Most types are left **inactive**; follow with `SAPActivate(type=..., name=...)`. Saves may contain invalid DDL until SAP activation checks them. APLO and UIAD source saves are active immediately on the verified systems; see its validation contract below.
 - **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC`, `DSFD`, `DTDC` and `DRTY` instead take **DDL text** (`define static cache …`, `define scalar function …`, `define dynamic cache …`, `define type …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
 - **`update`** requires `source` (AFF JSON or DDL text, per the type). Update and delete honor the `allowedPackages` ceiling against the object's real package.
 - **`delete`** checks SAP's advertised deletion precheck under the object lock and refuses negative or inconclusive results. After an accepted DELETE, ARC-1 verifies canonical metadata absence with a fresh GET. A surviving object is reported as incomplete deletion; an unreadable result is reported as unconfirmed. Neither outcome triggers an automatic recovery DELETE. Inspect dependencies and the package entry in ADT before proceeding. If discovery is unavailable, deletion is refused; a known target without the precheck keeps its existing delete path with readback. The check does not lock dependent objects or guarantee an atomic dependency snapshot.
-- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition), `DTDC` (CDS Dynamic Cache), and `DRTY` (CDS Type) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). `APLO`, `SAJC` and `SAJT` are live-verified on S/4HANA with SAP_BASIS 8.16 and on a BTP ABAP Environment trial (create/update/activate/read/delete). NetWeaver 7.50 exposes none of them.
+- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition), `DTDC` (CDS Dynamic Cache), and `DRTY` (CDS Type) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). `APLO`, `SAJC` and `SAJT` are live-verified on SAP_BASIS 758 and 816 and on a BTP ABAP Environment trial. APLO saves are active immediately; job catalogs and templates require activation. NetWeaver 7.50 exposes none of them.
 
 | Type | Object | Notes |
 |------|--------|-------|
 | `DESD` | CDS Logical External Schema | Creates standalone — the reference round-trip type. |
 | `EVTB` | RAP Event Binding | Also on 758. |
-| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type (the others use v1). |
+| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type. |
 | `DTSC` | CDS Static Cache (table-entity buffer) | Source is **DDL text**, not JSON. |
 | `CSNM` | Core Schema Notation Model (CSN) | |
 | `COTA` | Communication Target | |
@@ -474,12 +474,23 @@ invalid node edit can briefly take a lock but never writes.
 | `DRTY` | CDS Type (scalar type / enum) | Source is **DDL text**, not JSON. One subtype `DRTY/STY` covers scalar types and enums, so create needs no subtype routing. |
 | `UIAD` | Launchpad App Descriptor Item (LADI) | Manual Cloud-language items support create/update, including on-prem 816. Full-source validation and read-only configuration checks run before mutation. Generated items follow their application deployment lifecycle. See below. |
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
-| `APLO` | Application Log Object | AFF JSON with `subobjects[]`. The package sets the language version; `header.abapLanguageVersion` may be omitted. |
-| `SAJC` | Application Job Catalog Entry | Blues **v2**; `adtcore:type` is the bare `SAJC` (no subtype). The class in `generalInformation.className` must exist; activation regenerates `parameters[]` from it and reports its warnings. |
-| `SAJT` | Application Job Template | Blues **v2**; bare `SAJT`. `generalInformation.catalogName` must name an existing catalog entry — delete templates before their catalog. On BTP, activating a catalog entry starts an asynchronous publishing step; deleting the catalog before it finishes returns 400 "Publishing in process". |
+| `APLO` | Application Log Object | AFF JSON with optional `subobjects[]`. Maximum name length: **20**. Create/update takes effect **immediately**, without `SAPActivate` or an inactive draft. The package sets the language version. |
+| `SAJC` | Application Job Catalog Entry | Blues **v2**; `adtcore:type` is the bare `SAJC` (no subtype). Create requires `source.generalInformation.className` naming an existing active class. SAP calls its `GET_PARAMETERS` method to derive parameters; 758 omits `parameters[]` in AFF readback. Activate the catalog before creating templates. |
+| `SAJT` | Application Job Template | Blues **v2**; bare `SAJT`. Create requires `source.generalInformation.catalogName` naming an active catalog entry. Delete templates before their catalog; dependency enforcement differs by SAP release. On BTP, activating a catalog entry starts an asynchronous publishing step; deleting the catalog before it finishes returns 400 "Publishing in process". |
 
 - **Read versions:** Omitted/`auto` returns SAP's developer view, including a draft when present. Explicit `active`/`inactive` requests return an error if SAP cannot confirm that version in metadata. See [SAPRead](#sapread).
 - **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers use the registered URL; SAP may still return incomplete ATC results. `SAPDiagnose object_state` and `SAPRead action="diff"` refuse server-driven types; read `version="active"` and `version="inactive"` separately to compare them. [Version verification](roadmap.md#arch-02) remains required for `object_state`. Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
+
+Create job objects in dependency order: activate a class implementing `IF_APJ_DT_EXEC_OBJECT` and
+`IF_APJ_RT_EXEC_OBJECT`, create/activate `SAJC`, then create/activate `SAJT`. Pass complete AFF JSON
+in `source`; ARC-1 also sends the class/catalog reference in SAP's creation metadata, as required
+on 758. For example, a template source starts with:
+
+```json
+{"formatVersion":"1","header":{"description":"My job","originalLanguage":"en"},"generalInformation":{"catalogName":"ZMY_CATALOG"}}
+```
+
+These tools maintain repository definitions; they do not schedule or execute a job.
 
 **DRTY create/update:** Use canonical `type="DRTY"` with plain `define type` source, for example:
 

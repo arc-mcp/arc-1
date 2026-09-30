@@ -21,7 +21,7 @@ describe('APLO / SAJC / SAJT reads', () => {
   });
 
   for (const [code, searchType, key] of [
-    ['APLO', 'APLO/TYP', 'subobjects'],
+    ['APLO', 'APLO/TYP', 'header'],
     ['SAJC', 'SAJC', 'generalInformation'],
     ['SAJT', 'SAJT', 'generalInformation'],
   ] as const) {
