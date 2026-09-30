@@ -93,7 +93,8 @@ On BTP, activation removed a redundant child-table parameter already joined to t
 read back SAP's canonical parameter list before editing it. The fixture needed a data element for
 its foreign-key field, as SAP refused a built-in field type. Neither observation required an ARC-1
 workaround. All fresh cloud lock objects, tables and the data element were deleted with GET 404
-confirmation, including those from failed fixture attempts.
+confirmation, including those from failed fixture attempts. The shared temporary package has a
+separate [cleanup limitation](2026-09-28-aplo-sajc-sajt-adt-contract.md) that remains unresolved.
 
 Small private tables made the lifecycle probes fast. A `T000`-based control was slow even on direct
 metadata reads, before an update; an 816 lifecycle still completed. The backend cause was not
