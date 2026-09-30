@@ -2,7 +2,7 @@
 
 Initial verification: 2026-09-28 on SAP_BASIS 816 (Basic auth) and a BTP ABAP trial
 (named-user OAuth). Independent verification: 2026-09-30 through the production dispatcher
-on 750, 758 and 816. Availability comes from discovery, not a hard-coded release threshold.
+on 750, 758, 816 and BTP 920. Availability comes from discovery, not a hard-coded release threshold.
 
 ## Contract
 
@@ -56,7 +56,7 @@ method returned one harmless parameter; its execute method was empty and was nev
 | 750 / NPL | No collections advertised. Read, create and activate refused for all three types; no objects created. |
 | 758 / a4h | Full APLO and class→SAJC→SAJT create/read/update/activate/delete lifecycle passed with creation references. SAJC AFF readback omits `parameters[]`; SAJT parameter defaults still round-trip. |
 | 816 / a4h-2025 | Same lifecycle passed. SAJC readback includes class parameters. Active/inactive template values remain separate until activation. |
-| BTP trial | Fresh named-user OAuth succeeded, but the system returned 503 “System is stopped” before bootstrap; no new BTP mutation was attempted. Prior evidence below remains separate. |
+| BTP trial / 920 SP04 | Full APLO and class→SAJC→SAJT lifecycle passed with named-user OAuth in a disposable `ZLOCAL` sub-package. APLO metadata-only creation and an explicit `cloudDevelopment` update also passed, including lock contention and package refusals. |
 
 The dispatcher checks also exercised read-only refusal, actual-package enforcement, malformed
 JSON before creation, repeated APLO saves, and missing-version refusal. A second session holding
@@ -65,8 +65,13 @@ before catalogs during cleanup, and every created object was confirmed absent wi
 758 allowed deletion of a referenced catalog, whereas 816 refused it: do not rely on uniform
 dependency enforcement. Prefer dependency-order cleanup on every release.
 
-The tests used direct HTTPS Basic authentication, not principal propagation or MCP transport,
-and local `$TMP` objects, not transport-assigned development. No job was scheduled.
+The on-premise tests used HTTPS Basic and `$TMP`; BTP used named-user OAuth and a disposable
+`ZLOCAL` sub-package. No principal propagation, MCP transport or transport-assigned development was
+exercised. No job was scheduled.
+
+BTP catalog cleanup initially returned 400 “Publishing in process”. A later explicit delete succeeded,
+and GET 404 confirmed removal. No automatic mutation replay was added. Both fresh BTP APLO objects
+were deleted successfully; the earlier unexplained 403 below did not recur.
 
 ## Earlier BTP trial evidence — 2026-09-28
 
@@ -79,7 +84,7 @@ An earlier APLO source PUT returned 403 `S_ABPLNGVS` and left an inconsistent ob
 subsequent PUTs repeated the error, and DELETE did not remove it. The trigger was not isolated;
 this evidence does not establish whether creation metadata, tenant state or authorization caused
 it. Do not claim all original test objects were removed. ARC-1's post-delete check detected the
-incomplete deletion. The fresh 2026-09-30 on-premise runs did not reproduce that failure.
+incomplete deletion. The fresh 2026-09-30 on-premise and BTP runs did not reproduce that failure; they do not identify its original cause.
 
 ## Primary references
 
