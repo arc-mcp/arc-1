@@ -463,18 +463,18 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('change_method_visibility');
   });
 
-  it('SAPWrite exposes edit_unit only on-prem (issue #558)', () => {
+  it.each(['edit_unit', 'add_unit'])('SAPWrite exposes %s only on-prem', (action) => {
     const onPremTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'onprem' });
     const onPremSchema = onPremTools.find((tool) => tool.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    expect(onPremSchema.properties.action.enum).toContain('edit_unit');
+    expect(onPremSchema.properties.action.enum).toContain(action);
     expect(onPremSchema.properties.unit.description).toMatch(/FORM(?:\/| or )MODULE/i);
-    expect(onPremSchema.properties.source.description).toContain('edit_unit');
+    expect(onPremSchema.properties.source.description).toContain(action);
 
     const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
     const btpSchema = btpTools.find((tool) => tool.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    expect(btpSchema.properties.action.enum).not.toContain('edit_unit');
+    expect(btpSchema.properties.action.enum).not.toContain(action);
     expect(btpSchema.properties.unit).toBeUndefined();
-    expect(btpSchema.properties.source.description).not.toContain('edit_unit');
+    expect(btpSchema.properties.source.description).not.toContain(action);
   });
 
   it('SAPWrite schema exposes visibility + abstract for add_method (issue #303)', () => {

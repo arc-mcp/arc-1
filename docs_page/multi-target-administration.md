@@ -246,8 +246,9 @@ the destination administrator controls the credential, XSUAA controls which huma
 and SAP authorizes only the technical user.
 
 - Use a dedicated communication/technical user with the minimum ADT permissions required by the
-  exposed read actions. Never use `SAP_ALL`; read-like ADT POST operations may still require the
-  documented `S_ADT_RES` activities.
+  exposed read actions. Never use `SAP_ALL`. `S_ADT_RES` permits URI prefixes, not activities;
+  trace backend authorization checks separately even for read-like POST operations. See the
+  [SAP authorization guidance](btp-destination-setup.md#startup-user-authorizations).
 - Do not assign developer-wide, transport, activation, or write authorizations merely because the
   user is technical. Multi-target v1 cannot use them, and they enlarge the impact of credential
   misuse outside ARC-1.

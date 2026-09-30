@@ -144,7 +144,7 @@ definitions from startup; see [BTP ABAP Environment → What to Expect](btp-abap
 
 ## Verification
 
-With `ARC1_LOG_LEVEL=debug`, make any tool call (e.g. "search for ZCL_* classes") and check the
+With `SAP_VERBOSE=true`, make any tool call (e.g. "search for ZCL_* classes") and check the
 ARC-1 logs:
 
 - `Destination Service PP response` — lists the SAML auth-token entry returned by the destination

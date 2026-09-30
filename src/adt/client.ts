@@ -266,11 +266,6 @@ export class AdtClient {
    *  /tables/, structure at /structures/). Populated by getTabl() via the
    *  /tables/→/structures/ 404 fallback. */
   private readonly tablUrlCache = new Map<string, string>();
-  /** Per-client cache of resolved TABL URLs for **writes / activates / deletes**.
-   *  Populated by `resolveTablObjectUrlForWrite()` after asking SAP for the
-   *  actual `adtcore:type` (TABL/DT vs TABL/DS). Separate from `tablUrlCache`
-   *  so the two contracts don't contaminate each other. See issue #285. */
-  private readonly tablWriteUrlCache = new Map<string, string>();
   /** Lazily-instantiated DEVCLASS hierarchy resolver — only built when a subtree
    *  allowedPackages rule is hit. Shared across `withSafety()` clones because the
    *  hierarchy is a property of the SAP system, not of the current safety scope. */
@@ -312,29 +307,21 @@ export class AdtClient {
       semaphore: config.adtSemaphore ?? (config.maxConcurrent ? new Semaphore(config.maxConcurrent) : undefined),
     };
 
-    this.http = new AdtHttpClient(httpConfig);
+    this.http = config.http ?? new AdtHttpClient(httpConfig);
   }
 
-  /**
-   * Create a lightweight copy of this client with a different safety config — for per-request
-   * scopes derived from JWT/profile. Shares the live HTTP client (connection, CSRF token, cookies,
-   * sessions) and every resolution cache **by reference**; only `safety` is swapped.
-   *
-   * Object.create gives the clone the prototype (so methods + `instanceof` work) WITHOUT running
-   * the constructor — which must be skipped, since the ctor would build a fresh AdtHttpClient with
-   * a new cookie jar and break the shared session. Object.assign then copies whatever own fields
-   * `this` has, so a NEW AdtClient field rides along automatically: there is no hand-maintained
-   * re-attach list to forget (that list was issue #333 — a missing `tablWriteUrlCache` left it
-   * `undefined` on the clone and crashed TABL writes on every authenticated path). Each field's
-   * sharing rationale lives at its declaration above; a structural test in client.test.ts enforces
-   * "every field except safety is shared by reference".
-   *
-   * Caveat for future maintainers: this relies on fields being own-enumerable (plain TS `private`,
-   * which they are). A true `#private` field would NOT be copied by Object.assign — don't introduce
-   * one here without sharing it explicitly.
-   */
+  /** Share identity and caches; only the per-request safety ceiling changes.
+   * Clones skip the constructor to preserve the live connection. All fields must
+   * remain own-enumerable (TypeScript private, never #private); see issue #333. */
   withSafety(safety: SafetyConfig): AdtClient {
     return Object.assign(Object.create(AdtClient.prototype) as AdtClient, this, { safety });
+  }
+
+  /** Run existing readers in one isolated SAP session without mutating this client. */
+  withStatefulSession<T>(action: (client: AdtClient) => Promise<T>): Promise<T> {
+    return this.http.withStatefulSession((http) =>
+      action(Object.assign(Object.create(AdtClient.prototype) as AdtClient, this, { http })),
+    );
   }
 
   /**
@@ -609,8 +596,8 @@ export class AdtClient {
    *
    * Bounded for safety: a `seen` set (cycle + dedup guard), a depth cap, and a total-block
    * cap so a pathological include graph can't blow up the response. Comment-only INCLUDE
-   * lines (leading `*`) are skipped. Each block that fails to read carries a placeholder.
-   * `truncated` is true if the block cap was hit.
+   * lines (leading `*`) are skipped. A block that fails to read is a placeholder, `unreadable`.
+   * `truncated` is true if either cap leaves an unseen include unread.
    *
    * Note: dynpros (screens) and GUI status (CUA) are NOT included — ADT does not expose
    * those over REST (they are SAPGUI/SE51/SE41-only; the endpoints return 404). This
@@ -619,12 +606,12 @@ export class AdtClient {
   async getFunctionGroupExpanded(
     name: string,
     opts?: SourceReadOptions,
-  ): Promise<{ blocks: Array<{ name: string; source: string }>; truncated: boolean }> {
+  ): Promise<{ blocks: Array<{ name: string; source: string; unreadable?: true }>; truncated: boolean }> {
     checkOperation(this.safety, OperationType.Read, 'GetFunctionGroupExpanded');
     const MAX_BLOCKS = 80;
     const MAX_DEPTH = 5;
     const seen = new Set<string>();
-    const blocks: Array<{ name: string; source: string }> = [];
+    const blocks: Array<{ name: string; source: string; unreadable?: true }> = [];
     let truncated = false;
 
     const { source: mainSource } = await this.getFunctionGroupSource(name, opts);
@@ -644,11 +631,10 @@ export class AdtClient {
     while (frontier.length > 0 && !truncated) {
       const next: Array<{ src: string; depth: number }> = [];
       for (const { src, depth } of frontier) {
-        if (depth >= MAX_DEPTH) continue;
         for (const incRaw of findIncludes(src)) {
           const key = incRaw.toLowerCase();
           if (seen.has(key)) continue;
-          if (blocks.length >= MAX_BLOCKS) {
+          if (depth >= MAX_DEPTH || blocks.length >= MAX_BLOCKS) {
             truncated = true;
             break;
           }
@@ -658,7 +644,7 @@ export class AdtClient {
             blocks.push({ name: incRaw, source: incSource });
             next.push({ src: incSource, depth: depth + 1 });
           } catch {
-            blocks.push({ name: incRaw, source: `[Could not read include "${incRaw}"]` });
+            blocks.push({ name: incRaw, source: `[Could not read include "${incRaw}"]`, unreadable: true });
           }
         }
         if (truncated) break;
@@ -754,7 +740,7 @@ export class AdtClient {
    *  TADIR groups them under R3TR TABL, distinguished only by DD02L-TABCLASS
    *  (TRANSP/CLUSTER/POOL → /tables/, INTTAB/APPEND → /structures/).
    *  Tries /tables/ first, falls back to /structures/ on 404. Caches the resolved
-   *  URL on the client for subsequent write/activate operations. */
+   *  URL for later read-path lookups (where-used, structure hierarchy) — never for mutations. */
   async getTabl(name: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
     checkOperation(this.safety, OperationType.Read, 'GetTabl');
     const upper = name.toUpperCase();
@@ -802,9 +788,8 @@ export class AdtClient {
   }
 
   /** Resolve the canonical ADT URL for a TABL name on the **write/activate/delete**
-   *  path. Unlike `resolveTablObjectUrl()`, this never falls back blindly to
-   *  /structures/ — it asks SAP what the object actually is (via repository search)
-   *  and refuses transparent-table writes on systems where /sap/bc/adt/ddic/tables/
+   *  path. Unlike `resolveTablObjectUrl()`, it first asks SAP what the object actually is
+   *  (via repository search) and refuses transparent-table writes on systems where /sap/bc/adt/ddic/tables/
    *  is absent (NW 7.50 ships /ddic/structures/ only; the table editor was added
    *  in NW 7.52). Returning /structures/ for a TABL/DT object would let a PUT
    *  silently flip DD02L-TABCLASS to INTTAB on the inactive draft (issue #285).
@@ -813,53 +798,34 @@ export class AdtClient {
    *    1. Search returns `TABL/DT` → require /tables/ availability, return /tables/<n>
    *       or throw AdtSafetyError with SE11 hint.
    *    2. Search returns `TABL/DS` → return /structures/<n> (always allowed).
-   *    3. Search returns nothing (or a different type) → fall through to the
-   *       read-path resolver. The caller is creating something new or the object
-   *       was just renamed; subsequent ADT calls will surface the real error.
+   *    3. Search fails or finds no TABL → probe fresh via the read-path resolver. A /tables/ hit
+   *       proves a table on any release; a /structures/ hit proves a structure only where
+   *       discovery shows /tables/ exists. Otherwise (7.50/7.51, or discovery not loaded) refuse:
+   *       a /tables/ 404 cannot tell an absent endpoint from a structure.
    *
-   *  Caches separately from the read resolver so the two contracts don't
-   *  contaminate each other. */
+   *  Never cached: SAP can replace a structure with a table between calls of a long-lived
+   *  client, and a remembered /structures/ route would skip the refusal above. */
   async resolveTablObjectUrlForWrite(
     name: string,
     options: { tablesEndpointAvailable?: boolean } = {},
   ): Promise<string> {
     const upper = name.toUpperCase();
-    const cached = this.tablWriteUrlCache.get(upper);
-    if (cached) {
-      // Defense-in-depth: a cached /tables/ URL must still respect the current
-      // discovery state. The cache stores resolutions, but the availability of
-      // /sap/bc/adt/ddic/tables/ is a per-system property — if it ever resolves
-      // to "missing", the cached entry must not silently bypass the guard.
-      if (cached.startsWith('/sap/bc/adt/ddic/tables/') && options.tablesEndpointAvailable === false) {
-        throw new AdtSafetyError(
-          `Transparent table writes via ADT REST are not available on this system ` +
-            `(/sap/bc/adt/ddic/tables/ is not exposed — NW 7.50/7.51 ship the DDIC ` +
-            `structures endpoint only; the table editor was added in NW 7.52). ` +
-            `Use SE11 in SAPGUI to modify transparent table "${name}", or connect ` +
-            `ARC-1 to an SAP_BASIS ≥ 7.52 system. Writing to /sap/bc/adt/ddic/structures/ ` +
-            `would silently flip DD02L-TABCLASS to INTTAB and corrupt the table.`,
-        );
-      }
-      return cached;
-    }
-
     let actualType: string | undefined;
     try {
       const results = await this.searchObject(name, 5);
       // NPL 7.50 appends a localized suffix to adtcore:name ("T000 (Database Table)",
       // "BAPIRET2 (Structure)"), so strip parenthesized text before matching. A4H
       // and modern releases return just the bare name; both forms must work.
+      // Only TABL hits count: a same-named program must not hide the table's subtype.
       const match = results.find((r) => {
         const bare = String(r.objectName ?? '')
           .replace(/\s*\(.*$/, '')
           .toUpperCase();
-        return bare === upper;
+        return bare === upper && String(r.objectType ?? '').startsWith('TABL');
       });
       actualType = match?.objectType;
     } catch {
-      // Search failure should not block writes — fall through to the read-path
-      // resolver. If the user lacks search authorization the write will still
-      // surface its own error downstream.
+      // Subtype stays unknown; step 3 decides whether the fresh probe alone is trustworthy.
     }
 
     const tableUrl = `/sap/bc/adt/ddic/tables/${encodeURIComponent(name)}`;
@@ -876,18 +842,24 @@ export class AdtClient {
             `would silently flip DD02L-TABCLASS to INTTAB and corrupt the table.`,
         );
       }
-      this.tablWriteUrlCache.set(upper, tableUrl);
       return tableUrl;
     }
-    if (actualType === 'TABL/DS') {
-      this.tablWriteUrlCache.set(upper, structUrl);
-      return structUrl;
-    }
+    if (actualType === 'TABL/DS') return structUrl;
 
-    // Unknown / not-yet-existing object — fall back to the read-path resolver.
-    // For create paths the caller has already checked tablesEndpointAvailable
-    // separately (no existing object to search for).
-    return this.resolveTablObjectUrl(name);
+    // Subtype unknown: re-probe (a cached read route may be stale; a missing object throws its 404).
+    // Create paths never get here: they gate on tablesEndpointAvailable themselves.
+    this.tablUrlCache.delete(upper);
+    const url = await this.resolveTablObjectUrl(name);
+    if (url === tableUrl || options.tablesEndpointAvailable === true) return url;
+    const system =
+      options.tablesEndpointAvailable === false
+        ? 'This system has no /sap/bc/adt/ddic/tables/ (NW 7.50/7.51)'
+        : 'ADT discovery is not loaded, so ARC-1 cannot rule out a system without /sap/bc/adt/ddic/tables/';
+    throw new AdtSafetyError(
+      `Cannot confirm that TABL "${name}" is a structure: the repository search failed or found no TABL. ${system}, ` +
+        'where writing a transparent table through /sap/bc/adt/ddic/structures/ flips DD02L-TABCLASS to INTTAB. ' +
+        'Restore repository-search access for this user, or use SE11 in SAPGUI.',
+    );
   }
 
   /** Get domain metadata (type, length, value table, fixed values) */
@@ -1350,7 +1322,7 @@ export class AdtClient {
       // Fixed authorization metadata: public runQuery would recursively invoke this guard.
       readTableReplacement: async (name) => {
         const table = canonicalDataSourceName(name);
-        const sql = `SELECT d~TABNAME, d~TABCLASS, d~VIEWREF, d~VIEWREF_ERR, l~DDLNAME
+        const sql = `SELECT d~TABNAME, d~TABCLASS, d~VIEWREF, d~VIEWREF_ERR, d~SQLTAB, l~DDLNAME
 FROM DD02L AS d LEFT OUTER JOIN DDLDEPENDENCY AS l
 ON l~OBJECTNAME = d~VIEWREF AND l~OBJECTTYPE = 'VIEW' AND l~STATE = 'A'
 WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;

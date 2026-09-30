@@ -167,7 +167,7 @@ export type ResolvedDirectDataSource =
 
 export interface DataSourcePolicyResolver {
   resolveDirectSource(name: string): Promise<ResolvedDirectDataSource>;
-  readTableReplacement(name: string): Promise<TableReplacement | undefined>;
+  readTableReplacement(name: string): Promise<TableReplacement | PhysicalTableContainer | undefined>;
   readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode>;
 }
 
@@ -176,7 +176,7 @@ export interface DataSourcePolicyBackend {
     name: string,
     maxResults: number,
   ): Promise<Array<{ objectName: string; objectType: string; uri: string }>>;
-  readTableReplacement(name: string): Promise<TableReplacement | undefined>;
+  readTableReplacement(name: string): Promise<TableReplacement | PhysicalTableContainer | undefined>;
   dependencyGraphAccept(): string | undefined;
   readDependencyGraph(path: string, accept: string): Promise<string>;
 }
@@ -610,18 +610,47 @@ export interface TableReplacement {
   ddlSource: string;
 }
 
-/** A bounded catalog result must prove one active transparent table and at most one replacement. */
-export function parseTableReplacement(table: string, rows: Record<string, string>[]): TableReplacement | undefined {
+/**
+ * A pooled or cluster table has no replacement object (SAP forbids one) but stores its rows in a
+ * physical table pool/cluster, which is checked as its lineage node.
+ */
+export interface PhysicalTableContainer {
+  container: string;
+}
+
+/**
+ * A bounded catalog result must prove one active transparent table with at most one replacement, or one
+ * active pooled/cluster table without replacement metadata and with its physical container.
+ */
+export function parseTableReplacement(
+  table: string,
+  rows: Record<string, string>[],
+): TableReplacement | PhysicalTableContainer | undefined {
   const row = rows[0];
-  const fields = ['TABNAME', 'TABCLASS', 'VIEWREF', 'VIEWREF_ERR', 'DDLNAME'];
+  const fields = ['TABNAME', 'TABCLASS', 'VIEWREF', 'VIEWREF_ERR', 'SQLTAB', 'DDLNAME'];
   if (rows.length !== 1 || !row || fields.some((field) => typeof row[field] !== 'string')) {
     throw new DataSourceLineageError('replacement catalog returned missing or ambiguous metadata');
   }
-  if (row.TABNAME!.trim() !== table || row.TABCLASS!.trim() !== 'TRANSP' || row.VIEWREF_ERR!.trim()) {
-    throw new DataSourceLineageError('replacement catalog did not confirm a valid active transparent table');
+  const tableClass = row.TABCLASS!.trim();
+  if (row.TABNAME!.trim() !== table || !['TRANSP', 'POOL', 'CLUSTER'].includes(tableClass) || row.VIEWREF_ERR!.trim()) {
+    throw new DataSourceLineageError(
+      'replacement catalog did not confirm a valid active transparent, pooled or cluster table',
+    );
   }
   const name = row.VIEWREF!.trim();
   const ddlSource = row.DDLNAME!.trim();
+  if (tableClass !== 'TRANSP') {
+    if (name || ddlSource) {
+      throw new DataSourceLineageError(
+        'replacement catalog reported replacement metadata for a pooled or cluster table',
+      );
+    }
+    try {
+      return { container: canonicalDataSourceName(row.SQLTAB!) };
+    } catch {
+      throw new DataSourceLineageError('replacement catalog did not supply the physical table pool or cluster');
+    }
+  }
   if (!name && !ddlSource) return undefined;
   try {
     return { name: canonicalDataSourceName(name), ddlSource: canonicalDataSourceName(ddlSource) };
@@ -663,7 +692,7 @@ export async function enforceBlockedDataSources(
   }
   if (roots.length === 0) throw unresolved('UNKNOWN', [], 'no direct source was supplied');
 
-  const replacementCache = new Map<string, TableReplacement | undefined>();
+  const replacementCache = new Map<string, TableReplacement | PhysicalTableContainer | undefined>();
   const activeResolution = new Set<string>();
 
   const checkBlocked = (directSource: string, path: string[], aliases: string[]): void => {
@@ -687,7 +716,7 @@ export async function enforceBlockedDataSources(
     throw unresolved(roots[0]!, [roots[0]!], `request exceeds direct-source limit ${MAX_DIRECT_SOURCES}`);
   }
 
-  const replacementFor = async (table: string): Promise<TableReplacement | undefined> => {
+  const replacementFor = async (table: string): Promise<TableReplacement | PhysicalTableContainer | undefined> => {
     if (replacementCache.has(table)) return replacementCache.get(table);
     if (replacementCache.size >= MAX_REPLACEMENT_SOURCES) {
       throw new DataSourceLineageError(`replacement inspection exceeds source limit ${MAX_REPLACEMENT_SOURCES}`);
@@ -706,7 +735,13 @@ export async function enforceBlockedDataSources(
       for (const source of INTERNAL_DATA_OPERATIONS.replacement_lineage.sources) {
         checkBlocked(directSource, [...path, source], [source]);
       }
-      return await replacementFor(table);
+      const lineage = await replacementFor(table);
+      if (lineage && 'container' in lineage) {
+        // Blocking the pool/cluster blocks every logical table stored in it.
+        checkBlocked(directSource, [...path, lineage.container], [lineage.container]);
+        return undefined;
+      }
+      return lineage;
     } catch (error) {
       if (error instanceof DataSourcePolicyError) throw error;
       if (error instanceof AdtApiError && error.statusCode === 404) {

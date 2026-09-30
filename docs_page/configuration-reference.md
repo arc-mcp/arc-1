@@ -105,6 +105,10 @@ Pick one primary method. Combining methods that conflict (e.g. basic + cookies +
 | `--user` | `SAP_USER` | Username sent in `Authorization: Basic` on shared-client ADT requests. With `SAP_PP_ENABLED=true`, API-key / non-JWT requests may still use this technical user unless `SAP_PP_STRICT=true` was set explicitly. A failed JWT PP request never falls back to this identity. |
 | `--password` | `SAP_PASSWORD` | Password for the above. Redacted from ARC-1 logs; prefer the environment variable because command-line argv is outside that redaction boundary. |
 
+Single-target HTTP mode reuses SAP login cookies across calls. Changing the SAP password alone
+does not ensure the next call re-authenticates; follow
+[shared-login credential rotation](security-guide.md#shared-sap-login-lifetime-and-credential-rotation).
+
 #### B2. Cookie auth (dev-only SSO bridge)
 
 | Flag | Env var | Effect |
@@ -322,11 +326,11 @@ All ARC-1 logging goes to **stderr** to keep stdout clean for MCP JSON-RPC. Neve
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--log-file` | `ARC1_LOG_FILE` | — | Path to an additional file sink. Stderr output is unchanged; the file gets the same stream. |
-| `--log-level` | `ARC1_LOG_LEVEL` | `info` | One of `debug` / `info` / `warn` / `error`. Filters every log line, including the audit stream's structured entries. |
+| `--log-file` | `ARC1_LOG_FILE` | — | Path to an additional audit-event file sink. Receives all audit levels, independent of stderr verbosity. |
+| `--log-level` | `ARC1_LOG_LEVEL` | `info` | One of `debug` / `info` / `warn` / `error`. Filters logger output on stderr, including audit events. Does not filter the file sink, UI audit buffer or BTP Audit Log categories. `SAP_VERBOSE=true` / `--verbose` forces `debug`. |
 | `--log-format` | `ARC1_LOG_FORMAT` | `text` | `text` (human-readable) or `json` (one JSON object per line — for shipping to ELK / Loki / CF log aggregator). |
 | `--minimal-errors` | `ARC1_MINIMAL_ERRORS` | `false` for stdio, `true` for HTTP | When `true`, client-facing tool errors hide SAP diagnostic details such as lock owners, transport IDs, T100 variables, and authorization object names. HTTP deployments default to minimal errors because they are commonly shared or remotely reachable; stdio keeps detailed local diagnostics. Server-side audit logs retain request correlation and status data; use SAP-native logs or a trusted admin retry for full diagnostics. Set `ARC1_MINIMAL_ERRORS=false` only for trusted debugging sessions. |
-| `--verbose` | `SAP_VERBOSE` | `false` | Alias for `--log-level=debug`. Slightly older flag, kept for compatibility. |
+| `--verbose` | `SAP_VERBOSE` | `false` | Forces debug stderr output even when another log level is configured. When false, `--log-level` / `ARC1_LOG_LEVEL` applies (default `info`). Does not change file or BTP Audit Log sink selection. |
 | — | `ARC1_LOG_HTTP_DEBUG` | `false` | When `"true"`, captures HTTP request/response body fields and headers on `http_request` audit events. Sensitive headers (`Authorization`, `Cookie`, CSRF tokens) are redacted immediately; payload bodies are length-capped and centrally redacted before sink writes. **Do not enable in production** — it still increases log volume and records payload-size/timing metadata. **Boolean parsing inconsistency:** unlike other booleans, this one accepts only the literal string `"true"` — `"1"` does **not** work. |
 
 ---

@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-09-25
+**Last reviewed:** 2026-09-29
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -72,7 +72,6 @@ sequence.
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
-| [COMPAT-08](#compat-08) | Pooled and clustered table policy support | P2 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -81,6 +80,8 @@ sequence.
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
 | [FEAT-66](#feat-66) | Interactive confirmation for destructive actions | P3 | L | Blocked | Safety / UX |
 | [FEAT-75](#feat-75) | Delete mutually-referencing objects as one set | P2 | S | Ready | Developer workflow |
+| [FEAT-76](#feat-76) | Parameterized extension service calls | P2 | M | Needs research | Integration |
+| [FEAT-77](#feat-77) | Verified read-only POST operations for extensions | P2 | M | Needs research | Integration |
 | [FEAT-22](#feat-22) | Safe gCTS mutation workflows | P3 | L | Needs research | Integration |
 | [FEAT-34](#feat-34) | Translation workflows beyond text symbols | P3 | L | Needs research | Localization |
 | [FEAT-62](#feat-62) | Transaction source and write support | P3 | M | Blocked | Object coverage |
@@ -97,6 +98,7 @@ sequence.
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
+| [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
 
@@ -236,18 +238,6 @@ these remain unmapped and fail closed.
 **Resume with.** A live table using a CDS view-entity replacement, verified `VIEWREF`/`STOB` identities,
 and graph-alias/blocklist regressions before broadening the catalog join.
 
-<a id="compat-08"></a>
-### COMPAT-08 — Pooled and clustered table policy support
-
-- **Priority / effort / status:** P2 / S / Needs research
-- **Category:** Compatibility
-
-**Remaining gap.** [#848](https://github.com/arc-mcp/arc-1/pull/848) requires an active transparent
-table row. Pooled/clustered ECC tables fail closed even when no replacement is assigned.
-
-**Resume with.** An authorized ECC fixture and catalog/graph evidence for these table classes; prove
-safe no-replacement handling without weakening unsupported-view or ambiguous-metadata refusals.
-
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
 
@@ -383,6 +373,42 @@ live pair in one call on both releases; the integration suite uses it for cleanu
 report SAP's per-object `isDeleted` result, gate on discovery, and stop suggesting circular orders.
 
 ## Integration and localization
+
+<a id="feat-76"></a>
+### FEAT-76 — Parameterized extension service calls
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Integration
+
+**Remaining gap.** [#884](https://github.com/arc-mcp/arc-1/issues/884) needs structured parameters
+and results for custom report/SmartForms functions. Existing `ctx.run` operations are name-in,
+text-out; raw HTTP requires explicit write authorization. The contributor's generic SOAP 6.20
+endpoint is deprecated, and no supported binding has been verified for a core helper.
+
+**Resume with.** A redacted binding WSDL and harmless request/response/fault samples from an
+authorized supported service, including table and empty-value behavior, auth route and retry
+semantics. Start with a small transport-independent codec only if that contract supports it; a
+named executor additionally needs explicit operation authorization and bounded results. Keep the
+single-target identity and write ceiling. [Investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-29-plugin-post-rfc.md).
+
+<a id="feat-77"></a>
+### FEAT-77 — Verified read-only POST operations for extensions
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Integration
+
+**Remaining gap.** [#885](https://github.com/arc-mcp/arc-1/issues/885) has a valid read-only service
+use case, but a path-only exception would also authorize write bodies on SOAP and batch endpoints.
+Dedicated read endpoints, such as the extension sample's LISA POSTs, are narrower candidates.
+Verified read-only GET services already work through `ctx.http.get`; no read-POST exception or
+function-name purity claim is implemented.
+
+**Resume with.** One narrow operation with verified non-mutating semantics and a request contract
+that rejects other operations, changesets and dynamic report/function dispatch before network
+access. Decide whether its data requires `read`, `data` or `sql` scope; define response limits,
+auditing and safe retry behavior. A SAP-owner-reviewed service and authorized live tests must
+support the claim. Do not use a broad URL/prefix or wildcard FM exception to bypass the ceiling.
+[Investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-29-plugin-post-rfc.md).
 
 <a id="feat-22"></a>
 ### FEAT-22 — Safe gCTS mutation workflows
@@ -654,6 +680,28 @@ adding Cloud Logging must preserve the audit contract.
 **Resume when.** A production operator needs Cloud Logging or requires migration of an existing
 Application Logging deployment. Define the required signals, retention, service binding, and
 exporter support before implementation.
+
+<a id="ops-06"></a>
+### OPS-06 — Per-user SAP session reuse over HTTP
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Operations
+
+**Idea.** Reuse a principal-propagation user's SAP session across MCP HTTP requests instead of
+logging on again for every tool call.
+
+**Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target SAP
+transport is reused with ten-minute replacement for new requests, but per-user PP clients and
+multi-target clients are still built per request, so each tool call logs on again and refetches a
+CSRF token. On SAP_BASIS 816 such bursts coincided with fresh stateful contexts failing (`400 Session not found`); see the
+[investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-27-sap-816-session-failures.md).
+
+**Resume when.** A PP or multi-target deployment reports `400 Session not found` or failed stateful
+closes under load, or SAP logon volume becomes an operator concern. Key any cache by SAP identity and
+token lifetime, keep users isolated, and keep ADR-0007's request-local Basic credentials.
+Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
+the single-target transport's bounded reuse and remaining revocation limitations are documented in
+[security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener

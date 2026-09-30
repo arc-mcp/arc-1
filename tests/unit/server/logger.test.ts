@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import type { AuditEvent } from '../../../src/server/audit.js';
 import { requestContext } from '../../../src/server/context.js';
 import { Logger } from '../../../src/server/logger.js';
 import type { LogSink } from '../../../src/server/sinks/types.js';
 
 describe('Logger', () => {
-  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let stderrSpy: MockInstance<typeof process.stderr.write>;
 
   beforeEach(() => {
     stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -17,7 +17,7 @@ describe('Logger', () => {
 
   it('writes to stderr, not stdout', () => {
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    const logger = new Logger('text', true);
+    const logger = new Logger('text', 'debug');
     logger.info('test message');
     expect(stderrSpy).toHaveBeenCalled();
     expect(stdoutSpy).not.toHaveBeenCalled();
@@ -25,7 +25,7 @@ describe('Logger', () => {
   });
 
   it('outputs text format with timestamp and level', () => {
-    const logger = new Logger('text', true);
+    const logger = new Logger('text', 'debug');
     logger.info('hello world');
     const output = stderrSpy.mock.calls[0]?.[0] as string;
     expect(output).toMatch(/\[\d{4}-\d{2}-\d{2}T/);
@@ -34,7 +34,7 @@ describe('Logger', () => {
   });
 
   it('outputs JSON format with structured fields', () => {
-    const logger = new Logger('json', true);
+    const logger = new Logger('json', 'debug');
     logger.info('test', { tool: 'SAPRead' });
     const output = stderrSpy.mock.calls[0]?.[0] as string;
     const parsed = JSON.parse(output);
@@ -44,20 +44,31 @@ describe('Logger', () => {
     expect(parsed.timestamp).toBeDefined();
   });
 
-  it('respects log level (non-verbose suppresses debug)', () => {
-    const logger = new Logger('text', false);
-    logger.debug('should not appear');
-    expect(stderrSpy).not.toHaveBeenCalled();
-  });
-
-  it('shows debug messages when verbose', () => {
-    const logger = new Logger('text', true);
-    logger.debug('debug message');
-    expect(stderrSpy).toHaveBeenCalled();
-  });
+  it.each([
+    { level: 'debug', visible: ['debug', 'info', 'warn', 'error'] },
+    { level: 'info', visible: ['info', 'warn', 'error'] },
+    { level: 'warn', visible: ['warn', 'error'] },
+    { level: 'error', visible: ['error'] },
+  ] as const)(
+    '$level filters plain and audit stderr, while other sinks retain every audit level',
+    ({ level, visible }) => {
+      const logger = new Logger('json', level);
+      const auditSink: LogSink = { write: vi.fn() };
+      logger.addSink(auditSink);
+      const levels = ['debug', 'info', 'warn', 'error'] as const;
+      for (const emitted of levels) {
+        logger[emitted](`plain-${emitted}`);
+        logger.emitAudit({ timestamp: '', level: emitted, event: 'tool_call_start', tool: 'SAPRead', args: {} });
+      }
+      expect(stderrSpy.mock.calls.map(([line]) => JSON.parse(String(line)).level)).toEqual(
+        visible.flatMap((value) => [value, value]),
+      );
+      expect(vi.mocked(auditSink.write).mock.calls.map(([event]) => event.level)).toEqual(levels);
+    },
+  );
 
   it('redacts sensitive fields in context', () => {
-    const logger = new Logger('json', true);
+    const logger = new Logger('json', 'debug');
     logger.info('auth', { password: 'secret123', token: 'abc', username: 'admin' });
     const output = stderrSpy.mock.calls[0]?.[0] as string;
     const parsed = JSON.parse(output);
@@ -67,7 +78,7 @@ describe('Logger', () => {
   });
 
   it('suppresses SAP 401/403 response details in messages and nested debug context', () => {
-    const logger = new Logger('json', true);
+    const logger = new Logger('json', 'debug');
     const sentinel = 'SENTINEL_TECHNICAL_USER_AND_SECURITY_DETAIL';
     logger.debug(`Read failed: ADT API error: status 401 at /sap/bc/adt/discovery: ${sentinel}`, {
       error: `ADT API error: status 403 at /sap/bc/adt/repository/informationsystem: ${sentinel}`,
@@ -89,7 +100,7 @@ describe('Logger', () => {
   });
 
   it('keeps non-authentication ADT error details for diagnostics', () => {
-    const logger = new Logger('json', true);
+    const logger = new Logger('json', 'debug');
     logger.debug('request failed', { error: 'ADT API error: status 500 at /sap/bc/adt/test: useful detail' });
 
     const output = stderrSpy.mock.calls[0]?.[0] as string;
@@ -98,19 +109,19 @@ describe('Logger', () => {
 
   describe('Sink Architecture', () => {
     it('starts with stderr sink by default', () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       expect(logger.getSinks()).toHaveLength(1);
     });
 
     it('addSink adds a sink', () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       const mockSink: LogSink = { write: vi.fn() };
       logger.addSink(mockSink);
       expect(logger.getSinks()).toHaveLength(2);
     });
 
     it('emitAudit dispatches to all sinks', () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       const mockSink: LogSink = { write: vi.fn() };
       logger.addSink(mockSink);
 
@@ -129,7 +140,7 @@ describe('Logger', () => {
     });
 
     it('emitAudit does not crash if a sink throws', () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       const throwingSink: LogSink = {
         write: () => {
           throw new Error('boom');
@@ -156,7 +167,7 @@ describe('Logger', () => {
     });
 
     it('emitAudit attaches clientAgent and traceparent from the request context', () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       const mockSink: LogSink = { write: vi.fn() };
       logger.addSink(mockSink);
       const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
@@ -178,7 +189,7 @@ describe('Logger', () => {
     });
 
     it('emitAudit lets an explicit clientAgent win over the context', () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       const mockSink: LogSink = { write: vi.fn() };
       logger.addSink(mockSink);
 
@@ -198,7 +209,7 @@ describe('Logger', () => {
     });
 
     it('does not redact clientAgent or traceparent — neither carries a secret', () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       const mockSink: LogSink = { write: vi.fn() };
       logger.addSink(mockSink);
       const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
@@ -220,7 +231,7 @@ describe('Logger', () => {
     });
 
     it('flush calls flush on all sinks', async () => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       const mockSink: LogSink = { write: vi.fn(), flush: vi.fn().mockResolvedValue(undefined) };
       logger.addSink(mockSink);
 
@@ -229,7 +240,7 @@ describe('Logger', () => {
     });
 
     it.each(['throw', 'reject'])('waits for healthy sinks when another sink fails with %s', async (failure) => {
-      const logger = new Logger('text', false);
+      const logger = new Logger('text', 'info');
       let finish!: () => void;
       const pending = new Promise<void>((resolve) => (finish = resolve));
       logger.addSink({

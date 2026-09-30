@@ -130,6 +130,9 @@ export interface AdtClientConfig {
   maxConcurrentDataResults: number;
   /** Process-wide data-result semaphore shared by every server-created ADT client. */
   dataResultSemaphore?: import('./semaphore.js').Semaphore;
+  /** Existing SAP transport (login cookies, CSRF token) to reuse instead of building one. Object-resolution
+   *  caches stay on the AdtClient, so a request-local client over a shared transport never sees stale routes. */
+  http?: import('./http.js').AdtHttpClient;
 }
 
 /** Create default ADT client config */

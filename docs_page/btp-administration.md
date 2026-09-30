@@ -158,6 +158,51 @@ With a dedicated secret, rebinding XSUAA no longer revokes DCR registrations by 
 environment variable; sufficiently privileged CF operators can therefore read it. A bound/file
 secret is a future hardening item, not a property that documentation can provide today.
 
+## Audit Log delivery evidence
+
+Verify a known event end to end; a startup message only confirms binding fields.
+
+1. Prepare an approved Audit Log Viewer or `auditlog-management` reader (plan
+   `default`) for subaccount-wide API retrieval. Follow SAP's
+   [retrieval setup](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-retrieval-api-usage-for-subaccounts-in-cloud-foundry-environment).
+   Prefer X.509/mTLS credentials, keep keys outside tickets/source control, and
+   recreate reader bindings/keys at least every 90 days or earlier on expiry.
+   A client-secret key is an alternative where credential policy permits it.
+2. Make one successful `SAPRead` call with `type="SYSTEM"` through the intended
+   ARC-1 endpoint. Record the UTC time, authenticated caller and CF space GUID
+   (`cf space <space-name> --guid`). Run
+   `cf logs arc1-mcp-server --recent` and record the matching tool event's request
+   ID. `REQ-n` is process-local and repeats across restarts/instances; it is not
+   a globally unique lookup key.
+3. In the Viewer, or with a valid OAuth token in the retrieval API, search a narrow
+   UTC window around that call. `SAPRead` uses `audit.data-access`, matching this
+   example (other tools can use different categories):
+
+   ```text
+   GET <url>/auditlog/v2/auditlogrecords?time_from=2026-09-17T07:00:00&time_to=2026-09-17T07:05:00&category=audit.data-access
+   Authorization: Bearer <token>
+   ```
+
+   `<url>` comes from the reader credentials. UTC times use `YYYY-MM-DDTHH:MM:SS`;
+   without a time filter the API searches the previous 30 days. Pages contain up
+   to 500 records: URL-encode `Paging: handle=…` as the next request's `handle`
+   parameter. HTTP 204 means an empty result. Back off on 429. If category
+   filtering returns 501 for your landscape, omit it and filter locally. See
+   SAP's linked API contract for current limits.
+4. Match `object.type = "MCP Tool Call"`, tool, user, `space_id`, request ID and the
+   UTC window together. Use `target` when present; a space can serve several SAP
+   systems. Invocation records include redacted `args` (cut after 500 characters
+   with `...` appended); completion records carry the outcome. Retain the matched
+   evidence privately. If these fields do not distinguish concurrent requests,
+   repeat with a fresh known call in a quiet window.
+
+Delivery is asynchronous: one eu10 check took 11 minutes, which is an observation,
+not a delivery guarantee. Recheck the same known event before diagnosing loss.
+Monitor known traffic and certificate expiry; a quiet server alone is not evidence
+of failure. ARC-1 emits throttled `BTP Audit Log delivery failed` warnings but does
+not configure an external alert for you. The reader does not enable writing:
+ARC-1's sink requires the separate `auditlog` **premium** binding.
+
 ## Audit Log certificate rotation
 
 The optional Audit Log binding certificate does not renew inside a running process. Before its
@@ -165,7 +210,10 @@ configured validity ends, unbind `arc1-auditlog` from `arc1-mcp-server` during a
 For MTA deployments, redeploy the reviewed MTAR with the same extension to recreate the binding;
 for direct `cf push`, repeat SAP's
 [X.509 binding procedure](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers)
-and restage. Check the startup log and delivery of a known audit event afterward. Do not rotate
+and restage. Check the startup log and delivery of a known audit event afterward (see
+[Audit Log delivery evidence](#audit-log-delivery-evidence)). Rotation recreates only the binding;
+the instance keeps its X.509 configuration. Track the expiry in your monitoring or
+calendar and verify a delivered event after rotation. Do not rotate
 ARC-1's XSUAA binding or DCR signing key as part of this operation.
 
 On SIGTERM/SIGINT, ARC-1 allows up to five seconds to drain requests and flush audit sinks before
@@ -360,7 +408,8 @@ Work from the outer layer inward:
 3. **Registry:** Admin `SAPTargets`, destination marker/fields, duplicates, shadows, revision.
 4. **Destination/Connectivity:** binding, lookup, Cloud Connector location and resource exposure.
 5. **SAP authentication:** certificate generated, STRUST, trusted proxy, CERTRULE/SU01 or Basic credential.
-6. **SAP authorization:** propagated/technical user has only required ADT permissions.
+6. **SAP authorization:** propagated/technical user has only required ADT permissions (for the
+   startup user, see [Startup user authorizations](btp-destination-setup.md#startup-user-authorizations)).
 7. **ARC-1 policy:** instance ceiling, destination data/SQL narrowing, user scope, deny actions.
 
 Do not “fix” a downstream failure by widening an upstream boundary. For example, a SAP `403` after

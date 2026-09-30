@@ -368,7 +368,9 @@ When it is on, one logical caller request should follow this pipeline exactly on
 6. For transparent tables, resolve active replacement metadata with the fixed DD02L/DDLDEPENDENCY
    query under the caller's SAP identity and shared response budget; recursively evaluate the
    mapped SQL-view/DDLS lineage. Missing, ambiguous or unsupported metadata fails closed. CDS
-   view-entity replacements and pooled/clustered tables remain unsupported.
+   view-entity replacements remain unsupported. For pooled/clustered tables, require
+   empty replacement metadata and a valid `SQLTAB` physical container; check that
+   terminal container against the blocklist without treating it as another logical table.
 7. Deduplicate all roots and dependencies, enforce depth/node/body limits, and deny on incomplete,
    unknown, cyclic, ambiguous, or unsupported lineage.
 8. Record the decision and only then submit the original query.

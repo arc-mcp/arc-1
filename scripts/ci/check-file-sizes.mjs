@@ -41,7 +41,7 @@ const BUDGETS = {
   // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
   // +4: parent function group for SAPTransport check/history.
-  'src/handlers/tools.ts': 1786,
+  'src/handlers/tools.ts': 1774,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -69,7 +69,9 @@ const BUDGETS = {
   // belongs on the facade; the two parts that did not were extracted first (lineage evaluation to
   // data-source-policy.ts, the statement-execution loop to table-query.ts).
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
-  'src/adt/client.ts': 1734,
+  // TABL write-route cache removed (never cache subtype routes for mutations); +9 for refusing TABL
+  // mutations whose subtype cannot be verified on 7.50/7.51 (the resolver's error text).
+  'src/adt/client.ts': 1701,
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
@@ -80,7 +82,7 @@ const BUDGETS = {
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1507, // Keep the safe CTS explanation in minimal-error mode.
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
-  'src/server/server.ts': 1485, // #817: preserve the actual bootstrap endpoint in diagnostics.
+  'src/server/server.ts': 1494, // Shared HTTP transport + monotonic renewal for new requests (R21).
 };
 
 const DEFAULT_SRC = 1500;

@@ -602,9 +602,13 @@ describe('AdtApiError', () => {
       expect(classification?.transaction).toBe('SU53');
       // Names the dump-detail resource and the typical SAP authorization objects.
       expect(classification?.hint).toContain('short-dump detail');
-      expect(classification?.hint).toContain('S_ADMI_FCD');
+      expect(classification?.hint).toContain('DUMP_INFO');
+      expect(classification?.hint).toContain('DUMP_CUSER');
+      expect(classification?.hint).toContain('DUMP_CCLNT');
+      expect(classification?.hint).toContain('S_ABAPDUMP');
+      expect(classification?.hint).toContain('7.58');
       expect(classification?.hint).toContain('ST22');
-      expect(classification?.hint).toContain('S_ADT_RES');
+      expect(classification?.hint).toContain('`S_ADT_RES` with `URI`');
       expect(classification?.hint).toContain('/sap/bc/adt/runtime/dump/');
       expect(classification?.hint).toContain('SU53');
     });
@@ -618,9 +622,10 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('authorization');
       // Different wording from the detail case: "Listing" not "Reading the ... detail".
       expect(classification?.hint).toContain('Listing short dumps');
-      expect(classification?.hint).toContain('S_ADMI_FCD');
+      expect(classification?.hint).toContain('S_ABAPDUMP');
+      expect(classification?.hint).toContain('7.58');
       expect(classification?.hint).toContain('ST22');
-      expect(classification?.hint).toContain('S_ADT_RES');
+      expect(classification?.hint).toContain('`S_ADT_RES` with `URI`');
       expect(classification?.hint).not.toContain('short-dump detail');
     });
 
@@ -633,7 +638,8 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('authorization');
       expect(classification?.hint).toContain('SAP Gateway error log');
       expect(classification?.hint).toContain('/IWFND/ERROR_LOG');
-      expect(classification?.hint).toContain('S_ADT_RES');
+      expect(classification?.hint).toContain('STAUTHTRACE');
+      expect(classification?.hint).toContain('`S_ADT_RES` with `URI`');
       expect(classification?.hint).toContain('/sap/bc/adt/gw/errorlog/');
     });
 

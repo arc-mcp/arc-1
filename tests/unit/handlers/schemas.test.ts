@@ -968,23 +968,23 @@ describe('SAPWriteSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('exposes edit_unit only for on-prem PROG/INCL writes', () => {
+  it.each(['edit_unit', 'add_unit'])('exposes %s only for on-prem PROG/INCL writes', (action) => {
     const program = SAPWriteSchema.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'PROG',
       name: 'ZUNIT_TEST',
       unit: 'PROCESS_ORDERS',
       source: 'FORM process_orders.\nENDFORM.',
     });
     const include = SAPWriteSchema.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'INCL',
       name: 'ZUNIT_INCLUDE',
       unit: 'STATUS_0100',
       source: 'MODULE status_0100 OUTPUT.\nENDMODULE.',
     });
     const btp = SAPWriteSchemaBtp.safeParse({
-      action: 'edit_unit',
+      action,
       type: 'CLAS',
       name: 'ZCL_TEST',
       unit: 'PROCESS_ORDERS',

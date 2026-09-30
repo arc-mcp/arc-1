@@ -195,6 +195,34 @@ Refused with an `AdtSafetyError` unless **all** hold:
     `denyActions` + the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
     custom service's ABAP handler owns its locking/transport.
 
+`ctx.http.post`, `ctx.run.classRun` and `ctx.run.programRun` do not automatically repeat a request
+after a transient 429/503 or database connection error. A network failure or 429/5xx leaves
+completion **unconfirmed**: inspect the service's result or business state before retrying the tool.
+Authentication, any **403** (treated as possible CSRF expiry), and content negotiation can still
+resend a request; this is not an exactly-once guarantee. GET, PUT and DELETE retain their existing
+retry behavior. If your plugin catches errors, rethrow the original error so ARC-1 can render this
+guidance, or handle `error.pluginPostOutcome === 'unknown'` explicitly; returning only `error.message`
+loses the completion warning.
+
+### Parameterized services and read-only POSTs
+
+For reads, prefer a supported [OData function](https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_Functions)
+or an SAP-owner-reviewed read-only ICF GET endpoint. These work today with `ctx.http.get` without
+enabling writes; a service exposed only through POST would need a backend change. Business-data
+tools should declare `data` scope; raw GET does not enforce the data-preview/SQL flags (see
+[runtime gates](#security-roles-by-use-case)).
+
+There is no `ctx.run.callFunction` or `ctx.http.postRead`. All raw POSTs require the write gates
+above, including dedicated read endpoints such as the sample's LISA translation reads. Do not
+enable writes on a read-only deployment just to make them work. A URL exception cannot distinguish
+read/write bodies on shared SOAP or `$batch` endpoints; a dedicated read endpoint is a candidate
+for [FEAT-77](roadmap.md#feat-77) once its semantics and request contract are verified.
+
+For SOAP, use an SAP-owner-approved service and its configured **binding WSDL**, with fixed
+operations and endpoint in reviewed plugin code. Do not introduce the deprecated generic SOAP
+6.20 dispatcher as a new integration. See [SAP lifecycle guidance](https://help.sap.com/docs/SAP_NETWEAVER_740/f1cccec432514a3181f2852f2b91d306/c84cb8db0b3b43908ae4e987f3a3ade5.html)
+and [binding WSDL guidance](https://help.sap.com/docs/SUPPORT_CONTENT/abapconn/3354079866.html).
+
 ADT **object** create/update/delete (CLAS, DDLS, …) stay on the roadmap as the package-aware v2
 `ctx.write` vocabulary — see `docs/research/2026-06-17-extension-framework-v2-spec.md`.
 
@@ -259,7 +287,8 @@ framework — **all** of the following must hold, or the call is refused with an
 `classRun` and `programRun` are **named** ops (not raw POSTs), so a plugin can only run a class or
 report **by name** (validated, no path injection) — it cannot reach arbitrary endpoints. That is why
 they have their own dedicated gate, distinct from the raw `ctx.http` write surface; ADT **object**
-writes still wait for the v2 `ctx.write`.
+writes still wait for the v2 `ctx.write`. Both operations use the [POST retry policy](#writing-non-adt-odataicf)
+above: ambiguous failures require inspection before another execution.
 
 ---
 
@@ -286,6 +315,11 @@ This is the most important part. An extension tool **inherits ARC-1's full safet
 gated exactly like a built-in. Two layers must both pass: the **user's scope** (their MCP role/profile)
 **and** the **server's safety ceiling** (the admin's `allow*` flags). Per-user **principal propagation**
 means the tool acts as the calling SAP user, so SAP-side auth (`S_DEVELOP`, package checks) applies too.
+
+`ctx.client` exposes an explicit set of plain-read methods. Internal session factories,
+metadata/text writers, SQL methods and client internals are absent at runtime and in the public
+type. New ARC-1 client methods are not automatically added to this surface. Existing plugins
+that used these unintended methods must use a supported, gated operation instead.
 
 Declare `policy: { scope, opType }` to match the operation your tool performs. The user's scope must
 **cover** it (a `read` user never sees a `write`-scoped tool), and the server ceiling must allow it.

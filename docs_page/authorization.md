@@ -183,13 +183,23 @@ activation takes effect immediately and no stale decision can be reused. Directl
 stay cheap and local. The check and the query are separate SAP requests, so the pair is not
 transactionally atomic (a TOCTOU window remains).
 
-Replacement proof uses one fixed catalog query per distinct transparent table, on every release.
+Replacement proof uses one fixed catalog query per distinct table, on every release.
 For supported DDIC-based replacements, `DD02L.VIEWREF` identifies the SQL view; active
 `DDLDEPENDENCY` maps it to its DDLS source.
 Missing/ambiguous rows, an error flag or an unmapped replacement fail closed. The graph must identify
 the SQL view, and both identities are checked against the blocklist. No DDL-source resource or release
-number is used to infer the absence of replacements. Classic DDIC views, CDS view-entity replacements,
-and pooled/clustered tables (common on older ECC systems) are unsupported and fail closed.
+number is used to infer the absence of replacements.
+
+Pooled and cluster tables (common on older, non-HANA ECC systems) cannot carry a
+[replacement object](https://help.sap.com/doc/abapdocu_750_index_htm/7.50/en-US/abenddic_database_tables_poclure.htm).
+The same catalog row must show no replacement metadata and name the physical table pool or cluster
+(`DD02L.SQLTAB`); that container is checked against the blocklist as the table's lineage node. Blocking
+a container such as `RFBLG` therefore blocks every logical table stored in it (`BSEG`, `BSEC`, `BSET`),
+while blocking one logical table leaves its siblings readable. A direct query of the physical container
+stays unresolved and fails closed. This policy check does not grant SAP permissions
+or remove SAP's SQL restrictions on pooled/cluster tables.
+
+Classic DDIC views and CDS view-entity replacements are unsupported and fail closed.
 These are policy limitations, not evidence that SAP cannot query those objects.
 
 This private query reads authorization metadata and cannot recursively authorize itself. It runs only

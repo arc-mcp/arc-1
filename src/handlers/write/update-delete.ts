@@ -8,20 +8,7 @@ import {
   TEXT_ELEMENT_PARTS,
   type TextElementPart,
 } from '../../adt/client.js';
-import {
-  deleteObject,
-  lockObject,
-  safeUpdateClassInclude,
-  safeUpdateObject,
-  safeUpdateSource,
-  unlockObject,
-} from '../../adt/crud.js';
-import {
-  formatKtdWriteReport,
-  type KtdShortText,
-  type KtdWriteReport,
-  rewriteKtdDocument,
-} from '../../adt/ddic-xml.js';
+import { deleteObject, lockObject, safeUpdateClassInclude, safeUpdateSource, unlockObject } from '../../adt/crud.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
@@ -35,20 +22,15 @@ import { getCachedFeatures } from '../feature-cache.js';
 import { CLASS_WRITE_INCLUDES, canonicalTablType, classIncludeUrl } from '../object-types.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
-  buildCreateXml,
-  getMetadataWriteProperties,
   isMetadataWriteType,
-  mergeMetadataWriteProperties,
   mergePreWriteWarnings,
-  resolveWriteSystemType,
   runPreWriteLint,
   runPreWriteSyntaxCheck,
   runRapPreflightValidation,
-  SKTD_V2_CONTENT_TYPE,
   stripFmParamCommentBlock,
-  vendorContentTypeForType,
 } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
+import { writeMetadataUpdate } from './metadata-update.js';
 
 function isDeleteDependencyError(err: AdtApiError): boolean {
   const clean = AdtApiError.extractCleanMessage(err.responseBody ?? err.message).toLowerCase();
@@ -120,80 +102,8 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
     );
   }
 
-  if (type === 'SKTD') {
-    // KTD update requires the full <sktd:docu> XML envelope with the Markdown
-    // body base64-encoded inside <sktd:text>, PUT with
-    // `application/vnd.sap.adt.sktdv2+xml`. PUTting raw text/plain silently
-    // no-ops (or 415s on strict systems). Fetch the current envelope,
-    // replace only the <sktd:text> body, and PUT it back — preserves
-    // responsible/masterLanguage/packageRef/refObject metadata.
-    //
-    // Deliberately no `version`: ADT's default view already carries the pending
-    // inactive draft, so consecutive node writes without an activation in between
-    // accumulate instead of reverting to the active version (live-verified
-    // 2026-09-02). SAPRead defaults to "active", so its node list can lag this one;
-    // every refusal raised below lists the ids of the envelope it actually merged.
-    const { source: currentEnvelope } = await client.getKtd(name);
-    const report: KtdWriteReport = { proseHeadings: [] };
-    const body = rewriteKtdDocument(
-      currentEnvelope,
-      hasSource ? source : undefined,
-      args.shortTexts as KtdShortText[] | undefined,
-      report,
-    );
-    // Report both changed nodes and headings retained as prose so a new body exposes its routing.
-    const summary = formatKtdWriteReport(currentEnvelope, body, report, args.dryRun === true);
-    // A KTD update is a merge: only the addressed nodes change. dryRun runs the identical
-    // validation and reports the outcome without the PUT, so a 90-node edit can be checked
-    // before it touches SAP.
-    if (args.dryRun === true) {
-      return textResult(`Dry run for ${type} ${name} — nothing was written.\n${summary}`);
-    }
-    await safeUpdateObject(
-      client.http,
-      client.safety,
-      objectUrl,
-      body,
-      SKTD_V2_CONTENT_TYPE,
-      transport,
-      getCachedFeatures()?.abapRelease,
-    );
-    invalidateWrittenObject(type, name);
-    return textResult(`Successfully updated ${type} ${name}.\n${summary}`);
-  }
-
-  if (isMetadataWriteType(type)) {
-    // Metadata updates are full-XML-replace — we must fetch existing metadata
-    // and merge with provided fields so omitted fields keep their current values.
-    // Without this, updating just labels would reset dataType/typeKind to defaults.
-    const metadataProps = getMetadataWriteProperties(args);
-    const mergedProps = await mergeMetadataWriteProperties(client, type, name, metadataProps);
-    const description = String(args.description ?? mergedProps._description ?? name);
-    const pkg = String(args.package ?? existingPackage ?? mergedProps._package ?? '$TMP');
-    // Keep the full-XML-replace body cloud-correct on BTP (G-3); resolve the user from the JWT (G-5).
-    const systemType = resolveWriteSystemType(config, client);
-    const responsible = config.username || (await client.getEffectiveUser());
-    const body = buildCreateXml(
-      type,
-      name,
-      pkg,
-      description,
-      mergedProps,
-      config.language,
-      responsible,
-      systemType === 'btp',
-    );
-    await safeUpdateObject(
-      client.http,
-      client.safety,
-      objectUrl,
-      body,
-      vendorContentTypeForType(type),
-      transport,
-      getCachedFeatures()?.abapRelease,
-    );
-    invalidateWrittenObject(type, name);
-    return textResult(`Successfully updated ${type} ${name}.`);
+  if (type === 'SKTD' || isMetadataWriteType(type)) {
+    return writeMetadataUpdate(ctx, existingPackage);
   }
 
   // RAP deterministic preflight validation

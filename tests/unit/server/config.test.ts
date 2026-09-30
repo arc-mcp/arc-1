@@ -119,6 +119,13 @@ describe('parseArgs', () => {
     expect(config.verbose).toBe(true);
   });
 
+  it('parses ARC1_LOG_LEVEL and keeps SAP_VERBOSE as a debug alias', () => {
+    process.env.ARC1_LOG_LEVEL = 'warn';
+    expect(parseArgs([]).logLevel).toBe('warn');
+    process.env.SAP_VERBOSE = 'true';
+    expect(parseArgs([]).logLevel).toBe('debug');
+  });
+
   it('parses boolean env vars', () => {
     process.env.SAP_ALLOW_WRITES = 'true';
     process.env.SAP_ALLOW_FREE_SQL = '1';

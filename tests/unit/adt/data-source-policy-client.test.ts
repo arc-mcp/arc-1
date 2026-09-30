@@ -113,6 +113,28 @@ describe('catalog replacement policy through the real client', () => {
     expect(appPosts()).toHaveLength(0);
   });
 
+  it('selects the physical container in the one catalog query', async () => {
+    await client().runTableQuery('SCARR');
+    expect(posts()[0]?.[1].body).toContain('d~SQLTAB');
+  });
+
+  it('authorizes a cluster table through its unblocked container', async () => {
+    catalogBody = fixture('replacement-catalog-bseg-cluster');
+    await expect(client(['BSEC']).runTableQuery('BSEG')).resolves.toBeDefined();
+    expect(posts()).toHaveLength(2);
+    expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/graphdata'))).toBe(false);
+  });
+
+  it('denies a cluster table whose container is blocked before the application query', async () => {
+    catalogBody = fixture('replacement-catalog-bseg-cluster');
+    await expect(client(['RFBLG']).runTableQuery('BSEG')).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      matchedSource: 'RFBLG',
+      sourcePath: ['BSEG', 'RFBLG'],
+    });
+    expect(appPosts()).toHaveLength(0);
+  });
+
   it('counts catalog and application bytes in one cumulative budget', async () => {
     const limit = Math.max(Buffer.byteLength(catalog), Buffer.byteLength(data)) + 1;
     await expect(client(['USR02'], limit).runTableQuery('SCARR')).rejects.toThrow(/limit|budget|large/i);

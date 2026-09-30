@@ -1,16 +1,16 @@
-/** SAPWrite action for surgical FORM/MODULE replacement in PROG and INCL sources. */
+/** SAPWrite action for surgical FORM/MODULE replacement and insertion in PROG and INCL sources. */
 
 import { lockObject, unlockObject, updateSource } from '../../adt/crud.js';
 import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../../adt/features.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { assertSourceHash } from '../../adt/source-precondition.js';
-import { spliceUnit } from '../../context/unit-surgery.js';
+import { insertUnit, spliceUnit } from '../../context/unit-surgery.js';
 import { getCachedFeatures } from '../feature-cache.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import { runPreWriteLint, runPreWriteSyntaxCheck } from '../write-helpers.js';
 import type { SapWriteContext } from './context.js';
 
-export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolResult> {
+export async function writeActionUnit(ctx: SapWriteContext): Promise<ToolResult> {
   const {
     client,
     args,
@@ -26,13 +26,15 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
     invalidateWrittenObject,
     enforcePackageForExistingObject,
   } = ctx;
+  const action = String(args.action);
+  const adding = action === 'add_unit';
   const unit = String(args.unit ?? '').trim();
-  if (!unit) return errorResult('"unit" is required for edit_unit action.');
+  if (!unit) return errorResult(`"unit" is required for ${action} action.`);
   if (!source.trim()) {
-    return errorResult('"source" (complete FORM...ENDFORM or MODULE...ENDMODULE block) is required for edit_unit.');
+    return errorResult(`"source" (complete FORM...ENDFORM or MODULE...ENDMODULE block) is required for ${action}.`);
   }
   if (type !== 'PROG' && type !== 'INCL') {
-    return errorResult('edit_unit is only supported for type=PROG or type=INCL.');
+    return errorResult(`${action} is only supported for type=PROG or type=INCL.`);
   }
   checkOperation(client.safety, OperationType.Update, 'EditUnit');
   await enforcePackageForExistingObject();
@@ -51,7 +53,9 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
       // Read after locking, without source or inactive-list caches.
       const currentSource = (await session.get(srcUrl, { 'Cache-Control': 'no-cache' })).body;
       assertSourceHash(currentSource, args.expectedSourceHash as string | undefined, srcUrl);
-      const spliced = spliceUnit(currentSource, name, unit, source, abaplintVersion);
+      const spliced = adding
+        ? insertUnit(currentSource, name, unit, source, abaplintVersion)
+        : spliceUnit(currentSource, name, unit, source, abaplintVersion);
       if (!spliced.success) return errorResult(spliced.error ?? `Failed to splice unit "${unit}" in ${name}.`);
 
       const lint = runPreWriteLint(spliced.newSource, type, name, { ...config, abapRelease: release }, lintOverride);
@@ -80,7 +84,7 @@ export async function writeActionEditUnit(ctx: SapWriteContext): Promise<ToolRes
         type === 'INCL' && group
           ? ` Activate this structural include with SAPActivate(type="INCL", name="${name}", group="${group}").`
           : '';
-      const message = `Successfully updated ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
+      const message = `Successfully ${adding ? 'added' : 'updated'} ${kind} "${unit}" in ${type} ${name}.${activationHint}`;
       const extras = [lint.warnings, checkNotes].filter(Boolean).join('\n\n');
       return extras ? textResult(`${message}\n\n${extras}`) : textResult(message);
     } finally {

@@ -1,14 +1,4 @@
-/**
- * Tool definitions for ARC-1's 12 intent-based MCP tools.
- *
- * Group operations by intent, with a `type` parameter for object routing.
- * This keeps the LLM's tool selection simple and the context window small.
- *
- * Tool definitions adapt based on system type (BTP vs on-premise):
- * - BTP ABAP Environment: removes unavailable types (PROG, INCL, VIEW,
- *   TEXT_ELEMENTS, VARIANTS), adjusts descriptions for restricted features
- * - On-premise: full tool set with all types and descriptions
- */
+/** Intent-based tool schemas; BTP omits classic object types and adjusts descriptions. */
 
 import {
   ATC_BATCH_MAX_OBJECTS,
@@ -590,7 +580,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit']),
+              ...(btp ? [] : ['edit_unit', 'add_unit']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -608,7 +598,7 @@ export function getToolDefinitions(
             description:
               'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
-              (btp ? '' : 'edit_unit: replace one FORM or MODULE block inside a PROG/INCL. ') +
+              (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
@@ -625,13 +615,13 @@ export function getToolDefinitions(
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
               ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): "source" is AFF JSON, except DDL text for DTSC/DSFD/DTDC/DRTY — create/update/delete, then SAPActivate. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
-              : 'Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): "source" is AFF JSON, except DDL text for DTSC/DSFD/DTDC/DRTY — create/update/delete, then SAPActivate. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
+              : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): "source" is AFF JSON, except DDL text for DTSC/DSFD/DTDC/DRTY — create/update/delete, then SAPActivate. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
           },
           name: {
             type: 'string',
             description: btp
               ? 'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).'
-              : 'Object name (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
+              : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
           },
           expectedSourceHash: {
             type: 'string',
@@ -642,7 +632,7 @@ export function getToolDefinitions(
             type: 'string',
             description: btp
               ? 'ABAP source. create/update: full body. DDLS: type=DDLS; Cloud permits eligible `extend view entity`, not legacy `extend view`. edit_method: body. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.'
-              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.',
+              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit/add_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.',
           },
           include: {
             type: 'string',
@@ -670,7 +660,7 @@ export function getToolDefinitions(
             : {
                 unit: {
                   type: 'string',
-                  description: 'edit_unit FORM/MODULE name in a PROG or INCL (case-insensitive).',
+                  description: 'edit_unit/add_unit: existing/new FORM or MODULE name (case-insensitive).',
                 },
               }),
           visibility: {

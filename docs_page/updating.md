@@ -284,7 +284,12 @@ cf deploy -i <operation-id> -a abort
 ```
 
 Do not use `-f` to bypass this check: first inspect the operation and confirm that aborting it is
-safe for the target space.
+safe for the target space. On Windows a stalled `cf.exe` can leave its `multiapps.exe`
+child running. Stop only the identified stalled invocation and its child before retrying;
+ending a local process does not itself abort the server-side operation.
+The default version rule, `SAME_HIGHER`, already permits a same-version redeploy.
+An approved rollback to an older version needs `--version-rule ALL`; check
+`cf deploy --help` for your installed plugin.
 
 ### Single-target or PP-only multi-target
 
@@ -334,8 +339,13 @@ For every mode:
 5. perform one Viewer `SAPRead SYSTEM` and verify the intended SAP identity.
 
 Keep the previous reviewed MTAR, `.mtaext`, and DCR signing secret available. Roll back through the
-same strategy as the update. Shared Basic rollback is also stop/deploy/start and must finish at one
-process. See [BTP Administration](btp-administration.md#deployment-and-scaling-by-identity-mode).
+same strategy as the update, explicitly permitting the older archive:
+
+```bash
+cf deploy <previous-reviewed.mtar> -e <previous-reviewed.mtaext> --version-rule ALL
+```
+
+Shared Basic rollback is also stop/deploy/start and must finish at one process. See [BTP Administration](btp-administration.md#deployment-and-scaling-by-identity-mode).
 
 ### Keeping MCP clients signed in across updates
 
