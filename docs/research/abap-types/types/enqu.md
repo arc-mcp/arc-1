@@ -18,3 +18,13 @@ This dated section concerns read-only relationship roots, not new SAPRead operat
 ```
 
 Qualification and limitations: [per-type research](../../2026-09-10-live-relations-types.md). CI binds every qualified native identity to this document and replays the independent recorded fixtures. This proves the observed 758 shapes, not support on other releases or relationship completeness.
+
+## SAPRead / SAPWrite type — SAP_BASIS 816 (2026-09-28)
+
+`ENQU` is now a SAPRead/SAPWrite type and `ENQU/DL` a global slash alias (`SLASH_TYPE_MAP`). Evidence from
+an S/4HANA system on SAP_BASIS 8.16: discovery advertises `/sap/bc/adt/ddic/lockobjects/sources` with
+accept `application/vnd.sap.adt.lockobjects.v1+xml`, and a metadata GET of the SAP-standard `EVVBAKE` and
+`EMEKKOE` returns root `enqu:lockobject` with `adtcore:type="ENQU/DL"`. The full `EMEKKOE` response
+(primary `EKKO` + secondary `EKPO`) is recorded as
+[`tests/fixtures/xml/lockobject-emekkoe.xml`](../../../../tests/fixtures/xml/lockobject-emekkoe.xml).
+Create/update/activate/delete contract: [ADT contract research](../../2026-09-28-enqu-lock-object-adt-contract.md).

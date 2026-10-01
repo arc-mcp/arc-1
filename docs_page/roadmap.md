@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-09-29
+**Last reviewed:** 2026-09-30
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -89,6 +89,7 @@ sequence.
 | [FEAT-70](#feat-70) | Table technical settings | P2 | M | Needs research | Object coverage |
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
+| [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
 | [FEAT-69](#feat-69) | Mass syntax check | P2 | S | Ready | Diagnostics |
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
@@ -521,6 +522,30 @@ is a reference for researching the remaining candidates, not a guarantee they sh
 **Resume with.** Discovery markers, metadata/source media types, create subtype, stateful CRUD,
 activation and read-back evidence for each remaining type. Measure schema cost and add candidates
 independently; do not infer their create subtype or source format from the family.
+
+<a id="feat-78"></a>
+### FEAT-78 — Table type access type and keys
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Object coverage
+
+**Idea.** Read and write a table type's complete definition: access type, primary-key definition
+and components, secondary keys, initial row count, and reference or range row types.
+
+**Why it remains.** `SAPWrite` writes only a standard table with a non-unique standard key. An
+update with an explicit `rowType` therefore resets every other setting, and `SAPRead` reports
+`plainStandardTable: false` without listing the key components or secondary keys. ARC-1 refuses an
+update without `rowType` rather than lose them; see
+[table type updates](tools.md#table-type-updates). About one in six table types on the tested
+S/4HANA 2023 system has such a definition.
+
+**Resume with.** Prefer sending back the stored `<ttyp:tableType>` envelope with only the requested
+change, as SKTD updates do, over one input per setting. SAP_BASIS 758 and 816 accepted a PUT with a
+sorted table and unique key components; secondary keys, aliases and reference or range rows are
+untested. Prove the PUT contract for each of the
+[recorded shapes](https://github.com/arc-mcp/arc-1/blob/main/docs/research/abap-types/types/ttyp.md)
+on two releases, keep the refusal for anything ARC-1 still cannot reproduce, and add the key
+components and secondary keys to the read.
 
 ## Diagnostics, data, and code intelligence
 

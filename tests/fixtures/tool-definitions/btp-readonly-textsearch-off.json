@@ -23,6 +23,7 @@
             "TABL",
             "DOMA",
             "DTEL",
+            "ENQU",
             "TABLE_CONTENTS",
             "TABLE_QUERY",
             "DEVC",
@@ -44,9 +45,12 @@
             "DSFD",
             "DTDC",
             "UIAD",
-            "DRTY"
+            "DRTY",
+            "APLO",
+            "SAJC",
+            "SAJT"
           ],
-          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type. Deprecated: MESSAGES→MSAG."
+          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template. Deprecated: MESSAGES→MSAG. ENQU lock object as JSON."
         },
         "name": {
           "type": "string",
@@ -108,7 +112,7 @@
             "inactive",
             "auto"
           ],
-          "description": "Source defaults active; inactive requests a draft (SAP may return active if none); auto selects developer view. DTEL/server-driven types default to developer view. Server-driven types return an error if SAP cannot confirm an explicit version (e.g. no draft)."
+          "description": "Source defaults active; inactive requests a draft (SAP may return active if none); auto selects developer view. DTEL/ENQU/server-driven types default to developer view. Server-driven types return an error if SAP cannot confirm an explicit version (e.g. no draft)."
         },
         "includeSignature": {
           "type": "boolean",

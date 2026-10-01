@@ -60,6 +60,7 @@ export const SLASH_TYPE_MAP: Record<string, string> = {
   'VIEW/DV': 'VIEW', // docs/research/abap-types/types/view.md
   'SKTD/TYP': 'SKTD', // docs/research/abap-types/types/sktd.md
   'TTYP/DA': 'TTYP', // docs/research/abap-types/types/ttyp.md — live a4h 758 + 816 return adtcore:type="TTYP/DA"
+  'ENQU/DL': 'ENQU', // docs/research/abap-types/types/enqu.md — live 758 + 816 return adtcore:type="ENQU/DL"
 };
 
 /**
@@ -92,6 +93,7 @@ export const SLASH_TYPE_EVIDENCE: Record<string, string> = {
   'VIEW/DV': 'docs/research/abap-types/types/view.md',
   'SKTD/TYP': 'docs/research/abap-types/types/sktd.md',
   'TTYP/DA': 'docs/research/abap-types/types/ttyp.md',
+  'ENQU/DL': 'docs/research/abap-types/types/enqu.md',
 };
 
 const FRIENDLY_TYPE_ALIAS_MAP: Record<string, string> = {
@@ -129,6 +131,7 @@ export const KNOWN_BASE_TYPES = new Set([
   'VIEW',
   'SKTD',
   'TTYP',
+  'ENQU',
 ]);
 
 /** Normalize ADT type codes and aliases to ARC-1 canonical short types. */
@@ -464,6 +467,9 @@ export function objectBasePath(type: string): string {
       // DDIC table types. Live a4h 758 + 816 confirm GET/POST/DELETE here; XML-metadata
       // (no source/main). docs/research/abap-types/types/ttyp.md.
       return '/sap/bc/adt/ddic/tabletypes/';
+    case 'ENQU':
+      // DDIC lock objects: XML metadata, no source/main. Live 8.16: docs/research/abap-types/types/enqu.md.
+      return '/sap/bc/adt/ddic/lockobjects/sources/';
     case 'MSAG':
       return '/sap/bc/adt/messageclass/';
     case 'DEVC':

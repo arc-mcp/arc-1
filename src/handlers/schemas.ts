@@ -250,8 +250,8 @@ export const SAPReadSchema = z
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured', 'editable']).optional(),
-    // Keep omission observable: source handlers still default it to active, while DTEL
-    // uses SAP's version-less developer view for read-after-write consistency.
+    // Keep omission observable: source handlers still default it to active, while DTEL/ENQU
+    // use SAP's version-less developer view for read-after-write consistency.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),

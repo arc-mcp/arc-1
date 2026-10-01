@@ -39,6 +39,86 @@ Design (see `src/adt/ddic-xml.ts` `buildTableTypeXml`):
   So a future built-in ARC-1 hasn't enumerated still works via `rowTypeKind="builtin"`.
 - Current built-in set (16): `STRING XSTRING I INT8 F P D T C N X B S DECFLOAT16 DECFLOAT34 UTCLONG`.
 
+## Stored definitions and what an update writes back (2026-09-30)
+
+Read-only evidence from a4h (S/4HANA 2023 / SAP_BASIS 758): `GET /sap/bc/adt/ddic/tabletypes/{name}`
+plus `DD40L`/`DD43L` counts. `STRINGTAB`, `SALV_T_ROW` and `SATC_T_AC_AUNIT_TESTCLASSES` were re-read on
+a4h-2025 (816) and were identical.
+
+### `<ttyp:rowType>` by kind
+
+| `typeKind` | `typeName` | `builtInType` (`dataType` `length`) | `rangeType` | Read from |
+|---|---|---|---|---|
+| `predefinedAbapType` | empty | `STRING` 0, `RAWSTRING` 0, `CHAR` 30, `INT4` 10, `DF34_DEC` 31 | empty | `STRINGTAB`, `SCI_SQLSTMNT`, `SBO_T_SEMANTIC_KEY`, `SALV_T_ROW`, `SAPCRFC_DECFLOAT34_TAB` |
+| `dictionaryType` | structure, data element or table type | resolved: `STRU`, `STRING`, `TTYP` | empty | `SADT_EXCEPTION_PROPERTIES`, `SAML2_ANYURI_T`, `SCWB_STATEMENT_TAB` |
+| `refToClassOrInterfaceType` | class, interface or `OBJECT` | empty | empty | `SALERTTCLACTIVITY`, `SAML_ATTRIBUTES_REF`, `SWF_UTL_OBJECT_TAB` |
+| `refToDictionaryType` | DDIC type or `DATA` | empty | empty | `SCMS_GET_FILES_TEST`, `SCMG_T_LOC_RESULT` |
+| `rangeTypeOnPredefinedType` | empty | element type | row structure | `SCA_STRING_RANGE` |
+| `rangeTypeOnDataelement` | data element | resolved | row structure | `SACCT_CONNECTION_ID_RANGE` |
+
+What this means for `buildTableTypeXml`:
+
+- SAP returns dictionary names for built-in rows (`INT4`, `CHAR`, `RAWSTRING`), not the ABAP names in
+  `TTYP_BUILTIN_ROW_TYPES` (`I`, `C`, `XSTRING`). Auto-detection would classify a stored `INT4` as a
+  structure, so an update carries the stored kind instead.
+- `length` and `decimals` are part of a built-in row type (`CHAR` 30) and are returned even where SAP
+  derives them (`INT4` 10). An update carries them; the builder writes zeros otherwise.
+- Reference and range rows have no `rowTypeKind` equivalent and cannot be rebuilt.
+
+### Access type and keys
+
+| Element | Builder writes | Other stored values |
+|---|---|---|
+| `initialRowCount` | `00000` | `01000` (`SATR_T_HIT1`) |
+| `accessType` | `standard` | `sorted`, `hashed`, `index`, `notSpecified` |
+| `primaryKey/definition` | `standard` | `keyComponents` with `<ttyp:component ttyp:name>`, `rowType`, `empty`, `notSpecified` |
+| `primaryKey/kind` | `nonUnique` | `unique`, `notSpecified` |
+| `primaryKey/alias` | empty | `KEY` (`SAML2_AUDIT_MESSAGE_T`) |
+| `secondaryKeys/allowed` | `notSpecified` | `allowed`, `notAllowed` |
+| `secondaryKeys/secondaryKey` | none | one per key, also under `allowed=notSpecified` (`SACCT_TRACE`) |
+
+`parseTableType` reports `plainStandardTable: true` only when all seven match the builder. Of 63,172
+active table types, 52,284 (83%) have the builder's access type and primary key; 1,257 have secondary
+keys, and about 2,460 have a reference or range row type.
+
+### Update rule
+
+`mergeMetadataWriteProperties` reads the table type under the lock.
+
+- The description is kept unless supplied.
+- An omitted row type is kept with its kind and built-in length when the row kind is
+  `predefinedAbapType` or `dictionaryType` and `plainStandardTable` is true. Otherwise the update is
+  refused, because the PUT would reset what the builder cannot write.
+- A supplied row type that equals the stored one keeps the stored kind and length; a different one
+  takes neither.
+- A supplied row type always proceeds and still resets access type and keys (roadmap FEAT-78).
+
+### Live write verification (2026-09-30, 758 and 816)
+
+Disposable `$TMP` table types, basic authentication, same results on a4h (758) and a4h-2025 (816).
+A build of main `a1875eaa` replaced the description with the object name in the first scenario (758).
+
+| Scenario | Result with the merge |
+|---|---|
+| Update with only `rowType`, stored description `R&D <rows> "quoted"` | description unchanged, escaped once on the wire |
+| Update with only `description` | row type unchanged for `STRING`, `INT4`, `BAPIRET2`, `SYUNAME` and `CHAR` 1 rows |
+| `rowType` restated without `rowTypeKind` (`INT4`, `char`) | stored kind and length kept |
+| Activation after those updates (`INT4`, `BAPIRET2`, `SYUNAME`) | succeeds |
+| Draft pending after activation, then update with only `rowType` | the draft description survives: the version-less GET under the lock returns the inactive version |
+| Sorted table with unique key components (crafted with a raw PUT), update with only `description` | refused, nothing written; an explicit `rowType` rewrites it as a standard table |
+
+Further observations:
+
+- SAP derives `builtInType` for dictionary rows: ARC-1 sends `STRU` with length 0, and a `SYUNAME` row
+  reads back as `CHAR` 12.
+- An `INT4` row created with length 0 reads back with length 0 even when active; activation warns
+  `Number of positions is corrected to 10`. SAP-delivered `INT4` table types return 10.
+- The create POST alone stores the description and a `CHAR` 1 row. A description-only update of that
+  shell keeps `CHAR` 1, which proves the carry for a non-zero length.
+- SAP accepted the PUT of a sorted table with unique key components in the builder's element order.
+  That is the first evidence for FEAT-78; secondary keys, aliases and reference or range rows are
+  untested.
+
 
 ## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
 

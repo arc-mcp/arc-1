@@ -45,7 +45,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY` where the system advertises them — release-dependent) |
+| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` where the system advertises them — release-dependent) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
 | `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL` (CDS views are `DDLS`; classic DDIC `VIEW` is unsupported — it has no plain-text source). Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
 | `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or its canonical source/revision URI. URI inputs use the same endpoint, authority, traversal, query, fragment, and control-character checks as `versionUri`. |
@@ -66,7 +66,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`. IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
-| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. For DTEL metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
+| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
@@ -108,7 +108,8 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `SRVB` | Service binding (structured JSON: OData version, binding type, publish status) |
 | `SKTD` / `KTD` | Knowledge Transfer Document attached to an ABAP object. Returns Markdown decoded from the ADT XML envelope, one `## <node id>` section per documented node when routing is needed (BDEF entities, savers, actions, functions, …). A heading that names a node — its id, or the node name the index prints — is reserved routing syntax; a colliding heading inside stored body text is reversibly shown with one leading `\`. Behind a reserved HTML-comment marker, the response lists populated per-node short texts and a compact index of EVERY writable node, each by the spelling that resolves back to it (the name, or the full id when only that does), with the empty ones on an `empty (n):` line. Add a `## <name>` section above the marker to document one; use `shortTexts` to update its short text. Start multi-node edits from the complete `SAPRead` result; a standalone `## <object name>` is refused when it could instead be a visible root title (use `# <object name>` for that title). `SAPWrite` ignores the marker and context below it; the writable Markdown still follows the requested active/inactive version semantics. Documented non-writable sections can pass through unchanged while attempted edits remain refused. `KTD` is a friendly alias; `SKTD` remains the canonical SAP object type. |
 | `TABL` | DDIC TABL — covers both transparent tables (T000-style) and DDIC structures (BAPIRET2-style). Returns CDS-like source. ARC-1 auto-resolves the URL: tries `/sap/bc/adt/ddic/tables/{name}` first, falls back to `/sap/bc/adt/ddic/structures/{name}` on 404. There is no separate `STRU` type — `TABL` is the canonical short type for both, mirroring TADIR `R3TR TABL` and abapGit conventions. |
-| `TTYP` | DDIC table type (on-prem only). Returns `{name, description, rowType, rowTypeKind, accessType, keyKind}`. Written via `SAPWrite(type="TTYP")` — the create POSTs a CHAR shell and a follow-up PUT sets the real row type. |
+| `TTYP` | DDIC table type (on-prem only). Returns `{name, description, rowType, rowTypeKind, rowTypeLength, rowTypeDecimals, accessType, keyKind, plainStandardTable, package}`. Key components and secondary keys are not listed; `plainStandardTable` is `false` when the table type has them or is not a standard table with a non-unique standard key. Written via `SAPWrite(type="TTYP")` — the create POSTs a CHAR shell and a follow-up PUT sets the real row type. |
+| `ENQU` | DDIC lock object (on-prem and BTP; `ENQU/DL` accepted). Returns `{name, description, package, version, allowRFC, primaryTable, secondaryTables, lockParameters, lockModules}` — tables carry `{tableName, lockMode}`, parameters `{parameterName, tableName, fieldName, parameterWanted}`, and `lockModules` lists the generated `ENQUEUE_`/`DEQUEUE_` function modules. Omitted `version` returns SAP's developer view. Written via `SAPWrite(type="ENQU")` — see [Lock object writes](#lock-object-writes-enqu). |
 | `VIEW` | DDIC view |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
 | `DTEL` | Data element metadata (structured JSON: type, labels and their reserved lengths, search help and its parameter, SET/GET parameter, change-document and bidi flags, and `deactivateInputHistory`). Omitted `version` and `auto` return SAP's developer view so pending drafts remain visible; explicit `active` or `inactive` is passed to SAP. |
@@ -127,6 +128,9 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `UIAD` | Launchpad App Descriptor Item (LADI) — server-driven object. Discovery-gated; available on 8.16 and supported 758 backports. The successor to the deprecated tile/target-mapping model and the unit SAP Build Work Zone content exposure v2 federates. AFF JSON source carries `generalInformation` (appType, catalogId, transaction), `navigation` (targetMappingId, semanticObject, action, form factors) and `tiles[]`. Find names via `SAPRead type=DEVC` on the owning package (listed as `UIAD/TYP` — pass the bare `UIAD`). |
 | `DTDC` | CDS Dynamic Cache — server-driven object with its OWN metadata format (`<dtdc:dtdcSource>`, not `blue:blueSource`). JSON metadata + **DDL text** source (`define dynamic cache …`). Available on S/4HANA 2023 (758) and 8.16+. |
 | `DRTY` | CDS Type — server-driven object. JSON metadata + **DDL text** source (`define type …`). Covers scalar types and enumerated types alike; both report `DRTY/STY`. |
+| `APLO` | Application Log Object — server-driven object. AFF JSON source: `header` + `subobjects[]` (required by the AFF schema; may be empty) (`name`, `description`). Names are limited to 20 characters. Saves are active immediately. Verified on SAP_BASIS 758 and 816. |
+| `SAJC` | Application Job Catalog Entry — server-driven object (blues v2). AFF JSON source: `generalInformation.className` (the class implementing `IF_APJ_DT_EXEC_OBJECT`/`IF_APJ_RT_EXEC_OBJECT`) + `parameters[]`. SAP derives parameters from the class; 758 does not expose that list in its AFF readback. Verified on 758 and 816. |
+| `SAJT` | Application Job Template — server-driven object (blues v2). AFF JSON source: `generalInformation.catalogName` + `parameters.singleValueParameters[]` / `valueRangesParameters[]` (default values). Verified on 758 and 816. |
 | `TRAN` | Transaction metadata (structured JSON: code, description, program) |
 | `SOBJ` | BOR business object (list methods, or read specific method with `method` param) |
 | `BSP` | BSP/UI5 filestore. List apps without `name`; browse or read with `name="<app>"` and optional case-sensitive `include="<path>"`. `name="<app>/<path>"` is also accepted. |
@@ -264,7 +268,7 @@ inactive. UIAD saves are immediately active on the verified 816 system, so use `
 Version-query errors propagate; ARC-1 does not retry a different version. The two reads are not an
 atomic snapshot against concurrent activation.
 
-DTEL metadata uses SAP's version-less developer view when `version` is omitted or set to `auto`, so a
+DTEL/ENQU metadata uses SAP's version-less developer view when `version` is omitted or set to `auto`, so a
 plain read after `SAPWrite` returns the pending draft. Pass `active` to request the last activated metadata or
 `inactive` to request the draft explicitly; SAP can return active metadata when no draft exists.
 
@@ -357,10 +361,10 @@ keep their separate behavior.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `ENQU`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `update`, `edit_unit`, and `add_unit`. Ignored for other types. |
-| `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. |
-| `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. |
+| `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
+| `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. An update keeps the stored kind while the row type is unchanged. |
 | `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
 | `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
 | `parameters` | array | No | FUNC structured signature: `{kind,name,type?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
@@ -441,7 +445,7 @@ complete an uncertain creation automatically.
 
 Keep edits above the read-only metadata marker in a complete SAPRead result. For a root-only H2 edit, keep that context so the root heading is distinguishable from a visible Markdown title. When only the root has documentation, a bare body without its routing H2 also works. Ordinary unmatched headings remain prose and are reported; a node-shaped typo aborts the update. Prefix a reserved prose heading with one backslash (`\## …`) to keep it inside the current node.
 
-Metadata updates for DOMA, DTEL, MSAG and SRVB, and node edits for SKTD/KTD,
+Metadata updates for DOMA, DTEL, MSAG, SRVB and TTYP, and node edits for SKTD/KTD,
 read the current editable metadata after acquiring the SAP lock, then merge and
 save in that session. Omitted supported fields are preserved. Supplied collections
 (such as MSAG messages or DOMA fixed values) still replace that collection; read
@@ -449,21 +453,37 @@ first when extending one. SKTD `dryRun` validates without a lock and does not
 reserve the previewed state. Live SKTD validation uses the locked envelope, so an
 invalid node edit can briefly take a lock but never writes.
 
+#### Table type updates
+
+A `TTYP` update keeps the stored description and row type when you omit them. While the row type
+is unchanged it also keeps the stored kind and built-in length, such as `CHAR` 30 or `INT4`.
+
+The update still **replaces the rest of the definition**: ARC-1 writes only a standard table with a
+non-unique standard key. It therefore refuses an update without `rowType` when it cannot write the
+stored definition back unchanged:
+
+- a reference or range row type;
+- a sorted, hashed or index table, key components, a unique key or a key alias;
+- secondary keys or an initial row count.
+
+`SAPRead` reports the last two groups as `plainStandardTable: false`. Passing `rowType` accepts the
+rewrite and resets those settings. Use ADT or SE11 to change such a table type without losing them.
+
 #### Server-driven object writes
 
-`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, and `DRTY` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; `SAPActivate` activates them:
+`DESD`, `EVTB`, `DTSC`, `CSNM`, `EVTO`, `COTA`, `DSFD`, `DTDC`, `UIAD`, `DRTY`, `APLO`, `SAJC`, and `SAJT` are **server-driven objects** (mostly ABAP Platform 2025 / SAP_BASIS 8.16+) — ~46 repository types that share one AFF generic-object contract. `SAPWrite` supports `create`, `update`, and `delete` for them; use `SAPActivate` when SAP requires activation:
 
-- **`create`** posts a minimal `<blue:blueSource>` metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. Most types are left **inactive**; follow with `SAPActivate(type=..., name=...)`. Saves may contain invalid DDL until SAP activation checks them. UIAD source saves are active immediately on the verified system; see its validation contract below.
+- **`create`** posts the type's metadata body to the type's collection (e.g. `/sap/bc/adt/ddic/desd`), then — if `source` is supplied — writes it. Most types are left **inactive**; follow with `SAPActivate(type=..., name=...)`. Saves may contain invalid DDL until SAP activation checks them. APLO and UIAD source saves are active immediately on the verified systems; see its validation contract below.
 - **`source` format is per-type.** Most types take **AFF JSON** — e.g. `{"formatVersion":"1","header":{"description":"…","originalLanguage":"en","abapLanguageVersion":"cloudDevelopment"}}` — parse-validated (clean error on malformed JSON) and written to `…/source/main` as `application/json`. `DTSC`, `DSFD`, `DTDC` and `DRTY` instead take **DDL text** (`define static cache …`, `define scalar function …`, `define dynamic cache …`, `define type …`), written as `text/plain`; sending the wrong content type is a hard `415` from SAP, so the flavor is pinned per type in `SDO_REGISTRY`. ABAP-specific pre-write steps (lint, RAP preflight, CDS guard) do not apply.
 - **`update`** requires `source` (AFF JSON or DDL text, per the type). Update and delete honor the `allowedPackages` ceiling against the object's real package.
 - **`delete`** checks SAP's advertised deletion precheck under the object lock and refuses negative or inconclusive results. After an accepted DELETE, ARC-1 verifies canonical metadata absence with a fresh GET. A surviving object is reported as incomplete deletion; an unreadable result is reported as unconfirmed. Neither outcome triggers an automatic recovery DELETE. Inspect dependencies and the package entry in ADT before proceeding. If discovery is unavailable, deletion is refused; a known target without the precheck keeps its existing delete path with readback. The check does not lock dependent objects or guarantee an atomic dependency snapshot.
-- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition), `DTDC` (CDS Dynamic Cache), and `DRTY` (CDS Type) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). NetWeaver 7.50 exposes none of them.
+- **Availability is discovery-gated and per-type.** On systems that do not expose a type, write returns an ADT-support-unavailable error. Most types need 8.16+, but `EVTB` (RAP Event Binding), `DSFD` (CDS Scalar Function Definition), `DTDC` (CDS Dynamic Cache), and `DRTY` (CDS Type) also ship on S/4HANA 2023 (758) — their write paths are live-verified there (create/update/activate/read/delete). `APLO`, `SAJC` and `SAJT` are live-verified on SAP_BASIS 758 and 816 and on a BTP ABAP Environment trial. APLO saves are active immediately; job catalogs and templates require activation. NetWeaver 7.50 exposes none of them.
 
 | Type | Object | Notes |
 |------|--------|-------|
 | `DESD` | CDS Logical External Schema | Creates standalone — the reference round-trip type. |
 | `EVTB` | RAP Event Binding | Also on 758. |
-| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type (the others use v1). |
+| `EVTO` | RAP Event Object | Create uses the blues **v2** content-type. |
 | `DTSC` | CDS Static Cache (table-entity buffer) | Source is **DDL text**, not JSON. |
 | `CSNM` | Core Schema Notation Model (CSN) | |
 | `COTA` | Communication Target | |
@@ -471,9 +491,23 @@ invalid node edit can briefly take a lock but never writes.
 | `DRTY` | CDS Type (scalar type / enum) | Source is **DDL text**, not JSON. One subtype `DRTY/STY` covers scalar types and enums, so create needs no subtype routing. |
 | `UIAD` | Launchpad App Descriptor Item (LADI) | Manual Cloud-language items support create/update, including on-prem 816. Full-source validation and read-only configuration checks run before mutation. Generated items follow their application deployment lifecycle. See below. |
 | `DTDC` | CDS Dynamic Cache | **Non-blue** metadata format (`<dtdc:dtdcSource>`). Source is **DDL text** (`define dynamic cache …`). Also on 758. |
+| `APLO` | Application Log Object | AFF JSON with `subobjects[]` (required by the AFF schema; may be empty). Maximum name length: **20**. Create/update takes effect **immediately**, without `SAPActivate` or an inactive draft. In the contributor's test, the package set the language version. |
+| `SAJC` | Application Job Catalog Entry | Blues **v2**; `adtcore:type` is the bare `SAJC` (no subtype). Create requires `source.generalInformation.className` naming an existing active class. SAP calls its `GET_PARAMETERS` method to derive parameters; 758 omits `parameters[]` in AFF readback. Activate the catalog before creating templates. A deleted catalog left a deletion-flagged `SUSH` entry in one BTP `ZLOCAL` package and blocked package removal; see the [cleanup evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-aplo-sajc-sajt-adt-contract.md). |
+| `SAJT` | Application Job Template | Blues **v2**; bare `SAJT`. Create requires `source.generalInformation.catalogName` naming an active catalog entry. Delete templates before their catalog; dependency enforcement differs by SAP release. On BTP, activating a catalog entry starts an asynchronous publishing step; deleting the catalog before it finishes returns 400 "Publishing in process". |
 
 - **Read versions:** Omitted/`auto` returns SAP's developer view, including a draft when present. Explicit `active`/`inactive` requests return an error if SAP cannot confirm that version in metadata. See [SAPRead](#sapread).
 - **Type names and other tools:** Use the base code (for example `DRTY`), not the search result's slash code (`DRTY/STY`). Generic syntax/ATC/transport helpers use the registered URL; SAP may still return incomplete ATC results. `SAPDiagnose object_state` and `SAPRead action="diff"` refuse server-driven types; read `version="active"` and `version="inactive"` separately to compare them. [Version verification](roadmap.md#arch-02) remains required for `object_state`. Surgery, `batch_create` and RAP scaffolding are not supported for SDOs.
+
+Create job objects in dependency order: activate a class implementing `IF_APJ_DT_EXEC_OBJECT` and
+`IF_APJ_RT_EXEC_OBJECT`, create/activate `SAJC`, then create/activate `SAJT`. Pass complete AFF JSON
+in `source`; ARC-1 also sends the class/catalog reference in SAP's creation metadata, as required
+on 758. For example, a template source starts with:
+
+```json
+{"formatVersion":"1","header":{"description":"My job","originalLanguage":"en"},"generalInformation":{"catalogName":"ZMY_CATALOG"}}
+```
+
+These tools maintain repository definitions; they do not schedule or execute a job.
 
 **DRTY create/update:** Use canonical `type="DRTY"` with plain `define type` source, for example:
 
@@ -504,6 +538,27 @@ errors first, plus the total `messageCount`; `minimalErrors` hides SAP details.
 Execution semantics are function-module metadata, not ABAP source. Set `processingType="rfc"` for a Remote-Enabled module. For update modules, set `processingType="update"` plus an explicit `updateTaskKind`; V1 "Start immediately" is `startImmediate`. ARC-1 rejects processing fields on updates and non-FUNC objects instead of silently ignoring them.
 
 SAP's collection POST creates a normal function-module shell even when it accepts processing attributes. For an explicit processing type, ARC-1 therefore reads the new inactive root, preserves the server-provided representation, applies a locked metadata PUT with the release-negotiated media type, and reads the root back before reporting success. If that post-create step fails, the error warns that a normal shell may remain and must be reviewed or deleted before retrying. When `processingType` is omitted, ARC-1 keeps the pre-existing create behavior without the extra metadata round trips.
+
+#### Lock object writes (ENQU)
+
+`SAPWrite` supports `create`, `update` and `delete` for DDIC lock objects on on-premise and BTP systems that expose `/sap/bc/adt/ddic/lockobjects/sources`. `source` is **JSON in the shape `SAPRead type="ENQU"` returns**. Lock-object names begin with `E` (customer objects normally `EZ…` or `EY…`). Writable keys are `primaryTable`, `secondaryTables`, `lockParameters` and `allowRFC`. Supplied table entries require `lockMode`; supplied parameter entries require `parameterWanted`, for both create and update. Read-only keys (`name`, `description`, `package`, `version`, `lockModules`) are ignored; change the short text with the separate `SAPWrite.description` argument. Unknown keys, including those inside tables and parameters, are rejected. Lock modes are `E` (write, cumulative), `S` (read, shared), `X` (exclusive, non-cumulative) or `""` (no lock for a table used only to link other tables). Optimistic mode `O` is a runtime request option; SAP rejects it as a definition default.
+
+- **`create`** needs `primaryTable`. `lockParameters` are optional: when omitted, SAP derives one parameter per key field of the lock tables (all passed to `ENQUEUE_`; these may already appear after create). The object is created **inactive** — follow with `SAPActivate(type="ENQU", name=…)`, which also generates `ENQUEUE_<name>`/`DEQUEUE_<name>`.
+- **`update`** reads the developer view under the SAP lock, then merges the supplied top-level keys. Omitted keys preserve existing inactive edits. Supplied table entries and arrays replace their corresponding values. Changing the table set **requires** an explicit `lockParameters` list for the new tables. An explicit empty list is refused on update because SAP can re-derive every parameter with `parameterWanted=false`, broadening the runtime lock. Preserve the list from `SAPRead` unless you intend to change it. Activate after saving.
+- **`delete`** uses the standard lock → DELETE → unlock path.
+
+These operations maintain the repository definition and generate function modules on activation;
+they do not call those modules or acquire locks on business data. The referenced tables must already exist.
+`parameterWanted=false` makes that key generic when the lock is used, broadening the affected rows.
+Changing `allowRFC` changes the generated interface; review existing callers before activation.
+ABAP Cloud code uses `CL_ABAP_LOCK_OBJECT_FACTORY` to acquire runtime locks.
+
+```json
+{"action":"create","type":"ENQU","name":"EZ_ORDER","package":"$TMP","description":"Order lock",
+ "source":"{\"primaryTable\":{\"tableName\":\"ZORDER\",\"lockMode\":\"E\"}}"}
+```
+
+Create, partial update, table/parameter changes, activation, batch create, concurrent edits and deletion were verified on SAP_BASIS 758/816 and a BTP 920 trial. The collection was absent on the tested 7.50 system. SAP can normalize parameters joined through foreign keys; read back the activated definition before editing it. See the [wire contract and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-enqu-lock-object-adt-contract.md).
 
 #### SAPWrite for FUNC: create / update with structured parameters
 
@@ -601,6 +656,7 @@ Verified on NW 7.50 SP02 and S/4HANA 2023 (758) — the ADT contract is identica
 | `SAPWrite create type="TABL"/"TABL/DT"` | `/sap/bc/adt/ddic/tables` | SE11. Writing the source through `/ddic/structures/` instead would flip `DD02L-TABCLASS` to `INTTAB` and corrupt the table |
 | `SAPWrite create type="DOMA"` | `/sap/bc/adt/ddic/domains` | SE11. Data elements that reference a domain are blocked with it |
 | `SAPWrite create type="TTYP"` | `/sap/bc/adt/ddic/tabletypes` | SE11 |
+| `SAPWrite create type="ENQU"` | `/sap/bc/adt/ddic/lockobjects/sources` | SE11 (present on tested 758/816 systems; absent on tested 7.50) |
 | `SAPManage action="create_package"` | `/sap/bc/adt/packages` | SE80 / SE21 |
 
 Endpoint absence verified on two independent NW 7.50 systems (a dev edition and an ECC EhP8 7.50 SP31 production system); all four are present on S/4HANA 2023 (758) and ABAP Platform 2025 (816). Structures (`TABL/DS`), data elements, function groups, function modules and includes **do** work on 7.50 — note that DDIC structure source there uses `define type <name> { … }`, not `define structure`.
