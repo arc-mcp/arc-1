@@ -28,13 +28,13 @@ import type { ClassStructure, MethodStructure } from './types.js';
 const METHOD_NAME = '(?:/[A-Z0-9_]+/)?[A-Z_][A-Z0-9_]*(?:~[A-Z_][A-Z0-9_]*)?';
 
 function stripDeclarationComments(source: string): string {
-  return source.replace(/^\s*\*.*$/gm, '').replace(/"[^\n]*$/gm, '');
+  return source.replace(/^[ \t]*\*.*$/gm, '').replace(/"[^\n]*$/gm, '');
 }
 
 /** A qualified method can be declared in a subclass as an inherited redefinition. */
 export function isMethodRedefinition(clause: string): boolean {
-  return new RegExp(`^\\s*METHODS\\s+${METHOD_NAME}\\s+(?:FINAL\\s+)?REDEFINITION\\s*\\.?\\s*$`, 'i').test(
-    stripDeclarationComments(clause),
+  return new RegExp(`^METHODS\\s+${METHOD_NAME}\\s+(?:FINAL\\s+)?REDEFINITION\\s*\\.?$`, 'i').test(
+    stripDeclarationComments(clause).trim(),
   );
 }
 

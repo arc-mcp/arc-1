@@ -6,6 +6,7 @@
  * fixtures (objectstructure XML) live in tests/fixtures/xml/.
  */
 
+import { spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import {
   diffMethodSets,
@@ -573,6 +574,28 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
 });
 
 describe('isMethodRedefinition', () => {
+  it('rejects long malformed whitespace without blocking the parser', () => {
+    const source = new URL('../../../src/adt/class-structure.ts', import.meta.url).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '--input-type=module',
+        '-e',
+        `
+      import { isMethodRedefinition } from ${JSON.stringify(source)};
+      for (const gap of [' '.repeat(200_000), '\\n'.repeat(40_000)]) {
+        if (isMethodRedefinition('METHODS zif_demo~run REDEFINITION' + gap + 'x')) process.exit(1);
+      }
+    `,
+      ],
+      { timeout: 5000, encoding: 'utf8' },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+  }, 10000);
+
   it.each([
     ['METHODS /iwbep/if_x~run REDEFINITION.', true],
     ['* comment\nMETHODS zif_x~run\n FINAL REDEFINITION', true],

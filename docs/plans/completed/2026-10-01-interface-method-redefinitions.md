@@ -6,7 +6,7 @@ the definition comparison and is falsely reported as an orphan implementation.
 interface method redefinition. SAP documents `METHODS meth [FINAL] REDEFINITION`
 as an instance-method override with a matching implementation in the subclass.
 
-## Plan
+## Implemented plan
 
 1. Recognize a complete bare or interface-qualified name (including `/NS/`) in
    both declaration readers. Do not accept a valid prefix of a malformed name.
@@ -25,8 +25,10 @@ Reference: [SAP METHODS — REDEFINITION](https://help.sap.com/doc/abapdocu_750_
 ## Outcome
 
 Implemented with a shared name pattern and a narrow redefinition-clause check.
+Whitespace/comment handling avoids overlapping scans; a bounded process test
+rejects large malformed clauses without blocking.
 Eight new regression cases failed on main before the fix. Full validation passed
-(7,688 unit tests plus typecheck, lint, policy, sizes, build and strict docs).
+(7,689 unit tests plus typecheck, lint, policy, sizes, build and strict docs).
 
 Live on 2026-10-01, direct HTTPS/Basic through `handleToolCall`: SAP_BASIS 758 SP02
 and 816 SP01 accepted and activated all three `/IWBEP/` redefinitions from #895.
