@@ -17,7 +17,8 @@
  *             text/plain for entries with sourceFormat='text'. The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
- * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
+ * Create never auto-activates. APLO (and UIAD source) saves are active immediately; the other
+ * types stay inactive until SAPActivate.
  *
  * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB=EVTB/EVB, DTDC=DTDC/DF) and
  * the metadata content-type varies (blues v1, EVTO=blues v2, DTDC=ddic.dtdc.v1) — all stored per
@@ -122,7 +123,21 @@ export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
  * here is the ONLY step needed to expose it — `btp: true` by construction (runtime availability is
  * discovery-gated per system, so a type absent on a release degrades cleanly).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD', 'DRTY'] as const;
+export const SDO_TYPES = [
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
+  'DSFD',
+  'DTDC',
+  'UIAD',
+  'DRTY',
+  'APLO',
+  'SAJC',
+  'SAJT',
+] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
@@ -216,6 +231,33 @@ export const SDO_REGISTRY = {
     metadataContentType: BLUES_V1,
     ...BLUE_METADATA,
     sourceFormat: 'text',
+  },
+  // Application Log Object (SLG0 successor for ABAP Cloud): header + subobjects in AFF JSON.
+  APLO: {
+    href: '/sap/bc/adt/applicationlog/objects',
+    label: 'Application Log Object',
+    createType: 'APLO/TYP',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  // Application Job Catalog Entry / Template: blues v2, and SAP reports the bare code (no subtype)
+  // as adtcore:type. Verified 816: docs/research/2026-09-28-aplo-sajc-sajt-adt-contract.md
+  SAJC: {
+    href: '/sap/bc/adt/applicationjob/catalogs',
+    label: 'Application Job Catalog Entry',
+    createType: 'SAJC',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  SAJT: {
+    href: '/sap/bc/adt/applicationjob/templates',
+    label: 'Application Job Template',
+    createType: 'SAJT',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
   },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
@@ -368,13 +410,14 @@ export function buildServerDrivenMetadataXml(
   pkg: string,
   description: string,
   uiadLanguageVersion?: UiadLanguageVersion,
+  creationProperties?: Record<string, string>,
 ): string {
   const entry = sdoEntry(code);
   const [prefix] = entry.metadataRootQName.split(':');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <${entry.metadataRootQName} xmlns:${prefix}="${entry.metadataNamespace}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${escapeXmlAttr(entry.createType)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}"${code === 'UIAD' && uiadLanguageVersion ? ` adtcore:abapLanguageVersion="${escapeXmlAttr(uiadLanguageVersion)}"` : ''}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
-</${entry.metadataRootQName}>`;
+${creationProperties ? `  <blue:additionalCreationProperties><adtcore:content adtcore:type="application/vnd.sap.adt.objecttype.new.content.additional.v1+json">${escapeXmlAttr(JSON.stringify(creationProperties))}</adtcore:content></blue:additionalCreationProperties>\n` : ''}</${entry.metadataRootQName}>`;
 }
 
 /** Options shared by the SDO write operations. */
@@ -387,19 +430,32 @@ export interface ServerDrivenWriteOptions {
 
 /**
  * Create a server-driven object (metadata only — POST the <blue:blueSource> body to the collection
- * href with the type's blues content-type). Leaves the object INACTIVE; callers follow with source
- * write + activation. Returns the raw response body. Verified live: 201 for all 6 registered types.
+ * href with the type's metadata content-type). APLO is immediately active; other generic types
+ * need activation. Job objects also need their creation reference. Returns the raw response body.
  */
 export async function createServerDrivenObject(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
   name: string,
-  opts: { package: string; description: string; transport?: string; uiadLanguageVersion?: UiadLanguageVersion },
+  opts: {
+    package: string;
+    description: string;
+    transport?: string;
+    uiadLanguageVersion?: UiadLanguageVersion;
+    creationProperties?: Record<string, string>;
+  },
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
   const entry = sdoEntry(code);
-  const body = buildServerDrivenMetadataXml(code, name, opts.package, opts.description, opts.uiadLanguageVersion);
+  const body = buildServerDrivenMetadataXml(
+    code,
+    name,
+    opts.package,
+    opts.description,
+    opts.uiadLanguageVersion,
+    opts.creationProperties,
+  );
   const url = opts.transport ? `${entry.href}?corrNr=${encodeURIComponent(opts.transport)}` : entry.href;
   const resp = await postCreate(http, url, body, entry.metadataContentType);
   return resp.body;

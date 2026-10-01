@@ -28,6 +28,7 @@
             "DTEL",
             "TRAN",
             "TTYP",
+            "ENQU",
             "TABLE_CONTENTS",
             "TABLE_QUERY",
             "DEVC",
@@ -58,9 +59,12 @@
             "DSFD",
             "DTDC",
             "UIAD",
-            "DRTY"
+            "DRTY",
+            "APLO",
+            "SAJC",
+            "SAJT"
           ],
-          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type. Deprecated: MESSAGES→MSAG. FTG2→FEATURE_TOGGLE."
+          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template. Deprecated: MESSAGES→MSAG. FTG2→FEATURE_TOGGLE. ENQU lock object as JSON."
         },
         "name": {
           "type": "string",
@@ -126,7 +130,7 @@
             "inactive",
             "auto"
           ],
-          "description": "Source defaults active; inactive requests a draft (SAP may return active if none); auto selects developer view. DTEL/server-driven types default to developer view. Server-driven types return an error if SAP cannot confirm an explicit version (e.g. no draft)."
+          "description": "Source defaults active; inactive requests a draft (SAP may return active if none); auto selects developer view. DTEL/ENQU/server-driven types default to developer view. Server-driven types return an error if SAP cannot confirm an explicit version (e.g. no draft)."
         },
         "includeSignature": {
           "type": "boolean",
@@ -266,7 +270,7 @@
   },
   {
     "name": "SAPWrite",
-    "description": "Change ABAP objects in the SAP system: create, update, delete, and targeted source edits. Use it when the request is to PERSIST a change — write, add, implement, refactor, or remove ABAP code or DDIC metadata. Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext; local lint/formatting is SAPLint; SAP syntax checks use SAPRead(type=\"SYNTAX\"). Handles lock/modify/unlock automatically. TTYP needs rowType + optional rowTypeKind. Type codes are auto-normalized and case-insensitive (e.g., \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport). Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. TABL create: \"TABL\"/\"TABL/DT\" → transparent table (16-char name); \"TABL/DS\" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp; deactivateInputHistory=true disables input history); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like \"ODataV4-UI\" auto-normalized). SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. \"DDLS/DF\"); \"name\" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type=\"SKTD\"). FUNC: needs \"group\"; pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). INCL with group=: create/delete FUGR structural includes (name must start with L<GROUP>, e.g. LZFOOF01); SAP maintains the main program's INCLUDE line. edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. \"lhc_project~approve_project\"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. edit_unit/add_unit: replace/add one FORM/MODULE in PROG/INCL using unit+source; group= supports FUGR includes. batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA/UIAD take AFF JSON in \"source\"; DTSC/DSFD/DTDC/DRTY take DDL text — create/update/delete, then SAPActivate. edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one \"@MaxLength:NN\\nNNN=text\" per symbol, blank-line separated), selections (\"PARAM=Label\") or headings. CLAS: symbols only. Immediately active; needs ADT textelements. Full per-type field reference: docs_page SAPWrite. MINIMAL PAYLOAD: send only required fields; omit unrelated empty, null, or placeholder values. Do NOT send `include` unless type=CLAS. Delete needs only {action, type, name} (plus optional transport).  Write access is restricted to packages: ZARC1, Z*.",
+    "description": "Change ABAP objects in the SAP system: create, update, delete, and targeted source edits. Use it when the request is to PERSIST a change — write, add, implement, refactor, or remove ABAP code or DDIC metadata. Reading is SAPRead; searching is SAPSearch; dependency analysis is SAPContext; local lint/formatting is SAPLint; SAP syntax checks use SAPRead(type=\"SYNTAX\"). Handles lock/modify/unlock automatically. TTYP needs rowType + optional rowTypeKind. ENQU: SAPRead JSON in source; create needs primaryTable. Entries need explicit lockMode/parameterWanted; update refuses lockParameters=[]. Then SAPActivate. Type codes are auto-normalized and case-insensitive (e.g., \"CLAS/OC\" → \"CLAS\"). For delete, only type and name are required (plus optional transport). Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. TABL create: \"TABL\"/\"TABL/DT\" → transparent table (16-char name); \"TABL/DS\" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp; deactivateInputHistory=true disables input history); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like \"ODataV4-UI\" auto-normalized). SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. \"DDLS/DF\"); \"name\" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type=\"SKTD\"). FUNC: needs \"group\"; pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). INCL with group=: create/delete FUGR structural includes (name must start with L<GROUP>, e.g. LZFOOF01); SAP maintains the main program's INCLUDE line. edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. \"lhc_project~approve_project\"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. edit_unit/add_unit: replace/add one FORM/MODULE in PROG/INCL using unit+source; group= supports FUGR includes. batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). Server-driven objects (discovery-gated): AFF JSON source (DTSC/DSFD/DTDC/DRTY: DDL); create/update/delete. APLO/UIAD save active; others need SAPActivate. SAJC/SAJT create require source.generalInformation.className/catalogName. edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one \"@MaxLength:NN\\nNNN=text\" per symbol, blank-line separated), selections (\"PARAM=Label\") or headings. CLAS: symbols only. Immediately active; needs ADT textelements. Full per-type field reference: docs_page SAPWrite. MINIMAL PAYLOAD: send only required fields; omit unrelated empty, null, or placeholder values. Do NOT send `include` unless type=CLAS. Delete needs only {action, type, name} (plus optional transport).  Write access is restricted to packages: ZARC1, Z*.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -315,6 +319,7 @@
             "DTEL",
             "MSAG",
             "TTYP",
+            "ENQU",
             "DESD",
             "DTSC",
             "CSNM",
@@ -324,9 +329,12 @@
             "DSFD",
             "DTDC",
             "UIAD",
-            "DRTY"
+            "DRTY",
+            "APLO",
+            "SAJC",
+            "SAJT"
           ],
-          "description": "Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in \"source\"; DTSC/DSFD/DTDC/DRTY take DDL text — create/update/delete, then SAPActivate. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only."
+          "description": "Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only."
         },
         "name": {
           "type": "string",
@@ -749,6 +757,7 @@
                   "DTEL",
                   "MSAG",
                   "TTYP",
+                  "ENQU",
                   "DESD",
                   "DTSC",
                   "CSNM",
@@ -758,7 +767,10 @@
                   "DSFD",
                   "DTDC",
                   "UIAD",
-                  "DRTY"
+                  "DRTY",
+                  "APLO",
+                  "SAJC",
+                  "SAJT"
                 ],
                 "description": "Object type (includes TABL for RAP stack bootstrapping)"
               },

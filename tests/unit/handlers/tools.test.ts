@@ -356,7 +356,7 @@ describe('Tool Definitions', () => {
     const typeEnum: string[] = schema.properties.type.enum;
     for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
       expect(typeEnum).toContain(t);
-    expect(schema.properties.type.description).toContain('Server-driven objects');
+    expect(sapWrite.description).toContain('Server-driven objects');
   });
 
   it('SAPRead schema includes source version controls', () => {

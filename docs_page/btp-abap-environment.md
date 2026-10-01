@@ -195,8 +195,8 @@ is the default) and the first `tools/list` may still advertise on-premise types.
 
 | Tool | On the ABAP Environment |
 |---|---|
-| `SAPRead` | CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, DOMA, DTEL, MSAG, DEVC, TABLE_CONTENTS, TABLE_QUERY, SYSTEM, COMPONENTS, BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, plus the discovery-gated server-driven types (DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC, UIAD, DRTY). Removed: PROG, INCL, VIEW, TRAN, TTYP, SOBJ, TEXT_ELEMENTS, VARIANTS, AUTH, FEATURE_TOGGLE/FTG2, ENHO, VERSIONS, VERSION_SOURCE. |
-| `SAPWrite` | CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL (+ `TABL/DT`, `TABL/DS`), DOMA, DTEL, MSAG, and the server-driven types. The `edit_unit` / `add_unit` and `edit_text_symbols` actions are not offered (no PROG/INCL, no class text pool). ABAP Cloud language version and customer namespaces only. |
+| `SAPRead` | CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL, DOMA, DTEL, ENQU, MSAG, DEVC, TABLE_CONTENTS, TABLE_QUERY, SYSTEM, COMPONENTS, BSP/BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, plus the discovery-gated server-driven types (DESD, DTSC, CSNM, EVTB, EVTO, COTA, DSFD, DTDC, UIAD, DRTY, APLO, SAJC, SAJT). Removed: PROG, INCL, VIEW, TRAN, TTYP, SOBJ, TEXT_ELEMENTS, VARIANTS, AUTH, FEATURE_TOGGLE/FTG2, ENHO, VERSIONS, VERSION_SOURCE. |
+| `SAPWrite` | CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD, TABL (+ `TABL/DT`, `TABL/DS`), DOMA, DTEL, MSAG, ENQU, and the server-driven types. The `edit_unit` / `add_unit` and `edit_text_symbols` actions are not offered (no PROG/INCL, no class text pool). ABAP Cloud language version and customer namespaces only. |
 | `SAPContext` | CLAS, INTF, DDLS, TABL — `action="impact"` for CDS blast radius. |
 | `SAPSearch` / `SAPNavigate` | Work; scope is released SAP objects plus custom Z/Y objects. Classic programs and includes are not searchable. |
 | `SAPQuery` | Freestyle SQL needs `SAP_ALLOW_FREE_SQL=true` (table/CDS previews need `SAP_ALLOW_DATA_PREVIEW=true`). Custom tables and released CDS entities (`I_LANGUAGE`, `I_COUNTRY`, …) work; SAP standard tables (`MARA`, `TADIR`, `DD02L`, …) are blocked — the error suggests CDS views. |
@@ -218,6 +218,8 @@ the on-premise `adtcore:masterSystem` / `adtcore:responsible` and adds
 | RAP stack — BDEF, SRVD, SRVB create | Live-verified; SRVB `update` too (a full metadata replace merged over the existing binding, so a description-only edit keeps the bound `serviceDefinition`) |
 | Server-driven objects (DESD, DTSC, CSNM, EVTB, EVTO, COTA) | Live-verified; their minimal `blue:blueSource` body carries no owner/system attributes by construction |
 | DSFD, DTDC, DRTY | Registered and `btp`-capable, but live-verified only on on-premise 7.58 / 8.16; discovery-gated like every server-driven type |
+| APLO, SAJC, SAJT | Live-tested create/read/update/delete on 920; APLO saves active immediately, SAJC/SAJT require activation. Catalog deletion can return “Publishing in process”; inspect and retry after publishing finishes. One earlier APLO 403 `S_ABPLNGVS` was not reproduced on fresh objects. A deleted catalog left a `SUSH` directory entry in one `ZLOCAL` package, preventing package deletion; a supported SAP repair remains unconfirmed. See the [evidence and cleanup limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-aplo-sajc-sajt-adt-contract.md). |
+| ENQU (lock objects) | Live-verified on a BTP trial: create, activate, update, read, delete |
 | UIAD (launchpad app descriptor item) | Read in practice — SAP refuses `create` on on-premise ("LADI edits need the ABAP Cloud language version"); writing it on the ABAP Environment is unverified |
 
 Two prerequisites:
