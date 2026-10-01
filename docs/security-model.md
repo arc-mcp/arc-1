@@ -139,8 +139,11 @@ nested under a non-sensitive key.
 
 abapGit error diagnostics are inspected before extraction or truncation. Responses with credential
 terminology, sensitive URLs, ambiguous duplicate properties, unresolved encodings, or more than
-64 KiB are replaced by an omission notice, including any additional messages and T100 values. This intentionally sacrifices
-benign credential-related detail; it does not claim to recognize arbitrary unlabeled secrets.
+64 KiB are replaced by an omission notice, including additional messages, T100 values, check results
+and HTTP-200 rejected-object results. Even benign authorization/session/token messages or related
+object names trigger omission. Inspect the full message in SAP; retrying cannot recover omitted detail.
+This heuristic does not recognize arbitrary unlabeled secrets or every non-English credential label;
+request-local credential matching remains a research item ([SEC-17](../docs_page/roadmap.md#sec-17)).
 HTTP audit suppression and `ARC1_MINIMAL_ERRORS` remain separate protections.
 
 ### I5 — No unbounded work from untrusted input

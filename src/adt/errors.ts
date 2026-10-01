@@ -107,6 +107,9 @@ export class AdtApiError extends AdtError {
    */
   resourceExistenceAfterDelete?: 'exists' | 'absent' | 'unknown';
 
+  /** The handler withheld unsafe diagnostics; generic cause/retry advice cannot be inferred. */
+  diagnosticsOmitted?: boolean;
+
   constructor(
     message: string,
     public readonly statusCode: number,
@@ -147,7 +150,7 @@ export class AdtApiError extends AdtError {
     //    (a "<id>" placeholder, SAP text like "<ZFOO_TOP>"), and so does text already extracted from a
     //    body: scanning those again would eat the literal `<x>` and decode a second time.
     //    Callers rewrapping extracted text can explicitly set the constructor's plainText option.
-    if (!/^\s*</.test(raw)) {
+    if (!/^\s*</.test(raw) && !/<(?:html|head|body|title)\b/i.test(raw)) {
       return raw.slice(0, 300);
     }
 

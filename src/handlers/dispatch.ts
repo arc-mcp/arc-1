@@ -236,6 +236,10 @@ function buildBaseErrorMessage(
     if (isPossibleDataPreviewWafBlock(err, tool, args)) {
       return formatPossibleDataPreviewWafBlock(err, config.minimalErrors);
     }
+    if (err.diagnosticsOmitted) {
+      const detail = config.minimalErrors ? formatMinimalAdtError(err) : message;
+      return `${detail}\n\nHint: ARC-1 omitted the diagnostic for credential safety. Inspect the full message in SAP; retrying cannot recover omitted detail.`;
+    }
     if (config.minimalErrors) return formatMinimalAdtError(err);
 
     // Append additional SAP messages (line numbers, secondary errors) if available

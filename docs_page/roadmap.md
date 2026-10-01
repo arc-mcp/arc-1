@@ -73,6 +73,7 @@ sequence.
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
+| [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
@@ -255,6 +256,21 @@ hardening universally irrelevant.
 **Resume when.** ARC-1 supports or documents an exposed self-hosted topology that cannot rely on a
 trusted proxy. Rebase the prior work and re-evaluate forwarded-header trust rather than assuming
 the old patch is still correct.
+
+<a id="sec-17"></a>
+### SEC-17 — Match echoed abapGit credentials by value
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Security
+
+**Remaining gap.** [#894](https://github.com/arc-mcp/arc-1/pull/894) conservatively omits diagnostics
+with recognizable credential labels, sensitive URLs or unresolved encodings. Local probes still
+show unlabeled and non-English-labeled sentinels verbatim; an actual SAP echo is unverified.
+
+**Resume with.** Benign fixtures representing echoed `SAPGit` credentials and a bounded design
+that compares responses with credentials supplied for that request before extraction or truncation.
+Keep values request-local, cover error and HTTP-200 result paths, and measure false positives
+without logging or persisting the credentials. This is research, not a universal-secret-detector promise.
 
 ## Developer workflows
 

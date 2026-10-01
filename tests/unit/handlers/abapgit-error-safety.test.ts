@@ -109,6 +109,35 @@ describe('abapGit diagnostic confidentiality through dispatch', () => {
     expect(result.content[0]!.text).toContain('details omitted');
   });
 
+  it('omits a credential-bearing HTTP 200 check result', async () => {
+    const result = await run(exception('<message>Remote said password=SENTINEL</message>'), 'check', false, 200);
+    expect(JSON.parse(result.content[0]!.text).result).toEqual({
+      ok: false,
+      message: 'abapGit error details omitted because they may contain credentials.',
+    });
+  });
+
+  it('omits references left encoded after three decoding passes', async () => {
+    const text = JSON.stringify(await run(exception('<message>pass&amp;amp;amp;#119;ord=SENTINEL</message>')));
+    expect(text).toContain('details omitted');
+    expect(text).not.toContain('SENTINEL');
+  });
+
+  it.each(['Could not connect to https://github.com', 'Could not connect to https://GitHub.com/org/repo.git'])(
+    'keeps a URL that only normalization changes: %s',
+    async (message) => {
+      const text = (await run(exception(`<message>${message}</message>`), 'check')).content[0]!.text;
+      expect(text.toLowerCase()).toContain(message.toLowerCase()); // redactGitText prints the normalized host
+    },
+  );
+
+  it('omits a credential key beyond the inspected URL prefix', async () => {
+    const url = `https://example.com/${'p'.repeat(4100)}?auth=SENTINEL`;
+    const text = JSON.stringify(await run(exception(`<message>${url}</message>`), 'check'));
+    expect(text).toContain('details omitted');
+    expect(text).not.toContain('SENTINEL');
+  });
+
   it('omits encoded credentials in HTTP 200 object rejection messages', async () => {
     const body =
       '<objects><object><obj_type>CLAS</obj_type><obj_name>ZCL_TEST</obj_name><msg_type>E</msg_type>' +
@@ -117,6 +146,14 @@ describe('abapGit diagnostic confidentiality through dispatch', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain('details omitted');
     expect(JSON.stringify(result)).not.toContain('SENTINEL');
+    expect(result.content[0]!.text).not.toContain('often transient');
+  });
+
+  it.each([false, true])('does not guess retry advice for omitted diagnostics, minimal=%s', async (minimal) => {
+    const result = await run(exception('<message>No authorization to pull</message>'), 'pull', minimal);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('Inspect the full message in SAP');
+    expect(result.content[0]!.text).not.toContain('often transient');
   });
 
   it('retains ordinary decoded diagnostics and the live T100 message-class key', async () => {

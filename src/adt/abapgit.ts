@@ -154,7 +154,7 @@ const MAX_GIT_ERROR_BODY = 65_536;
 
 /** Inspect the whole diagnostic before extraction/truncation can separate a secret from its label.
  * Omit credential-bearing responses together: SAP repeats and splits credentials across fields.
- * Normal errors retain their messages and structured diagnostics. This is deliberately conservative.
+ * Credential-related words (even object names) trigger omission. This is deliberately conservative.
  */
 function safeGitErrorBody(body: string): string {
   // Keep the known bridge namespace so checkRepo still returns {ok:false}; never echo arbitrary IDs.
@@ -184,21 +184,35 @@ function safeGitErrorBody(body: string): string {
       decoded,
     ) ||
     /&(?:#|amp;|lt;|gt;|quot;|apos;)|\\u[\da-f]{4}|%[\da-f]{2}/i.test(decoded) ||
-    [...decoded.matchAll(/https?:\/\/[^\s<>"']+/gi)].some(([url]) => redactGitUrl(url) !== url);
+    [...decoded.matchAll(/https?:\/\/[^\s<>"']+/gi)].some(([url]) => urlCarriesCredentials(url));
   return sensitive ? omitted : body;
 }
 
+/** Redaction changes the URL beyond WHATWG normalization (`https://Host` → `https://host/`). */
+function urlCarriesCredentials(url: string): boolean {
+  // redactGitUrl inspects only a prefix; a longer URL could hide a credential key behind the cut.
+  if (url.length > ABAPGIT_REDACTION_MAX_STRING_LENGTH) return true;
+  try {
+    return redactGitUrl(url) !== new URL(normalizeEscapedUrlSlashes(url)).toString();
+  } catch {
+    return true;
+  }
+}
+
 function sanitizedAbapGitApiError(err: AdtApiError, path: string): AdtApiError {
-  const body = safeGitErrorBody(err.responseBody || err.message);
+  const rawBody = err.responseBody || err.message;
+  const body = safeGitErrorBody(rawBody);
   const parsed = classifyAbapgitError(body);
   const detail = [parsed.namespace ? `[${parsed.namespace}]` : undefined, parsed.message].filter(Boolean).join(' ');
-  return new AdtApiError(
+  const sanitized = new AdtApiError(
     redactGitText(detail || err.message),
     err.statusCode,
     redactGitText(err.path || path),
     redactGitText(body),
     { plainText: true },
   );
+  sanitized.diagnosticsOmitted = body !== rawBody;
+  return sanitized;
 }
 
 function literalHostIsPrivate(hostname: string): boolean {
@@ -541,7 +555,9 @@ function assertSuccessfulObjectMessages(objects: AbapGitObject[], path: string, 
     .join('; ');
   const safeBody = safeGitErrorBody(responseBody);
   if (safeBody !== responseBody) {
-    throw new AdtApiError(OMITTED_GIT_DIAGNOSTICS, 500, path, undefined, { plainText: true });
+    const error = new AdtApiError(OMITTED_GIT_DIAGNOSTICS, 500, path, undefined, { plainText: true });
+    error.diagnosticsOmitted = true;
+    throw error;
   }
   throw new AdtApiError(
     redactGitText(`abapGit reported rejecting object messages: ${details}`),

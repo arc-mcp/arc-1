@@ -254,6 +254,12 @@ describe('AdtApiError', () => {
       expect(AdtApiError.extractCleanMessage(message)).toBe(message);
     });
 
+    it('does not replace a composed message with details from an unrelated response body', () => {
+      const message = 'Application Server Error: sanitized';
+      const body = '<html><title>Application Server Error</title><span id="msgText">unrelated detail</span></html>';
+      expect(new AdtApiError(message, 500, '/p', body).message).toBe(`ADT API error: status 500 at /p: ${message}`);
+    });
+
     it('keeps explicitly composed text starting with an angle bracket intact', () => {
       expect(new AdtApiError('<ZFOO> &lt; rejected', 400, '/p', undefined, { plainText: true }).message).toBe(
         'ADT API error: status 400 at /p: <ZFOO> &lt; rejected',
@@ -425,6 +431,16 @@ describe('AdtApiError', () => {
     });
   });
 
+  it('extracts the HTML title after a proxy preamble', () => {
+    const error = new AdtApiError('Proxy error 502 <html><head><title>Bad Gateway</title></head></html>', 502, '/p');
+    expect(error.message).toBe('ADT API error: status 502 at /p: Bad Gateway');
+  });
+
+  it('preserves a closing-tag example in a composed plain-text message', () => {
+    const error = new AdtApiError('Expected </END> after <START>', 400, '/p');
+    expect(error.message).toBe('ADT API error: status 400 at /p: Expected </END> after <START>');
+  });
+
   describe('formatDdicDiagnostics', () => {
     it('uses the message class key returned by the live abapGit bridge', () => {
       const xml =
@@ -433,6 +449,13 @@ describe('AdtApiError', () => {
       expect(AdtApiError.formatDdicDiagnostics(xml)).toContain('[00/001]');
       expect(classifyAbapgitError(xml).t100Key).toBe('00/001');
     });
+    it('prefers MSGID when both message-class keys are present', () => {
+      const xml =
+        '<exception><entry key="T100KEY-MSGID">PRIMARY</entry><entry key="T100KEY-ID">FALLBACK</entry><entry key="T100KEY-NO">001</entry></exception>';
+      expect(AdtApiError.formatDdicDiagnostics(xml)).toContain('[PRIMARY/001]');
+      expect(classifyAbapgitError(xml).t100Key).toBe('PRIMARY/001');
+    });
+
     it('formats structured DDIC diagnostics as bullet list', () => {
       const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
   <exc:localizedMessage lang="EN">Can&apos;t save due to errors in source</exc:localizedMessage>
