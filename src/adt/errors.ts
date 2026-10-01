@@ -112,12 +112,19 @@ export class AdtApiError extends AdtError {
     public readonly statusCode: number,
     public readonly path: string,
     public readonly responseBody?: string,
+    options: { plainText?: boolean } = {},
   ) {
     // Extract a human-readable message, stripping raw XML/HTML — but only from a raw SAP body.
     // Try the truncated message first; if that only yields a generic title (e.g., "Application Server Error"),
     // retry with the full responseBody which may contain deeper error details (e.g., <span id="msgText">).
-    let clean = AdtApiError.extractCleanMessage(message);
-    if (responseBody && responseBody.length > message.length && /^Application Server Error/.test(clean)) {
+    let clean = options.plainText ? message : AdtApiError.extractCleanMessage(message);
+    if (
+      !options.plainText &&
+      responseBody &&
+      responseBody.length > message.length &&
+      responseBody.startsWith(message) &&
+      /^Application Server Error/.test(clean)
+    ) {
       const deepClean = AdtApiError.extractCleanMessage(responseBody);
       if (deepClean !== clean) clean = deepClean;
     }
@@ -252,7 +259,7 @@ export class AdtApiError extends AdtError {
     const props = AdtApiError.extractProperties(xml);
     const localizedMessages = findElementTexts(xml, ['localizedMessage']);
 
-    const messageId = props['T100KEY-MSGID'];
+    const messageId = props['T100KEY-MSGID'] ?? props['T100KEY-ID'];
     const messageNumber = props['T100KEY-MSGNO'] ?? props['T100KEY-NO'];
     const variables = [props['T100KEY-V1'], props['T100KEY-V2'], props['T100KEY-V3'], props['T100KEY-V4']].filter(
       (value): value is string => Boolean(value),
@@ -977,7 +984,7 @@ export function classifyAbapgitError(
     xmlBody.match(/<(?:\w+:)?namespace[^>]*>([^<]+)</i)?.[1];
   const message = AdtApiError.extractCleanMessage(xmlBody, redactEncoded);
   const props = AdtApiError.extractProperties(xmlBody);
-  const msgId = props['T100KEY-MSGID'];
+  const msgId = props['T100KEY-MSGID'] ?? props['T100KEY-ID'];
   const msgNo = props['T100KEY-MSGNO'] ?? props['T100KEY-NO'];
   const t100Key = msgId || msgNo ? `${msgId ?? '?'}/${msgNo ?? '?'}` : undefined;
 
