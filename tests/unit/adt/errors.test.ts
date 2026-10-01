@@ -238,18 +238,16 @@ describe('AdtApiError', () => {
       expect(AdtApiError.extractCleanMessage(message)).toBe(message);
     });
 
-    it('hands each extracted text to whileEncoded before decoding it', () => {
-      const seen: string[] = [];
-      const mask = (text: string): string => {
-        seen.push(text);
-        return text.replace('SECRET', '[X]');
-      };
-      expect(AdtApiError.extractCleanMessage(exception('<message>a &lt;SECRET&gt; b</message>'), mask)).toBe(
-        'a <[X]> b',
+    it('keeps explicitly composed text starting with an angle bracket intact', () => {
+      expect(new AdtApiError('<ZFOO> &lt; rejected', 400, '/p', undefined, { plainText: true }).message).toBe(
+        'ADT API error: status 400 at /p: <ZFOO> &lt; rejected',
       );
-      expect(seen).toEqual(['a &lt;SECRET&gt; b']);
-      // The tag-stripping fallback passes through it as well.
-      expect(AdtApiError.extractCleanMessage('<root><a>x &amp; SECRET</a></root>', mask)).toBe('x & [X]');
+    });
+
+    it('matches decoded HTML attributes and decodes numeric references once', () => {
+      expect(AdtApiError.extractCleanMessage('<html><span id="msg&#84;ext">&#60;X&#62; &amp;lt;</span></html>')).toBe(
+        '<X> &lt;',
+      );
     });
   });
 
@@ -412,6 +410,13 @@ describe('AdtApiError', () => {
   });
 
   describe('formatDdicDiagnostics', () => {
+    it('uses the message class key returned by the live abapGit bridge', () => {
+      const xml =
+        '<exception><localizedMessage>Repository not found</localizedMessage><properties>' +
+        '<entry key="T100KEY-ID">00</entry><entry key="T100KEY-NO">001</entry></properties></exception>';
+      expect(AdtApiError.formatDdicDiagnostics(xml)).toContain('[00/001]');
+      expect(classifyAbapgitError(xml).t100Key).toBe('00/001');
+    });
     it('formats structured DDIC diagnostics as bullet list', () => {
       const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
   <exc:localizedMessage lang="EN">Can&apos;t save due to errors in source</exc:localizedMessage>

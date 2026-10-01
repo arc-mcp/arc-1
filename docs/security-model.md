@@ -137,6 +137,12 @@ Where: [`src/server/logger.ts`](../src/server/logger.ts) (`redactSensitive`),
 Fails when: redaction lives in one sink but not others (R5), or is shallow and a secret is logged
 nested under a non-sensitive key.
 
+abapGit error diagnostics are inspected before extraction or truncation. Responses with credential
+terminology, sensitive URLs, ambiguous duplicate properties, unresolved encodings, or more than 64 KiB are replaced by
+an omission notice, including any additional messages and T100 values. This intentionally sacrifices
+benign credential-related detail; it does not claim to recognize arbitrary unlabeled secrets.
+HTTP audit suppression and `ARC1_MINIMAL_ERRORS` remain separate protections.
+
 ### I5 — No unbounded work from untrusted input
 Every LLM-supplied regex, loop, or list is bounded in **length, time, and count**. The service is
 a single Node event loop shared by all users — one catastrophic regex or unbounded scan is a

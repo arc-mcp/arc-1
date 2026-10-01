@@ -157,24 +157,35 @@ const MAX_GIT_ERROR_BODY = 65_536;
  * Normal errors retain their messages and structured diagnostics. This is deliberately conservative.
  */
 function safeGitErrorBody(body: string): string {
-  if (body.length > MAX_GIT_ERROR_BODY) return OMITTED_GIT_DIAGNOSTICS;
-  const properties = AdtApiError.extractProperties(body);
+  // Keep the known bridge namespace so checkRepo still returns {ok:false}; never echo arbitrary IDs.
+  const prefix = body.slice(0, MAX_GIT_ERROR_BODY);
+  const knownNamespace = /<(?:\w+:)?namespace\b[^>]*(?:\bid=["']org\.abapgit\.adt["']|>org\.abapgit\.adt<)/i.test(
+    prefix,
+  );
+  const omitted = knownNamespace
+    ? `<exception><namespace id="org.abapgit.adt"/><message>${OMITTED_GIT_DIAGNOSTICS}</message></exception>`
+    : OMITTED_GIT_DIAGNOSTICS;
+  if (body.length > MAX_GIT_ERROR_BODY || Buffer.byteLength(body, 'utf8') > MAX_GIT_ERROR_BODY) return omitted;
+  const entries = AdtApiError.extractPropertyEntries(body);
+  const properties = Object.fromEntries(entries);
+  // Ambiguous duplicates must not hide earlier T100 fragments from inspection.
+  if (entries.length !== Object.keys(properties).length) return omitted;
   // SAP can cut the credential label itself across T100 variables, not just its value.
   const variables = [1, 2, 3, 4].map((n) => properties[`T100KEY-V${n}`] ?? '').join('');
-  let decoded = `${normalizeEscapedUrlSlashes(body)}\n${variables}`;
-  // Detection only: inspect nested encodings without changing the text that is returned.
-  for (let layer = 0; layer < 3; layer++) decoded = decodeXmlEntities(decoded);
+  let decoded = `${body}\n${variables}`;
+  // Detection only: inspect mixed XML, JSON and URL encodings without changing returned text.
+  for (let layer = 0; layer < 3; layer++) {
+    decoded = normalizeEscapedUrlSlashes(decodeXmlEntities(decoded)).replace(/%([\da-f]{2})/gi, (_, hex: string) =>
+      String.fromCharCode(Number.parseInt(hex, 16)),
+    );
+  }
   const sensitive =
     /password|passwd|passphrase|\bpwd\b|token|secret|api[_-]?key|authorization|credential|access[_-]?key|private[_-]?key|ssh[_-]?key|signature|cookie|session|auth[_-]?(?:pwd|user)|remote[_-]?user|\b(?:bearer|basic)\s/i.test(
       decoded,
     ) ||
-    /&(?:#|amp;|lt;|gt;|quot;|apos;)/.test(decoded) ||
+    /&(?:#|amp;|lt;|gt;|quot;|apos;)|\\u[\da-f]{4}|%[\da-f]{2}/i.test(decoded) ||
     [...decoded.matchAll(/https?:\/\/[^\s<>"']+/gi)].some(([url]) => redactGitUrl(url) !== url);
-  if (!sensitive) return body;
-  // Keep the known bridge namespace so checkRepo still returns {ok:false}; never echo arbitrary IDs.
-  return /<(?:\w+:)?namespace\b[^>]*\bid=["']org\.abapgit\.adt["']/.test(body)
-    ? `<exception><namespace id="org.abapgit.adt"/><message>${OMITTED_GIT_DIAGNOSTICS}</message></exception>`
-    : OMITTED_GIT_DIAGNOSTICS;
+  return sensitive ? omitted : body;
 }
 
 function sanitizedAbapGitApiError(err: AdtApiError, path: string): AdtApiError {

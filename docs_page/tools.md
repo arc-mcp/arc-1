@@ -616,7 +616,7 @@ This helps pinpoint the exact failing field/annotation instead of retrying blind
 
 **CDS dependency-aware CRUD hints (DDLS):**
 - `SAPWrite(action="update", type="DDLS", ...)` appends downstream where-used impact buckets and a concrete re-activation order + `SAPActivate(objects=[...])` template.
-- `SAPWrite(action="delete", type="DDLS", ...)` enriches dependency-style delete failures (for example DDIC `[?/039]`) with blocking dependents and suggested delete order.
+- `SAPWrite(action="delete", type="DDLS", ...)` enriches dependency-style delete failures (for example DDIC `DDIC message 039`) with blocking dependents and suggested delete order.
 - Delete hints include cycle-break guidance for mutually-dependent projection graphs (strip redirected/composition clauses, activate stripped versions, then delete).
 - If delete guidance lists dependents that were just deleted, treat it as possible stale SAP active dependency/index state and retry after a short wait before deeper cleanup.
 - If SAP reports a delete dependency error but current where-used results are empty, ARC-1 now adds stale active-dependency guidance: wait/retry after recent cleanup, activate restored/stripped sources first, then re-check references/locks.

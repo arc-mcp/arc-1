@@ -139,24 +139,20 @@ export class AdtApiError extends AdtError {
    *   <exc:exception ...><exc:localizedMessage lang="EN">...</exc:localizedMessage></exc:exception>
    * or HTML error pages. We extract the meaningful text and discard the markup; the text is
    * entity-decoded once, as it leaves the markup.
-   *
-   * `whileEncoded` sees each extracted text before that decode. A redactor has to run there as well
-   * as on the result: a decoded `<` or `>` would end a credential-bearing URL short of its secret.
    */
-  static extractCleanMessage(raw: string, whileEncoded: (text: string) => string = (text) => text): string {
+  static extractCleanMessage(raw: string): string {
     if (!raw || raw.length === 0) return 'Unknown error';
 
     // 1. Not a markup document, so plain text — use as-is (truncated). A composed message keeps its "<"
     //    (a "<id>" placeholder, SAP text like "<ZFOO_TOP>"), and so does text already extracted from a
     //    body: scanning those again would eat the literal `<x>` and decode a second time.
-    //    ponytail: text that itself starts with `<` still counts as markup. Re-wrapped SAP text carries
-    //    a prefix (`[namespace] …`); give the constructor a plain-text flag if a caller ever cannot.
+    //    Callers rewrapping extracted text can explicitly set the constructor's plainText option.
     if (!/^\s*</.test(raw)) {
       return raw.slice(0, 300);
     }
 
     // 2. Try XML: extract <localizedMessage> or <message> content
-    const xmlMessage = findFirstElementText(raw, ['localizedMessage', 'message'], {}, whileEncoded);
+    const xmlMessage = findFirstElementText(raw, ['localizedMessage', 'message'], {});
     if (xmlMessage) {
       return xmlMessage;
     }
@@ -164,22 +160,22 @@ export class AdtApiError extends AdtError {
     // 3. Try HTML: extract SAP's error detail from <span id="msgText"> or <p class="detailText">
     //    SAP 500 pages embed the actual error (e.g., "Syntax error in program ...") in these elements.
     const detail =
-      findFirstElementText(raw, ['span'], { id: 'msgText' }, whileEncoded) ??
-      findFirstElementText(raw, ['p'], { class: 'detailText' }, whileEncoded);
+      findFirstElementText(raw, ['span'], { id: 'msgText' }) ??
+      findFirstElementText(raw, ['p'], { class: 'detailText' });
     if (detail) {
       // Also grab the title for context (e.g., "Application Server Error")
-      const title = findFirstElementText(raw, ['title'], {}, whileEncoded);
+      const title = findFirstElementText(raw, ['title'], {});
       return title && title !== detail ? `${title}: ${detail}` : detail;
     }
 
     // 4. Try HTML: extract <title> or <h1> content
-    const htmlMessage = findFirstElementText(raw, ['title', 'h1'], {}, whileEncoded);
+    const htmlMessage = findFirstElementText(raw, ['title', 'h1'], {});
     if (htmlMessage) {
       return htmlMessage;
     }
 
     // 5. Fallback: strip all tags and use whatever text remains
-    const stripped = decodeXmlEntities(whileEncoded(stripTagsAndCollapseWhitespace(raw)));
+    const stripped = decodeXmlEntities(stripTagsAndCollapseWhitespace(raw));
     return stripped.length > 0 ? stripped.slice(0, 300) : 'SAP returned an error (no readable message)';
   }
 
@@ -237,14 +233,18 @@ export class AdtApiError extends AdtError {
    * Properties often contain line numbers, message IDs, and other diagnostic detail.
    */
   static extractProperties(xml: string): Record<string, string> {
-    if (!xml) return {};
-    const props: Record<string, string> = {};
+    return Object.fromEntries(AdtApiError.extractPropertyEntries(xml));
+  }
+
+  /** Preserve repeated properties when inspecting diagnostic confidentiality. */
+  static extractPropertyEntries(xml: string): Array<[string, string]> {
+    const entries: Array<[string, string]> = [];
     for (const entry of findElements(xml, ['entry'])) {
       const key = entry.attributes.key?.trim();
       const value = entry.text.trim();
-      if (key && value) props[key] = value;
+      if (key && value) entries.push([key, value]);
     }
-    return props;
+    return entries;
   }
 
   /**
@@ -342,10 +342,9 @@ function findFirstElementText(
   input: string,
   names: string[],
   requiredAttributes: Record<string, string> = {},
-  whileEncoded?: (text: string) => string,
 ): string | undefined {
   for (const name of names) {
-    const text = findElements(input, [name], requiredAttributes, whileEncoded)[0]?.text;
+    const text = findElements(input, [name], requiredAttributes)[0]?.text;
     if (text) return text;
   }
   return undefined;
@@ -359,7 +358,6 @@ function findElements(
   input: string,
   names: string[],
   requiredAttributes: Record<string, string> = {},
-  whileEncoded: (text: string) => string = (text) => text,
 ): DirectTextElement[] {
   const out: DirectTextElement[] = [];
   let cursor = 0;
@@ -374,7 +372,6 @@ function findElements(
     const startTag = parseStartTag(input, lt, gt);
     cursor = gt + 1;
     if (!startTag || startTag.selfClosing || !names.includes(startTag.name)) continue;
-    if (!attributesMatch(startTag.attributes, requiredAttributes)) continue;
 
     const nextTag = input.indexOf('<', cursor);
     if (nextTag < 0 || input[nextTag + 1] !== '/') continue;
@@ -386,7 +383,8 @@ function findElements(
     // gets text here and must not decode it again.
     const attributes: Record<string, string> = {};
     for (const [key, value] of Object.entries(startTag.attributes)) attributes[key] = decodeXmlEntities(value);
-    out.push({ name: startTag.name, attributes, text: decodeXmlEntities(whileEncoded(text)) });
+    if (!attributesMatch(attributes, requiredAttributes)) continue;
+    out.push({ name: startTag.name, attributes, text: decodeXmlEntities(text) });
   }
 
   return out;
@@ -975,18 +973,14 @@ export function classifyGctsError(body: string): GctsErrorClassification {
 
 /**
  * Parse abapGit bridge/framework XML errors from /sap/bc/adt/abapgit/*.
- * `redactEncoded` runs on the message before it is entity-decoded — see `extractCleanMessage`.
  */
-export function classifyAbapgitError(
-  xmlBody: string,
-  redactEncoded?: (text: string) => string,
-): AbapGitErrorClassification {
+export function classifyAbapgitError(xmlBody: string): AbapGitErrorClassification {
   if (!xmlBody) return {};
 
   const namespace =
     xmlBody.match(/<(?:\w+:)?namespace[^>]*\sid="([^"]+)"/i)?.[1] ??
     xmlBody.match(/<(?:\w+:)?namespace[^>]*>([^<]+)</i)?.[1];
-  const message = AdtApiError.extractCleanMessage(xmlBody, redactEncoded);
+  const message = AdtApiError.extractCleanMessage(xmlBody);
   const props = AdtApiError.extractProperties(xmlBody);
   const msgId = props['T100KEY-MSGID'] ?? props['T100KEY-ID'];
   const msgNo = props['T100KEY-MSGNO'] ?? props['T100KEY-NO'];

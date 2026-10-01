@@ -445,7 +445,7 @@ describe('abapGit client helpers', () => {
       expect(String(err)).not.toContain(sentinel);
       expect((err as AdtApiError).responseBody).not.toContain(sentinel);
       expect((err as AdtApiError).responseBody!.length).toBeLessThan(4_096);
-      expect((err as AdtApiError).responseBody).toContain('[truncated');
+      expect((err as AdtApiError).responseBody).toContain('details omitted');
     }
   });
 
@@ -469,8 +469,7 @@ describe('abapGit client helpers', () => {
     );
   });
 
-  // The message line and the checkRepo result only. Text that dispatch derives from the response body
-  // (extra messages, properties, DDIC diagnostics) is redacted once, while encoded — a known gap.
+  // Both thrown errors and check results omit the same credential-bearing diagnostic.
   it.each([
     // Decoded before redaction, `<` / `>` would end the URL match and leave the rest of the password.
     ['a URL password containing &lt;', 'Remote failed https://git-user:pa&lt;SENTINEL@example.com/r.git now'],
@@ -498,7 +497,7 @@ describe('abapGit client helpers', () => {
 
   // The encoded pass runs on the extracted text, never on the raw body: there markup separates a
   // keyword from its value, and an unbalanced quote makes a quoted-value match swallow the tags after it.
-  it('redacts the extracted text, not the raw body, before decoding', async () => {
+  it('omits credentials separated by HTML tags or introduced by an unfinished assignment', async () => {
     const siblings =
       '<html><body><table><tr><td>Authorization: Bearer</td><td>SENTINEL</td></tr></table></body></html>';
     const http = mockHttp();
@@ -506,7 +505,7 @@ describe('abapGit client helpers', () => {
       new AdtApiError(siblings, 500, '/sap/bc/adt/abapgit/repos/R/pull', siblings),
     );
     await expect(pullRepo(http, gitSafety, 'R')).rejects.toThrow(
-      'ADT API error: status 500 at /sap/bc/adt/abapgit/repos/R/pull: authorization:[REDACTED]',
+      'ADT API error: status 500 at /sap/bc/adt/abapgit/repos/R/pull: abapGit error details omitted because they may contain credentials.',
     );
 
     const unbalanced =
@@ -519,7 +518,7 @@ describe('abapGit client helpers', () => {
     );
     expect(await checkRepo(checked, gitSafety, firstRepo())).toEqual({
       ok: false,
-      message: "Login failed, auth_token='",
+      message: 'abapGit error details omitted because they may contain credentials.',
     });
   });
 
