@@ -22,6 +22,7 @@ import { type DataResponseBudget, DataResultScope } from './data-result-context.
 import { canonicalDataSourceName } from './data-source-name.js';
 import { CDS_DEPENDENCY_GRAPH_PATH, DataSourceBlocklistGuard, parseTableReplacement } from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
+import { readEnhancementImplementation } from './enhancements.js';
 import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
@@ -79,7 +80,6 @@ import {
   parseDataElementMetadata,
   parseDataPreviewResult,
   parseDomainMetadata,
-  parseEnhancementImplementation,
   parseFeatureToggleStates,
   parseFunctionGroup,
   parseFunctionGroupNodes,
@@ -939,13 +939,9 @@ export class AdtClient {
     return parseFeatureToggleStates(resp.body, name);
   }
 
-  /** Get enhancement implementation metadata (technology, referenced object, BAdI implementations) */
+  /** Get enhancement metadata and, for source-code plug-ins, hook locations and ABAP source. */
   async getEnhancementImplementation(name: string): Promise<EnhancementImplementationInfo> {
-    checkOperation(this.safety, OperationType.Read, 'GetEnhancementImplementation');
-    const resp = await this.http.get(`/sap/bc/adt/enhancements/enhoxhb/${encodeURIComponent(name)}`, {
-      Accept: 'application/vnd.sap.adt.enh.enhoxhb.v4+xml',
-    });
-    return parseEnhancementImplementation(resp.body);
+    return readEnhancementImplementation(this, name);
   }
 
   /** Get transaction code metadata (description, package) */

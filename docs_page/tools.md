@@ -66,7 +66,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`. IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
-| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
+| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
@@ -115,7 +115,7 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `DTEL` | Data element metadata (structured JSON: type, labels and their reserved lengths, search help and its parameter, SET/GET parameter, change-document and bidi flags, and `deactivateInputHistory`). Omitted `version` and `auto` return SAP's developer view so pending drafts remain visible; explicit `active` or `inactive` is passed to SAP. |
 | `AUTH` | Authorization field metadata (structured JSON: role name, check table, domain, conversion exit, org-level info) |
 | `FEATURE_TOGGLE` | Feature toggle states (structured JSON: toggle state per system from SAP switch framework). Renamed from `FTG2` in audit Plan B (docs/research/abap-types/types/ftg2.md) — `FTG2` still accepted as deprecated alias for one minor release with stderr warning. |
-| `ENHO` | Enhancement implementation metadata (structured JSON: BAdI technology, referenced object, implementation classes) |
+| `ENHO` | Enhancement metadata; BAdI implementation classes or hook locations plus ABAP source. See [enhancement reads](#enhancement-reads). |
 | `VERSIONS` | Revision history for an ABAP object. Returns JSON: `{ object: { name, type }, revisions: [{ id, author, timestamp, transport?, uri }] }`. Optional `include` for CLAS and `group` for FUNC. On-prem only. |
 | `VERSION_SOURCE` | Source code at a specific revision. Pass `versionUri` from a VERSIONS response. Returns raw source text. On-prem only. |
 | `DESD` | CDS Logical External Schema — **server-driven object** (generic AFF read). Returns JSON: parsed `blue:blueSource` metadata (name, type, description, package, language, version, …) + the AFF JSON source. SAP_BASIS 8.16+ (ABAP Platform 2025), discovery-gated. |
@@ -209,7 +209,7 @@ SAPRead(type="DTEL", name="MANDT")               — data element metadata with 
 SAPRead(type="AUTH", name="BUKRS")               — authorization field metadata
 SAPRead(type="FEATURE_TOGGLE", name="ABC_TOGGLE")  — feature toggle states (FTG2 still works as deprecated alias)
 SAPRead(type="MSAG", name="SY")                    — message class (MESSAGES still works as deprecated alias)
-SAPRead(type="ENHO", name="ZMY_BADI_IMPL")       — enhancement implementation metadata
+SAPRead(type="ENHO", name="ZMY_BADI_IMPL")       — BAdI metadata; hook implementations also return source
 SAPRead(type="VERSIONS", name="ZARC1_TEST_REPORT") — list object revisions with revision URIs
 SAPRead(type="VERSIONS", name="ZCL_X", include="definitions") — list revisions for CLAS definitions include
 SAPRead(type="VERSION_SOURCE", versionUri="/sap/bc/adt/programs/programs/ZARC1_TEST_REPORT/source/main/versions/20260410185851/00000/content") — fetch source at one revision
@@ -249,9 +249,26 @@ can hit the limit before reaching function-module bodies. Follow up with a known
 `SAPRead(type="INCL", name="LZUTILSU01", grep="...")`, or a function module,
 `SAPRead(type="FUNC", group="ZUTILS", name="Z_UTIL", grep="...")`.
 
+### Enhancement reads
+
+`SAPRead(type="ENHO", name="...")` reads BAdI metadata and source-code plug-ins on
+on-prem systems. Hook implementations additionally return `source`, `enhancedObject`
+and `hookImplementations` (positions, program/method names, overwrite flags and
+navigation links). A failed source read returns an error, not successful partial metadata.
+
+ARC-1 resolves a different enhancement subtype through repository search only after
+an unsupported BAdI read. This needs search permission as well as read permission.
+Some class enhancements still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
+integration when the error identifies an unavailable ADT route. No enhancement writes
+or ENHO source filtering (`grep`, method or line selection) are supported.
+
+ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
+Explicit `active`/`inactive` selection is refused because its behavior is not verified
+for these resources. Metadata and source are separate reads, not an atomic snapshot.
+
 ### Active vs Inactive Source
 
-Source-bearing types accept a `version` parameter to choose between the activated source and the calling user's unactivated draft:
+Except for [ENHO](#enhancement-reads), source-bearing types accept a `version` parameter to choose between the activated source and the calling user's unactivated draft:
 
 | `version` | Behaviour |
 |-----------|-----------|

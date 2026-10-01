@@ -681,6 +681,11 @@ export async function handleSAPRead(
       return textResult(toolJson(toggle));
     }
     case 'ENHO': {
+      if (args.version === 'active' || args.version === 'inactive') {
+        return errorResult(
+          'ENHO does not support explicit version selection. Omit version or use "auto" for SAP\'s developer view.',
+        );
+      }
       const enhancement = await client.getEnhancementImplementation(name);
       return textResult(toolJson(enhancement));
     }

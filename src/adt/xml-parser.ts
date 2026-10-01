@@ -815,11 +815,7 @@ export function parseFeatureToggleStates(json: string, name: string): FeatureTog
   };
 }
 
-/**
- * Parse enhancement implementation metadata from /sap/bc/adt/enhancements/enhoxhb/{name}.
- *
- * Expected root: <enho:objectData> with contentCommon/contentSpecific and BAdI entries.
- */
+/** Parse BAdI metadata (XHB v4 or legacy XH v1), rooted at enho:objectData. */
 export function parseEnhancementImplementation(xml: string): EnhancementImplementationInfo {
   const parsed = parseXml(xml);
   const objectData = (parsed.objectData ?? findDeepNodes(parsed, 'objectData')[0] ?? {}) as Record<string, unknown>;
@@ -858,8 +854,8 @@ export function parseEnhancementImplementation(xml: string): EnhancementImplemen
         implementingClass: String(implementingClass['@_name'] ?? ''),
         badiDefinition: String(badiDefinition['@_name'] ?? ''),
         enhancementSpot: String(enhancementSpot['@_name'] ?? ''),
-        active: String(node['@_active'] ?? '') === 'true',
-        default: String(node['@_default'] ?? '') === 'true',
+        active: String(node['@_active'] ?? node['@_isActive'] ?? '') === 'true',
+        default: String(node['@_default'] ?? node['@_isDefault'] ?? '') === 'true',
       };
     }),
   };

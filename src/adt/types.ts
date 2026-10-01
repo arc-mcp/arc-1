@@ -1150,8 +1150,20 @@ export interface FeatureToggleInfo {
   }>;
 }
 
-/** Enhancement implementation metadata from /sap/bc/adt/enhancements/enhoxhb/{name} */
+/** Enhancement metadata; hook implementations also include locations and ABAP source. */
 export interface EnhancementImplementationInfo {
+  source?: string;
+  enhancedObject?: { name: string; type: string; uri: string };
+  hookImplementations?: Array<{
+    id: string;
+    spotName: string;
+    programName: string;
+    method: string;
+    overwrite: boolean;
+    fullName: string;
+    description: string;
+    uri: string;
+  }>;
   name: string;
   description: string;
   package: string;

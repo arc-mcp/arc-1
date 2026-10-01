@@ -1,57 +1,66 @@
 # ENHO — Enhancement Implementation
 
-## TL;DR
-Canonical TADIR R3TR `ENHO` (Enhancement Implementation — BAdI implementations,
-explicit/implicit enhancement source plug-ins, enhanced classes). Spelling is correct.
-URL `/sap/bc/adt/enhancements/enhoxhb/<name>` and Accept
-`application/vnd.sap.adt.enh.enhoxhb.v4+xml` are correct (`enhoxhb` = enhancement object
-"hbi" / extended-BAdI form). On-prem only in ARC-1.
+Use `SAPRead(type="ENHO", name="...")` on on-prem systems. The R3TR type covers
+BAdIs, source-code plug-ins and other enhancement technologies; it does not identify
+one ADT resource. There is no public slash alias or enhancement write operation.
 
-## TADIR ground truth
-- **R3TR type**: `ENHO`.
-- **LIMU sub-objects**: ENHO has internal sub-elements (BAdI implementations, source plug-ins)
-  but TADIR doesn't carry them as separate LIMU rows in the way FUGR carries FUNC.
-- **abap-file-formats support**: ✅ released — `file-formats/enho/`.
+## Verified read routes (2026-10-01, issue #896)
 
-## ADT slash subtypes
-| Slash code | Meaning | URL prefix | Verified on |
-|---|---|---|---|
-| (no alias in ARC-1) | Enhancement Implementation | `/sap/bc/adt/enhancements/enhoxhb/<name>` | probe catalog, ARC-1 client |
+| Repository subtype | Collection / Accept | Observed behavior |
+|---|---|---|
+| `ENHO/XHB` | `enhoxhb` / `application/vnd.sap.adt.enh.enhoxhb.v4+xml` | BAdI metadata on SAP_BASIS 758 SP02 and 816 SP01; root `enho:objectData`. |
+| `ENHO/XHH` | `enhoxhh` / `application/vnd.sap.adt.enh.enhoxhh.v3+xml` | Hook metadata on 758/816; root `enho:enhancement`. ABAP is at the same object's `/source/main` (`text/plain`). |
+| `ENHO/XH` | `enhoxh` / `application/vnd.sap.adt.enh.enho.v1+xml` | Legacy/generic route, not exclusively class enhancements. On 750 it serves BAdI `objectData`; some class enhancements on 758/816 fail inside SAP even at this route. |
 
-## SAP docs & notes
-- "Enhancement Framework" (SAP Help — ABAP Workbench Tools).
-- BAdI / Implicit / Explicit enhancement spots.
+All paths are under `/sap/bc/adt/enhancements/`, followed by the encoded object
+name. Discovery advertised all three collections on 758/816 and only `enhoxh`
+on 750. Collection presence alone does not prove every object can be read.
 
-## Other MCP servers / cross-reference
-- abap-file-formats: serializes `enho` (✅ verified in this audit's gh api dump).
-- mcp-abap-abap-adt-api: `ENHO`.
+### Routing and payload
 
-## Live verification
-### a4h (S/4HANA 2023)
-- Probe `knownObjects: []` per `src/probe/catalog.ts:190` — no SAP-shipped ENHO universally
-  guaranteed; customer-defined.
+The original BAdI GET remains first, preserving its one-request success path and
+JSON shape. Only HTTP 400/404/500 triggers one bounded repository search. ARC-1
+requires a unique recognized subtype for the exact name. SAP 750 decorates search
+names with a display label, so an exact relative URI matching the constructed,
+known object path also qualifies. ARC-1 never follows a returned URI, probes all
+collections, or retries with another identity. Unknown or ambiguous results keep
+the original failure; denied searches and source errors propagate.
 
-### 7.50 (NW 7.50)
-- Available — `minRelease: 702`.
+XHH returns `source`, `enhancedObject` and `hookImplementations` in addition to the
+common metadata. Hook entries retain IDs, spots, programs, methods, overwrite
+flags, full enhancement locations and enclosure links. Links are navigation data,
+not authorization to fetch another object. Source bytes are not XML-decoded.
+Legacy BAdI `isActive` / `isDefault` attributes map to the same boolean fields as
+modern `active` / `default` attributes. See the reduced [hook fixture](../../../../tests/fixtures/xml/enhancement-hook.xml).
 
-## ARC-1 current surface
-| Location | Line(s) | Form used | Correct? |
-|---|---|---|---|
-| `handleSAPRead` | 1581–1584 | `case 'ENHO'` → `getEnhancementImplementation` | ✅ |
-| `client.getEnhancementImplementation` | 512–518 | `/sap/bc/adt/enhancements/enhoxhb/<name>` | ✅ |
-| `src/probe/catalog.ts` | 187–193 | `ENHO` | ✅ |
-| `objectBasePath` | n/a (read-only path; no URL builder entry) | n/a | acceptable — read uses dedicated client method |
+ENHO uses SAP's unversioned developer view. Explicit `active`/`inactive` requests
+are refused rather than silently ignored; omit `version` or use `auto`. No atomic
+metadata/source snapshot or inactive-draft contract is claimed. There is no ENHO
+source cache, grep, method extraction or write support.
 
-## Verdict
-- **Status**: correct
-- **Evidence**: verified-from-source (abap-file-formats released, probe catalog)
-- **Issue**: none
+### Live observations and limits
 
-## Recommendation
-- Keep as-is.
-- **Breaking change**: no
-- **Test gap to close**: none specifically; covered by probe.
+Tests used ARC-1's production `handleToolCall` over direct HTTPS/Basic, client 001,
+with no SAP mutations. Build hashes and raw comparisons are retained with the PR's
+local evidence; mocks are separate from these observations.
 
+- 758/816: `/AIF/ANS_RESTART_EI` kept the existing BAdI payload with one GET.
+- 758/816: `/MFND/CORE_UPD_BDS_CONNECTION` and `/SMFND/DEMO_DEL_BOOKING` exposed
+  hook locations and source equal to a direct `/source/main` read. The old BAdI
+  route failed with 400/500. Each corrected read made four GETs.
+- 750: `/BOBF/CONF_ADT_CHECKABLE` exposed a BAdI through the generic XH route;
+  its search name included ` (Enhancement Implementation)` and its flags used
+  `isActive` / `isDefault`.
+- 758/816: `WDR_TEST_ENH_08_01` still returned SAP 500 at `enhoxh`. ARC-1 keeps
+  that status and points to SAP GUI (SE80/SE19) or Eclipse's SAP GUI integration.
+- Not verified: the reporter's exact objects, inactive drafts, PP, MCP transport,
+  BTP, or working class-enhancement metadata. A route correction cannot repair a
+  backend transformation error.
+
+[SAP's source-code plug-in documentation](https://help.sap.com/docs/ABAP_PLATFORM_NEW/c238d694b825421f940829321ffa326a/4ec1abd36e391014adc9fffe4e204223.html)
+describes ADT editing from 7.53 and creation from 7.54, and excludes class/function
+group enhancements from that support. These are authoring limits, not a promise
+about all read endpoints. Enhancement authoring remains [FEAT-03](../../../../docs_page/roadmap.md#feat-03).
 
 ## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
 

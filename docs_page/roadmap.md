@@ -283,8 +283,8 @@ without logging or persisting the credentials. This is research, not a universal
 
 **Idea.** Add guarded creation or editing workflows for enhancement implementations and BAdIs.
 
-**Why it remains.** ARC-1 can read enhancement implementation metadata and relations, but that is
-not authoring support. The create/update wire contracts and activation behavior are not proven
+**Why it remains.** ARC-1 can read BAdI metadata, source-code plug-ins and qualified BAdI relations,
+but that is not authoring support. The create/update wire contracts and activation behavior are not proven
 across supported releases.
 
 **Resume with.** Capture live ADT traffic for one narrowly scoped enhancement type, define package
