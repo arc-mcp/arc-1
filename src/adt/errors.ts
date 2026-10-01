@@ -470,6 +470,10 @@ function parseAttributes(input: string, start: number, end: number): Record<stri
         while (pos < end && !isWhitespace(input.charCodeAt(pos)) && input[pos] !== '/') pos++;
         attrValue = input.slice(valueStart, pos);
       }
+    } else if (pos === nameStart) {
+      // A ">" inside a quoted run that is not an attribute value (`<a "b>c">`): `findTagEnd` skips
+      // it, the name loop above stops at it. Step over it, or this loop never ends.
+      pos++;
     }
 
     if (attrName) attributes[attrName] = attrValue;
