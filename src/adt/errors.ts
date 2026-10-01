@@ -152,7 +152,7 @@ export class AdtApiError extends AdtError {
     }
 
     // 2. Try XML: extract <localizedMessage> or <message> content
-    const xmlMessage = findFirstElementText(raw, ['localizedMessage', 'message'], {});
+    const xmlMessage = findFirstElementText(raw, ['localizedMessage', 'message']);
     if (xmlMessage) {
       return xmlMessage;
     }
@@ -164,12 +164,12 @@ export class AdtApiError extends AdtError {
       findFirstElementText(raw, ['p'], { class: 'detailText' });
     if (detail) {
       // Also grab the title for context (e.g., "Application Server Error")
-      const title = findFirstElementText(raw, ['title'], {});
+      const title = findFirstElementText(raw, ['title']);
       return title && title !== detail ? `${title}: ${detail}` : detail;
     }
 
     // 4. Try HTML: extract <title> or <h1> content
-    const htmlMessage = findFirstElementText(raw, ['title', 'h1'], {});
+    const htmlMessage = findFirstElementText(raw, ['title', 'h1']);
     if (htmlMessage) {
       return htmlMessage;
     }

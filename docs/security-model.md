@@ -138,8 +138,8 @@ Fails when: redaction lives in one sink but not others (R5), or is shallow and a
 nested under a non-sensitive key.
 
 abapGit error diagnostics are inspected before extraction or truncation. Responses with credential
-terminology, sensitive URLs, ambiguous duplicate properties, unresolved encodings, or more than 64 KiB are replaced by
-an omission notice, including any additional messages and T100 values. This intentionally sacrifices
+terminology, sensitive URLs, ambiguous duplicate properties, unresolved encodings, or more than
+64 KiB are replaced by an omission notice, including any additional messages and T100 values. This intentionally sacrifices
 benign credential-related detail; it does not claim to recognize arbitrary unlabeled secrets.
 HTTP audit suppression and `ARC1_MINIMAL_ERRORS` remain separate protections.
 
