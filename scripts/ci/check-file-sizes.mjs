@@ -50,7 +50,7 @@ const BUDGETS = {
   // are the CTS-id shape guard and the safe percent-decode — an unvalidated href tail returned
   // "reference" as a transport id, and a malformed escape threw away the whole feed
   // (docs/plans/2026-08-03-transport-diff.md).
-  // -9: parseXml decodes entities itself, so the per-parser decodes went away.
+  // -25: parseXml decodes entities itself, so the per-parser decodes went away.
   'src/adt/xml-parser.ts': 1774,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
