@@ -41,6 +41,7 @@ import type {
   ServerDrivenObjectMetadata,
   TransactionInfo,
 } from './types.js';
+import { decodeXmlEntities } from './xml-entities.js';
 
 /**
  * Escape the five predefined XML entities (`& < > " '`) for safe interpolation into XML.
@@ -113,14 +114,21 @@ const parser = new XMLParser({
   isArray: (name) => ARRAY_TAGS.has(name),
   parseAttributeValue: false, // Keep attributes as strings
   parseTagValue: false, // Keep tag values as strings (prevents "001" → 1)
-  // SAP ADT responses use only standard XML entities (&amp; &lt; &gt; &quot;).
-  // Dump listings (ST22) can contain thousands of entity references in stack traces.
-  // fast-xml-parser v5 defaults to maxTotalExpansions=1000 which is too low.
-  // Disable custom entity processing — standard entities are handled regardless.
-  processEntities: false,
+  // Use the native entity boundary: unlike value processors, it skips literal CDATA.
+  // Decode only predefined/numeric references, with no recursive DOCTYPE expansion or ST22 cap.
+  entityDecoder: {
+    decode: decodeXmlEntities,
+    addInputEntities: () => {},
+    setExternalEntities: () => {},
+    setXmlVersion: () => {},
+    reset: () => {},
+  },
 });
 
-/** Parse raw XML string to a JS object */
+/**
+ * Parse raw XML string to a JS object. Every attribute and text value is entity-DECODED
+ * (`R&amp;D` → `R&D`): never decode a parsed value again, and `escapeXmlAttr` it on the way back.
+ */
 export function parseXml(xml: string): Record<string, unknown> {
   return parser.parse(xml) as Record<string, unknown>;
 }
@@ -132,14 +140,6 @@ export function parseXml(xml: string): Record<string, unknown> {
  * <adtcore:objectReferences>
  *   <adtcore:objectReference uri="..." type="PROG/P" name="ZTEST" packageName="$TMP" description="..."/>
  * </adtcore:objectReferences>
- *
- * The shared parser runs with `processEntities: false` (intentional — dump XML
- * can exceed fast-xml-parser's `maxTotalExpansions` cap), so XML attribute
- * values like descriptions arrive with `&gt;` / `&amp;` / `&lt;` / `&quot;` /
- * `&apos;` un-decoded. We decode the user-visible free-text field
- * (`description`) at the boundary via `decodeXmlEntities()`. Object names,
- * types, URIs, and package names don't carry free text — leaving them
- * undecoded is intentional.
  */
 export function parseSearchResults(xml: string): AdtSearchResult[] {
   const parsed = parseXml(xml);
@@ -147,7 +147,7 @@ export function parseSearchResults(xml: string): AdtSearchResult[] {
   return refs.map((ref: Record<string, unknown>) => ({
     objectType: String(ref['@_type'] ?? ''),
     objectName: String(ref['@_name'] ?? ''),
-    description: decodeXmlEntities(String(ref['@_description'] ?? '')),
+    description: String(ref['@_description'] ?? ''),
     packageName: String(ref['@_packageName'] ?? ''),
     uri: String(ref['@_uri'] ?? ''),
   }));
@@ -1103,7 +1103,7 @@ export function parseMessageClass(xml: string): MessageClassInfo {
   const msgNodes = Array.isArray(mc.messages) ? (mc.messages as Array<Record<string, unknown>>) : [];
   const messages = msgNodes.map((m) => ({
     number: String(m['@_msgno'] ?? ''),
-    shortText: decodeXmlEntities(String(m['@_msgtext'] ?? '')),
+    shortText: String(m['@_msgtext'] ?? ''),
   }));
 
   return {
@@ -1176,24 +1176,6 @@ export function parseBspFolderListing(xml: string, appName: string): BspFileNode
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-/**
- * Decode standard XML entities in attribute values.
- * fast-xml-parser with processEntities:false + parseAttributeValue:false
- * keeps raw encoded strings — we decode them for human-readable output.
- *
- * `&amp;` is decoded LAST so chained entities like `&amp;lt;` resolve to the
- * literal `&lt;` rather than `<`. Closes CodeQL alert `js/double-escaping`
- * (alert #8).
- */
-export function decodeXmlEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&');
-}
-
 /** Safely get a nested array from parsed XML.
  *  Absent, empty (`<alerts/>` → `''` on 7.50) and single-node containers all collapse to an array. */
 export function getNestedArray(
@@ -1250,16 +1232,9 @@ export function parseNamedItems(xml: string): NamedItem[] {
     const x = Array.isArray(v) ? v[0] : v;
     return typeof x === 'string' ? x : typeof x === 'number' ? String(x) : '';
   };
-  // Some items carry entity-encoded markup (e.g. "&lt;p&gt;Target: &lt;b&gt;DEV&lt;/b&gt;&lt;/p&gt;").
-  // The shared parser leaves entities encoded — decode, strip tags, collapse whitespace.
+  // Some items carry markup (e.g. "gCTS generated<p>Target: <b>DEV</b></p>") — strip tags, collapse whitespace.
   const clean = (v: unknown): string =>
     str(v)
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
-      .replace(/&#39;/g, "'")
-      .replace(/&amp;/g, '&') // decode &amp; last so encoded entities aren't double-decoded
       .replace(/<[^>]*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();

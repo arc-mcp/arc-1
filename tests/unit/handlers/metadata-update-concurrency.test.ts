@@ -128,6 +128,21 @@ describe('metadata updates preserve edits committed before the lock', () => {
     expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
   });
 
+  // SAP sends stored text entity-encoded. Re-escaping it undecoded ("R&amp;amp;D") made SAP store
+  // the literal "R&amp;D", compounding with every further partial update.
+  it.each(cases)('$type writes the stored description back escaped exactly once', async (row) => {
+    const stored = 'R&amp;D &lt;Orders&gt; &quot;x&quot;';
+    const calls = sap(row, undefined, stored);
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: row.type,
+      name: row.name,
+      ...row.patch,
+    });
+    expect(result.isError, JSON.stringify(result)).toBeUndefined();
+    expect(calls.find((c) => c.method === 'PUT')?.body).toContain(`adtcore:description="${stored}"`);
+  });
+
   it.each(['lock', 'read', 'put', 'unlock'] as const)(
     'reports %s failure and releases any acquired lock',
     async (failure) => {

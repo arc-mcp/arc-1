@@ -1057,6 +1057,20 @@ describe('Runtime Diagnostics', () => {
       expect(result[0]?.username).toBe('DEVELOPER');
     });
 
+    it('undoes the XML escaping of the summary once, leaving its HTML entities to the HTML step', () => {
+      // The cell text "<fs>" is HTML-escaped inside HTML that is itself XML-escaped. One decode too
+      // many would turn it into a tag and the tag stripper would delete it.
+      const xml = `<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
+        <atom:entry>
+          <atom:id>FrontendError/1E81ABCDEF0123456789</atom:id>
+          <atom:title>Frontend Error</atom:title>
+          <atom:summary type="html">&lt;table&gt;&lt;tr&gt;&lt;td&gt;&lt;b&gt;Short Text&lt;/b&gt;&lt;/td&gt;&lt;td&gt;Field &amp;lt;fs&amp;gt; not assigned &amp;amp; more&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</atom:summary>
+        </atom:entry>
+      </atom:feed>`;
+
+      expect(parseGatewayErrors(xml)[0]?.shortText).toBe('Field <fs> not assigned & more');
+    });
+
     it('decodes encoded atom:id segments before deriving detail URL', () => {
       const xml = `<atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
         <atom:entry>

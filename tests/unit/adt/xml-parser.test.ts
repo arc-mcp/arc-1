@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parseTableType } from '../../../src/adt/ddic-xml.js';
 import { parseSourceSearchResults } from '../../../src/adt/text-search.js';
 import {
   buildApiReleasePutBody,
-  decodeXmlEntities,
   escapeXmlAttr,
   findDeepNodes,
   parseApiReleaseState,
@@ -29,6 +29,7 @@ import {
   parsePackageContents,
   parseRevisionFeed,
   parseSearchResults,
+  parseServerDrivenMetadata,
   parseServiceBinding,
   parseSubpackageNodestructure,
   parseSyntaxConfigurations,
@@ -92,6 +93,56 @@ describe('XML Parser', () => {
       const result = parseXml('<root/>');
       expect(result.root).toBeDefined();
     });
+
+    // The custom entity decoder handles raw XML references once; CDATA remains literal.
+    describe('entity decoding', () => {
+      const attrAndText = (wire: string) => {
+        const item = parseXml(`<item attr="${wire}">${wire}</item>`).item as Record<string, unknown>;
+        return [item['@_attr'], item['#text']];
+      };
+
+      it('decodes the five predefined entities in attributes and text', () => {
+        const text = 'a > b & c < d "e" \'f\'';
+        expect(attrAndText('a &gt; b &amp; c &lt; d &quot;e&quot; &apos;f&apos;')).toEqual([text, text]);
+      });
+
+      // CodeQL js/double-escaping (docs/plans/2026-05-08-codeql-alerts-html-hygiene.md): were
+      // &amp; decoded first, &amp;lt; would become < instead of the literal text "&lt;".
+      it('decodes &amp; last, so an escaped entity stays literal text', () => {
+        const text = '&lt; &amp; &quot;x"';
+        expect(attrAndText('&amp;lt; &amp;amp; &amp;quot;x&quot;')).toEqual([text, text]);
+      });
+
+      it('leaves bare ampersands and references it does not know alone', () => {
+        const text = 'a & b &nbsp; &#0; &#xD800; &#1114112; &x';
+        expect(attrAndText(text)).toEqual([text, text]);
+      });
+
+      it('decodes numeric references once, including supplementary Unicode characters', () => {
+        const text = "' &lt; &amp; 😀";
+        expect(attrAndText('&#39; &#38;lt; &amp;amp; &#x1F600;')).toEqual([text, text]);
+      });
+
+      it('preserves literal entities and whitespace inside CDATA alongside encoded text', () => {
+        expect(parseXml('<r><![CDATA[ &amp; &#39; <x> ]]></r>').r).toBe(' &amp; &#39; <x> ');
+        expect(parseXml('<r>a&amp;<![CDATA[&amp;]]>b&lt;</r>').r).toBe('a&&amp;b<');
+      });
+
+      it('never expands an entity the document declares itself', () => {
+        const doc = parseXml('<!DOCTYPE r [<!ENTITY e "EXPANDED">]><r attr="&e;">&e; &amp; rest</r>');
+        expect(doc.r).toEqual({ '@_attr': '&e;', '#text': '&e; & rest' });
+      });
+
+      // fast-xml-parser 5.5.x rejected a document after 1000 references, which is what an ST22
+      // feed carries in a handful of stack traces. The decode here must never be capped.
+      it('has no cap on the number of references', () => {
+        const count = 5000;
+        const xml = `<feed>${'<entry title="a &lt; b">x &amp; y &gt; z</entry>'.repeat(count)}</feed>`;
+        const entries = (parseXml(xml).feed as Record<string, unknown>).entry as Array<Record<string, unknown>>;
+        expect(entries).toHaveLength(count);
+        expect(entries[count - 1]).toEqual({ '@_title': 'a < b', '#text': 'x & y > z' });
+      });
+    });
   });
 
   // ─── parseSearchResults ────────────────────────────────────────────
@@ -145,10 +196,8 @@ describe('XML Parser', () => {
       expect(results[0]?.objectType).toBe('');
     });
 
-    // Regression for the "literal &gt; in description" bug. The shared parser
-    // runs with processEntities:false (intentional — see xml-parser.ts header
-    // comment). Free-text fields are decoded at the boundary so consumers see
-    // the human-readable form, not the wire-encoded form.
+    // Regression for the "literal &gt; in description" bug: consumers see the
+    // human-readable form, not the wire-encoded form.
     describe('decodes standard XML entities in description', () => {
       function descOf(rawAttr: string): string | undefined {
         const xml = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
@@ -187,16 +236,15 @@ describe('XML Parser', () => {
         expect(descOf('a &amp;lt; b')).toBe('a &lt; b');
       });
 
-      it("leaves names/types/uri/packageName undecoded (they don't carry free text)", () => {
-        // Synthetic — SAP wouldn't produce these — but the contract says we don't touch these fields.
+      it('decodes every other field too — a uri with a query string must be requestable', () => {
         const xml = `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">
-          <adtcore:objectReference uri="/u&amp;r" type="X&amp;Y" name="N&amp;M" packageName="P&amp;Q" description="d"/>
+          <adtcore:objectReference uri="/u?a=1&amp;b=2" type="X&amp;Y" name="N&amp;M" packageName="P&amp;Q" description="d"/>
         </adtcore:objectReferences>`;
         const r = parseSearchResults(xml)[0];
-        expect(r?.uri).toBe('/u&amp;r');
-        expect(r?.objectType).toBe('X&amp;Y');
-        expect(r?.objectName).toBe('N&amp;M');
-        expect(r?.packageName).toBe('P&amp;Q');
+        expect(r?.uri).toBe('/u?a=1&b=2');
+        expect(r?.objectType).toBe('X&Y');
+        expect(r?.objectName).toBe('N&M');
+        expect(r?.packageName).toBe('P&Q');
       });
     });
   });
@@ -318,6 +366,20 @@ describe('XML Parser', () => {
         rows: [{ MANDT: '001' }, { MANDT: '002' }],
       });
       expect(parseDataPreviewResult('')).toEqual({ columns: [], rows: [] });
+    });
+
+    it('decodes entity-encoded cell values and the executed query', () => {
+      // Verbatim freestyle response captured live from a4h (SAP_BASIS 758); SAP escapes & < > in cells.
+      const xml = `<?xml version="1.0" encoding="utf-8"?><dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>2</dataPreview:totalRows><dataPreview:isHanaAnalyticalView>false</dataPreview:isHanaAnalyticalView><dataPreview:executedQueryString>SELECT ROLLNAME, DDTEXT FROM DD04T WHERE DDLANGUAGE = 'E' AND ROLLNAME IN ('CKDETAILNO', 'CHECKOP') AND DDTEXT LIKE '%&lt;%' OR DDLANGUAGE = 'E' AND ROLLNAME = 'CKDETAILNO'   INTO     TABLE @DATA(LT_RESULT)   UP TO 5  ROWS   .</dataPreview:executedQueryString><dataPreview:queryExecutionTime>50.4930000</dataPreview:queryExecutionTime><dataPreview:columns><dataPreview:metadata dataPreview:name="ROLLNAME" dataPreview:type="C" dataPreview:description="ROLLNAME" dataPreview:keyAttribute="false" dataPreview:colType="" dataPreview:isKeyFigure="false"/><dataPreview:dataSet><dataPreview:data>CHECKOP</dataPreview:data><dataPreview:data>CKDETAILNO</dataPreview:data></dataPreview:dataSet></dataPreview:columns><dataPreview:columns><dataPreview:metadata dataPreview:name="DDTEXT" dataPreview:type="C" dataPreview:description="DDTEXT" dataPreview:keyAttribute="false" dataPreview:colType="" dataPreview:isKeyFigure="false"/><dataPreview:dataSet><dataPreview:data>Check operator: '=','!=','&lt;','&gt;','&lt;=','&gt;=' or 'D' -&gt; dynamic</dataPreview:data><dataPreview:data>(Serial) detail number of logical check (LTXHWM: 1 &amp; 2)</dataPreview:data></dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>`;
+      const result = parseDataPreviewResult(xml);
+      expect(result.rows).toEqual([
+        { ROLLNAME: 'CHECKOP', DDTEXT: "Check operator: '=','!=','<','>','<=','>=' or 'D' -> dynamic" },
+        { ROLLNAME: 'CKDETAILNO', DDTEXT: '(Serial) detail number of logical check (LTXHWM: 1 & 2)' },
+      ]);
+      expect(result.executedQueryString).toBe(
+        "SELECT ROLLNAME, DDTEXT FROM DD04T WHERE DDLANGUAGE = 'E' AND ROLLNAME IN ('CKDETAILNO', 'CHECKOP') AND DDTEXT LIKE '%<%' OR DDLANGUAGE = 'E' AND ROLLNAME = 'CKDETAILNO' INTO TABLE @DATA(LT_RESULT) UP TO 5 ROWS .",
+      );
+      expect(parseTableContents(xml).rows).toEqual(result.rows);
     });
   });
 
@@ -1869,6 +1931,79 @@ describe('XML Parser', () => {
     });
   });
 
+  // ─── Entity-encoded free text ──────────────────────────────────────
+  //
+  // SAP escapes & < > " on the wire. These parsers used to return that wire text verbatim, so
+  // SAPRead showed "R&amp;D" — and a partial metadata update escaped it a second time.
+  describe('free text arrives decoded', () => {
+    const WIRE = 'R&amp;D &lt;Orders&gt; &quot;x&quot;';
+    const TEXT = 'R&D <Orders> "x"';
+    const ADTCORE = 'xmlns:adtcore="http://www.sap.com/adt/core"';
+    /** A recorded response with its root description swapped for entity-bearing wire text. */
+    const recorded = (name: string) =>
+      loadFixture(name).replace(/adtcore:description="[^"]*"/, `adtcore:description="${WIRE}"`);
+    const ref = `adtcore:uri="/u" adtcore:type="PROG/P" adtcore:name="Z" adtcore:description="${WIRE}"`;
+
+    it.each<[string, () => unknown]>([
+      ['domain', () => parseDomainMetadata(recorded('domain-metadata.xml')).description],
+      ['data element', () => parseDataElementMetadata(recorded('dataelement-metadata.xml')).description],
+      ['table type', () => parseTableType(recorded('tabletype-stringtab.xml')).description],
+      ['authorization field', () => parseAuthorizationField(recorded('authorization-field.xml')).description],
+      ['enhancement', () => parseEnhancementImplementation(recorded('enhancement-implementation.xml')).description],
+      ['transaction', () => parseTransactionMetadata(recorded('transaction-metadata.xml')).description],
+      ['service binding', () => JSON.parse(parseServiceBinding(recorded('service-binding.xml'))).description],
+      ['class', () => parseClassMetadata(recorded('class-metadata.xml')).description],
+      [
+        'message class',
+        () =>
+          parseMessageClass(
+            `<mc:messageClass xmlns:mc="http://www.sap.com/adt/MessageClass" ${ADTCORE} adtcore:description="${WIRE}"/>`,
+          ).description,
+      ],
+      [
+        'server-driven object',
+        () =>
+          parseServerDrivenMetadata(
+            `<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue" ${ADTCORE} adtcore:description="${WIRE}"/>`,
+            'blueSource',
+          ).description,
+      ],
+      [
+        'inactive object (rich)',
+        () =>
+          parseInactiveObjects(
+            `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" ${ADTCORE}><ioc:entry><ioc:object><ioc:ref ${ref}/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
+          )[0]?.description,
+      ],
+      [
+        'inactive object (flat)',
+        () =>
+          parseInactiveObjects(
+            `<adtcore:objectReferences ${ADTCORE}><adtcore:objectReference ${ref}/></adtcore:objectReferences>`,
+          )[0]?.description,
+      ],
+    ])('%s description', (_parser, description) => {
+      expect(description()).toBe(TEXT);
+    });
+
+    it('domain fixed values: low, high and text', () => {
+      const xml = loadFixture('domain-with-fixvalues.xml')
+        .replace('<doma:low>S</doma:low>', '<doma:low>&lt;</doma:low>')
+        .replace('<doma:high/>', '<doma:high>&gt;=</doma:high>')
+        .replace('<doma:text>Success</doma:text>', `<doma:text>${WIRE}</doma:text>`);
+      expect(parseDomainMetadata(xml).fixedValues[0]).toEqual({ low: '<', high: '>=', description: TEXT });
+    });
+
+    it('data element field labels', () => {
+      const xml = loadFixture('dataelement-metadata.xml').replace(
+        /(<dtel:(?:short|medium|long|heading)FieldLabel>)[^<]*/g,
+        '$1R&amp;D',
+      );
+      const dtel = parseDataElementMetadata(xml);
+      expect([dtel.shortLabel, dtel.mediumLabel, dtel.longLabel, dtel.headingLabel]).toEqual(Array(4).fill('R&D'));
+    });
+  });
+
   describe('escapeXmlAttr', () => {
     it('escapes & < > " and single quote', () => {
       expect(escapeXmlAttr('a&b<c>d"e\'f')).toBe('a&amp;b&lt;c&gt;d&quot;e&apos;f');
@@ -1884,40 +2019,6 @@ describe('XML Parser', () => {
 
     it('handles empty string', () => {
       expect(escapeXmlAttr('')).toBe('');
-    });
-  });
-
-  // Regression tests for CodeQL alert #8 — see
-  // docs/plans/2026-05-08-codeql-alerts-html-hygiene.md
-  describe('decodeXmlEntities (CodeQL alert #8 — js/double-escaping)', () => {
-    it('decodes the five standard XML entities', () => {
-      expect(decodeXmlEntities('&lt;tag/&gt;')).toBe('<tag/>');
-      expect(decodeXmlEntities('&quot;hello&quot;')).toBe('"hello"');
-      expect(decodeXmlEntities('&apos;world&apos;')).toBe("'world'");
-      expect(decodeXmlEntities('&amp;')).toBe('&');
-    });
-
-    it('decodes chained entity without double-unescape', () => {
-      // The CodeQL-flagged case: with `&amp;` decoded last, `&amp;lt;`
-      // resolves to the literal `&lt;`, not `<`.
-      expect(decodeXmlEntities('&amp;lt;')).toBe('&lt;');
-      expect(decodeXmlEntities('&amp;amp;')).toBe('&amp;');
-    });
-
-    it('decodes mixed chained and direct entities', () => {
-      // `&quot;` resolves first, `&amp;` last.
-      expect(decodeXmlEntities('&amp;quot;hello&quot;')).toBe('&quot;hello"');
-    });
-
-    it('passes through input without entities unchanged', () => {
-      expect(decodeXmlEntities('plain text')).toBe('plain text');
-      expect(decodeXmlEntities('')).toBe('');
-    });
-
-    it('decodes a realistic SAP attribute value', () => {
-      // Real-world shape: ADT URLs sometimes encode `&` as `&amp;` and `<`
-      // appears via `&lt;` in error messages.
-      expect(decodeXmlEntities('/foo?a=1&amp;b=2')).toBe('/foo?a=1&b=2');
     });
   });
 });

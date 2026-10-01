@@ -19,7 +19,7 @@ import type {
   TransportTarget,
   TransportTask,
 } from './types.js';
-import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseNamedItems, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, findDeepNodes, parseNamedItems, parseXml } from './xml-parser.js';
 
 /**
  * Filter inactive objects (from `getInactiveObjects()`) down to those that belong to transport
@@ -402,14 +402,14 @@ export function parseReleaseReports(xml: string): TransportReleaseReport[] {
       return {
         severity: type === 'E' ? 'error' : type === 'W' ? 'warning' : 'info',
         type,
-        text: decodeXmlEntities(String(msg['@_shortText'] ?? '')),
+        text: String(msg['@_shortText'] ?? ''),
         ...(uri ? { uri } : {}),
       };
     });
     return {
       reporter: String(r['@_reporter'] ?? ''),
       status,
-      statusText: decodeXmlEntities(String(r['@_statusText'] ?? '')),
+      statusText: String(r['@_statusText'] ?? ''),
       ...(r['@_triggeringUri'] ? { triggeringUri: String(r['@_triggeringUri']) } : {}),
       released: status === 'released',
       messages,
