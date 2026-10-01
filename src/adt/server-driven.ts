@@ -17,7 +17,8 @@
  *             text/plain for entries with sourceFormat='text'. The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
- * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
+ * Create never auto-activates. APLO (and UIAD source) saves are active immediately; the other
+ * types stay inactive until SAPActivate.
  *
  * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB=EVTB/EVB, DTDC=DTDC/DF) and
  * the metadata content-type varies (blues v1, EVTO=blues v2, DTDC=ddic.dtdc.v1) — all stored per

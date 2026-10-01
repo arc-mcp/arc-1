@@ -404,7 +404,7 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPREAD_TYPES_BTP : SAPREAD_TYPES_ONPREM,
             description:
-              'Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO app log; SAJC/SAJT job catalog/template. Deprecated: MESSAGES→MSAG.' +
+              'Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template. Deprecated: MESSAGES→MSAG.' +
               (btp ? ' ENQU lock object as JSON.' : ' FTG2→FEATURE_TOGGLE. ENQU lock object as JSON.'),
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
