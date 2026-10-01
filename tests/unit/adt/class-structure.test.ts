@@ -474,7 +474,7 @@ describe('extractMethodNameFromClause', () => {
     );
   });
 
-  it.each(['/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM', 'ZIF_SERVICE~GET_STREAM'])(
+  it.each(['/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM', 'ZIF_SERVICE~GET_STREAM', 'ZIF_SERVICE~/NS/RUN'])(
     'preserves the complete qualified name %s in both declaration readers',
     (name) => {
       const clause = `METHODS ${name.toLowerCase()} REDEFINITION.`;
@@ -584,10 +584,11 @@ describe('isMethodRedefinition', () => {
         '--input-type=module',
         '-e',
         `
-      import { isMethodRedefinition } from ${JSON.stringify(source)};
+      import { isMethodRedefinition, parseDefinitionBlockDeclarations } from ${JSON.stringify(source)};
       for (const gap of [' '.repeat(200_000), '\\n'.repeat(40_000)]) {
         if (isMethodRedefinition('METHODS zif_demo~run REDEFINITION' + gap + 'x')) process.exit(1);
       }
+      if (parseDefinitionBlockDeclarations(' \\n'.repeat(80_000)).length !== 0) process.exit(1);
     `,
       ],
       { timeout: 5000, encoding: 'utf8' },
@@ -598,6 +599,7 @@ describe('isMethodRedefinition', () => {
 
   it.each([
     ['METHODS /iwbep/if_x~run REDEFINITION.', true],
+    ['METHODS zif_x~/ns/run REDEFINITION.', true],
     ['* comment\nMETHODS zif_x~run\n FINAL REDEFINITION', true],
     ['METHODS zif_x~run REDEFINITION. " keep', true],
     ['METHODS zif_x~run. " REDEFINITION', false],

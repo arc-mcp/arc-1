@@ -1593,27 +1593,70 @@ ENDCLASS.`;
       expect(putCall?.body ?? '').toContain('ENDMETHOD.');
     });
 
-    it.each(['/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM', 'ZIF_SERVICE~GET_STREAM'])(
-      'add_method inserts an inherited interface redefinition %s',
-      async (method) => {
-        const calls = mockClassSurgeryFlow({
-          className: 'ZCL_PROBE',
-          mainSource: PROBE_MAIN,
-          structureXml: PROBE_STRUCTURE,
-        });
-        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-          action: 'add_method',
-          type: 'CLAS',
-          name: 'ZCL_PROBE',
-          method: `METHODS ${method.toLowerCase()} REDEFINITION.`,
-        });
-        expect(result.isError, result.content[0]?.text).toBeUndefined();
-        const body = calls.find((c) => c.method === 'PUT')?.body;
-        expect(body).toContain(`METHODS ${method.toLowerCase()} REDEFINITION.`);
-        expect(body).toContain(`METHOD ${method.toLowerCase()}.`);
-        expect(body).toContain("result = 'Goodbye!'.");
-      },
-    );
+    it.each([
+      { method: '/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM', lintBeforeWrite: true },
+      { method: 'ZIF_SERVICE~GET_STREAM', lintBeforeWrite: true },
+      // SAP accepts namespaced components; abaplint cannot parse this syntax yet.
+      { method: 'ZIF_SERVICE~/NS/RUN', lintBeforeWrite: false },
+    ])('add_method inserts an inherited interface redefinition $method', async ({ method, lintBeforeWrite }) => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: `METHODS ${method.toLowerCase()} REDEFINITION.`,
+        lintBeforeWrite,
+      });
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      const body = calls.find((c) => c.method === 'PUT')?.body;
+      expect(body).toContain(`METHODS ${method.toLowerCase()} REDEFINITION.`);
+      expect(body).toContain(`METHOD ${method.toLowerCase()}.`);
+      expect(body).toContain("result = 'Goodbye!'.");
+    });
+
+    it('add_method refuses an interface body without an objectstructure definition range', async () => {
+      const main = `CLASS zcl_probe DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_svc.
+    METHODS other.
+ENDCLASS.
+
+CLASS zcl_probe IMPLEMENTATION.
+  METHOD zif_svc~run.
+    rv = 42.
+  ENDMETHOD.
+  METHOD other.
+  ENDMETHOD.
+ENDCLASS.`;
+      const structure = `<abapsource:objectStructureElement xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="ZCL_PROBE" adtcore:type="CLAS/OC">
+  <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=1,0;end=5,8"/>
+  <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=7,0;end=13,8"/>
+  <abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="ZIF_SVC~RUN" visibility="public">
+    <atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="./source/main#start=3,15;end=3,22"/>
+    <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=8,2;end=10,11"/>
+  </abapsource:objectStructureElement>
+  <abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="OTHER" visibility="public">
+    <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=4,4;end=4,18"/>
+    <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=11,2;end=12,11"/>
+  </abapsource:objectStructureElement>
+</abapsource:objectStructureElement>`;
+      const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: main, structureXml: structure });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'METHODS zif_svc~run REDEFINITION.',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('already implements');
+      expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(true);
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    });
 
     it.each(['keep', 'remove', 'duplicate', 'add'] as const)('handles qualified declarations: %s', async (change) => {
       const method = '/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM';
@@ -1796,7 +1839,24 @@ ENDCLASS.`;
       expect(calls.some((c) => c.method === 'PUT')).toBe(true);
     });
 
-    it('add_method rejects an interface-qualified method name (would emit invalid ABAP)', async () => {
+    it.each(['protected', 'private'])(
+      'add_method refuses an interface redefinition in %s visibility',
+      async (visibility) => {
+        mockFetch.mockReset();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'add_method',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          method: 'METHODS zif_service~run REDEFINITION.',
+          visibility,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('public');
+        expect(mockFetch).not.toHaveBeenCalled();
+      },
+    );
+
+    it('add_method rejects a new interface method and explains how to add its body', async () => {
       mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'add_method',
@@ -1806,6 +1866,8 @@ ENDCLASS.`;
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/interface-qualified|INTERFACES/);
+      expect(result.content[0]?.text).toContain('action="update"');
+      expect(result.content[0]?.text).toContain('edit_method only replaces an existing body');
     });
 
     it('add_method (concrete) refuses on a purely-abstract class with no IMPLEMENTATION block', async () => {

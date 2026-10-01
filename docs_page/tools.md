@@ -915,12 +915,18 @@ Pass `abstract: true` to skip the IMPLEMENTATION stub (for `METHODS x ABSTRACT.`
 
 For an inherited interface method, pass a redefinition clause such as
 `METHODS /IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM REDEFINITION.` (optionally
-`FINAL REDEFINITION`). Use the inherited visibility and leave `abstract` false.
+`FINAL REDEFINITION`). Keep `visibility="public"` and leave `abstract` false.
 ARC-1 inserts the declaration and an empty implementation; fill the body with
 `edit_method`, then activate. SAP checks that the superclass actually provides a
 redefinable method. `edit_class_definition` also recognizes these qualified names
 when checking for missing or orphaned implementations.
+Namespaced components such as `ZIF_SERVICE~/NS/RUN` are also recognized, but
+abaplint currently rejects that syntax. For valid source, use the per-call
+`lintBeforeWrite: false` override and verify with SAP syntax checking and activation.
 
+Do not use `REDEFINITION` for an interface the class itself implements through
+`INTERFACES`. Add any missing bodies with a full-source `SAPWrite(action="update")`,
+preserving existing code; `edit_method` can only replace a body that already exists.
 
 #### `action="edit_method_signature"` — replace one METHODS clause
 

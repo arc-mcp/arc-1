@@ -191,13 +191,8 @@ export async function writeActionEditClassDefinition(ctx: SapWriteContext): Prom
     for (const add of diff.added) {
       // Exempt declarations that never have a METHOD…ENDMETHOD body.
       if (add.isAbstract || add.isEvent || add.isInterface || add.isAlias) continue;
-      // Does IMPLEMENTATION already have a METHOD <name> header? Match the
-      // method name followed by a word-boundary so AMDP / event-handler /
-      // multi-line headers (`METHOD x BY DATABASE PROCEDURE…`, `METHOD x FOR
-      // EVENT…`, `METHOD x\n  IMPORTING…`) are recognized — NOT only the bare
-      // `METHOD x.` form. \b after the name prevents matching a longer name
-      // with the same prefix (METHOD x_helper for added X).
-      const re = new RegExp(`^\\s*METHOD\\s+${add.name}\\b`, 'im');
+      // Match a complete method name, including AMDP / event-handler headers.
+      const re = new RegExp(`^[ \\t]*METHOD\\s+${add.name}(?=\\s|\\.)`, 'im');
       if (!re.test(main)) missingImpls.push(add.name);
     }
     for (const rem of diff.removed) {
@@ -257,7 +252,7 @@ export async function writeActionEditMethodSignature(ctx: SapWriteContext): Prom
     if (!method) {
       const available = structure.methods.map((m) => m.name).join(', ');
       const hint = methodSpecifier.includes('~')
-        ? ' Interface-qualified names (e.g. "zif_x~m") are not addressable here — objectstructure lists the implementing method under its bare name; for interface/local-handler bodies use edit_method.'
+        ? ' Methods supplied by INTERFACES have no separate METHODS declaration here. Change their signature in the interface; use edit_method for an existing body.'
         : '';
       return errorResult(
         `Method "${methodSpecifier}" not found in CLAS ${name}. Available methods: ${available || '(none)'}.${hint}`,
@@ -295,10 +290,13 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
   // New interface methods belong to INTERFACES; inherited ones can be redefined.
   if (methodName.includes('~') && (!isMethodRedefinition(clause) || args.abstract === true)) {
     return errorResult(
-      `To add the inherited interface-qualified method "${methodName}", use "METHODS <name> REDEFINITION." without abstract=true. For a new interface, use "INTERFACES <name>." in edit_class_definition and provide the body with edit_method.`,
+      `To add the inherited interface-qualified method "${methodName}", use "METHODS <name> REDEFINITION." with visibility="public" and without abstract=true. Methods of an interface this class implements itself are declared by "INTERFACES <name>."; add their bodies with SAPWrite(action="update"), preserving the full source. edit_method only replaces an existing body.`,
     );
   }
   const visibility = (args.visibility as 'public' | 'protected' | 'private' | undefined) ?? 'public';
+  if (methodName.includes('~') && visibility !== 'public') {
+    return errorResult('Interface method redefinitions must keep public visibility. Use visibility="public".');
+  }
   const isAbstract = args.abstract === true;
   // MAIN-only action: include= is rejected at the schema layer (not in
   // SAPWRITE_INCLUDE_AWARE_ACTIONS). Defensive guard for direct CLI calls.
@@ -315,6 +313,12 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
     if (structure.methods.some((m) => m.name === methodName)) {
       return errorResult(
         `Method "${methodName}" already exists in CLAS ${name}. Use SAPWrite(action="edit_method_signature", method="${methodName}", source="<new METHODS clause>") to change its signature.`,
+      );
+    }
+    // Bodies supplied by INTERFACES have no METHODS declaration range in objectstructure.
+    if (new RegExp(`^[ \\t]*METHOD\\s+${methodName}(?=\\s|\\.)`, 'im').test(main)) {
+      return errorResult(
+        `CLAS ${name} already implements "${methodName}". Use SAPWrite(action="edit_method", method="${methodName}") to change its body.`,
       );
     }
 
@@ -376,7 +380,7 @@ export async function writeActionDeleteMethod(ctx: SapWriteContext): Promise<Too
     if (!method) {
       const available = structure.methods.map((m) => m.name).join(', ');
       const hint = methodSpecifier.includes('~')
-        ? ' Interface-qualified names (e.g. "zif_x~m") are not addressable here; objectstructure lists methods under their bare names.'
+        ? ' Methods supplied by INTERFACES have no separate METHODS declaration to delete here; removing the interface requires a consistent full-source update.'
         : '';
       return errorResult(
         `Method "${methodSpecifier}" not found in CLAS ${name}. Available methods: ${available || '(none)'}.${hint}`,
@@ -428,7 +432,7 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
     if (!method) {
       const available = structure.methods.map((m) => m.name).join(', ');
       const hint = methodSpecifier.includes('~')
-        ? ' Interface-qualified names (e.g. "zif_x~m") are not addressable here; objectstructure lists methods under their bare names.'
+        ? ' Methods supplied by INTERFACES have no separate METHODS declaration to move; interface components retain public visibility.'
         : '';
       return errorResult(
         `Method "${methodSpecifier}" not found in CLAS ${name}. Available methods: ${available || '(none)'}.${hint}`,

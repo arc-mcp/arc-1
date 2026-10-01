@@ -25,7 +25,7 @@
 import type { ClassStructure, MethodStructure } from './types.js';
 
 // Bare names and interface-qualified names, including a registered namespace.
-const METHOD_NAME = '(?:/[A-Z0-9_]+/)?[A-Z_][A-Z0-9_]*(?:~[A-Z_][A-Z0-9_]*)?';
+const METHOD_NAME = '(?:/[A-Z0-9_]+/)?[A-Z_][A-Z0-9_]*(?:~(?:/[A-Z0-9_]+/)?[A-Z_][A-Z0-9_]*)?';
 
 function stripDeclarationComments(source: string): string {
   return source.replace(/^[ \t]*\*.*$/gm, '').replace(/"[^\n]*$/gm, '');
@@ -391,22 +391,22 @@ function parseWithRegex(defBlock: string): DeclaredMethod[] {
   const stripped = stripDeclarationComments(defBlock);
   // METHODS / CLASS-METHODS <name> — multi-line clauses span until the period.
   // We only need the NAME, so the regex looks at the start of each clause.
-  const methodRe = new RegExp(`^\\s*(CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.)([^.]*)\\.`, 'gim');
+  const methodRe = new RegExp(`^[ \\t]*(CLASS-METHODS|METHODS)\\s+(${METHOD_NAME})(?=\\s|\\.)([^.]*)\\.`, 'gim');
   for (const m of stripped.matchAll(methodRe)) {
     const name = m[2]!.toUpperCase();
     const tail = m[3] ?? '';
     const isAbstract = /\bABSTRACT\b/i.test(tail);
     out.push({ name, isAbstract, isEvent: false, isInterface: false, isAlias: false });
   }
-  const eventRe = /^\s*(CLASS-EVENTS|EVENTS)\s+([A-Z_][A-Z0-9_]*)/gim;
+  const eventRe = /^[ \t]*(CLASS-EVENTS|EVENTS)\s+([A-Z_][A-Z0-9_]*)/gim;
   for (const m of stripped.matchAll(eventRe)) {
     out.push({ name: m[2]!.toUpperCase(), isAbstract: false, isEvent: true, isInterface: false, isAlias: false });
   }
-  const ifaceRe = /^\s*INTERFACES\s+([A-Z_][A-Z0-9_]*)/gim;
+  const ifaceRe = /^[ \t]*INTERFACES\s+([A-Z_][A-Z0-9_]*)/gim;
   for (const m of stripped.matchAll(ifaceRe)) {
     out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: true, isAlias: false });
   }
-  const aliasRe = /^\s*ALIASES\s+([A-Z_][A-Z0-9_]*)/gim;
+  const aliasRe = /^[ \t]*ALIASES\s+([A-Z_][A-Z0-9_]*)/gim;
   for (const m of stripped.matchAll(aliasRe)) {
     out.push({ name: m[1]!.toUpperCase(), isAbstract: false, isEvent: false, isInterface: false, isAlias: true });
   }
