@@ -239,7 +239,7 @@ describe('metadata updates preserve edits committed before the lock', () => {
   });
 
   describe('TTYP', () => {
-    const ttyp = cases[5]!;
+    const ttyp = cases.find((row) => row.type === 'TTYP')!;
     const update = (args: Record<string, unknown>) =>
       handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'update',
