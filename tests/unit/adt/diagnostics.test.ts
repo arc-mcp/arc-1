@@ -1064,11 +1064,11 @@ describe('Runtime Diagnostics', () => {
         <atom:entry>
           <atom:id>FrontendError/1E81ABCDEF0123456789</atom:id>
           <atom:title>Frontend Error</atom:title>
-          <atom:summary type="html">&lt;table&gt;&lt;tr&gt;&lt;td&gt;&lt;b&gt;Short Text&lt;/b&gt;&lt;/td&gt;&lt;td&gt;Field &amp;lt;fs&amp;gt; not assigned &amp;amp; more&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</atom:summary>
+          <atom:summary type="html">&lt;table&gt;&lt;tr&gt;&lt;td&gt;&lt;b&gt;Short Text&lt;/b&gt;&lt;/td&gt;&lt;td&gt;Field &amp;lt;fs&amp;gt; not assigned &amp;amp;amp; more&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;</atom:summary>
         </atom:entry>
       </atom:feed>`;
 
-      expect(parseGatewayErrors(xml)[0]?.shortText).toBe('Field <fs> not assigned & more');
+      expect(parseGatewayErrors(xml)[0]?.shortText).toBe('Field <fs> not assigned &amp; more');
     });
 
     it('decodes encoded atom:id segments before deriving detail URL', () => {

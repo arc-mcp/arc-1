@@ -1553,7 +1553,7 @@ describe('XML Parser', () => {
 <textsearch:adtMainObject adtcore:name="Test Classes" adtcore:type="CLAS/I" adtcore:description="Include" xmlns:adtcore="http://www.sap.com/adt/core"/>
 <textsearch:textLines>
 <textsearch:textLine uri="/sap/bc/adt/repository/proxyurimappings?id=sedi.include&amp;content=ZCL_DEMO%3d%3d%3d%3d%3d%3d%3d%3d%3dCCAU%23start%3d51%2c0%3bend%3d51%2c0">
-<textsearch:content>... &lt;b&gt;lv_flag&lt;/b&gt; = lv_ok ).
+<textsearch:content>... &lt;b&gt;lv_flag&lt;/b&gt; = lv_ok ). &amp;amp;
 ...</textsearch:content>
 </textsearch:textLine>
 <textsearch:textLine uri="/sap/bc/adt/repository/proxyurimappings?id=sedi.include&amp;content=ZCL_DEMO%3d%3d%3d%3d%3d%3d%3d%3d%3dCCAU%23start%3d150%2c0%3bend%3d150%2c0">
@@ -1590,7 +1590,7 @@ describe('XML Parser', () => {
       expect(results[0]?.objectName).toBe('ZCL_DEMO');
       expect(results[0]?.objectType).toBe('CLAS/I');
       expect(results[0]?.matches).toHaveLength(2);
-      expect(results[0]?.matches[0]).toEqual({ line: 51, snippet: '... lv_flag = lv_ok ). ...' });
+      expect(results[0]?.matches[0]).toEqual({ line: 51, snippet: '... lv_flag = lv_ok ). &amp; ...' });
       expect(results[0]?.matches[1]?.line).toBe(150);
 
       expect(results[1]?.objectName).toBe('ZDEMO_REPORT');
@@ -1610,6 +1610,13 @@ describe('XML Parser', () => {
       const results = parseSourceSearchResults(liveTextSearchXml);
       expect(results[0]?.uri).toContain('&content=');
       expect(results[0]?.uri).not.toContain('&amp;');
+    });
+
+    it('does not decode a literal entity into a proxy-URI parameter', () => {
+      const xml = liveTextSearchXml.replaceAll('&amp;content=', '&amp;amp;content=');
+      const result = parseSourceSearchResults(xml)[0];
+      expect(result?.uri).toContain('&amp;content=');
+      expect(result?.objectName).toBe('Test Classes'); // No actual content parameter: use adtMainObject.
     });
 
     it('reads the line number from the position: form used by non-source editors', () => {
@@ -2024,12 +2031,12 @@ describe('XML Parser', () => {
 });
 
 describe('parseNamedItems + parseAtcSystemCheckVariant (relocated / FEAT-68)', () => {
-  const VARIANTS = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ABAP_CLOUD_DEVELOPMENT_DEFAULT</nameditem:name><nameditem:description>Cloud default</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZABAP_CLOUD_DEVELOPMENT</nameditem:name><nameditem:description/><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
+  const VARIANTS = `<?xml version="1.0" encoding="utf-8"?><nameditem:namedItemList xmlns:nameditem="http://www.sap.com/adt/nameditem"><nameditem:totalItemCount>2</nameditem:totalItemCount><nameditem:namedItem><nameditem:name>ABAP_CLOUD_DEVELOPMENT_DEFAULT</nameditem:name><nameditem:description>Cloud &amp;amp; default</nameditem:description><nameditem:data/></nameditem:namedItem><nameditem:namedItem><nameditem:name>ZABAP_CLOUD_DEVELOPMENT</nameditem:name><nameditem:description/><nameditem:data/></nameditem:namedItem></nameditem:namedItemList>`;
 
   it('parses a nameditem list into {name, description}', () => {
     const items = parseNamedItems(VARIANTS);
     expect(items).toHaveLength(2);
-    expect(items[0]).toMatchObject({ name: 'ABAP_CLOUD_DEVELOPMENT_DEFAULT', description: 'Cloud default' });
+    expect(items[0]).toMatchObject({ name: 'ABAP_CLOUD_DEVELOPMENT_DEFAULT', description: 'Cloud &amp; default' });
     expect(items[1].name).toBe('ZABAP_CLOUD_DEVELOPMENT');
     expect(items[1].description).toBe('');
   });
