@@ -14,6 +14,7 @@ describe('BTP UI AppRouter config', () => {
   it('pins patched transitive dependencies on an AppRouter-supported Node release', async () => {
     const packageJson = JSON.parse(await readFile('btp/approuter/package.json', 'utf8')) as {
       engines: { node: string };
+      dependencies: Record<string, string>;
       overrides: Record<string, string>;
     };
     const packageLock = JSON.parse(await readFile('btp/approuter/package-lock.json', 'utf8')) as {
@@ -22,12 +23,19 @@ describe('BTP UI AppRouter config', () => {
 
     // 22.12 is the floor for require(esm), which the decode-uri-component bridge needs.
     expect(packageJson.engines.node).toBe('^22.12.0 || ^24.0.0');
+    expect(packageJson.dependencies['@sap/approuter']).toBe('23.0.0');
     expect(packageJson.overrides).toMatchObject({
-      axios: '1.18.0',
+      '@sap/logging': '9.2.3',
+      axios: '1.20.0',
       'body-parser': '2.3.0',
       'decode-uri-component': 'file:./vendor/decode-uri-component-cjs',
     });
-    expect(packageLock.packages['node_modules/axios']?.version).toBe('1.18.0');
+    // Include nested copies: checking only the hoisted package can hide a vulnerable duplicate.
+    for (const [name, version] of Object.entries({ axios: '1.20.0', '@sap/logging': '9.2.3', moment: '2.31.0' })) {
+      const entries = Object.entries(packageLock.packages).filter(([path]) => path.endsWith(`node_modules/${name}`));
+      expect(entries.length).toBeGreaterThan(0);
+      for (const [, entry] of entries) expect(entry.version).toBe(version);
+    }
     expect(packageLock.packages['node_modules/body-parser']?.version).toBe('2.3.0');
     // AppRouter pins its own patched ws (>= 7.5.10); never override it to a different major.
     // Asserted by version rather than tree position, which npm is free to hoist.
