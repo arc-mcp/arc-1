@@ -201,4 +201,24 @@ describe('ENQU (lock object) handlers', () => {
       expect(mockFetch.mock.calls).toHaveLength(0);
     },
   );
+
+  const source = JSON.stringify({ primaryTable: { tableName: 'ZTAB', lockMode: 'E' } });
+  it.each([
+    ['create', { action: 'create', type: 'ENQU', name: 'EZTEST', package: 'ZOTHER', source }, 'ZOTHER'],
+    [
+      'batch_create',
+      { action: 'batch_create', package: 'ZOTHER', objects: [{ type: 'ENQU', name: 'EZTEST', source }] },
+      'ZOTHER',
+    ],
+    // Update is checked against the stored package (ME in the fixture), not an argument.
+    ['update', { action: 'update', type: 'ENQU', name: 'EMEKKOE', source: JSON.stringify({ allowRFC: true }) }, 'ME'],
+  ])('refuses ENQU %s outside the package allowlist before any write', async (_action, args, pkg) => {
+    const calls = mockSap();
+    const client = createClient();
+    const restricted = client.withSafety({ ...client.safety, allowedPackages: ['$TMP'] });
+    const result = await handleToolCall(restricted, DEFAULT_CONFIG, 'SAPWrite', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(`'${pkg}'`);
+    expect(calls.filter((c) => c.method === 'POST' || c.method === 'PUT')).toHaveLength(0);
+  });
 });
