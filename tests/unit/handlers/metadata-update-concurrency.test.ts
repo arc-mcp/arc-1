@@ -142,7 +142,7 @@ describe('metadata updates preserve edits committed before the lock', () => {
   // SAP sends stored text entity-encoded. Re-escaping it undecoded ("R&amp;amp;D") made SAP store
   // the literal "R&amp;D", compounding with every further partial update.
   it.each(cases)('$type writes the stored description back escaped exactly once', async (row) => {
-    const stored = 'R&amp;D &lt;Orders&gt; &quot;x&quot;';
+    const stored = 'R&amp;D &lt;Orders&gt; &amp;lt;literal&amp;gt; &quot;x&quot;';
     const calls = sap(row, undefined, stored);
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'update',

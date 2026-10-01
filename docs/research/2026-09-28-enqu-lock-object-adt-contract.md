@@ -89,6 +89,12 @@ The earlier live update with an explicit empty parameter list re-derived paramet
 omitting the list preserved existing values. This distinction remains deliberate and documented.
 A read through the shared client instead of the locked session fails the new ENQU row in the
 existing metadata concurrency test. Nested-key and mode tests fail on the contributor's parser.
+On 2026-10-01, 64 dispatcher steps per on-prem system (758/816) passed with the stricter
+input rules and shared XML fix: omitted nested values and `lockParameters: []` were refused
+without changing the definition, and repeated updates preserved `&`, quotes and literal
+`&lt;...&gt;` text. All ten disposable objects were deleted with GET 404 confirmation.
+The read-only application-object and ENQU integration files also passed (four tests per system).
+The stricter input rules were not rerun on BTP; the earlier cloud evidence above remains separate.
 On BTP, activation removed a redundant child-table parameter already joined to the parent's key;
 read back SAP's canonical parameter list before editing it. The fixture needed a data element for
 its foreign-key field, as SAP refused a built-in field type. Neither observation required an ARC-1
