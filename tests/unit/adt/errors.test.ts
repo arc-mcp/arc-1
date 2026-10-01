@@ -437,8 +437,8 @@ describe('AdtApiError', () => {
   });
 
   it('preserves a closing-tag example in a composed plain-text message', () => {
-    const error = new AdtApiError('Expected </END> after <START>', 400, '/p');
-    expect(error.message).toBe('ADT API error: status 400 at /p: Expected </END> after <START>');
+    const error = new AdtApiError('Expected </body> after <body>', 400, '/p');
+    expect(error.message).toBe('ADT API error: status 400 at /p: Expected </body> after <body>');
   });
 
   describe('formatDdicDiagnostics', () => {
