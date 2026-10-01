@@ -94,8 +94,7 @@ describe('XML Parser', () => {
       expect(result.root).toBeDefined();
     });
 
-    // The library's entity handling is off (DOCTYPE expansion, reference caps), so parseXml
-    // decodes the five predefined entities itself — once, for every attribute and text value.
+    // The custom entity decoder handles raw XML references once; CDATA remains literal.
     describe('entity decoding', () => {
       const attrAndText = (wire: string) => {
         const item = parseXml(`<item attr="${wire}">${wire}</item>`).item as Record<string, unknown>;
@@ -115,8 +114,18 @@ describe('XML Parser', () => {
       });
 
       it('leaves bare ampersands and references it does not know alone', () => {
-        const text = 'a & b &nbsp; &#39; &x';
+        const text = 'a & b &nbsp; &#0; &#xD800; &#1114112; &x';
         expect(attrAndText(text)).toEqual([text, text]);
+      });
+
+      it('decodes numeric references once, including supplementary Unicode characters', () => {
+        const text = "' &lt; &amp; 😀";
+        expect(attrAndText('&#39; &#38;lt; &amp;amp; &#x1F600;')).toEqual([text, text]);
+      });
+
+      it('preserves literal entities and whitespace inside CDATA alongside encoded text', () => {
+        expect(parseXml('<r><![CDATA[ &amp; &#39; <x> ]]></r>').r).toBe(' &amp; &#39; <x> ');
+        expect(parseXml('<r>a&amp;<![CDATA[&amp;]]>b&lt;</r>').r).toBe('a&&amp;b<');
       });
 
       it('never expands an entity the document declares itself', () => {

@@ -41,6 +41,7 @@ import type {
   ServerDrivenObjectMetadata,
   TransactionInfo,
 } from './types.js';
+import { decodeXmlEntities } from './xml-entities.js';
 
 /**
  * Escape the five predefined XML entities (`& < > " '`) for safe interpolation into XML.
@@ -113,14 +114,15 @@ const parser = new XMLParser({
   isArray: (name) => ARRAY_TAGS.has(name),
   parseAttributeValue: false, // Keep attributes as strings
   parseTagValue: false, // Keep tag values as strings (prevents "001" → 1)
-  // The library's entity handling stays off: it also expands DOCTYPE-declared entities, and its
-  // expansion caps have rejected ST22 feeds (5.5.x: 1000 references). Off means NOTHING is
-  // decoded, so the processors below decode the five predefined entities instead — uncapped.
-  // ponytail: CDATA text is decoded too (the processor gets no CDATA flag); no recorded ADT
-  // response uses CDATA. If one does, escape `&` inside the sections before parsing.
-  processEntities: false,
-  tagValueProcessor: (_name, value) => decodeXmlEntities(value),
-  attributeValueProcessor: (_name, value) => decodeXmlEntities(value),
+  // Use the native entity boundary: unlike value processors, it skips literal CDATA.
+  // Decode only predefined/numeric references, with no recursive DOCTYPE expansion or ST22 cap.
+  entityDecoder: {
+    decode: decodeXmlEntities,
+    addInputEntities: () => {},
+    setExternalEntities: () => {},
+    setXmlVersion: () => {},
+    reset: () => {},
+  },
 });
 
 /**
@@ -1173,24 +1175,6 @@ export function parseBspFolderListing(xml: string, appName: string): BspFileNode
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
-
-/**
- * Decode the five predefined XML entities. Module-private: `parseXml` already applies it to
- * every value, so a second call on a parsed value would double-decode.
- *
- * `&amp;` is decoded LAST so chained entities like `&amp;lt;` resolve to the
- * literal `&lt;` rather than `<`. Closes CodeQL alert `js/double-escaping`
- * (alert #8).
- */
-function decodeXmlEntities(s: string): string {
-  if (!s.includes('&')) return s;
-  return s
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&amp;/g, '&');
-}
 
 /** Safely get a nested array from parsed XML.
  *  Absent, empty (`<alerts/>` → `''` on 7.50) and single-node containers all collapse to an array. */
