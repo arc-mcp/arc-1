@@ -439,6 +439,10 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
       );
     }
 
+    if (method.name.includes('~') && target !== 'public') {
+      return errorResult('Interface method redefinitions must keep public visibility.');
+    }
+
     // Idempotent: already in the requested section → no write.
     if (method.visibility === target) {
       return textResult(

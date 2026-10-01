@@ -1618,8 +1618,10 @@ ENDCLASS.`;
       expect(body).toContain("result = 'Goodbye!'.");
     });
 
-    it('add_method refuses an interface body without an objectstructure definition range', async () => {
-      const main = `CLASS zcl_probe DEFINITION PUBLIC CREATE PUBLIC.
+    it.each(['duplicate', 'bare-name-add', 'bare-name-definition'] as const)(
+      'distinguishes interface bodies from bare method names: %s',
+      async (scenario) => {
+        const main = `CLASS zcl_probe DEFINITION PUBLIC CREATE PUBLIC.
   PUBLIC SECTION.
     INTERFACES zif_svc.
     METHODS other.
@@ -1632,7 +1634,7 @@ CLASS zcl_probe IMPLEMENTATION.
   METHOD other.
   ENDMETHOD.
 ENDCLASS.`;
-      const structure = `<abapsource:objectStructureElement xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="ZCL_PROBE" adtcore:type="CLAS/OC">
+        const structure = `<abapsource:objectStructureElement xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="ZCL_PROBE" adtcore:type="CLAS/OC">
   <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=1,0;end=5,8"/>
   <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=7,0;end=13,8"/>
   <abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="ZIF_SVC~RUN" visibility="public">
@@ -1644,19 +1646,34 @@ ENDCLASS.`;
     <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=11,2;end=12,11"/>
   </abapsource:objectStructureElement>
 </abapsource:objectStructureElement>`;
-      const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: main, structureXml: structure });
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'add_method',
-        type: 'CLAS',
-        name: 'ZCL_PROBE',
-        method: 'METHODS zif_svc~run REDEFINITION.',
-      });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('already implements');
-      expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(true);
-      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
-      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
-    });
+        const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: main, structureXml: structure });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: scenario === 'bare-name-definition' ? 'edit_class_definition' : 'add_method',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          ...(scenario === 'bare-name-definition'
+            ? {
+                source: main
+                  .slice(0, main.indexOf('\n\n'))
+                  .replace('METHODS other.', 'METHODS other.\n    METHODS zif_svc.'),
+              }
+            : { method: scenario === 'duplicate' ? 'METHODS zif_svc~run REDEFINITION.' : 'METHODS zif_svc.' }),
+          lintBeforeWrite: false,
+        });
+        if (scenario === 'bare-name-add') {
+          expect(result.isError, result.content[0]?.text).toBeUndefined();
+          expect(calls.find((c) => c.method === 'PUT')?.body).toContain('METHOD zif_svc.');
+        } else {
+          expect(result.isError).toBe(true);
+          expect(result.content[0]?.text).toContain(
+            scenario === 'duplicate' ? 'already implements' : 'no matching METHOD',
+          );
+        }
+        expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(true);
+        expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+        expect(calls.some((c) => c.method === 'PUT')).toBe(scenario === 'bare-name-add');
+      },
+    );
 
     it.each(['keep', 'remove', 'duplicate', 'add'] as const)('handles qualified declarations: %s', async (change) => {
       const method = '/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM';
@@ -1912,6 +1929,35 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
     });
 
     // ── change_method_visibility (issue #303 follow-up) ───────────────
+
+    it.each(['protected', 'private'] as const)(
+      'change_method_visibility refuses to move an interface redefinition to %s',
+      async (visibility) => {
+        const calls = mockClassSurgeryFlow({
+          className: 'ZCL_PROBE',
+          mainSource: PROBE_MAIN.replace('FINAL CREATE PUBLIC', 'INHERITING FROM zcl_parent CREATE PUBLIC')
+            .replace(
+              'METHODS hello\n      IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.',
+              'METHODS zif_svc~run\n      REDEFINITION\n      .',
+            )
+            .replace('METHOD hello.', 'METHOD zif_svc~run.')
+            .replace('DATA mv_counter TYPE i.', 'PROTECTED SECTION.'),
+          structureXml: PROBE_STRUCTURE.replace('adtcore:name="HELLO"', 'adtcore:name="ZIF_SVC~RUN"'),
+        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'change_method_visibility',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          method: 'zif_svc~run',
+          visibility,
+          lintBeforeWrite: false,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Interface method redefinitions must keep public visibility');
+        expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+        expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+      },
+    );
 
     it('change_method_visibility moves a method public→private and preserves the body', async () => {
       const calls = mockClassSurgeryFlow({
