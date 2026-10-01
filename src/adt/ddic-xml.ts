@@ -5,7 +5,7 @@
  * structured XML payloads on create/update.
  */
 
-import { decodeXmlEntities, escapeXmlAttr, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, parseXml } from './xml-parser.js';
 
 export interface DomainFixedValue {
   low: string;
@@ -432,7 +432,7 @@ export function parseTableType(xml: string): TableTypeInfo {
   const secondaryKeys = asRecord(tt.secondaryKeys) ?? {};
   return {
     name: String(tt['@_name'] ?? ''),
-    description: decodeXmlEntities(String(tt['@_description'] ?? '')),
+    description: String(tt['@_description'] ?? ''),
     rowType,
     rowTypeKind: typeKind,
     rowTypeLength: String(builtIn.length ?? ''),

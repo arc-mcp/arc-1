@@ -131,7 +131,7 @@ describe('metadata updates preserve edits committed before the lock', () => {
   // SAP sends stored text entity-encoded. Re-escaping it undecoded ("R&amp;amp;D") made SAP store
   // the literal "R&amp;D", compounding with every further partial update.
   it.each(cases)('$type writes the stored description back escaped exactly once', async (row) => {
-    const stored = 'R&amp;D &lt;Orders&gt; &quot;x&quot;';
+    const stored = 'R&amp;D &lt;Orders&gt; &quot;x&quot; literal &amp;lt;';
     const calls = sap(row, undefined, stored);
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'update',
@@ -264,7 +264,7 @@ describe('metadata updates preserve edits committed before the lock', () => {
 
     it('writes the stored description back escaped exactly once when only rowType is given', async () => {
       // SAP sends stored text entity-encoded; re-escaping it undecoded would PUT "R&amp;amp;D".
-      const stored = 'R&amp;D &lt;Orders&gt; &quot;x&quot;';
+      const stored = 'R&amp;D &lt;Orders&gt; &quot;x&quot; literal &amp;lt;';
       const calls = sap(ttyp, undefined, stored);
       const result = await update({ rowType: 'STRING' });
       expect(result.isError, JSON.stringify(result)).toBeUndefined();
