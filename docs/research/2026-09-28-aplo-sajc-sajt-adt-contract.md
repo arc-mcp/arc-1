@@ -8,13 +8,13 @@ on 750, 758, 816 and BTP 920. Availability comes from discovery, not a hard-code
 
 | Type | Collection under `/sap/bc/adt/` | Metadata MIME | `adtcore:type` | Source |
 |---|---|---|---|---|
-| APLO | `applicationlog/objects` | `application/vnd.sap.adt.blues.v1+xml` | `APLO/TYP` | AFF JSON: `header`, optional `subobjects[]` |
+| APLO | `applicationlog/objects` | `application/vnd.sap.adt.blues.v1+xml` | `APLO/TYP` | AFF JSON: `header`, `subobjects[]` (required by AFF; may be empty) |
 | SAJC | `applicationjob/catalogs` | `application/vnd.sap.adt.blues.v2+xml` | `SAJC` | AFF JSON: `generalInformation.className`, `parameters[]` |
 | SAJT | `applicationjob/templates` | `application/vnd.sap.adt.blues.v2+xml` | `SAJT` | AFF JSON: `generalInformation.catalogName`, `parameters.singleValueParameters[]` / `valueRangesParameters[]` |
 
 All three use `<blue:blueSource>` metadata and JSON source PUT under a lock. The generic
 SDO package gate, lock lifecycle, no-create-replay policy and verified deletion remain in use.
-The package determines the language version; setting `header.abapLanguageVersion` alone does
+In the contributor's 2026-09-28 run, the package determined the language version; setting `header.abapLanguageVersion` alone does
 not override it. APLO names are limited to 20 characters (`BALOBJ-OBJECT`).
 
 **APLO saves are immediately active**, including metadata-only creation on 758/816. Source PUT

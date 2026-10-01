@@ -156,7 +156,7 @@ function formatErrorForLLM(
   const base = buildBaseErrorMessage(err, message, tool, args, config);
   // Handler-attached remediation hints (e.g., CDS delete blocker list) always
   // appear last so the message reads "what happened → diagnostics → how to fix".
-  if (err instanceof AdtApiError && err.extraHint && !base.includes(err.extraHint)) {
+  if (err instanceof AdtError && err.extraHint && !base.includes(err.extraHint)) {
     return `${base}\n\n${err.extraHint}`;
   }
   return base;

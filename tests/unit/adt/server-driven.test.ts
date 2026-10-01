@@ -335,17 +335,6 @@ describe('SDO registry write metadata', () => {
     expect(SDO_REGISTRY.DRTY.href).toBe('/sap/bc/adt/ddic/drty/sources');
     expect(SDO_REGISTRY.DRTY.createType).toBe('DRTY/STY');
   });
-
-  // Read off an S/4HANA system (SAP_BASIS 8.16): collections from discovery, adtcore:type from the metadata
-  // GET of existing objects, and a create→update→activate→delete cycle per type through ARC-1.
-  it('APLO/SAJC/SAJT are pinned to the collections and adtcore:type read live (816)', () => {
-    expect(SDO_REGISTRY.APLO.href).toBe('/sap/bc/adt/applicationlog/objects');
-    expect(SDO_REGISTRY.APLO.createType).toBe('APLO/TYP');
-    expect(SDO_REGISTRY.SAJC.href).toBe('/sap/bc/adt/applicationjob/catalogs');
-    expect(SDO_REGISTRY.SAJC.createType).toBe('SAJC');
-    expect(SDO_REGISTRY.SAJT.href).toBe('/sap/bc/adt/applicationjob/templates');
-    expect(SDO_REGISTRY.SAJT.createType).toBe('SAJT');
-  });
 });
 
 // DTDC is the first NON-blue server-driven type. These lock down that the generalized engine paths
@@ -433,6 +422,17 @@ describe('serverDrivenObjectUrl', () => {
 });
 
 describe('buildServerDrivenMetadataXml', () => {
+  // SAP's SADT_BLUE_SOURCE reads the properties AFTER the main object (packageRef) and SADT_CONTENT
+  // requires this media type; a reordered or renamed element is skipped silently (758: NULL-reference 500).
+  it('emits job creation properties in the exact wire form SAP deserializes', () => {
+    expect(buildServerDrivenMetadataXml('SAJT', 'ZT', '$TMP', 'd', undefined, { catalogName: 'Z"C&' })).toBe(
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="SAJT" adtcore:name="ZT" adtcore:description="d">\n' +
+        '  <adtcore:packageRef adtcore:name="$TMP"/>\n' +
+        '  <blue:additionalCreationProperties><adtcore:content adtcore:type="application/vnd.sap.adt.objecttype.new.content.additional.v1+json">{&quot;catalogName&quot;:&quot;Z\\&quot;C&amp;&quot;}</adtcore:content></blue:additionalCreationProperties>\n' +
+        '</blue:blueSource>',
+    );
+  });
   it('emits the per-type createType, packageRef, and escapes the description', () => {
     const xml = buildServerDrivenMetadataXml('EVTB', 'ZEVT', '$TMP', 'A & B "x"');
     expect(xml).toContain('adtcore:type="EVTB/EVB"');

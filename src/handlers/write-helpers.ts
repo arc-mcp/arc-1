@@ -22,7 +22,7 @@ import {
   type ServiceBindingCreateParams,
 } from '../adt/ddic-xml.js';
 import { syntaxCheck } from '../adt/devtools.js';
-import { AdtSafetyError } from '../adt/errors.js';
+import { AdtError, AdtSafetyError } from '../adt/errors.js';
 import { formatRapPreflightFindings, validateRapSource } from '../adt/rap-preflight.js';
 import { checkPackage } from '../adt/safety.js';
 import {
@@ -874,6 +874,9 @@ export async function handleServerDrivenObjectWrite(
     case 'create': {
       const pkg = String(args.package ?? '$TMP');
       await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
+      if (type === 'APLO' && name.length > 20) {
+        return errorResult('APLO names must be at most 20 characters. Nothing was created.');
+      }
       const description = String(args.description ?? name);
       // Validate BEFORE the create POST — validating after would leave an inactive orphan on SAP
       // that the caller never asked for and has to clean up by hand.
@@ -895,14 +898,25 @@ export async function handleServerDrivenObjectWrite(
         transport,
         creationProperties,
       });
-      let wroteSource = false;
-      if (validated?.ok) {
-        await updateServerDrivenObjectSource(client.http, client.safety, type, name, validated.source, { transport });
-        wroteSource = true;
+      try {
+        if (validated?.ok) {
+          await updateServerDrivenObjectSource(client.http, client.safety, type, name, validated.source, { transport });
+        }
+      } catch (cause) {
+        // The POST succeeded; both HTTP and network failures can leave the object with a partial source.
+        const err =
+          cause instanceof AdtError ? cause : new AdtError(cause instanceof Error ? cause.message : String(cause));
+        err.extraHint = `${type} ${name} was created in package ${pkg}${type === 'APLO' ? ' and is active' : ''}, but the follow-up source step failed. Check it with SAPRead before using SAPWrite(action="update") — do not repeat create.`;
+        throw err;
+      } finally {
+        try {
+          invalidate();
+        } catch {
+          // Cache bookkeeping must not replace the confirmed create outcome or its original failure.
+        }
       }
-      invalidate();
       return textResult(
-        `Created ${type} ${name} in package ${pkg}${wroteSource ? ' and wrote source' : ''}.\n${activationHint}`,
+        `Created ${type} ${name} in package ${pkg}${validated?.ok ? ' and wrote source' : ''}.\n${activationHint}`,
       );
     }
     case 'update': {
@@ -934,7 +948,7 @@ export async function handleServerDrivenObjectWrite(
     default:
       return errorResult(
         `Action "${action}" is not supported for server-driven object type ${type}. ` +
-          'Supported: create, update, delete — then SAPActivate to activate.',
+          'Supported: create, update, delete.',
       );
   }
 }

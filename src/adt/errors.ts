@@ -25,6 +25,15 @@ export class AdtError extends Error {
   /** A plugin POST failed without establishing whether its service executed it. */
   pluginPostOutcome?: 'unknown';
 
+  /**
+   * Optional remediation hint attached by a handler when it has context the
+   * generic error formatter lacks (e.g., the list of blocking dependents
+   * fetched via `/usageReferences` after a `[?/039]` delete failure).
+   * Appended at the very end of the LLM-facing error message so it reads as
+   * "what happened → diagnostics → how to fix".
+   */
+  extraHint?: string;
+
   constructor(message: string) {
     super(message);
     this.name = 'AdtError';
@@ -89,15 +98,6 @@ export interface AbapGitErrorClassification {
 
 /** HTTP-level API error from SAP ADT */
 export class AdtApiError extends AdtError {
-  /**
-   * Optional remediation hint attached by a handler when it has context the
-   * generic error formatter lacks (e.g., the list of blocking dependents
-   * fetched via `/usageReferences` after a `[?/039]` delete failure).
-   * Appended at the very end of the LLM-facing error message so it reads as
-   * "what happened → diagnostics → how to fix".
-   */
-  extraHint?: string;
-
   /**
    * Handler-owned result of the metadata probe after a failed post-lock DELETE.
    * Only a probe 404 proves absence; other probe failures are explicitly unknown.
