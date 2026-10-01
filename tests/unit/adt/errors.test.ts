@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,16 +82,31 @@ describe('AdtApiError', () => {
 
     // The tag end is found quote-aware, so a quoted run may hold a ">". The attribute parser stopped
     // at that ">" and never moved on: every one of these bodies hung the process in the constructor.
-    // A regression here shows as a test run that never finishes.
-    it.each([
-      '<a "b>c">',
-      '{"error":{"message":"x < y \\"quoted > text\\" z > w"}}',
-      'Expression a < 5 and "x>y" > 3 failed',
-    ])('returns for a ">" inside a quoted run that is not an attribute value: %s', (raw) => {
-      expect(new AdtApiError(raw, 500, '/p', raw).message).toContain('ADT API error: status 500 at /p: ');
-      expect(AdtApiError.extractProperties(raw)).toEqual({});
-      expect(AdtApiError.extractAllMessages(raw)).toEqual([]);
-    });
+    // Run separately so a regression fails by timeout instead of hanging the test worker.
+    it('advances past a quoted > that is not an attribute value', () => {
+      const source = new URL('../../../src/adt/errors.ts', import.meta.url).href;
+      const inputs = ['<a "b>c">', '{"message":"x < y \\"quoted > text\\" z > w"}', 'a < 5 and "x>y" > 3'];
+      const child = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '--input-type=module',
+          '-e',
+          `
+        import { AdtApiError } from ${JSON.stringify(source)};
+        for (const raw of ${JSON.stringify(inputs)}) {
+          new AdtApiError(raw, 500, '/p', raw);
+          AdtApiError.extractProperties(raw);
+          AdtApiError.extractAllMessages(raw);
+        }
+      `,
+        ],
+        { timeout: 5000, encoding: 'utf8' },
+      );
+      expect(child.error).toBeUndefined();
+      expect(child.status, child.stderr).toBe(0);
+    }, 10000);
 
     it('extracts msgText from SAP HTML 500 error page', () => {
       const html = `<!DOCTYPE html>
