@@ -21,7 +21,14 @@ describe('TTYP update — live', () => {
     tabletypesAvailable = (await fetchDiscoveryDocument(client.http)).map.has('/sap/bc/adt/ddic/tabletypes');
   });
   afterAll(async () => {
-    for (const name of created) await call('SAPWrite', { action: 'delete', type: 'TTYP', name });
+    for (const name of created) {
+      try {
+        await call('SAPWrite', { action: 'delete', type: 'TTYP', name });
+      } catch (error) {
+        // best-effort-cleanup: attempt every fixture and preserve the original test failure.
+        console.warn(`Could not delete TTYP ${name}`, error);
+      }
+    }
   });
 
   it.for([

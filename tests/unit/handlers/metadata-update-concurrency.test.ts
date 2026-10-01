@@ -271,6 +271,26 @@ describe('metadata updates preserve edits committed before the lock', () => {
       expect(putBody(calls)).toContain(`adtcore:description="${stored}"`);
     });
 
+    // A packed row (DEC 15,2): decimals are part of the stored row type, like the length.
+    it('a description-only update keeps stored decimals', async () => {
+      const decRow =
+        '<ttyp:dataType>DEC</ttyp:dataType><ttyp:length>000015</ttyp:length><ttyp:decimals>000002</ttyp:decimals>';
+      const calls = sap({
+        ...ttyp,
+        xml: ttyp.xml.replace(`${stringRow}<ttyp:decimals>000000</ttyp:decimals>`, decRow),
+      });
+      expect((await update({ description: 'New text' })).isError).toBeUndefined();
+      expect(putBody(calls)).toContain(builtIn + decRow);
+    });
+
+    it('an explicit rowTypeKind wins over the stored kind', async () => {
+      const calls = sap(int4Table);
+      expect((await update({ rowType: 'INT4', rowTypeKind: 'structure' })).isError).toBeUndefined();
+      expect(putBody(calls)).toContain(
+        '<ttyp:typeKind>dictionaryType</ttyp:typeKind><ttyp:typeName>INT4</ttyp:typeName>',
+      );
+    });
+
     // INT4 is SAP's name for a built-in that ARC-1 does not auto-detect, and its length is part of the row type.
     it.each([
       ['a description-only update keeps the stored row type', { description: 'New text' }, 'New text', int4Row],
