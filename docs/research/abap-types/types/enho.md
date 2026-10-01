@@ -10,7 +10,7 @@ one ADT resource. There is no public slash alias or enhancement write operation.
 |---|---|---|
 | `ENHO/XHB` | `enhoxhb` / `application/vnd.sap.adt.enh.enhoxhb.v4+xml` | BAdI metadata on SAP_BASIS 758 SP02 and 816 SP01; root `enho:objectData`. |
 | `ENHO/XHH` | `enhoxhh` / `application/vnd.sap.adt.enh.enhoxhh.v3+xml` | Hook metadata on 758/816; root `enho:enhancement`. ABAP is at the same object's `/source/main` (`text/plain`). |
-| `ENHO/XH` | `enhoxh` / `application/vnd.sap.adt.enh.enho.v1+xml` | Legacy/generic route, not exclusively class enhancements. On 750 it serves BAdI `objectData`; some class enhancements on 758/816 fail inside SAP even at this route. |
+| `ENHO/XH` | `enhoxh` / `application/vnd.sap.adt.enh.enho.v1+xml` | Legacy/generic route, not proof of a specific enhancement technology. On 750 it serves BAdI `objectData`; `WDR_TEST_ENH_08_01` on 758/816 fails inside SAP even at this route. |
 
 All paths are under `/sap/bc/adt/enhancements/`, followed by the encoded object
 name. Discovery advertised all three collections on 758/816 and only `enhoxh`
@@ -53,6 +53,8 @@ local evidence; mocks are separate from these observations.
   `isActive` / `isDefault`.
 - 758/816: `WDR_TEST_ENH_08_01` still returned SAP 500 at `enhoxh`. ARC-1 keeps
   that status and points to SAP GUI (SE80/SE19) or Eclipse's SAP GUI integration.
+  Its underlying enhancement technology was not captured. Issue #896 reports
+  class enhancements; this object's generic XH subtype does not prove that case.
 - Not verified: the reporter's exact objects, inactive drafts, PP, MCP transport,
   BTP, or working class-enhancement metadata. A route correction cannot repair a
   backend transformation error.

@@ -92,7 +92,7 @@ export async function readEnhancementImplementation(
       return await read(subtype as Subtype);
     }
   } catch (error) {
-    if (error instanceof AdtError) {
+    if (error instanceof AdtApiError && [400, 404, 500].includes(error.statusCode)) {
       error.extraHint = `ENHO read attempted ${attempted.join(', ')}. If this enhancement cannot be exposed by ADT, inspect it in SAP GUI (SE80/SE19) or Eclipse's SAP GUI integration.`;
     }
     throw error;

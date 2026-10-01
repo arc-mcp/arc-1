@@ -258,7 +258,7 @@ navigation links). A failed source read returns an error, not successful partial
 
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
-Some class enhancements still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
+Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
 integration when the error identifies an unavailable ADT route. No enhancement writes
 or ENHO source filtering (`grep`, method or line selection) are supported.
 

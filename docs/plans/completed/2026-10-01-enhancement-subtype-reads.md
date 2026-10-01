@@ -19,8 +19,9 @@ object is a class enhancement. Some XH objects still fail inside SAP.
    error. Preserve legacy BAdI `isActive`/`isDefault` flags on the XH fallback.
 3. Keep read/search safety checks and the caller's client. No cache, SQL, writes,
    new tool arguments or slash aliases. Refuse unsupported explicit versions.
-   Keep failure status and attach an
-   actionable collection/SAP GUI hint when a known route cannot be read.
+   Keep failure status and attach a collection/SAP GUI hint only to API errors
+   400/404/500; connection, authentication and authorization errors keep their
+   own guidance.
 4. Prove dispatcher routing, one-request BAdI behavior, source-error propagation,
    exact identity/allowlisted routes, minimal errors and unchanged schemas.
    Replay reduced live XML fixtures, then verify live on 758/816 and legacy 750.
@@ -31,13 +32,14 @@ Reference: [SAP source-code plug-ins](https://help.sap.com/docs/ABAP_PLATFORM_NE
 
 ## Outcome
 
-The dispatcher regression tests fail before the fix. All 7,695 unit tests and the
-local type, lint, policy, size, build and strict-docs gates pass. The source and
-runtime tool schemas are unchanged.
+The dispatcher regression tests fail before the fix, including misleading SAP
+GUI guidance on connection and authorization errors. Local test, type, lint,
+policy, size, build and strict-docs gates pass. Tool schemas are unchanged.
 
 Live HTTPS/Basic reads through `handleToolCall` pass on 758 SP02, 816 SP01 and 750.
 The [research record](../../research/abap-types/types/enho.md) retains the subtype
-contracts, 750 decorated-name evidence and SAP-side class-enhancement failures.
+contracts, 750 decorated-name evidence and remaining SAP-side XH failures.
 No SAP objects were changed. Customer-specific objects, inactive drafts, PP, BTP
 and MCP transport remain unverified. This change adds reads, not enhancement
-authoring or a repair for SAP's class-enhancement 500 errors.
+authoring or a repair for SAP's remaining 500 errors. The failing XH object's
+underlying enhancement technology is unverified.

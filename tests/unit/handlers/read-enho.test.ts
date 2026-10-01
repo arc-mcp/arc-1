@@ -132,6 +132,7 @@ describe('SAPRead ENHO subtype routing', () => {
     const result = await read();
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('403');
+    expect(result.content[0]?.text).not.toContain('SE80');
     expect(calls.at(-1)).toContain('/source/main');
   });
 
@@ -141,10 +142,19 @@ describe('SAPRead ENHO subtype routing', () => {
       const calls = setup({ firstStatus });
       const result = await read();
       expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).not.toContain('SE80');
       // HTTP transport may retry, but no subtype lookup or alternate collection is allowed.
       expect(calls.every((path) => path.includes('/enhoxhb/'))).toBe(true);
     },
   );
+
+  it('keeps network failures focused on connectivity instead of suggesting SAP GUI', async () => {
+    mockFetch.mockRejectedValue(new TypeError('socket hang up'));
+    const result = await read();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('network');
+    expect(result.content[0]?.text).not.toContain('SE80');
+  });
 
   it.each([
     { type: 'ENHO/UNKNOWN' },
@@ -168,6 +178,7 @@ describe('SAPRead ENHO subtype routing', () => {
     const result = await read();
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain('403');
+    expect(result.content[0]?.text).not.toContain('SE80');
     expect(calls).toHaveLength(2);
   });
 
