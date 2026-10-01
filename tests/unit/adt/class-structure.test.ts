@@ -14,6 +14,7 @@ import {
   findSectionAnchor,
   insertBeforeLine,
   insertMethodPair,
+  isMethodRedefinition,
   moveMethodDefinition,
   parseDefinitionBlockDeclarations,
   removeMethodPair,
@@ -472,6 +473,20 @@ describe('extractMethodNameFromClause', () => {
     );
   });
 
+  it.each(['/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM', 'ZIF_SERVICE~GET_STREAM'])(
+    'preserves the complete qualified name %s in both declaration readers',
+    (name) => {
+      const clause = `METHODS ${name.toLowerCase()} REDEFINITION.`;
+      expect(extractMethodNameFromClause(clause)).toBe(name);
+      expect(parseDefinitionBlockDeclarations(clause).map((d) => d.name)).toEqual([name]);
+    },
+  );
+
+  it.each(['foo~bar~baz', 'foo-bad', '/NS/IF~', '/NS//IF~RUN'])(
+    'does not extract a valid prefix of malformed name %s',
+    (name) => expect(extractMethodNameFromClause(`METHODS ${name} REDEFINITION.`)).toBeNull(),
+  );
+
   it('returns null on non-METHODS first non-comment line', () => {
     expect(extractMethodNameFromClause('* a comment\nDATA foo TYPE i.')).toBeNull();
   });
@@ -554,5 +569,19 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
   it('throws if targetAfterLine falls inside the moved method range', () => {
     // hello def is 3-5; anchor 4 is inside → caller bug.
     expect(() => moveMethodDefinition(PROBE_SOURCE, PROBE_STRUCTURE.methods[0]!, 4)).toThrow(RangeError);
+  });
+});
+
+describe('isMethodRedefinition', () => {
+  it.each([
+    ['METHODS /iwbep/if_x~run REDEFINITION.', true],
+    ['* comment\nMETHODS zif_x~run\n FINAL REDEFINITION', true],
+    ['METHODS zif_x~run REDEFINITION. " keep', true],
+    ['METHODS zif_x~run. " REDEFINITION', false],
+    ["METHODS zif_x~run IMPORTING x TYPE string DEFAULT 'REDEFINITION'.", false],
+    ['CLASS-METHODS zif_x~run REDEFINITION.', false],
+    ['METHODS zif_x~run~bad REDEFINITION.', false],
+  ])('recognizes only a complete redefinition: %s', (clause, expected) => {
+    expect(isMethodRedefinition(clause)).toBe(expected);
   });
 });

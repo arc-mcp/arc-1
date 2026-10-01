@@ -13,6 +13,7 @@ import {
   extractMethodNameFromClause,
   findSectionAnchor,
   insertMethodPair,
+  isMethodRedefinition,
   moveMethodDefinition,
   removeMethodPair,
   spliceClassDefinition,
@@ -291,12 +292,10 @@ export async function writeActionAddMethod(ctx: SapWriteContext): Promise<ToolRe
       'Could not extract method name from the METHODS clause. Provide a clause starting with "METHODS <name>" or "CLASS-METHODS <name>".',
     );
   }
-  // Interface-qualified names (lhc_x~y, zif_x~m) can't be added to a global
-  // class's DEFINITION/IMPLEMENTATION — `~` is interface-method scope and would
-  // produce invalid ABAP in the METHOD stub. Reject with a clear pointer.
-  if (methodName.includes('~')) {
+  // New interface methods belong to INTERFACES; inherited ones can be redefined.
+  if (methodName.includes('~') && (!isMethodRedefinition(clause) || args.abstract === true)) {
     return errorResult(
-      `add_method cannot add the interface-qualified method "${methodName}" to a global class. Implement the interface via "INTERFACES <name>." in the DEFINITION (use edit_class_definition), then provide the body with edit_method.`,
+      `To add the inherited interface-qualified method "${methodName}", use "METHODS <name> REDEFINITION." without abstract=true. For a new interface, use "INTERFACES <name>." in edit_class_definition and provide the body with edit_method.`,
     );
   }
   const visibility = (args.visibility as 'public' | 'protected' | 'private' | undefined) ?? 'public';

@@ -913,6 +913,15 @@ Insert a METHODS clause AND an empty `METHOD <name>. ENDMETHOD.` stub in one PUT
 
 Pass `abstract: true` to skip the IMPLEMENTATION stub (for `METHODS x ABSTRACT.` in an abstract class).
 
+For an inherited interface method, pass a redefinition clause such as
+`METHODS /IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM REDEFINITION.` (optionally
+`FINAL REDEFINITION`). Use the inherited visibility and leave `abstract` false.
+ARC-1 inserts the declaration and an empty implementation; fill the body with
+`edit_method`, then activate. SAP checks that the superclass actually provides a
+redefinable method. `edit_class_definition` also recognizes these qualified names
+when checking for missing or orphaned implementations.
+
+
 #### `action="edit_method_signature"` — replace one METHODS clause
 
 One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract.

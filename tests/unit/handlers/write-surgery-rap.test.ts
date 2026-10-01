@@ -1593,6 +1593,64 @@ ENDCLASS.`;
       expect(putCall?.body ?? '').toContain('ENDMETHOD.');
     });
 
+    it.each(['/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM', 'ZIF_SERVICE~GET_STREAM'])(
+      'add_method inserts an inherited interface redefinition %s',
+      async (method) => {
+        const calls = mockClassSurgeryFlow({
+          className: 'ZCL_PROBE',
+          mainSource: PROBE_MAIN,
+          structureXml: PROBE_STRUCTURE,
+        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'add_method',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          method: `METHODS ${method.toLowerCase()} REDEFINITION.`,
+        });
+        expect(result.isError, result.content[0]?.text).toBeUndefined();
+        const body = calls.find((c) => c.method === 'PUT')?.body;
+        expect(body).toContain(`METHODS ${method.toLowerCase()} REDEFINITION.`);
+        expect(body).toContain(`METHOD ${method.toLowerCase()}.`);
+        expect(body).toContain("result = 'Goodbye!'.");
+      },
+    );
+
+    it.each(['keep', 'remove', 'duplicate', 'add'] as const)('handles qualified declarations: %s', async (change) => {
+      const method = '/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM';
+      const main = PROBE_MAIN.replaceAll('hello', method.toLowerCase()).replace(
+        'IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.',
+        'FINAL\n      REDEFINITION.',
+      );
+      const structure = PROBE_STRUCTURE.replaceAll('HELLO', method);
+      const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: main, structureXml: structure });
+      let definition = main.slice(0, main.indexOf('ENDCLASS.') + 'ENDCLASS.'.length).replace(' FINAL', '');
+      if (change === 'add')
+        definition = definition.replace(
+          'ENDCLASS.',
+          'METHODS /iwbep/if_mgw_appl_srv_runtime~other REDEFINITION.\nENDCLASS.',
+        );
+      if (change === 'remove') definition = definition.replace(/ {4}METHODS \/iwbep\/[^.]+\./i, '');
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        ...(change === 'duplicate'
+          ? { action: 'add_method', method: `METHODS ${method} REDEFINITION.` }
+          : { action: 'edit_class_definition', source: definition }),
+      });
+      if (change === 'keep') {
+        expect(result.isError, result.content[0]?.text).toBeUndefined();
+        expect(calls.find((c) => c.method === 'PUT')?.body).toContain(
+          main.slice(main.indexOf('CLASS zcl_probe IMPLEMENTATION.')),
+        );
+      } else {
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain(
+          change === 'remove' ? 'orphan implementation' : change === 'add' ? 'no matching METHOD' : 'already exists',
+        );
+        expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      }
+    });
+
     it('add_method with abstract=true inserts no IMPL stub', async () => {
       const calls = mockClassSurgeryFlow({
         className: 'ZCL_PROBE',
