@@ -27,7 +27,7 @@ import type {
   SyntaxCheckResult,
   SyntaxMessage,
 } from './types.js';
-import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
 export {
   type AtcCompletionEvidence,
@@ -1021,7 +1021,7 @@ function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCh
     const t100 = findDeepNodes(m, 't100Key')[0];
     return {
       severity: type === 'E' ? 'error' : type === 'W' ? 'warning' : 'info',
-      text: decodeXmlEntities(String(m['@_shortText'] ?? '')),
+      text: String(m['@_shortText'] ?? ''),
       line: Number.isFinite(line) ? line : 0,
       column: Number.isFinite(column) ? column : 0,
       ...(uri ? { uri } : {}),
@@ -1048,7 +1048,7 @@ function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCh
     hasErrors: messages.some((m) => m.severity === 'error'),
     messages,
     checked: !unprocessed && jsonReportValid,
-    ...(unprocessed ? { statusText: decodeXmlEntities(String(unprocessed['@_statusText'] ?? '')) } : {}),
+    ...(unprocessed ? { statusText: String(unprocessed['@_statusText'] ?? '') } : {}),
     ...(!jsonReportValid && !unprocessed
       ? { statusText: 'SAP did not return a processed JSON candidate check for this object.' }
       : {}),

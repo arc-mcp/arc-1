@@ -51,7 +51,11 @@ const cases = [
   },
 ];
 
-function sap(row: (typeof cases)[number], failure?: 'lock' | 'read' | 'put' | 'unlock') {
+function sap(
+  row: (typeof cases)[number],
+  failure?: 'lock' | 'read' | 'put' | 'unlock',
+  colleagueDescription = 'Colleague description',
+) {
   let current = row.xml;
   let locked = false;
   const calls: Array<{ method: string; url: string; body: string; stateful: boolean; locked: boolean }> = [];
@@ -70,7 +74,7 @@ function sap(row: (typeof cases)[number], failure?: 'lock' | 'read' | 'put' | 'u
       if (method === 'POST' && path.includes('_action=LOCK')) {
         if (failure === 'lock') return mockResponse(423, 'locked by another user');
         // A colleague saves and releases their lock before ours is granted.
-        current = current.replace(/adtcore:description="[^"]*"/, 'adtcore:description="Colleague description"');
+        current = current.replace(/adtcore:description="[^"]*"/, `adtcore:description="${colleagueDescription}"`);
         locked = true;
         return mockResponse(200, '<asx:values><LOCK_HANDLE>LH</LOCK_HANDLE><CORRNR>REQ1</CORRNR></asx:values>');
       }
@@ -122,6 +126,21 @@ describe('metadata updates preserve edits committed before the lock', () => {
     expect(reads.some((c) => c.locked && c.stateful)).toBe(true);
     expect(calls.find((c) => c.url.includes('_action=LOCK'))?.stateful).toBe(true);
     expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+  });
+
+  // SAP sends stored text entity-encoded. Re-escaping it undecoded ("R&amp;amp;D") made SAP store
+  // the literal "R&amp;D", compounding with every further partial update.
+  it.each(cases)('$type writes the stored description back escaped exactly once', async (row) => {
+    const stored = 'R&amp;D &lt;Orders&gt; &quot;x&quot;';
+    const calls = sap(row, undefined, stored);
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: row.type,
+      name: row.name,
+      ...row.patch,
+    });
+    expect(result.isError, JSON.stringify(result)).toBeUndefined();
+    expect(calls.find((c) => c.method === 'PUT')?.body).toContain(`adtcore:description="${stored}"`);
   });
 
   it.each(['lock', 'read', 'put', 'unlock'] as const)(
