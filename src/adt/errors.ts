@@ -112,10 +112,13 @@ export class AdtApiError extends AdtError {
     public readonly path: string,
     public readonly responseBody?: string,
   ) {
-    // Extract a human-readable message, stripping raw XML/HTML.
+    // Extract a human-readable message, stripping raw XML/HTML — but only from a raw SAP body. A
+    // composed message is plain text, and its "<" (a "<id>" placeholder, SAP text like "<ZFOO_TOP>")
+    // must survive the tag stripper.
     // Try the truncated message first; if that only yields a generic title (e.g., "Application Server Error"),
     // retry with the full responseBody which may contain deeper error details (e.g., <span id="msgText">).
-    let clean = AdtApiError.extractCleanMessage(message);
+    const isMarkup = /^\s*</.test(message);
+    let clean = isMarkup ? AdtApiError.extractCleanMessage(message) : message.slice(0, 300) || 'Unknown error';
     if (responseBody && responseBody.length > message.length && /^Application Server Error/.test(clean)) {
       const deepClean = AdtApiError.extractCleanMessage(responseBody);
       if (deepClean !== clean) clean = deepClean;
@@ -445,6 +448,10 @@ function parseAttributes(input: string, start: number, end: number): Record<stri
         while (pos < end && !isWhitespace(input.charCodeAt(pos)) && input[pos] !== '/') pos++;
         attrValue = input.slice(valueStart, pos);
       }
+    } else if (pos === nameStart) {
+      // A ">" inside a quoted run that is not an attribute value (`<a "b>c">`): `findTagEnd` skips
+      // it, the name loop above stops at it. Step over it, or this loop never ends.
+      pos++;
     }
 
     if (attrName) attributes[attrName] = attrValue;

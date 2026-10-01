@@ -1725,7 +1725,7 @@ function normalizeAdtPath(rawPath: string): string {
 // resilient to whitespace/attribute variations across releases.
 
 function splitGatewayAtomId(atomId: string): { errorType: string; transactionId: string } {
-  const cleaned = decodeHtmlEntities(String(atomId ?? '')).trim();
+  const cleaned = String(atomId ?? '').trim();
   if (!cleaned) return { errorType: '', transactionId: '' };
 
   const marker = '/sap/bc/adt/gw/errorlog/';
@@ -1760,13 +1760,13 @@ function splitCamelCase(value: string): string {
 function extractEntrySummaryHtml(entry: Record<string, unknown>): string {
   const summary = entry.summary;
   if (summary == null) return '';
-  if (typeof summary === 'string') return decodeHtmlEntities(summary);
+  if (typeof summary === 'string') return summary; // already HTML: parseXml undid the XML escaping
 
   const summaryNode = toRecordArray(summary)[0];
   if (!summaryNode) return '';
   const text = summaryNode['#text'];
-  if (typeof text === 'string' && text.length > 0) return decodeHtmlEntities(text);
-  return decodeHtmlEntities(String(summaryNode ?? ''));
+  if (typeof text === 'string' && text.length > 0) return text;
+  return String(summaryNode ?? '');
 }
 
 function extractHtmlSection(html: string, anchorId: string): string {

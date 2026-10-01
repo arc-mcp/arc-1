@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -79,6 +80,34 @@ describe('AdtApiError', () => {
       expect(AdtApiError.extractCleanMessage(raw)).toBe('SAP returned an error (no readable message)');
     });
 
+    // The tag end is found quote-aware, so a quoted run may hold a ">". The attribute parser stopped
+    // at that ">" and never moved on: every one of these bodies hung the process in the constructor.
+    // Run separately so a regression fails by timeout instead of hanging the test worker.
+    it('advances past a quoted > that is not an attribute value', () => {
+      const source = new URL('../../../src/adt/errors.ts', import.meta.url).href;
+      const inputs = ['<a "b>c">', '{"message":"x < y \\"quoted > text\\" z > w"}', 'a < 5 and "x>y" > 3'];
+      const child = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '--input-type=module',
+          '-e',
+          `
+        import { AdtApiError } from ${JSON.stringify(source)};
+        for (const raw of ${JSON.stringify(inputs)}) {
+          new AdtApiError(raw, 500, '/p', raw);
+          AdtApiError.extractProperties(raw);
+          AdtApiError.extractAllMessages(raw);
+        }
+      `,
+        ],
+        { timeout: 5000, encoding: 'utf8' },
+      );
+      expect(child.error).toBeUndefined();
+      expect(child.status, child.stderr).toBe(0);
+    }, 10000);
+
     it('extracts msgText from SAP HTML 500 error page', () => {
       const html = `<!DOCTYPE html>
 <html><head><title>Application Server Error</title></head><body>
@@ -109,6 +138,18 @@ describe('AdtApiError', () => {
         '<p class="detailText"><span id="msgText">Syntax error in program ZC_FBCLUBTP===================BD</span></p></body></html>';
       const err = new AdtApiError(shortHtml, 500, '/sap/bc/adt/activation', fullHtml);
       expect(err.message).toContain('Syntax error in program ZC_FBCLUBTP');
+    });
+
+    // The tag stripper is for raw SAP bodies. Run over a composed message it deleted "<id>"-style
+    // placeholders and everything after a lone "<".
+    it('keeps angle brackets in a composed plain-text message', () => {
+      const err = new AdtApiError('Include <ZFOO_TOP> not found; length < 5 required', 400, '/p');
+      expect(err.message).toBe('ADT API error: status 400 at /p: Include <ZFOO_TOP> not found; length < 5 required');
+    });
+
+    it('still cleans a raw body that starts with whitespace', () => {
+      const err = new AdtApiError('\n <error><message lang="EN">Syntax error in line 5</message></error>', 400, '/p');
+      expect(err.message).toBe('ADT API error: status 400 at /p: Syntax error in line 5');
     });
   });
 
