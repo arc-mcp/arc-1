@@ -238,7 +238,11 @@ function buildBaseErrorMessage(
     }
     if (err.diagnosticsOmitted) {
       const detail = config.minimalErrors ? formatMinimalAdtError(err) : message;
-      return `${detail}\n\nHint: ARC-1 omitted the diagnostic for credential safety. Inspect the full message in SAP; retrying cannot recover omitted detail.`;
+      const statusHint =
+        err.isUnauthorized || err.isForbidden
+          ? ' Ask the operator to check SAP authentication, authorizations, and session state.'
+          : '';
+      return `${detail}\n\nHint: ARC-1 omitted the diagnostic for credential safety. Inspect the full message in SAP; retrying cannot recover omitted detail.${statusHint}`;
     }
     if (config.minimalErrors) return formatMinimalAdtError(err);
 

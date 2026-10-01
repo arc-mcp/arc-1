@@ -150,7 +150,8 @@ export class AdtApiError extends AdtError {
     //    (a "<id>" placeholder, SAP text like "<ZFOO_TOP>"), and so does text already extracted from a
     //    body: scanning those again would eat the literal `<x>` and decode a second time.
     //    Callers rewrapping extracted text can explicitly set the constructor's plainText option.
-    if (!/^\s*</.test(raw) && !/<html\b[^>]*>[\s\S]*<\/html\s*>/i.test(raw)) {
+    // Independent scans avoid rescanning the tail for every HTML opener in malformed SAP text.
+    if (!/^\s*</.test(raw) && !(/<html[\s>]/i.test(raw) && /<\/html\s*>/i.test(raw))) {
       return raw.slice(0, 300);
     }
 

@@ -154,6 +154,19 @@ describe('abapGit diagnostic confidentiality through dispatch', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toContain('Inspect the full message in SAP');
     expect(result.content[0]!.text).not.toContain('often transient');
+    if (minimal) {
+      expect(result.content[0]!.text).toContain('ARC1_MINIMAL_ERRORS=true');
+      expect(result.content[0]!.text).toMatch(/request ID/i);
+      expect(result.content[0]!.text).not.toContain('/sap/bc/adt/');
+    }
+  });
+
+  it.each([401, 403])('keeps status-based guidance when a %s diagnostic is omitted', async (status) => {
+    const result = await run(exception('<message>Authorization: Bearer SENTINEL</message>'), 'pull', true, status);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('check SAP authentication, authorizations, and session state');
+    expect(result.content[0]!.text).toContain('ARC1_MINIMAL_ERRORS=true');
+    expect(result.content[0]!.text).not.toContain('SENTINEL');
   });
 
   it('retains ordinary decoded diagnostics and the live T100 message-class key', async () => {

@@ -84,7 +84,7 @@ describe('AdtApiError', () => {
     // The tag end is found quote-aware, so a quoted run may hold a ">". The attribute parser stopped
     // at that ">" and never moved on: every one of these bodies hung the process in the constructor.
     // Run separately so a regression fails by timeout instead of hanging the test worker.
-    it('advances past a quoted > that is not an attribute value', () => {
+    it('finishes on malformed attributes and repeated unclosed HTML openers', () => {
       const source = new URL('../../../src/adt/errors.ts', import.meta.url).href;
       const inputs = ['<a "b>c">', '{"message":"x < y \\"quoted > text\\" z > w"}', 'a < 5 and "x>y" > 3'];
       const child = spawnSync(
@@ -96,7 +96,8 @@ describe('AdtApiError', () => {
           '-e',
           `
         import { AdtApiError } from ${JSON.stringify(source)};
-        for (const raw of ${JSON.stringify(inputs)}) {
+        // Build the large input here so it does not exceed the OS argument-size limit.
+        for (const raw of [...${JSON.stringify(inputs)}, \`x\${' <html>'.repeat(300_000)}\`]) {
           new AdtApiError(raw, 500, '/p', raw);
           AdtApiError.extractProperties(raw);
           AdtApiError.extractAllMessages(raw);
