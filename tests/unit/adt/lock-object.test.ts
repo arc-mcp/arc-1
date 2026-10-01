@@ -71,16 +71,16 @@ describe('parseLockObjectDefinition', () => {
     expect(def).not.toHaveProperty('lockModules');
   });
 
-  it('normalizes case, defaults lockMode to E and parameterWanted to true', () => {
+  it('normalizes case and defaults the parameter name to the field name', () => {
     const def = parseLockObjectDefinition(
       JSON.stringify({
-        primaryTable: { tableName: 'ztab' },
-        lockParameters: [{ tableName: 'ztab', fieldName: 'docid' }],
+        primaryTable: { tableName: 'ztab', lockMode: 'e' },
+        lockParameters: [{ tableName: 'ztab', fieldName: 'docid', parameterWanted: false }],
       }),
     );
     expect(def.primaryTable).toEqual({ tableName: 'ZTAB', lockMode: 'E' });
     expect(def.lockParameters).toEqual([
-      { parameterName: 'DOCID', tableName: 'ZTAB', fieldName: 'DOCID', parameterWanted: true },
+      { parameterName: 'DOCID', tableName: 'ZTAB', fieldName: 'DOCID', parameterWanted: false },
     ]);
   });
 
@@ -106,7 +106,15 @@ describe('parseLockObjectDefinition', () => {
     ],
     ['an unknown lock mode', '{"primaryTable":{"tableName":"ZT","lockMode":"Q"}}', /lockMode "Q" must be one of/],
     ['a runtime-only lock mode', '{"primaryTable":{"tableName":"ZT","lockMode":"O"}}', /lockMode "O" must be one of/],
-    ['an invalid table name', '{"primaryTable":{"tableName":"Z-T"}}', /not a valid DDIC name/],
+    ['an invalid table name', '{"primaryTable":{"tableName":"Z-T","lockMode":"E"}}', /not a valid DDIC name/],
+    // A supplied entry replaces the stored one: a default would silently reset S/X/"" or a false flag.
+    ['an omitted lock mode', '{"primaryTable":{"tableName":"ZT"}}', /primaryTable\.lockMode undefined must be one of/],
+    ['a null lock mode', '{"secondaryTables":[{"tableName":"ZT","lockMode":null}]}', /lockMode null must be one of/],
+    [
+      'an omitted parameterWanted',
+      '{"lockParameters":[{"tableName":"ZT","fieldName":"K"}]}',
+      /parameterWanted must be true or false/,
+    ],
     ['a non-array secondaryTables', '{"secondaryTables":{}}', /secondaryTables must be an array/],
     ['a non-boolean allowRFC', '{"allowRFC":"yes"}', /allowRFC must be true or false/],
   ])('rejects %s', (_label, source, message) => {
@@ -116,10 +124,11 @@ describe('parseLockObjectDefinition', () => {
 
 describe('mergeLockObjectDefinition', () => {
   it('keeps stored values for omitted keys', () => {
-    const merged = mergeLockObjectDefinition(EXISTING, {
-      allowRFC: true,
-      primaryTable: { tableName: 'ZTAB', lockMode: 'S' },
-    });
+    // allowRFC is stored true and omitted: it must survive, like the tables and parameters.
+    const merged = mergeLockObjectDefinition(
+      { ...EXISTING, allowRFC: true },
+      { primaryTable: { tableName: 'ZTAB', lockMode: 'S' } },
+    );
     expect(merged).toEqual({
       allowRFC: true,
       primaryTable: { tableName: 'ZTAB', lockMode: 'S' },
@@ -137,6 +146,8 @@ describe('mergeLockObjectDefinition', () => {
     expect(() =>
       mergeLockObjectDefinition(EXISTING, { secondaryTables: [{ tableName: 'ZITEM', lockMode: 'E' }] }),
     ).toThrow(/requires "lockParameters"/);
+    // Live 758/816/920: [] on update came back with every parameter unwanted (generic lock).
+    expect(() => mergeLockObjectDefinition(EXISTING, { lockParameters: [] })).toThrow(/\[\] is refused on update/);
     const params = [{ parameterName: 'K', tableName: 'ZOTHER', fieldName: 'K', parameterWanted: true }];
     expect(
       mergeLockObjectDefinition(EXISTING, {

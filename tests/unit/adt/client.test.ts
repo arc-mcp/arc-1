@@ -1843,6 +1843,12 @@ describe('AdtClient', () => {
       }
     });
 
+    it('returns the ADT metadata URI for a SQL-sourced lock object', async () => {
+      mockTadirPost([{ pgmid: 'R3TR', object: 'ENQU', obj_name: 'EZARC1', devclass: 'ZPKG' }]);
+      const result = await createClient().lookupObjectsViaDb(['EZARC1']);
+      expect(result[0]?.matches[0]?.uri).toBe('/sap/bc/adt/ddic/lockobjects/sources/EZARC1');
+    });
+
     it('adds AND object IN (...) when objectTypes filter is supplied', async () => {
       mockTadirPost([{ pgmid: 'R3TR', object: 'DDLS', obj_name: 'ZA', devclass: 'ZPKG' }]);
       const client = createClient();

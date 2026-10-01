@@ -27,7 +27,6 @@ export const LOCKOBJECT_COLLECTION = '/sap/bc/adt/ddic/lockobjects/sources';
 
 /** Definition defaults: E/S/X, or no lock for a table used only as a foreign-key link. O is runtime-only. */
 export const LOCK_MODES = ['E', 'S', 'X', ''] as const;
-export type LockMode = (typeof LOCK_MODES)[number];
 
 export interface LockTable {
   tableName: string;
@@ -150,10 +149,11 @@ function validateLockTable(value: unknown, where: string): LockTable {
   const rec = asRecord(value);
   if (!rec) throw invalid(`${where} must be an object {"tableName":"…","lockMode":"E"}.`);
   rejectUnknownKeys(rec, ['tableName', 'lockMode'], where);
-  const lockMode = text(rec.lockMode ?? 'E').toUpperCase();
-  if (!(LOCK_MODES as readonly string[]).includes(lockMode)) {
+  // Required: a supplied entry replaces the stored one, so a default would silently reset S/X/"".
+  const lockMode = typeof rec.lockMode === 'string' ? rec.lockMode.trim().toUpperCase() : undefined;
+  if (lockMode === undefined || !(LOCK_MODES as readonly string[]).includes(lockMode)) {
     throw invalid(
-      `${where}.lockMode "${text(rec.lockMode)}" must be one of ${LOCK_MODES.map((mode) => JSON.stringify(mode)).join(', ')}. Optimistic mode O is a runtime option, not a definition default.`,
+      `${where}.lockMode ${JSON.stringify(rec.lockMode)} must be one of ${LOCK_MODES.map((mode) => JSON.stringify(mode)).join(', ')}. Optimistic mode O is a runtime option, not a definition default.`,
     );
   }
   return { tableName: validateName(rec.tableName, `${where}.tableName`), lockMode };
@@ -198,8 +198,7 @@ export function parseLockObjectDefinition(source: string): LockObjectDefinition 
         parameterName: validateName(prec.parameterName ?? prec.fieldName, `${where}.parameterName`),
         tableName: validateName(prec.tableName, `${where}.tableName`),
         fieldName: validateName(prec.fieldName, `${where}.fieldName`),
-        parameterWanted:
-          prec.parameterWanted === undefined ? true : validateBoolean(prec.parameterWanted, `${where}.parameterWanted`),
+        parameterWanted: validateBoolean(prec.parameterWanted, `${where}.parameterWanted`),
       };
     });
   }
@@ -221,6 +220,12 @@ export function mergeLockObjectDefinition(existing: LockObjectInfo, def: LockObj
   const tableKey = (p: LockTable, s: LockTable[]) => [p.tableName, ...s.map((t) => t.tableName)].join(',');
   const tablesChanged =
     tableKey(primaryTable, secondaryTables) !== tableKey(existing.primaryTable, existing.secondaryTables);
+  if (def.lockParameters?.length === 0) {
+    throw invalid(
+      '"lockParameters": [] is refused on update: SAP re-derives every parameter with parameterWanted=false, ' +
+        'so ENQUEUE_ locks generically. List each parameter; set parameterWanted=false to exclude one.',
+    );
+  }
   if (tablesChanged && def.lockParameters === undefined) {
     throw invalid(
       'changing primaryTable/secondaryTables requires "lockParameters" for the new tables ' +

@@ -58,7 +58,14 @@ function sap(
 ) {
   let current = row.xml;
   let locked = false;
-  const calls: Array<{ method: string; url: string; body: string; stateful: boolean; locked: boolean }> = [];
+  const calls: Array<{
+    method: string;
+    url: string;
+    body: string;
+    stateful: boolean;
+    locked: boolean;
+    cookie: string;
+  }> = [];
   mockFetch.mockImplementation(
     async (url: string | URL, opts?: { method?: string; body?: unknown; headers?: Record<string, string> }) => {
       const method = opts?.method ?? 'GET';
@@ -69,6 +76,7 @@ function sap(
         body: String(opts?.body ?? ''),
         stateful: opts?.headers?.['X-sap-adt-sessiontype'] === 'stateful',
         locked,
+        cookie: opts?.headers?.Cookie ?? '',
       };
       calls.push(call);
       if (method === 'POST' && path.includes('_action=LOCK')) {
@@ -76,7 +84,9 @@ function sap(
         // A colleague saves and releases their lock before ours is granted.
         current = current.replace(/adtcore:description="[^"]*"/, `adtcore:description="${colleagueDescription}"`);
         locked = true;
-        return mockResponse(200, '<asx:values><LOCK_HANDLE>LH</LOCK_HANDLE><CORRNR>REQ1</CORRNR></asx:values>');
+        return mockResponse(200, '<asx:values><LOCK_HANDLE>LH</LOCK_HANDLE><CORRNR>REQ1</CORRNR></asx:values>', {
+          'set-cookie': 'sap-contextid=LOCK_SESSION; Path=/',
+        });
       }
       if (method === 'POST' && path.includes('_action=UNLOCK')) {
         locked = false;
@@ -123,7 +133,8 @@ describe('metadata updates preserve edits committed before the lock', () => {
     expect(put?.body).toContain('adtcore:description="Colleague description"');
     expect(put?.url).toContain('corrNr=REQ1');
     const reads = calls.filter((c) => c.method === 'GET' && c.url.includes(row.path));
-    expect(reads.some((c) => c.locked && c.stateful)).toBe(true);
+    expect(reads.some((c) => c.locked && c.stateful && c.cookie.includes('sap-contextid=LOCK_SESSION'))).toBe(true);
+    expect(put?.cookie).toContain('sap-contextid=LOCK_SESSION');
     expect(calls.find((c) => c.url.includes('_action=LOCK'))?.stateful).toBe(true);
     expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
   });

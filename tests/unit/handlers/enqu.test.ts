@@ -72,6 +72,8 @@ describe('ENQU (lock object) handlers', () => {
     expect(json.secondaryTables).toEqual([{ tableName: 'EKPO', lockMode: 'E' }]);
     const get = calls.find((c) => c.method === 'GET' && c.url.includes(`${ENQU_URL}/EMEKKOE`));
     expect(get?.accept).toBe(LOCKOBJECT_CT);
+    // Omitted version = SAP's developer view, so a pending draft is visible.
+    expect(get?.url).not.toContain('version=');
   });
 
   it('SAPRead accepts the ADT slash type ENQU/DL and forwards an explicit version', async () => {
@@ -137,6 +139,10 @@ describe('ENQU (lock object) handlers', () => {
     expect(put?.body).toContain('<enqu:parameterWanted>false</enqu:parameterWanted><enqu:parameterName>EBELN');
     expect(put?.body).toContain('adtcore:description="Purchasing Document Exclusive"');
     expect(calls.some((c) => c.method === 'POST' && c.url.includes('_action=UNLOCK'))).toBe(true);
+    // The merge base is the developer view: an explicit version would drop an unactivated draft.
+    const reads = calls.filter((c) => c.method === 'GET' && c.url.includes(`${ENQU_URL}/EMEKKOE`));
+    expect(reads.length).toBeGreaterThan(0);
+    expect(reads.every((c) => !c.url.includes('version='))).toBe(true);
   });
 
   it('SAPWrite update refuses a table change without lockParameters and never PUTs', async () => {
@@ -152,23 +158,47 @@ describe('ENQU (lock object) handlers', () => {
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
   });
 
-  it('refuses ENQU create when discovery does not advertise the lock-object collection', async () => {
-    setCachedFeatures({
-      ...featuresOff(),
-      abapRelease: '750',
-      systemType: 'onprem',
-      discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
-    });
-    mockFetch.mockReset();
+  it.each([
+    { lockParameters: [] },
+    { primaryTable: { tableName: 'EKKO' } },
+    { lockParameters: [{ parameterName: 'EBELN', tableName: 'EKKO', fieldName: 'EBELN' }] },
+  ])('refuses an unsafe partial update without writing: %j', async (definition) => {
+    const calls = mockSap();
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-      action: 'create',
+      action: 'update',
       type: 'ENQU',
-      name: 'EZTEST',
-      package: '$TMP',
-      source: JSON.stringify({ primaryTable: { tableName: 'ZTAB' } }),
+      name: 'EMEKKOE',
+      source: JSON.stringify(definition),
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('Lock object (ENQU) writes are not available');
-    expect(mockFetch.mock.calls).toHaveLength(0);
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    const locked = calls.some((c) => c.url.includes('_action=LOCK'));
+    expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(locked);
   });
+
+  it.each(['create', 'batch_create'] as const)(
+    'refuses ENQU %s when discovery does not advertise the lock-object collection',
+    async (action) => {
+      setCachedFeatures({
+        ...featuresOff(),
+        abapRelease: '750',
+        systemType: 'onprem',
+        discoveryMap: new Map<string, string[]>([['/sap/bc/adt/ddic/structures', ['application/*']]]),
+      });
+      mockFetch.mockReset();
+      const entry = {
+        type: 'ENQU',
+        name: 'EZTEST',
+        source: JSON.stringify({ primaryTable: { tableName: 'ZTAB', lockMode: 'E' } }),
+      };
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action,
+        package: '$TMP',
+        ...(action === 'create' ? entry : { objects: [entry] }),
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Lock object (ENQU) writes are not available');
+      expect(mockFetch.mock.calls).toHaveLength(0);
+    },
+  );
 });

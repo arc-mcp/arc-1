@@ -747,7 +747,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       type === 'SRVB'
         ? `\n\nNext steps:\n1. SAPActivate(type="SRVB", name="${name}")\n2. SAPActivate(action="publish_srvb", name="${name}")`
         : type === 'ENQU'
-          ? `\n\nNext step: SAPActivate(type="ENQU", name="${name}") — activation generates ENQUEUE_${name}/DEQUEUE_${name} (and derives lock parameters from the key fields if none were given).`
+          ? `\n\nNext step: SAPActivate(type="ENQU", name="${name}") — activation generates ENQUEUE_${name}/DEQUEUE_${name}.`
           : '';
     return textResult(`Created ${type} ${name} in package ${pkg}.\n${result}${followUpHint}`);
   }

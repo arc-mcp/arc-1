@@ -38,8 +38,8 @@ GET `…/lockobjects/sources/{name}` (Accept `lockobjects.v1+xml`), optional `?v
 | Step | Observation |
 |---|---|
 | Create POST without `<enqu:content>` | 400 `SDDIC_ADT_ENQU/201` "Primary table name must not be empty" |
-| Create POST with only `primaryTable` | 201, inactive, empty `lockParameters` and `lockModules` |
-| Activate after that create | parameters derived from the key fields with `parameterWanted=true`; `ENQUEUE_`/`DEQUEUE_` generated |
+| Create POST with only `primaryTable` | 201, inactive; contributor run had empty `lockParameters`, but 2026-09-30 reads already contained derived parameters; `lockModules` empty |
+| Activate after that create | `ENQUEUE_`/`DEQUEUE_` generated; key parameters have `parameterWanted=true` (may already be present before activation) |
 | Create POST with explicit `lockParameters` | honored as sent (incl. `parameterWanted=false`) — no follow-up PUT needed |
 | Update: LOCK → PUT full document (no `lockModules`) → UNLOCK | 200; description, `allowRFC`, lock modes and `parameterWanted` round-trip through activation |
 | Update changing the primary table with an **empty** parameter list | activation re-derives the parameters, but with `parameterWanted=false` for every field |
@@ -85,7 +85,7 @@ Two input defects were reproduced and corrected:
 | 816 / a4h-2025, HTTPS Basic | The same 56-step lifecycle passed. |
 | BTP free plan / 920 SP04, named-user OAuth | 61 dispatcher steps passed in a disposable `ZLOCAL` sub-package, including the same mutation, version, contention and refusal checks, secondary tables, batch activation and deletion. Private data-element/table fixtures supplied the foreign-key relationship. |
 
-On update, an explicit empty parameter list re-derived parameters with `parameterWanted=false`;
+The earlier live update with an explicit empty parameter list re-derived parameters with `parameterWanted=false`; ARC-1 now refuses this input on update and requires explicit nested `lockMode`/`parameterWanted` values;
 omitting the list preserved existing values. This distinction remains deliberate and documented.
 A read through the shared client instead of the locked session fails the new ENQU row in the
 existing metadata concurrency test. Nested-key and mode tests fail on the contributor's parser.
