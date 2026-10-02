@@ -113,6 +113,25 @@ describe('parseClassStructure — NPL (kernel 7.50) split shape', () => {
   });
 });
 
+describe('parseClassStructure — inherited methods', () => {
+  it.each(['CLAS/OO', 'CLAS/OM'])('preserves redefinition from either %s half of a split method', (type) => {
+    const xml = NPL_XML.replace(
+      `adtcore:type="${type}" adtcore:name="DESCRIBE_BY_DATA"`,
+      `adtcore:type="${type}" adtcore:name="DESCRIBE_BY_DATA" redefinition="true"`,
+    );
+    expect(parseClassStructure(xml).methods.find((m) => m.name === 'DESCRIBE_BY_DATA')?.redefinition).toBe(true);
+  });
+
+  it.each([
+    ['true', true],
+    ['false', undefined],
+  ] as const)('reads a unified redefinition="%s" flag', (flag, expected) => {
+    const xml = A4H_XML.replace('adtcore:name="HELLO"', `adtcore:name="HELLO" redefinition="${flag}"`);
+    expect(parseClassStructure(xml).methods.find((m) => m.name === 'HELLO')?.redefinition).toBe(expected);
+    expect(parseClassStructure(xml).methods.find((m) => m.name === 'GOODBYE')?.redefinition).toBeUndefined();
+  });
+});
+
 describe('parseClassStructure — error handling', () => {
   it('throws AdtApiError on empty input', () => {
     expect(() => parseClassStructure('')).toThrow(AdtApiError);

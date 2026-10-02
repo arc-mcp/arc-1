@@ -51,7 +51,7 @@ const BUDGETS = {
   // "reference" as a transport id, and a malformed escape threw away the whole feed
   // (docs/plans/2026-08-03-transport-diff.md).
   // -25: parseXml decodes entities itself, so the per-parser decodes went away.
-  'src/adt/xml-parser.ts': 1770,
+  'src/adt/xml-parser.ts': 1769,
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
   // +88 for dump paging: SAP caps the dumps feed at 100 entries and ignores $skip, so listDumps walks

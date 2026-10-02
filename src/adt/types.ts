@@ -1236,6 +1236,8 @@ export interface LineRange {
  */
 export interface MethodStructure {
   name: string;
+  /** SAP marks methods that retain an inherited signature and visibility. */
+  redefinition?: boolean;
   visibility: 'public' | 'protected' | 'private';
   level: 'instance' | 'static';
   abstract: boolean;

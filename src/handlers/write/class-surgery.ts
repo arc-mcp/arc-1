@@ -446,6 +446,10 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
       );
     }
 
+    if (method.redefinition) {
+      return errorResult('Redefined methods must keep their inherited visibility.');
+    }
+
     // The target section header must already exist (same constraint as add_method).
     const anchor = findSectionAnchor(main, structure, target);
     if (!anchor) {

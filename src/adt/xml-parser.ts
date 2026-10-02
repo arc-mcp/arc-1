@@ -1589,12 +1589,8 @@ function parseLineRange(href: string): LineRange | null {
  * Live evidence: fixtures `tests/fixtures/xml/objectstructure-clas-a4h-758.xml`
  * (single-element shape) and `objectstructure-clas-npl-750.xml` (split shape).
  *
- * Implementation note: this parser is regex-driven, not XMLParser-driven. The
- * `objectstructure` response is large (~40KB for `CL_ABAP_TYPEDESCR`) and the
- * existing `removeNSPrefix: true` parser config would strip the `adtcore:type`
- * attribute we need for the OO/OM merge. The element shape is regular enough
- * that scoped regexes are cheaper and more readable than reconfiguring the
- * shared parser.
+ * Scoped regexes preserve the `adtcore:type` prefix used to merge OO/OM entries;
+ * the shared XML parser's `removeNSPrefix` setting would strip it.
  */
 export function parseClassStructure(xml: string, className?: string): ClassStructure {
   if (!xml.trim()) {
@@ -1654,6 +1650,7 @@ export function parseClassStructure(xml: string, className?: string): ClassStruc
   // 7.50 split shape: per-name accumulators.
   type PartialMethod = {
     name: string;
+    redefinition?: boolean;
     visibility?: 'public' | 'protected' | 'private';
     level?: 'instance' | 'static';
     abstract: boolean;
@@ -1699,6 +1696,7 @@ export function parseClassStructure(xml: string, className?: string): ClassStruc
       // 7.58+ the single CLAS/OM element carries everything.
       if (visibility && (!entry.visibility || type === 'CLAS/OO')) entry.visibility = visibility;
       if (level && (!entry.level || type === 'CLAS/OO')) entry.level = level;
+      if (/\bredefinition="true"/.test(attrs)) entry.redefinition = true;
       if (isAbstract) entry.abstract = true;
       if (isConstructor) entry.constructor = true;
       if (defBlock) {
@@ -1749,6 +1747,7 @@ export function parseClassStructure(xml: string, className?: string): ClassStruc
     if (!m.definition) continue;
     methods.push({
       name: m.name,
+      ...(m.redefinition ? { redefinition: true } : {}),
       visibility: m.visibility ?? 'public',
       level: m.level ?? 'instance',
       abstract: m.abstract,
