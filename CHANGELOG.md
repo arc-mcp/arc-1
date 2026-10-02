@@ -5,6 +5,58 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.5.0](https://github.com/arc-mcp/arc-1/compare/v1.4.0...v1.5.0) (2026-10-02)
+
+
+### Features
+
+* add APLO, SAJC and SAJT server-driven object support ([#876](https://github.com/arc-mcp/arc-1/issues/876)) ([fc2e02c](https://github.com/arc-mcp/arc-1/commit/fc2e02c9583cb217812cf3cc8d67b4fde778305b))
+* add ENQU lock object read and write support ([#877](https://github.com/arc-mcp/arc-1/issues/877)) ([1913592](https://github.com/arc-mcp/arc-1/commit/19135928c1e9664e7db5f621bb515525a2b7ec0e))
+* add explicit source preconditions to SAPWrite ([#853](https://github.com/arc-mcp/arc-1/issues/853)) ([699b965](https://github.com/arc-mcp/arc-1/commit/699b9657511863ad7057dfd5e744f1ab7b816201))
+* add surgical FORM and MODULE insertion ([#880](https://github.com/arc-mcp/arc-1/issues/880)) ([d43e9f8](https://github.com/arc-mcp/arc-1/commit/d43e9f8fcaec794d5ac1ddf26fc5fb6f80ffe6d9))
+* expose syntax checks through read-only SAPRead ([#855](https://github.com/arc-mcp/arc-1/issues/855)) ([08bfa42](https://github.com/arc-mcp/arc-1/commit/08bfa4217f2b20e08556a3f5ccf07d98a0bfaa2d))
+* identify outbound SAP requests with a configurable User-Agent ([#859](https://github.com/arc-mcp/arc-1/issues/859)) ([9bf8423](https://github.com/arc-mcp/arc-1/commit/9bf84230dc1025c6a8ad3fe47b09cdc17b5b775a)), closes [#796](https://github.com/arc-mcp/arc-1/issues/796)
+
+
+### Bug Fixes
+
+* accept pooled and cluster tables in replacement lineage ([#863](https://github.com/arc-mcp/arc-1/issues/863)) ([6c517de](https://github.com/arc-mcp/arc-1/commit/6c517de2104431197148863fcfb6e859ca62318e))
+* accept version in hyperfocused SAP calls ([#856](https://github.com/arc-mcp/arc-1/issues/856)) ([53fd698](https://github.com/arc-mcp/arc-1/commit/53fd6986908203512daeefbca697b7788f41e88f))
+* apply bounded source grep to function groups ([#889](https://github.com/arc-mcp/arc-1/issues/889)) ([a1875ea](https://github.com/arc-mcp/arc-1/commit/a1875eaa34ccee97e3d0085ed4bdb0df1e6bb88f))
+* correct SAP authorization guidance and honor log levels ([#816](https://github.com/arc-mcp/arc-1/issues/816)) ([f99b4d5](https://github.com/arc-mcp/arc-1/commit/f99b4d568cd1143a5918c429177dd66ec559bf13))
+* decode SAP errors once and protect abapGit diagnostics ([#894](https://github.com/arc-mcp/arc-1/issues/894)) ([20643a0](https://github.com/arc-mcp/arc-1/commit/20643a0b37776bb286a7ff90cddd68ed8b507b48))
+* decode XML entities once at the parse boundary ([#890](https://github.com/arc-mcp/arc-1/issues/890)) ([69b0ae7](https://github.com/arc-mcp/arc-1/commit/69b0ae731445bce7c42415ca1a2b10426c608c19))
+* **deps:** patch ip-address IPv6 classification vulnerabilities ([#883](https://github.com/arc-mcp/arc-1/issues/883)) ([2437dbe](https://github.com/arc-mcp/arc-1/commit/2437dbe7b985103269ba8ad79e8a4b9bda739733))
+* expose only reviewed reads to extension tools ([#886](https://github.com/arc-mcp/arc-1/issues/886)) ([ac97838](https://github.com/arc-mcp/arc-1/commit/ac97838b48b56c417f92ccb5ac1d28261cc96cd9))
+* expose SAP session failures in tests and CSRF audit ([#860](https://github.com/arc-mcp/arc-1/issues/860)) ([40aa1cc](https://github.com/arc-mcp/arc-1/commit/40aa1cc35edb81c63c409c2bde3db0a7f46502fb))
+* honor explicit server-driven read versions ([#846](https://github.com/arc-mcp/arc-1/issues/846)) ([e7a3087](https://github.com/arc-mcp/arc-1/commit/e7a3087604606e8db4b29e308f3ba71cddf05dd7))
+* keep interface redefinitions public during visibility edits ([#902](https://github.com/arc-mcp/arc-1/issues/902)) ([7617bf4](https://github.com/arc-mcp/arc-1/commit/7617bf4985abae9bd5dcc4e2bc8a31f03ced9488))
+* keep stored descriptions and row types on TTYP updates ([#891](https://github.com/arc-mcp/arc-1/issues/891)) ([b08f3b4](https://github.com/arc-mcp/arc-1/commit/b08f3b4dc4c8d939fb25a182da6f8720d2e41f7a))
+* merge metadata updates inside the SAP lock ([#879](https://github.com/arc-mcp/arc-1/issues/879)) ([050dee0](https://github.com/arc-mcp/arc-1/commit/050dee0cc3dd0b92aeeeea2186248c173a2138a6))
+* patch optional UI AppRouter dependencies ([#897](https://github.com/arc-mcp/arc-1/issues/897)) ([e2638ce](https://github.com/arc-mcp/arc-1/commit/e2638cebd643b4b0f475378ae68736c55f41aa2e))
+* precheck and confirm server-driven deletions ([#847](https://github.com/arc-mcp/arc-1/issues/847)) ([5f80e23](https://github.com/arc-mcp/arc-1/commit/5f80e237db422e31549587495b155b680bd03c61))
+* preserve class drafts throughout surgical edits ([#845](https://github.com/arc-mcp/arc-1/issues/845)) ([056f416](https://github.com/arc-mcp/arc-1/commit/056f4160193ea209e69cfa32c0255aca12b1c1b5))
+* preserve concurrent edits during RAP scaffolding ([#857](https://github.com/arc-mcp/arc-1/issues/857)) ([934cc0a](https://github.com/arc-mcp/arc-1/commit/934cc0a17174936145e834d2dd5d68234c31453c))
+* preserve inherited visibility when moving methods ([#903](https://github.com/arc-mcp/arc-1/issues/903)) ([2673809](https://github.com/arc-mcp/arc-1/commit/267380922b10277b5d9ecf8c3aaaccb965f6a595))
+* preserve tool-call IDs across eval turns ([#854](https://github.com/arc-mcp/arc-1/issues/854)) ([be600d9](https://github.com/arc-mcp/arc-1/commit/be600d92665b2baef371c64681fd8a9062a50db1))
+* prevent malformed SAP errors from stalling the parser ([#893](https://github.com/arc-mcp/arc-1/issues/893)) ([d7c4c4f](https://github.com/arc-mcp/arc-1/commit/d7c4c4f69206b07273f68d40da462e68554c351e))
+* prevent transient replay of extension POST requests ([#887](https://github.com/arc-mcp/arc-1/issues/887)) ([969159d](https://github.com/arc-mcp/arc-1/commit/969159dd319bcfadb2a1f4150561d5d383687b90))
+* re-resolve TABL write routes on every mutation ([#873](https://github.com/arc-mcp/arc-1/issues/873)) ([716d9a5](https://github.com/arc-mcp/arc-1/commit/716d9a5455d2ade28fbbd63d6de4cc5e228842c0))
+* read enhancement implementations by ADT subtype ([#901](https://github.com/arc-mcp/arc-1/issues/901)) ([f0f8a33](https://github.com/arc-mcp/arc-1/commit/f0f8a332694fc4f045e1e28bba2d8847a57a9a08))
+* recognize Windows drive-letter paths in SAP_DENY_ACTIONS ([#598](https://github.com/arc-mcp/arc-1/issues/598)) ([e94fd16](https://github.com/arc-mcp/arc-1/commit/e94fd16736c627224ff8eded0f7194d64c8ed877))
+* refuse TABL mutations whose subtype cannot be verified ([#874](https://github.com/arc-mcp/arc-1/issues/874)) ([88819aa](https://github.com/arc-mcp/arc-1/commit/88819aa00857dcddc8ebebfdea6747a49be9a147))
+* resolve function-group objects in transport checks and history ([#576](https://github.com/arc-mcp/arc-1/issues/576)) ([4d00479](https://github.com/arc-mcp/arc-1/commit/4d0047919cea1a406eaca5a1d6badf6baec96554))
+* resolve replacement lineage through the active DDIC catalog ([#848](https://github.com/arc-mcp/arc-1/issues/848)) ([e6314ab](https://github.com/arc-mcp/arc-1/commit/e6314ab2a50b43f47b91a8b17c7ebe3939b05004))
+* reuse the SAP login across HTTP tool calls ([#871](https://github.com/arc-mcp/arc-1/issues/871)) ([3547812](https://github.com/arc-mcp/arc-1/commit/354781235119de2c363ecfc85178af852c659a30))
+* route generic server-driven calls through the registry ([#849](https://github.com/arc-mcp/arc-1/issues/849)) ([202ad56](https://github.com/arc-mcp/arc-1/commit/202ad5668e00f8cd8c9c828dd56d54dbb7c1d9f5))
+* support interface method redefinitions in class surgery ([#900](https://github.com/arc-mcp/arc-1/issues/900)) ([0fa0418](https://github.com/arc-mcp/arc-1/commit/0fa041807e1be55b7591405cd7703d46eae083be))
+
+
+### Tests
+
+* **integration:** delete composition-linked DDLS pairs as one set ([#872](https://github.com/arc-mcp/arc-1/issues/872)) ([9fcad11](https://github.com/arc-mcp/arc-1/commit/9fcad11e98d9491b2339b9464dce10eb05c712ed))
+* normalize Windows paths in skip-discipline exclusions ([#599](https://github.com/arc-mcp/arc-1/issues/599)) ([b9755b2](https://github.com/arc-mcp/arc-1/commit/b9755b254096c045a4a20fef33d438a120c86559))
+
 ## [1.4.0](https://github.com/arc-mcp/arc-1/compare/v1.3.0...v1.4.0) (2026-09-23)
 
 
