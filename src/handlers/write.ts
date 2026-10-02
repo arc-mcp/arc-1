@@ -172,9 +172,10 @@ export async function handleSAPWrite(
     // (live-verified a4h 816 + 758). A bare INCL with no group stays a standalone /programs/includes/.
     const group = String(args.group).trim();
     if (action === 'create' || action === 'delete') {
-      // SAP derives the include's identity from the group: anything not named L<GROUP>… earns an
+      // SAP names includes [namespace/]L<GROUP>…: a different prefix earns an
       // opaque 500 "Attributes for program X have not been saved". Reject it with a usable message.
-      const expectedPrefix = `L${group.toUpperCase()}`;
+      const match = group.toUpperCase().match(/^(\/[^/]+\/)(.+)$/);
+      const expectedPrefix = match ? `${match[1]}L${match[2]}` : `L${group.toUpperCase()}`;
       if (!name.toUpperCase().startsWith(expectedPrefix)) {
         return errorResult(
           `FUGR structural include names must start with ${expectedPrefix} — got "${name}". ` +

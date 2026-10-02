@@ -387,7 +387,7 @@
         },
         "group": {
           "type": "string",
-          "description": "FUNC: existing FUGR; required for create, otherwise resolved. INCL: group for L<group>…; omit for standalone."
+          "description": "FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone."
         },
         "dataType": {
           "type": "string",

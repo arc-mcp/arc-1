@@ -721,7 +721,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: group for L<group>…; omit for standalone.',
+              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
