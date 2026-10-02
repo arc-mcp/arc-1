@@ -22,7 +22,7 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
-## 1.5.0 — guarded source edits and verified reads (unreleased)
+## 1.5.0 — guarded source edits and verified reads (2026-10-02)
 
 Adds optional source preconditions and read-only syntax checks. No new server settings are required;
 refresh your client's tool list after upgrading. Review User-Agent matching rules in gateways/WAFs
@@ -47,7 +47,8 @@ to `arc-1/<version>`.
 | Evaluation conversations ([#854](https://github.com/arc-mcp/arc-1/pull/854)) | The eval harness preserves provider call IDs and groups results from the same assistant turn. | Rerun affected evaluations; production tool behavior is unchanged. |
 | RAP scaffolding ([#857](https://github.com/arc-mcp/arc-1/pull/857)) | Derives class replacements under the lock, preserving edits completed before lock acquisition. | Unchanged mutation calls also need the lock; separate include saves remain non-atomic. See [RAP scaffolding](tools.md#rap-handler-scaffolding). |
 | Request identification ([#859](https://github.com/arc-mcp/arc-1/pull/859), [#796](https://github.com/arc-mcp/arc-1/issues/796)) | SAP requests identify as `arc-1/<version>` by default, including multi-target routes. | Optionally set `SAP_USER_AGENT` / `--user-agent` to identify the deployment; see [configuration](configuration-reference.md#sap-connection). |
-| IPv6 dependency correction ([#883](https://github.com/arc-mcp/arc-1/pull/883)) | Updates the lockfile's transitive `ip-address` dependency to fix private/link-local classification. ARC-1's rate-limit consumer does not call those classifiers; IP bucket behavior remains covered by regression tests. | Rebuild/redeploy from the updated lockfile. No configuration change. |
+| IP address dependency corrections ([#883](https://github.com/arc-mcp/arc-1/pull/883), [#899](https://github.com/arc-mcp/arc-1/pull/899)) | Updates the transitive `ip-address` dependency with private/link-local classification, cross-family subnet and input-validation fixes. ARC-1's rate-limit consumer uses subnet formatting; IPv4/IPv6 bucket behavior remains covered by regression tests. | Rebuild/redeploy from the updated lockfile. No configuration change. |
+| Root URI dependency ([#898](https://github.com/arc-mcp/arc-1/pull/898)) | Updates the transitive `fast-uri` parser used by AJV so percent-encoded uppercase host names normalize consistently. | Rebuild/redeploy from the updated lockfile. No configuration change. |
 | Integration fixture cleanup ([#872](https://github.com/arc-mcp/arc-1/pull/872)) | Test cleanup deletes mutually referencing DDLS fixtures together and verifies their absence. Product-level set deletion remains deferred. | No operator action; this changes the test harness only. |
 | AppRouter URI dependency ([#882](https://github.com/arc-mcp/arc-1/pull/882)) | Updates the optional AppRouter's transitive URI parser to a patched version. The root MCP dependency was already patched. | If using `mta-ui-approuter.mtaext`, rebuild and redeploy the MTAR. Otherwise, `none`. |
 | AppRouter HTTP and logging dependencies ([#897](https://github.com/arc-mcp/arc-1/pull/897)) | Keeps AppRouter 23.0.0 and updates Axios and SAP Logging, including its Moment dependency, to remove the reported dependency vulnerabilities. | If using `mta-ui-approuter.mtaext`, rebuild and redeploy the MTAR. No configuration change. |
@@ -66,6 +67,13 @@ to `arc-1/<version>`.
 
 Source hashes remain optional; unguarded writes do not protect against edits between tool calls.
 Separate server-driven version reads are not an atomic snapshot.
+
+**Known dependency issue:** the MCP server and optional AppRouter still include `node-forge` 1.4.0,
+affected by [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv).
+No patched version was available when preparing this release. The reviewed built-in dependency paths
+use certificate parsing and key conversion; no call to the affected RSA signature verifier was identified.
+This is an accepted release risk, not a dependency fix. A dependency patch is planned once a reviewed
+upstream fix is available; keep the alerts open and update both the server and AppRouter when it ships.
 
 ## 1.4.0 — CDS types, safer writes, and diagnostics (2026-09-23)
 
