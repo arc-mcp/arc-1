@@ -70,7 +70,7 @@ refuses structural includes and remains unchanged.
 - All write fixtures are disposable `$TMP` objects. Standard namespaced objects
   were only read.
 
-## Final verification and review
+## Initial verification and review
 
 Tested ARC-1 1.5.0, base `1f00c7ac` plus this PR's runtime patch, on 2026-10-02.
 
@@ -93,13 +93,68 @@ Tested ARC-1 1.5.0, base `1f00c7ac` plus this PR's runtime patch, on 2026-10-02.
   absent, including the rejected namespace probe and an earlier run whose
   read-back assertion needed CRLF normalization.
 
-Final diff review found no further actionable findings. The runtime patch only
+The initial diff review found no further actionable findings. That runtime patch only
 changes the shared prefix calculation; package resolution, mutation gates,
 encoded URL/XML construction, and locking retain their existing implementations.
 Regression tests cover denied and unresolved include packages before mutation.
 All five snapshot changes are the same corrected `group` description; there are
 no input or capability changes. Live namespaced deletion and transported writes
 remain unverified, as stated above.
+
+## Claude review reassessment
+
+Reviewed the supplied findings against PR head `ff8a8fd1`, then tested the
+lowercase-parent scenario on the same A4H/758 SP02 system.
+
+| Finding | Assessment and action |
+|---|---|
+| Main SAPWrite description still promises `L<GROUP>` and automatic insertion | Confirmed. Corrected `tool-descriptions.ts` and its four on-prem snapshots to show `[/NS/]L<GROUP>` and require checking the main-program line. The earlier change only covered the `group` property's description. |
+| Lowercase `containerRef` can break include creation | Confirmed live, with a stronger failure than the proposed missing-insertion explanation: HTTP 500 and no include created. Uppercase the trimmed group in the INCL XML builder; leave URL encoding and package resolution unchanged. Assert uppercase parent XML for ordinary and namespaced groups. |
+| `SAPLX…` can suppress insertion | Confirmed by read-only SAP source inspection. In `RS_CREATE_NEW_INCLUDE`'s new-include branch, the namespace is stripped before the `SAPLX` comparison; that branch passes a false insertion flag. Document this exception without claiming it explains the reporter's 752 result. |
+| Standalone/batch `L*` guards miss namespaced names | Confirmed code shape, but whether SAP reserves every `/NS/L*` name for structural includes is not established here. Keep the existing guards; verify the backend contract in a usable customer namespace before widening a rejection rule. |
+| One-line prefix rewrite / shared helper | Not adopted. The existing match and conditional are explicit and small. Combining separate naming routines or changing longer-sibling matching would add unverified scope. |
+| FUNC has a similar raw parent reference | Confirmed code pattern only; its SAP create path was not tested. No FUNC changes in this INCL fix. |
+
+No explicit `createIncludeStatement=true` flag was added: it is already the 758
+default and would not override that release's `SAPLX` exception. Its behavior on
+the reporter's 752 system remains unverified.
+
+Before the XML correction, disposable group `ZARC904CMURDX3MI` existed in `$TMP`.
+Creating `LZARC904CMURDX3MIF01` with `group=" zarc904cmurdx3mi "` returned
+HTTP 500, "Object R3TR FUGR zarc904cmurdx3mi cannot be created without a package".
+The include GET returned 404 and the main program had no matching statement.
+The two new parent-XML assertions also failed before the fix.
+
+After correction, the same lowercase/whitespace request shape on disposable group
+`ZARC904CMURE01WI` succeeded: include exists, source matches, and main program
+contains its `INCLUDE` statement. Include and group activation succeeded and
+the syntax check returned `checked=true`, `hasErrors=false`, no messages.
+Both runs cleaned up successfully: metadata GETs returned 404 and a bounded
+TRDIR query confirmed no main program, TOP/UXX include, or test include remained.
+This verifies lowercase ordinary-group behavior; live namespaced writes remain
+limited by the namespace setup described above.
+
+The original PR CI run `37046518149` stopped its Node test jobs at the dependency
+audit, with the existing `node-forge` advisory `GHSA-86w9-cpqp-85rv`; downstream
+SAP jobs were skipped. The local audit reproduced the failure and reported no
+fix available on 2026-10-02. `package.json` and `package-lock.json` are unchanged
+from `main`. The audit gate was not bypassed and dependency remediation is outside
+this include fix.
+
+Follow-up validation: 130 focused handler/snapshot tests passed; the two added
+parent-XML assertions failed before uppercasing and pass afterward. Typecheck,
+build, lint, policy validation, file/schema budgets, strict MkDocs, and diff checks
+passed. Lint retains the same two unrelated informational suggestions.
+
+The default-concurrency full run was interrupted under severe host load. The
+completed two-worker run had 7,751 passing tests and three startup/deadline
+failures in the CLI subprocess and shutdown signal tests. All three subsequently
+passed in isolated reruns without changing source, test assertions, or timeouts;
+one shutdown case needed a single-case rerun, with the other 11 intentionally
+filtered out. The unmodified PR code also passed the shutdown tests. These
+results do not constitute a clean single full-suite run and are recorded as
+timing-sensitive validation, separately from the passing include regression and
+live SAP lifecycle. Final review found no additional actionable patch findings.
 
 ## Roadmap
 

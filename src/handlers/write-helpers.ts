@@ -518,9 +518,11 @@ function buildCreateXmlBody(
     case 'INCL': {
       // With a parent group this is a FUGR STRUCTURAL include: a different collection
       // (/functions/groups/{g}/includes), a different envelope, and Content-Type
-      // …fincludes.v2+xml. No packageRef — it inherits the group's package. SAP 7.50/758 insert
-      // the main program's INCLUDE line by default; this is not guaranteed on other releases (#904).
-      const fugrGroup = String(properties?.group ?? '').trim();
+      // …fincludes.v2+xml. No packageRef — it inherits the group's package. Default main-program
+      // INCLUDE insertion was verified for Z groups on 7.50/758; callers must check their group (#904).
+      const fugrGroup = String(properties?.group ?? '')
+        .trim()
+        .toUpperCase();
       if (fugrGroup) {
         const fugrGroupLc = encodeURIComponent(fugrGroup.toLowerCase());
         return `<?xml version="1.0" encoding="UTF-8"?>

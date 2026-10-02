@@ -25,7 +25,7 @@ const SAPWRITE_BODY_ONPREM =
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   // "group"/FUGR-must-exist and processingType live on their own property descriptions — not repeated here.
   'FUNC: needs "group"; pass structured `parameters` for the signature (read back via SAPRead includeSignature=true). ' +
-  "INCL with group=: create/delete FUGR structural includes (name must start with L<GROUP>, e.g. LZFOOF01); SAP maintains the main program's INCLUDE line. " +
+  "INCL with group=: create/delete FUGR structural includes ([/NS/]L<GROUP>…, e.g. /NS/LFOOF01); verify the main program's INCLUDE line after create. " +
   'edit_method: replace one CLAS method body via source (95% fewer tokens than full-class). Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing: lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=); zif_*~* stays on /source/main. ' +
   'edit_unit/add_unit: replace/add one FORM/MODULE in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +

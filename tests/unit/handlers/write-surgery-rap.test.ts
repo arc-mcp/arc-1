@@ -2225,6 +2225,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
 
     it.each([
       { group: 'ZMY_FG', name: 'LZMY_FGF01', groupPath: 'zmy_fg', includePath: 'lzmy_fgf01' },
+      { group: ' zmy_fg ', name: 'LZMY_FGF01', groupPath: 'zmy_fg', includePath: 'lzmy_fgf01' },
       { group: '/ABC/NAME', name: '/ABC/LNAMEB03', groupPath: '%2Fabc%2Fname', includePath: '%2Fabc%2Flnameb03' },
       { group: ' /abc/name ', name: '/ABC/LNAMEB04', groupPath: '%2Fabc%2Fname', includePath: '%2Fabc%2Flnameb04' },
     ])(
@@ -2254,7 +2255,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
               return Promise.resolve(
                 mockResponse(
                   200,
-                  `<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${group.trim()}"><adtcore:packageRef adtcore:name="$TMP"/></group:abapFunctionGroup>`,
+                  `<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${group.trim().toUpperCase()}"><adtcore:packageRef adtcore:name="$TMP"/></group:abapFunctionGroup>`,
                   { 'x-csrf-token': 'T' },
                 ),
               );
@@ -2286,6 +2287,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
         const lock = calls.find((c) => c.method === 'POST' && c.url.includes('_action=LOCK'));
         expect(lock?.url).toContain(`/functions/groups/${groupPath}/includes/${includePath}?`);
         expect(post?.body).toContain(`adtcore:name="${name}"`);
+        expect(post?.body).toContain(`<adtcore:containerRef adtcore:name="${group.trim().toUpperCase()}"`);
         expect(post?.body).toContain(`adtcore:uri="/sap/bc/adt/functions/groups/${groupPath}"`);
         expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
       },
