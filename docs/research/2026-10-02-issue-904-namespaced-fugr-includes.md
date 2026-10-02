@@ -18,7 +18,7 @@ the XML builder already escapes names. Neither needs a namespace-specific path.
 The reporter verified namespaced create, source write, and activation after
 patching this guard on 752 SP06. That is reporter evidence, not a run of this PR.
 
-## Main-program insertion is a separate release-dependent behavior
+## Main-program insertion is a separate verification gap
 
 On A4H (SAP_BASIS 758 SP02), read-only inspection of
 `CL_FB_ADT_RES_FUGR_INCLUDE` found:
@@ -35,7 +35,8 @@ A disposable `$TMP` group `ZARC904A` confirmed the current XML creates
 `LZARC904AF01`, appends its `INCLUDE` statement, and comments the line out when
 the include is deleted. The include returned 404 after deletion; the parent was
 also deleted. This corroborates the earlier 7.50/758 research. The reporter's
-752 SP06 result differs, so documentation must not promise universal insertion.
+752 SP06 result differs; its cause was not verified on that system. Documentation
+must therefore not promise universal insertion.
 This fix does not change XML flags, package handling, or source insertion.
 
 ## Fix plan and review
@@ -103,5 +104,5 @@ remain unverified, as stated above.
 ## Roadmap
 
 Checked `docs_page/roadmap.md`: no roadmap impact. This fixes an existing supported
-operation. The release-dependent insertion behavior is documented with its
+operation. The reported insertion difference is documented with its
 verification gap rather than introducing an unverified feature.
