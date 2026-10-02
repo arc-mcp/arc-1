@@ -2003,7 +2003,35 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Redefined methods must keep their inherited visibility');
+      expect(result.content[0]?.text).toContain(
+        'use edit_class_definition with the visibility declared by the superclass',
+      );
       expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('edit_class_definition repairs a redefinition in the wrong section without changing its body', async () => {
+      const broken = PROBE_MAIN.replace('FINAL CREATE PUBLIC', 'INHERITING FROM zcl_parent CREATE PUBLIC')
+        .replace('PUBLIC SECTION.', 'PROTECTED SECTION.')
+        .replace('IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.', 'REDEFINITION\n      .');
+      const repaired = broken.replace('PROTECTED SECTION.', 'PUBLIC SECTION.');
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: broken,
+        structureXml: PROBE_STRUCTURE.replace(
+          'adtcore:name="HELLO" level="instance" visibility="public"',
+          'adtcore:name="HELLO" redefinition="true" level="instance" visibility="protected"',
+        ),
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: repaired.split('CLASS zcl_probe IMPLEMENTATION.')[0]!.trim(),
+      });
+      expect(result.isError).toBeUndefined();
+      expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1);
+      expect(calls.find((c) => c.method === 'PUT')?.body).toBe(repaired);
       expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
     });
 

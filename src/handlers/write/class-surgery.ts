@@ -447,7 +447,9 @@ export async function writeActionChangeMethodVisibility(ctx: SapWriteContext): P
     }
 
     if (method.redefinition) {
-      return errorResult('Redefined methods must keep their inherited visibility.');
+      return errorResult(
+        'Redefined methods must keep their inherited visibility. To repair an invalid draft, use edit_class_definition with the visibility declared by the superclass.',
+      );
     }
 
     // The target section header must already exist (same constraint as add_method).

@@ -979,7 +979,7 @@ Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRA
 Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
 
 - Idempotent: if the method is already in the target section, it's a no-op (no write).
-- A `REDEFINITION` must retain its inherited visibility; moving it is refused before saving, even with `lintBeforeWrite=false`.
+- Methods SAP marks as `REDEFINITION` must retain their inherited visibility; moving them is refused before saving, even with `lintBeforeWrite=false`. If an existing draft has the wrong section, check the superclass declaration and repair the definition with `edit_class_definition`.
 - The target section header must already exist; if not, ARC-1 refuses with a hint to add it via `edit_class_definition` first.
 
 ```jsonc
