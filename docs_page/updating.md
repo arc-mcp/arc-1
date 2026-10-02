@@ -1,5 +1,21 @@
 # Updating ARC-1
 
+## v1.5.0 — upgrade checks
+
+Start with the [1.5.0 upgrade checklist](release-notes.md#150-upgrade-checklist).
+No new server setting is required; refresh your MCP client's tool list after upgrading.
+
+### v1.5.0 — XML text and cached summaries
+
+ARC-1 now decodes SAP XML entities once. If your extension decodes values already parsed by ARC-1,
+remove that extra decoding; raw XML handled by your own code is unaffected. Text previously saved
+in SAP as a literal `&amp;` is not repaired automatically—update it once with the intended text.
+
+With `ARC1_CACHE=sqlite`, an existing SRVB summary may retain encoded text until its ETag changes.
+For an immediate refresh, stop every ARC-1 process sharing the cache, remove the cache file, then
+restart. Use `ARC1_CACHE_FILE`, or `.arc1-cache.db` in the process working directory by default.
+This clears the local cache, not SAP source; it is unnecessary if you do not see stale summaries.
+
 <a id="xsuaa-callback-hardening"></a>
 
 ## v1.4.0 — XSUAA callback hardening
