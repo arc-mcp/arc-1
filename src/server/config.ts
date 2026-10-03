@@ -17,7 +17,7 @@
  */
 
 import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
-import type { SafetyConfig } from '../adt/safety.js';
+import { type SafetyConfig, splitAllowedPackageList } from '../adt/safety.js';
 import { resolveSapUserAgent } from '../adt/user-agent.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
@@ -681,8 +681,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
 
   const pkgs = getFlag('allowed-packages') ?? process.env.SAP_ALLOWED_PACKAGES;
   if (pkgs !== undefined) {
-    const raw = pkgs.split(',').map((p) => p.trim());
-    const filtered = raw.filter((p) => p.length > 0);
+    const { entries: filtered, hadEmptyEntries } = splitAllowedPackageList(pkgs);
     if (filtered.length === 0) {
       // Empty / separator-only value ("" or ",," from a shell-expanded unset $VAR, or a cleared
       // install-dialog field). Treat as "not provided" and keep the $TMP default — do NOT fall
@@ -693,7 +692,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
       );
       sources.allowedPackages = 'default';
     } else {
-      if (raw.length !== filtered.length) {
+      if (hadEmptyEntries) {
         logger.warn(
           "SAP_ALLOWED_PACKAGES contained empty entries — likely shell expansion of unset $VARs. Use single quotes: SAP_ALLOWED_PACKAGES='$TMP,Z*'",
           { raw: pkgs, parsed: filtered },
