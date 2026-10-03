@@ -166,7 +166,7 @@ describe('ADR-0008 pinned multi-target writes', () => {
     // Single-target parity: SAPManage stays listed for readers, pruned to its read-scoped actions only.
     const manage = readerList.tools.find((tool: { name: string }) => tool.name === 'SAPManage');
     const manageActions: string[] = manage?.inputSchema.properties.action.enum ?? [];
-    expect(manageActions.length).toBeGreaterThan(0);
+    expect(manageActions).toContain('features');
     for (const action of ['create_package', 'delete_package', 'change_package']) {
       expect(manageActions).not.toContain(action);
     }

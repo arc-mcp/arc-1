@@ -60,6 +60,17 @@ function classPosts(): unknown[] {
   });
 }
 
+/** Every non-GET/HEAD request that reached the mocked fetch (CSRF fetches are GETs). */
+function mutatingFetches(): string[] {
+  return mockFetch.mock.calls
+    .map(([url, options]) => ({ url: String(url), method: (options as RequestInit | undefined)?.method ?? 'GET' }))
+    .filter(({ method }) => method !== 'GET' && method !== 'HEAD')
+    .map(({ url, method }) => `${method} ${url}`);
+}
+
+const ALLOW_WRITES_BLOCK =
+  /Operation '[^']+' \(type [A-Z]\) is blocked by safety configuration \(reason: allowWrites=false blocks mutations \(C\/D\/U\/A\/W\/X\)\)/;
+
 const instance = { ...DEFAULT_CONFIG, multiTargetAllowWrites: true };
 
 describe('ADR-0008 pinned write package gate', () => {
@@ -84,8 +95,31 @@ describe('ADR-0008 pinned write package gate', () => {
       },
     );
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('blocked by safety configuration');
+    const text = result.content[0]?.text ?? '';
+    expect(text).toContain("Operations on package 'ZOTHER' are blocked by safety configuration (allowed: [$TMP])");
+    expect(text).not.toContain('allowWrites');
     expect(classPosts()).toEqual([]);
+    expect(mutatingFetches()).toEqual([]);
+  });
+
+  it('positive control: the same pinned PP write to an allowed package passes the safety gates', async () => {
+    const target = writableTarget(['$TMP']);
+    const result = await handleToolCall(
+      clientFor(target, 'pinned'),
+      buildMultiTargetConfig(instance, target, 'pinned'),
+      'SAPWrite',
+      {
+        action: 'create',
+        type: 'CLAS',
+        name: 'ZCL_ARC1_TMP',
+        package: '$TMP',
+        source: 'CLASS zcl_arc1_tmp DEFINITION PUBLIC. ENDCLASS. CLASS zcl_arc1_tmp IMPLEMENTATION. ENDCLASS.',
+      },
+    );
+    // May fail later on the generic mock; only the safety outcome is asserted here.
+    const text = result.content[0]?.text ?? '';
+    expect(text).not.toContain('blocked by safety configuration');
+    expect(text).not.toContain('allowWrites=false');
   });
 
   it('refuses the same write on the aggregate ceiling', async () => {
@@ -103,8 +137,9 @@ describe('ADR-0008 pinned write package gate', () => {
       },
     );
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/allowWrites|blocked/);
+    expect(result.content[0]?.text).toMatch(ALLOW_WRITES_BLOCK);
     expect(classPosts()).toEqual([]);
+    expect(mutatingFetches()).toEqual([]);
   });
 
   it('never grants a pinned write ceiling to a shared identity, even with the instance ceiling on', async () => {
@@ -122,7 +157,8 @@ describe('ADR-0008 pinned write package gate', () => {
       source: 'CLASS zcl_arc1_tmp DEFINITION PUBLIC. ENDCLASS. CLASS zcl_arc1_tmp IMPLEMENTATION. ENDCLASS.',
     });
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toMatch(/allowWrites|blocked/);
+    expect(result.content[0]?.text).toMatch(ALLOW_WRITES_BLOCK);
     expect(classPosts()).toEqual([]);
+    expect(mutatingFetches()).toEqual([]);
   });
 });
