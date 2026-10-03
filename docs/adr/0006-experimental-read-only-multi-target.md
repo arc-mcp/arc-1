@@ -7,6 +7,8 @@
 **Qualifies:** ADR-0005 for the explicit, default-off v1 mode described here
 **Qualified by:** [ADR-0007](0007-shared-basic-identity-for-read-only-multi-target.md) for the
 explicit shared Basic-authentication exception
+**Amended by:** [ADR-0008](0008-opt-in-writes-on-pinned-multi-target-routes.md) — opt-in writes on
+pinned Principal Propagation routes only; `/multi/mcp` stays mutation-free
 
 ## Context
 

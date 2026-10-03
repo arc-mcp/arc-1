@@ -2,6 +2,8 @@
 
 ## Status
 
+- **Amended:** ADR-0008 (2026-10-03) permits opt-in pinned PP writes; the v1 contract below stays
+  normative for the aggregate route and Basic targets.
 - **State:** implemented, merged to `main`, and beta-validated for Principal Propagation and shared Basic
 - **Code ancestry:** PR #543 remains in the branch history so Wouter's tested multi-runtime work can
   be reused where it fits. The public contract described here replaces the prototype contract.

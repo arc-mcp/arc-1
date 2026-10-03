@@ -20,11 +20,13 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
-7. **Single target by default; one experimental read-only BTP exception** — ADR-0005 remains the rule
-   for writable/general multi-system access. ADR-0006 permits only the default-off BTP CF mode with
-   explicit pinned/aggregate targets under its mutation-free safety contract. ADR-0007 permits the
-   default-off shared Basic identity only under its one-instance/lockout controls. Do not broaden
-   either exception to writes or another discovery/auth model without a new ADR/security review.
+7. **Single target by default; experimental BTP multi-target exceptions** — ADR-0005 remains the rule
+   for general multi-system access. ADR-0006 permits only the default-off BTP CF mode with explicit
+   pinned/aggregate targets, mutation-free except as ADR-0008 allows. ADR-0007 permits the
+   default-off shared Basic identity only under its one-instance/lockout controls. ADR-0008 permits
+   default-off, two-key, PP-only writes on pinned routes; `/multi/mcp` and Basic targets stay
+   mutation-free. Do not broaden these exceptions or add another discovery/auth model without a new
+   ADR/security review.
 
 ## Roadmap Discipline
 
@@ -122,6 +124,8 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
 | `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
 | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
+| `ARC1_MULTI_TARGET_ALLOW_WRITES` | Default false. ADR-0008 instance ceiling for writes on pinned PrincipalPropagation routes; destination must also set `arc1.allow_writes=true` + `arc1.allowed_packages`. `/multi/mcp` never mutates. |
+| `ARC1_MULTI_TARGET_ALLOW_TRANSPORT_WRITES` / `ARC1_MULTI_TARGET_ALLOW_GIT_WRITES` | Default false. Sub-ceilings for transport / Git mutations on writable pinned targets; startup fails unless `ARC1_MULTI_TARGET_ALLOW_WRITES=true`. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
@@ -196,7 +200,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Task | Files (+ key gotcha) |
 |------|------|
 | BTP deployment/docs guidance | `docs_page/btp-overview.md` → one canonical runbook or task reference. Use the deployed artifact's source revision; research/specs are not shipped settings. Maintenance and optional walkthrough checks: `docs/dev-guide.md#btp-documentation`. |
-| Multi-target ADR-0006/0007 work | Read `docs/adr/0006-experimental-read-only-multi-target.md` and `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. Keep the mutation-free boundary and explicit lint/transport action allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
+| Multi-target ADR-0006/0007/0008 work | Read `docs/adr/0006-experimental-read-only-multi-target.md`, `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md` and `docs/adr/0008-opt-in-writes-on-pinned-multi-target-routes.md` (plan: `docs/plans/2026-10-03-multi-target-pinned-writes.md`), then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. Keep the aggregate/Basic mutation-free boundary (writes only on pinned PP routes, ADR-0008) and explicit lint/transport action allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
 | SAPWrite TABL subtype routing (TABL/DT vs /DS, #285) | `src/handlers/object-types.ts`, `src/handlers/write-helpers.ts`, `src/handlers/write/create.ts`, `src/handlers/{schemas,tools}.ts` — reads collapse to bare `TABL` |
@@ -370,10 +374,11 @@ never present mocks or skipped tests as live coverage. Documentation-only change
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
 - **Multi-system boundary** — single target remains the default and all writable multi-system access
-  stays out of scope under ADR-0005. ADR-0006 is the sanctioned experimental, default-off, BTP/XSUAA,
-  mutation-free exception for pinned and aggregate endpoints. Principal Propagation remains recommended;
+  stays out of scope under ADR-0005 except ADR-0008. ADR-0006 is the sanctioned experimental, default-off,
+  BTP/XSUAA exception for pinned and aggregate endpoints, mutation-free except that ADR-0008 is the only
+  sanctioned write exception: default-off, two-key, PrincipalPropagation-only, pinned routes only. Principal Propagation remains recommended;
   ADR-0007 permits only an explicit, default-off shared Basic identity under its mutation-free, one-instance
-  controls and never as a PP fallback. Follow both normative plans exactly; do not add writes,
+  controls and never as a PP fallback. Follow the normative plans exactly; do not add writes beyond ADR-0008,
   target-specific roles, another discovery/auth model, or a hidden compatibility mode. Route requirements
   outside those boundaries to the
   [MCP hub](https://github.com/arc-mcp/mcp-hub) or a new ADR/security review.
