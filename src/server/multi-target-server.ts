@@ -455,7 +455,7 @@ export async function prepareMultiTargetCall(args: {
   // Use the same canonical arguments as the shared dispatch pipeline. This keeps
   // the early policy/PP gate and the eventual handler decision identical.
   callArgs = normalizeTypeArgsForValidation(toolName, callArgs);
-  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget);
+  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget, options.mode);
   const action = invocationPolicyKey(toolName, callArgs);
   const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);
   if (invocationDecision === 'forbidden') {

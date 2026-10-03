@@ -809,20 +809,44 @@ export function sharedBasicSingleTargetConflicts(
  * a second caller would silently have got an empty blocklist. Making it required turns that omission
  * into a compile error. A destination may narrow the instance policy but can never remove it.
  */
-export function multiTargetSafety(policy: TargetPolicy, blockedDataSources: readonly string[]): SafetyConfig {
+export type MultiTargetRoute = 'pinned' | 'aggregate';
+
+/**
+ * `route` is REQUIRED (playbook rule 4): forgetting it must be a compile error, never a silent
+ * write grant. The aggregate route is mutation-free by construction (ADR-0006/0008).
+ */
+export function multiTargetSafety(
+  policy: TargetPolicy,
+  blockedDataSources: readonly string[],
+  route: MultiTargetRoute,
+): SafetyConfig {
+  const writable = route === 'pinned' && policy.allowWrites;
+  if (writable && policy.allowedPackages.length === 0) {
+    // safety.ts treats [] as "all packages"; a writable target must always carry an explicit list.
+    throw new Error('Writable multi-target policy has no allowedPackages; refusing to build an unrestricted ceiling.');
+  }
   return {
-    allowWrites: false,
+    allowWrites: writable,
     allowDataPreview: policy.allowDataPreview,
     allowFreeSQL: policy.allowFreeSQL,
-    allowTransportWrites: false,
-    allowGitWrites: false,
+    allowTransportWrites: writable && policy.allowTransportWrites,
+    allowGitWrites: writable && policy.allowGitWrites,
     blockedDataSources: [...blockedDataSources],
-    allowedPackages: ['$TMP'],
+    allowedPackages: writable ? [...policy.allowedPackages] : ['$TMP'],
     allowedTransports: [],
     denyActions: [],
   };
 }
 
-export function targetSafety(target: TargetDescriptor, blockedDataSources: readonly string[]): SafetyConfig {
-  return multiTargetSafety(target.effectivePolicy, blockedDataSources);
+export function targetSafety(
+  target: TargetDescriptor,
+  blockedDataSources: readonly string[],
+  route: MultiTargetRoute,
+): SafetyConfig {
+  // Only a per-user (PP) identity may ever receive a write ceiling, whatever the descriptor says.
+  return multiTargetSafety(
+    target.effectivePolicy,
+    blockedDataSources,
+    target.identity === 'per-user' ? route : 'aggregate',
+  );
 }

@@ -60,7 +60,7 @@ describe('DestinationRegistry', () => {
       authentication: 'PrincipalPropagation',
       identity: 'per-user',
     });
-    expect(targetSafety(registry.targets[0], [])).toMatchObject({
+    expect(targetSafety(registry.targets[0], [], 'pinned')).toMatchObject({
       allowWrites: false,
       allowDataPreview: true,
       allowFreeSQL: false,
@@ -77,11 +77,14 @@ describe('DestinationRegistry', () => {
       discovery([destination({ arcProperties: { 'arc1.enabled': 'true', 'arc1.allow_data_preview': 'true' } })]),
       { ...DEFAULT_CONFIG, allowDataPreview: true },
     );
-    const safety = targetSafety(registry.targets[0], ['USR02', 'PA0002']);
+    const safety = targetSafety(registry.targets[0], ['USR02', 'PA0002'], 'pinned');
     expect(safety.blockedDataSources).toEqual(['USR02', 'PA0002']);
     // Defensive copy: mutating the result must not corrupt another target's ceiling.
     safety.blockedDataSources.push('SCARR');
-    expect(targetSafety(registry.targets[0], ['USR02', 'PA0002']).blockedDataSources).toEqual(['USR02', 'PA0002']);
+    expect(targetSafety(registry.targets[0], ['USR02', 'PA0002'], 'pinned').blockedDataSources).toEqual([
+      'USR02',
+      'PA0002',
+    ]);
   });
 
   it('uses an optional route alias without changing the real SAP SID or client', () => {

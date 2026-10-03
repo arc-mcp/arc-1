@@ -4,6 +4,7 @@ import type { Destination } from '@arc-mcp/xsuaa-auth/btp';
 import { canonicalDestinationUrl, projectMultiTargetDestination } from './destination-discovery.js';
 import {
   evaluateStandaloneTargetDescriptor,
+  type MultiTargetRoute,
   multiTargetSafety,
   type TargetDescriptor,
   targetSafety,
@@ -15,8 +16,9 @@ import { DEFAULT_CONFIG } from './types.js';
 /**
  * Build from safe defaults plus an explicit instance allowlist.
  *
- * This intentionally does not spread `base`: single-target credentials and future
- * write-capable settings must be reviewed before they can enter multi-target mode.
+ * This intentionally does not spread `base`: single-target credentials and the single-target
+ * write flags never enter multi-target mode. The write fields come only from the route-bound
+ * safety ceiling (`multiTargetSafety`/`targetSafety`), so they are off for the aggregate route.
  */
 function buildReadOnlyRuntimeConfig(
   base: ServerConfig,
@@ -91,9 +93,13 @@ function buildReadOnlyRuntimeConfig(
   };
 }
 
-/** Build the isolated runtime for one discovered target. */
-export function buildMultiTargetConfig(base: ServerConfig, target: TargetDescriptor): ServerConfig {
-  return buildReadOnlyRuntimeConfig(base, targetSafety(target, base.blockedDataSources), target);
+/** Build the isolated runtime for one discovered target on the given route (ADR-0008). */
+export function buildMultiTargetConfig(
+  base: ServerConfig,
+  target: TargetDescriptor,
+  route: MultiTargetRoute,
+): ServerConfig {
+  return buildReadOnlyRuntimeConfig(base, targetSafety(target, base.blockedDataSources, route), target);
 }
 
 /**
@@ -113,6 +119,7 @@ export function buildAggregateToolSurfaceConfig(
         ...READ_ONLY_WRITE_POLICY,
       },
       base.blockedDataSources,
+      'aggregate',
     ),
   );
 }

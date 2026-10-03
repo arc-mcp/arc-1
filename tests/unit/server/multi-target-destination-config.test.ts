@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   isSupportedMultiTargetArcProperty,
-  isWriteRelatedArcProperty,
   MULTI_TARGET_ARC_PROPERTIES,
   parseDestinationBoolean,
   parseDestinationWritePolicy,
@@ -24,8 +23,6 @@ describe('multi-target destination property contract', () => {
     expect(isSupportedMultiTargetArcProperty('arc1.target_alias')).toBe(true);
     expect(isSupportedMultiTargetArcProperty('ARC1.Enabled')).toBe(false);
     expect(isSupportedMultiTargetArcProperty('arc1.Target_Alias')).toBe(false);
-    expect(isWriteRelatedArcProperty('arc1.allow_writes')).toBe(true);
-    expect(isWriteRelatedArcProperty('arc1.allow_data_preview')).toBe(false);
   });
 
   it('parses only explicit destination booleans', () => {

@@ -1461,7 +1461,7 @@ export async function createAndStartServer(
             registry,
             aggregateFactory: buildAggregateServer,
             createPinnedServer: (target: TargetDescriptor) => {
-              const targetConfig = buildMultiTargetConfig(config, target);
+              const targetConfig = buildMultiTargetConfig(config, target, 'pinned');
               return createServer(targetConfig, {
                 btpConfig,
                 adtSemaphore,

@@ -24,7 +24,6 @@ export const MULTI_TARGET_ARC_PROPERTIES = Object.freeze([
 ]);
 
 const SUPPORTED_ARC_PROPERTIES = new Set(MULTI_TARGET_ARC_PROPERTIES);
-const WRITE_ARC_PROPERTIES = new Set(WRITE_ARC_PROPERTY_LIST);
 const MAX_DESTINATION_PACKAGE_PATTERNS = 64;
 
 export interface DestinationWritePolicy {
@@ -48,10 +47,6 @@ export type WritePolicyParseResult =
 
 export function isSupportedMultiTargetArcProperty(key: string): boolean {
   return SUPPORTED_ARC_PROPERTIES.has(key);
-}
-
-export function isWriteRelatedArcProperty(key: string): boolean {
-  return WRITE_ARC_PROPERTIES.has(key);
 }
 
 /** Parse the destination-service boolean format without inventing a default. */

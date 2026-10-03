@@ -361,7 +361,7 @@ describe('multi-target MCP servers', () => {
   it('keeps pinned schemas target-free', async () => {
     const current = registry(1);
     const target = current.targets[0];
-    const server = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target, 'pinned'), {
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: DEFAULT_CONFIG, target },
     });
     const result = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
