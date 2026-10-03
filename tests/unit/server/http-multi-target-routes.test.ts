@@ -196,6 +196,12 @@ describe('multi-target HTTP route authentication', () => {
     expect(challenge.headers['www-authenticate']).not.toContain('scope=');
   });
 
+  it('keeps pinned protected-resource metadata read-only while instance writes are off', async () => {
+    const pinned = await request(app).get('/.well-known/oauth-protected-resource/A4H/100/mcp');
+    expect(pinned.status).toBe(200);
+    expect(pinned.body.scopes_supported).toEqual(['read', 'data', 'sql', 'admin']);
+  });
+
   it('does not expose a separate HTTP target catalog', async () => {
     expect((await request(app).get('/targets')).status).toBe(404);
     expect((await request(app).get('/targets').set('Authorization', 'Bearer read-token')).status).toBe(404);
@@ -263,5 +269,101 @@ describe('multi-target HTTP route authentication', () => {
     expect(xsuaa.status).not.toBe(401);
     expect(aggregateFactory).toHaveBeenCalledTimes(1);
     expect(singleFactory).not.toHaveBeenCalled();
+  });
+});
+
+describe('multi-target HTTP protected-resource metadata with instance writes enabled (ADR-0008)', () => {
+  let app: express.Express;
+  let listenSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    listenSpy = vi.spyOn(express.application, 'listen').mockImplementation(function (this: express.Express) {
+      app = this;
+      return new EventEmitter() as never;
+    });
+    await startHttpServer(
+      undefined,
+      {
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        httpAddr: '127.0.0.1:0',
+        xsuaaAuth: true,
+        multiTargetEndpoints: true,
+        multiTargetAllowWrites: true,
+        authRateLimit: 0,
+        mcpHttpRateLimit: 0,
+      },
+      XSUAA,
+      undefined,
+      {
+        registry: registry(),
+        aggregateFactory: vi.fn() as never,
+        createPinnedServer: vi.fn() as never,
+      },
+    );
+  });
+
+  afterEach(() => {
+    listenSpy.mockRestore();
+  });
+
+  it('advertises write on every pinned PRM while the aggregate PRM stays mutation-free', async () => {
+    const known = await request(app).get('/.well-known/oauth-protected-resource/A4H/100/mcp');
+    const unknown = await request(app).get('/.well-known/oauth-protected-resource/ZZZ/999/mcp');
+    expect(known.status).toBe(200);
+    expect(known.body.scopes_supported).toEqual(['read', 'write', 'data', 'sql', 'admin']);
+    expect({ ...known.body, resource: undefined }).toEqual({ ...unknown.body, resource: undefined });
+
+    const aggregate = await request(app).get('/.well-known/oauth-protected-resource/multi/mcp');
+    expect(aggregate.status).toBe(200);
+    expect(aggregate.body.scopes_supported).toEqual(['read', 'data', 'sql', 'admin']);
+  });
+});
+
+describe('multi-target HTTP protected-resource metadata with every write ceiling enabled (ADR-0008)', () => {
+  let app: express.Express;
+  let listenSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    listenSpy = vi.spyOn(express.application, 'listen').mockImplementation(function (this: express.Express) {
+      app = this;
+      return new EventEmitter() as never;
+    });
+    await startHttpServer(
+      undefined,
+      {
+        ...DEFAULT_CONFIG,
+        transport: 'http-streamable',
+        httpAddr: '127.0.0.1:0',
+        xsuaaAuth: true,
+        multiTargetEndpoints: true,
+        multiTargetAllowWrites: true,
+        multiTargetAllowTransportWrites: true,
+        multiTargetAllowGitWrites: true,
+        authRateLimit: 0,
+        mcpHttpRateLimit: 0,
+      },
+      XSUAA,
+      undefined,
+      {
+        registry: registry(),
+        aggregateFactory: vi.fn() as never,
+        createPinnedServer: vi.fn() as never,
+      },
+    );
+  });
+
+  afterEach(() => {
+    listenSpy.mockRestore();
+  });
+
+  it('advertises write, transports and git on a pinned PRM while the aggregate PRM stays mutation-free', async () => {
+    const pinned = await request(app).get('/.well-known/oauth-protected-resource/A4H/100/mcp');
+    expect(pinned.status).toBe(200);
+    expect(pinned.body.scopes_supported).toEqual(['read', 'write', 'data', 'sql', 'transports', 'git', 'admin']);
+
+    const aggregate = await request(app).get('/.well-known/oauth-protected-resource/multi/mcp');
+    expect(aggregate.status).toBe(200);
+    expect(aggregate.body.scopes_supported).toEqual(['read', 'data', 'sql', 'admin']);
   });
 });

@@ -1,7 +1,16 @@
 import type { Destination } from '@arc-mcp/xsuaa-auth/btp';
 import { describe, expect, it } from 'vitest';
-import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
-import { DestinationRegistry } from '../../../src/server/destination-registry.js';
+import { isPackageAllowed } from '../../../src/adt/safety.js';
+import {
+  canonicalDestinationUrl,
+  opaqueDestinationValue,
+  projectMultiTargetDestination,
+} from '../../../src/server/destination-discovery.js';
+import {
+  DestinationRegistry,
+  evaluateStandaloneTargetDescriptor,
+  targetSafety,
+} from '../../../src/server/destination-registry.js';
 import {
   buildAggregateToolSurfaceConfig,
   buildMultiTargetConfig,
@@ -47,6 +56,8 @@ function registryTarget() {
 }
 
 function destination(overrides: Record<string, unknown> = {}): Destination {
+  // Merge originalProperties overrides instead of letting the trailing spread replace them wholesale.
+  const { originalProperties: originalOverrides, ...rest } = overrides;
   const originalProperties = {
     Name: 'ARC1_A4H_100_PP',
     Type: 'HTTP',
@@ -60,7 +71,7 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
     'arc1.enabled': 'true',
     'arc1.allow_data_preview': 'true',
     'arc1.allow_free_sql': 'false',
-    ...((overrides.originalProperties as Record<string, unknown> | undefined) ?? {}),
+    ...((originalOverrides as Record<string, unknown> | undefined) ?? {}),
   };
   return {
     Name: 'ARC1_A4H_100_PP',
@@ -73,7 +84,7 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
     'sap-client': '100',
     CloudConnectorLocationId: 'LOC_A',
     originalProperties,
-    ...overrides,
+    ...rest,
   } as Destination;
 }
 
@@ -99,6 +110,7 @@ describe('multi-target runtime isolation', () => {
         cacheMode: 'none',
       },
       registryTarget(),
+      'pinned',
     );
 
     expect(config).toMatchObject({
@@ -149,7 +161,10 @@ describe('multi-target runtime isolation', () => {
       maxConcurrentDataResults: 4,
     };
 
-    for (const config of [buildMultiTargetConfig(base, registryTarget()), buildAggregateToolSurfaceConfig(base, [])]) {
+    for (const config of [
+      buildMultiTargetConfig(base, registryTarget(), 'pinned'),
+      buildAggregateToolSurfaceConfig(base, []),
+    ]) {
       expect(config).toMatchObject({
         maxDataPreviewResponseBytes: 1024 * 1024,
         maxConcurrentDataResults: 4,
@@ -165,7 +180,7 @@ describe('multi-target runtime isolation', () => {
       identity: 'shared' as const,
     };
 
-    const config = buildMultiTargetConfig(DEFAULT_CONFIG, basicTarget);
+    const config = buildMultiTargetConfig(DEFAULT_CONFIG, basicTarget, 'pinned');
 
     expect(config).toMatchObject({
       ppEnabled: false,
@@ -200,5 +215,80 @@ describe('multi-target runtime isolation', () => {
     expect(
       validateTargetDrift(destination(overrides), registryTarget(), { ...DEFAULT_CONFIG, allowDataPreview: true }),
     ).toMatchObject({ ok: false, code: 'TARGET_CONFIG_CHANGED' });
+  });
+
+  it('reports TARGET_CONFIG_CHANGED when arc1.allow_writes changes after startup', () => {
+    const startup = destination({
+      originalProperties: { 'arc1.allow_writes': 'true', 'arc1.allowed_packages': '$TMP' },
+    });
+    const projected = projectMultiTargetDestination(startup);
+    if (!projected) throw new Error('expected a projected destination');
+    const target = evaluateStandaloneTargetDescriptor(projected, DEFAULT_CONFIG);
+    if (!target) throw new Error('expected an accepted target');
+    const changed = destination({
+      originalProperties: { 'arc1.allow_writes': 'false', 'arc1.allowed_packages': '$TMP' },
+    });
+    expect(validateTargetDrift(changed, target, DEFAULT_CONFIG)).toMatchObject({
+      ok: false,
+      code: 'TARGET_CONFIG_CHANGED',
+    });
+    expect(validateTargetDrift(startup, target, DEFAULT_CONFIG)).toMatchObject({ ok: true });
+  });
+});
+
+describe('ADR-0008 route-bound write ceiling', () => {
+  const writable = (identity: 'per-user' | 'shared' = 'per-user') => ({
+    ...registryTarget(),
+    identity,
+    authentication: identity === 'per-user' ? ('PrincipalPropagation' as const) : ('BasicAuthentication' as const),
+    effectivePolicy: {
+      allowDataPreview: false,
+      allowFreeSQL: false,
+      allowWrites: true,
+      allowedPackages: ['ZTEAM*'],
+      allowTransportWrites: true,
+      allowGitWrites: true,
+    },
+  });
+
+  it('maps the effective policy only on the pinned route', () => {
+    expect(buildMultiTargetConfig(DEFAULT_CONFIG, writable(), 'pinned')).toMatchObject({
+      allowWrites: true,
+      allowTransportWrites: true,
+      allowGitWrites: true,
+      allowedPackages: ['ZTEAM*'],
+    });
+  });
+
+  it('keeps the aggregate route mutation-free even for a writable target', () => {
+    expect(buildMultiTargetConfig(DEFAULT_CONFIG, writable(), 'aggregate')).toMatchObject({
+      allowWrites: false,
+      allowTransportWrites: false,
+      allowGitWrites: false,
+      allowedPackages: ['$TMP'],
+    });
+  });
+
+  it('never grants writes to a shared identity, even if a descriptor claims it', () => {
+    expect(buildMultiTargetConfig(DEFAULT_CONFIG, writable('shared'), 'pinned').allowWrites).toBe(false);
+  });
+
+  it('never maps an empty package list to "all packages"', () => {
+    const target = { ...writable(), effectivePolicy: { ...writable().effectivePolicy, allowedPackages: [] } };
+    expect(() => buildMultiTargetConfig(DEFAULT_CONFIG, target, 'pinned')).toThrow(/allowedPackages/);
+  });
+
+  it('matches a lower-case destination package pattern against SAP upper-case package names', () => {
+    // arc1.allowed_packages is validated case-insensitively; safety.ts upper-cases both sides.
+    const target = { ...writable(), effectivePolicy: { ...writable().effectivePolicy, allowedPackages: ['zteam*'] } };
+    const safety = targetSafety(target, [], 'pinned');
+    expect(isPackageAllowed(safety, 'ZTEAM_CORE')).toBe(true);
+    expect(isPackageAllowed(safety, 'ZOTHER')).toBe(false);
+  });
+
+  it('keeps the aggregate tools/list union mutation-free', () => {
+    expect(
+      buildAggregateToolSurfaceConfig({ ...DEFAULT_CONFIG, multiTargetAllowWrites: true }, [writable()]).allowWrites,
+    ).toBe(false);
   });
 });

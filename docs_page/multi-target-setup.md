@@ -6,12 +6,14 @@ multi-target-specific override, destinations, endpoints, and acceptance test. Co
 restart, upgrade, scaling, and handover procedures live in
 [BTP Administration](btp-administration.md).
 
-!!! warning "Experimental, default-off, and mutation-free"
+!!! warning "Experimental, default-off, and read-only unless writes are opted in"
 
     Multi-target v1 is available only for SAP BTP Cloud Foundry deployments built from source. It
     serves on-premise SAP systems through XSUAA. Principal Propagation is recommended. A
     default-off BasicAuthentication option exists for read-only systems that must use a shared
-    technical identity. Writes, activation, and transport/Git mutations are unavailable. Offline
+    technical identity. Writes, activation, and transport/Git mutations are unavailable unless you opt in
+    on pinned Principal Propagation routes (ADR-0008, see
+    [Optional writes](#optional-writes-on-pinned-principal-propagation-routes-adr-0008)). Offline
     SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit execute
     SAP workloads and are not passive metadata reads.
 
@@ -329,7 +331,7 @@ non-rolling stop/start strategy.
 <a id="aggregate-tool-behavior"></a>
 <a id="allowed-tools"></a>
 
-## What multi-target v1 exposes
+## What the read-only routes expose
 
 Both pinned and aggregate routes draw from the same set of up to eight permitted SAP-contacting
 tools. Tool lists are narrowed by configured instance/target policy and XSUAA scope where the schema
@@ -532,6 +534,90 @@ An instance ceiling of `true` only makes a capability eligible; it does not enab
 On `/multi/mcp`, a tool may be listed because one target permits it, but every call rechecks the
 selected target and can return `TARGET_POLICY_DENIED`.
 
+### Optional writes on pinned Principal Propagation routes (ADR-0008)
+
+By default every multi-target route is mutation-free. ADR-0008 adds an opt-in path for writes on
+**pinned** routes (`/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp`) of **Principal Propagation** targets only.
+`/multi/mcp` never mutates, and Basic (shared technical user) targets can never be write-enabled.
+
+Effective write permission for one tool call is the conjunction of all six:
+
+1. the instance ceiling `ARC1_MULTI_TARGET_ALLOW_WRITES=true` (default `false`);
+2. the destination opt-in `arc1.allow_writes=true` on that system;
+3. a `PrincipalPropagation` identity for that target;
+4. a pinned route, not `/multi/mcp`;
+5. the matching XSUAA scope (`write`, `transports`, `git`, or `admin`), granted through the
+   corresponding role collection; and
+6. SAP's own authorization for the propagated user (`S_DEVELOP`, `S_TRANSPRT`, and so on).
+
+If any term is missing the call stays read-only or is refused. `SAP_DENY_ACTIONS` still applies to
+every target.
+
+A writable pinned route exposes the single-target tool surface, not only package-bound object writes.
+That includes write-scoped actions that are not package-bound and act system-wide —
+`SAPDiagnose.set_sql_trace_state` (ST05 on/off across all instances), `SAPDiagnose.trace_start` /
+`SAPDiagnose.trace_cancel`, `SAPLint.set_formatter_settings`, and the `SAPManage` FLP/UI5-repository
+actions — plus reads outside the v1 allowlist (SAP-backed `SAPLint.format` /
+`SAPLint.get_formatter_settings`, `SAPTransport.layers` / `SAPTransport.targets`, and the
+workload-producing `SAPDiagnose.atc_ci` / `SAPDiagnose.unittest_ci`). Deny the ones your developers
+should not receive, for example:
+
+```properties
+SAP_DENY_ACTIONS=SAPDiagnose.set_sql_trace_state,SAPDiagnose.trace_start,SAPDiagnose.trace_cancel,SAPLint.set_formatter_settings
+```
+
+Instance keys (all default `false`; set them in `mta-overrides.mtaext`, never only in `.env`):
+
+| Key | Meaning |
+|---|---|
+| `ARC1_MULTI_TARGET_ALLOW_WRITES` | Master ceiling for `SAPWrite`, `SAPActivate`, and `SAPManage` on writable pinned targets. |
+| `ARC1_MULTI_TARGET_ALLOW_TRANSPORT_WRITES` | Sub-ceiling for transport mutations; startup fails unless the master is `true`. |
+| `ARC1_MULTI_TARGET_ALLOW_GIT_WRITES` | Sub-ceiling for abapGit/gCTS mutations; startup fails unless the master is `true`. |
+
+Destination properties (fictional `A4H/100` development system):
+
+```properties
+sap-sysid=A4H
+sap-client=100
+Description=A4H development client 100
+Authentication=PrincipalPropagation
+arc1.enabled=true
+arc1.allow_writes=true
+arc1.allowed_packages=ZARC1_*
+# optional, each needs arc1.allow_writes=true and the matching instance sub-ceiling
+arc1.allow_transport_writes=true
+arc1.allow_git_writes=false
+```
+
+| Property | Rule |
+|---|---|
+| `arc1.allow_writes` | `true` or `false`. |
+| `arc1.allowed_packages` | **Required** when `allow_writes=true`; there is no implicit `$TMP`. Comma-separated, at most 64 entries, case-insensitive, each `NAME`, `PREFIX*`, `ROOT/**`, or `*`. Empty entries or other syntax quarantine the target. `allow_writes=false` plus `allowed_packages` is a valid read-only configuration. |
+| `arc1.allow_transport_writes` / `arc1.allow_git_writes` | Optional; require `arc1.allow_writes=true`. |
+
+A destination that asks for more than the instance ceiling is narrowed, not rejected: it stays active
+and `SAPTargets` (admin) shows `limitedByInstance: true`. A Basic destination with only explicit
+`false` write keys stays a readable target; any Basic destination that requests writes is quarantined
+as `WRITE_REQUIRES_PRINCIPAL_PROPAGATION`. An invalid write policy is quarantined as
+`INVALID_WRITE_POLICY`.
+
+Operational rules:
+
+- Changing any write key on the destination after startup makes the target return
+  `TARGET_CONFIG_CHANGED` until you restart ARC-1. Raising or lowering the instance ceilings is a
+  redeploy.
+- Users need the `write`, `transports`, or `git` scope through their role collections; see
+  [OAuth scopes on first sign-in](#oauth-scopes-on-first-sign-in). `admin` implies all three, as on
+  single-target `/mcp`.
+- Writes use the caller's own SAP user, so SAP authorizations and change documents stay per user.
+- **Production guidance:** omit `arc1.allow_writes` on production destinations and keep the
+  instance ceiling off wherever no target needs writes.
+- A pinned writable route advertises the writable tool surface in its server instructions; a call
+  outside the enabled set returns `MULTI_TARGET_OPERATION_FORBIDDEN` ("This tool or operation is not
+  enabled for target <ID>.").
+- **Known limitation:** Copilot Studio's `/authorize` alias always routes to the aggregate
+  `/multi/mcp`, so Copilot Studio cannot use writable pinned routes.
+
 ### Clone reviewed destinations carefully
 
 BTP Cockpit can export and import destinations as JSON, YAML, or Properties. This is useful for
@@ -552,24 +638,28 @@ Multi-target v1 uses the existing global role collections; it does not create on
 | `ARC-1 Viewer (<space>)` | Permitted mutation-free reads and diagnostics; compact `SAPTargets` is listed only when more than one target is active and identifies each target as `per-user` or `shared`. |
 | `ARC-1 Data Viewer (<space>)` | Viewer access plus destination/instance-enabled data-preview actions. |
 | `ARC-1 Viewer + SQL (<space>)` | Viewer/data access plus destination/instance-enabled `SAPQuery`. |
-| `ARC-1 Admin (<space>)` | Expanded `SAPTargets` diagnostics; mutations remain absent from multi-target routes. |
+| `ARC-1 Admin (<space>)` | Expanded `SAPTargets` diagnostics; mutations remain absent from `/multi/mcp`; `admin` implies the write scopes on writable pinned routes. |
 
-Developer role collections include read scope, but cannot unlock multi-target mutations. Role
+Developer role collections include read scope and do not by themselves unlock mutations; writes also need the ADR-0008 opt-ins and a `write`/`transports`/`git` role collection. Role
 assignment does not create an SAP user or Principal Propagation mapping. For Basic targets, it also
 does not change the destination's shared technical user. `SAPTargets` lists configured targets, not
 the targets the current user can actually access; ARC-1 learns that only when a SAP call is made.
 
 ### OAuth scopes on first sign-in
 
-Pinned and aggregate routes advertise only the mutation-free `read`, `data`, `sql`, and `admin`
-scopes. They do not force a read-only initial grant. General MCP clients such as VS Code and Cursor
-therefore request the advertised set, and XSUAA issues only the subset permitted by the signing
+The aggregate route advertises only the mutation-free `read`, `data`, `sql`, and `admin` scopes.
+Pinned routes advertise the same set, plus `write`, `transports`, and `git` whenever the instance
+ceilings are on (`ARC1_MULTI_TARGET_ALLOW_WRITES=true`, and the transport/Git sub-ceilings for their
+scopes); this is independent of which targets are write-enabled. Users who connected before the
+ceiling was enabled may need to log out and reconnect to obtain the new scopes.
+General MCP clients such as VS Code and Cursor request the advertised set, and XSUAA issues only the subset permitted by the signing
 user's role collections. ARC-1 then prunes tools and actions from that token:
 
 ```text
 Viewer             -> read
 Data Viewer        -> read, data
 Viewer + SQL       -> read, data, sql
+Developer          -> read, write, transports, git (pinned writes need the ADR-0008 opt-ins)
 Admin              -> read, data, sql, admin
 ```
 
@@ -577,16 +667,16 @@ A valid token must still contain `read` before ARC-1 resolves a pinned route or 
 aggregate transport. Role changes require logout/reconnect because an existing refresh grant cannot
 add scopes that were not granted originally.
 
-!!! warning "Do not extend this flow to writes"
+!!! warning "Write scopes are advertised only on pinned routes"
 
-    Initial scope negotiation is acceptable here only because the multi-target surface is
-    structurally mutation-free. Do not add `write`, `transports`, or `git` to its advertised scopes.
-    A future write-capable multi-target version requires a new security review covering explicit
-    consent, step-up support, token privilege, wrong-target mutations, and client compatibility.
+    Initial scope negotiation is acceptable because the aggregate route stays structurally
+    mutation-free and pinned writes need several further opt-ins. Never add `write`, `transports`,
+    or `git` to the aggregate route's advertised scopes. Advertising a scope grants nothing by
+    itself; see [Optional writes](#optional-writes-on-pinned-principal-propagation-routes-adr-0008).
 
 !!! danger "Side-by-side single-target `/mcp`"
 
-    `MCPAdmin` implies every ARC-1 scope. Multi-target routes remain mutation-free, but the same
+    `MCPAdmin` implies every ARC-1 scope. `/multi/mcp` and read-only targets stay mutation-free, but the same
     token may allow write, transport, or Git operations on a write-enabled single-target `/mcp`.
     Grant Admin only to trusted operators and prefer a separate ARC-1 application when a writable
     single-target endpoint must coexist.
@@ -716,6 +806,9 @@ unacceptable.
 | `SAP_TARGET_BUSY` | The Basic target's bounded request gate is busy; retry after the active call completes. Persistent occurrences indicate that a shared Basic target is unsuitable for this load. |
 | `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary reached a transient network, timeout, rate, SAP 5xx, or unrecognized non-login 2xx response. Check SAP/intermediary health and retry; the credential generation was not blocked. |
 | `TARGET_CONFIG_CHANGED` | Review the destination change and restart ARC-1. |
+| `WRITE_REQUIRES_PRINCIPAL_PROPAGATION` | A Basic destination requests writes. Switch it to `PrincipalPropagation` or remove the write keys (explicit `false` is fine), then restart. |
+| `INVALID_WRITE_POLICY` | Fix the write keys: `true`/`false` values, `arc1.allowed_packages` present and valid when `arc1.allow_writes=true`, sub-flags only with writes on. Restart. |
+| `MULTI_TARGET_OPERATION_FORBIDDEN` ("not enabled for target") | The tool or action is outside what this pinned target enables. Check the instance ceilings, the destination write keys, and that you are on the pinned route rather than `/multi/mcp`. |
 | Data/SQL action is absent or denied | Check the instance ceiling, target property, XSUAA role, and SAP authorization. |
 
 <a id="not-in-v1"></a>

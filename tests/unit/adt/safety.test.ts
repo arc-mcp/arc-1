@@ -13,8 +13,10 @@ import {
   describeSafety,
   isOperationAllowed,
   isPackageAllowed,
+  isValidAllowedPackagePattern,
   OperationType,
   type SafetyConfig,
+  splitAllowedPackageList,
   unrestrictedSafetyConfig,
 } from '../../../src/adt/safety.js';
 
@@ -634,4 +636,21 @@ describe('Safety System', () => {
       expect(describeSafety(config({ blockedDataSources: ['USR02'] }))).toContain('BlockedDataSources=1');
     });
   });
+});
+
+describe('allowed-package list parsing', () => {
+  it('splits, trims and reports empty entries without inventing defaults', () => {
+    expect(splitAllowedPackageList('$TMP, Z*')).toEqual({ entries: ['$TMP', 'Z*'], hadEmptyEntries: false });
+    expect(splitAllowedPackageList('$TMP,,Z*')).toEqual({ entries: ['$TMP', 'Z*'], hadEmptyEntries: true });
+    expect(splitAllowedPackageList(' , ')).toEqual({ entries: [], hadEmptyEntries: true });
+  });
+  it.each(['$TMP', 'Z*', 'ZFOO/**', '*', '/ABC/ZPKG', '/ABC/Z*', 'zlower'])('accepts %s', (entry) => {
+    expect(isValidAllowedPackagePattern(entry)).toBe(true);
+  });
+  it.each(['', '**', '/**', 'Z**', 'Z*X', 'Z FOO', '__ARC1_DENY_ALL__X;', 'A'.repeat(31), 'ZFOO/**/X'])(
+    'rejects %s',
+    (entry) => {
+      expect(isValidAllowedPackagePattern(entry)).toBe(false);
+    },
+  );
 });

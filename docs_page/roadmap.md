@@ -148,12 +148,12 @@ releases before enabling it. See [routing evidence](https://github.com/arc-mcp/a
 **Idea.** Offer a supported library API for hosts that need to create isolated ARC-1 server
 instances with per-tenant configuration, lifecycle, and audit context.
 
-**Why it remains.** Experimental read-only multi-target HTTP routing is implemented, but it is not
+**Why it remains.** Experimental multi-target HTTP routing (read-only aggregate, opt-in writable pinned PP routes) is implemented, but it is not
 an embeddable API and does not generalize to writable tenant instances. Extracting internals now
 would create a public compatibility surface without a known consumer.
 
 **Resume when.** A concrete embedding customer can define lifecycle, isolation, writable-safety,
-and upgrade requirements. Do not widen the mutation-free multi-target contract as a shortcut.
+and upgrade requirements. ADR-0008 opened writes only on pinned Principal Propagation routes; do not widen it to aggregate, shared Basic, or embedded tenants as a shortcut.
 
 ## Authentication, compatibility, and security
 
@@ -740,6 +740,7 @@ CSRF token. On SAP_BASIS 816 such bursts coincided with fresh stateful contexts 
 **Resume when.** A PP or multi-target deployment reports `400 Session not found` or failed stateful
 closes under load, or SAP logon volume becomes an operator concern. Key any cache by SAP identity and
 token lifetime, keep users isolated, and keep ADR-0007's request-local Basic credentials.
+Writable pinned targets (ADR-0008) add stateful lock sessions per call, which raises the relevance of this item.
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
 the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).

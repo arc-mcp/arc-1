@@ -166,6 +166,19 @@ describe('shipped mta.yaml resolves through the config parser', () => {
     expect(appModuleDescriptor().parameters?.instances).toBe(1);
   });
 
+  it('ships multi-target writes off and boots with the explicit pinned-write opt-in', () => {
+    const base = {
+      ARC1_MULTI_TARGET_ENDPOINTS: 'true',
+      ARC1_CACHE: 'none',
+      ARC1_TOOL_MODE: 'standard',
+      ARC1_UI: 'off',
+    };
+    expect(resolveWithOverrides(base).multiTargetAllowWrites).toBe(false);
+    const config = resolveWithOverrides({ ...base, ARC1_MULTI_TARGET_ALLOW_WRITES: 'true' });
+    expect(config.multiTargetAllowWrites).toBe(true);
+    expect(config.allowWrites).toBe(false);
+  });
+
   it('excludes local agent credentials and generated documentation from the deployable module', () => {
     const ignored = appModuleDescriptor()['build-parameters']?.ignore as string[] | undefined;
 

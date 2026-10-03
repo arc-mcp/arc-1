@@ -15,7 +15,14 @@ import { describe, expect, it } from 'vitest';
 import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
-import type { ServerConfig } from '../../../src/server/types.js';
+import { READ_ONLY_WRITE_POLICY } from '../../../src/server/multi-target-destination-config.js';
+import { buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
+import {
+  injectTargetSchema,
+  multiTargetSurfaceDefinitions,
+  multiTargetToolDefinitions,
+} from '../../../src/server/multi-target-tools.js';
+import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { btp, FULL, features, onprem } from './handler-test-config.js';
 
 interface Variant {
@@ -125,5 +132,69 @@ describe('tool-definitions snapshot (LLM-visible surface)', () => {
     ]) {
       expect(seen).toContain(name);
     }
+  });
+});
+
+describe('multi-target tool surface snapshot (LLM-visible, ADR-0006/0008)', () => {
+  const multiTargetTarget = {
+    target: 'A4H/100',
+    sid: 'A4H',
+    client: '100',
+    description: 'A4H development',
+    language: 'EN',
+    destinationName: 'ARC1_A4H_100_PP',
+    authentication: 'PrincipalPropagation' as const,
+    identity: 'per-user' as const,
+    proxyType: 'OnPremise' as const,
+    hasCloudConnectorLocationId: false,
+    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
+    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
+    connectionFingerprint: 'connection',
+    fingerprint: 'fingerprint',
+  };
+  const surfaces: Array<[string, ServerConfig]> = [
+    ['multi-target-readonly', { ...DEFAULT_CONFIG, multiTargetEndpoints: true }],
+    [
+      'multi-target-data-sql',
+      { ...DEFAULT_CONFIG, multiTargetEndpoints: true, allowDataPreview: true, allowFreeSQL: true },
+    ],
+  ];
+  for (const [name, config] of surfaces) {
+    it(`is stable: ${name}`, async () => {
+      const tools = multiTargetToolDefinitions(getToolDefinitions(config), config);
+      await expect(JSON.stringify(tools, null, 2)).toMatchFileSnapshot(`../../fixtures/tool-definitions/${name}.json`);
+    });
+  }
+  it('is stable: multi-target-aggregate-one-target', async () => {
+    const config = { ...DEFAULT_CONFIG, multiTargetEndpoints: true };
+    const tools = multiTargetToolDefinitions(getToolDefinitions(config), config).map((tool) =>
+      injectTargetSchema(tool, [multiTargetTarget]),
+    );
+    await expect(JSON.stringify(tools, null, 2)).toMatchFileSnapshot(
+      '../../fixtures/tool-definitions/multi-target-aggregate-one-target.json',
+    );
+  });
+  it('is stable: multi-target-pinned-writable', async () => {
+    const config = buildMultiTargetConfig(
+      { ...DEFAULT_CONFIG, multiTargetEndpoints: true, multiTargetAllowWrites: true },
+      {
+        ...multiTargetTarget,
+        effectivePolicy: {
+          ...multiTargetTarget.effectivePolicy,
+          allowWrites: true,
+          allowedPackages: ['$TMP', 'ZTEAM*'],
+        },
+      },
+      'pinned',
+    );
+    const tools = multiTargetSurfaceDefinitions(
+      getToolDefinitions(config),
+      'pinned',
+      { available: true, targets: [multiTargetTarget] },
+      config,
+    );
+    await expect(JSON.stringify(tools, null, 2)).toMatchFileSnapshot(
+      '../../fixtures/tool-definitions/multi-target-pinned-writable.json',
+    );
   });
 });

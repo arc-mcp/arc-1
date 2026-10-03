@@ -42,6 +42,9 @@ describe('parseArgs', () => {
     expect(config.denyActions).toEqual([]);
     expect(config.schemaNullableOptionals).toBe('auto');
     expect(config.multiTargetAllowBasicAuth).toBe(false);
+    expect(config.multiTargetAllowWrites).toBe(false);
+    expect(config.multiTargetAllowTransportWrites).toBe(false);
+    expect(config.multiTargetAllowGitWrites).toBe(false);
     expect(config.verbose).toBe(false);
   });
 
@@ -55,6 +58,45 @@ describe('parseArgs', () => {
       expect(stderrSpy).toHaveBeenCalledWith(
         expect.stringContaining(
           'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true has no effect without ARC1_MULTI_TARGET_ENDPOINTS=true',
+        ),
+      );
+    } finally {
+      stderrSpy.mockRestore();
+    }
+  });
+
+  it('parses the default-off multi-target write ceilings', () => {
+    process.env.ARC1_MULTI_TARGET_ENDPOINTS = 'true';
+    process.env.SAP_TRANSPORT = 'http-streamable';
+    process.env.SAP_XSUAA_AUTH = 'true';
+    process.env.ARC1_CACHE = 'none';
+    process.env.ARC1_MULTI_TARGET_ALLOW_WRITES = 'true';
+    process.env.ARC1_MULTI_TARGET_ALLOW_TRANSPORT_WRITES = 'true';
+    const { config, sources } = resolveConfig([]);
+    expect(config.multiTargetAllowWrites).toBe(true);
+    expect(config.multiTargetAllowTransportWrites).toBe(true);
+    expect(config.multiTargetAllowGitWrites).toBe(false);
+    expect(sources.multiTargetAllowWrites).toEqual({ env: 'ARC1_MULTI_TARGET_ALLOW_WRITES' });
+    // The single-target ceilings stay independent (design: no leakage either way).
+    expect(config.allowWrites).toBe(false);
+  });
+
+  it.each(['ARC1_MULTI_TARGET_ALLOW_TRANSPORT_WRITES', 'ARC1_MULTI_TARGET_ALLOW_GIT_WRITES'])(
+    'rejects %s without the master multi-target write ceiling',
+    (key) => {
+      process.env[key] = 'true';
+      expect(() => parseArgs([])).toThrow(/require ARC1_MULTI_TARGET_ALLOW_WRITES=true/);
+    },
+  );
+
+  it('warns when the multi-target write ceiling is set without multi-target mode', () => {
+    const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      process.env.ARC1_MULTI_TARGET_ALLOW_WRITES = 'true';
+      parseArgs([]);
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          'ARC1_MULTI_TARGET_ALLOW_WRITES=true has no effect without ARC1_MULTI_TARGET_ENDPOINTS=true',
         ),
       );
     } finally {

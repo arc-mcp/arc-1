@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { getToolDefinitions, type ToolDefinition } from '../../../src/handlers/tools.js';
 import type { TargetDescriptor } from '../../../src/server/destination-registry.js';
+import { READ_ONLY_WRITE_POLICY } from '../../../src/server/multi-target-destination-config.js';
 import {
   injectTargetSchema,
+  isWritablePinnedSurface,
   multiTargetInvocationDecision,
+  multiTargetSurfaceDefinitions,
   multiTargetToolDefinitions,
   normalizeTarget,
+  routeInvocationDecision,
   sapTargetsDefinition,
 } from '../../../src/server/multi-target-tools.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -24,8 +28,8 @@ function target(index: number): TargetDescriptor {
     identity: 'per-user',
     proxyType: 'OnPremise',
     hasCloudConnectorLocationId: false,
-    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false },
-    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false },
+    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
+    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
     connectionFingerprint: `connection-${index}`,
     fingerprint: `fingerprint-${index}`,
   };
@@ -191,5 +195,86 @@ describe('multi-target tool surface', () => {
     expect(definition.inputSchema).toMatchObject({ additionalProperties: false });
     expect(property(definition, 'query')).toMatchObject({ type: 'string', maxLength: 160 });
     expect(property(definition, 'offset')).toMatchObject({ type: 'integer', minimum: 0, maximum: 1_000_000 });
+  });
+});
+
+describe('ADR-0008 pinned writable surface', () => {
+  const writableConfig = {
+    ...DEFAULT_CONFIG,
+    multiTargetEndpoints: true,
+    allowWrites: true,
+    allowedPackages: ['$TMP'],
+  };
+
+  it('switches only a pinned route whose route-bound ceiling grants writes', () => {
+    expect(isWritablePinnedSurface('pinned', writableConfig)).toBe(true);
+    expect(isWritablePinnedSurface('aggregate', writableConfig)).toBe(false);
+    expect(isWritablePinnedSurface('pinned', DEFAULT_CONFIG)).toBe(false);
+  });
+
+  it('uses single-target pruning only on a writable pinned route', () => {
+    const tools = getToolDefinitions(writableConfig);
+    const pinned = multiTargetSurfaceDefinitions(
+      tools,
+      'pinned',
+      { available: true, targets: [target(0)] },
+      writableConfig,
+    );
+    expect(pinned).toEqual(tools);
+    expect(pinned.map((tool) => tool.name)).toEqual(expect.arrayContaining(['SAPWrite', 'SAPActivate', 'SAPManage']));
+    expect(pinned.find((tool) => tool.name === 'SAPWrite')?.annotations?.readOnlyHint).not.toBe(true);
+    const aggregate = multiTargetSurfaceDefinitions(
+      tools,
+      'aggregate',
+      { available: true, targets: [target(0)] },
+      writableConfig,
+    );
+    expect(aggregate).toEqual(multiTargetToolDefinitions(tools, writableConfig));
+    expect(aggregate.map((tool) => tool.name)).not.toContain('SAPWrite');
+  });
+
+  it('keeps a read-only pinned route on the reviewed v1 surface', () => {
+    const tools = getToolDefinitions(DEFAULT_CONFIG);
+    expect(
+      multiTargetSurfaceDefinitions(tools, 'pinned', { available: true, targets: [target(0)] }, DEFAULT_CONFIG),
+    ).toEqual(multiTargetToolDefinitions(tools, DEFAULT_CONFIG));
+  });
+
+  it('advertises no tools when the registry is unavailable or the aggregate has no targets', () => {
+    const tools = getToolDefinitions(writableConfig);
+    expect(multiTargetSurfaceDefinitions(tools, 'pinned', { available: false, targets: [] }, writableConfig)).toEqual(
+      [],
+    );
+    expect(multiTargetSurfaceDefinitions(tools, 'aggregate', { available: true, targets: [] }, writableConfig)).toEqual(
+      [],
+    );
+  });
+
+  it('decides writable pinned invocations by ACTION_POLICY + safety', () => {
+    expect(routeInvocationDecision('pinned', 'SAPWrite', { action: 'create' }, writableConfig)).toBe('allowed');
+    expect(routeInvocationDecision('pinned', 'SAPActivate', {}, writableConfig)).toBe('allowed');
+    expect(routeInvocationDecision('aggregate', 'SAPWrite', { action: 'create' }, writableConfig)).toBe('forbidden');
+    expect(routeInvocationDecision('pinned', 'SAPTransport', { action: 'create' }, writableConfig)).toBe('forbidden');
+    expect(
+      routeInvocationDecision(
+        'pinned',
+        'SAPTransport',
+        { action: 'create' },
+        { ...writableConfig, allowTransportWrites: true },
+      ),
+    ).toBe('allowed');
+    expect(routeInvocationDecision('pinned', 'SAPGit', { action: 'push' }, writableConfig)).toBe('forbidden');
+    expect(
+      routeInvocationDecision('pinned', 'SAPGit', { action: 'push' }, { ...writableConfig, allowGitWrites: true }),
+    ).toBe('allowed');
+    expect(routeInvocationDecision('pinned', 'SAPTargets', {}, writableConfig)).toBe('forbidden');
+    expect(routeInvocationDecision('pinned', 'SAP', { action: 'read' }, writableConfig)).toBe('forbidden');
+    expect(routeInvocationDecision('pinned', 'Custom_Tool', {}, writableConfig)).toBe('forbidden');
+    expect(routeInvocationDecision('pinned', 'SAPNoSuchTool', {}, writableConfig)).toBe('forbidden');
+    expect(routeInvocationDecision('pinned', 'SAPQuery', {}, writableConfig)).toBe('target-policy-denied');
+    expect(routeInvocationDecision('pinned', 'SAPWrite', { action: 'create' }, DEFAULT_CONFIG)).toBe('forbidden');
+    expect(routeInvocationDecision('pinned', 'SAPRead', { type: 'CLAS' }, DEFAULT_CONFIG)).toBe(
+      multiTargetInvocationDecision('SAPRead', { type: 'CLAS' }, DEFAULT_CONFIG),
+    );
   });
 });
