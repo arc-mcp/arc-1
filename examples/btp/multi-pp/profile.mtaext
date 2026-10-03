@@ -8,6 +8,7 @@ modules:
       # No SAP_BTP_DESTINATION or SAP_BTP_PP_DESTINATION: no independent /mcp.
       ARC1_MULTI_TARGET_ENDPOINTS: "true"
       ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "false"
+      ARC1_MULTI_TARGET_ALLOW_WRITES: "false"
       SAP_PP_ENABLED: "true"
       SAP_PP_STRICT: "true"
       SAP_PP_ALLOW_SHARED_COOKIES: "false"

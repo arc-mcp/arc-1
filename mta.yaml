@@ -186,6 +186,12 @@ modules:
       # Basic User/Password rotation is hot; every other destination change
       # remains restart-bound.
       # ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH: "true"
+      # Optional ADR-0008 writes on pinned PrincipalPropagation routes only. Each
+      # destination must also opt in with arc1.allow_writes=true and
+      # arc1.allowed_packages. /multi/mcp and Basic targets never mutate.
+      # ARC1_MULTI_TARGET_ALLOW_WRITES: "true"
+      # ARC1_MULTI_TARGET_ALLOW_TRANSPORT_WRITES: "true"
+      # ARC1_MULTI_TARGET_ALLOW_GIT_WRITES: "true"
       # Optional rate tuning for a small beta deployment; these values are not
       # required to enable ARC-1 multi-target mode.
       # ARC1_AUTH_RATE_LIMIT: "30"
