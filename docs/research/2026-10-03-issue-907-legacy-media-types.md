@@ -9,7 +9,7 @@ Class metadata GETs reject `Accept: */*`; class/program creates reject
 `Content-Type: application/*`. Unversioned vendor types work in the reporter's
 replays. The 740 system is not available in this test environment.
 
-At base `4ad7d1659`, ARC-1 sends those wildcards without a matching discovery
+At base `4ad7d165`, ARC-1 sends those wildcards without a matching discovery
 entry. `resolveObjectPackage` reads class metadata before writes and activation,
 so the error prevents the package gate from resolving the real package. The
 gate must continue to fail closed. The HTTP negotiation branch handles 406/415,
@@ -56,6 +56,70 @@ avoid replaying unrelated mutations. No generic 400 retry, release-number guess,
 package bypass, discovery-capability fabrication, or new configuration is needed.
 The small compatibility selector stays separate from the already size-limited
 HTTP transport; its integration is an explicit, small file-budget increase.
+
+## Implementation and automated verification
+
+Runtime commit: `02d632866a2d7187082d0725294a3e9db049d0bf` (ARC-1 1.5.0).
+The 28-line selector in `legacy-content-handler.ts` changes only Accept or
+Content-Type for the verified request shapes. `http.ts` reuses its existing
+one-retry branch and excludes these results from the subtree header cache.
+The transport budget increases by exactly 12 lines; no refactor or public schema
+change is introduced.
+
+- Full suite: **7,793 tests across 255 files passed**, using
+  `npm test -- --maxWorkers=2` (47.87 seconds, no skips).
+- HTTP, legacy discovery, and new handler regression suites: **246 passed**.
+  The new suite has 39 cases covering recovery, unchanged headers/body/URL,
+  no retry for unrelated errors or endpoints, bounded retries, an unknown
+  creation outcome after a fallback 500, and fail-closed package enforcement.
+- Removing the HTTP fix fails 20 of those 39 cases. Allowing legacy results into
+  the subtree cache fails the source/read-isolation regression. Both mutations
+  were reverted and verified against the committed source.
+- Typecheck, build, lint, policy validation, file/schema budgets, strict MkDocs,
+  and diff checks passed. Lint retains two pre-existing informational suggestions.
+- `npm audit --audit-level=high --omit=optional` still fails on the existing
+  `node-forge` advisory `GHSA-86w9-cpqp-85rv`, reporting no fix available on
+  2026-10-03. Dependency manifests and the audit gate are unchanged.
+
+## Live lifecycle verification
+
+All runs used commit `02d63286`, Node 22.21.1 on macOS, local `handleToolCall`
+dispatch, HTTPS port 443, Basic authentication, client 001, and disposable `$TMP`
+objects. Each run recorded a clean working tree and verified that the commit and
+SHA-256 hashes of both runtime files were unchanged before/after testing.
+
+| Run | Fixture suffix | Result |
+|---|---|---|
+| A4H 758 SP02, normal discovery | `MUSUA979` | Class, program, and interface create/source read/activate/delete passed; class update and `edit_method` passed; active source contained the edited method; syntax check had no errors. |
+| NPL 750 SP02, normal discovery | `MUSUDGAS` | Same complete lifecycle passed. |
+| NPL 750 SP02, empty discovery and injected legacy errors | `MUSUEDPZ` | Same lifecycle passed, recovering from ten injected structured 400 responses; fallback requests and subsequent operations reached real SAP. |
+
+Names are `ZCL_ARC907_<suffix>`, `ZARC907_<suffix>`, and `ZIF_ARC907_<suffix>`.
+The injected run intercepted only wildcard class metadata GETs and class/program
+create POSTs locally. It did not send the rejected request to SAP, fabricate
+successes, or bypass the package gate. This exercises the fallback against real
+750 handlers, **not** the inaccessible 740 backend.
+
+The first NPL run (`ZCL_ARC907_MUSUA8ZP`) stopped when an immediate metadata read
+returned 404 after successful creation. A fresh client found the object; it was
+then deleted and independently verified absent. The cause of that first read
+was not diagnosed. The harness was corrected to verify writes and cleanup using
+fresh clients. A final pass confirmed all ten fixture names absent through both
+fresh metadata GETs (404) and repository searches (empty).
+
+Remaining verification: the reporter's actual 740 SP04 system, transported writes,
+BTP/principal propagation, and external MCP-client execution. No stateful-session
+enhancement is installed or changed by this fix; the older backend's separate
+locking prerequisite remains applicable.
+
+## Final review
+
+Reviewed the code, tests, plan, and SAP evidence after verification. No further
+actionable findings. Modern discovery and successful wildcard requests retain
+their original behavior. The compatibility path cannot bypass real-package
+resolution, change the request target/body/identity, add a second negotiation
+retry, or spread metadata types into source/action requests. The existing
+dependency audit failure and unavailable 740 verification remain explicit limits.
 
 ## Roadmap
 
