@@ -854,7 +854,7 @@ export class AdtHttpClient {
           if (retryContentType !== currentContentType) {
             negotiated.contentType = retryContentType;
           }
-          // Legacy metadata types must not propagate to source or action sub-resources.
+          // Never cache into the source subtree; costs one extra round trip per matching legacy call.
           if (!legacyFallback && (negotiated.accept || negotiated.contentType)) {
             this.negotiatedHeaders.set(negotiationKey, negotiated);
           }
