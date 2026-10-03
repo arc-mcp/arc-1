@@ -113,7 +113,7 @@ lowercase-parent scenario on the same A4H/758 SP02 system.
 | `SAPLX…` can suppress insertion | Confirmed by read-only SAP source inspection. In `RS_CREATE_NEW_INCLUDE`'s new-include branch, the namespace is stripped before the `SAPLX` comparison; that branch passes a false insertion flag. Document this exception without claiming it explains the reporter's 752 result. |
 | Standalone/batch `L*` guards miss namespaced names | Confirmed code shape, but whether SAP reserves every `/NS/L*` name for structural includes is not established here. Keep the existing guards; verify the backend contract in a usable customer namespace before widening a rejection rule. |
 | One-line prefix rewrite / shared helper | Not adopted. The existing match and conditional are explicit and small. Combining separate naming routines or changing longer-sibling matching would add unverified scope. |
-| FUNC has a similar raw parent reference | Confirmed code pattern only; its SAP create path was not tested. No FUNC changes in this INCL fix. |
+| FUNC has a similar raw parent reference | Resolved during final review on 758: `CL_FB_ADT_RES_FUNC_COLL.DO_CREATE_CHILD` reads the group from the URI and uppercases it, without reading the XML parent reference. This INCL failure does not apply to that controller; no FUNC change is needed. |
 
 No explicit `createIncludeStatement=true` flag was added: it is already the 758
 default and would not override that release's `SAPLX` exception. Its behavior on
@@ -146,15 +146,45 @@ parent-XML assertions failed before uppercasing and pass afterward. Typecheck,
 build, lint, policy validation, file/schema budgets, strict MkDocs, and diff checks
 passed. Lint retains the same two unrelated informational suggestions.
 
-The default-concurrency full run was interrupted under severe host load. The
-completed two-worker run had 7,751 passing tests and three startup/deadline
-failures in the CLI subprocess and shutdown signal tests. All three subsequently
-passed in isolated reruns without changing source, test assertions, or timeouts;
-one shutdown case needed a single-case rerun, with the other 11 intentionally
-filtered out. The unmodified PR code also passed the shutdown tests. These
-results do not constitute a clean single full-suite run and are recorded as
-timing-sensitive validation, separately from the passing include regression and
-live SAP lifecycle. Final review found no additional actionable patch findings.
+The first follow-up full runs encountered high host load: one was interrupted,
+and a completed two-worker run had 7,751 passes and three CLI/shutdown startup
+deadline failures. All three passed isolated reruns without source, assertion,
+or timeout changes. The clean full run below supersedes this validation gap.
+
+## Final review, 2026-10-03
+
+Reassessed Claude's final review against clean commit
+`3d01c304e4d5b18c3db25d0282d052bd8beb6213`, with `main` still at `1f00c7ac`.
+No further actionable code findings. The implementation remains two small
+corrections in the existing guard and XML builder, without new abstractions.
+
+- Independent `npm test -- --maxWorkers=2`: **7,754 tests across 254 files passed**
+  in one run (43.81 seconds), with no skipped tests or timeout changes.
+- Typecheck, build, lint, policy validation, file/schema budgets, strict MkDocs,
+  and diff checks passed. Lint retains two unrelated informational suggestions.
+- Repeated the live lowercase-group lifecycle on A4H/758 SP02 through the same
+  Basic-authenticated local tool dispatch. Fixture `ZARC904FMUSTCZVG` and include
+  `LZARC904FMUSTCZVGF01` passed create, source read-back, main-program insertion,
+  include/group activation, active-source read-back, and a clean syntax check.
+  Both objects were deleted; 404s and an empty bounded TRDIR query verified cleanup.
+- The live run recorded the full commit, clean working tree, Node 22.21.1, and
+  start time `2026-10-03T19:57:27.995Z`. SHA-256 values for `write.ts`
+  (`8f99aa4cb857c2ea991ebfa74d8e6b4fe3569abcebc453eb5c16d4e7983cae82`)
+  and `write-helpers.ts`
+  (`3765ffe9ad98de285108f8c86ee4fed04f8e34668dae37fd2f602900e577a97e`)
+  matched before and after; the commit and working tree were also unchanged.
+  This closes the earlier live-run provenance gap.
+- Independently read the FUNC create controller to confirm Claude's finding in
+  the assessment table. No FUNC write was required.
+- GitHub reports no merge conflicts. The effective `main` rules require a PR
+  and squash merging, with no required status checks or reviewer approvals.
+  CI run `37059889300` still fails before tests at the existing `node-forge`
+  audit; the local audit reproduced it on 2026-10-03 with no fix available.
+  Mergeability does not mean CI is green.
+
+The PR title now covers both namespace placement and lowercase parent names.
+The live namespace, 752 insertion-cause, and transport/auth-route limitations
+above remain unchanged; they are not claims of this final verification.
 
 ## Roadmap
 
