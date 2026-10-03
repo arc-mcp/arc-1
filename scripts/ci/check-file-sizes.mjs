@@ -79,7 +79,7 @@ const BUDGETS = {
   'tests/integration/adt.integration.test.ts': 3100,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1549, // Combined #859/#860 transport size; either merge order fits.
+  'src/adt/http.ts': 1561, // +12: #907 bounded legacy negotiation; selector lives in its own module.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1507, // Keep the safe CTS explanation in minimal-error mode.
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.

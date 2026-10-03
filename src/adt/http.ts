@@ -25,6 +25,7 @@ import {
   withoutResponseBudget,
 } from './http-deadline.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
+import { legacyContentHandlerFallback } from './legacy-content-handler.js';
 import { fetchWithAttemptBudget } from './request-attempt-budget.js';
 import type { Semaphore } from './semaphore.js';
 import { resolveSapUserAgent } from './user-agent.js';
@@ -766,14 +767,24 @@ export class AdtHttpClient {
         return result;
       }
 
-      // Handle 406/415 content negotiation failure — retry once with fallback headers
-      if ((response.status === 406 || response.status === 415) && !negotiationRetried) {
+      // Retry negotiation once, including the narrowly matched NW 7.40 handler error.
+      const legacyFallback = legacyContentHandlerFallback(
+        response.status,
+        responseBody,
+        method,
+        negotiationKey,
+        headers,
+      );
+      if ((response.status === 406 || response.status === 415 || legacyFallback) && !negotiationRetried) {
         negotiationRetried = true;
         const fallbackHeaders = { ...headers };
 
         let headersChanged = false;
 
-        if (response.status === 406) {
+        if (legacyFallback) {
+          Object.assign(fallbackHeaders, legacyFallback);
+          headersChanged = true;
+        } else if (response.status === 406) {
           // Server rejected our Accept header — try fallback
           const inferred = inferAcceptFromError(responseBody);
           if (inferred && inferred !== fallbackHeaders.Accept) {
@@ -843,7 +854,8 @@ export class AdtHttpClient {
           if (retryContentType !== currentContentType) {
             negotiated.contentType = retryContentType;
           }
-          if (negotiated.accept || negotiated.contentType) {
+          // Legacy metadata types must not propagate to source or action sub-resources.
+          if (!legacyFallback && (negotiated.accept || negotiated.contentType)) {
             this.negotiatedHeaders.set(negotiationKey, negotiated);
           }
 
