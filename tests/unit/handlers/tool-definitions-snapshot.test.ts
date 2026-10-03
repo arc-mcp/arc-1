@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-relations.js';
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
+import { READ_ONLY_WRITE_POLICY } from '../../../src/server/multi-target-destination-config.js';
 import { injectTargetSchema, multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { btp, FULL, features, onprem } from './handler-test-config.js';
@@ -141,8 +142,8 @@ describe('multi-target tool surface snapshot (LLM-visible, ADR-0006/0008)', () =
     identity: 'per-user' as const,
     proxyType: 'OnPremise' as const,
     hasCloudConnectorLocationId: false,
-    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false },
-    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false },
+    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
+    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
     connectionFingerprint: 'connection',
     fingerprint: 'fingerprint',
   };

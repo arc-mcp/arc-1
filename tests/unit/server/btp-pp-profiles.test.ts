@@ -4,6 +4,7 @@ import { parse } from 'yaml';
 import { parseArgs } from '../../../src/server/config.js';
 import { projectMultiTargetDestination } from '../../../src/server/destination-discovery.js';
 import { DestinationRegistry } from '../../../src/server/destination-registry.js';
+import { READ_ONLY_WRITE_POLICY } from '../../../src/server/multi-target-destination-config.js';
 import type { ServerConfig } from '../../../src/server/types.js';
 
 const read = (path: string) => readFileSync(new URL(`../../../${path}`, import.meta.url), 'utf8');
@@ -158,7 +159,11 @@ describe('actual BTP setup examples', () => {
     expect(result.counts.quarantined).toBe(0);
     for (const target of result.targets) {
       expect(target.identity).toBe('per-user');
-      expect(target.effectivePolicy).toEqual({ allowDataPreview: false, allowFreeSQL: false });
+      expect(target.effectivePolicy).toEqual({
+        allowDataPreview: false,
+        allowFreeSQL: false,
+        ...READ_ONLY_WRITE_POLICY,
+      });
     }
   });
 

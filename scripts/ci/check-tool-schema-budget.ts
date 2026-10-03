@@ -27,6 +27,7 @@ import { RELATIONS_MIME, RELATIONS_PATH } from '../../src/adt/repository-relatio
 import type { FeatureStatus, ResolvedFeatures } from '../../src/adt/types.js';
 import { getToolDefinitions, type ToolDefinition } from '../../src/handlers/tools.js';
 import type { TargetDescriptor } from '../../src/server/destination-registry.js';
+import { READ_ONLY_WRITE_POLICY } from '../../src/server/multi-target-destination-config.js';
 import {
   injectTargetSchema,
   multiTargetToolDefinitions,
@@ -146,8 +147,8 @@ function syntheticTarget(index: number): TargetDescriptor {
     identity: 'per-user',
     proxyType: 'OnPremise',
     hasCloudConnectorLocationId: false,
-    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false },
-    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false },
+    requestedPolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
+    effectivePolicy: { allowDataPreview: false, allowFreeSQL: false, ...READ_ONLY_WRITE_POLICY },
     connectionFingerprint: `connection-${index}`,
     fingerprint: `fingerprint-${index}`,
   };

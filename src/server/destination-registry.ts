@@ -1,12 +1,14 @@
 /** Immutable validation registry for destination-discovered multi-target mode. */
 
 import { createHash } from 'node:crypto';
-import type { SafetyConfig } from '../adt/safety.js';
+import { isValidAllowedPackagePattern, type SafetyConfig, splitAllowedPackageList } from '../adt/safety.js';
 import type { DestinationDiscoveryResult, DiscoveredDestination } from './destination-discovery.js';
 import {
+  type DestinationWritePolicy,
   isSupportedMultiTargetArcProperty,
-  isWriteRelatedArcProperty,
   parseDestinationBoolean,
+  parseDestinationWritePolicy,
+  READ_ONLY_WRITE_POLICY,
 } from './multi-target-destination-config.js';
 import { buildTargetId, SAP_SYSID_PATTERN, TARGET_SYSTEM_ALIAS_PATTERN } from './multi-target-identity.js';
 import type { ServerConfig } from './types.js';
@@ -37,14 +39,16 @@ export type TargetExclusionCode =
   | 'INVALID_LANGUAGE'
   | 'UNKNOWN_ARC1_PROPERTY'
   | 'INVALID_POLICY'
-  | 'UNSUPPORTED_V1_WRITE_CONFIG'
+  | 'WRITE_REQUIRES_PRINCIPAL_PROPAGATION'
+  | 'INVALID_WRITE_POLICY'
   | 'DUPLICATE_DESTINATION_NAME'
   | 'DUPLICATE_TARGET'
   | 'DUPLICATE_BASIC_CONNECTION'
   | 'SHADOWED_BY_INSTANCE'
   | 'TARGET_LIMIT_EXCEEDED';
 
-export interface TargetPolicy {
+/** Write fields are REQUIRED: a forgotten policy literal must be a compile error (ADR-0008). */
+export interface TargetPolicy extends DestinationWritePolicy {
   readonly allowDataPreview: boolean;
   readonly allowFreeSQL: boolean;
 }
@@ -93,6 +97,10 @@ export interface TargetDiagnostic {
     enabled?: boolean;
     allowDataPreview?: boolean;
     allowFreeSQL?: boolean;
+    allowWrites?: boolean;
+    allowedPackages?: readonly string[];
+    allowTransportWrites?: boolean;
+    allowGitWrites?: boolean;
     targetAlias?: string;
     unknownProperties?: readonly string[];
   }>;
@@ -161,6 +169,10 @@ export function targetFingerprint(value: FingerprintInput): string {
     language: value.language,
     allowDataPreview: value.requestedPolicy.allowDataPreview,
     allowFreeSQL: value.requestedPolicy.allowFreeSQL,
+    allowWrites: value.requestedPolicy.allowWrites,
+    allowedPackages: value.requestedPolicy.allowedPackages,
+    allowTransportWrites: value.requestedPolicy.allowTransportWrites,
+    allowGitWrites: value.requestedPolicy.allowGitWrites,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -169,10 +181,18 @@ function immutableArcConfig(properties: Readonly<Record<string, string>>): Targe
   const unknownProperties = Object.keys(properties)
     .filter((key) => !isSupportedMultiTargetArcProperty(key))
     .sort();
+  const packages = splitAllowedPackageList(properties['arc1.allowed_packages'] ?? '').entries;
   return Object.freeze({
     enabled: parseDestinationBoolean(properties['arc1.enabled']),
     allowDataPreview: parseDestinationBoolean(properties['arc1.allow_data_preview']),
     allowFreeSQL: parseDestinationBoolean(properties['arc1.allow_free_sql']),
+    allowWrites: parseDestinationBoolean(properties['arc1.allow_writes']),
+    allowTransportWrites: parseDestinationBoolean(properties['arc1.allow_transport_writes']),
+    allowGitWrites: parseDestinationBoolean(properties['arc1.allow_git_writes']),
+    // Retain only a fully valid list; invalid destination values never reach diagnostics.
+    ...(packages.length > 0 && packages.every(isValidAllowedPackagePattern)
+      ? { allowedPackages: Object.freeze(packages) }
+      : {}),
     ...(TARGET_SYSTEM_ALIAS_PATTERN.test(properties['arc1.target_alias'] ?? '')
       ? { targetAlias: properties['arc1.target_alias'] }
       : {}),
@@ -254,16 +274,6 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
   }
 
   for (const key of Object.keys(source.arcProperties)) {
-    if (isWriteRelatedArcProperty(key)) {
-      return excludedCandidate(
-        source,
-        diagnosticBase,
-        true,
-        'quarantined',
-        'UNSUPPORTED_V1_WRITE_CONFIG',
-        'Write-related destination configuration is not supported in multi-target v1.',
-      );
-    }
     if (!isSupportedMultiTargetArcProperty(key)) {
       return excludedCandidate(
         source,
@@ -451,17 +461,28 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       'sap-language must contain exactly two letters.',
     );
   }
+  const writeRequest = parseDestinationWritePolicy(source.arcProperties, authentication);
+  if (!writeRequest.ok) {
+    return excludedCandidate(source, diagnosticBase, true, 'quarantined', writeRequest.code, writeRequest.message);
+  }
 
   const targetId = buildTargetId(source.sapSysId, source.sapClient, targetAlias);
   const description = sanitizeTargetDescription(source.description, targetId);
   const descriptionFallback = description === targetId && source.description !== targetId;
-  const requestedPolicy = Object.freeze({
+  const requestedPolicy: TargetPolicy = Object.freeze({
     allowDataPreview: dataRequested ?? false,
     allowFreeSQL: sqlRequested ?? false,
+    ...writeRequest.policy,
   });
-  const effectivePolicy = Object.freeze({
+  // ADR-0008: instance ceiling ∧ destination opt-in (PP already guaranteed by the parser).
+  const allowWrites = base.multiTargetAllowWrites && requestedPolicy.allowWrites;
+  const effectivePolicy: TargetPolicy = Object.freeze({
     allowDataPreview: base.allowDataPreview && requestedPolicy.allowDataPreview,
     allowFreeSQL: base.allowFreeSQL && requestedPolicy.allowFreeSQL,
+    allowWrites,
+    allowedPackages: allowWrites ? requestedPolicy.allowedPackages : READ_ONLY_WRITE_POLICY.allowedPackages,
+    allowTransportWrites: allowWrites && base.multiTargetAllowTransportWrites && requestedPolicy.allowTransportWrites,
+    allowGitWrites: allowWrites && base.multiTargetAllowGitWrites && requestedPolicy.allowGitWrites,
   });
   const withoutFingerprints: Omit<TargetDescriptor, 'fingerprint' | 'connectionFingerprint'> = {
     target: targetId,
@@ -509,7 +530,10 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       effectivePolicy,
       limitedByInstance:
         requestedPolicy.allowDataPreview !== effectivePolicy.allowDataPreview ||
-        requestedPolicy.allowFreeSQL !== effectivePolicy.allowFreeSQL,
+        requestedPolicy.allowFreeSQL !== effectivePolicy.allowFreeSQL ||
+        requestedPolicy.allowWrites !== effectivePolicy.allowWrites ||
+        requestedPolicy.allowTransportWrites !== effectivePolicy.allowTransportWrites ||
+        requestedPolicy.allowGitWrites !== effectivePolicy.allowGitWrites,
       warnings: Object.freeze(descriptionFallback ? ['MISSING_DESCRIPTION'] : []),
     },
   };

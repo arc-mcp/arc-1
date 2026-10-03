@@ -1,7 +1,11 @@
 import type { Destination } from '@arc-mcp/xsuaa-auth/btp';
 import { describe, expect, it } from 'vitest';
-import { canonicalDestinationUrl, opaqueDestinationValue } from '../../../src/server/destination-discovery.js';
-import { DestinationRegistry } from '../../../src/server/destination-registry.js';
+import {
+  canonicalDestinationUrl,
+  opaqueDestinationValue,
+  projectMultiTargetDestination,
+} from '../../../src/server/destination-discovery.js';
+import { DestinationRegistry, evaluateStandaloneTargetDescriptor } from '../../../src/server/destination-registry.js';
 import {
   buildAggregateToolSurfaceConfig,
   buildMultiTargetConfig,
@@ -47,6 +51,8 @@ function registryTarget() {
 }
 
 function destination(overrides: Record<string, unknown> = {}): Destination {
+  // Merge originalProperties overrides instead of letting the trailing spread replace them wholesale.
+  const { originalProperties: originalOverrides, ...rest } = overrides;
   const originalProperties = {
     Name: 'ARC1_A4H_100_PP',
     Type: 'HTTP',
@@ -60,7 +66,7 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
     'arc1.enabled': 'true',
     'arc1.allow_data_preview': 'true',
     'arc1.allow_free_sql': 'false',
-    ...((overrides.originalProperties as Record<string, unknown> | undefined) ?? {}),
+    ...((originalOverrides as Record<string, unknown> | undefined) ?? {}),
   };
   return {
     Name: 'ARC1_A4H_100_PP',
@@ -73,7 +79,7 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
     'sap-client': '100',
     CloudConnectorLocationId: 'LOC_A',
     originalProperties,
-    ...overrides,
+    ...rest,
   } as Destination;
 }
 
@@ -200,5 +206,23 @@ describe('multi-target runtime isolation', () => {
     expect(
       validateTargetDrift(destination(overrides), registryTarget(), { ...DEFAULT_CONFIG, allowDataPreview: true }),
     ).toMatchObject({ ok: false, code: 'TARGET_CONFIG_CHANGED' });
+  });
+
+  it('reports TARGET_CONFIG_CHANGED when arc1.allow_writes changes after startup', () => {
+    const startup = destination({
+      originalProperties: { 'arc1.allow_writes': 'true', 'arc1.allowed_packages': '$TMP' },
+    });
+    const projected = projectMultiTargetDestination(startup);
+    if (!projected) throw new Error('expected a projected destination');
+    const target = evaluateStandaloneTargetDescriptor(projected, DEFAULT_CONFIG);
+    if (!target) throw new Error('expected an accepted target');
+    const changed = destination({
+      originalProperties: { 'arc1.allow_writes': 'false', 'arc1.allowed_packages': '$TMP' },
+    });
+    expect(validateTargetDrift(changed, target, DEFAULT_CONFIG)).toMatchObject({
+      ok: false,
+      code: 'TARGET_CONFIG_CHANGED',
+    });
+    expect(validateTargetDrift(startup, target, DEFAULT_CONFIG)).toMatchObject({ ok: true });
   });
 });

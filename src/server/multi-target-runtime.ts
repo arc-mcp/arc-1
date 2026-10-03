@@ -8,6 +8,7 @@ import {
   type TargetDescriptor,
   targetSafety,
 } from './destination-registry.js';
+import { READ_ONLY_WRITE_POLICY } from './multi-target-destination-config.js';
 import type { ServerConfig } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
 
@@ -109,6 +110,7 @@ export function buildAggregateToolSurfaceConfig(
       {
         allowDataPreview: targets.some((target) => target.effectivePolicy.allowDataPreview),
         allowFreeSQL: targets.some((target) => target.effectivePolicy.allowFreeSQL),
+        ...READ_ONLY_WRITE_POLICY,
       },
       base.blockedDataSources,
     ),
