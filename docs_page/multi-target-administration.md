@@ -219,17 +219,22 @@ The complete field table and minimal/SQL examples are in
 [Destination configuration](multi-target-setup.md#destination-configuration). The operational rules
 are:
 
-- the only supported v1 keys are `arc1.enabled`, `arc1.allow_data_preview`,
-  `arc1.allow_free_sql`, and optional `arc1.target_alias`;
+- the supported keys are `arc1.enabled`, `arc1.allow_data_preview`, `arc1.allow_free_sql`, optional
+  `arc1.target_alias`, and the ADR-0008 write keys `arc1.allow_writes`, `arc1.allowed_packages`,
+  `arc1.allow_transport_writes`, and `arc1.allow_git_writes` (see
+  [Optional writes](multi-target-setup.md#optional-writes-on-pinned-principal-propagation-routes-adr-0008));
 - `arc1.target_alias` changes only the public target/pinned route; real `sap-sysid` and `sap-client`
   remain required for SAP and are visible to admins in diagnostics;
 - omitted data/SQL values are false and the two switches are independent;
-- unknown `arc1.*` keys and any write/package/transport/Git key quarantine an enabled destination;
+- unknown `arc1.*` keys quarantine an enabled destination, and so does an invalid write policy (`INVALID_WRITE_POLICY`) or a Basic destination that requests writes (`WRITE_REQUIRES_PRINCIPAL_PROPAGATION`);
 - `limitedByInstance: true` means a target requested data or SQL above the current instance ceiling;
-  source reads remain active;
+  source reads remain active. The same flag covers write, transport, and Git requests above the
+  `ARC1_MULTI_TARGET_ALLOW_*` ceilings: the target is narrowed, not rejected;
 - changing any target field or policy requires a restart, except Basic `User`/`Password` rotation;
   and
-- there is no `arc1.config_version` or full-write destination profile in v1.
+- there is no `arc1.config_version`; and
+- write policy is read at startup like every other key: a later change returns `TARGET_CONFIG_CHANGED`
+  until restart.
 
 Descriptions are returned to users and models. Treat them as untrusted labels: no prompts,
 instructions, credentials, secrets, token-bearing links, or sensitive notes.
@@ -429,7 +434,8 @@ support tickets.
 | `INVALID_LANGUAGE` | Remove or correct `sap-language`. |
 | `UNKNOWN_ARC1_PROPERTY` | Remove or correct the unsupported ARC-1 property. |
 | `INVALID_POLICY` | Set the data/SQL property to `true` or `false`. |
-| `UNSUPPORTED_V1_WRITE_CONFIG` | Remove write-related properties; writes are unavailable. |
+| `WRITE_REQUIRES_PRINCIPAL_PROPAGATION` | A Basic destination requests writes (`true`, an invalid value, or `arc1.allowed_packages`). Use PP or remove the write keys; explicit `false` keeps it readable. |
+| `INVALID_WRITE_POLICY` | Repair the write keys: strict booleans, sub-flags only with `arc1.allow_writes=true`, and a valid `arc1.allowed_packages` (required, at most 64 entries). |
 | `DUPLICATE_TARGET` | Give every enabled destination a unique public target ID. Systems sharing a real SID/client need an alias on one or both destinations; every duplicate claimant is quarantined. |
 | `DUPLICATE_BASIC_CONNECTION` | Keep exactly one enabled Basic destination for each physical URL/client/Cloud Connector location. Aliases cannot duplicate a shared Basic backend; every claimant is quarantined to preserve the lockout guard. |
 | `DUPLICATE_DESTINATION_NAME` | Remove duplicate inputs; every enabled claimant is quarantined and all claimants remain non-routable. |
@@ -512,14 +518,15 @@ caller.
 
 ## Operational checklist
 
-- [ ] The feature is explicitly enabled and all multi-target routes remain mutation-free.
+- [ ] The feature is explicitly enabled; `/multi/mcp` and every target without a valid write opt-in remain mutation-free.
 - [ ] XSUAA, Destination, and Connectivity bindings are healthy.
 - [ ] Every target has an intentional identity: strict Principal Propagation, or explicitly enabled Basic with no fallback between modes.
 - [ ] PP destinations match an HTTPS/`X509_RESTRICTED` mapping and CERTRULE setup; Basic destinations match a separate principal-type-None mapping with internal HTTPS and a Basic-capable ADT ICF logon procedure. All required ADT paths are allowed.
 - [ ] Basic uses a least-privileged technical user (not `SAP_ALL`), strong reviewed credentials, password-expiry/account-lock monitoring, audited destination administration, and exactly one non-rolling CF instance.
 - [ ] Every target has a valid real SID, client, factual description, `arc1.enabled=true`, and a unique valid route alias when its SID/client is reused.
 - [ ] Data/SQL is approved and enabled only where required at both instance and target layers.
-- [ ] No target contains unknown or write-related `arc1.*` keys.
+- [ ] No target contains unknown `arc1.*` keys; write keys appear only on reviewed PP targets.
+- [ ] Before enabling writes: `ARC1_MULTI_TARGET_ALLOW_WRITES=true` (plus transport/Git sub-ceilings only if needed) is set in the `.mtaext`; the target is PP with `arc1.allow_writes=true` and a narrow `arc1.allowed_packages`; users hold `write`/`transports`/`git` role collections and reconnected; admin `SAPTargets` shows the target active without `limitedByInstance`; a write is tested in an allowed package and refused outside it; production destinations omit `arc1.allow_writes`.
 - [ ] Enabled candidate count is 256 or fewer.
 - [ ] Admin `SAPTargets` shows no duplicate, shadow, quarantine, or unexpected policy narrowing.
 - [ ] PP-only scaled deployments report the same registry revision on every instance; Basic-enabled deployments have exactly one instance.
@@ -533,8 +540,8 @@ caller.
 
 ## Deferred from v1
 
-- multi-target writes, activation, transport mutation, and Git mutation;
-- a full-write destination template;
+- writes on the aggregate `/multi/mcp` route and writes on Basic (shared identity) targets;
+- per-target write grants (XSUAA roles per target; `admin` implies write scopes everywhere);
 - target-specific ARC-1 ACLs or XSUAA roles;
 - persisted per-user target availability;
 - API-key or direct Entra/IAS OIDC access to multi-target routes;

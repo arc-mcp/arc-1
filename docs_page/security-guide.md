@@ -225,6 +225,8 @@ used when per-user SAP authorization or horizontal scaling is required. See
 [ADR-0007](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md)
 and [Multi-System Setup](multi-target-setup.md).
 
+Writes on pinned Principal Propagation routes are a separate default-off opt-in with instance ceilings, per-destination package allowlists, and per-user SAP authorization, defined by [ADR-0008](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0008-opt-in-writes-on-pinned-multi-target-routes.md); the aggregate route and Basic targets never mutate.
+
 ### Shared SAP login lifetime and credential rotation
 
 Single-target HTTP deployments reuse the shared identity's SAP login cookies and CSRF token

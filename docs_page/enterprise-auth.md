@@ -60,6 +60,8 @@ Each target keeps one fixed identity mode; Basic never replaces failed PP. Basic
 mandatory with non-rolling deployment. See [Multi-System Setup](multi-target-setup.md) and
 [Multi-Target Administration](multi-target-administration.md).
 
+Pinned Principal Propagation routes can additionally allow writes, activation, transport, and Git mutations under the default-off instance and destination opt-ins of [ADR-0008](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0008-opt-in-writes-on-pinned-multi-target-routes.md); `/multi/mcp` and Basic targets stay read-only.
+
 ### What to Consider
 
 **How many users?**
@@ -551,6 +553,7 @@ S_ADT_RES authorization, SSO-only system needing `SAP_DISABLE_SAML=true`).
 | — | `SAP_BTP_DESTINATION` | BTP Destination name (shared, or BTP ABAP per-user destination) |
 | — | `SAP_BTP_PP_DESTINATION` | BTP PP Destination name (per-user) |
 | — | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default-off multi-target ceiling permitting shared Basic destinations; requires one CF instance and never enables PP fallback |
+| — | `ARC1_MULTI_TARGET_ALLOW_WRITES` / `_TRANSPORT_WRITES` / `_GIT_WRITES` | Default-off ceilings for opt-in writes on pinned Principal Propagation multi-target routes (ADR-0008); Basic targets and `/multi/mcp` stay read-only |
 | `--pp-enabled` | `SAP_PP_ENABLED` | Enable ARC-1's per-user destination path |
 | `--pp-strict` | `SAP_PP_STRICT` | JWT PP errors always fail closed; explicit `true` gives the recommended strict topology, while explicit `false` supports mixed PP/API-key operation |
 | `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | Allow PP + cookie auth only for shared client (advanced escape hatch) |
