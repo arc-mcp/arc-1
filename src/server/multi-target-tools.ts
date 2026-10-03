@@ -1,4 +1,4 @@
-/** Stable read-only tool surface and target schema helpers for multi-target v1. */
+/** Reviewed read-only multi-target surface and target schema helpers, plus the ADR-0008 writable-pinned switch. */
 
 import { isOperationAllowed, OperationType, type OperationTypeCode } from '../adt/safety.js';
 import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
@@ -148,6 +148,45 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
 
 export function multiTargetToolDefinitions(tools: ToolDefinition[], config: ServerConfig): ToolDefinition[] {
   return tools.map((tool) => pruneDefinition(tool, config)).filter((tool): tool is ToolDefinition => !!tool);
+}
+
+export type MultiTargetSurfaceMode = 'pinned' | 'aggregate';
+
+/** ADR-0008: only a pinned route whose route-bound ceiling grants writes leaves the v1 allowlist. */
+export function isWritablePinnedSurface(mode: MultiTargetSurfaceMode, config: ServerConfig): boolean {
+  return mode === 'pinned' && config.allowWrites;
+}
+
+export function multiTargetSurfaceDefinitions(
+  tools: ToolDefinition[],
+  mode: MultiTargetSurfaceMode,
+  registry: { readonly available: boolean; readonly targets: readonly unknown[] },
+  config: ServerConfig,
+): ToolDefinition[] {
+  if (!registry.available || (mode === 'aggregate' && registry.targets.length === 0)) return [];
+  // Writable pinned: the single-target pruning in getToolDefinitions(config) already applied the
+  // route-bound safety ceiling; scopes and deny actions follow in filterToolsByAuthScope. The v1
+  // allowlist (and its forced readOnlyHint) stays on aggregate and read-only pinned routes.
+  return isWritablePinnedSurface(mode, config) ? tools : multiTargetToolDefinitions(tools, config);
+}
+
+export function routeInvocationDecision(
+  mode: MultiTargetSurfaceMode,
+  toolName: string,
+  args: Record<string, unknown>,
+  config: ServerConfig,
+): 'allowed' | 'target-policy-denied' | 'forbidden' {
+  if (!isWritablePinnedSurface(mode, config)) return multiTargetInvocationDecision(toolName, args, config);
+  // Catalog, hyperfocused and plugin tools never exist on a pinned route; unknown tools fail closed.
+  if (toolName === 'SAPTargets' || toolName === 'SAP' || !toolName.startsWith('SAP')) return 'forbidden';
+  const action = invocationPolicyKey(toolName, args);
+  const policy = getActionPolicy(toolName, action);
+  if (!policy) return 'forbidden';
+  // Git mutations have no dedicated OperationType; mirror the tools/list gate (allowGitWrites).
+  if (policy.scope === 'git' && !config.allowGitWrites) return 'forbidden';
+  if (isOperationAllowed(config, policy.opType)) return 'allowed';
+  if (policy.opType === OperationType.Query || policy.opType === OperationType.FreeSQL) return 'target-policy-denied';
+  return 'forbidden';
 }
 
 function targetSchema(targets: readonly TargetDescriptor[]): Record<string, unknown> {

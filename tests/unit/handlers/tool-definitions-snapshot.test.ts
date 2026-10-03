@@ -16,7 +16,12 @@ import { RELATIONS_MIME, RELATIONS_PATH } from '../../../src/adt/repository-rela
 import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { READ_ONLY_WRITE_POLICY } from '../../../src/server/multi-target-destination-config.js';
-import { injectTargetSchema, multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
+import { buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
+import {
+  injectTargetSchema,
+  multiTargetSurfaceDefinitions,
+  multiTargetToolDefinitions,
+} from '../../../src/server/multi-target-tools.js';
 import { DEFAULT_CONFIG, type ServerConfig } from '../../../src/server/types.js';
 import { btp, FULL, features, onprem } from './handler-test-config.js';
 
@@ -167,6 +172,29 @@ describe('multi-target tool surface snapshot (LLM-visible, ADR-0006/0008)', () =
     );
     await expect(JSON.stringify(tools, null, 2)).toMatchFileSnapshot(
       '../../fixtures/tool-definitions/multi-target-aggregate-one-target.json',
+    );
+  });
+  it('is stable: multi-target-pinned-writable', async () => {
+    const config = buildMultiTargetConfig(
+      { ...DEFAULT_CONFIG, multiTargetEndpoints: true, multiTargetAllowWrites: true },
+      {
+        ...multiTargetTarget,
+        effectivePolicy: {
+          ...multiTargetTarget.effectivePolicy,
+          allowWrites: true,
+          allowedPackages: ['$TMP', 'ZTEAM*'],
+        },
+      },
+      'pinned',
+    );
+    const tools = multiTargetSurfaceDefinitions(
+      getToolDefinitions(config),
+      'pinned',
+      { available: true, targets: [multiTargetTarget] },
+      config,
+    );
+    await expect(JSON.stringify(tools, null, 2)).toMatchFileSnapshot(
+      '../../fixtures/tool-definitions/multi-target-pinned-writable.json',
     );
   });
 });

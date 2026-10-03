@@ -12,7 +12,11 @@ import { logger } from '../../../src/server/logger.js';
 import { buildTargetCatalog, TARGET_CATALOG_DIAGNOSTIC_LIMIT } from '../../../src/server/multi-target-catalog.js';
 import { hasAuthorizationLimitedFeatureEvidence } from '../../../src/server/multi-target-feature-state.js';
 import { buildAggregateToolSurfaceConfig, buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
-import { parseSapTargetsArguments } from '../../../src/server/multi-target-server.js';
+import {
+  buildMultiTargetServerInstructions,
+  MULTI_TARGET_SERVER_INSTRUCTIONS,
+  parseSapTargetsArguments,
+} from '../../../src/server/multi-target-server.js';
 import { createServer, resolveSingleTargetOverlapState } from '../../../src/server/server.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -686,5 +690,54 @@ describe('multi-target MCP servers', () => {
     );
     expect(allowedConsumes).toBe(1);
     auditSpy.mockRestore();
+  });
+});
+
+describe('ADR-0008 writable pinned instructions', () => {
+  const targets = registry(1);
+  const readOnlyTarget = targets.targets[0];
+  const writableTarget = {
+    ...readOnlyTarget,
+    effectivePolicy: {
+      ...readOnlyTarget.effectivePolicy,
+      allowWrites: true,
+      allowedPackages: ['$TMP', 'ZTEAM*'],
+      allowTransportWrites: true,
+      allowGitWrites: false,
+    },
+  };
+  const instanceConfig = { ...DEFAULT_CONFIG, multiTargetEndpoints: true, multiTargetAllowWrites: true };
+
+  it('describes the read/write pinned interface with its package and mutation limits', () => {
+    const text = buildMultiTargetServerInstructions({
+      mode: 'pinned',
+      registry: targets,
+      instanceConfig,
+      target: writableTarget,
+    });
+    expect(text).toContain('read/write');
+    expect(text).toContain(writableTarget.target);
+    expect(text).toContain('ZTEAM*');
+    expect(text).toContain('Transport mutations are enabled; Git mutations are unavailable.');
+    expect(text).not.toContain('Writes, activation');
+  });
+
+  it('keeps the aggregate and read-only pinned instructions unchanged', () => {
+    expect(
+      buildMultiTargetServerInstructions({
+        mode: 'aggregate',
+        registry: targets,
+        instanceConfig,
+        target: writableTarget,
+      }),
+    ).toBe(MULTI_TARGET_SERVER_INSTRUCTIONS);
+    const readOnly = buildMultiTargetServerInstructions({
+      mode: 'pinned',
+      registry: targets,
+      instanceConfig,
+      target: readOnlyTarget,
+    });
+    expect(readOnly).toContain(`ARC-1 provides a read-only interface to SAP target ${readOnlyTarget.target}.`);
+    expect(readOnly).toContain('Writes, activation, transport/Git mutations');
   });
 });
