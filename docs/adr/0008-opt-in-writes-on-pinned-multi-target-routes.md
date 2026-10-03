@@ -128,8 +128,19 @@ Operators who need per-target grants or raw-scope-only mutation must keep those 
   pinned routes.
 - Per-request PP clients with stateful lock sessions raise the relevance of roadmap OPS-06 (816
   session failures); live verification is required.
-- `SAPManage` FLP and UI5-repository actions are gated by `allowWrites` but are not package-bound,
-  the same as single-target.
+- A writable pinned route uses single-target pruning, so it exposes more than package-bound object
+  writes, the same as single-target:
+  - write-scoped actions that are **not package-bound** and act system-wide: `SAPManage` FLP and
+    UI5-repository actions, `SAPDiagnose.set_sql_trace_state` (switches ST05 on/off across all
+    application server instances), `SAPDiagnose.trace_start` / `SAPDiagnose.trace_cancel`, and
+    `SAPLint.set_formatter_settings`;
+  - reads outside the reviewed v1 allowlist: SAP-backed `SAPLint.format` /
+    `SAPLint.get_formatter_settings`, `SAPTransport.layers` / `SAPTransport.targets` topology, and
+    the package-scoped `SAPDiagnose.atc_ci` / `SAPDiagnose.unittest_ci` (SAP workload).
+
+  Operators who do not want these on writable pinned targets deny them instance-wide with
+  `SAP_DENY_ACTIONS`, for example
+  `SAP_DENY_ACTIONS=SAPDiagnose.set_sql_trace_state,SAPDiagnose.trace_start,SAPDiagnose.trace_cancel,SAPLint.set_formatter_settings`.
 - Residual risk R22 in [security-model.md](../security-model.md) records a pinned connector set up
   against the wrong system.
 - Plugins, caching and hyperfocused mode stay unsupported in multi-target mode.

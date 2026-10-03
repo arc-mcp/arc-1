@@ -68,7 +68,8 @@ is unacceptable.
 Use one ARC-1 instance per target, optionally behind an external router such as
 [`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub), when you need:
 
-- writes, activation, transport mutation, or Git mutation;
+- writes on Basic (shared identity) targets or on the aggregate `/multi/mcp` route, or per-target
+  write grants (pinned Principal Propagation routes can opt into writes under ADR-0008);
 - target-specific visibility or authorization before SAP is contacted;
 - different XSUAA tenants, subaccounts, or identity providers;
 - hard performance, maintenance, or failure isolation;
@@ -550,7 +551,7 @@ caller.
 - a second technical/design-time destination per target;
 - cache modes, plugins, optional UI, and hyperfocused mode;
 - SAP-backed lint formatting/settings, transport topology (`layers`/`targets`), and every transport
-  mutation;
+  mutation on `/multi/mcp` and read-only/Basic targets (a writable pinned route reaches them);
 - a browser HTML catalog or cookie/session login;
 - per-target concurrency reservations; and
 - live destination refresh without restart.

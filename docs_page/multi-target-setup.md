@@ -553,6 +553,19 @@ Effective write permission for one tool call is the conjunction of all six:
 If any term is missing the call stays read-only or is refused. `SAP_DENY_ACTIONS` still applies to
 every target.
 
+A writable pinned route exposes the single-target tool surface, not only package-bound object writes.
+That includes write-scoped actions that are not package-bound and act system-wide —
+`SAPDiagnose.set_sql_trace_state` (ST05 on/off across all instances), `SAPDiagnose.trace_start` /
+`SAPDiagnose.trace_cancel`, `SAPLint.set_formatter_settings`, and the `SAPManage` FLP/UI5-repository
+actions — plus reads outside the v1 allowlist (SAP-backed `SAPLint.format` /
+`SAPLint.get_formatter_settings`, `SAPTransport.layers` / `SAPTransport.targets`, and the
+workload-producing `SAPDiagnose.atc_ci` / `SAPDiagnose.unittest_ci`). Deny the ones your developers
+should not receive, for example:
+
+```properties
+SAP_DENY_ACTIONS=SAPDiagnose.set_sql_trace_state,SAPDiagnose.trace_start,SAPDiagnose.trace_cancel,SAPLint.set_formatter_settings
+```
+
 Instance keys (all default `false`; set them in `mta-overrides.mtaext`, never only in `.env`):
 
 | Key | Meaning |
@@ -639,14 +652,14 @@ Pinned routes advertise the same set, plus `write`, `transports`, and `git` when
 ceilings are on (`ARC1_MULTI_TARGET_ALLOW_WRITES=true`, and the transport/Git sub-ceilings for their
 scopes); this is independent of which targets are write-enabled. Users who connected before the
 ceiling was enabled may need to log out and reconnect to obtain the new scopes.
- They do not force a read-only initial grant. General MCP clients such as VS Code and Cursor
-therefore request the advertised set, and XSUAA issues only the subset permitted by the signing
+General MCP clients such as VS Code and Cursor request the advertised set, and XSUAA issues only the subset permitted by the signing
 user's role collections. ARC-1 then prunes tools and actions from that token:
 
 ```text
 Viewer             -> read
 Data Viewer        -> read, data
 Viewer + SQL       -> read, data, sql
+Developer          -> read, write, transports, git (pinned writes need the ADR-0008 opt-ins)
 Admin              -> read, data, sql, admin
 ```
 

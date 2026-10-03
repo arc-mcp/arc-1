@@ -153,6 +153,7 @@ export function multiTargetToolDefinitions(tools: ToolDefinition[], config: Serv
 export type MultiTargetSurfaceMode = 'pinned' | 'aggregate';
 
 /** ADR-0008: only a pinned route whose route-bound ceiling grants writes leaves the v1 allowlist. */
+// Only safe with a config built by buildMultiTargetConfig (route-bound ceiling), never the instance config.
 export function isWritablePinnedSurface(mode: MultiTargetSurfaceMode, config: ServerConfig): boolean {
   return mode === 'pinned' && config.allowWrites;
 }

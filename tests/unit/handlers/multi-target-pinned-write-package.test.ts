@@ -116,10 +116,15 @@ describe('ADR-0008 pinned write package gate', () => {
         source: 'CLASS zcl_arc1_tmp DEFINITION PUBLIC. ENDCLASS. CLASS zcl_arc1_tmp IMPLEMENTATION. ENDCLASS.',
       },
     );
-    // May fail later on the generic mock; only the safety outcome is asserted here.
     const text = result.content[0]?.text ?? '';
     expect(text).not.toContain('blocked by safety configuration');
     expect(text).not.toContain('allowWrites=false');
+    // Positive evidence the gates were passed: the create POST actually reached (mocked) SAP.
+    expect(result.isError).toBeFalsy();
+    expect(mutatingFetches()).toContainEqual(
+      expect.stringMatching(/^POST http:\/\/sap:8000\/sap\/bc\/adt\/oo\/classes\?/),
+    );
+    expect(classPosts().length).toBeGreaterThan(0);
   });
 
   it('refuses the same write on the aggregate ceiling', async () => {

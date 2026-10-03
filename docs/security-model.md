@@ -188,7 +188,6 @@ Not every invariant bites in every deployment. State the mode before triaging.
 | **HTTP, shared service account** | one technical user for all MCP users | I2 mostly moot — every user already *is* that identity; but I5/I4/I1/I6/I7 fully apply |
 | **HTTP + principal propagation** | per-user SAP session | **I2 and I3 are critical** — this is where cross-user leaks (R1, R3) and fallback-identity (R6) bite |
 | **HTTP multi-target pinned writes (ADR-0008)** | per-user PP only | I1 now applies on pinned routes: package gate on the object's real package, per destination |
-| **HTTP multi-target pinned writes (ADR-0008)** | per-user PP only | I1 now applies on pinned routes: package gate on the object's real package, per destination |
 
 R1, R3, R6 are **principal-propagation-mode risks**. They are the cost of the per-user identity
 feature; under a single shared service account they do not produce a cross-user boundary to cross.
