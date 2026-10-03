@@ -1,5 +1,5 @@
 # Opt-in writes on pinned multi-target routes (ADR-0008)
-Customer: personal · Project: arc-1 · Date: 2026-10-03 · Status: approved · Card: T-0087
+Customer: personal · Project: arc-1 · Date: 2026-10-03 · Status: implemented · Card: T-0087
 
 ## Goal
 When ARC-1 runs in multi-target (multi-backend) mode, allow write and activate — and, per
