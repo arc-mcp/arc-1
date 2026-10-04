@@ -1044,7 +1044,7 @@ export function getToolDefinitions(
           description: 'references: max entries (default 100, max 1000). "total" counts every match of the filter.',
         },
         line: { type: 'number', description: 'Line (1-based integer)' },
-        column: { type: 'number', description: 'Column (1-based integer)' },
+        column: { type: 'number', description: 'Column (0-based integer)' },
         source: { type: 'string', description: 'Current source for definition/completion' },
       },
       required: ['action'],

@@ -10,7 +10,7 @@ import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
-/** Definition navigation result */
+/** Definition target with ADT coordinates: 1-based line, 0-based cursor column. */
 export interface DefinitionResult {
   uri: string;
   type: string;

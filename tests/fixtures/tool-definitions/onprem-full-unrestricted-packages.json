@@ -1146,7 +1146,7 @@
         },
         "column": {
           "type": "number",
-          "description": "Column (1-based integer)"
+          "description": "Column (0-based integer)"
         },
         "source": {
           "type": "string",

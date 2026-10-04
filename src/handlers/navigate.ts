@@ -49,11 +49,11 @@ export async function handleSAPNavigate(
         !Number.isInteger(line) ||
         line < 1 ||
         !Number.isInteger(column) ||
-        column < 1 ||
+        column < 0 ||
         !source.trim()
       ) {
         return errorResult(
-          'Definition lookup needs line, column and source: pass the current source text of the object (e.g. from SAPRead) and positive integer line and column numbers (1-based).',
+          'Definition lookup needs line, column and source: pass current source text and integer ADT cursor coordinates (line >= 1, column >= 0).',
         );
       }
       const result = await findDefinition(client.http, client.safety, uri, line, column, source);

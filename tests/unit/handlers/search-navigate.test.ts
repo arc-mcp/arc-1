@@ -1601,12 +1601,36 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.content[0]?.text).toContain('Provide uri');
     });
 
+    it.each([0, '0'])('accepts zero-based cursor column %s for definition', async (column) => {
+      const uri = '/sap/bc/adt/programs/programs/ztest/source/main';
+      const target = '/sap/bc/adt/oo/classes/zcl_target/source/main#start=2,0';
+      mockFetch.mockResolvedValue(
+        mockResponse(
+          200,
+          `<adtcore:objectReference xmlns:adtcore="http://www.sap.com/adt/core" adtcore:uri="${target}"/>`,
+          {
+            'x-csrf-token': 'mock-csrf-token',
+          },
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'definition',
+        uri,
+        line: 2,
+        column,
+        source: 'REPORT ztest.\nzcl_target=>run( ).',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]?.text)).toMatchObject({ uri: target, line: 2, column: 0 });
+      expect(String(mockFetch.mock.calls.at(-1)?.[0])).toContain(encodeURIComponent(`${uri}#start=2,0`));
+    });
+
     it.each([
       ['line', { column: 5, source: 'REPORT ztest.' }],
       ['column', { line: 1, source: 'REPORT ztest.' }],
       ['source', { line: 1, column: 5 }],
       ['positive line', { line: 0, column: 5, source: 'REPORT ztest.' }],
-      ['positive column', { line: 1, column: -1, source: 'REPORT ztest.' }],
+      ['non-negative column', { line: 1, column: -1, source: 'REPORT ztest.' }],
       ['integer line', { line: 1.5, column: 5, source: 'REPORT ztest.' }],
       ['integer column', { line: 1, column: 5.5, source: 'REPORT ztest.' }],
       ['non-blank source', { line: 1, column: 5, source: ' \n\t' }],
