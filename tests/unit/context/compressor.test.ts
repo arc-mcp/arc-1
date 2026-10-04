@@ -3,7 +3,9 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import type { AdtClient } from '../../../src/adt/client.js';
+import { AdtClient } from '../../../src/adt/client.js';
+import { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
 import { compressCdsContext, compressContext, inferObjectType } from '../../../src/context/compressor.js';
 
 /** Create a mock AdtClient */
@@ -30,6 +32,7 @@ function mockClient(sources: Record<string, string>): AdtClient {
       return src;
     }),
     searchObject: vi.fn(async () => []),
+    resolveFunctionGroup: AdtClient.prototype.resolveFunctionGroup,
     http: {},
     safety: {},
   } as unknown as AdtClient;
@@ -278,6 +281,46 @@ ENDCLASS.`;
     expect(deep.output).toContain('zcl_b');
     expect(deep.output).toContain('zcl_c');
     expect(deep.output).toContain('deep_method');
+  });
+
+  it.each([false, true])('expands function bodies at depth 2 (cache=%s)', async (cached) => {
+    const source = "FUNCTION z_root IMPORTING iv_id TYPE string.\nCALL FUNCTION '/DEMO/CHILD'.\nENDFUNCTION.";
+    const childSource = 'FUNCTION /demo/child IMPORTING iv_id TYPE string. " Header\n zcl_leaf=>run( ).\nENDFUNCTION.';
+    const client = mockClient({});
+    vi.mocked(client.searchObject).mockResolvedValue([
+      {
+        objectType: 'FUGR/FF',
+        objectName: '/DEMO/OTHER',
+        description: '',
+        packageName: '$TMP',
+        uri: '/sap/bc/adt/functions/groups/wrong/fmodules/%2fdemo%2fother',
+      },
+      {
+        objectType: 'FUGR/FF',
+        objectName: '/DEMO/CHILD (Function Module)',
+        description: '',
+        packageName: '$TMP',
+        uri: '/sap/bc/adt/functions/groups/%2fdemo%2fgroup/fmodules/%2fdemo%2fchild',
+      },
+    ]);
+    vi.mocked(client.getFunction).mockResolvedValue({ source: childSource, notModified: false, statusCode: 200 });
+    vi.mocked(client.getClass).mockResolvedValue({
+      source: dependencyClassSource('zcl_leaf'),
+      notModified: false,
+      statusCode: 200,
+    });
+    const cache = cached ? new CachingLayer(new MemoryCache()) : undefined;
+
+    const shallow = await compressContext(client, source, 'Z_ROOT', 'FUNC', 1, 1, undefined, cache);
+    expect(shallow.depsResolved).toBe(1);
+    expect(shallow.output).not.toContain('zcl_leaf');
+    expect(client.getFunction).toHaveBeenCalledWith('/DEMO/GROUP', '/DEMO/CHILD', { ifNoneMatch: undefined });
+
+    const deep = await compressContext(client, source, 'Z_ROOT', 'FUNC', 1, 2, undefined, cache);
+    expect(deep.depsResolved).toBe(2);
+    expect(deep.depsFailed).toBe(0);
+    expect(deep.output).toContain('zcl_leaf');
+    expect(deep.output).not.toContain('zcl_leaf=>run');
   });
 
   it('detects cycles and does not loop infinitely', async () => {

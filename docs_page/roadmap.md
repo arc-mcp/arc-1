@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-09-30
+**Last reviewed:** 2026-10-04
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -97,6 +97,7 @@ sequence.
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
+| [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
@@ -673,6 +674,22 @@ types locally would duplicate a compiler incompletely.
 
 **Unblock when.** ADT discovery exposes a supported endpoint and it can be demonstrated on a real
 object and release.
+
+<a id="feat-79"></a>
+### FEAT-79 — DDIC-aware dependency context
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Code intelligence
+
+**Remaining gap.** `SAPContext(deps)` extracts body type references, but its resolver guesses CLAS
+for DDIC names. Failed class reads consume `maxDeps` and may exclude later resolvable classes.
+Function-module signature parameter types are also omitted. The parser repair in
+[PR #911](https://github.com/arc-mcp/arc-1/pull/911) deliberately leaves these coverage limits explicit;
+`BAPI_USER_GET_DETAIL` demonstrates the lookup starvation on 750 and 758.
+
+**Resume with.** Design bounded, permission-respecting object-kind resolution and useful DDIC
+contracts, then verify source/signature type references and lookup limits on both releases. Keep
+failed attempts distinct from absent objects and preserve the existing source/cache identity policy.
 
 ## CI and operations
 

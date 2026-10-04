@@ -1478,6 +1478,10 @@ Returns the target object's KTD first when available, followed by public API con
 
 **Dependency detection:** Uses `@abaplint/core` AST parsing to find `TYPE REF TO`, `NEW`, `CAST`, `INHERITING FROM`, `INTERFACES`, `CALL FUNCTION`, `RAISING`, `CATCH`, and static method calls (`=>`).
 
+Function-module bodies support classic and ADT inline signatures; parameter types in the signature
+are not dependency candidates. DDIC types referenced in a body may still be tried as classes and
+fail, consuming `maxDeps` before later candidates. Failed lookups do not prove those objects are absent.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |

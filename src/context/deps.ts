@@ -15,7 +15,7 @@
  * - exception:      RAISING <name>, CATCH <name>
  */
 
-import { Expressions, MemoryFile, Registry, Statements, Version } from '@abaplint/core';
+import { Comment, type Config, Expressions, MemoryFile, Objects, Registry, Statements, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 import { detectFilename } from '../lint/lint.js';
 import type { Dependency, DependencyKind } from './types.js';
@@ -93,21 +93,40 @@ function isCustomObject(name: string): boolean {
 }
 
 /**
- * A function module body as ADT returns it does not parse as it stands. ADT may put the
- * signature into the statement (`FUNCTION name IMPORTING VALUE(p) TYPE t ... .`), which
- * abaplint rejects, and a `.fugr.abap` file is read as a function group whose main program is
- * missing. Either way there is no AST and no dependency is found. Reduced to `FUNCTION name.`
- * and parsed as a program, the body's statements are found. Signature parameter types are not
- * part of the result.
+ * ADT returns standalone FUNCTION source, sometimes with inline parameters that abaplint
+ * cannot parse. Use a program file (FUGR needs a separate main file), then blank only the
+ * parameter text. Parser tokens handle dots in comments/defaults; spaces preserve body positions.
+ * This is dependency-only normalization: signature types are not extracted.
  */
-function functionModuleForParsing(source: string, objectName: string): { filename: string; source: string } | null {
-  const header = /^[ \t]*FUNCTION[ \t]+([^\s.]+)[\s\S]*?\.[ \t]*$/im;
-  const match = header.exec(source);
-  if (!match) return null;
-  return {
-    filename: `${objectName.toLowerCase().replace(/\//g, '#')}.prog.abap`,
-    source: source.replace(header, `FUNCTION ${match[1]}.`),
-  };
+function parseFunctionModule(source: string, objectName: string, config: Config): Registry | undefined {
+  const filename = `${objectName.toLowerCase().replace(/\//g, '#')}.prog.abap`;
+  const reg = new Registry(config);
+  reg.addFile(new MemoryFile(filename, source));
+  reg.parse();
+  const object = reg.getFirstObject();
+  if (!(object instanceof Objects.Program)) return undefined;
+  const header = object
+    .getMainABAPFile()
+    ?.getStatements()
+    .find((stmt) => !(stmt.get() instanceof Comment));
+  const tokens = header?.getTokens();
+  // FUNCTION-POOL also starts with a FUNCTION token, but is a different repository object.
+  if (header?.get() instanceof Statements.FunctionPool) return undefined;
+  if (tokens?.[0]?.getStr().toUpperCase() !== 'FUNCTION' || tokens.at(-1)?.getStr() !== '.') return undefined;
+  if (tokens.length === 3) return reg; // Classic FUNCTION name. already parses.
+
+  const start = tokens[1]!.getEnd();
+  const end = tokens.at(-1)!.getStart();
+  const lines = source.split('\n');
+  for (let row = start.getRow() - 1; row < end.getRow(); row++) {
+    const line = lines[row]!;
+    const from = row === start.getRow() - 1 ? start.getCol() - 1 : 0;
+    const to = row === end.getRow() - 1 ? end.getCol() - 1 : line.length;
+    lines[row] = line.slice(0, from) + ' '.repeat(to - from) + line.slice(to);
+  }
+  reg.updateFile(new MemoryFile(filename, lines.join('\n')));
+  reg.parse();
+  return reg;
 }
 
 /**
@@ -129,19 +148,15 @@ export function extractDependencies(
   abaplintVersion?: Version,
 ): Dependency[] {
   // Normalize CRLF → LF (SAP ADT returns CRLF which can break abaplint parsing)
-  let normalizedSource = source.replace(/\r\n/g, '\n');
+  const normalizedSource = source.replace(/\r\n/g, '\n');
   const config = getDefaultAbaplintConfig(abaplintVersion ?? DEFAULT_DEPENDENCY_VERSION);
-  let filename = detectFilename(normalizedSource, objectName);
-  const functionModule = filename.endsWith('.fugr.abap')
-    ? functionModuleForParsing(normalizedSource, objectName)
-    : null;
-  if (functionModule) {
-    filename = functionModule.filename;
-    normalizedSource = functionModule.source;
+  const filename = detectFilename(normalizedSource, objectName);
+  let reg = filename.endsWith('.fugr.abap') ? parseFunctionModule(normalizedSource, objectName, config) : undefined;
+  if (!reg) {
+    reg = new Registry(config);
+    reg.addFile(new MemoryFile(filename, normalizedSource));
+    reg.parse();
   }
-  const reg = new Registry(config);
-  reg.addFile(new MemoryFile(filename, normalizedSource));
-  reg.parse();
 
   const rawDeps: Dependency[] = [];
 

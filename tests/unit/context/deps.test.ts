@@ -338,6 +338,9 @@ ENDCLASS.`;
       const names = extractDependencies(source, 'Z_DEMO_CONFIRM').map((d) => d.name.toUpperCase());
       expect(names).toContain('ZCL_DEMO_CLEANUP');
       expect(names).toContain('Z_DEMO_POST');
+      const deps = extractDependencies(source, 'Z_DEMO_CONFIRM');
+      expect(deps.find((d) => d.name.toUpperCase() === 'ZCL_DEMO_CLEANUP')?.line).toBe(7);
+      expect(deps.find((d) => d.name.toUpperCase() === 'Z_DEMO_POST')?.line).toBe(8);
     });
 
     it('extracts dependencies after a classic header with parameter comments', () => {
@@ -363,6 +366,44 @@ ENDFUNCTION.`;
       ].join('\n');
       const names = extractDependencies(source, '/DEMO/LOG_WRITE').map((d) => d.name.toUpperCase());
       expect(names).toContain('/DEMO/CL_LOG');
+    });
+
+    it.each(['FUNCTION z_demo.', 'FUNCTION z_demo IMPORTING iv_id TYPE string.'])(
+      'preserves the first body statement after a commented header: %s',
+      (header) => {
+        const source = `${header} " Signature ends here.
+  zcl_first=>run( ).
+ENDFUNCTION.`;
+        expect(extractDependencies(source, 'Z_DEMO')).toEqual([
+          expect.objectContaining({ name: 'zcl_first', line: 2 }),
+        ]);
+      },
+    );
+
+    it('preserves same-line body statements after inline parameters', () => {
+      const source = "FUNCTION z_demo IMPORTING iv_id TYPE string. CALL FUNCTION 'Z_OTHER'. ENDFUNCTION.";
+      expect(extractDependencies(source, 'Z_DEMO')).toEqual([
+        expect.objectContaining({ name: 'Z_OTHER', kind: 'function_call', line: 1 }),
+      ]);
+    });
+
+    it('uses the statement terminator rather than dots in defaults or comments', () => {
+      const source = [
+        '"! Leading comment.',
+        'function /demo/read IMPORTING',
+        "  iv_id TYPE string DEFAULT 'a.b' \" Comment with a dot.",
+        '* Full-line comment with another dot.',
+        "  iv_text TYPE string DEFAULT 'it''s.c'. \" End.",
+        '  /demo/cl_store=>read( ).',
+        'ENDFUNCTION.',
+      ].join('\r\n');
+      expect(extractDependencies(source, '/DEMO/READ')).toEqual([
+        expect.objectContaining({ name: '/demo/cl_store', line: 6 }),
+      ]);
+    });
+
+    it('does not reinterpret a FUNCTION-POOL as a standalone module', () => {
+      expect(extractDependencies('FUNCTION-POOL zgroup.\nDATA ref TYPE REF TO zcl_helper.', 'ZGROUP')).toEqual([]);
     });
   });
 });
