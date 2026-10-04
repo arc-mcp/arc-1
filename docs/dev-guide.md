@@ -309,7 +309,8 @@ Gotchas worth knowing before changing anything here:
   `USR02` executed. Anything needing character removal is refused, blocklist on or off.
 - **Blank is off, but a stray comma is not.** Once the trimmed value is non-empty every field is
   mandatory; `.filter(Boolean)` would silently disable the control.
-- **Node kinds are classified explicitly.** `CDS_VIEW`/`TABLE`/`CDS_TABLE_FUNCTION` are SQL; the exact
+- **Node kinds are classified explicitly.** `CDS_VIEW`/`CDS_VIEW_ENTITY`/`CDS_PROJECTION_VIEW`/`TABLE`/
+  `CDS_TABLE_FUNCTION` are SQL (the three CDS view kinds are traversed, table functions refused); the exact
   `RELATED_OBJECTS_TREE → RELATED_OBJECTS_ENTRY → DCLS_OBJECT_LIST → DCLS/DL` chain is auxiliary and is
   validated then dropped. Match exact `TYPE` values and exact nesting — never a name *containing*
   "RELATED"/"DCLS", or an auxiliary-looking subtree could hide a real source. A released view like
@@ -319,7 +320,8 @@ Gotchas worth knowing before changing anything here:
 - **One decision per logical request.** `runQueryBatch` unions all chunk sources and decides once;
   there is no cache, and no caller-supplied authorization receipt exists.
 - **Fixtures are real captures.** `tests/fixtures/xml/cds-dependency-graph-*.xml` came from live 750 /
-  758 (byte-identical on 816). Do not hand-write graph XML for kind decisions.
+  758 (byte-identical on 816); the `816-view-entity` stack is a customer 816 capture with only the Z names
+  replaced. Do not hand-write graph XML for kind decisions.
 
 ## Testing — concurrent runs, isolation & teardown
 

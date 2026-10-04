@@ -124,11 +124,25 @@ export class DataSourcePolicyError extends AdtSafetyError {
 }
 
 /**
- * SQL node kinds SAP emits in the dependency branch. Verified live on SAP_BASIS 750, 758 and 816.
+ * SQL node kinds SAP emits in the dependency branch. `CDS_VIEW`, `TABLE` and `CDS_TABLE_FUNCTION`
+ * verified live on SAP_BASIS 750, 758 and 816; `CDS_VIEW_ENTITY` (`define [root] view entity`) and
+ * `CDS_PROJECTION_VIEW` (`as projection on`) verified live on 816 SP01 (#912).
  * Anything outside this set inside a SQL branch fails closed.
  */
-export const SQL_NODE_KINDS = ['CDS_VIEW', 'TABLE', 'CDS_TABLE_FUNCTION'] as const;
+export const SQL_NODE_KINDS = [
+  'CDS_VIEW',
+  'CDS_VIEW_ENTITY',
+  'CDS_PROJECTION_VIEW',
+  'TABLE',
+  'CDS_TABLE_FUNCTION',
+] as const;
 export type SqlNodeKind = (typeof SQL_NODE_KINDS)[number];
+
+/**
+ * CDS kinds whose graph node expands its SQL data sources as children, so lineage is proven by
+ * walking them. Deliberately not `CDS_TABLE_FUNCTION`: SAP omits its AMDP `USING` sources.
+ */
+const TRAVERSABLE_CDS_KINDS: ReadonlySet<SqlNodeKind> = new Set(['CDS_VIEW', 'CDS_VIEW_ENTITY', 'CDS_PROJECTION_VIEW']);
 
 /**
  * The EXACT auxiliary chain SAP emits for access-control metadata, verified live on 758/816 for the
@@ -819,7 +833,7 @@ export async function enforceBlockedDataSources(
           `CDS table function ${node.name} is not supported by the experimental policy: SAP does not expose its AMDP USING lineage in the dependency graph`,
         );
       }
-      if (node.kind !== 'CDS_VIEW') {
+      if (!TRAVERSABLE_CDS_KINDS.has(node.kind)) {
         throw unresolved(directSource, nodePath, `dependency kind ${node.kind} is unsupported`);
       }
       if (node.children.length === 0) {

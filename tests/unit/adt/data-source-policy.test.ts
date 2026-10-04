@@ -77,6 +77,35 @@ describe('parseCdsDependencyGraph', () => {
     expect(findTf(graph)?.children).toEqual([]);
   });
 
+  // Live 816 (#912): view entities and projection views are their own node kinds. Before they were
+  // classified, every query on a modern CDS stack failed with "unsupported kind CDS_VIEW_ENTITY".
+  it('classifies a live 816 projection-view and view-entity stack', () => {
+    const graph = parseCdsDependencyGraph(loadFixture('cds-dependency-graph-816-view-entity.xml'));
+    expect(graph.kind).toBe('CDS_PROJECTION_VIEW');
+    expect(graph.aliases).toEqual(expect.arrayContaining(['Z_PV_PROJECTION']));
+    const root = graph.children[0];
+    expect(graph.children.map((node) => [node.name, node.kind])).toEqual([['Z_VE_ROOT', 'CDS_VIEW_ENTITY']]);
+    const iface = root?.children[0];
+    expect(root?.children.map((node) => [node.name, node.kind])).toEqual([['Z_VE_INTERFACE', 'CDS_VIEW_ENTITY']]);
+    // No generated SQL view: NODE_NAME is the upper-case entity name, not a separate alias.
+    expect(iface?.aliases).toEqual(['Z_VE_INTERFACE']);
+    const classic = iface?.children[0];
+    expect(classic?.kind).toBe('CDS_VIEW');
+    expect(classic?.aliases).toEqual(expect.arrayContaining(['I_PAYTMEDIA', 'IPAYTMEDIA']));
+    expect(classic?.children.map((node) => node.name)).toEqual([
+      'I_PAYTDATEGROUPING',
+      'REGUT',
+      'TFCUPM042F',
+      'TFPM042F',
+    ]);
+    // One RELATED_OBJECTS_ENTRY per DCL-protected entity; all of them are dropped as auxiliary.
+    const names = (node: typeof graph): string[] => [node.name, ...node.children.flatMap(names)];
+    expect(names(graph)).not.toContain('RELATED_OBJECTS_TREE');
+    expect(names(graph)).not.toContain('DCLS_OBJECT_LIST');
+    expect(graph.accessControlled).toBe(true);
+    expect(iface?.accessControlled).toBe(true);
+  });
+
   it('orders siblings deterministically regardless of SAP response order', () => {
     const build = (first: string, second: string) =>
       `<elementInfo name="ROOT"><properties><entry key="TYPE" value="CDS_VIEW"/></properties>` +
@@ -366,6 +395,63 @@ describe('enforceBlockedDataSources', () => {
       code: 'DATA_SOURCE_BLOCKED',
       sourcePath: ['I_BUSINESSPARTNER', 'BUT000'],
     });
+  });
+
+  describe('live 816 view-entity stack (#912)', () => {
+    const stack = () => parseCdsDependencyGraph(loadFixture('cds-dependency-graph-816-view-entity.xml'));
+    const cdsResolver = (graph: ReturnType<typeof stack>) =>
+      resolver({
+        resolveDirectSource: vi.fn(async (name: string) => ({ kind: 'cds' as const, name, ddlSource: name })),
+        readCdsDependencyGraph: vi.fn(async () => graph),
+        readTableReplacement: vi.fn(async () => undefined),
+      });
+
+    it('allows a projection view and checks the replacement of every leaf table', async () => {
+      const r = cdsResolver(stack());
+      await expect(enforceBlockedDataSources(['Z_PV_PROJECTION'], ['USR02'], r)).resolves.toBeUndefined();
+      expect(vi.mocked(r.readTableReplacement).mock.calls.map(([table]) => table)).toEqual([
+        'DFPAYG',
+        'REGUT',
+        'TFCUPM042F',
+        'TFPM042F',
+      ]);
+    });
+
+    it('allows a view entity requested directly as the graph root', async () => {
+      // SAP returns the view entity's own subtree when its DDLS is requested.
+      const iface = stack().children[0]?.children[0];
+      if (!iface) throw new Error('fixture shape changed');
+      const r = cdsResolver(iface);
+      await expect(enforceBlockedDataSources(['Z_VE_INTERFACE'], ['USR02'], r)).resolves.toBeUndefined();
+    });
+
+    it('denies a blocked table below the view entities with the full path', async () => {
+      const r = cdsResolver(stack());
+      await expect(enforceBlockedDataSources(['Z_PV_PROJECTION'], ['REGUT'], r)).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['Z_PV_PROJECTION', 'Z_VE_ROOT', 'Z_VE_INTERFACE', 'I_PAYTMEDIA', 'REGUT'],
+      });
+      expect(r.readTableReplacement).not.toHaveBeenCalled();
+    });
+
+    it('denies a blocked intermediate view entity', async () => {
+      const r = cdsResolver(stack());
+      await expect(enforceBlockedDataSources(['Z_PV_PROJECTION'], ['Z_VE_INTERFACE'], r)).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath: ['Z_PV_PROJECTION', 'Z_VE_ROOT', 'Z_VE_INTERFACE'],
+      });
+    });
+
+    it.each(['CDS_VIEW_ENTITY', 'CDS_PROJECTION_VIEW'] as const)(
+      'fails closed on a childless %s node',
+      async (kind) => {
+        const r = cdsResolver({ name: 'Z_EMPTY', aliases: ['Z_EMPTY'], kind, accessControlled: false, children: [] });
+        await expect(enforceBlockedDataSources(['Z_EMPTY'], ['USR02'], r)).rejects.toMatchObject({
+          code: 'DATA_LINEAGE_UNRESOLVED',
+          reason: 'CDS root Z_EMPTY has no proven terminal source',
+        });
+      },
+    );
   });
 
   it('fails closed when SAP returns a graph for a different root', async () => {

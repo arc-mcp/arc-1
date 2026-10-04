@@ -156,7 +156,9 @@ While the list is active, these are refused rather than guessed at:
 - `TABLE_CONTENTS` with a `sqlFilter` — use the structured `TABLE_QUERY` `where`/`columns` instead.
 
 Joins, unions, nested subqueries, CTEs, parameterized CDS roots, hierarchy sources and aggregates
-**are** supported.
+**are** supported. Supported CDS dependency-graph node kinds are classic DDIC-based views (`CDS_VIEW`),
+view entities (`CDS_VIEW_ENTITY`, including root view entities) and projection views
+(`CDS_PROJECTION_VIEW`); any other kind SAP reports fails closed.
 
 ### Impact on ARC-1's own features
 
