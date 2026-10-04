@@ -30,7 +30,7 @@ clients relying on an arbitrary CF/BAS callback with the shared client ID should
 
 ## v1.1.0 — CLI/CI hardening compatibility changes
 
-The CLI/CI hardening release targets `1.1.0`. Its direct CI commands and unavailable Git mutation
+The CLI/CI hardening changes shipped in `1.1.0`. Its direct CI commands and unavailable Git mutation
 paths were not established stable, usable contracts, so these changes ship as a minor release.
 Pipelines that already trialed them should still review these compatibility changes:
 
@@ -212,7 +212,7 @@ See the full [Authorization & Roles](authorization.md) doc for the complete mode
 
 ## npx / npm
 
-`npx` always pulls the latest version. To pin:
+Use `@latest` to follow npm’s current latest tag. An unqualified `npx arc-1` can use an existing local installation. To pin:
 
 <!-- x-release-please-start-version -->
 ```bash
@@ -230,7 +230,7 @@ npm install -g arc-1@1.5.0
 Verify:
 
 ```bash
-npx arc-1 --version
+arc1 --version  # global installation; for npx, use the same exact version specifier you launch
 ```
 
 If you pin in MCP client config, update the `args`:
@@ -260,17 +260,17 @@ docker run -d --name arc1 -p 8080:8080 \
 
 # 4. Verify
 docker logs arc1 | head -20
-curl -s http://localhost:8080/mcp
+curl -s http://localhost:8080/health  # process health; also verify a safe SAP read from your client
 ```
 <!-- x-release-please-end -->
 
-**Downtime:** brief interruption between stop and start. For zero-downtime, run two containers behind a reverse proxy (nginx / Traefik) and switch traffic after health check.
+**Downtime:** brief interruption between stop and start. For single-target or PP deployments, two containers behind a reverse proxy (nginx / Traefik) can reduce downtime; switch traffic after health and safe-read checks. Shared-Basic multi-target mode requires exactly one instance and cannot use this approach.
 
-**Rollback:** start the previous image.
+**Rollback:** start the previous reviewed image with compatible configuration; replace the placeholder below. Keep HTTP authentication in `.env`.
 
 ```bash
 docker stop arc1 && docker rm arc1
-docker run -d --name arc1 -p 8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:0.6.8
+docker run -d --name arc1 -p 8080:8080 --env-file .env "ghcr.io/arc-mcp/arc-1:<previous-reviewed-version>"
 ```
 
 ---

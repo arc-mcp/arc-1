@@ -50,19 +50,19 @@ SELECT carrid, COUNT(*) as cnt FROM sflight GROUP BY carrid ORDER BY cnt DESC
 | INTF (Interface) | **Y** | Full support |
 | FUNC (Function Module) | **Y** | Requires `group` (function group) |
 | FUGR (Function Group) | **Y** | Returns JSON metadata |
-| INCL (Include) | **Y** | Read-only |
+| INCL (Include) | **Y** | Source read; supported writes use `SAPWrite` |
 | DDLS (CDS DDL Source) | **Y** | CDS view definitions |
 | BDEF (Behavior Definition) | **Y** | RAP behavior definitions |
 | SRVD (Service Definition) | **Y** | RAP service definitions |
 | KTD / SKTD | **Y** | Knowledge Transfer Documents; `KTD` is the friendly alias for canonical `SKTD` |
 | TABL (Table Definition) | **Y** | Table structure |
 | VIEW (DDIC View) | **Y** | Dictionary views |
-| TABLE_CONTENTS | **Y** | Table data with SQL filtering |
+| TABLE_CONTENTS | **Y** | Legacy preview; filter and exact cap vary by backend. Prefer `TABLE_QUERY` for structured filtering |
 | DEVC (Package) | **Y** | Package contents |
-| SYSTEM | **Y** | System info (SID, release) |
+| SYSTEM | **Y** | ADT discovery collections and configured/token-derived user; not SID, release, or SAP identity proof |
 | COMPONENTS | **Y** | Installed software components |
 | MSAG | **Y** | Message class texts (canonical TADIR R3TR type; deprecated alias: `MESSAGES`) |
-| TEXT_ELEMENTS | **Y** | Program text elements |
+| TEXT_ELEMENTS | **Y** | Program, class, or function-group text elements (`objectType`) |
 | VARIANTS | **Y** | Program variants |
 
 ---
@@ -112,7 +112,7 @@ flowchart TD
 | Read KTD only | `SAPRead` | `type=KTD, name=ZCL_TEST` |
 | Read message class | `SAPRead` | `type=MSAG, name=ZMSG` (deprecated alias: `type=MESSAGES`) |
 | Read table structure | `SAPRead` | `type=TABL, name=MARA` |
-| Read table data | `SAPRead` | `type=TABLE_CONTENTS, name=MARA, maxRows=10, sqlFilter="MANDT = '100'"` |
+| Read table data | `SAPRead` | `type=TABLE_QUERY, name=MARA, columns=["MATNR"], maxRows=10` |
 | **Read user's draft** | `SAPRead` | `type=CLAS, name=ZCL_TEST, version=inactive` |
 | **Show developer's view** (draft if exists, else active) | `SAPRead` | `type=CLAS, name=ZCL_TEST, version=auto` |
 | **Bypass cache for one read** | `SAPRead` | `type=PROG, name=ZTEST, force_refresh=true` |
@@ -120,7 +120,7 @@ flowchart TD
 | System info | `SAPRead` | `type=SYSTEM` |
 | Installed components | `SAPRead` | `type=COMPONENTS` |
 
-**Cache & freshness:** SAPRead source results are cached and revalidated against SAP on every hit via `If-None-Match`. A response prefixed with `[cached:revalidated]` means SAP confirmed the cached body is still current; no prefix means a fresh fetch. External writes (Eclipse activations, gCTS pulls, etc.) are caught automatically — no staleness window. When the active source has an unactivated draft (created by the same user in Eclipse/SE80), the response prepends a one-line note so you know to consider `version='inactive'` if the draft is what you want. See [Caching System](caching.md) for the full mechanics.
+**Cache & freshness:** SAPRead source results are normally cached and revalidated against SAP via `If-None-Match`. A response prefixed with `[cached:revalidated]` means SAP confirmed the cached body is still current; no prefix alone does not prove a fresh fetch. On instances without principal propagation, an activation can make its captured draft available for up to 120 seconds without a GET; use `force_refresh=true` to bypass this window. With `SAP_PP_ENABLED=true`, including mixed PP/API-key instances, activations invalidate instead; see [cache security](caching.md#security). When the active source has an unactivated draft (created by the same user in Eclipse/SE80), the response prepends a one-line note so you know to consider `version='inactive'` if the draft is what you want. See [Caching System](caching.md) for the full mechanics.
 
 ### Searching
 
@@ -218,7 +218,7 @@ Step 1: SAPRead(type="MSAG", name="ZRAY_00")
 
 ### 4. Create Objects in Transportable Packages
 
-When creating objects in non-`$TMP` packages, a transport number is required. ARC-1 detects this automatically and returns guidance, but the optimal workflow is:
+Transport requirements depend on the package and backend. Use the check below rather than inferring them from the package name. ARC-1 detects this automatically and returns guidance, but the optimal workflow is:
 
 ```
 Step 1: SAPTransport(action="check", type="CLAS", name="ZCL_ORDER", package="ZDEV")
@@ -268,14 +268,15 @@ Step 2: SAPDiagnose(action="dumps", id="<dump_id>")
 
 Create a RAP (RESTful ABAP Programming) business object stack. Order matters — dependencies first.
 
-**Version consideration:** `define table entity` syntax requires ABAP Cloud (BTP) or SAP_BASIS >= 757. On older on-premise systems (7.50-7.56), use DDIC transparent tables + CDS view entities instead.
+**Version consideration:** Table entities, view entities, and RAP have different release requirements. Check the target’s capabilities and ABAP documentation; a SAP_BASIS number alone does not establish support. Use a supported DDIC/CDS model on older systems.
 
 ```
 Step 1: Check system capabilities
-        SAPRead(type="SYSTEM")
-        → Check SAP_BASIS release for syntax support
+        SAPRead(type="COMPONENTS")
+        SAPManage(action="probe")
+        → Check installed release and feature evidence; confirm syntax support on the target
 
-Step 2: Create database tables (on-prem < 757) OR use define table entity (BTP / >= 757)
+Step 2: Create a root CDS view over an existing, supported persistence table
         SAPWrite(action="create", type="DDLS", name="ZI_TRAVEL",
           source="define root view entity ZI_Travel as select from ztravel { ... }")
 
@@ -323,7 +324,7 @@ SAPWrite(action="batch_create", package="$TMP", objects=[
 |-------|-------|----------|
 | Package requires transport | Non-`$TMP` package, no transport provided | Use `SAPTransport(action="list")` or `SAPTransport(action="create")` to get a transport ID, then pass it via `transport` parameter |
 | Package not in allowed list | Package not in `--allowed-packages` | Admin must add the package to the allow list |
-| "define table entity" rejected | Syntax requires SAP_BASIS >= 757 | Use DDIC tables + CDS view entities on older systems |
+| "define table entity" rejected | Syntax is unavailable on the target release or language version | Check target support; use a supported DDIC/CDS model |
 | CDS reserved keyword | Field name like `position`, `value`, `type` | Rename field (e.g., `playing_position`, `field_value`) |
 
 ### SAPRead Errors
@@ -339,9 +340,9 @@ SAPWrite(action="batch_create", package="$TMP", objects=[
 
 | Error | Cause | Solution |
 |-------|-------|----------|
-| 500 Internal Server Error | SAP application error | Wait 10-30 seconds and retry. Check `SAPDiagnose(action="dumps")` for short dumps |
+| 500 Internal Server Error | SAP application error | Check `SAPDiagnose(action="dumps")`; inspect state before retrying a mutation because SAP may have applied it |
 | 502 Bad Gateway | Proxy/gateway issue | Check SAP system availability via `SAPRead(type="SYSTEM")` |
-| 503 Service Unavailable | Server overloaded or restarting | Wait and retry. Common after heavy write/delete cycles |
+| 503 Service Unavailable | Server overloaded or restarting | Back off and check availability. Inspect mutation results before retrying |
 
 ---
 

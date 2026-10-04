@@ -9,21 +9,20 @@ Where ARC-1 sits relative to SAP's published guidance for third-party MCP access
 
     That is a *different question* from whether the **SAP API Policy** clears your specific use of it.
     ARC-1 drives **ADT REST endpoints** (`/sap/bc/adt/*`) — an interface third parties have built on for
-    over a decade, with SAP's own ADT SDK and SAP's own newest tooling on the same endpoints, but one
-    that is not listed on the SAP Business Accelerator Hub. Under
+    over a decade, with SAP's own ADT SDK and SAP's own newest tooling on the same endpoints, but API publication and permitted use must be checked per endpoint. Under
     [API Policy v.4.2026a](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf)
     §1.2 the duty to verify that an endpoint is a Published API sits **with the customer**.
 
-    **Our recommendation: you can run ARC-1 at your own risk — and you should ask your SAP contact
-    (account executive, CSP, or partner manager) before rolling it out beyond dev/test.** They are the
+    **Our recommendation: confirm the permitted endpoints and intended AI usage with your SAP contact
+    (account executive, CSP, or partner manager) before adoption, including dev/test.** They are the
     only party who can answer for your contract, your deployment, and your landscape.
 
     This page is informational and **not legal advice**.
 
 !!! info "Snapshot date"
-    Written **2026-07-30** against **SAP API Policy v.4.2026a** and the SAP Architecture Center page
-    *Third-Party MCP Access to SAP Solutions*. Both are living documents and SAP's position is moving
-    quickly. Re-check the primary sources in [References](#references) before relying on anything here.
+    The API Policy PDF was rechecked on **2026-10-04** and still identifies itself as
+    **v.4.2026a**. The architecture evaluation and MCP Gateway inventory below remain a
+    **2026-07-30 snapshot**; they were not reverified in this review. Re-check the primary sources in [References](#references) before relying on anything here.
 
 ---
 
@@ -35,8 +34,7 @@ Where ARC-1 sits relative to SAP's published guidance for third-party MCP access
 | **Is the use permitted?** Does calling these particular SAP endpoints, from an AI agent, comply with the API Policy and your agreements? | **SAP** — your account team and, if it matters commercially, SAP Legal | **Open.** See §3. Not something the project can answer on SAP's behalf |
 
 A tool can be exemplary on the first and still unresolved on the second. That is honestly where ARC-1
-is, and where every ADT-based tool is — including `abap-adt-api`, abapGit's ADT bridge, and abaplint's
-ADT integrations.
+is. This page does not establish the contractual status of other ADT-based tools.
 
 Keeping the two apart is SAP's own framing, not a convenience of ours. SAP Note 3690029 states that
 "Clean Core and the API Policy are two independent, orthogonal governance dimensions" — clean core
@@ -69,15 +67,17 @@ flowchart TB
   C --> R1
   C --> R2
   C --> R3
-  R1 -->|"RFC 8693 token exchange · per-user SAP identity"| SAP
+  R1 -->|"Destination Service · per-user SAP identity"| SAP
   R2 --> SAP
   R3 --> SAP
 ```
 
 **Why BTP Cloud Foundry is the recommendation.** It is the only deployment where the full set of
 controls SAP's guidance asks for is available at once: XSUAA OAuth at the edge, principal propagation
-so each user reaches SAP under their own identity, the Destination Service performing the RFC 8693
-token exchange, Cloud Connector for on-premise reachability, and the BTP Audit Log as an audit sink.
+so each user reaches SAP under their own identity, destination-based authentication,
+Cloud Connector for on-premise reachability, and the BTP Audit Log as an audit sink.
+The credential exchange depends on the destination type; on-premise PP uses short-lived
+X.509 certificates and the documented Public Cloud flow uses a SAML assertion.
 Running on your own server is a legitimate Pattern 1 deployment, but platform hardening, credential
 lifecycle and TLS termination become yours. Local `npx`/stdio has no auth layer at all — it is a
 single-developer convenience for trying ARC-1 out, not a deployment.
@@ -140,10 +140,10 @@ invited**, and it has been in the open for over a decade:
 
 **Where the nuance ends.** The ADT SDK is an *Eclipse client extension* SDK — it lets your plugin use
 ADT's client-side APIs inside the IDE. It is not a publication of the ADT HTTP wire protocol as a
-third-party API contract, and `/sap/bc/adt/*` is still not listed on the Business Accelerator Hub. A
-tool that speaks the wire protocol directly — ARC-1, `abap-adt-api`, abapGit's bridge — is relying on
-an interface that is long-standing, SAP-enabled and widely used, but not formally *Published* in the
-§1.1 sense. The §1.2 on-premise carve-out covers interfaces *you* build, not ADT.
+third-party API contract. Absence from the Business Accelerator Hub alone does not establish
+that an endpoint is non-published: §1.1 also includes product-specific documentation. Verify
+the publication status and documented purpose of each endpoint ARC-1 uses. The customer-built
+ABAP example in §1.2 does not by itself authorize use of SAP-provided ADT endpoints.
 
 So the honest position is neither "this is forbidden" nor "this is cleared". It is: **a well-established,
 SAP-enabled practice whose formal status under the current policy only SAP can confirm** — which is
@@ -184,7 +184,7 @@ ARC-1 is an intermediary, so this clause deserves a direct answer:
 - **It adds controls, it does not remove any.** Every call still passes SAP's own authorization
   (`S_DEVELOP`, `S_ADT_RES`, package authority). ARC-1 layers a safety ceiling, scopes, package
   allowlists and deny-actions *on top*. Nothing in ARC-1 disables or weakens a SAP-side control.
-- **Principal propagation means no impersonation.** Each MCP user is exchanged to their *own* SAP
+- **Principal propagation preserves per-user identity.** Each MCP user is exchanged to their *own* SAP
   identity, so SAP-side authorization and audit see the real human.
 - **Be aware of the shared-identity modes.** A shared service account (`SAP_USER`/`SAP_PASSWORD`) and
   the default-off shared-Basic multi-target identity make SAP see one technical user for many humans.
@@ -208,7 +208,7 @@ multiple instances.
 ## 4. The MCP Gateway question
 
 SAP's preferred managed answer is the **MCP Gateway in SAP Integration Suite** (Premium and Enhanced
-editions). Today it creates MCP servers from three source types:
+editions). The July 2026 documentation snapshot listed three source types:
 
 | Source | What it does |
 |---|---|
@@ -223,26 +223,24 @@ Gateway does front external *systems*; but the documented creation methods are A
 MCP-to-MCP federation. Verify the current state before planning around it, and treat this paragraph as
 the most likely part of this page to go stale.
 
-**If and when that federation lands, ARC-1 behind the Gateway would close several remaining gaps at
-once:** rate limits enforced centrally against real SAP quotas, one governed and monitored entry point,
-SAP-managed handling of MCP spec upgrades, and — most importantly — an SAP-operated component in the
-path, which materially changes the §2.2.2 "SAP-endorsed architecture" conversation. That is the
-alignment target we are building toward.
+An external-MCP federation path could centralize operational controls. It would
+still require endpoint- and use-specific policy review; placing ARC-1 behind an
+SAP-operated gateway would not itself establish permission for the underlying calls.
 
 ---
 
 ## 5. What we recommend
 
-1. **Dev and test: go ahead.** Run ARC-1 against non-production systems at your own risk. This is where
-   nearly all of its value is anyway — it is developer tooling.
-2. **Start read-only — it is not a lesser mode.** With `SAP_ALLOW_WRITES=false` ARC-1 reads your system
-   and reasons about it, but changes nothing. That is often the *better* workflow, not a limitation:
+1. **Confirm the permitted use, including dev/test.** The policy has no general dev/test
+   exemption. Use an authorized non-production system for initial technical validation.
+2. **Start read-only — it is not a lesser mode.** With `SAP_ALLOW_WRITES=false` ARC-1 blocks source and repository mutations.
+   Reads, ATC checks, and unit tests still consume backend resources; tests execute ABAP. That is often the *better* workflow, not a limitation:
    ask the model to explain the object, find the bug, and **respond with the code fix**, then read the
    diff and apply it yourself in ADT or your IDE. You get the full analytical value — full dependency
    context, ATC findings, where-used, dumps, SQL insight — while every change to the system stays a
    deliberate human action. Many teams never need to turn writes on. It also makes the conversation in
-   step 4 much simpler, because nothing is mutating anything.
-3. **Before production or a wider rollout, ask SAP.** Your account executive, Customer Success Partner
+   step 4 much simpler, because repository mutations remain disabled.
+3. **Before adoption, ask SAP about your proposed use.** Your account executive, Customer Success Partner
    or partner manager. Put the question in writing so you have the answer in writing.
 4. **Ask specifically.** Vague questions get vague answers. Useful ones:
     - Does our agreement permit third-party tooling to call ADT REST endpoints (`/sap/bc/adt/*`)?

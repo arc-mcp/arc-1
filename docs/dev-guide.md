@@ -309,17 +309,22 @@ Gotchas worth knowing before changing anything here:
   `USR02` executed. Anything needing character removal is refused, blocklist on or off.
 - **Blank is off, but a stray comma is not.** Once the trimmed value is non-empty every field is
   mandatory; `.filter(Boolean)` would silently disable the control.
-- **Node kinds are classified explicitly.** `CDS_VIEW`/`TABLE`/`CDS_TABLE_FUNCTION` are SQL; the exact
+- **Node kinds are classified explicitly.** `CDS_VIEW`/`CDS_VIEW_ENTITY`/`CDS_PROJECTION_VIEW` share
+  the same traversal checks; `TABLE` is terminal and `CDS_TABLE_FUNCTION` is parsed but refused.
+  The parser and evaluator share `CDS_VIEW_KINDS` ([#912 evidence](research/2026-10-04-issue-912-cds-lineage.md)). The exact
   `RELATED_OBJECTS_TREE → RELATED_OBJECTS_ENTRY → DCLS_OBJECT_LIST → DCLS/DL` chain is auxiliary and is
   validated then dropped. Match exact `TYPE` values and exact nesting — never a name *containing*
   "RELATED"/"DCLS", or an auxiliary-looking subtree could hide a real source. A released view like
   `I_BUSINESSPARTNER` has this branch, and `HAS_DCL=X` means `AC_STATE` is not the only DCL signal.
+- **Preserve empty properties.** `<entry key="DB_EXISTS"/>` means false (for example a transient
+  analytical query); an omitted property on the legacy 750 graph remains unknown. Do not drop empty values.
 - **`addMetrics=false`.** Metrics add payload, not topology. The v3 media type 406s on 750, which is
   what drives the element-info fallback.
 - **One decision per logical request.** `runQueryBatch` unions all chunk sources and decides once;
   there is no cache, and no caller-supplied authorization receipt exists.
 - **Fixtures are real captures.** `tests/fixtures/xml/cds-dependency-graph-*.xml` came from live 750 /
-  758 (byte-identical on 816). Do not hand-write graph XML for kind decisions.
+  758 and the sanitized 816 graph supplied in #912; provenance is in the linked research.
+  Do not hand-write graph XML for kind decisions.
 
 ## Testing — concurrent runs, isolation & teardown
 

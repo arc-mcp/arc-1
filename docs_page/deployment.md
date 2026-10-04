@@ -47,18 +47,19 @@ Run the published image on any host with Docker. Works for on-prem SAP reachable
 ### Shared service account + API Key
 
 ```bash
+export ARC1_LOCAL_KEY=$(openssl rand -hex 32)
 docker run -d --name arc1 --memory=512m -p 8080:8080 \
   -e NODE_OPTIONS=--max-old-space-size=384 \
   -e SAP_URL=https://your-sap-host:44300 \
   -e SAP_USER=SVC_ARC1 -e SAP_PASSWORD=... \
   -e SAP_CLIENT=100 \
-  -e ARC1_API_KEYS="$(openssl rand -hex 32):admin" \
-  -e SAP_ALLOW_WRITES=true SAP_ALLOW_TRANSPORT_WRITES=true \
+  -e ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin" \
+  -e SAP_ALLOW_WRITES=true -e SAP_ALLOW_TRANSPORT_WRITES=true \
   -e SAP_ALLOWED_PACKAGES='Z*,$TMP' \
   ghcr.io/arc-mcp/arc-1:latest
 ```
 
-MCP clients pass `Authorization: Bearer <api-key>` when connecting to `http://host:8080/mcp`.
+MCP clients pass `Authorization: Bearer <ARC1_LOCAL_KEY value>` when connecting to `http://host:8080/mcp`.
 
 ### Shared service account + per-user OIDC
 
@@ -78,14 +79,14 @@ This example only turns on OIDC validation for the MCP endpoint. It does **not**
 If this shared server should allow development work, add these flags to the same `docker run` command:
 
 ```bash
--e SAP_ALLOW_WRITES=true SAP_ALLOW_TRANSPORT_WRITES=true \
+-e SAP_ALLOW_WRITES=true -e SAP_ALLOW_TRANSPORT_WRITES=true \
 -e SAP_ALLOWED_PACKAGES='Z*,$TMP'
 ```
 
 Per-user JWT scopes and API-key profiles sit **beneath** that server ceiling — they can only tighten, never widen. A user with the `write` scope still cannot mutate objects when `SAP_ALLOW_WRITES=false`. Full model: [authorization.md](authorization.md#capability-requirements). Every flag: [configuration-reference.md](configuration-reference.md).
 
 ARC-1 audit logs show the real MCP user; SAP audit logs show the shared service account. Trade-off — good compromise when you can't use PP.
-For this shared-user mode, ARC-1 checks authentication and CSRF bootstrap at startup. It tries core discovery first and falls back once to `/sap/bc/adt/discovery` when the core resource is missing or returns no usable token. HTTP 401/403 blocks SAP tool calls with a remediation message, avoiding repeated failed logins. Other bootstrap failures are inconclusive and do not block GET reads; success does not establish authorization or backend support for every tool.
+For this shared-user mode, ARC-1 checks authentication and CSRF bootstrap at startup. It tries core discovery first and falls back once to `/sap/bc/adt/discovery` when the core resource is missing or returns no usable token. HTTP 401/403 blocks SAP tool calls with a remediation message, avoiding repeated failed logins. After repairing a startup authentication failure, restart ARC-1 to clear the block. Other bootstrap failures are inconclusive and do not block GET reads; success does not establish authorization or backend support for every tool.
 
 **Full references:**
 - [docker.md](docker.md) — image tags, build, ports, troubleshooting

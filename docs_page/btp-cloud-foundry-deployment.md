@@ -344,7 +344,7 @@ inspect_mtar() (
     { echo 'FAIL: no <module>/data.zip member'; return 1; }
   tmp=$(mktemp -d) || return 1
   trap 'rm -rf "$tmp"' EXIT
-  for member in $members; do
+  while IFS= read -r member; do
     unzip -p "$mtar" "$member" > "$tmp/payload.zip" || { echo "FAIL: cannot extract $member"; return 1; }
     entries=$(unzip -Z1 "$tmp/payload.zip") || { echo "FAIL: cannot read $member"; return 1; }
     n=$(printf '%s\n' "$entries" | wc -l) || { echo "FAIL: cannot count $member"; return 1; }
@@ -360,7 +360,7 @@ inspect_mtar() (
       bad=$(printf '%s\n' "$bad" | grep -Ev '^\.npmrc$' || true)
     fi
     [ -z "$bad" ] || { printf '%s\n' "$bad"; echo "FAIL: denied path in $member"; return 1; }
-  done
+  done <<< "$members"
   echo 'PASS: every payload inspected, no denied paths or unreviewed npm config'
 )
 inspect_mtar
@@ -373,7 +373,11 @@ Read a full listing too — the pattern covers today's known names, and the poin
 catch a file type no denylist anticipated. Take the member names from the wrapper listing above:
 
 ```bash
-unzip -p "$MTAR" '<module>/data.zip' > payload.zip && unzip -l payload.zip | less
+MTAR="mta_archives/arc1-mcp_$(node -p "require('./package.json').version").mtar"
+inspect_dir=$(mktemp -d)
+unzip -p "$MTAR" '<module>/data.zip' > "$inspect_dir/payload.zip" &&
+  unzip -l "$inspect_dir/payload.zip" | less
+rm -rf "$inspect_dir"
 ```
 
 On Windows, `Expand-Archive` needs a `.zip` extension, so copy first:

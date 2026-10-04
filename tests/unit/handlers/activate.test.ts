@@ -5,6 +5,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
@@ -991,4 +993,76 @@ describe('batch activation status attribution', () => {
     expect(result.content[0].text).toContain('ZFIRST (INTF): unknown');
     expect(result.content[0].text).toContain('ZFIRST2 (INTF): unknown');
   });
+});
+
+// The promoted draft is served without SAP revalidation, so it must never be armed on a server where
+// several SAP identities share the cache (PP on, e.g. API keys on the shared client + PP users).
+describe('post-activation source promotion', () => {
+  const DRAFT = 'CLASS zcl_promo DEFINITION PUBLIC. ENDCLASS. " activated draft';
+  const SAP_ACTIVE = 'CLASS zcl_promo DEFINITION PUBLIC. ENDCLASS. " served by SAP';
+  const single = { type: 'CLAS', name: 'ZCL_PROMO' };
+  const activations: [string, Record<string, unknown>][] = [
+    ['single', single],
+    ['batch', { objects: [single] }],
+  ];
+  const sourceGets = (version: 'active' | 'inactive') =>
+    mockFetch.mock.calls.filter(([url, opts]) => {
+      const u = new URL(String(url));
+      return (
+        (opts?.method ?? 'GET') === 'GET' &&
+        u.pathname.toLowerCase() === '/sap/bc/adt/oo/classes/zcl_promo/source/main' &&
+        (u.searchParams.get('version') === 'inactive') === (version === 'inactive')
+      );
+    });
+  // Activation runs on the shared client (stdio, or an API-key call on a PP server); the reader is
+  // per-user exactly when PP is on.
+  const activateThenRead = async (ppEnabled: boolean, args: Record<string, unknown>) => {
+    const layer = new CachingLayer(new MemoryCache());
+    const config = { ...DEFAULT_CONFIG, ppEnabled };
+    const activation = await handleToolCall(
+      createClient(),
+      config,
+      'SAPActivate',
+      args,
+      undefined,
+      undefined,
+      layer,
+      false,
+    );
+    expect(activation.isError).toBeUndefined();
+    expect(sourceGets('inactive')).toHaveLength(ppEnabled ? 0 : 1); // draft captured only for promotion
+    expect(layer.wasRecentlyActivated('CLAS', 'ZCL_PROMO')).toBe(!ppEnabled);
+    return handleToolCall(createClient(), config, 'SAPRead', single, undefined, undefined, layer, ppEnabled);
+  };
+
+  beforeEach(() => {
+    mockFetch.mockReset();
+    mockFetch.mockImplementation(async (url, opts) => {
+      const u = new URL(String(url));
+      const headers = { 'x-csrf-token': 'T', etag: 'e1' };
+      if (opts?.method === 'POST') return mockResponse(200, '', headers);
+      if (u.pathname.endsWith('/activation/inactiveobjects')) {
+        return mockResponse(200, '<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects"/>');
+      }
+      return mockResponse(200, u.searchParams.get('version') === 'inactive' ? DRAFT : SAP_ACTIVE, headers);
+    });
+  });
+
+  it.each(activations)(
+    '%s: serves the promoted draft to a single-identity reader without a source GET',
+    async (_, args) => {
+      const result = await activateThenRead(false, args);
+      expect(result.content[0]?.text).toContain('activated draft');
+      expect(sourceGets('active')).toHaveLength(0);
+    },
+  );
+
+  it.each(activations)(
+    '%s: with PP enabled, a per-user read after a shared-client activation GETs the source',
+    async (_, args) => {
+      const result = await activateThenRead(true, args);
+      expect(result.content[0]?.text).toContain('served by SAP');
+      expect(sourceGets('active')).toHaveLength(1);
+    },
+  );
 });

@@ -57,7 +57,7 @@ In Cursor, install the repository as an Agent Plugin from **Customize**, a team 
 
 ## Test A Checkout Locally
 
-Use a local checkout to validate a branch before installing a published version. Neither setup
+Use a local checkout to validate the plugin metadata and skills from a branch. The MCP entry still runs the published `arc-1@latest` package; to test server changes, follow [Local development](local-development.md#git-clone-contributing-or-running-from-source). Neither setup
 stores SAP credentials in the checkout.
 
 ### VS Code
@@ -181,6 +181,8 @@ copilot plugin list
 copilot mcp list
 copilot mcp get arc-1
 ```
+
+After connecting, ask for the source of a known program or class using `SAPRead` to verify SAP access.
 
 ARC-1 is read-only by default. A successful install does not grant SAP permissions and does not
 enable writes, table-data preview, free SQL, transport mutations, or Git mutations. Those remain

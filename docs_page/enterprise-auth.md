@@ -5,7 +5,7 @@ ARC-1 has two independent authentication concerns that work together:
 1. **MCP Client → ARC-1**: How does the AI client (Claude, Cursor, Copilot Studio) prove its identity to ARC-1?
 2. **ARC-1 → SAP**: How does ARC-1 authenticate to the SAP system?
 
-These are separate layers. You choose one method for each, and they combine freely. This guide helps you understand the options, pick the right combination, and find the detailed setup instructions.
+These are separate layers. Choose a supported combination from the matrix below; some SAP authentication modes cannot coexist. This guide helps you understand the options, pick the right combination, and find the detailed setup instructions.
 
 For **what users can do** after authenticating (scopes, roles, safety controls), see [Authorization & Roles](authorization.md).
 
@@ -109,7 +109,7 @@ A shared secret token. Simple to set up, no external IdP needed. Supports **mult
 Per-user authentication via any [OpenID Connect](https://openid.net/specs/openid-connect-core-1_0.html) provider (Microsoft Entra ID, Google, Okta, Keycloak, Auth0, etc.). Users authenticate with their corporate identity. Tokens carry per-user [scopes](authorization.md#user-scopes) for fine-grained authorization.
 
 **Upsides:** Per-user identity. Per-user scopes. Works with existing corporate IdPs. Standard protocol.
-**Downsides:** Requires an OIDC provider. Token rotation is automatic (refresh tokens) but initial setup is more complex.
+**Downsides:** Requires an OIDC provider. Token refresh depends on the MCP client and provider; ARC-1 validates presented tokens. Initial setup is more complex.
 **When to use:** Enterprise deployments with existing identity infrastructure.
 **Prerequisites:** An OIDC provider with app registration. Configure scopes in IdP to match ARC-1's scope model.
 
@@ -187,7 +187,7 @@ arc1 --btp-service-key-file /path/to/service-key.json
 
 The most complete authentication model. Each MCP user's identity flows through to SAP via BTP Destination Service, so every request runs as the real SAP user — not a shared technical account. For on-premise SAP, the destination path uses Connectivity Service + Cloud Connector principal propagation. For BTP ABAP Environment, the destination path uses `OAuth2UserTokenExchange` and sends an ABAP-context bearer token.
 
-**Upsides:** Full per-user audit trail. SAP-level authorization per user. Zero stored SAP credentials. No shared accounts.
+**Upsides:** Per-user SAP authorization and audit for JWT-backed calls. No shared SAP password on that request path; the single-target on-premise startup destination still needs a separate technical credential.
 **Downsides:** Most complex setup. On-premise requires BTP + Cloud Connector + CERTRULE. BTP ABAP requires a correctly configured OAuth user-token-exchange destination. Requires JWT/XSUAA on the client side.
 **When to use:** Enterprise deployments requiring audit compliance, per-user SAP authorization, or regulatory requirements.
 **Prerequisites:** BTP Cloud Foundry and Destination Service. Add Connectivity Service, Cloud Connector, and SAP certificate mapping for on-premise systems.
@@ -234,7 +234,7 @@ See [Multi-System Setup](multi-target-setup.md).
 stdio (no MCP auth) → Basic Auth to SAP
 ```
 
-Simplest setup. Single user. Leave defaults for read-only access, or set `SAP_ALLOW_WRITES=true` (plus `SAP_ALLOWED_PACKAGES="$TMP,Z*"`) to enable developer writes.
+Simplest setup. Single user. Leave defaults for read-only access, or set `SAP_ALLOW_WRITES=true` (plus `SAP_ALLOWED_PACKAGES='$TMP,Z*'`) to enable developer writes.
 
 ### Team Server with Role-Based Access
 
@@ -316,7 +316,7 @@ arc1
 # .env file (auto-loaded)
 SAP_URL=https://sap-host:443
 SAP_USER=DEVELOPER
-SAP_PASSWORD=ABAPtr2023#00
+SAP_PASSWORD='ABAPtr2023#00'
 ```
 
 **When to use:** Local development, sandbox systems, CI/CD pipelines with secrets.
@@ -369,6 +369,7 @@ RFC_CLIENT=100
 RFC_USER=YOUR_USER
 RFC_PASSWD=YOUR_PASS
 RFC_SAPROUTER=/H/router.example.com/S/3299
+export BRIDGE_PORT RFC_ASHOST RFC_SYSNR RFC_CLIENT RFC_USER RFC_PASSWD RFC_SAPROUTER
 python adt_rfc_bridge.py
 ```
 
@@ -379,7 +380,8 @@ SAP_URL=http://127.0.0.1:8410
 SAP_USER=YOUR_USER
 SAP_PASSWORD=YOUR_PASS
 SAP_CLIENT=100
-ARC1_MAX_CONCURRENT=1
+export SAP_URL SAP_USER SAP_PASSWORD SAP_CLIENT
+export ARC1_MAX_CONCURRENT=1
 arc1
 ```
 
@@ -408,6 +410,7 @@ For Claude Desktop, use the same `SAP_URL` value in the `env` block:
 - ARC-1 safety gates still apply: writes, SQL, table preview, transports, and package allowlists remain opt-in.
 - SAP sees the RFC user configured in the bridge. This is not ARC-1 Principal Propagation.
 - Run one bridge per SAP user/client/port.
+- The bridge documents stateless RFC calls, which cannot preserve every ADT lock/write/activation flow. Treat ARC-1 writes over this path as unverified; use direct HTTPS or Eclipse for stateful operations.
 - Keep the bridge bound to `127.0.0.1`; do not expose it as a shared service.
 - `ARC1_MAX_CONCURRENT=1` is recommended because the bridge reuses a serialized RFC connection.
 - The SAP user needs the RFC authorizations for `SADT_REST_RFC_ENDPOINT` plus the normal ADT resource authorizations.
@@ -490,12 +493,13 @@ See [Principal Propagation Setup](principal-propagation-setup.md) for the on-pre
 ## Custom TLS Trust
 
 When the SAP system uses a TLS server certificate signed by an internal CA
-(not a public CA like Let's Encrypt), use `--insecure` or mount the CA certificate
-into the Node.js trust store via `NODE_EXTRA_CA_CERTS`.
+(not a public CA like Let's Encrypt), add the CA certificate through
+`NODE_EXTRA_CA_CERTS`. For an isolated development test, `--insecure true` disables
+verification on the SAP connection; it does not change OIDC issuer/JWKS trust.
 
 ```bash
 # Skip TLS verification (development only)
-arc1 --url https://sap-host:443 --user DEV --password pass --insecure
+arc1 --url https://sap-host:443 --user DEV --password pass --insecure true
 
 # Mount custom CA (production)
 NODE_EXTRA_CA_CERTS=/path/to/internal-ca.crt arc1 --url https://sap-host:443 ...
@@ -510,7 +514,7 @@ even where Basic / cookie auth is also available. ARC-1 can request that SAP ski
 the SAML redirect via either a request header (preferred) or a URL query parameter:
 
 ```bash
-SAP_DISABLE_SAML=true
+export SAP_DISABLE_SAML=true
 ```
 
 When set, every ADT request adds `X-SAP-SAML2: disabled` (SAP Note 3456236)
@@ -611,7 +615,7 @@ These flags from older documentation do **not** exist in the current ARC-1 codeb
 ### OIDC token validation fails
 
 **"key ID not found in JWKS"**
-- The token was signed with a key that rotated. JWKS cache refreshes every hour.
+- The token may use a rotated signing key. ARC-1 uses the verifier's remote JWKS cache and refresh behavior; check key availability and issuer reachability.
 - Verify the `--oidc-issuer` URL is correct (must match the `iss` claim)
 
 **"JWT audience mismatch"** or **"OIDC audience is required"**

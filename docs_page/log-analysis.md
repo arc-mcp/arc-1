@@ -9,7 +9,8 @@ Set the `ARC1_LOG_FILE` environment variable to enable JSON line audit logging:
 ARC1_LOG_FILE=/tmp/arc1-audit.jsonl npm run dev
 
 # Docker
-docker run -v /data/logs:/logs -e ARC1_LOG_FILE=/logs/arc1-audit.jsonl ghcr.io/arc-mcp/arc-1
+docker run --env-file .env -v /data/logs:/logs -e ARC1_LOG_FILE=/logs/arc1-audit.jsonl ghcr.io/arc-mcp/arc-1
+# .env must include SAP connection settings and HTTP authentication, e.g. ARC1_API_KEYS
 
 # BTP Cloud Foundry (in manifest.yml)
 env:
@@ -87,7 +88,7 @@ INFO: Authorization probe: object search access is available
 INFO: Authorization probe: transport access is available
 ```
 
-**These two lines mean your SAP authorizations are correct.** If you see them, ARC-1 reached SAP,
+**These two lines confirm only the search and transport probes.** If you see them, ARC-1 reached SAP,
 authenticated, and the SAP user can search the repository and read transports — the foundation every
 tool call builds on. (Under principal propagation the preflight is skipped — each user authenticates at
 runtime — so you'll instead see `Skipped startup auth preflight: principal propagation mode is enabled`;
@@ -100,7 +101,7 @@ WARN: Authorization probe: object search access denied — <reason>
 INFO: Authorization probe: transport access is not available — <reason>
 ```
 
-…the SAP **user** is missing an authorization (not an ARC-1 bug). Search/read needs `S_DEVELOP` and
+…investigate authorization, endpoint availability, and the reported status. A probe failure alone does not rule out an ARC-1 or connectivity regression. Search/read needs `S_DEVELOP` and
 `S_ADT_RES`. The latter checks allowed URI prefixes and has no `ACTVT` field. A read
 implemented as HTTP POST does not imply create/change authorization; trace the
 backend checks on `S_DEVELOP` and other objects separately. See the
@@ -134,8 +135,7 @@ the individual probe responses.
 ### OAuth scope errors on the MCP client (not SAP)
 
 A different failure class: the MCP client (Claude, Copilot, …) can't complete OAuth and reports an
-`invalid_scope` / scope error even though your user has the right role collection. This is almost always
-a **stale cache**, not a missing authorization:
+`invalid_scope` / scope error even though your user has the right role collection. Check the requested scopes, current XSUAA configuration, role assignments, and then cached client state:
 
 - Log out of the MCP client's OAuth session and reconnect — or use a fresh/incognito browser window for
   the consent step. A previous deployment's XSUAA/DCR client registration is often cached.
@@ -150,7 +150,7 @@ a **stale cache**, not a missing authorization:
 ### Recent Errors
 
 ```bash
-# All errors in the last hour
+# All error-level audit events in this file (no time filter)
 jq 'select(.level == "error")' arc1-audit.jsonl
 
 # Failed tool calls with error details
@@ -271,13 +271,15 @@ when truncated). Completion records carry the outcome.
 ## Docker Volume Mount Example
 
 ```bash
-# Run with persistent log file
+# Generate ARC1_LOCAL_KEY with `openssl rand -hex 32` before running.
+# Run with persistent log file; the mounted directory must be writable by the container user.
 docker run -d \
   -v /data/arc1-logs:/logs \
   -e ARC1_LOG_FILE=/logs/audit.jsonl \
   -e SAP_URL=http://sap:50000 \
   -e SAP_USER=admin \
   -e SAP_PASSWORD=secret \
+  -e ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin" \
   ghcr.io/arc-mcp/arc-1
 
 # Tail logs in real-time

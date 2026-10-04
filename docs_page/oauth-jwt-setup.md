@@ -24,7 +24,7 @@ Authenticate MCP clients using OAuth 2.1 with an external identity provider (Mic
                                         │
                           ┌─────────────┘
                           │ JWKS keys
-                          │ (cached 1h)
+                          │ (verifier cache)
 ```
 
 ## Identity Provider Setup
@@ -67,11 +67,12 @@ Authenticate MCP clients using OAuth 2.1 with an external identity provider (Mic
    - **Why:** Power Platform requires this permission for OAuth connectors.
 
 5. **Create a Client Secret:**
+   - Use `--append` in the CLI example to preserve existing credentials ([Azure CLI reference](https://learn.microsoft.com/en-us/cli/azure/ad/app/credential#az-ad-app-credential-reset)).
    - App registration → Certificates & secrets → New client secret
    - Copy the secret value immediately (it won't be shown again)
    - Or via Azure CLI:
      ```bash
-     az ad app credential reset --id {client-id} --display-name "PowerAutomate" --years 2
+     az ad app credential reset --append --id {client-id} --display-name "PowerAutomate" --years 2
      ```
 
 6. **Note the values:**
@@ -193,7 +194,7 @@ see [Auto-discovery](#auto-discovery-rfc-9728) below, including the Entra ID cav
 
 ### Microsoft Copilot Studio / Power Automate
 
-Copilot Studio uses Power Automate custom connectors to connect to MCP servers. The connector handles OAuth token acquisition automatically.
+Copilot Studio can now add an MCP server directly through its Tools page; follow [Microsoft’s current MCP setup](https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent). The Power Automate steps below apply when maintaining an existing custom connector, which handles OAuth token acquisition.
 
 #### Step 1: Create Custom Connector
 
@@ -234,13 +235,12 @@ Copilot Studio uses Power Automate custom connectors to connect to MCP servers. 
    - It looks like: `https://global.consent.azure-apim.net/redirect/crc25-5farc-2d1-20...`
 7. Go to Azure Portal → App registration → **Authentication** → Add platform → **Web**
    - Add the redirect URI from step 6
-   - Also add the base: `https://global.consent.azure-apim.net/redirect`
+   - Register the exact callback shown by your connector; do not add unrelated callbacks.
 
-   Or via Azure CLI:
+   If using the CLI, include all existing callbacks that must remain: `--web-redirect-uris` replaces the list.
    ```bash
    az ad app update --id {client-id} \
      --web-redirect-uris \
-       "https://global.consent.azure-apim.net/redirect" \
        "https://global.consent.azure-apim.net/redirect/your-connector-specific-uri"
    ```
 

@@ -6,15 +6,15 @@ Find your row, then jump to that section.
 
 | You use… | ARC-1 runs… | Install path | Skills included? |
 |---|---|---|---|
-| **Claude Desktop** | locally (`npx`, your machine) | [One-click `.mcpb` — or hand-edit JSON](#claude-desktop-one-click-mcpb) | — |
+| **Claude Desktop** | locally (your machine) | [One-click `.mcpb` — or hand-edit JSON](#claude-desktop-one-click-mcpb) | — |
 | **Claude Code** | locally (`npx`, your machine) | [Plugin](#claude-code-plugin-server-skills) (`/plugin install`) | ✅ all of them |
 | **claude.ai / Desktop / mobile / Cowork** | remotely (BTP Cloud Foundry) | [Custom connector](#remote-btp-cloud-foundry-custom-connector) (URL + OAuth) | — |
 | **Claude Code** | remotely (BTP Cloud Foundry) | [`claude mcp add --transport http`](#remote-btp-cloud-foundry-custom-connector) | add separately |
 
 !!! info "MCPB is local-only; skills don't live inside it"
-    The `.mcpb` bundle and a remote connector both wire up the **tools** only. The 18 SAP
+    The `.mcpb` bundle and a remote connector both wire up the **tools** only. The bundled SAP
     [skills](skills.md) (RAP, CDS, ABAP Unit, clean-core, UI5 modernization) are a *separate*
-    layer. The **Claude Code plugin** is the only artifact that bundles the MCP server **and** the
+    layer. The **Claude Code plugin** bundles the MCP server **and** the
     skills in one install — so for Claude Code, prefer the plugin.
 
 ---
@@ -24,9 +24,7 @@ Find your row, then jump to that section.
 The simplest path for a single developer on a SAP system reachable from your laptop.
 
 1. Download the latest **`arc-1-<version>.mcpb`** from the
-   [Releases page](https://github.com/arc-mcp/arc-1/releases). It is attached to every release
-   from the first one after this feature ships; if the newest release has no `.mcpb` yet, build it
-   locally per the
+   [Releases page](https://github.com/arc-mcp/arc-1/releases). To build a bundle locally, follow the
    [publishing guide](https://github.com/arc-mcp/arc-1/blob/main/docs/publishing-guide.md#6-claude-desktop-extensions).
 2. **Double-click** it, or open Claude Desktop → **Settings → Extensions** and drag the file in.
 3. Claude prompts for your SAP connection. **URL, user, and password** are required (the password is
@@ -89,7 +87,7 @@ starts the `arc-1` MCP server via `npx`, and loads the skills namespaced as `/ar
 
 ??? tip "Just the server, or just the skills"
     - **Only the MCP server** (no skills, no plugin): `claude mcp add arc-1 --env SAP_URL=… --env
-      SAP_USER=… --env SAP_PASSWORD=… -- npx -y arc-1` — see the
+      SAP_USER=… --env SAP_PASSWORD=… -- npx -y arc-1@latest` — see the
       [Claude Code MCP docs](https://code.claude.com/docs/en/mcp).
     - **Only the skills** (server already added another way): `npx skills add arc-mcp/arc-1` —
       see the [skills README](https://github.com/arc-mcp/arc-1/tree/main/skills) for the

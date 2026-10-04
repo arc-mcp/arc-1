@@ -8,6 +8,8 @@ edit_uri: edit/main/docs_page/
 docs_dir: docs_page
 
 validation:
+  nav:
+    omitted_files: warn
   links:
     anchors: warn
 
@@ -125,6 +127,7 @@ plugins:
   - redirects:
       redirect_maps:
         multi-destination.md: multi-target-setup.md
+        # Legacy URL only; the retired project is not a supported deployment option.
         multi-system-hub.md: btp-overview.md
         phase4-btp-deployment.md: btp-cloud-foundry-deployment.md
 

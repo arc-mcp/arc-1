@@ -60,7 +60,7 @@ Choose the integration style that matches your assistant:
 - **GitHub Copilot in VS Code / CLI / cloud agent**: install into `.agents/skills/<name>/`, `.github/skills/<name>/`, or `~/.copilot/skills/<name>/`
 - **GitHub Copilot in Eclipse**: install into `.agents/skills/<name>/`, `.github/skills/<name>/`, or `~/.copilot/skills/<name>/` in a normal local Eclipse project; use **Enable Skills** and the `/skill:<name>` slash menu
 - **Cursor**: install into `.agents/skills/<name>/` or `~/.cursor/skills/<name>/`
-- **OpenAI Codex**: install into `.agents/skills/<name>/` or `~/.codex/skills/<name>/`
+- **OpenAI Codex**: install into `.agents/skills/<name>/` or `~/.agents/skills/<name>/` — see [Codex skill locations](https://learn.chatgpt.com/docs/build-skills)
 - **Generic tools**: paste the markdown into project instructions, system prompt, or reusable templates
 
 These skills assume:
@@ -301,7 +301,7 @@ Workspace `.vscode/mcp.json` for a centrally hosted ARC-1 server:
 }
 ```
 
-Local ARC-1 development is still useful with SAP ADT for VS Code:
+Local ARC-1 development is still useful with SAP ADT for VS Code. Generate a key with `openssl rand -hex 32` and use the same value in the server command and client header:
 
 ```bash
 npx arc-1@latest \
@@ -309,7 +309,8 @@ npx arc-1@latest \
   --http-addr 127.0.0.1:3000 \
   --url https://your-sap-host:44300 \
   --user YOUR_USER \
-  --password YOUR_PASS
+  --password YOUR_PASS \
+  --api-keys "YOUR_GENERATED_API_KEY:admin"
 ```
 
 Then configure:
@@ -319,7 +320,8 @@ Then configure:
   "servers": {
     "arc1-local": {
       "type": "http",
-      "url": "http://127.0.0.1:3000/mcp"
+      "url": "http://127.0.0.1:3000/mcp",
+      "headers": { "Authorization": "Bearer YOUR_GENERATED_API_KEY" }
     }
   }
 }
@@ -398,6 +400,8 @@ References: [ABAP Development Tools for VS Code marketplace page](https://market
 | [migrate-custom-code](https://github.com/arc-mcp/arc-1/blob/main/skills/migrate-custom-code/SKILL.md) | Runs migration-oriented checks and groups findings by priority | S/4HANA migration and ABAP Cloud readiness |
 | [sap-migration-dossier](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-migration-dossier/SKILL.md) | Builds a scoped ECC to S/4HANA migration dossier with inventory, usage, ATC, Clean Core, dependency, and SAP Docs evidence | Package- or namespace-level migration planning |
 | [sap-object-documenter](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-object-documenter/SKILL.md) | Batch-documents custom objects as Markdown | Package onboarding and handoffs |
+| [sap-transport-overview](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-transport-overview/SKILL.md) | Lists open transports, owners, and contents | Planning releases and finding work in progress |
+| [sap-transport-review](https://github.com/arc-mcp/arc-1/blob/main/skills/sap-transport-review/SKILL.md) | Reviews transport changes or inactive drafts against earlier source | Reviewing a change before activation or release |
 
 ### Clean Core And Custom Code Retirement
 

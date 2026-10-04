@@ -192,8 +192,8 @@ arc1.allow_free_sql=true
 ```
 
 Those properties only narrow/opt into capabilities beneath the application ceiling. Data preview
-requires `SAP_ALLOW_DATA_PREVIEW=true`; SQL requires both `SAP_ALLOW_DATA_PREVIEW=true` and
-`SAP_ALLOW_FREE_SQL=true`, plus matching XSUAA user scopes and SAP authorization. No destination
+requires `SAP_ALLOW_DATA_PREVIEW=true`; freestyle SQL independently requires
+`SAP_ALLOW_FREE_SQL=true`, plus its matching XSUAA user scope and SAP authorization. No destination
 property can enable writes in multi-target v1.
 
 If the physical SAP SID/client is reused in the same ARC-1 registry, use a public alias:

@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-04
+**Last reviewed:** 2026-10-05
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -73,8 +73,10 @@ sequence.
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
+| [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
+| [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
 | [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
@@ -104,6 +106,7 @@ sequence.
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
 | [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
+| [OPS-07](#ops-07) | Bounded HTTP request sizes for large source edits | P2 | S | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
 
@@ -257,8 +260,29 @@ namespaces, ambiguous names, unrelated hits, and both releases before replacing 
 SQL views through `DDLDEPENDENCY OBJECTTYPE=VIEW`. SAP also permits CDS view-entity replacements;
 these remain unmapped and fail closed.
 
+Direct CDS view entities and transactional projection views are handled by the graph traversal
+after [#912](https://github.com/arc-mcp/arc-1/issues/912); that does not resolve this catalog-mapping gap.
+The issue's 816 evidence reports `DDLDEPENDENCY OBJECTTYPE=STOB` without a `VIEW` row, but still lacks
+a live table-to-view-entity replacement capture.
+
 **Resume with.** A live table using a CDS view-entity replacement, verified `VIEWREF`/`STOB` identities,
 and graph-alias/blocklist regressions before broadening the catalog join.
+
+<a id="compat-10"></a>
+### COMPAT-10 — CDS set-operation lineage
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** The strict caller-SQL parser supports `UNION`, but SAP's dependency graphs for
+CDS set operations contain structural nodes outside the current kind allowlist. A4H 758's
+`DEMO_CDS_UNION_VE` is denied on `TYPE=SELECT`; this predates the view-entity fix in
+[#914](https://github.com/arc-mcp/arc-1/pull/914). See the
+[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#separately-tracked-limitations).
+
+**Resume with.** Captured graphs for classic/view-entity UNION, EXCEPT and INTERSECT where supported;
+define structural-node identity and traversal without mistaking branch labels for data-source names.
+Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
@@ -292,6 +316,24 @@ show unlabeled and non-English-labeled sentinels verbatim; an actual SAP echo is
 that compares responses with credentials supplied for that request before extraction or truncation.
 Keep values request-local, cover error and HTTP-200 result paths, and measure false positives
 without logging or persisting the credentials. This is research, not a universal-secret-detector promise.
+
+<a id="sec-18"></a>
+### SEC-18 — Implicit CDS conversion dependencies
+
+- **Priority / effort / status:** P3 / M / Revisit on trigger
+- **Category:** Security
+
+**Remaining gap.** SAP's SQL dependency graph does not list the implicit customizing tables used
+by CDS currency/unit conversion functions. Fresh 758 metadata for both classic and view-entity
+demo pairs lists only `DEMO_PRICES` or `DEMO_EXPRESSIONS`, despite conversion expressions in their
+source. This is an existing policy coverage limit, documented during
+[#914](https://github.com/arc-mcp/arc-1/pull/914); see the
+[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#separately-tracked-limitations).
+
+**Resume when.** An operator needs to block conversion customizing tables. Verify supported
+SAP metadata for implicit dependencies and test representative releases. Choose a bounded proof or
+explicit refusal for affected functions; do not infer full lineage from the present graph or add a
+hard-coded table list without proving its completeness.
 
 ## Developer workflows
 
@@ -797,6 +839,21 @@ token lifetime, keep users isolated, and keep ADR-0007's request-local Basic cre
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
 the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
+
+<a id="ops-07"></a>
+### OPS-07 — Bounded HTTP request sizes for large source edits
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Operations
+
+**Remaining gap.** The HTTP server uses Express's default 100 KiB JSON body limit. Large source
+writes or batches can fail with HTTP 413 before tool dispatch, even when a reverse proxy permits
+larger bodies. Smaller edits or local stdio are current workarounds; see [SAPWrite](tools.md#sapwrite).
+The limitation was confirmed during [PR #793](https://github.com/arc-mcp/arc-1/pull/793)'s docs review.
+
+**Resume with.** Define a bounded request-size contract and useful client errors before raising the
+limit. Review parsing before authentication, concurrent memory use, and proxy limits; test both
+oversized rejection and an authenticated large-source write/read-back round trip.
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener

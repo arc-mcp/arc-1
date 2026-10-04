@@ -296,10 +296,10 @@ guidance for choosing between them, are in
    `target: "A4H/100"` on the aggregate connection.
 4. For PP, test an unmapped or unauthorized user and confirm ARC-1 returns a safe PP/auth error
    rather than another user's SAP session. For Basic, use the Admin connection to confirm
-   `SAPTargets` labels the target `identity: "shared"`, then confirm the `SAPRead SYSTEM` result
-   reports the intended technical SAP user, then correlate it with SAP-side evidence
-   ([Verify the backend identity](principal-propagation-setup.md#verify-the-backend-identity)).
-   A Viewer does not receive `SAPTargets` when only one target is active.
+   `SAPTargets` labels the target `identity: "shared"`. For both modes, verify the intended SAP
+   user through [backend identity evidence](principal-propagation-setup.md#verify-the-backend-identity);
+   `SYSTEM.user` is configured/token-derived and is not independent SAP login evidence. A Viewer does not receive `SAPTargets` when only one
+   target is active.
 
 You are done when health is ready, the expected target is active, the reader sees the expected
 read-only tools, and the selected-identity `SAPRead` call succeeds.

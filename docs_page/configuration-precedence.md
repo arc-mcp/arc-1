@@ -29,10 +29,10 @@ The rule above is universal. What differs across modes is **where `process.env` 
 
 | Mode | `process.env` source | `.env` in CWD? | Practical winner |
 |---|---|---|---|
-| `npx arc-1` from a shell | shell exports | usually no (CWD is wherever you ran npx, not the package cache) | shell exports > defaults |
-| `npx arc-1` launched by an MCP client (stdio) | the client subprocess env (set from the `env` block in mcp.json / claude_desktop_config.json) | no | mcp.json `env` > defaults |
+| `npx arc-1` from a shell | shell exports | yes, if present in the launch directory (not the package cache) | shell exports > CWD `.env` > defaults |
+| `npx arc-1` launched by an MCP client (stdio) | the client subprocess env (set from the `env` block in mcp.json / claude_desktop_config.json) | if present in the subprocess CWD | mcp.json `env` > CWD `.env` > defaults |
 | `npm run dev` / `npm start` from a local clone | shell exports | yes, the repo's `.env` | shell exports > repo `.env` > defaults |
-| `node dist/index.js` launched by an MCP client (stdio) | client subprocess env from mcp.json | only if you set the client's `cwd` to a directory that has one | mcp.json `env` > .env in `cwd` (if set) > defaults |
+| `node dist/index.js` launched by an MCP client (stdio) | client subprocess env from mcp.json | if present in the subprocess CWD (check your client’s launch directory) | mcp.json `env` > .env in `cwd` (if set) > defaults |
 | Remote HTTP — client connects via `"url"` | the **server's** env at startup (set when you launched the server) | the server's CWD | server-side env > server's `.env` > defaults. **Client-side mcp.json `env` does nothing.** |
 | `docker run -e KEY=VAL ...` | the `-e` flags + `--env-file` | not in the image; only present if you bind-mount one | `-e` / `--env-file` > defaults |
 | BTP Cloud Foundry (`cf push` / `cf deploy`) | `manifest.yml` / `mta.yaml` `properties:` + `cf set-env` + bound services via `VCAP_SERVICES` | not in the droplet; not deployed | manifest/cf-set-env/VCAP > defaults |
@@ -56,8 +56,8 @@ If you need to change a config value on a remote ARC-1, change it where the serv
 ARC-1 logs an effective-config summary on startup. The most useful lines are:
 
 ```
-INFO: auth: MCP=[…] SAP=[…] (shared|per-user) [disable-saml=on?]
-INFO: safety: writes=… data=… freeSQL=… transports=… git=… packages=…
+auth: MCP=[…] SAP=… (shared|per-user)
+effective safety: writes=… data=… sql=… packages=[…] transports=… git=…
 ```
 
 Each value is recorded with its source (flag / env / .env / default) internally; the `arc1 config show` CLI command (when run with the same args / env as your server) prints the resolved value plus the source for every field. Use it whenever the runtime behaviour disagrees with what you thought `.env` said.
@@ -69,8 +69,8 @@ For BTP CF deploys, `cf env <app>` shows you the final environment as the contai
 ## Common pitfalls
 
 - **`.env` not being read.** Dotenv loads from `process.cwd()`. If you `cd /tmp && arc1 …`, the `.env` in your project root is ignored. Either `cd` into the project or use absolute env vars.
-- **Shell exports shadowing `.env`.** `export SAP_URL=…` in your `~/.zshrc` will silently win over a `.env` file. Unset the shell variable or change `.env` (or just use the CLI flag for one-off overrides).
-- **Quoting glob patterns.** `SAP_ALLOWED_PACKAGES=*` in a shell expands to the contents of the current directory. Use single quotes: `SAP_ALLOWED_PACKAGES='*'` or `-e SAP_ALLOWED_PACKAGES='Z*,$TMP'`. Inside `.env` files no extra quoting is needed.
+- **Shell exports shadowing `.env`.** `export SAP_URL=…` in your `~/.zshrc` will silently win over a `.env` file. Unset or change the shell variable (or use the CLI flag for one-off overrides); editing `.env` alone cannot override an exported value.
+- **Quoting glob patterns.** Unquoted patterns passed as command arguments can be expanded by the shell. Use single quotes: `SAP_ALLOWED_PACKAGES='*'` or `-e SAP_ALLOWED_PACKAGES='Z*,$TMP'`. Inside `.env` files no extra quoting is needed.
 - **Changing mcp.json on a remote server.** As noted above, the `env` block only applies when the client is *spawning* the server. For `url`-based remote connections, change config on the server side.
 - **Container `.env` files.** `docker run` doesn't read `.env` from your host. Use `--env-file path/to/.env` or `-e` flags.
 - **`ARC1_LOG_HTTP_DEBUG=1` doesn't work.** Most boolean env vars accept either `"true"` or `"1"`, but this one only accepts `"true"` (a known inconsistency — see the note in [configuration-reference.md → Logging and observability](configuration-reference.md#logging-and-observability)).
@@ -84,13 +84,14 @@ control off.
 
 ARC-1 treats a customer `.mtaext` extension descriptor as the **durable desired state** for a
 landscape. Every `cf deploy` reconciles the application environment toward the descriptor chain. A
-direct `cf set-env SAP_BLOCKED_DATA_SOURCES ...` takes effect immediately but is **temporary**: the
+direct `cf set-env <app> SAP_BLOCKED_DATA_SOURCES ...` takes effect after restarting
+the application and is **temporary**: the
 next MTA deployment reconciles the property back to whatever the descriptors declare.
 
 | You want | Do this |
 |---|---|
 | Enable the blocklist durably on BTP | Set the value in the landscape `.mtaext` |
-| A temporary incident-response brake | `cf set-env`, then promote the value into the `.mtaext` |
+| A temporary incident-response brake | `cf set-env`, restart the app, then promote the value into the `.mtaext` |
 | Disable it | Write the explicit empty value `SAP_BLOCKED_DATA_SOURCES: ""` |
 
 The base `Dockerfile`, `mta.yaml`, `manifest.yml` and `manifest-btp-abap.yml` deliberately ship

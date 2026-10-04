@@ -24,15 +24,15 @@ As an **admin**, you control what the AI can and cannot do via positive-opt-in f
 
 ```bash
 # Run directly with npx (no install needed)
-npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
+npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASSWORD
 
 # Or install globally
 npm install -g arc-1
-arc1 --url https://your-sap-host:44300 --user YOUR_USER
+arc1 --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASSWORD
 
 # Or use Docker
-docker run -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret \
-  ghcr.io/arc-mcp/arc-1
+docker run --rm -i -e SAP_URL=https://host:44300 -e SAP_USER=dev -e SAP_PASSWORD=secret \
+  -e SAP_TRANSPORT=stdio ghcr.io/arc-mcp/arc-1
 ```
 
 ### BTP ABAP Environment
@@ -68,7 +68,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-**ARC-1 is read-only by default** — no writes, no free SQL, no table preview, no transport actions. To change that, edit the same `env` block that starts ARC-1. For example, `SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true` keeps the server read-only but enables SQL + named table preview. The example below shows the "everything on" variant (writes + SQL + transports + all packages):
+**ARC-1 is read-only by default** — no writes, no free SQL, no table preview, no transport mutations. To change that, edit the same `env` block that starts ARC-1. For example, `SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true` keeps the server read-only but enables SQL + named table preview. The example below shows a broad-access variant (writes + SQL + transports + all packages):
 
 ```json
 {
@@ -120,7 +120,7 @@ Add `.mcp.json` to your project root:
 
 ### GitHub Copilot / VS Code
 
-For local stdio mode, use the same `npx` command shape shown above. VS Code's `servers` form looks like this:
+For local stdio mode, use the same `npx` command shape shown above. VS Code's workspace `.vscode/mcp.json` uses this `servers` form:
 
 ```json
 {
@@ -140,11 +140,14 @@ For local stdio mode, use the same `npx` command shape shown above. VS Code's `s
 }
 ```
 
-For HTTP Streamable mode, start arc1 as an HTTP server, then point your MCP client to it:
+For local HTTP Streamable mode, generate an API key, start the server, and configure
+the same key in the client. For shared access, use HTTPS as described in [Deployment](deployment.md).
 
 ```bash
+export ARC1_LOCAL_KEY="$(openssl rand -hex 32)"
+export ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin"
 SAP_URL=https://host:44300 SAP_USER=dev SAP_PASSWORD=secret \
-  npx arc-1@latest --transport http-streamable --http-addr 0.0.0.0:3000
+  npx arc-1@latest --transport http-streamable --http-addr 127.0.0.1:3000
 ```
 
 Add to VS Code / Copilot MCP config:
@@ -153,7 +156,9 @@ Add to VS Code / Copilot MCP config:
 {
   "servers": {
     "sap": {
-      "url": "http://localhost:3000/mcp"
+      "type": "http",
+      "url": "http://127.0.0.1:3000/mcp",
+      "headers": { "Authorization": "Bearer YOUR_GENERATED_API_KEY" }
     }
   }
 }
@@ -222,7 +227,7 @@ For production, combine conservative tool exposure with real user identity, SAP-
 
 | Doc | Description |
 |-----|-------------|
-| [quickstart.md](quickstart.md) | **Start here** — 5-minute npx + Claude Desktop setup |
+| [quickstart.md](quickstart.md) | **Start here** — npx + Claude Desktop setup |
 | [release-notes.md](release-notes.md) | Released changes and upgrade notes |
 | [roadmap.md](roadmap.md) | Parked ideas and future possibilities |
 | [local-development.md](local-development.md) | Full local dev — npx/npm/Docker/git, `.env`, SSO cookie extractor, MCP client configs |

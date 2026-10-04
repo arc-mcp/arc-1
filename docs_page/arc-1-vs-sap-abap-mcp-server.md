@@ -12,15 +12,16 @@ with *ABAP Development Tools for VS Code* and *ADT for Eclipse*) so you can deci
     ARC-1 is stronger it says so; where the SAP server is stronger it says so just as plainly.
 
 !!! info "How the facts here were sourced — public vs. snapshot"
-    *Last reviewed 2026-07-29 — the SAP Marketplace version and SAP's "experimental / not intended for
-    productive use" status were re-verified today; the author's live snapshot below remains the original
-    2026-06-16 observation.*
+    *Public guidance rechecked 2026-10-04 against SAP’s Marketplace listing, GA announcements, and
+    licensing documentation. The detailed tool and object inventories below retain the original
+    2026-06-16 observation; they are not a fresh test of the latest SAP server.*
 
     - **Public / primary sources** (strongest): SAP's Marketplace listing, the **SAP Help "Model
       Context Protocol Tools"** page (toolset + per-tool *Joule License* column), SAP Help
       *Enabling/Configuring ADT MCP Server*, SAP-samples (RAP130), SAP News, the
-      [ARC-1 repo/docs](https://github.com/arc-mcp/arc-1), and the MCP spec. The **20-tool set, exact
-      IDs, and licensing split** below are confirmed against SAP Help. See [Sources](#sources).
+      [ARC-1 repo/docs](https://github.com/arc-mcp/arc-1), and the MCP spec. The **20-tool set and exact
+      IDs** below are the documented inventory used for the June comparison. Check current SAP Help
+      and your server’s `tools/list` before treating an absent tool as a product limitation. See [Sources](#sources).
     - **Author's live snapshot (2026-06-16 — observed, not product-wide):** a running `ADT MCP Server`
       v1.0.0 in **Eclipse** (port **2234**, MCP protocol `2025-06-18` *as that server reported it* —
       newer MCP revisions exist; Jetty 12.1.9) bound to **one** on-prem **S/4HANA 2023** backend. Tool
@@ -38,18 +39,18 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
 | | **ARC-1** | **SAP ABAP MCP Server** |
 |---|---|---|
 | **What it is** | Independent MCP server translating AI tool calls into ADT REST calls | The *ADT MCP Server* SAP ships *inside* ADT for VS Code / Eclipse |
-| **Vendor / support** | Community open-source (MIT); no SAP support contract | SAP SE, first-party. The **extension is official/GA**, but SAP flags the **MCP server itself as experimental, "not intended for productive use"** |
+| **Vendor / support** | Community open-source (MIT); no SAP support contract | SAP SE, first-party; SAP announced the ABAP MCP Server as generally available in 2026 ([announcement](https://community.sap.com/t5/technology-blog-posts-by-sap/entering-the-new-era-of-agentic-ai-for-abap-development/ba-p/14394643)) |
 | **Where it runs** | BTP Cloud Foundry, Docker, npm/`npx`, or local stdio | A local HTTP server the IDE starts on `localhost` (default port **2234**) |
-| **Distribution** | npm · Docker · **`.mcpb` one-click bundle** · **Claude Code plugin (+22 skills)** · cross-agent skills CLI · BTP connector | Bundled in the SAP ADT extension (VS Code + Eclipse) |
+| **Distribution** | npm · Docker · **`.mcpb` one-click bundle** · **Claude Code plugin (+skills)** · cross-agent skills CLI · BTP connector | Bundled in the SAP ADT extension (VS Code + Eclipse) |
 | **Auth to the *server*** | XSUAA OAuth · OIDC JWT · API key · (stdio = none) | Auto-generated bearer token on `localhost` |
 | **Auth to *SAP*** | Per-user principal propagation, or shared service user | **Inherits the IDE's ADT destination** — RFC (SNC/SSO) on-prem, HTTP+OAuth cloud |
-| **Central governance** | Yes — safety ceiling, scopes, package allowlist, **rate limits**, central audit | None (local IDE settings + your SAP authorizations); **no rate limiting** |
+| **Central governance** | Yes — safety ceiling, scopes, package allowlist, **rate limits**, central audit | None (local IDE settings + your SAP authorizations); no comparable central limiter documented here |
 | **MCP clients** | Any — Claude, **Copilot Studio, automation/CI**, Cursor, CLI, JetBrains, web | Intended for local IDE agents; any local client *can* connect with URL+token |
 | **System reach** | Systems exposing the ADT REST endpoints a tool needs (on-prem→cloud) | **Connects to old & new** (ADT VS Code supports down to NW 7.3 EHP1 SP04); modern/RAP/AI need newer/cloud backends |
-| **Object types** | Classic **and** modern (PROG, FUGR, TABL, DOMA, DTEL, MSAG, ENHO… + CLAS, CDS, RAP) | 24 creatable types observed (CLAS, INTF, CDS, RAP, FUGR, PROG, TABL…); **no DOMA/DTEL/MSAG/SHLP/ENHO**; Dynpro not planned |
+| **Object types** | Classic **and** modern (PROG, FUGR, TABL, DOMA, DTEL, MSAG, ENHO… + CLAS, CDS, RAP) | 24 creatable types in the June snapshot (CLAS, INTF, CDS, RAP, FUGR, PROG, TABL…); see §8 for that snapshot’s omissions |
 | **Writes to SAP?** | Yes — create/update/delete + surgery + RAP scaffolding | **Yes — creates & generates objects** (`abap_creation-create_object`, `abap_generators-*`); editing existing source is done in the IDE editor |
 | **Server-side AI** | None — uses *your* LLM (Claude/GPT/Gemini/…) | Optional **Joule** AI (model not publicly pinned) for the 2 ATC AI-fix tools — licensed |
-| **Cost** | Free (you pay only your infra + your LLM) | Extension free; **only the 2 ATC AI-fix tools need a Joule licence** (BTP-hosted, not on pure on-prem) |
+| **Cost** | Free (you pay only your infra + your LLM) | Extension has no additional purchase price; the documented ATC AI-fix tools require Joule entitlement. On-stack and side-by-side licensing differ (§12) |
 
 ---
 
@@ -61,9 +62,8 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
 - Your system is **S/4HANA (Cloud/RISE/recent on-prem) or BTP ABAP** and your work is **RAP / ABAP
   Cloud / clean-core**.
 - You want **near-zero setup** — reuse your ADT logon, enable one setting, done.
-- You want **SAP's own AI** for ATC fix proposals (Joule), and you have the BTP-hosted Joule licence.
-- You value a **first-party** tool and the integrated **debugger / completion / form editors** — and
-  you are comfortable that SAP currently labels the MCP server *experimental*.
+- You want **SAP’s own AI** for ATC fix proposals (Joule), and have the required entitlement for your deployment.
+- You value a **first-party** tool and the surrounding IDE’s **debugger / completion / form editors**.
 
 ### Pick ARC-1 if…
 
@@ -77,7 +77,7 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
 - You work on **on-prem ECC / NetWeaver / older S/4** or with **classic objects** (reports, function
   groups, DDIC domains/data elements, message classes, enhancements) — or you need **free SQL,
   git (gCTS/abapGit), transport release, or ST22 dump / trace analysis**.
-- You want to keep your **choice of LLM** (Claude, GPT, Gemini, Mistral, …).
+- You want to choose your LLM and run ARC-1 independently of an IDE. Both servers support external agents; LLM choice alone does not distinguish them.
 
 ### Run both — and add more — if… (common for teams on VS Code ADT)
 
@@ -111,14 +111,14 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
 
     A standalone **TypeScript MCP server** (npm package `arc-1`, Docker image
     `ghcr.io/arc-mcp/arc-1`) that turns AI tool calls into **ADT REST** requests (`/sap/bc/adt/*`) —
-    the same public API the Eclipse ADT client uses.
+    the ADT interface also used by SAP’s tooling; third-party usage terms are discussed in §13.
 
     - **Distribution — "and other stuff":** `npx`/global npm; **Docker**; a **`.mcpb` one-click bundle**
-      for Claude Desktop; a **Claude Code plugin** that bundles the server **and 22 SAP skills**
+      for Claude Desktop; a **Claude Code plugin** that bundles the server **and SAP skills**
       (RAP, CDS, ABAP Unit, clean-core, UI5); a **cross-agent skills CLI** (`npx skills add` for Cursor,
       Copilot, Codex, Gemini CLI); and a **remote BTP CF connector** (URL + XSUAA OAuth). See
       [Install in Claude](install-in-claude.md).
-    - **Maturity:** now at its **1.0 release** — the first stable version, with a **semantic-versioning
+    - **Maturity:** the current release is **1.5.0**, with a **semantic-versioning
       stability commitment** from 1.0 onward (experimental, default-off features like multi-target are
       excluded until promoted). The project **positions itself** as production-ready, write-capable,
       multi-user; open source (MIT), community-maintained (no independent SLA claimed here).
@@ -138,15 +138,16 @@ ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many 
       runs as a **local HTTP server** at `http://localhost:<port>/mcp` (port **2234** in the tested
       Eclipse install; SAP-samples VS Code material references 2236; configurable 1024–65535), with an
       **auto-generated bearer token**.
-    - **Maturity / status:** the **extension is official and GA** and **actively developed** (VS Code
-      Marketplace **v1.1.1**, updated **2026-07-23**), but SAP's own material still states *"The ADT
-      MCP Server is an experimental feature that may change at any time without notice. It is not
-      intended for productive use."* It is **disabled by default** (Eclipse: *ABAP Development → MCP
-      Server → Enable ADT MCP Server*; VS Code: `adt.mcpServer.enabled` / "Adt: Enable MCP Server").
-    - **AI:** the AI capabilities are **Joule for Developers**, a separately-licensed BTP-hosted service —
+    - **Maturity / status:** SAP announced general availability of the ABAP MCP Server in 2026.
+      Earlier exercise material carries an experimental warning; it should not be used to describe
+      every current build. See the [SAP announcement](https://community.sap.com/t5/technology-blog-posts-by-sap/entering-the-new-era-of-agentic-ai-for-abap-development/ba-p/14394643)
+      and the [current Marketplace listing](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode).
+      Enable it through the IDE’s MCP settings (Eclipse: *ABAP Development → MCP Server*;
+      VS Code: `adt.mcpServer.enabled`).
+    - **AI:** the AI capabilities are **Joule for Developers**, separately entitled capabilities with on-stack and side-by-side deployment options —
       see §12. **The specific model is not publicly pinned** (it is *not* simply "SAP-ABAP-1"); SAP's
       GenAI Hub orchestrates a mix of foundation models plus an SAP ABAP-trained model.
-    - **Tool model:** **20 tools** (per SAP Help, §7.1), heavily prompt-engineered, partly **server-driven**
+    - **Tool model:** **20 tools in the June inventory** (§7.1), heavily prompt-engineered, partly **server-driven**
       (adapts to what the connected backend offers).
 
 ---
@@ -173,10 +174,10 @@ flowchart LR
 | Process model | A server you deploy (CF app / container / `npx` / stdio) | A `localhost` process the IDE starts for you |
 | Network exposure | Remote over HTTPS (or local stdio) | **`localhost` only** + auto-generated bearer token (a Host-header / DNS-rebinding guard was also observed in teardown) |
 | Multi-user | **Yes** — one endpoint, many users | No — one server per developer machine, tied to the IDE session |
-| Multiple SAP systems | One SAP system per server instance (a central BTP deployment routes to its configured destination; many systems → many instances/destinations) | **Yes** — every tool takes a `destination` arg, so one running server spans all the systems your IDE has configured |
+| Multiple SAP systems | Single target by default. Experimental BTP CF multi-target mode is read-only; writable access uses separate instances ([setup](multi-target-setup.md)) | **Yes** — every tool takes a `destination` arg, so one running server spans all the systems your IDE has configured |
 | Connection to SAP | ADT REST (HTTP) everywhere, incl. on-prem via Cloud Connector | **Inherits the IDE destination**: RFC (SNC/SSO) on-prem, HTTP (OAuth) cloud |
 | Runtime footprint | Lightweight Node process | Bundled inside the ADT engine (heavier; the price of full ADT fidelity) |
-| Who operates it | You (or your platform team) | SAP's extension; nothing to operate |
+| Who operates it | You (or your platform team) | Developer/admin maintains the IDE, destinations, credentials, and updates |
 
 ---
 
@@ -219,7 +220,7 @@ server authenticates to SAP.**
 The SAP ADT MCP Server **does not provide a central multi-user policy, scope and audit layer comparable
 to ARC-1.** Control is **local IDE configuration plus the developer's SAP authorizations and backend
 workflow controls** (e.g. the human-in-the-loop transport selection its tools enforce) — appropriate for
-a personal developer tool with no "across users" dimension. It also has **no rate limiting**.
+a personal developer tool with no "across users" dimension. It also has no comparable central limiter documented here.
 
 ARC-1's reason to exist is the opposite: an **admin-controlled safety ceiling** every call passes through.
 
@@ -230,7 +231,7 @@ ARC-1's reason to exist is the opposite: an **admin-controlled safety ceiling** 
 | **Package allowlist** (`$TMP`, `Z*`, subtree) enforced fail-closed on every mutation | **Yes** | No |
 | **Per-action deny** (e.g. block `SAPWrite.delete`) | **Yes** (`SAP_DENY_ACTIONS`) | No |
 | **Scopes** (read / write / data / sql / transports / git / admin) | **Yes**, per user/profile | No |
-| **Rate limiting** | **Yes** — per-IP OAuth, per-user MCP, server-wide SAP semaphore | **No** |
+| **Rate limiting** | **Yes** — per-IP OAuth, per-user MCP, server-wide SAP semaphore | Not verified in the current build |
 | **Central audit log** with user identity | **Yes** (stderr / file / **BTP Audit Log**) | No central log; activity is implicit in the SAP system |
 | Configuration locus | Central server env/CLI/`.env` | Per-developer IDE settings (enable flag, port) + the developer's SAP auth |
 
@@ -244,10 +245,11 @@ ARC-1's reason to exist is the opposite: an **admin-controlled safety ceiling** 
 
 ## 7. Capabilities & tool surface
 
-### 7.1 The SAP server's tools — 20 tools (SAP Help canonical list)
+### 7.1 The SAP server’s tools — June 2026 inventory
 
-Exact tool IDs from the SAP Help **"Model Context Protocol Tools"** page, including its per-tool **Joule
-License** column.
+The inventory used in June, with IDs and licensing from SAP Help’s **Model Context Protocol Tools**
+page. This historical list is retained for comparison; the connected backend and installed ADT version
+determine today’s available tools. Consult [SAP Help](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/model-context-protocol-tools) and `tools/list`.
 
 | Toolset | Tool IDs | Joule licence |
 |---|---|---|
@@ -261,7 +263,7 @@ License** column.
 | **ABAP Test Cockpit** | `abap_run_atc` · `abap_atc_get_result` · `abap_atc_execute_deterministic_quickfixes` · `abap_atc_apply_ai_fix` · `abap_atc_get_ai_fix_result` | **Required** for the 2 AI-fix tools; others not required |
 
 !!! note "Names: documented vs. tested build"
-    The IDs above are SAP's **published** list. The build tested live returned the **same 20 tools** with
+    The IDs above are the **published list used for that snapshot**. The build tested live returned the **same 20 tools** with
     **two minor ID variants** — `abap_list_destinations` (vs documented `abap_lists_destinations`) and
     `abap_atc_run` (vs documented `abap_run_atc`). Trust your client's own `tools/list` over any article;
     the set is **backend/version dependent** (SAP's roadmap includes an *ABAP object search* tool).
@@ -279,12 +281,12 @@ diagnostics (ST22 dumps, traces)**. On the tested backend the server exposed **o
 
 | Tool | Covers |
 |---|---|
-| `SAPRead` | Read source & metadata for **any** ADT object type; `grep`; where-used; version history; method-level surgery reads |
+| `SAPRead` | Read source & metadata for supported ADT object types; `grep`; where-used; version history; method-level surgery reads |
 | `SAPSearch` | `quick_search`, `tadir_lookup` (ADT / DB / both) |
 | `SAPWrite` | Create / update / delete; class- & method-section surgery; RAP scaffolding & `generate_behavior_implementation`; `batch_create` |
 | `SAPActivate` | Activate (single & batch, ED064-aware); publish/unpublish service bindings |
 | `SAPNavigate` | Go-to-definition, references, where-used, completion |
-| `SAPQuery` | Free SQL **and** table-data preview (both admin-gated) |
+| `SAPQuery` | Freestyle SQL (admin-gated); named table preview is in `SAPRead` |
 | `SAPTransport` | `list` · `get` · `diff` · `check` · `history` · layers/targets plus gated create/release/reassign/delete/remove-object workflows |
 | `SAPGit` | gCTS/abapGit reads plus gated abapGit workflows. gCTS mutations are quarantined; accepted abapGit mutations are fail-closed as incomplete when no authoritative postcondition exists. |
 | `SAPContext` | Dependency / contract / compressed-context extraction for LLMs |
@@ -296,6 +298,8 @@ All gated operations also depend on the target system exposing the needed ADT/OD
 user being authorized.
 
 ### 7.3 Capability matrix
+
+SAP MCP absences below describe the June inventory, not a verified absence from every later release. IDE features are labeled separately.
 
 | Capability | ARC-1 | SAP ABAP MCP Server |
 |---|:---:|:---:|
@@ -318,9 +322,9 @@ user being authorized.
 | Integrated **debugger** | ❌ (MCP is RPC) | ✅ (in the IDE) |
 | Inline completion / form editors | ❌ | ✅ (in the IDE) |
 | Server-side AI model | ❌ (bring your own LLM) | ✅ Joule (licensed; model not publicly pinned) |
-| Rate limiting | ✅ (3 layers) | ❌ |
+| Rate limiting | ✅ (3 layers; per-user limit is opt-in) | No comparable central control verified |
 | Multiple SAP targets in one server | 🧪 BTP CF read-only v1: pinned URLs or explicit `target`; single-target remains default | ✅ (`destination` arg per tool) |
-| Token efficiency (hyperfocused / context compression / method surgery) | ✅ | ❌ (verbose tool descriptions) |
+| Token efficiency (hyperfocused / context compression / method surgery) | Supported | No comparative token benchmark performed |
 
 ⚠️ = available but indirectly / partially, or only inside the IDE.
 
@@ -330,13 +334,13 @@ user being authorized.
 
 !!! note "Read this as four separate axes — they don't move together"
     Don't conflate **(a) IDE/backend connectivity**, **(b) which MCP tools a backend exposes**, **(c)
-    Joule/ABAP-AI availability + licensing** (BTP-hosted), and — for ARC-1 — **(d) which ADT REST
+    Joule/ABAP-AI availability + licensing** (§12), and — for ARC-1 — **(d) which ADT REST
     endpoints a given system exposes** (varies by release, decides per-tool coverage).
 
 **The SAP server connects to old systems too.** ADT for VS Code is documented to support releases **down
 to NetWeaver 7.3 EHP1 SP04**, and Eclipse ADT reaches further still. What is *not* available on older /
 non-cloud backends is the **ABAP-Cloud-model** workflows (RAP/CDS/generators need newer backends) and the
-**Joule AI** features (BTP-hosted, licensed) — **connectivity is not the limiter**.
+**Joule AI** features (deployment and entitlement dependent) — **connectivity is not the limiter**.
 
 | | ARC-1 | SAP ABAP MCP Server |
 |---|---|---|
@@ -345,8 +349,8 @@ non-cloud backends is the **ABAP-Cloud-model** workflows (RAP/CDS/generators nee
 | RISE / Private Cloud · S/4 Cloud Public · BTP ABAP | ✅ | ✅ |
 | **Classic procedural** (PROG, FUGR/FUNC, includes) | ✅ | ✅ creatable (observed live on S/4 2023); not the marketing focus |
 | **DDIC** (TABL, STRU) | ✅ | ✅ (TABL/DT, TABL/DS) |
-| **DOMA / DTEL / MSAG / SHLP / ENHO / XSLT** | ✅ | ❌ (not in the creatable set observed) |
-| Modern (CLAS, INTF, DDLS, DDLX, DCLS, BDEF, SRVD, SRVB, DRAS…) | ✅ | ✅ |
+| **DOMA / DTEL / MSAG / SHLP / ENHO / XSLT** | DOMA/DTEL/MSAG read/write; ENHO read-only. No SHLP/XSLT tool type | Absent from the June creatable set observed |
+| Modern (CLAS, INTF, DDLS, DDLX, DCLS, BDEF, SRVD, SRVB, DRTY…) | Supported where backend endpoints exist; DRAS is not an ARC-1 tool type | Backend-dependent; see the snapshot below |
 | **Dynpro / Web Dynpro / module pools** | ⚠️ limited (ADT itself is thin here) | ❌ not planned (SAP states classic Dynpro/Web Dynpro are not in the current focus) |
 
 !!! note "The 24 creatable types observed live (one S/4HANA 2023 on-prem backend)"
@@ -355,8 +359,8 @@ non-cloud backends is the **ABAP-Cloud-model** workflows (RAP/CDS/generators nee
     (lock object), TYPE (type group), DTEB (entity buffer), CHDO, NROB, NONT, RONT** plus the modern
     **DDLS, DDLX, DCLS, DRAS, DRTY, BDEF, SRVD, SRVB**. **Absent:** DOMA, DTEL, MSAG, SHLP, ENHO, XSLT,
     and all Dynpro/Web Dynpro. This is a **backend-driven snapshot**, not a product-wide guarantee — and
-    even where *create* is supported there is **no read/search** over MCP. ARC-1 covers the absent types
-    and the read/search path where the backend exposes the endpoints.
+    even where *create* is supported there is **no read/search** over MCP. ARC-1 supports the read/search path and the types listed in its [tool reference](tools.md);
+    it does not cover every type absent from this snapshot.
 
 ---
 
@@ -411,15 +415,15 @@ matches it there:
        SAP-samples references 2236) and **auto-generates a bearer token**.
     3. Point your IDE AI agent (Copilot Agent Mode / Joule) at it.
 
-    **Effort: minutes. Zero infrastructure.** (Remember SAP marks it *experimental, not for productive use*.)
+    Setup reuses the existing IDE and SAP destination; prerequisites still depend on the backend and authentication method.
 
 === "ARC-1 (local)"
 
     ```bash
-    npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER
+    npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASS
     ```
 
-    Or one-click via the **`.mcpb`** bundle in Claude Desktop, or the **Claude Code plugin** (server + 22
+    Or one-click via the **`.mcpb`** bundle in Claude Desktop, or the **Claude Code plugin** (server +
     skills). **Effort: minutes** — as easy as the SAP server for a single developer.
 
 === "ARC-1 (the target architecture)"
@@ -440,29 +444,29 @@ matches it there:
 | | ARC-1 | SAP ABAP MCP Server |
 |---|---|---|
 | The server itself | Free, open source (MIT) | Free (ships with the official extension) |
-| Non-AI tools | Free | **Free** — 18 of 20 tools need no Joule licence |
+| Non-AI tools | Free | No Joule licence for the non-AI tools in the documented inventory; backend and external-agent terms still apply |
 | AI tools | n/a (you bring your own LLM) | **`abap_atc_apply_ai_fix` + `abap_atc_get_ai_fix_result` require a Joule for Developers licence** |
 | AI model | Your choice (Claude/GPT/Gemini/…) | **Not publicly pinned** — SAP GenAI Hub orchestrates a mix of foundation models + an SAP ABAP model (do **not** assume "SAP-ABAP-1") |
-| Licensing model | Your LLM provider's pricing | **Joule Premium** package; separate licence; **consumption-based AI Units** activated via SAP for Me; a valid SAP Build or ABAP licence required |
-| Where the AI runs | Your LLM endpoint | A **BTP-hosted hub** (auth + licence + BTP AI Core) |
+| Licensing model | Your LLM provider's pricing | SAP documents an additional licence for on-stack capabilities and AI Units for side-by-side capabilities; confirm the applicable product terms |
+| Where the AI runs | Your LLM endpoint | Depends on the on-stack or side-by-side setup; see SAP prerequisites |
 | Infrastructure | Your BTP CF / container / host | Your laptop (none extra) |
 
-!!! warning "On-premise reality + a commercial caveat"
-    Because Joule for Developers is delivered through a **BTP cloud hub** and licensed separately, a **pure
-    on-premise system with no BTP / Joule-for-Developers entitlement does not get the AI-fix tools** — they
-    won't function there, though the other 18 tools still work. Exact SKUs, AI-Unit pricing, regional terms
-    and any promotional period **change and should be confirmed with SAP** (e.g. via SAP for Me).
+!!! note "Check the entitlement for your deployment"
+    SAP distinguishes on-stack and side-by-side Joule capabilities. Its
+    [administrator prerequisites](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/748fe7cd693a4639b765cdc4ddbe4b68.html)
+    reference SAP Note 3571857 for on-stack licensing and 3740750 for side-by-side AI Units.
+    A successful non-AI MCP call does not establish an AI entitlement. Confirm current availability,
+    product terms, and pricing for your landscape with SAP.
 
 ---
 
 ## 13. A note on SAP's API policy (unsettled)
 
-Both products ultimately call SAP's **ADT REST endpoints** (`/sap/bc/adt/*`). The short version: the
-official ADT MCP Server is unaffected — it is SAP's own first-party client of its own APIs. ARC-1, like
+Both products ultimately call SAP's **ADT REST endpoints** (`/sap/bc/adt/*`). The short version: SAP’s official MCP server is SAP’s own client, subject to its product terms. ARC-1, like
 [`abap-adt-api`](https://github.com/marcellourbani/abap-adt-api), abapGit and abaplint, uses those same
-endpoints, which are long-standing and SAP-enabled but not formally published as a third-party API
-contract. Treat third-party ADT-API use as **not-officially-confirmed** — fine for dev/test, worth a
-conversation with SAP before production.
+endpoints. Their publication status and permitted third-party use need to be assessed per endpoint;
+absence from the Business Accelerator Hub alone does not settle that question. Treat third-party ADT-API use as **not-officially-confirmed**; obtain a decision for your use case from your SAP contact.
+Developer use alone does not establish a contractual exemption.
 
 **→ [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** is the full
 treatment: what API Policy v.4.2026a says clause by clause, why the ADT question is more nuanced than
@@ -480,7 +484,7 @@ adds reusable workflows on top. Beyond the two compared here, high-value additio
   ABAP, BTP, SAP Help, SAP Community). Great for grounding any agent in real documentation.
 - **SAP Notes MCP** — search/retrieve SAP Notes & KBAs.
 - **Official SAP dev-tooling MCP servers** — Fiori elements, CAP, UI5, UI5 Web Components, MDK (npm-distributed).
-- **Skills** — ARC-1 ships **22 SAP skills** (RAP, CDS, ABAP Unit, clean-core, UI5 modernization) usable
+- **Skills** — ARC-1 ships **SAP skills** (RAP, CDS, ABAP Unit, clean-core, UI5 modernization) usable
   across agents via `npx skills add`.
 
 A curated, regularly-updated catalog of SAP MCP servers, AI skills and Claude plugins lives at
@@ -511,10 +515,10 @@ Namespaces differ (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold s
 === "SAP ABAP MCP Server is better at…"
 
     - **Near-zero-config** in-IDE experience; reuses your ADT session.
-    - **First-party**, on SAP's roadmap, evolving fast (currently labelled experimental).
+    - **First-party**, on SAP's roadmap, actively developed.
     - **Server-driven creation + repository-object generators** that auto-track backend capabilities
       (incl. *OData UI Service from Scratch*).
-    - **Joule AI** ATC fix proposals (licensed, BTP-hosted).
+    - **Joule AI** ATC fix proposals (licensed; see §12).
     - The surrounding **IDE**: debugger, completion, navigation, form editors, virtual workspace.
     - **Human-in-the-loop** transport selection baked into the tools.
     - **Multi-destination** — one running server spans every system configured in your IDE (each tool
@@ -535,7 +539,7 @@ Namespaces differ (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold s
       skills, Docker, npm, BTP connector).
     - **Token efficiency** — hyperfocused 1-tool mode (~200 tokens), context compression, and
       method-level surgery keep tight context windows and mid-tier LLMs viable.
-    - **No cloud/AI-Core dependency and no licence** for any tool.
+    - **No ARC-1 licence fee**. Direct local connections need no AI Core; BTP deployments, SAP access, and your LLM have their own requirements.
 
 ### ARC-1's honest limitations
 
@@ -556,10 +560,10 @@ Namespaces differ (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold s
 
 ### Public / primary sources
 
-- [ABAP Development Tools for VS Code — Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode) — official SAP SE extension (**v1.1.1, updated 2026-07-23; 23,584 installs; 3★ from 36 reviews as of 2026-07-29**): free, integrated AI/MCP, debugger, Unit, ATC, transports, RFC/HTTP connectivity, additional licence for certain Joule features.
+- [ABAP Development Tools for VS Code — Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode) — official SAP SE extension (checked 2026-10-04): free, integrated AI/MCP, debugger, Unit, ATC, transports, RFC/HTTP connectivity, additional licence for certain Joule features.
 - [SAP Help — Model Context Protocol Tools](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/243d050c1be846e788f38f8c23c45d3a.html) — **canonical toolset, exact tool IDs, and per-tool Joule License column** (source for §7.1 and §12).
 - [SAP Help — Configuring ADT MCP Server](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/ed94320814734d97801f51a5b6deb802.html) and [Enabling ADT MCP Server](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/6f6e72852b9746ffbe083d5a818fbbec.html) — URL `http://localhost:<port>/mcp`, port preference, auto-generated bearer token.
-- [SAP-samples — RAP130 Exercise 1: Enable the ADT MCP Server](https://github.com/SAP-samples/abap-platform-rap130/blob/main/exercises/ex01/README.md) — `adt.mcpServer.enabled`, Copilot Agent mode, and the **experimental / "not intended for productive use"** warning.
+- [SAP-samples — RAP130 Exercise 1: Enable the ADT MCP Server](https://github.com/SAP-samples/abap-platform-rap130/blob/main/exercises/ex01/README.md) — `adt.mcpServer.enabled`, Copilot Agent mode, and an older experimental warning; use the later GA announcement for current product status.
 - [SAP Joule for Developers — product page](https://www.sap.com/products/artificial-intelligence/joule-for-developers.html) · [GA announcement: ABAP AI capabilities incl. agentic](https://community.sap.com/t5/artificial-intelligence-blogs-posts/sap-joule-for-developers-abap-ai-capabilities-including-agentic/ba-p/14417633) · [Entering the New Era of Agentic AI for ABAP Development](https://community.sap.com/t5/technology-blog-posts-by-sap/entering-the-new-era-of-agentic-ai-for-abap-development/ba-p/14394643) — Joule licensing (Joule Premium / AI Units), BTP-hosted hub, model mix.
 - [SAP Business AI — Release Highlights Q1 2026](https://news.sap.com/2026/04/sap-business-ai-release-highlights-q1-2026/) — Joule model landscape / GenAI Hub.
 - ADT connectivity & SSO: [ADT for VS Code — Everything You Need to Know](https://community.sap.com/t5/technology-blog-posts-by-sap/abap-development-tools-for-vs-code-everything-you-need-to-know/ba-p/14258129) · [VS Code now on the Marketplace (Q&A on SNC/SSO, RFC ports)](https://community.sap.com/t5/technology-blog-posts-by-sap/abap-development-tools-for-visual-studio-code-is-now-available-on-the-vs/ba-p/14402120) · [ABAP Tools VS Code Quick Start (software-heroes)](https://software-heroes.com/en/blog/abap-tools-vs-code-quick-start-en) · [Installing ADT for Eclipse — config/SSO/SNC (PDF)](https://help.sap.com/doc/2e9cf4a457d84c7a81f33d8c3fdd9694/Cloud/en-US/inst_guide_abap_development_tools.pdf).
