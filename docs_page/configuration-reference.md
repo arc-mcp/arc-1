@@ -308,7 +308,7 @@ and audit-event reference.
 
 ## Caching
 
-ARC-1 normally revalidates cached source with ETags; a shared-client activation can briefly make its promoted draft available without a GET, including on mixed PP/API-key instances. See [cache security](caching.md#security) before mixing these identities.
+ARC-1 normally revalidates cached source with ETags; an activation can briefly make its promoted draft available without a GET, but never while `SAP_PP_ENABLED=true` (including mixed PP/API-key instances). See [cache security](caching.md#security).
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|

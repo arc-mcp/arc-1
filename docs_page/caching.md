@@ -54,7 +54,7 @@ If-None-Match: <etag>
 | `200 OK` without `ETag` | Store the body; the next read performs a normal GET |
 | `404` or `410` | Evict the entry and surface the ADT error |
 
-There is no general source TTL. Normally SAP validates each cached source read. After successful activation through a shared client, ARC-1 can serve the captured draft as active for up to 120 seconds without a GET to avoid SAP read-after-activation lag. An activation through a principal-propagation client invalidates instead of promoting a draft. This decision is per activation caller, not per instance: mixed PP/API-key deployments can also enter the shared window. `force_refresh=true` bypasses it for an individual read.
+There is no general source TTL. Normally SAP validates each cached source read. After successful activation on an instance without principal propagation, ARC-1 can serve the captured draft as active for up to 120 seconds without a GET to avoid SAP read-after-activation lag. With `SAP_PP_ENABLED=true`, every activation invalidates instead of promoting a draft, including API-key calls through the shared client, so mixed PP/API-key instances never enter the window. `force_refresh=true` bypasses it for an individual read.
 
 ### Active and inactive source
 
@@ -113,10 +113,10 @@ For CDS blast-radius analysis, prefer `SAPContext(action="impact", type="DDLS", 
 
 `ARC1_CACHE=sqlite` stores full SAP source in cleartext. ARC-1 creates the database with owner-only permissions (`0600`), but that is not encryption. Use memory/none for sensitive landscapes, or put SQLite on an encrypted volume with restricted backup access.
 
-Ordinary source cache hits are revalidated through the current caller's SAP client. The shared
-post-activation window is an exception: it has no per-reader identity check. Keep caching disabled
-(`ARC1_CACHE=none`) when mixing PP callers and shared-client activations in one process, or use
-separate instances. Live usage lookup uses the current caller rather than a shared prebuilt index.
+Ordinary source cache hits are revalidated through the current caller's SAP client. The
+post-activation window is the exception: it has no per-reader identity check, so ARC-1 never opens
+it while `SAP_PP_ENABLED=true`, including on mixed PP/API-key instances. Live usage lookup uses the
+current caller rather than a shared prebuilt index.
 
 ## Statistics and UI
 

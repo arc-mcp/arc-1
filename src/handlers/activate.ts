@@ -74,21 +74,22 @@ async function captureDraftForPromotion(
  *  next read isn't masked by the backend's read-after-activate lag (stale active source / sticky
  *  "unactivated draft" note).
  *
- *  Under principal propagation the freshness guard + note-suppression are keyed by object (not by
- *  user), so they must NOT be shared across identities — one user's activation would otherwise hide
- *  another user's own draft. PP clients fall back to plain invalidation (the source-cache body is
- *  already process-shared, but the active version is global so that stays correct). The lag-defeating
- *  promotion applies to single-identity servers (stdio / shared service user / bearer token), which
- *  is how the bug reproduces. */
+ *  The freshness guard + note-suppression are keyed by object (not by user) and the promoted body is
+ *  served without SAP revalidation, so they must NOT be shared across identities — a PP reader would
+ *  otherwise get another identity's promoted body without SAP's authorization check, or have their
+ *  own draft note hidden. Whenever principal propagation is enabled (including API-key calls on the
+ *  shared client) activations fall back to plain invalidation. The lag-defeating promotion applies to
+ *  single-identity servers (stdio / shared service user / bearer token), which is how the bug
+ *  reproduces. */
 function applyActivationToCache(
   cachingLayer: CachingLayer | undefined,
   type: string,
   name: string,
   draft: string | undefined,
-  perUserClient: boolean,
+  multiIdentity: boolean,
 ): void {
   if (!cachingLayer) return;
-  if (perUserClient) {
+  if (multiIdentity) {
     cachingLayer.invalidate(type, name, 'all');
     return;
   }
@@ -101,6 +102,7 @@ export async function handleSAPActivate(
   args: Record<string, unknown>,
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
+  ppEnabled: boolean,
 ): Promise<ToolResult> {
   const action = String(args.action ?? 'activate');
   const name = String(args.name ?? '');
@@ -223,8 +225,8 @@ export async function handleSAPActivate(
   const preaudit = args.preaudit !== undefined ? Boolean(args.preaudit) : undefined;
   const activateOpts = preaudit !== undefined ? { preaudit } : undefined;
   // Post-activation cache promotion + freshness guard are object-keyed (not user-keyed); disable
-  // them for per-user (principal-propagation) clients. See applyActivationToCache.
-  const perUserClient = cacheSecurity.isPerUserClient;
+  // them whenever several SAP identities share the cache (PP on). See applyActivationToCache.
+  const multiIdentity = cacheSecurity.isPerUserClient || ppEnabled;
 
   if (args.objects && Array.isArray(args.objects)) {
     const rawObjects = args.objects as Array<Record<string, unknown>>;
@@ -298,7 +300,7 @@ export async function handleSAPActivate(
 
     // Capture each object's inactive draft before the batch flips them to active.
     const drafts =
-      cachingLayer && !perUserClient
+      cachingLayer && !multiIdentity
         ? await Promise.all(objects.map((o) => captureDraftForPromotion(client, o.type, o.url)))
         : [];
 
@@ -317,7 +319,7 @@ export async function handleSAPActivate(
 
     if (result.success) {
       for (const [i, object] of objects.entries()) {
-        applyActivationToCache(cachingLayer, object.type, object.name, drafts[i], perUserClient);
+        applyActivationToCache(cachingLayer, object.type, object.name, drafts[i], multiIdentity);
       }
       invalidateInactiveList(cachingLayer, client, cacheSecurity);
       return textResult(`Successfully activated ${objects.length} objects: ${names}.${statusDetails}${globalMessages}`);
@@ -397,12 +399,12 @@ export async function handleSAPActivate(
   );
 
   // Capture the inactive draft before activation flips it to active (see captureDraftForPromotion).
-  const draft = cachingLayer && !perUserClient ? await captureDraftForPromotion(client, type, objectUrl) : undefined;
+  const draft = cachingLayer && !multiIdentity ? await captureDraftForPromotion(client, type, objectUrl) : undefined;
 
   const result = await activate(client.http, client.safety, objectUrl, { ...activateOpts, name });
 
   if (result.success) {
-    applyActivationToCache(cachingLayer, type, name, draft, perUserClient);
+    applyActivationToCache(cachingLayer, type, name, draft, multiIdentity);
     invalidateInactiveList(cachingLayer, client, cacheSecurity);
     return textResult(`Successfully activated ${type} ${name}.${formatActivationMessages(result)}`);
   }

@@ -303,7 +303,7 @@ For cache-supported source reads, ARC-1 uses the SAP-emitted `ETag`; `format="ed
 - **`200 OK` with new body and ETag** → cache is replaced; no prefix on the response.
 - **`404` / `410`** → cache entry is invalidated and the error is propagated.
 
-External writes (Eclipse activations, gCTS pulls, abapGit imports) are normally caught on the next conditional GET. After a shared-client activation, the captured draft can be served as active for up to 120 seconds without revalidation. PP activations invalidate instead, but mixed PP/API-key instances can still enter the shared window; see [cache security](caching.md#security). To force a fresh fetch and bypass the cache for one read, pass `force_refresh: true`.
+External writes (Eclipse activations, gCTS pulls, abapGit imports) are normally caught on the next conditional GET. On instances without principal propagation, the captured draft can be served as active for up to 120 seconds after an activation without revalidation. With `SAP_PP_ENABLED=true`, including mixed PP/API-key instances, activations invalidate instead; see [cache security](caching.md#security). To force a fresh fetch and bypass the cache for one read, pass `force_refresh: true`.
 
 The full caching architecture (per-version cache keys, conditional GET, pure parse memoization, inactive-list session cache, write invalidation) is documented in [Caching System](caching.md).
 
