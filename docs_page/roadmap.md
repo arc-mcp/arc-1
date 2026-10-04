@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-04
+**Last reviewed:** 2026-10-05
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -76,7 +76,7 @@ sequence.
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
-| [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P2 | M | Needs research | Security |
+| [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
 | [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
@@ -278,7 +278,7 @@ and graph-alias/blocklist regressions before broadening the catalog join.
 CDS set operations contain structural nodes outside the current kind allowlist. A4H 758's
 `DEMO_CDS_UNION_VE` is denied on `TYPE=SELECT`; this predates the view-entity fix in
 [#914](https://github.com/arc-mcp/arc-1/pull/914). See the
-[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#review-follow-up).
+[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#separately-tracked-limitations).
 
 **Resume with.** Captured graphs for classic/view-entity UNION, EXCEPT and INTERSECT where supported;
 define structural-node identity and traversal without mistaking branch labels for data-source names.
@@ -320,7 +320,7 @@ without logging or persisting the credentials. This is research, not a universal
 <a id="sec-18"></a>
 ### SEC-18 — Implicit CDS conversion dependencies
 
-- **Priority / effort / status:** P2 / M / Needs research
+- **Priority / effort / status:** P3 / M / Revisit on trigger
 - **Category:** Security
 
 **Remaining gap.** SAP's SQL dependency graph does not list the implicit customizing tables used
@@ -328,9 +328,9 @@ by CDS currency/unit conversion functions. Fresh 758 metadata for both classic a
 demo pairs lists only `DEMO_PRICES` or `DEMO_EXPRESSIONS`, despite conversion expressions in their
 source. This is an existing policy coverage limit, documented during
 [#914](https://github.com/arc-mcp/arc-1/pull/914); see the
-[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#review-follow-up).
+[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#separately-tracked-limitations).
 
-**Resume with.** An operator requirement to block conversion customizing tables; verify supported
+**Resume when.** An operator needs to block conversion customizing tables. Verify supported
 SAP metadata for implicit dependencies and test representative releases. Choose a bounded proof or
 explicit refusal for affected functions; do not infer full lineage from the present graph or add a
 hard-coded table list without proving its completeness.

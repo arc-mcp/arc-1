@@ -130,11 +130,9 @@ With an active list, one logical request is decided exactly once:
 
 Classic CDS views, CDS view entities (including root entities), and transactional projection views
 share the same lineage checks. Their graph must identify the requested source and expand to proven
-terminal tables; a childless or explicitly inactive view is denied. SAP's SQL restrictions still
-apply after the policy permits a query. CDS view-entity **replacement objects** remain a separate,
-unsupported catalog-mapping case.
-An empty `DB_EXISTS` is an explicit false value, so transient analytical queries with that graph
-marker are denied. Older graphs that omit the property are handled separately.
+terminal tables. A childless view, or one SAP reports without a database object (such as a transient
+analytical query), is denied. SAP's SQL restrictions still apply after the policy permits a query.
+CDS view-entity **replacement objects** remain a separate, unsupported catalog-mapping case.
 
 ### Failure codes
 

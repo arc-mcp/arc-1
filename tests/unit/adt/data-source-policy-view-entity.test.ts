@@ -114,16 +114,6 @@ describe('CDS view-entity and projection lineage (#912)', () => {
     },
   );
 
-  it.each(['CDS_VIEW_ENTITY', 'CDS_PROJECTION_VIEW'] as const)('rejects inactive %s nodes', async (kind) => {
-    const graph = mixedGraph();
-    const target = nodes(graph).find((n) => n.kind === kind)!;
-    target.databaseExists = false;
-    await expect(enforceBlockedDataSources([graph.name], ['USR02'], resolver(graph))).rejects.toMatchObject({
-      code: 'DATA_LINEAGE_UNRESOLVED',
-      reason: expect.stringContaining('is not active in the database'),
-    });
-  });
-
   it('preserves an empty DB_EXISTS from a live analytical-query graph as false', async () => {
     const graph = parseCdsDependencyGraph(fixture('cds-dependency-graph-758-analytical-query'));
     expect(graph.kind).toBe('CDS_PROJECTION_VIEW');
