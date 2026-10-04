@@ -80,7 +80,7 @@ export async function findDefinition(
 
   // ADT reads the cursor from the URI fragment (`#start=<line>,<column>`). Separate
   // `line`/`column` query parameters are rejected with 400 "I::000".
-  const target = `${sourceUrl}#start=${line},${column}`;
+  const target = `${sourceUrl.split('#')[0]}#start=${line},${column}`;
   const resp = await http.post(
     `/sap/bc/adt/navigation/target?uri=${encodeURIComponent(target)}&filter=definition`,
     source,

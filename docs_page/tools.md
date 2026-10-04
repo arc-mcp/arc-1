@@ -1179,6 +1179,11 @@ SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest", line
 SAPNavigate(action="hierarchy", name="ZCL_ORDER")
 ```
 
+For `definition`, pass the source URI and current source text, with positive integer line and column
+numbers (1-based) pointing into that text. Object metadata URIs and `type`+`name` are insufficient.
+The source can contain unsaved changes; ARC-1 does not replace it with a backend read. A returned
+target URI may include a cursor fragment; an explicit new line/column replaces that fragment.
+
 ---
 
 ## SAPQuery

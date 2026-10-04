@@ -1026,7 +1026,7 @@ export function getToolDefinitions(
         },
         uri: {
           type: 'string',
-          description: 'Source URI of the object. Optional for references if type+name are provided.',
+          description: 'Definition needs source URI, line, column and source; references also accepts type+name.',
         },
         type: {
           type: 'string',
@@ -1043,9 +1043,9 @@ export function getToolDefinitions(
           type: 'number',
           description: 'references: max entries (default 100, max 1000). "total" counts every match of the filter.',
         },
-        line: { type: 'number', description: 'Line number (1-based)' },
-        column: { type: 'number', description: 'Column number (1-based)' },
-        source: { type: 'string', description: 'Current source code (for definition/completion)' },
+        line: { type: 'number', description: 'Line (1-based integer)' },
+        column: { type: 'number', description: 'Column (1-based integer)' },
+        source: { type: 'string', description: 'Current source for definition/completion' },
       },
       required: ['action'],
     },

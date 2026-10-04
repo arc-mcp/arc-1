@@ -115,6 +115,13 @@ describe('Code Intelligence', () => {
         '/sap/bc/adt/functions/groups/%2fscwm%2fl03b/fmodules/%2fscwm%2fto_confirm/source/main#start=34,16',
       );
     });
+
+    it('replaces a previous cursor while preserving the source query', async () => {
+      const http = mockHttp('<navigation/>');
+      await findDefinition(http, unrestrictedSafetyConfig(), '/source?version=active#start=1,1;end=1,9', 8, 12, 'x');
+      const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      expect(new URLSearchParams(url.split('?')[1]).get('uri')).toBe('/source?version=active#start=8,12');
+    });
   });
 
   // ─── findReferences ────────────────────────────────────────────────

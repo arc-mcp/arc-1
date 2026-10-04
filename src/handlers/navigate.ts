@@ -27,7 +27,7 @@ export async function handleSAPNavigate(
   const source = String(args.source ?? '');
 
   // Allow symbolic type+name as alternative to uri for references
-  if (!uri && args.type && args.name) {
+  if (action !== 'definition' && !uri && args.type && args.name) {
     const symName = String(args.name);
     uri = (await resolveWhereUsedUri(client, String(args.type), symName)) ?? '';
     if (!uri) {
@@ -40,12 +40,20 @@ export async function handleSAPNavigate(
   switch (action) {
     case 'definition': {
       if (!uri) {
-        return errorResult('Provide uri (or type+name) and line+column for definition lookup.');
+        return errorResult('Provide uri pointing to the source (e.g. /source/main) for definition lookup.');
       }
       // SAP resolves the position against the posted text: without it the answer is empty.
-      if (args.line === undefined || args.column === undefined || !source) {
+      if (
+        args.line === undefined ||
+        args.column === undefined ||
+        !Number.isInteger(line) ||
+        line < 1 ||
+        !Number.isInteger(column) ||
+        column < 1 ||
+        !source.trim()
+      ) {
         return errorResult(
-          'Definition lookup needs line, column and source: pass the current source text of the object (e.g. from SAPRead) and the 1-based line and column of the symbol in it.',
+          'Definition lookup needs line, column and source: pass the current source text of the object (e.g. from SAPRead) and positive integer line and column numbers (1-based).',
         );
       }
       const result = await findDefinition(client.http, client.safety, uri, line, column, source);

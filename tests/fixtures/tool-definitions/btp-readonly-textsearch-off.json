@@ -264,7 +264,7 @@
         },
         "uri": {
           "type": "string",
-          "description": "Source URI of the object. Optional for references if type+name are provided."
+          "description": "Definition needs source URI, line, column and source; references also accepts type+name."
         },
         "type": {
           "type": "string",
@@ -284,15 +284,15 @@
         },
         "line": {
           "type": "number",
-          "description": "Line number (1-based)"
+          "description": "Line (1-based integer)"
         },
         "column": {
           "type": "number",
-          "description": "Column number (1-based)"
+          "description": "Column (1-based integer)"
         },
         "source": {
           "type": "string",
-          "description": "Current source code (for definition/completion)"
+          "description": "Current source for definition/completion"
         },
         "direction": {
           "type": "string",
