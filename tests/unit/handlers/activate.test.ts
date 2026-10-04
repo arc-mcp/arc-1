@@ -1000,22 +1000,39 @@ describe('batch activation status attribution', () => {
 describe('post-activation source promotion', () => {
   const DRAFT = 'CLASS zcl_promo DEFINITION PUBLIC. ENDCLASS. " activated draft';
   const SAP_ACTIVE = 'CLASS zcl_promo DEFINITION PUBLIC. ENDCLASS. " served by SAP';
-  const activeSourceGets = () =>
+  const single = { type: 'CLAS', name: 'ZCL_PROMO' };
+  const activations: [string, Record<string, unknown>][] = [
+    ['single', single],
+    ['batch', { objects: [single] }],
+  ];
+  const sourceGets = (version: 'active' | 'inactive') =>
     mockFetch.mock.calls.filter(([url, opts]) => {
       const u = new URL(String(url));
       return (
         (opts?.method ?? 'GET') === 'GET' &&
         u.pathname.toLowerCase() === '/sap/bc/adt/oo/classes/zcl_promo/source/main' &&
-        u.searchParams.get('version') !== 'inactive'
+        (u.searchParams.get('version') === 'inactive') === (version === 'inactive')
       );
     });
-  const activateThenRead = async (ppEnabled: boolean, readerIsPerUser: boolean) => {
+  // Activation runs on the shared client (stdio, or an API-key call on a PP server); the reader is
+  // per-user exactly when PP is on.
+  const activateThenRead = async (ppEnabled: boolean, args: Record<string, unknown>) => {
     const layer = new CachingLayer(new MemoryCache());
     const config = { ...DEFAULT_CONFIG, ppEnabled };
-    const args = { type: 'CLAS', name: 'ZCL_PROMO' };
-    // Activation always runs on the shared client (stdio, or an API-key call on a PP server).
-    await handleToolCall(createClient(), config, 'SAPActivate', args, undefined, undefined, layer, false);
-    return handleToolCall(createClient(), config, 'SAPRead', args, undefined, undefined, layer, readerIsPerUser);
+    const activation = await handleToolCall(
+      createClient(),
+      config,
+      'SAPActivate',
+      args,
+      undefined,
+      undefined,
+      layer,
+      false,
+    );
+    expect(activation.isError).toBeUndefined();
+    expect(sourceGets('inactive')).toHaveLength(ppEnabled ? 0 : 1); // draft captured only for promotion
+    expect(layer.wasRecentlyActivated('CLAS', 'ZCL_PROMO')).toBe(!ppEnabled);
+    return handleToolCall(createClient(), config, 'SAPRead', single, undefined, undefined, layer, ppEnabled);
   };
 
   beforeEach(() => {
@@ -1031,15 +1048,21 @@ describe('post-activation source promotion', () => {
     });
   });
 
-  it('serves the promoted draft to a single-identity reader without a SAP fetch', async () => {
-    const result = await activateThenRead(false, false);
-    expect(result.content[0]?.text).toContain('activated draft');
-    expect(activeSourceGets()).toHaveLength(0);
-  });
+  it.each(activations)(
+    '%s: serves the promoted draft to a single-identity reader without a source GET',
+    async (_, args) => {
+      const result = await activateThenRead(false, args);
+      expect(result.content[0]?.text).toContain('activated draft');
+      expect(sourceGets('active')).toHaveLength(0);
+    },
+  );
 
-  it('makes a per-user read after a shared-client activation fetch from SAP when PP is enabled', async () => {
-    const result = await activateThenRead(true, true);
-    expect(result.content[0]?.text).toContain('served by SAP');
-    expect(activeSourceGets()).toHaveLength(1);
-  });
+  it.each(activations)(
+    '%s: with PP enabled, a per-user read after a shared-client activation GETs the source',
+    async (_, args) => {
+      const result = await activateThenRead(true, args);
+      expect(result.content[0]?.text).toContain('served by SAP');
+      expect(sourceGets('active')).toHaveLength(1);
+    },
+  );
 });
