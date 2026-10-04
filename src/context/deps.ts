@@ -112,7 +112,14 @@ function parseFunctionModule(source: string, objectName: string, config: Config)
   const tokens = header?.getTokens();
   // FUNCTION-POOL also starts with a FUNCTION token, but is a different repository object.
   if (header?.get() instanceof Statements.FunctionPool) return undefined;
-  if (tokens?.[0]?.getStr().toUpperCase() !== 'FUNCTION' || tokens.at(-1)?.getStr() !== '.') return undefined;
+  if (
+    !tokens ||
+    tokens.length < 3 ||
+    tokens[0]!.getStr().toUpperCase() !== 'FUNCTION' ||
+    tokens.at(-1)?.getStr() !== '.'
+  ) {
+    return undefined;
+  }
   if (tokens.length === 3) return reg; // Classic FUNCTION name. already parses.
 
   const start = tokens[1]!.getEnd();

@@ -405,5 +405,9 @@ ENDFUNCTION.`;
     it('does not reinterpret a FUNCTION-POOL as a standalone module', () => {
       expect(extractDependencies('FUNCTION-POOL zgroup.\nDATA ref TYPE REF TO zcl_helper.', 'ZGROUP')).toEqual([]);
     });
+
+    it.each(['FUNCTION.', 'FUNCTION .'])('returns no dependencies for an incomplete header: %s', (source) => {
+      expect(extractDependencies(source, 'ZINCOMPLETE')).toEqual([]);
+    });
   });
 });
