@@ -42,6 +42,12 @@ export async function handleSAPNavigate(
       if (!uri) {
         return errorResult('Provide uri (or type+name) and line+column for definition lookup.');
       }
+      // SAP resolves the position against the posted text: without it the answer is empty.
+      if (args.line === undefined || args.column === undefined || !source) {
+        return errorResult(
+          'Definition lookup needs line, column and source: pass the current source text of the object (e.g. from SAPRead) and the 1-based line and column of the symbol in it.',
+        );
+      }
       const result = await findDefinition(client.http, client.safety, uri, line, column, source);
       if (!result) {
         return textResult('No definition found at this position.');

@@ -29,7 +29,31 @@ describe('Code Intelligence', () => {
   // ─── findDefinition ────────────────────────────────────────────────
 
   describe('findDefinition', () => {
-    it('returns definition location', async () => {
+    it('reads the target from the ADT objectReference answer', async () => {
+      // Shape returned by SAP_BASIS 757 and 816 for a method call on a class.
+      const xml =
+        '<?xml version="1.0" encoding="utf-8"?><adtcore:objectReference adtcore:uri="/sap/bc/adt/oo/classes/cl_identity_factory/source/main#start=129,16" xmlns:adtcore="http://www.sap.com/adt/core"/>';
+      const http = mockHttp(xml);
+      const result = await findDefinition(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/functions/groups/su_user/fmodules/bapi_user_get_detail/source/main',
+        202,
+        42,
+        'FUNCTION bapi_user_get_detail.',
+      );
+      expect(result?.uri).toBe('/sap/bc/adt/oo/classes/cl_identity_factory/source/main#start=129,16');
+      expect(result?.line).toBe(129);
+      expect(result?.column).toBe(16);
+    });
+
+    it('returns null for an objectReference without a uri', async () => {
+      const http = mockHttp('<adtcore:objectReference xmlns:adtcore="http://www.sap.com/adt/core"/>');
+      const result = await findDefinition(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'DATA: lv_x.');
+      expect(result).toBeNull();
+    });
+
+    it('returns definition location from a navigation element', async () => {
       const xml =
         '<navigation uri="/sap/bc/adt/oo/classes/CL_ABAP_REGEX/source/main" type="CLAS/OC" name="CL_ABAP_REGEX"/>';
       const http = mockHttp(xml);
@@ -65,12 +89,31 @@ describe('Code Intelligence', () => {
       );
     });
 
-    it('includes line and column in URL', async () => {
+    it('sends the position as a #start fragment of the uri, not as line/column parameters', async () => {
       const http = mockHttp('<navigation/>');
       await findDefinition(http, unrestrictedSafetyConfig(), '/source', 42, 15, 'x');
       const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
-      expect(url).toContain('line=42');
-      expect(url).toContain('column=15');
+      expect(url).toContain(`uri=${encodeURIComponent('/source#start=42,15')}`);
+      expect(url).toContain('filter=definition');
+      expect(url).not.toContain('line=');
+      expect(url).not.toContain('column=');
+    });
+
+    it('keeps an already escaped namespace in the source uri', async () => {
+      const http = mockHttp('<navigation/>');
+      await findDefinition(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/functions/groups/%2fscwm%2fl03b/fmodules/%2fscwm%2fto_confirm/source/main',
+        34,
+        16,
+        'x',
+      );
+      const url = (http.post as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
+      const uri = new URLSearchParams(url.split('?')[1]).get('uri');
+      expect(uri).toBe(
+        '/sap/bc/adt/functions/groups/%2fscwm%2fl03b/fmodules/%2fscwm%2fto_confirm/source/main#start=34,16',
+      );
     });
   });
 

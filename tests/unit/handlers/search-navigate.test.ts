@@ -1600,6 +1600,21 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('Provide uri');
     });
+
+    it.each([
+      ['line', { column: 5, source: 'REPORT ztest.' }],
+      ['column', { line: 1, source: 'REPORT ztest.' }],
+      ['source', { line: 1, column: 5 }],
+    ])('returns error without %s for definition instead of asking SAP', async (_missing, extra) => {
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'definition',
+        uri: '/sap/bc/adt/programs/programs/ztest/source/main',
+        ...extra,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('line, column and source');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
   });
 
   describe('SAPNavigate references — INTF augmentation via SEOMETAREL', () => {
