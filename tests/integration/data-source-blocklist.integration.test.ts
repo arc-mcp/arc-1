@@ -147,6 +147,36 @@ describe('experimental data-source blocklist live contract', () => {
     });
   });
 
+  // Read-only standard demos captured on A4H 758 SP02 for #912; pre-758 fixtures are not verified.
+  describe.each([
+    ['DEMO_CDS_SPFLI_ENTITY', 'CARRID', ['DEMO_CDS_SPFLI_ENTITY', 'SPFLI']],
+    ['DEMO_MANAGED_ROOT_WAS', 'KEY_FIELD', ['DEMO_MANAGED_ROOT_WAS', 'DEMO_TAB_ROOT_3']],
+    ['DEMO_MANAGED_ROOT_PROJ', 'KEY_FIELD', ['DEMO_MANAGED_ROOT_PROJ', 'DEMO_MANAGED_ROOT_WAS', 'DEMO_TAB_ROOT_3']],
+  ] as const)('view-entity lineage: %s', (name, column, sourcePath) => {
+    const requireViewEntityFixture = (ctx: Parameters<typeof skipTest>[0]): void => {
+      if (basisRelease < 758) {
+        skipTest(ctx, `${SkipReason.NO_FIXTURE}: these CDS demos are not verified on the pre-758 test target`);
+      }
+    };
+
+    it('allows the freestyle query with an unrelated blocklist', async (ctx) => {
+      requireViewEntityFixture(ctx);
+      const result = await withBlocked(['USR02']).runQuery(`SELECT ${column} FROM ${name}`, 1);
+      expect(result.columns).toEqual([column]);
+    });
+
+    it('denies the terminal table before sending a data POST', async (ctx) => {
+      requireViewEntityFixture(ctx);
+      const strict = withBlocked([sourcePath.at(-1)!]);
+      const postSpy = vi.spyOn(strict.http, 'post');
+      await expect(strict.runQuery(`SELECT ${column} FROM ${name}`, 1)).rejects.toMatchObject({
+        code: 'DATA_SOURCE_BLOCKED',
+        sourcePath,
+      });
+      expect(postSpy).not.toHaveBeenCalled();
+    });
+  });
+
   it('allows a live cluster table whose physical container is not blocked', async (ctx) => {
     requireClusterFixture(ctx);
     const strict = withBlocked(['USR02']);

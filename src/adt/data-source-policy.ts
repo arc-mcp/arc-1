@@ -127,7 +127,8 @@ export class DataSourcePolicyError extends AdtSafetyError {
  * SQL node kinds SAP emits in the dependency branch. Verified live on SAP_BASIS 750, 758 and 816.
  * Anything outside this set inside a SQL branch fails closed.
  */
-export const SQL_NODE_KINDS = ['CDS_VIEW', 'TABLE', 'CDS_TABLE_FUNCTION'] as const;
+const CDS_VIEW_KINDS = ['CDS_VIEW', 'CDS_VIEW_ENTITY', 'CDS_PROJECTION_VIEW'] as const;
+export const SQL_NODE_KINDS = [...CDS_VIEW_KINDS, 'TABLE', 'CDS_TABLE_FUNCTION'] as const;
 export type SqlNodeKind = (typeof SQL_NODE_KINDS)[number];
 
 /**
@@ -819,7 +820,7 @@ export async function enforceBlockedDataSources(
           `CDS table function ${node.name} is not supported by the experimental policy: SAP does not expose its AMDP USING lineage in the dependency graph`,
         );
       }
-      if (node.kind !== 'CDS_VIEW') {
+      if (!(CDS_VIEW_KINDS as readonly string[]).includes(node.kind)) {
         throw unresolved(directSource, nodePath, `dependency kind ${node.kind} is unsupported`);
       }
       if (node.children.length === 0) {

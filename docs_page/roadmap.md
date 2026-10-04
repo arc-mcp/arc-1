@@ -237,6 +237,11 @@ test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and B
 SQL views through `DDLDEPENDENCY OBJECTTYPE=VIEW`. SAP also permits CDS view-entity replacements;
 these remain unmapped and fail closed.
 
+Direct CDS view entities and transactional projection views are handled by the graph traversal
+after [#912](https://github.com/arc-mcp/arc-1/issues/912); that does not resolve this catalog-mapping gap.
+The issue's 816 evidence reports `DDLDEPENDENCY OBJECTTYPE=STOB` without a `VIEW` row, but still lacks
+a live table-to-view-entity replacement capture.
+
 **Resume with.** A live table using a CDS view-entity replacement, verified `VIEWREF`/`STOB` identities,
 and graph-alias/blocklist regressions before broadening the catalog join.
 

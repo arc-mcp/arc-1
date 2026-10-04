@@ -1,0 +1,137 @@
+<abapsource:elementInfo xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:uri="/sap/bc/adt/ddic/ddl/sources/z_pv_projection" adtcore:type="DDLS/DF" adtcore:name="Z_PV_PROJECTION">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">CDS_PROJECTION_VIEW</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION"/>
+<abapsource:entry abapsource:key="ENTITY_NAME">Z_PV_Projection</abapsource:entry>
+<abapsource:entry abapsource:key="NODE_NAME">Z_PV_PROJECTION</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">DEFINED</abapsource:entry>
+<abapsource:entry abapsource:key="HAS_DCL">X</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/z_ve_root" adtcore:type="DDLS/DF" adtcore:name="Z_VE_ROOT">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">CDS_VIEW_ENTITY</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME">Z_VE_Root</abapsource:entry>
+<abapsource:entry abapsource:key="NODE_NAME">Z_VE_ROOT</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">MASKED</abapsource:entry>
+<abapsource:entry abapsource:key="HAS_DCL">X</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/z_ve_interface" adtcore:type="DDLS/DF" adtcore:name="Z_VE_INTERFACE">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">CDS_VIEW_ENTITY</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME">Z_VE_Interface</abapsource:entry>
+<abapsource:entry abapsource:key="NODE_NAME">Z_VE_INTERFACE</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">MASKED</abapsource:entry>
+<abapsource:entry abapsource:key="HAS_DCL">X</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/i_paytmedia" adtcore:type="DDLS/DF" adtcore:name="I_PAYTMEDIA">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">CDS_VIEW</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME">I_PaytMedia</abapsource:entry>
+<abapsource:entry abapsource:key="NODE_NAME">IPAYTMEDIA</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">NONE</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/tables/regut" adtcore:type="TABL/DT" adtcore:name="REGUT">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME"/>
+<abapsource:entry abapsource:key="NODE_NAME">REGUT</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">NA</abapsource:entry>
+</abapsource:properties>
+</abapsource:elementInfo>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/tables/tfpm042f" adtcore:type="TABL/DT" adtcore:name="TFPM042F">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">LEFT_OUTER_JOIN</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME"/>
+<abapsource:entry abapsource:key="NODE_NAME">TFPM042F</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">NA</abapsource:entry>
+</abapsource:properties>
+</abapsource:elementInfo>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/tables/tfcupm042f" adtcore:type="TABL/DT" adtcore:name="TFCUPM042F">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">LEFT_OUTER_JOIN</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME"/>
+<abapsource:entry abapsource:key="NODE_NAME">TFCUPM042F</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">NA</abapsource:entry>
+</abapsource:properties>
+</abapsource:elementInfo>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/i_paytdategrouping" adtcore:type="DDLS/DF" adtcore:name="I_PAYTDATEGROUPING">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">CDS_VIEW</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">LEFT_OUTER_JOIN</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME">I_PaytDateGrouping</abapsource:entry>
+<abapsource:entry abapsource:key="NODE_NAME">IPAYTDATEGRPG</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">NONE</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/tables/dfpayg" adtcore:type="TABL/DT" adtcore:name="DFPAYG">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">TABLE</abapsource:entry>
+<abapsource:entry abapsource:key="RELATION">FROM</abapsource:entry>
+<abapsource:entry abapsource:key="ENTITY_NAME"/>
+<abapsource:entry abapsource:key="NODE_NAME">DFPAYG</abapsource:entry>
+<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>
+<abapsource:entry abapsource:key="AC_STATE">NA</abapsource:entry>
+</abapsource:properties>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+<abapsource:elementInfo adtcore:name="RELATED_OBJECTS_TREE">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">RELATED_OBJECTS_TREE</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/z_ve_interface" adtcore:name="Z_VE_INTERFACE">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">RELATED_OBJECTS_ENTRY</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:name="DCLS_OBJECT_LIST">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">DCLS_OBJECT_LIST</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/acm/dcl/sources/z_ve_interface" adtcore:type="DCLS/DL" adtcore:name="Z_VE_INTERFACE">
+<abapsource:properties/>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/z_ve_root" adtcore:name="Z_VE_ROOT">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">RELATED_OBJECTS_ENTRY</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:name="DCLS_OBJECT_LIST">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">DCLS_OBJECT_LIST</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/acm/dcl/sources/z_ve_root" adtcore:type="DCLS/DL" adtcore:name="Z_VE_ROOT">
+<abapsource:properties/>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/ddic/ddl/sources/z_pv_projection" adtcore:name="Z_PV_PROJECTION">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">RELATED_OBJECTS_ENTRY</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:name="DCLS_OBJECT_LIST">
+<abapsource:properties>
+<abapsource:entry abapsource:key="TYPE">DCLS_OBJECT_LIST</abapsource:entry>
+</abapsource:properties>
+<abapsource:elementInfo adtcore:uri="/sap/bc/adt/acm/dcl/sources/z_pv_projection" adtcore:type="DCLS/DL" adtcore:name="Z_PV_PROJECTION">
+<abapsource:properties/>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>
+</abapsource:elementInfo>

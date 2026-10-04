@@ -128,6 +128,12 @@ With an active list, one logical request is decided exactly once:
 - IN-list chunking does **not** re-decide: the union of all chunks is authorized once and the
   already-authorized statements are then executed.
 
+Classic CDS views, CDS view entities (including root entities), and transactional projection views
+share the same lineage checks. Their graph must identify the requested source and expand to proven
+terminal tables; a childless or explicitly inactive view is denied. SAP's SQL restrictions still
+apply after the policy permits a query. CDS view-entity **replacement objects** remain a separate,
+unsupported catalog-mapping case.
+
 ### Failure codes
 
 | Code | Meaning |

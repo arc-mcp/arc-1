@@ -147,3 +147,66 @@ describe('catalog replacement policy through the real client', () => {
     expect(appPosts()).toHaveLength(0);
   });
 });
+
+describe.each([
+  ['DEMO_CDS_SPFLI_ENTITY', 'SPFLI', 'cds-dependency-graph-758-view-entity', ['DEMO_CDS_SPFLI_ENTITY', 'SPFLI']],
+  [
+    'DEMO_MANAGED_ROOT_PROJ',
+    'DEMO_TAB_ROOT_3',
+    'cds-dependency-graph-758-projection',
+    ['DEMO_MANAGED_ROOT_PROJ', 'DEMO_MANAGED_ROOT_WAS', 'DEMO_TAB_ROOT_3'],
+  ],
+] as const)('view-entity lineage through the real client: %s', (name, table, graphFixture, sourcePath) => {
+  beforeEach(() => {
+    const fallback = mockFetch.getMockImplementation()!;
+    catalogBody = catalog.replaceAll('SCARR', table);
+    mockFetch.mockImplementation(async (url: string, opts: RequestInit) => {
+      if (String(url).includes('/repository/informationsystem/search')) {
+        const uri = `/sap/bc/adt/ddic/ddl/sources/${name.toLowerCase()}`;
+        return mockResponse(
+          200,
+          `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core">` +
+            `<adtcore:objectReference adtcore:uri="${uri}/source/main#name=${name.toLowerCase()}" adtcore:type="STOB/DO" adtcore:name="${name}"/>` +
+            `<adtcore:objectReference adtcore:uri="${uri}" adtcore:type="DDLS/DF" adtcore:name="${name}"/>` +
+            `<adtcore:objectReference adtcore:uri="/sap/bc/adt/acm/dcl/sources/${name.toLowerCase()}" adtcore:type="DCLS/DL" adtcore:name="${name}"/>` +
+            `</adtcore:objectReferences>`,
+        );
+      }
+      if (String(url).includes('/graphdata')) return mockResponse(200, fixture(graphFixture));
+      return fallback(url, opts);
+    });
+  });
+
+  it('authorizes one query after traversing the graph and checking its terminal table', async () => {
+    const audit = vi.spyOn(logger, 'emitAudit');
+    try {
+      await expect(client().runQuery(`SELECT * FROM ${name}`, 1)).resolves.toBeDefined();
+      expect(posts()).toHaveLength(2);
+      expect(appPosts()).toHaveLength(1);
+      expect(appPosts()[0]?.[1].body).toBe(`SELECT * FROM ${name}`);
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'data_source_policy_decision',
+          decision: 'allow',
+          metadataRequests: 3,
+          graphNodes: sourcePath.length,
+        }),
+      );
+      // No advertised graph MIME: the existing v3 probe still works unchanged.
+      expect(mockFetch.mock.calls.find(([url]) => String(url).includes('/graphdata'))?.[0]).toContain(
+        'addMetrics=false',
+      );
+    } finally {
+      audit.mockRestore();
+    }
+  });
+
+  it('denies a blocked descendant before any catalog or application POST', async () => {
+    await expect(client([table]).runQuery(`SELECT * FROM ${name}`, 1)).rejects.toMatchObject({
+      code: 'DATA_SOURCE_BLOCKED',
+      matchedSource: table,
+      sourcePath,
+    });
+    expect(posts()).toHaveLength(0);
+  });
+});
