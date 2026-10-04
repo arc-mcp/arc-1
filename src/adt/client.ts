@@ -534,13 +534,13 @@ export class AdtClient {
     return parseFunctionModuleProperties((await this.http.get(url)).body);
   }
 
-  /** Resolve function group for a function module via quickSearch */
+  /** Resolve by URI: some releases decorate search names with "(Function Module)". */
   async resolveFunctionGroup(fmName: string): Promise<string | null> {
     const results = await this.searchObject(fmName, 10);
     for (const r of results) {
-      if (r.objectName.toUpperCase() === fmName.toUpperCase() && r.uri.includes('/groups/')) {
-        const match = r.uri.match(/\/groups\/([^/]+)\//);
-        if (match) return decodeURIComponent(match[1]!).toUpperCase();
+      const match = r.uri.match(/\/functions\/groups\/([^/]+)\/fmodules\/([^/?#]+)(?:[/?#]|$)/i);
+      if (match && decodeURIComponent(match[2]!).toUpperCase() === fmName.toUpperCase()) {
+        return decodeURIComponent(match[1]!).toUpperCase();
       }
     }
     return null;

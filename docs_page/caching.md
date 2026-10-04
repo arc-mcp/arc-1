@@ -30,7 +30,7 @@ ARC-1 stores four kinds of request-derived data:
 
 | Data | Key | Freshness |
 |---|---|---|
-| Source | Object type, name, and `active`/`inactive` version | Revalidated with SAP `ETag` on every hit when available |
+| Source | Object type, name, and `active`/`inactive` version | Normally revalidated with SAP `ETag` when available; see the post-activation exception below |
 | Parsed ABAP contracts/dependencies (memory only) | Source content hash, object identity and parser language version | Consulted after source retrieval under the normal cache/auth policy; no aggregate reuse |
 | Released API metadata | Object name and type | Populated on demand |
 | Function-group mapping | Function module name | Populated on demand; mappings rarely change |
@@ -54,7 +54,7 @@ If-None-Match: <etag>
 | `200 OK` without `ETag` | Store the body; the next read performs a normal GET |
 | `404` or `410` | Evict the entry and surface the ADT error |
 
-There is no source TTL. SAP validates freshness on each cached source read.
+There is no general source TTL. Normally SAP validates each cached source read. After successful activation through a shared client, ARC-1 can serve the captured draft as active for up to 120 seconds without a GET to avoid SAP read-after-activation lag. An activation through a principal-propagation client invalidates instead of promoting a draft. This decision is per activation caller, not per instance: mixed PP/API-key deployments can also enter the shared window. `force_refresh=true` bypasses it for an individual read.
 
 ### Active and inactive source
 
@@ -107,13 +107,16 @@ For CDS blast-radius analysis, prefer `SAPContext(action="impact", type="DDLS", 
 
 ## Invalidation
 
-`SAPWrite` and `SAPActivate` invalidate active and inactive source entries for affected objects and refresh the inactive-object state. Edits made outside ARC-1 are detected by the next conditional GET.
+`SAPWrite` and `SAPActivate` invalidate active and inactive source entries for affected objects and refresh the inactive-object state. Edits made outside ARC-1 are detected by the next conditional GET; during the post-activation window, use `force_refresh=true` to check immediately.
 
 ## Security
 
 `ARC1_CACHE=sqlite` stores full SAP source in cleartext. ARC-1 creates the database with owner-only permissions (`0600`), but that is not encryption. Use memory/none for sensitive landscapes, or put SQLite on an encrypted volume with restricted backup access.
 
-Under principal propagation, source cache hits are revalidated through the current per-user SAP client before a body is served. Live usage lookup likewise uses the current caller rather than a shared prebuilt index.
+Ordinary source cache hits are revalidated through the current caller's SAP client. The shared
+post-activation window is an exception: it has no per-reader identity check. Keep caching disabled
+(`ARC1_CACHE=none`) when mixing PP callers and shared-client activations in one process, or use
+separate instances. Live usage lookup uses the current caller rather than a shared prebuilt index.
 
 ## Statistics and UI
 

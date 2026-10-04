@@ -270,7 +270,7 @@ describe('CachingLayer', () => {
         },
         {
           objectType: 'FUGR/FF',
-          objectName: '/TEST/FM',
+          objectName: '/TEST/FM (Function Module)',
           description: '',
           packageName: '$TMP',
           uri: '/sap/bc/adt/functions/groups/%2ftest%2fgroup/fmodules/%2ftest%2ffm',

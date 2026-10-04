@@ -164,7 +164,7 @@ evaluator and client tests pass. Fresh A4H tests deny the analytical query on `S
 `TABLE_QUERY` and `TABLE_CONTENTS` with zero POSTs and retain the existing allowed demo reads.
 Replaying the final 105 focused cases against previous PR head `2c2f034e` gives six failures
 (three raw-XML cases plus three client denials) and 99 passes; restoring the fix gives 105 passes.
-The full final unit suite passes 7,799 tests. Typecheck, lint, policy validation, build and
+The review follow-up's full unit suite passes 7,799 tests. Typecheck, lint, policy validation, build and
 size/schema checks also pass. The rebuilt CLI independently denies the analytical query with two
 metadata requests, while the ordinary transactional projection still succeeds.
 
@@ -173,6 +173,11 @@ skips. The additional cases include `DEMO_CDS_ASSOCIATION_VE → SCARR` and
 `DEMO_CDS_PV_PARENT → DEMO_CDS_PV_CHILD → DEMO_CDS_VIEW_CHILD → DEMO_DDIC_TYPES`.
 The association allow case returns a carrier row; the nested projection returns its expected
 column with zero rows. No 553-graph scan was repeated and no SAP objects/data were changed.
+
+After merging main `b65276d8` (which added unrelated navigation/dependency tests), the combined
+branch passes 7,826 unit tests across 256 files and repeats the live suite at 24 passed / 3 skipped.
+Typecheck, lint, policy validation, build and size/schema checks pass again. The only merge conflict
+was the roadmap's adjacent compatibility rows; both branches' ideas and evidence are preserved.
 
 ### What transfers from PR #915
 

@@ -58,11 +58,17 @@ cp xs-security.json xs-security.landscape.json
 In the copied file, set `oauth2-configuration.redirect-uris` to your actual public URLs:
 
 ```json
-"redirect-uris": [
-  "https://arc1.example.com/oauth/callback",
-  "https://arc1.example.com/oauth/logged-out"
-]
+{
+  "oauth2-configuration": {
+    "redirect-uris": [
+      "https://arc1.example.com/oauth/callback",
+      "https://arc1.example.com/oauth/logged-out"
+    ]
+  }
+}
 ```
+
+Merge this property into the copied descriptor; this fragment is not a complete XSUAA descriptor.
 
 Keep the template's localhost entries only when needed for local use;
 add the optional AppRouter's exact `/login/callback` if used. Never trust an entire shared domain
@@ -454,7 +460,7 @@ See [Manage MCP servers in VS Code](https://code.visualstudio.com/docs/agent-cus
 
 ### Browser-based DCR clients (rare)
 
-The four MCP clients in the section above (Claude Desktop, Cursor, MCP Inspector, Copilot Studio) all run as native processes — they call `/register` and `/authorize` over native HTTP, not the browser `fetch` API, and never trigger CORS. If a browser-based MCP client (custom playground, embedded widget) calls these OAuth endpoints from a different origin, you must add that origin to `ARC1_ALLOWED_ORIGINS`. See [Security headers & CORS](security-guide.md#cors-for-browser-based-mcp-clients-opt-in) for the full configuration.
+CORS applies when a browser makes a cross-origin request to ARC-1. Native or server-side MCP transports are not subject to it, but browser tools such as MCP Inspector may use a proxy or direct browser requests depending on their configuration. For direct browser requests, add the exact origin to `ARC1_ALLOWED_ORIGINS`. See [Security headers & CORS](security-guide.md#cors-for-browser-based-mcp-clients-opt-in) for the full configuration.
 
 ### Audit events
 
@@ -463,7 +469,8 @@ DCR lifecycle is captured in the audit stream alongside tool calls. Three event 
 - `oauth_client_registered` — `info`: a new `client_id` was minted; payload includes the issued id, client name, redirect-URI count, and id length (for tracking URL-budget regressions).
 - `oauth_client_lookup_failed` — `warn` (or `info` for `expired`): a `client_id` failed to resolve; `reason` is one of `unknown_prefix` / `malformed` / `bad_signature` / `invalid_payload` / `expired`. Useful for spotting forgery / probing attempts.
 - `oauth_redirect_uri_registered` — `info`: a redirect URI matched ARC-1's manual-client policy
-  and was added at `/authorize` time to the pre-registered XSUAA default client.
+  and was added at `/authorize` time to ARC-1's in-memory metadata for that client. This does not
+  update the XSUAA service configuration.
 
 Events flow through the existing audit sinks (stderr / file / BTP Audit Log Service) — same pipeline used for tool-call audit.
 
@@ -588,8 +595,14 @@ That is a `jwt-bearer` token exchange: the caller trades its user's JWT for one 
 `xs-security.json` enables it:
 
 ```json
-"grant-types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+{
+  "oauth2-configuration": {
+    "grant-types": ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:jwt-bearer"]
+  }
+}
 ```
+
+This is the relevant fragment of the descriptor, not a replacement for its other settings.
 
 **The exchange runs against ARC-1's own OAuth client**, so the grant belongs in ARC-1's descriptor —
 not the caller's. Create a service key on ARC-1's XSUAA instance and hand its credentials to the
@@ -645,11 +658,6 @@ it is real and broker-honored, just undocumented.
       not trusted there.
     - **Users still need role collections.** An exchanged token for a user with no ARC-1 collection
       authenticates but authorizes nothing.
-
-The external [`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub) project uses a *different*
-wiring — the hub exchanges with its
-**own** client plus a `granted-apps` grant chain — because it fronts several backends. For a single
-consumer, the service-key route above is simpler and needs no grant chain.
 
 ## Configuration Reference
 

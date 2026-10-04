@@ -72,6 +72,7 @@ sequence.
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
+| [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
@@ -98,11 +99,14 @@ sequence.
 | [FEAT-74](#feat-74) | Dump feed attribute filters | P3 | S | Ready | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
+| [FEAT-80](#feat-80) | Repair ADT code completion | P2 | S | Ready | Code intelligence |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
+| [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
 | [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
+| [OPS-07](#ops-07) | Bounded HTTP request sizes for large source edits | P2 | S | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
 
@@ -229,6 +233,23 @@ misleading.
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/http-forward-proxy-env-support.md);
 test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and BTP isolation.
 
+<a id="compat-09"></a>
+### COMPAT-09 — Exact lookup with decorated SAP object names
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** On SAP_BASIS 750, quickSearch labels functions such as
+`BAPI_USER_GET_DETAIL` with ` (Function Module)`. `lookupObjects` compares that display name
+literally, discards the hit, and `SAPContext(usages)` without a type reports no object. Both standard
+and `/UI2/` function lookups reproduce this on 750 and succeed on 758. The function-specific group
+resolver repaired by [PR #911](https://github.com/arc-mcp/arc-1/pull/911) does not repair this path;
+provide `type="FUNC"` for usages to select that resolver.
+
+**Resume with.** Establish canonical identity for generic lookup and type-free usages across ADT
+object families, using verified fields or URIs rather than stripping arbitrary display text. Test
+namespaces, ambiguous names, unrelated hits, and both releases before replacing the exact filters.
+
 <a id="compat-07"></a>
 ### COMPAT-07 — CDS view-entity replacement lineage
 
@@ -296,8 +317,6 @@ that compares responses with credentials supplied for that request before extrac
 Keep values request-local, cover error and HTTP-200 result paths, and measure false positives
 without logging or persisting the credentials. This is research, not a universal-secret-detector promise.
 
-## Developer workflows
-
 <a id="sec-18"></a>
 ### SEC-18 — Implicit CDS conversion dependencies
 
@@ -315,6 +334,8 @@ source. This is an existing policy coverage limit, documented during
 SAP metadata for implicit dependencies and test representative releases. Choose a bounded proof or
 explicit refusal for affected functions; do not infer full lineage from the present graph or add a
 hard-coded table list without proving its completeness.
+
+## Developer workflows
 
 <a id="feat-03"></a>
 ### FEAT-03 — BAdI and enhancement authoring
@@ -701,6 +722,22 @@ ordering key.
 proven. Refuse ambiguous tables, preserve all data-preview gates, and include a schema-only mode if
 it can reuse the same safe contract.
 
+<a id="feat-80"></a>
+### FEAT-80 — Repair ADT code completion
+
+- **Priority / effort / status:** P2 / S / Ready
+- **Category:** Code intelligence
+
+**Remaining gap.** `SAPNavigate(completion)` posts to `/abapsource/codecompletion/proposals` with
+separate cursor parameters and expects `<proposal>` elements. It returns 404 on 750 and 758.
+The singular `/proposal` endpoint with `uri=...#start=line,column` returns `asx:abap` /
+`SCC_COMPLETION` records. This is independent of the definition repair in
+[PR #910](https://github.com/arc-mcp/arc-1/pull/910).
+
+**Resume with.** Correct the request and parser together, verify media negotiation and cursor
+coordinates, and test useful and empty proposals on both releases with current and unsaved source.
+Preserve read-only authorization and keep unsupported-backend errors explicit.
+
 <a id="feat-36"></a>
 ### FEAT-36 — Type information
 
@@ -714,6 +751,24 @@ types locally would duplicate a compiler incompletely.
 
 **Unblock when.** ADT discovery exposes a supported endpoint and it can be demonstrated on a real
 object and release.
+
+<a id="feat-79"></a>
+### FEAT-79 — DDIC-aware dependency context
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Code intelligence
+
+**Remaining gap.** `SAPContext(deps)` extracts body type references, but its resolver guesses CLAS
+for DDIC names. Failed class reads consume `maxDeps` and may exclude later resolvable classes.
+Function-module signature parameter types are also omitted. The parser repair in
+[PR #911](https://github.com/arc-mcp/arc-1/pull/911) deliberately leaves these coverage limits explicit;
+`BAPI_USER_GET_DETAIL` demonstrates the lookup starvation on 750 and 758.
+
+**Resume with.** Design bounded, permission-respecting object-kind resolution and useful DDIC
+contracts, then verify source/signature type references and lookup limits on both releases. Keep
+failed attempts distinct from absent objects and preserve the existing source/cache identity policy.
+Evaluate prioritizing known function/class candidates ahead of ambiguous type guesses without
+increasing the lookup limit; verify that any ranking change improves useful coverage.
 
 ## CI and operations
 
@@ -784,6 +839,21 @@ token lifetime, keep users isolated, and keep ADR-0007's request-local Basic cre
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
 the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
+
+<a id="ops-07"></a>
+### OPS-07 — Bounded HTTP request sizes for large source edits
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Operations
+
+**Remaining gap.** The HTTP server uses Express's default 100 KiB JSON body limit. Large source
+writes or batches can fail with HTTP 413 before tool dispatch, even when a reverse proxy permits
+larger bodies. Smaller edits or local stdio are current workarounds; see [SAPWrite](tools.md#sapwrite).
+The limitation was confirmed during [PR #793](https://github.com/arc-mcp/arc-1/pull/793)'s docs review.
+
+**Resume with.** Define a bounded request-size contract and useful client errors before raising the
+limit. Review parsing before authentication, concurrent memory use, and proxy limits; test both
+oversized rejection and an authenticated large-source write/read-back round trip.
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener

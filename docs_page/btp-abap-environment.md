@@ -44,12 +44,15 @@ SAP documents this exchange for applications that must call another application 
 
 ### 1. Bind the BTP services
 
-First prepare the route-specific file in [XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
+For the manual manifest path below, first prepare the route-specific file in [XSUAA setup](xsuaa-setup.md#step-1-create-xsuaa-service-instance).
 
 ```bash
 cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
 cf create-service destination lite arc1-destination
 ```
+
+If the MTA already manages these services, keep that lifecycle and configure its module
+properties instead of creating them again or switching to the manual manifest.
 
 ### 2. Create the per-user destination
 
@@ -122,8 +125,8 @@ PP: using destination-exchanged Bearer token (OAuth2UserTokenExchange)
 [auth_pp_created] success:true  user:<the MCP user>
 ```
 
-`auth_pp_created success:false` means the exchange failed — the message carries the Destination
-service's own error verbatim.
+`auth_pp_created success:false` means PP setup failed. Correlate the request with Destination
+Service diagnostics; client-facing errors and audit logs may redact or omit sensitive details.
 
 ## Local development: service key + browser login
 
@@ -135,7 +138,9 @@ server, because the callback listener binds to loopback.
 
 ```bash
 # Keep the key outside the repo
+mkdir -p ~/.config/arc-1
 cp ~/Downloads/service-key.json ~/.config/arc-1/btp-service-key.json
+chmod 600 ~/.config/arc-1/btp-service-key.json
 
 SAP_BTP_SERVICE_KEY_FILE=~/.config/arc-1/btp-service-key.json SAP_SYSTEM_TYPE=btp arc1
 ```
@@ -172,17 +177,13 @@ Make any tool call; a browser opens on the BTP login page (IAS, SAP ID service, 
 call completes once you authenticate. ARC-1 runs the Authorization Code flow with PKCE and a `state`
 check against a callback listener bound to `localhost` (`SAP_BTP_OAUTH_CALLBACK_PORT`, auto by
 default), then sends `Authorization: Bearer <token>` on every ADT call — CSRF and cookies behave as
-on-premise. The ~12 h access token is refreshed silently; only an expired refresh token means another
-browser login. When no browser can be launched, the authorization URL goes to stderr — usable only if
+on-premise. Token lifetime is determined by the issuer. ARC-1 refreshes an expired access token when possible;
+a missing or rejected refresh token requires another browser login. When no browser can be launched, the authorization URL goes to stderr — usable only if
 that browser can still reach the loopback callback, which rules out most remote hosts.
 
 ### Smoke test
 
-```bash
-SAP_BTP_SERVICE_KEY_FILE=/path/to/service-key.json SAP_SYSTEM_TYPE=btp arc1 search "ZCL_*" --output json
-```
-
-Browser login, then results as JSON. A `client_credentials` token cannot be used instead: ADT requires
+Start the MCP server with the service-key configuration above, connect a stdio MCP client, and ask it to call `SAPSearch(query="ZCL_*")`. Browser login completes before the result. Direct CLI commands such as `arc1 search` do not support service-key OAuth. A `client_credentials` token cannot be used instead: ADT requires
 a user context and returns 401.
 
 ## System type: `SAP_SYSTEM_TYPE=btp`
@@ -201,7 +202,7 @@ is the default) and the first `tools/list` may still advertise on-premise types.
 | `SAPSearch` / `SAPNavigate` | Work; scope is released SAP objects plus custom Z/Y objects. Classic programs and includes are not searchable. |
 | `SAPQuery` | Freestyle SQL needs `SAP_ALLOW_FREE_SQL=true` (table/CDS previews need `SAP_ALLOW_DATA_PREVIEW=true`). Custom tables and released CDS entities (`I_LANGUAGE`, `I_COUNTRY`, …) work; SAP standard tables (`MARA`, `TADIR`, `DD02L`, …) are blocked — the error suggests CDS views. |
 | `SAPTransport` | Works, but `release` triggers a gCTS Git push, not a TMS export — the software-component model, see the tutorial [Transport a Software Component Between two Systems](https://developers.sap.com/tutorials/abap-environment-gcts..html). |
-| `SAPActivate` / `SAPLint` | Unchanged (`SAPLint` runs client-side). |
+| `SAPActivate` / `SAPLint` | Unchanged. `SAPLint` linting runs client-side; formatting and formatter settings call SAP. |
 | `SAPDiagnose` | ATC works and uses the system's default check variant (`ABAP_CLOUD_DEVELOPMENT_DEFAULT`) unless you pass `variant`. |
 | `SAPManage` | `probe` reports `systemType: "btp"`. |
 

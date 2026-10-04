@@ -54,8 +54,8 @@ Verification checklist:
 - [ ] `SAP_OIDC_ISSUER` matches the `iss` claim in your tokens exactly (trailing slashes matter).
 - [ ] `SAP_OIDC_AUDIENCE` matches the `aud` claim in your tokens (decode a token at jwt.ms to verify).
 - [ ] The OIDC provider includes ARC-1 scopes (`read`, `write`, `data`, `sql`, `transports`, `git`, `admin`) in the `scope` or `scp` claim. Tokens without scope claims default to read-only access.
-- [ ] The JWKS endpoint at `{issuer}/.well-known/openid-configuration` is reachable from the ARC-1 server.
-- [ ] TLS certificates on the issuer URL are valid (no self-signed certs without `--insecure`).
+- [ ] OIDC discovery at `{issuer}/.well-known/openid-configuration` and its advertised `jwks_uri` are reachable from ARC-1.
+- [ ] The issuer and JWKS TLS certificates are trusted by Node.js. `--insecure` affects SAP connections, not OIDC; add an internal CA with `NODE_EXTRA_CA_CERTS` when needed.
 
 ARC-1 validates tokens per the OAuth 2.0 Protected Resource model (RFC 9700): signature verification via JWKS, issuer match, audience match, and expiration check.
 
@@ -199,7 +199,7 @@ When deploying ARC-1 behind a reverse proxy (nginx, HAProxy, Traefik, etc.) outs
 | **Proxy headers** | Forward `Host`, `X-Real-IP`, and `X-Forwarded-For` to ARC-1 for accurate logging. |
 | **Health check** | Expose `/health` without authentication for load balancer probes. |
 | **Timeouts** | Set proxy read/write timeouts to at least 120 seconds. Some ADT operations (activation, unit tests) can take 30-60 seconds. |
-| **Request size** | Allow request bodies up to at least 10 MB for large source code writes. |
+| **Request size** | ARC-1 currently uses Express's **100 KiB JSON body limit**. A larger proxy limit does not raise it; oversized HTTP tool calls return 413 before dispatch. Use smaller source edits or local stdio for larger payloads. |
 
 Example nginx configuration is provided in the [API Key Setup](api-key-setup.md#behind-a-reverse-proxy-nginx) guide.
 
@@ -334,12 +334,13 @@ tool call. See [setup](btp-cloud-foundry-deployment.md#optional-btp-audit-log-si
 | `sap_authentication_failed` | SAP rejected the selected per-user or shared identity. Includes tool and safe `errorCode`. |
 | `sap_authorization_failed` | SAP authenticated the identity but denied the operation. Includes tool and safe `errorCode`. |
 | `target_policy_denied` | Instance/target policy denied a selected-target operation. Includes tool and safe `errorCode`. |
+| `data_source_policy_decision` | Experimental data-source policy allowed or denied a query. Includes decision ID, direct sources, policy fingerprint, and metadata-work counters; denials include a reason. |
 | `safety_blocked` | Safety ceiling blocked an operation; includes the operation and safe reason. |
 | `server_start` | Server version, transport, write ceiling, configured target URL indicator, and process ID where available. |
 | `activation_preaudit_completed` | Two-phase SAP activation preaudit result, reference count, and phase durations. |
 | `oauth_client_registered` | XSUAA only: a new DCR `client_id` was minted (`/register`). Includes id length and redirect-URI count. |
 | `oauth_client_lookup_failed` | XSUAA only: a `client_id` failed to resolve. `reason` ∈ {`unknown_prefix`, `malformed`, `bad_signature`, `invalid_payload`, `expired`}. Useful for spotting forgery / probing. |
-| `oauth_redirect_uri_registered` | XSUAA only: a redirect URI was added at `/authorize` time to the pre-registered XSUAA default client. |
+| `oauth_redirect_uri_registered` | XSUAA only: a redirect URI matched the manual-client policy at `/authorize` and was added to ARC-1's in-memory client metadata. The XSUAA service configuration is unchanged. |
 | `oauth_redirect_uri_rejected` | XSUAA only: an unapproved redirect URI was rejected at `/authorize`; useful for detecting interception attempts or bad client configuration. |
 | `cors_rejected` | A browser request was blocked because its `Origin` header is not in `ARC1_ALLOWED_ORIGINS`. Includes origin, method, path. Useful for spotting misconfigured browser clients or probing. |
 | `auth_rate_limited` | **Layer 1** rate-limit denial on OAuth or `/mcp` endpoint (per-IP). Includes endpoint, IP, `limitPerMinute`. See [Rate Limiting Guide](rate-limiting.md). |
@@ -431,7 +432,7 @@ cf restage arc1-mcp-server
 
 Configuration rules:
 
-- **Comma-separated, exact match.** No wildcards (`*`, `https://*.example.com`) — they are silently rejected.
+- **Comma-separated, exact match.** Wildcard patterns (`*`, `https://*.example.com`) do not expand: they are treated as literal strings and do not match normal browser origins.
 - **Pairs with `credentials: true`.** ARC-1 sends `Access-Control-Allow-Origin: <reflected origin>` (never `*`) and `Access-Control-Allow-Credentials: true`. The wildcard form is incompatible with credentialed requests by browser policy.
 - **Allowed methods:** `GET`, `POST`, `DELETE`, `OPTIONS`. Allowed request headers: `Content-Type`, `Authorization`, `mcp-session-id`, `mcp-protocol-version`, `last-event-id`. Exposed response headers: `mcp-session-id`. The 2026-07-28 modern-era headers (`Mcp-Method`/`Mcp-Name`/`Mcp-Param-*`) are deliberately absent — see [ADR-0006](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0006-mcp-legacy-era-until-triggers.md).
 - **Disallowed origins are silently dropped** by the browser, but ARC-1 emits a `cors_rejected` audit event server-side so misconfigured browser clients are observable. See [§9 Audit Logging](#what-gets-logged).
@@ -525,7 +526,7 @@ pick up newly published OS security fixes.
 
 ### GitHub-native security features (verified enabled)
 
-These toggles live on the repo's Settings → Code security page and are checked here so a cold reader can confirm what's on without leaving the docs. Last verified: **2026-05-08**.
+These toggles live on the repo’s Settings → Code security page. REST-exposed scanning/update settings were rechecked **2026-10-04**; UI-only grouped-update and malware-alert settings below retain the **2026-05-08** observation and need an administrator to reconfirm.
 
 | Feature | API verification | Status |
 |---|---|---|
@@ -566,15 +567,15 @@ jq -e --arg version "$VERSION" '
 ' "arc-1-${VERSION}-sbom.cdx.json"
 # Expected: true
 
-# 3. npm package — confirm no known vulnerabilities at install time
+# 3. Installed npm dependency graph — review current advisories
 npm audit --audit-level=high
-# Expected: "found 0 vulnerabilities"
+# Nonzero exit means advisories at or above the threshold need review.
 
 # 4. Docker image — scan locally with the same scanner CI uses
 trivy image ghcr.io/arc-mcp/arc-1:<version> \
   --severity HIGH,CRITICAL \
   --exit-code 1
-# Expected: exit 0, "No vulnerabilities found"
+# Nonzero exit means HIGH/CRITICAL findings need review.
 
 # 5. View the full advisory history for the project
 open https://github.com/arc-mcp/arc-1/security/advisories

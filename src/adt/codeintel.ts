@@ -10,7 +10,7 @@ import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import { escapeXmlAttr, findDeepNodes, parseXml } from './xml-parser.js';
 
-/** Definition navigation result */
+/** Definition target with ADT coordinates: 1-based line, 0-based cursor column. */
 export interface DefinitionResult {
   uri: string;
   type: string;
@@ -78,22 +78,29 @@ export async function findDefinition(
 ): Promise<DefinitionResult | null> {
   checkOperation(safety, OperationType.Intelligence, 'FindDefinition');
 
+  // ADT reads the cursor from the URI fragment (`#start=<line>,<column>`). Separate
+  // `line`/`column` query parameters are rejected with 400 "I::000".
+  const target = `${sourceUrl.split('#')[0]}#start=${line},${column}`;
   const resp = await http.post(
-    `/sap/bc/adt/navigation/target?uri=${encodeURIComponent(sourceUrl)}&line=${line}&column=${column}`,
+    `/sap/bc/adt/navigation/target?uri=${encodeURIComponent(target)}&filter=definition`,
     source,
     'text/plain',
     { Accept: 'application/xml' },
   );
 
+  // ADT answers `<adtcore:objectReference adtcore:uri="…/source/main#start=30,16"/>`;
+  // `navigation` is kept as a fallback.
   const parsed = parseXml(resp.body);
-  const nodes = findDeepNodes(parsed, 'navigation');
-  const nav = nodes[0] ?? (parsed.navigation as Record<string, unknown> | undefined);
+  const nav = findDeepNodes(parsed, 'objectReference')[0] ?? findDeepNodes(parsed, 'navigation')[0];
   if (!nav?.['@_uri']) return null;
 
+  const uri = String(nav['@_uri']);
+  const start = /#start=(\d+),(\d+)/.exec(uri);
   return {
-    uri: String(nav['@_uri']),
+    uri,
     type: String(nav['@_type'] ?? ''),
     name: String(nav['@_name'] ?? ''),
+    ...(start ? { line: Number(start[1]), column: Number(start[2]) } : {}),
   };
 }
 

@@ -32,7 +32,7 @@ its artifact; ask the deployment owner if that revision is unknown. Proposed set
 | One general `/mcp` endpoint beside mutation-free multi-target routes | Independent single-target and multi-target configurations in one app | Configure each path independently | Read the [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) before deployment |
 | BTP ABAP Environment | One `/mcp` endpoint | `OAuth2UserTokenExchange` | [BTP ABAP Environment](btp-abap-environment.md) |
 | S/4HANA Public Cloud developer extensibility | One `/mcp` endpoint | Per-user SAML/OAuth exchange | [S/4HANA Public Cloud](s4hana-public-cloud.md) |
-| Writable access to several SAP systems with stronger isolation | One ARC-1 instance per target behind a router | Identity and safety policy per instance | External [`arc-mcp/mcp-hub`](https://github.com/arc-mcp/mcp-hub) project |
+| Writable access to several SAP systems with stronger isolation | One ARC-1 instance and MCP connection per target | Identity and safety policy per instance | [Separate instances](multi-target-administration.md#when-separate-instances-are-safer) |
 
 !!! warning "Multi-target v1 is mutation-free"
 

@@ -567,7 +567,7 @@ XSUAA tenant handling, subscriber-aware destination resolution, tenant-qualified
 keys, tenant audit and quotas, offboarding, and cross-tenant leakage tests. Subaccount-only discovery
 must not be generalized into provider/subscriber discovery by adding a broad flag.
 
-Non-BTP multi-system deployments should continue to use separate ARC-1 instances behind an MCP hub.
+Non-BTP multi-system deployments should continue to use separate ARC-1 instances and MCP connections.
 
 ### 9. Deployment and configuration tooling
 
@@ -713,7 +713,7 @@ identity binding plus the Destination-admin/role-admin trust boundary.
 
 **Acceptance:** one representation has documented size limits, administration workflow, stale-token
 behavior, rename/repoint behavior, and failure semantics. If none is viable, do not implement
-in-process multi-target writes; retain separate instances/hub routing.
+in-process multi-target writes; retain separate instances and MCP connections.
 
 **Rollback:** research/prototype only.
 
@@ -1027,7 +1027,7 @@ ADR/research PR when its trigger is real:
 | Hyperfocused mode | Measured token benefit without loss of target confidence | Schema/UX experiment across large catalogs | Not the recommended multi-target mode |
 | SaaS kickoff | Provider/subscriber business requirement and tenant operations owner | Multitenancy ADR covering subscription lifecycle, tenant-qualified DCR/auth grants/destinations/cache/quotas/audit/offboarding | No cross-tenant lookup and no shared Basic initially |
 | Additional SQL governance | Separate requirement for statement/row controls | SQL-specific security plan | Not coupled to routing v2 |
-| Non-BTP multi-system | Customer cannot use BTP Destination/XSUAA model | Improve MCP hub deployment guidance | No second discovery/auth model in ARC-1 core |
+| Non-BTP multi-system | Customer cannot use BTP Destination/XSUAA model | Improve guidance for separate ARC-1 instances and MCP connections | No second discovery/auth model in ARC-1 core |
 
 ## Aggregate Writes: Research Gate, Not a Planned PR
 
@@ -1288,7 +1288,6 @@ Repository decisions and plans:
 - [ADR-0007: Shared Basic identity exception](../adr/0007-shared-basic-identity-for-read-only-multi-target.md)
 - [Destination-discovered multi-target v1](destination-discovered-multi-target-v1.md)
 - [Shared Basic v1 implementation plan](2026-07-20-multi-target-basic-auth-v1.md)
-- [MCP hub multi-system research](../research/mcp-hub-multi-system.md)
 - [BTP documentation architecture research](../research/2026-07-20-btp-documentation-architecture.md)
 
 External standards and platform guidance:

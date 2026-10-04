@@ -49,7 +49,7 @@ With no safety flags set, ARC-1 starts in the safest useful mode:
 Important details:
 
 - Reads are not package-gated by ARC-1. Use SAP authorization for read-level restrictions.
-- The `SAP_ALLOWED_PACKAGES` ceiling applies to **every** mutating operation against the object's **real** package (resolved from ADT metadata, fail-closed): create/update/delete/method-surgery, **activation** (`SAPActivate`, single and batch), and **`change_package`** (gated by the move's real source package, never the caller-supplied `oldPackage`). Activating a draft, or moving an object, in a package outside the allowlist is refused even when `SAP_ALLOW_WRITES=true`. (Service-binding publish/unpublish is the one exception not yet package-gated — tracked as a follow-up.)
+- The `SAP_ALLOWED_PACKAGES` ceiling applies to **every** mutating operation against the object's **real** package (resolved from ADT metadata, fail-closed): create/update/delete/method-surgery, **activation** (`SAPActivate`, single and batch), and **`change_package`** (gated by the move's real source package, never the caller-supplied `oldPackage`). Activating a draft, or moving an object, in a package outside the allowlist is refused even when `SAP_ALLOW_WRITES=true`. Service-binding publish/unpublish also resolves and checks the binding's package before the mutation.
 - Transport and Git **read** actions are available when the backend feature exists. Transport/Git **write** actions need extra opt-ins.
 - `SAP_ALLOW_WRITES=false` blocks every mutation, including activation, transport writes, and Git writes.
 
@@ -331,7 +331,7 @@ Assigning only `transports` or only `git` is not useful for mutations because tr
 
 ## BTP XSUAA role templates
 
-Start here for BTP deployments. API-key profiles are only for HTTP deployments without XSUAA/OIDC.
+Start here for BTP deployments. API-key profiles apply to API-key callers; they can coexist with XSUAA/OIDC on the same HTTP endpoint.
 
 BTP users receive scopes through role collections. The shipped `xs-security.json` contains these role templates:
 
@@ -367,7 +367,7 @@ See [XSUAA Setup](xsuaa-setup.md) for BTP Cockpit assignment steps.
 
 ## API-key profiles (non-BTP)
 
-Use API-key profiles when you run HTTP mode without XSUAA/OIDC:
+Use API-key profiles for HTTP callers authenticated by a key. They can coexist with XSUAA/OIDC; explicit strict PP rejects non-JWT tool calls:
 
 ```bash
 ARC1_API_KEYS="viewer-key:viewer,dev-key:developer,admin-key:admin"

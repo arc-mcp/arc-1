@@ -72,14 +72,14 @@ Clone the sample and adapt it:
 git clone https://github.com/arc-mcp/arc-1-extension-sample
 cd arc-1-extension-sample
 
-# link the local arc-1 build (until arc-1 is published with the public API)
-( cd /path/to/arc-1 && npm link )
-npm install && npm link arc-1 && npm run build
+# Build against the published ARC-1 peer dependency
+npm install
+npm run build
 
 # load into an ARC-1 instance…
-ARC1_PLUGINS=$PWD/dist/index.js  arc1 --transport http-streamable
+ARC1_PLUGINS="$PWD/dist/index.js" npx arc-1@latest  # stdio; uses your SAP connection settings
 # …or drive one call (args are --json, never positional):
-ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_ProgramLineCount --json '{"name":"RSPARAM"}'
+ARC1_PLUGINS="$PWD/dist/index.js" npx --package=arc-1@latest arc1-cli call Custom_ProgramLineCount --json '{"name":"RSPARAM"}'
 ```
 
 `ARC1_PLUGINS` is a CSV of **absolute paths**. An entry is either a `.js` code plugin (point at the
@@ -192,7 +192,7 @@ Refused with an `AdtSafetyError` unless **all** hold:
 !!! note "What `SAP_ALLOWED_PACKAGES` does and doesn't cover here"
     The package allowlist gates **ADT object** writes. It does **not** apply to OData/ICF paths (there
     is no ABAP package in them) — those writes are gated by the opt-in + `allowWrites` + scope +
-    `denyActions` + the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
+    the service's own SAP-side auth (+ Cloud Connector resource allowlist on BTP). The
     custom service's ABAP handler owns its locking/transport.
 
 `ctx.http.post`, `ctx.run.classRun` and `ctx.run.programRun` do not automatically repeat a request
@@ -311,10 +311,11 @@ above: ambiguous failures require inspection before another execution.
     - **Bake into an immutable artifact.** Ship plugins inside the reviewed deploy image / app bits,
       under the same change control as the rest of the server (see [Deploying](#deploying-extensions-btp-cloud-foundry-docker)).
 
-This is the most important part. An extension tool **inherits ARC-1's full safety pipeline** — it is
-gated exactly like a built-in. Two layers must both pass: the **user's scope** (their MCP role/profile)
-**and** the **server's safety ceiling** (the admin's `allow*` flags). Per-user **principal propagation**
-means the tool acts as the calling SAP user, so SAP-side auth (`S_DEVELOP`, package checks) applies too.
+An extension tool must pass the **user's scope** check (their MCP role/profile). Calls through the
+provided `ctx` APIs also enforce the applicable server opt-ins and use the selected SAP identity,
+including per-user identity for PP calls. These are the extension-specific gates below: built-in
+`SAP_DENY_ACTIONS` rules do not support custom tools, and the package allowlist does not cover raw
+OData/ICF writes. SAP still enforces the selected user's authorizations.
 
 `ctx.client` exposes an explicit set of plain-read methods. Internal session factories,
 metadata/text writers, SQL methods and client internals are absent at runtime and in the public
@@ -341,8 +342,7 @@ Key points:
 - **`custom` scopes are not supported.** Reuse the 7 built-in scopes — XSUAA scopes are deploy-time
   static (`xs-security.json`), so reuse maps cleanly to existing roles. See
   [Authorization & Roles](authorization.md).
-- **Admins keep the kill switch.** `SAP_DENY_ACTIONS=Custom_*` removes all plugin tools;
-  `SAP_DENY_ACTIONS=Custom_Foo` removes one.
+- **Disable extensions through configuration.** Remove the path from `ARC1_PLUGINS` and restart to unload it (clear the setting to unload all plugins). `SAP_DENY_ACTIONS` accepts built-in tool names only; `Custom_*` rules fail startup validation.
 - **Code execution is opt-in + default off.** `ctx.run.classRun` and `ctx.run.programRun` require
   `SAP_ALLOW_PLUGIN_EXECUTE=true` **and** `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool (see
   [Executing ABAP](#executing-abap-classes-and-reports)).

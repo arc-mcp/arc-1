@@ -12,14 +12,14 @@ see [Authorization & Roles](authorization.md).
 
 | Area | Current architecture |
 | ---- | -------------------- |
-| Runtime | TypeScript MCP server on Node.js 22+, distributed as npm package and Docker image. |
+| Runtime | TypeScript MCP server on Node.js 22.19+, distributed as npm package and Docker image. |
 | MCP transports | `stdio` for local clients and `http-streamable` for hosted/server deployments. |
 | Tool surface | Standard mode exposes 12 intent-based tools. Hyperfocused mode exposes one `SAP` tool. |
 | SAP access | ADT REST APIs under `/sap/bc/adt/*`, plus selected OData/utility endpoints for UI5, Git, FLP, and diagnostics. |
 | MCP auth | HTTP mode supports API-key profiles, OIDC JWTs, and XSUAA OAuth proxy mode. Stdio relies on local process trust. |
 | SAP identity | Shared SAP credentials, BTP ABAP service-key OAuth, BTP Destination, or per-user principal propagation. |
 | Safety | Server opt-in flags form the ceiling. User scopes and SAP authorization can only restrict further. |
-| Cache | Request-driven memory cache by default for every transport; SQLite persistence is explicit opt-in. Server-validated freshness via `If-None-Match` / `ETag` (no TTL). See [Caching System](caching.md). |
+| Cache | Request-driven memory cache by default for every transport; SQLite persistence is explicit opt-in. Server-validated freshness via `If-None-Match` / `ETag` (with a short post-activation exception). See [Caching System](caching.md). |
 | Observability | Structured logs and audit events to stderr, optional file sink, and optional BTP Audit Log sink. |
 
 ## High-level architecture
@@ -112,7 +112,7 @@ sequenceDiagram
     alt HTTP auth configured
         HTTP->>HTTP: API key match or JWT validation
         HTTP-->>Server: authInfo with scopes
-    else stdio or open HTTP
+    else stdio or explicitly enabled unauthenticated HTTP
         HTTP-->>Server: no authInfo
     end
 
@@ -213,7 +213,7 @@ Standard mode groups many ADT endpoints into 12 intent-based tools.
 | `SAPActivate` | Activate objects and publish/unpublish service bindings. | Registered only when writes are enabled. |
 | `SAPNavigate` | Definition, references, completion, hierarchy. | Some ADT read endpoints use POST. |
 | `SAPQuery` | Freestyle ABAP SQL. | Requires SQL scope and `SAP_ALLOW_FREE_SQL=true`. |
-| `SAPContext` | Dependency context, usages, and CDS impact analysis. | Uses cache for reverse usages. |
+| `SAPContext` | Dependency context, usages, and CDS impact analysis. | Usages query SAP’s live where-used index. |
 | `SAPLint` | Local abaplint, formatting, formatter settings, pre-write validation helpers. | Formatter settings mutation needs write permission. |
 | `SAPDiagnose` | Syntax, unit tests, ATC, headless CI ATC/AUnit, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |
 | `SAPManage` | Feature probe, cache stats, packages, package moves, FLP catalog/group/tile actions. | Read actions stay visible in read-only mode. |
@@ -237,7 +237,7 @@ Hyperfocused mode maps one `SAP` action to the same underlying handlers:
 | `git` | `SAPGit` |
 | `manage` | `SAPManage` |
 
-The concrete delegated tool/action still enforces the real policy.
+The concrete delegated tool/action still enforces the real policy. Experimental live relations and multi-target mode require standard tools; they are not available through hyperfocused mode.
 
 ## Authentication and SAP identity
 
@@ -256,7 +256,7 @@ flowchart TD
     AuthMode -->|API keys| ApiKey[Exact bearer token match<br/>profile -> scopes + profile safety]
     AuthMode -->|OIDC| OIDC[JWT verify<br/>issuer + audience + JWKS]
     AuthMode -->|XSUAA| XSUAA[MCP OAuth proxy<br/>authorize/token/register metadata]
-    AuthMode -->|None| Open[Open HTTP endpoint<br/>trusted network only]
+    AuthMode -->|None| Open[Startup refused unless<br/>ARC1_ALLOW_HTTP_NO_AUTH=true]
 
     ApiKey --> AuthInfo[authInfo.scopes]
     OIDC --> AuthInfo
@@ -278,7 +278,8 @@ flowchart TD
     ToolCall[Tool call] --> PP{Principal propagation?}
     PP -->|Enabled + JWT| UserDest[Lookup BTP Destination<br/>with X-User-Token]
     UserDest --> PerUser[Per-user ADT client<br/>SAP sees end user]
-    PP -->|Disabled or unavailable| Shared[Shared ADT client]
+    PP -->|Disabled or permitted non-JWT request| Shared[Shared ADT client]
+    UserDest -->|Lookup/auth failure| Refuse[Reject request]
 
     Shared --> SharedAuth{Shared SAP auth}
     SharedAuth --> Basic[Basic username/password]
@@ -294,7 +295,7 @@ flowchart TD
 ```
 
 With principal propagation enabled, JWT requests always fail closed if ARC-1 cannot
-build the per-user SAP client. With explicit `SAP_PP_STRICT=false`, API-key / non-JWT
+build the per-user SAP client. Unless `SAP_PP_STRICT=true` is explicitly set, API-key / non-JWT
 requests continue through the shared client because they do not enter the JWT PP path.
 That mixed topology is supported. The recommended topology sets `SAP_PP_STRICT=true`
 and runs API-key automation on a separate non-PP instance with a technical SAP identity.
@@ -354,7 +355,7 @@ does not become one huge file.
 | Diagnostics | `src/adt/diagnostics.ts` | Dumps, traces, gateway errors, system messages. |
 | Transports | `src/adt/transport.ts` | CTS list/get/check/create/release/delete/reassign/history. |
 | Git | `src/adt/gcts.ts`, `src/adt/abapgit.ts` | gCTS and abapGit operations. |
-| BTP | `src/adt/btp.ts`, `src/adt/oauth.ts` | Destination Service, Connectivity proxy, BTP ABAP service-key OAuth. |
+| BTP | `src/server/server.ts`, `src/adt/oauth.ts`, `@arc-mcp/xsuaa-auth` | Destination Service, Connectivity proxy, BTP ABAP service-key OAuth. |
 | UI tooling | `src/adt/ui5-repository.ts`, `src/adt/flp.ts` | UI5 repository and FLP catalog/group/tile operations. |
 | Parsing | `src/adt/xml-parser.ts` | ADT XML and Atom response parsing. |
 
@@ -385,7 +386,7 @@ These services are cross-cutting rather than tied to one tool.
 
 | Service | Main files | What it does |
 | ------- | ---------- | ------------ |
-| Cache | `src/cache/*` | Stores request-derived source (per-version, with SAP `ETag`), hash-keyed dependency graphs, released API metadata, function-group mappings, and a per-username inactive-objects list. Source reads use `If-None-Match` so SAP confirms freshness on every cache hit. |
+| Cache | `src/cache/*` | Stores request-derived source (per-version, with SAP `ETag`), hash-keyed parsed contracts/dependency names, released API metadata, function-group mappings, and a per-username inactive-objects list. Source reads normally use `If-None-Match`; see [cache freshness](caching.md#source-freshness) for the activation exception. |
 | Live where-used | `src/handlers/where-used.ts` | Resolves objects and queries SAP's current where-used index for `SAPNavigate(references)` and `SAPContext(usages)` with the current caller's identity. |
 | Feature probes | `src/adt/features.ts`, `src/probe/*` | Detects backend support and builds the ADT discovery map used for tool schemas and MIME negotiation. |
 | Context compression | `src/context/*` | Extracts public contracts, CDS dependencies, method-level slices, and compact dependency context. |
@@ -431,7 +432,7 @@ returns an ABAP-context bearer token, and ARC-1 sends that token to ADT.
 | Add a new mutation | Domain module in `src/adt/`, safety checks in `src/adt/safety.ts`, route in `src/handlers/write.ts` (or the matching tool handler) |
 | Add scope or safety behavior | `src/authz/policy.ts`, `src/adt/safety.ts`, `src/server/server.ts` |
 | Add HTTP auth behavior | `src/server/http.ts`, `src/server/xsuaa.ts` |
-| Add SAP identity/BTP behavior | `src/adt/btp.ts`, `src/adt/oauth.ts`, `src/server/server.ts` |
+| Add SAP identity/BTP behavior | `src/server/server.ts`, `src/adt/oauth.ts`, `@arc-mcp/xsuaa-auth` |
 | Add cache behavior | `src/cache/*`, `src/context/*` |
 | Add diagnostics | `src/adt/diagnostics.ts`, `src/handlers/diagnose.ts`, `src/handlers/tools.ts` |
 

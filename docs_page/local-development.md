@@ -20,7 +20,7 @@ npx arc-1@latest --url https://your-sap-host:44300 \
                  --client 100
 ```
 
-npx downloads on first run and caches. Always gets the latest patch. Best for trying things out.
+npx downloads on first run and caches. `@latest` follows the npm latest tag, which can advance across minor or major releases. Best for trying things out.
 
 ### npm install -g (faster startup)
 
@@ -34,7 +34,9 @@ Startup is ~1s faster than npx. Update with `npm install -g arc-1@latest`.
 ### Docker (local)
 
 ```bash
-docker run -d --name arc1 -p 8080:8080 \
+export ARC1_LOCAL_KEY=$(openssl rand -hex 32)
+docker run -d --name arc1 -p 127.0.0.1:8080:8080 \
+  -e ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin" \
   -e SAP_URL=https://your-sap-host:44300 \
   -e SAP_USER=YOUR_USER \
   -e SAP_PASSWORD=YOUR_PASS \
@@ -42,7 +44,7 @@ docker run -d --name arc1 -p 8080:8080 \
   ghcr.io/arc-mcp/arc-1:latest
 ```
 
-Defaults to HTTP Streamable on `:8080`. Connect MCP clients to `http://localhost:8080/mcp`. Full Docker reference → [docker.md](docker.md).
+Defaults to HTTP Streamable on `:8080`. Connect MCP clients to `http://localhost:8080/mcp` with `Authorization: Bearer <ARC1_LOCAL_KEY value>`. Full Docker reference → [docker.md](docker.md).
 
 For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP config), add `-e SAP_TRANSPORT=stdio` and use `docker run -i --rm` instead of `-d`.
 
@@ -66,14 +68,14 @@ npm ci
 cp .env.example .env       # then edit for your SAP system
 
 # Pick one:
-npm run dev                # stdio, tsx auto-reload (development loop)
+npm run dev                # stdio from source; restart after edits
 npm run dev:http           # builds + runs HTTP streamable on 0.0.0.0:8080
 npm run build && npm start # production-style: compile to dist/, run from there
 ```
 
 | Script | What it does | When to use it |
 |---|---|---|
-| `npm run dev` | `tsx src/index.ts` — runs from source over stdio. No build step; restarts on file change. | Iterating on stdio-mode code; pairing with `node` debugger. |
+| `npm run dev` | `tsx src/index.ts` — runs from source over stdio. No build step; does not watch files or restart automatically. | Iterating on stdio-mode code; pairing with `node` debugger. |
 | `npm run dev:http` | `npm run build && tsx src/index.ts --transport http-streamable` | Iterating on HTTP-mode code; testing OAuth/XSUAA flows; pointing remote MCP clients at your laptop. |
 | `npm run build` | `tsc` + copies AFF schemas to `dist/`. | Producing the `dist/index.js` you ship in Docker or invoke as `node dist/index.js`. |
 | `npm start` | `node dist/index.js` (assumes you ran `npm run build` first). | Production-equivalent local run; useful when you want to test the same artifact CI publishes. |
@@ -109,7 +111,7 @@ SAP_CLIENT=100
 SAP_LANGUAGE=EN
 ```
 
-**The `.env` file loads automatically for `npm run dev`, `npm start`, and the `arc1` CLI.** For `npx` and Docker, pass values as env vars or flags instead.
+**The `.env` file loads automatically for `npm run dev`, `npm start`, and the `arc1` CLI.** `npx` also reads `.env` if one exists in its launch directory. Docker requires explicit `--env-file`/`-e` settings or a mounted file.
 
 Full grouped template with every option: see [`.env.example`](https://github.com/arc-mcp/arc-1/blob/main/.env.example). The file is grouped into Layer B (ARC-1 → SAP) and Layer A (MCP Client → ARC-1) blocks with fail-fast rules documented inline.
 
@@ -120,7 +122,7 @@ ARC-1 resolves every config field from four sources, in order: **CLI flag > `pro
 What `process.env` contains depends on how you launched ARC-1:
 
 - **`npm run dev` / `npm start` from a shell** — your shell exports + the repo's `.env`. Shell wins over `.env`.
-- **`npx arc-1` from an MCP client (stdio)** — the `env` block in your `mcp.json` / `claude_desktop_config.json` becomes the subprocess's environment. There's no `.env` involved.
+- **`npx arc-1` from an MCP client (stdio)** — the `env` block in your `mcp.json` / `claude_desktop_config.json` becomes the subprocess's environment. Dotenv also checks the subprocess working directory; do not assume which directory your client chooses.
 - **Remote HTTP — MCP client connects via `"url"`** — only the server's startup environment matters. Putting `env:` in mcp.json next to a `url:` does **nothing**.
 - **Docker / BTP CF** — `-e` flags, `--env-file`, `cf set-env`, manifest properties, and `VCAP_SERVICES`. No `.env` inside containers.
 
@@ -165,7 +167,7 @@ Cursor Settings → MCP — same JSON shape as Claude Desktop.
 
 ### VS Code / GitHub Copilot
 
-For local stdio mode, use the same shape as Claude Desktop:
+For local stdio mode in `.vscode/mcp.json`, use `servers` (Claude Desktop uses `mcpServers`):
 
 ```json
 {
@@ -185,11 +187,11 @@ For local stdio mode, use the same shape as Claude Desktop:
 }
 ```
 
-For a long-running local server or shared endpoint, run ARC-1 as an HTTP Streamable server:
+For a long-running local server, first generate `ARC1_LOCAL_KEY` as in the Docker example, then run ARC-1 as an HTTP Streamable server:
 
 ```bash
 npx arc-1@latest --url https://host:44300 --user dev --password secret \
-                 --client 100 \
+                 --client 100 --api-keys "$ARC1_LOCAL_KEY:admin" \
                  --transport http-streamable --http-addr 127.0.0.1:3000
 ```
 
@@ -198,25 +200,25 @@ Then in VS Code MCP settings:
 ```json
 {
   "servers": {
-    "sap": { "url": "http://localhost:3000/mcp" }
+    "sap": { "type": "http", "url": "http://localhost:3000/mcp", "headers": { "Authorization": "Bearer <ARC1_LOCAL_KEY value>" } }
   }
 }
 ```
 
-If you want `viewer-sql` in VS Code / Copilot, change the command that starts ARC-1, not the MCP JSON. The JSON only tells VS Code where the already-running server lives:
+If you want read-only SQL access in VS Code / Copilot, change the command that starts ARC-1, not the MCP JSON. The JSON only tells VS Code where the already-running server lives:
 
 ```bash
 SAP_ALLOW_DATA_PREVIEW=true SAP_ALLOW_FREE_SQL=true \
 npx arc-1@latest --url https://host:44300 --user dev --password secret \
-                 --client 100 \
+                 --client 100 --api-keys "$ARC1_LOCAL_KEY:admin" \
                  --transport http-streamable --http-addr 127.0.0.1:3000
 ```
 
-> For a local loop, bind to `127.0.0.1` not `0.0.0.0` — stops other machines on the network from hitting your instance. If you bind `0.0.0.0`, add an API key: see [api-key-setup.md](api-key-setup.md).
+> For a local loop, bind to `127.0.0.1` not `0.0.0.0` — stops other machines on the network from hitting your instance. HTTP authentication is required even on loopback; for setup see [api-key-setup.md](api-key-setup.md).
 
 ### Gemini CLI / Goose / OpenCode / other stdio clients
 
-Same pattern: spawn `npx -y arc-1@latest` with the same `env` block. All stdio clients are interchangeable.
+Same pattern: spawn `npx -y arc-1@latest` with the same `env` block. Use each client’s configuration syntax; the subprocess command is the same.
 
 ### Pointing an MCP client at a locally-built instance
 
@@ -241,7 +243,7 @@ When you're iterating on ARC-1 itself (or just want to skip the npx download), p
 }
 ```
 
-`.env` is **not** read here unless you set `"cwd": "/absolute/path/to/arc-1"` in the same block — dotenv looks at the subprocess CWD. Either set `cwd`, or pass everything via `env`.
+Dotenv reads `.env` from the subprocess CWD, which may differ from the directory containing `dist/index.js`. Pass settings via `env`, or set the working directory if your client supports it.
 
 **Stdio against `tsx` (no build step)** — handy while iterating on source.
 
@@ -261,7 +263,7 @@ When you're iterating on ARC-1 itself (or just want to skip the npx download), p
 
 ```bash
 cd /path/to/arc-1
-npm run dev:http -- --http-addr 127.0.0.1:3000     # reads .env from repo root
+ARC1_API_KEYS="$ARC1_LOCAL_KEY:admin" npm run dev:http -- --http-addr 127.0.0.1:3000  # reads .env from repo root
 ```
 
 Then point any MCP client at the URL:
@@ -269,12 +271,12 @@ Then point any MCP client at the URL:
 ```json
 {
   "servers": {
-    "sap-local": { "url": "http://localhost:3000/mcp" }
+    "sap-local": { "type": "http", "url": "http://localhost:3000/mcp", "headers": { "Authorization": "Bearer <ARC1_LOCAL_KEY value>" } }
   }
 }
 ```
 
-> For local HTTP loops, bind to `127.0.0.1` (not `0.0.0.0`) so other machines on your network can't hit the instance. If you bind `0.0.0.0`, add an API key — see [api-key-setup.md](api-key-setup.md).
+> For local HTTP loops, bind to `127.0.0.1` (not `0.0.0.0`) so other machines on your network can't hit the instance. HTTP authentication is required even on loopback — see [api-key-setup.md](api-key-setup.md).
 
 In HTTP mode, the `env` block in mcp.json **does nothing** — the server already has its own environment from when you launched `npm run dev:http`. Change config by editing `.env` (or shell-exporting) and restarting the server. Full mode-by-mode breakdown: [Configuration Precedence](configuration-precedence.md).
 
@@ -329,7 +331,7 @@ What it does:
 
 1. Launches Chrome with remote-debugging enabled (CDP).
 2. You complete your normal SSO login in the browser window (IdP redirect, MFA, whatever your corp flow is).
-3. The script reads the SAP session cookies (`SAP_SESSIONID_*`, `MYSAPSSO2`, `sap-usercontext`) out of Chrome.
+3. Return to the terminal and press Enter. The script then reads the SAP session cookies (`SAP_SESSIONID_*`, `MYSAPSSO2`, `sap-usercontext`) out of Chrome.
 4. Writes them to `cookies.txt` with mode `0600`.
 
 Then point ARC-1 at the cookie file:

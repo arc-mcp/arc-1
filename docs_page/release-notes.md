@@ -22,6 +22,14 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## Unreleased
+
+These changes are not included in a published release.
+
+| Change | Impact | Action |
+|---|---|---|
+| Function-module dependencies and group lookup ([#911](https://github.com/arc-mcp/arc-1/pull/911)) | `SAPContext(deps)` extracts dependencies from function bodies. Automatic group lookup also recognizes SAP_BASIS 750's decorated function names in existing callers, including `SAPRead FUNC`, update/delete, activation and typed where-used. | `none` — existing explicit-group requirements and authorization checks remain in place. |
+
 ## 1.5.0 — guarded source edits and verified reads (2026-10-02)
 
 Safer SAP edits, more object types and clearer failure reporting. **No new mandatory settings.**
