@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-09-30
+**Last reviewed:** 2026-10-04
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -72,8 +72,10 @@ sequence.
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
+| [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
+| [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P2 | M | Needs research | Security |
 | [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
@@ -245,6 +247,22 @@ a live table-to-view-entity replacement capture.
 **Resume with.** A live table using a CDS view-entity replacement, verified `VIEWREF`/`STOB` identities,
 and graph-alias/blocklist regressions before broadening the catalog join.
 
+<a id="compat-10"></a>
+### COMPAT-10 — CDS set-operation lineage
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** The strict caller-SQL parser supports `UNION`, but SAP's dependency graphs for
+CDS set operations contain structural nodes outside the current kind allowlist. A4H 758's
+`DEMO_CDS_UNION_VE` is denied on `TYPE=SELECT`; this predates the view-entity fix in
+[#914](https://github.com/arc-mcp/arc-1/pull/914). See the
+[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#review-follow-up).
+
+**Resume with.** Captured graphs for classic/view-entity UNION, EXCEPT and INTERSECT where supported;
+define structural-node identity and traversal without mistaking branch labels for data-source names.
+Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
+
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
 
@@ -279,6 +297,24 @@ Keep values request-local, cover error and HTTP-200 result paths, and measure fa
 without logging or persisting the credentials. This is research, not a universal-secret-detector promise.
 
 ## Developer workflows
+
+<a id="sec-18"></a>
+### SEC-18 — Implicit CDS conversion dependencies
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Security
+
+**Remaining gap.** SAP's SQL dependency graph does not list the implicit customizing tables used
+by CDS currency/unit conversion functions. Fresh 758 metadata for both classic and view-entity
+demo pairs lists only `DEMO_PRICES` or `DEMO_EXPRESSIONS`, despite conversion expressions in their
+source. This is an existing policy coverage limit, documented during
+[#914](https://github.com/arc-mcp/arc-1/pull/914); see the
+[review evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-04-issue-912-cds-lineage.md#review-follow-up).
+
+**Resume with.** An operator requirement to block conversion customizing tables; verify supported
+SAP metadata for implicit dependencies and test representative releases. Choose a bounded proof or
+explicit refusal for affected functions; do not infer full lineage from the present graph or add a
+hard-coded table list without proving its completeness.
 
 <a id="feat-03"></a>
 ### FEAT-03 — BAdI and enhancement authoring

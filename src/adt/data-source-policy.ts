@@ -124,7 +124,8 @@ export class DataSourcePolicyError extends AdtSafetyError {
 }
 
 /**
- * SQL node kinds SAP emits in the dependency branch. Verified live on SAP_BASIS 750, 758 and 816.
+ * SQL node kinds from SAP_BASIS 750/758/816 captures. View-entity and projection kinds are verified
+ * on 758 SP02 and 816 SP01 (#912), not 750.
  * Anything outside this set inside a SQL branch fails closed.
  */
 const CDS_VIEW_KINDS = ['CDS_VIEW', 'CDS_VIEW_ENTITY', 'CDS_PROJECTION_VIEW'] as const;
@@ -453,7 +454,8 @@ function parseProperties(node: Record<string, unknown>): Map<string, string> {
     const key = attribute(entry, 'key')?.toUpperCase();
     const text = entry['#text'];
     const value = attribute(entry, 'value') ?? (typeof text === 'string' && text.trim() ? text.trim() : undefined);
-    if (key && value !== undefined) result.set(key, value);
+    // Empty DB_EXISTS is SAP's false value; an omitted property is a different (legacy) case.
+    if (key) result.set(key, value ?? '');
   }
   return result;
 }

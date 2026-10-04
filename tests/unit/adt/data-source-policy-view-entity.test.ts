@@ -124,6 +124,46 @@ describe('CDS view-entity and projection lineage (#912)', () => {
     });
   });
 
+  it('preserves an empty DB_EXISTS from a live analytical-query graph as false', async () => {
+    const graph = parseCdsDependencyGraph(fixture('cds-dependency-graph-758-analytical-query'));
+    expect(graph.kind).toBe('CDS_PROJECTION_VIEW');
+    expect(graph.databaseExists).toBe(false);
+    expect(graph.children.length).toBeGreaterThan(0);
+    const r = resolver(graph);
+    await expect(enforceBlockedDataSources([graph.name], ['USR02'], r)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      reason: 'dependency DEMO_ANALYTICAL_QUERY is not active in the database',
+      sourcePath: ['DEMO_ANALYTICAL_QUERY'],
+    });
+    expect(r.readTableReplacement).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '<abapsource:entry abapsource:key="DB_EXISTS"/>',
+    '<abapsource:entry abapsource:key="DB_EXISTS"> </abapsource:entry>',
+  ])('rejects an empty DB_EXISTS on a nested view entity: %s', async (emptyEntry) => {
+    const xml = fixture('cds-dependency-graph-758-projection');
+    const marker = '<abapsource:entry abapsource:key="DB_EXISTS">X</abapsource:entry>';
+    const rootIndex = xml.indexOf(marker);
+    const nestedIndex = xml.indexOf(marker, rootIndex + marker.length);
+    expect(nestedIndex).toBeGreaterThan(rootIndex);
+    const graph = parseCdsDependencyGraph(
+      xml.slice(0, nestedIndex) + emptyEntry + xml.slice(nestedIndex + marker.length),
+    );
+    expect(graph.databaseExists).toBe(true);
+    expect(graph.children[0]?.databaseExists).toBe(false);
+    await expect(enforceBlockedDataSources([graph.name], ['USR02'], resolver(graph))).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      sourcePath: ['DEMO_MANAGED_ROOT_PROJ', 'DEMO_MANAGED_ROOT_WAS'],
+    });
+  });
+
+  it('keeps the legacy 750 graph with no DB_EXISTS property eligible', async () => {
+    const graph = parseCdsDependencyGraph(fixture('cds-dependency-graph-750'));
+    expect(graph.databaseExists).toBeUndefined();
+    await expect(enforceBlockedDataSources([graph.name], ['USR02'], resolver(graph))).resolves.toBeUndefined();
+  });
+
   it('keeps root identity verification for view entities', async () => {
     const graph = mixedGraph();
     await expect(enforceBlockedDataSources(['OTHER_ENTITY'], ['USR02'], resolver(graph))).rejects.toMatchObject({

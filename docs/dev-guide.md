@@ -316,6 +316,8 @@ Gotchas worth knowing before changing anything here:
   validated then dropped. Match exact `TYPE` values and exact nesting — never a name *containing*
   "RELATED"/"DCLS", or an auxiliary-looking subtree could hide a real source. A released view like
   `I_BUSINESSPARTNER` has this branch, and `HAS_DCL=X` means `AC_STATE` is not the only DCL signal.
+- **Preserve empty properties.** `<entry key="DB_EXISTS"/>` means false (for example a transient
+  analytical query); an omitted property on the legacy 750 graph remains unknown. Do not drop empty values.
 - **`addMetrics=false`.** Metrics add payload, not topology. The v3 media type 406s on 750, which is
   what drives the element-info fallback.
 - **One decision per logical request.** `runQueryBatch` unions all chunk sources and decides once;

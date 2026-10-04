@@ -152,6 +152,8 @@ describe('experimental data-source blocklist live contract', () => {
     ['DEMO_CDS_SPFLI_ENTITY', 'CARRID', ['DEMO_CDS_SPFLI_ENTITY', 'SPFLI']],
     ['DEMO_MANAGED_ROOT_WAS', 'KEY_FIELD', ['DEMO_MANAGED_ROOT_WAS', 'DEMO_TAB_ROOT_3']],
     ['DEMO_MANAGED_ROOT_PROJ', 'KEY_FIELD', ['DEMO_MANAGED_ROOT_PROJ', 'DEMO_MANAGED_ROOT_WAS', 'DEMO_TAB_ROOT_3']],
+    ['DEMO_CDS_ASSOCIATION_VE', 'CARRIER', ['DEMO_CDS_ASSOCIATION_VE', 'SCARR']],
+    ['DEMO_CDS_PV_PARENT', 'ID', ['DEMO_CDS_PV_PARENT', 'DEMO_CDS_PV_CHILD', 'DEMO_CDS_VIEW_CHILD', 'DEMO_DDIC_TYPES']],
   ] as const)('view-entity lineage: %s', (name, column, sourcePath) => {
     const requireViewEntityFixture = (ctx: Parameters<typeof skipTest>[0]): void => {
       if (basisRelease < 758) {
@@ -175,6 +177,24 @@ describe('experimental data-source blocklist live contract', () => {
       });
       expect(postSpy).not.toHaveBeenCalled();
     });
+  });
+
+  it.for([
+    ['SAPQuery', (c: AdtClient) => c.runQuery('SELECT * FROM DEMO_ANALYTICAL_QUERY', 1)],
+    ['TABLE_QUERY', (c: AdtClient) => c.runTableQuery('DEMO_ANALYTICAL_QUERY', { maxRows: 1 })],
+    ['TABLE_CONTENTS', (c: AdtClient) => c.getTableContents('DEMO_ANALYTICAL_QUERY', 1)],
+  ] as const)('denies the live analytical query before a %s data POST', async ([_, call], ctx) => {
+    if (basisRelease < 758) {
+      skipTest(ctx, `${SkipReason.NO_FIXTURE}: analytical query demo is not verified on the pre-758 test target`);
+    }
+    const strict = withBlocked(['USR02']);
+    const postSpy = vi.spyOn(strict.http, 'post');
+    await expect(call(strict)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      sourcePath: ['DEMO_ANALYTICAL_QUERY'],
+      reason: 'dependency DEMO_ANALYTICAL_QUERY is not active in the database',
+    });
+    expect(postSpy).not.toHaveBeenCalled();
   });
 
   it('allows a live cluster table whose physical container is not blocked', async (ctx) => {

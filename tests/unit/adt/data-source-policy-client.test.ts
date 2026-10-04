@@ -146,6 +146,34 @@ describe('catalog replacement policy through the real client', () => {
     await expect(client().runTableQuery('SCARR')).rejects.toMatchObject({ code: 'DATA_LINEAGE_UNRESOLVED' });
     expect(appPosts()).toHaveLength(0);
   });
+
+  it.each([
+    ['SAPQuery', (c: InstanceType<typeof AdtClient>) => c.runQuery('SELECT * FROM DEMO_ANALYTICAL_QUERY', 1)],
+    ['TABLE_QUERY', (c: InstanceType<typeof AdtClient>) => c.runTableQuery('DEMO_ANALYTICAL_QUERY', { maxRows: 1 })],
+    ['TABLE_CONTENTS', (c: InstanceType<typeof AdtClient>) => c.getTableContents('DEMO_ANALYTICAL_QUERY', 1)],
+  ] as const)('denies a live empty DB_EXISTS before any %s data POST', async (_, call) => {
+    const c = client();
+    vi.spyOn(c, 'searchObject').mockResolvedValue([
+      {
+        objectName: 'DEMO_ANALYTICAL_QUERY',
+        objectType: 'STOB/DO',
+        uri: '/sap/bc/adt/ddic/ddl/sources/demo_analytical_query/source/main#name=DEMO_ANALYTICAL_QUERY',
+        packageName: 'SABAP_DEMOS_SALES',
+        description: '',
+      },
+    ]);
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: string, opts: RequestInit) =>
+      String(url).includes('/graphdata')
+        ? mockResponse(200, fixture('cds-dependency-graph-758-analytical-query'))
+        : fallback(url, opts),
+    );
+    await expect(call(c)).rejects.toMatchObject({
+      code: 'DATA_LINEAGE_UNRESOLVED',
+      reason: 'dependency DEMO_ANALYTICAL_QUERY is not active in the database',
+    });
+    expect(posts()).toHaveLength(0);
+  });
 });
 
 describe.each([

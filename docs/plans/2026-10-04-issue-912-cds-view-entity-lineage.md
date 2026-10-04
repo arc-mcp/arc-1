@@ -61,5 +61,16 @@ abstraction is needed.
 Implemented the shared tuple, three captured fixtures, parser/evaluator/client regressions and
 six read-only live scenarios. The parser-only candidate was tested and rejected. A review added
 coverage that a terminal-table replacement still blocks through a view entity; no production
-change beyond the original kind checks was needed. Final scope review found no further actionable
-finding. See the [research and test evidence](../research/2026-10-04-issue-912-cds-lineage.md).
+change beyond the original kind checks was needed at that stage. The later independent review
+identified a wire-parsing gap missed here; see the follow-up below and the
+[research and test evidence](../research/2026-10-04-issue-912-cds-lineage.md).
+
+## Reviewed follow-up
+
+Preserve present-but-empty graph properties so SAP's empty `DB_EXISTS` becomes false and the
+existing inactive-node guard refuses transient analytical queries. Keep omitted legacy properties
+distinct. Verify with fresh XML plus parser/client/live tests, including no POST on all three
+governed data paths. Add live association/nested-projection regressions, fix the compatibility and
+error-code wording, cite #915's equivalent deployed result, and credit its author in the new commit.
+Keep set-operation graphs and implicit conversion dependencies as separately documented roadmap
+work. This needs one parser-line correction, with no new policy mode or traversal abstraction.
