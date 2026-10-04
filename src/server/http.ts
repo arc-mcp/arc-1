@@ -284,6 +284,25 @@ export function multiTargetHealthStatus(registry: DestinationRegistry): 'ready' 
 
 export const MULTI_TARGET_SCOPES_SUPPORTED = Object.freeze(['read', 'data', 'sql', 'admin']);
 
+/** ADR-0008: pinned PRM stays registry-independent; write scopes follow the instance ceilings only. */
+export function pinnedTargetScopesSupported(
+  config: Pick<
+    ServerConfig,
+    'multiTargetAllowWrites' | 'multiTargetAllowTransportWrites' | 'multiTargetAllowGitWrites'
+  >,
+): readonly string[] {
+  if (!config.multiTargetAllowWrites) return MULTI_TARGET_SCOPES_SUPPORTED;
+  return Object.freeze([
+    'read',
+    'write',
+    'data',
+    'sql',
+    ...(config.multiTargetAllowTransportWrites ? ['transports'] : []),
+    ...(config.multiTargetAllowGitWrites ? ['git'] : []),
+    'admin',
+  ]);
+}
+
 /**
  * Start the HTTP Streamable server.
  */
@@ -697,7 +716,7 @@ export async function startHttpServer(
         res.json({
           resource: `${oauthFullBase}/${match?.[1]}/${match?.[2]}/mcp`,
           authorization_servers: [`${oauthFullBase}/`],
-          scopes_supported: MULTI_TARGET_SCOPES_SUPPORTED,
+          scopes_supported: pinnedTargetScopesSupported(config),
           resource_name: 'ARC-1 SAP MCP Server (pinned target)',
         });
       });

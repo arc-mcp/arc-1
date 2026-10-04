@@ -6,6 +6,9 @@
 [implementation plan](../plans/destination-discovered-multi-target-v1.md)
 **Qualifies:** ADR-0006's strict Principal Propagation requirement for explicitly enabled Basic
 destinations only
+**Unchanged by:** [ADR-0008](0008-opt-in-writes-on-pinned-multi-target-routes.md) — shared Basic
+targets remain mutation-free; any write request quarantines them (explicit `false` write keys stay
+readable)
 
 ## Context
 

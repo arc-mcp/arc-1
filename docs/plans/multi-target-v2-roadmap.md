@@ -6,6 +6,11 @@
   [#579](https://github.com/arc-mcp/arc-1/pull/579)
 - **Scope:** BTP Cloud Foundry, subaccount Destination Service, XSUAA, and on-premise SAP
   targets through Cloud Connector
+- **Update 2026-10-03:** a reduced form of V2-08 was delivered by
+  [ADR-0008](../adr/0008-opt-in-writes-on-pinned-multi-target-routes.md) without V2-02B (per-target
+  grants) and V2-05 (OAuth client spike), by user decision. Scopes stay instance-wide and `admin` still
+  implies `write`; see the ADR's deviation section. V2-04 and V2-07 are not covered by it. The rows
+  below describe the original plan and are not rewritten.
 
 This document records what remains after multi-target v1 and proposes a safe order for future work.
 It is deliberately a roadmap, not a specification or authorization to enable writes. Each security
@@ -47,12 +52,12 @@ The work IDs below are dependency labels, not a demand for one long-lived branch
 | V2-06 read-only parity | V2-00 | No mutation; sensitive metadata gets new opt-ins |
 | V2-01 draft write ADR/threat model | V2-00 | Design only; accepted after V2-05 evidence |
 | V2-02A target-grant feasibility | V2-01 | Research only |
-| V2-02B target-grant implementation | V2-02A | Authorization plumbing, no tools |
+| V2-02B target-grant implementation | V2-02A | Authorization plumbing, no tools; not implemented by ADR-0008 |
 | V2-03 destination write policy | V2-01 | Policy plumbing, no tools |
 | V2-04 mutation hardening | V2-01 | Hardening only |
 | V2-05 OAuth/client spike | V2-01 | Research/prototype only |
 | V2-07 fairness/metrics | V2-00 | Operational behavior |
-| V2-08 pinned PP write beta | V2-00B/C, V2-02B, V2-03, V2-04, V2-05, V2-07 | Yes |
+| V2-08 pinned PP write beta | V2-00B/C, V2-02B, V2-03, V2-04, V2-05, V2-07 | Yes (reduced form delivered by ADR-0008; prerequisites V2-02B/V2-05 waived) |
 | V2-09 through V2-11 | Successful V2-08 evidence | Yes, action by action |
 | V2-12 memory cache | V2-07; V2-08 before write coexistence | Optional performance boundary |
 | V2-13 registry refresh | V2-00B, V2-03; V2-08 before write coexistence | Operational/security state change |

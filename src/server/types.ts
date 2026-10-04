@@ -137,6 +137,12 @@ export interface ServerConfig {
   multiTargetEndpoints: boolean;
   /** Allow explicitly marked OnPremise BasicAuthentication targets in multi-target mode. Default false. */
   multiTargetAllowBasicAuth: boolean;
+  /** ADR-0008 master ceiling: writes on pinned PrincipalPropagation routes. Default false. */
+  multiTargetAllowWrites: boolean;
+  /** ADR-0008 transport-mutation ceiling; requires multiTargetAllowWrites. Default false. */
+  multiTargetAllowTransportWrites: boolean;
+  /** ADR-0008 abapGit/gCTS-mutation ceiling; requires multiTargetAllowWrites. Default false. */
+  multiTargetAllowGitWrites: boolean;
   /** Runtime-only: internal Destination Service name for a discovered target. */
   destinationName?: string;
   /** Runtime-only: public immutable system-or-alias/client ID for a discovered target. */
@@ -298,6 +304,9 @@ export const DEFAULT_CONFIG: ServerConfig = {
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,
   multiTargetAllowBasicAuth: false,
+  multiTargetAllowWrites: false,
+  multiTargetAllowTransportWrites: false,
+  multiTargetAllowGitWrites: false,
   ppEnabled: false,
   ppStrict: false,
   ppStrictExplicit: false,

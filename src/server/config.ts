@@ -17,7 +17,7 @@
  */
 
 import { parseBlockedDataSourcesCsv } from '../adt/data-source-name.js';
-import type { SafetyConfig } from '../adt/safety.js';
+import { type SafetyConfig, splitAllowedPackageList } from '../adt/safety.js';
 import { resolveSapUserAgent } from '../adt/user-agent.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
@@ -136,6 +136,21 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
     name: 'multi-target-allow-basic-auth',
     valueName: 'boolean',
     description: 'Allow shared Basic multi-target identity (true/false)',
+  },
+  {
+    name: 'multi-target-allow-writes',
+    valueName: 'boolean',
+    description: 'Allow writes on pinned PP multi-target routes (true/false)',
+  },
+  {
+    name: 'multi-target-allow-transport-writes',
+    valueName: 'boolean',
+    description: 'Allow transport writes on pinned PP multi-target routes (true/false)',
+  },
+  {
+    name: 'multi-target-allow-git-writes',
+    valueName: 'boolean',
+    description: 'Allow abapGit/gCTS writes on pinned PP multi-target routes (true/false)',
   },
   { name: 'pp-enabled', valueName: 'boolean', description: 'Enable principal propagation (true/false)' },
   { name: 'pp-strict', valueName: 'boolean', description: 'Require principal propagation (true/false)' },
@@ -666,8 +681,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
 
   const pkgs = getFlag('allowed-packages') ?? process.env.SAP_ALLOWED_PACKAGES;
   if (pkgs !== undefined) {
-    const raw = pkgs.split(',').map((p) => p.trim());
-    const filtered = raw.filter((p) => p.length > 0);
+    const { entries: filtered, hadEmptyEntries } = splitAllowedPackageList(pkgs);
     if (filtered.length === 0) {
       // Empty / separator-only value ("" or ",," from a shell-expanded unset $VAR, or a cleared
       // install-dialog field). Treat as "not provided" and keep the $TMP default — do NOT fall
@@ -678,7 +692,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
       );
       sources.allowedPackages = 'default';
     } else {
-      if (raw.length !== filtered.length) {
+      if (hadEmptyEntries) {
         logger.warn(
           "SAP_ALLOWED_PACKAGES contained empty entries — likely shell expansion of unset $VARs. Use single quotes: SAP_ALLOWED_PACKAGES='$TMP,Z*'",
           { raw: pkgs, parsed: filtered },
@@ -822,6 +836,24 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     'ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH',
     false,
     'multiTargetAllowBasicAuth',
+  );
+  config.multiTargetAllowWrites = resolveBool(
+    'multi-target-allow-writes',
+    'ARC1_MULTI_TARGET_ALLOW_WRITES',
+    false,
+    'multiTargetAllowWrites',
+  );
+  config.multiTargetAllowTransportWrites = resolveBool(
+    'multi-target-allow-transport-writes',
+    'ARC1_MULTI_TARGET_ALLOW_TRANSPORT_WRITES',
+    false,
+    'multiTargetAllowTransportWrites',
+  );
+  config.multiTargetAllowGitWrites = resolveBool(
+    'multi-target-allow-git-writes',
+    'ARC1_MULTI_TARGET_ALLOW_GIT_WRITES',
+    false,
+    'multiTargetAllowGitWrites',
   );
 
   // ── Principal Propagation ──────────────────────────────────────────
@@ -1078,6 +1110,17 @@ export function validateConfig(config: ServerConfig): void {
   if (config.multiTargetAllowBasicAuth && !config.multiTargetEndpoints) {
     console.error(
       '[warn] ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH=true has no effect without ARC1_MULTI_TARGET_ENDPOINTS=true — ignoring the shared Basic opt-in.',
+    );
+  }
+
+  if ((config.multiTargetAllowTransportWrites || config.multiTargetAllowGitWrites) && !config.multiTargetAllowWrites) {
+    throw new Error(
+      'ARC1_MULTI_TARGET_ALLOW_TRANSPORT_WRITES and ARC1_MULTI_TARGET_ALLOW_GIT_WRITES require ARC1_MULTI_TARGET_ALLOW_WRITES=true.',
+    );
+  }
+  if (config.multiTargetAllowWrites && !config.multiTargetEndpoints) {
+    console.error(
+      '[warn] ARC1_MULTI_TARGET_ALLOW_WRITES=true has no effect without ARC1_MULTI_TARGET_ENDPOINTS=true — ignoring the multi-target write ceiling.',
     );
   }
 

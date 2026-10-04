@@ -6,6 +6,7 @@ import {
   createPinnedTargetMcpHandler,
   MULTI_TARGET_SCOPES_SUPPORTED,
   multiTargetHealthStatus,
+  pinnedTargetScopesSupported,
   resolveMcpHttpRateLimit,
 } from '../../../src/server/http.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -74,6 +75,26 @@ describe('multi-target HTTP helpers', () => {
     expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('write');
     expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('transports');
     expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('git');
+  });
+
+  it('advertises write scopes on pinned PRM only from the instance write ceilings', () => {
+    expect(pinnedTargetScopesSupported(DEFAULT_CONFIG)).toEqual(['read', 'data', 'sql', 'admin']);
+    expect(pinnedTargetScopesSupported({ ...DEFAULT_CONFIG, multiTargetAllowWrites: true })).toEqual([
+      'read',
+      'write',
+      'data',
+      'sql',
+      'admin',
+    ]);
+    expect(
+      pinnedTargetScopesSupported({
+        ...DEFAULT_CONFIG,
+        multiTargetAllowWrites: true,
+        multiTargetAllowTransportWrites: true,
+        multiTargetAllowGitWrites: true,
+      }),
+    ).toEqual(['read', 'write', 'data', 'sql', 'transports', 'git', 'admin']);
+    expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('write'); // aggregate unchanged
   });
 
   it('preserves the derived MCP edge cap and supports an explicit override or disable', () => {

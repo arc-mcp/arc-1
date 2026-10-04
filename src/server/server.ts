@@ -66,7 +66,7 @@ import {
   structuredToolError,
 } from './multi-target-server.js';
 import { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
-import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
+import { injectTargetSchema, multiTargetSurfaceDefinitions, sapTargetsDefinition } from './multi-target-tools.js';
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
 import { buildServerInstructions } from './server-instructions.js';
@@ -734,11 +734,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
     let tools = getConfiguredToolDefinitions(config, features?.textSearch?.available, features, clientVersion);
 
     if (multiTarget) {
-      tools =
-        !multiTarget.registry.available ||
-        (multiTarget.mode === 'aggregate' && multiTarget.registry.targets.length === 0)
-          ? []
-          : multiTargetToolDefinitions(tools, config);
+      tools = multiTargetSurfaceDefinitions(tools, multiTarget.mode, multiTarget.registry, config);
       if (multiTarget.mode === 'aggregate') {
         if (tools.length > 0) tools = tools.map((tool) => injectTargetSchema(tool, multiTarget.registry.targets));
         const isAdmin = extra.authInfo ? hasRequiredScope(extra.authInfo.scopes, 'admin') : false;
@@ -1461,7 +1457,7 @@ export async function createAndStartServer(
             registry,
             aggregateFactory: buildAggregateServer,
             createPinnedServer: (target: TargetDescriptor) => {
-              const targetConfig = buildMultiTargetConfig(config, target);
+              const targetConfig = buildMultiTargetConfig(config, target, 'pinned');
               return createServer(targetConfig, {
                 btpConfig,
                 adtSemaphore,

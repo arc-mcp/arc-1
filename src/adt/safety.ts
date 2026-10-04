@@ -26,6 +26,22 @@ import type { PackageHierarchyResolver } from './package-hierarchy.js';
 /** Suffix that marks an `allowedPackages` entry as "this package + DEVCLASS subtree". */
 export const SUBTREE_SUFFIX = '/**';
 
+/** Split a comma-separated allowedPackages value. Never substitutes a default — callers decide. */
+export function splitAllowedPackageList(raw: string): { entries: string[]; hadEmptyEntries: boolean } {
+  const parts = raw.split(',').map((part) => part.trim());
+  const entries = parts.filter((part) => part.length > 0);
+  return { entries, hadEmptyEntries: entries.length !== parts.length };
+}
+
+// `*`, exact name, `PREFIX*`, or `ROOT/**`; SAP package names are <=30 chars incl. /NAMESPACE/.
+const PACKAGE_NAME = '(?:/[A-Z0-9_]{1,10}/)?[A-Z0-9_$]{1,30}';
+const ALLOWED_PACKAGE_PATTERN = new RegExp(`^(?:\\*|${PACKAGE_NAME}\\*?|${PACKAGE_NAME}/\\*\\*)$`, 'i');
+
+/** Strict syntax check for destination-supplied allowedPackages entries (ADR-0008). */
+export function isValidAllowedPackagePattern(entry: string): boolean {
+  return entry.length <= 34 && ALLOWED_PACKAGE_PATTERN.test(entry);
+}
+
 /**
  * Operation type codes (internal classification).
  * NOT admin-facing — the code just uses these as a compact categorical label.

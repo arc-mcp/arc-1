@@ -60,7 +60,7 @@ describe('DestinationRegistry', () => {
       authentication: 'PrincipalPropagation',
       identity: 'per-user',
     });
-    expect(targetSafety(registry.targets[0], [])).toMatchObject({
+    expect(targetSafety(registry.targets[0], [], 'pinned')).toMatchObject({
       allowWrites: false,
       allowDataPreview: true,
       allowFreeSQL: false,
@@ -77,11 +77,14 @@ describe('DestinationRegistry', () => {
       discovery([destination({ arcProperties: { 'arc1.enabled': 'true', 'arc1.allow_data_preview': 'true' } })]),
       { ...DEFAULT_CONFIG, allowDataPreview: true },
     );
-    const safety = targetSafety(registry.targets[0], ['USR02', 'PA0002']);
+    const safety = targetSafety(registry.targets[0], ['USR02', 'PA0002'], 'pinned');
     expect(safety.blockedDataSources).toEqual(['USR02', 'PA0002']);
     // Defensive copy: mutating the result must not corrupt another target's ceiling.
     safety.blockedDataSources.push('SCARR');
-    expect(targetSafety(registry.targets[0], ['USR02', 'PA0002']).blockedDataSources).toEqual(['USR02', 'PA0002']);
+    expect(targetSafety(registry.targets[0], ['USR02', 'PA0002'], 'pinned').blockedDataSources).toEqual([
+      'USR02',
+      'PA0002',
+    ]);
   });
 
   it('uses an optional route alias without changing the real SAP SID or client', () => {
@@ -129,7 +132,7 @@ describe('DestinationRegistry', () => {
     [{ arcProperties: { 'ARC1.Enabled': 'true' } }, 'ARC1_ENABLED_MISSING'],
     [{ arcProperties: { 'arc1.enabled': 'yes' } }, 'ARC1_ENABLED_INVALID'],
     [{ arcProperties: { 'arc1.enabled': 'true', 'arc1.typo': 'true' } }, 'UNKNOWN_ARC1_PROPERTY'],
-    [{ arcProperties: { 'arc1.enabled': 'true', 'arc1.allow_writes': 'true' } }, 'UNSUPPORTED_V1_WRITE_CONFIG'],
+    [{ arcProperties: { 'arc1.enabled': 'true', 'arc1.allow_writes': 'true' } }, 'INVALID_WRITE_POLICY'],
   ])('quarantines invalid config %#', (overrides, code) => {
     const registry = DestinationRegistry.fromDiscovery(
       discovery([destination(overrides as Partial<DiscoveredDestination>)]),
@@ -138,6 +141,64 @@ describe('DestinationRegistry', () => {
     expect(registry.targets).toHaveLength(0);
     expect(registry.diagnostics[0]).toMatchObject({ code });
     expect(['ignored', 'quarantined']).toContain(registry.diagnostics[0].status);
+  });
+
+  const writeProps = { 'arc1.enabled': 'true', 'arc1.allow_writes': 'true', 'arc1.allowed_packages': '$TMP,Z*' };
+
+  it('enables a requested PP write policy only under the instance ceiling', () => {
+    const narrowed = DestinationRegistry.fromDiscovery(
+      discovery([destination({ arcProperties: writeProps })]),
+      DEFAULT_CONFIG,
+    );
+    expect(narrowed.targets[0]).toMatchObject({
+      requestedPolicy: { allowWrites: true, allowedPackages: ['$TMP', 'Z*'] },
+      effectivePolicy: {
+        allowWrites: false,
+        allowedPackages: ['$TMP'],
+        allowTransportWrites: false,
+        allowGitWrites: false,
+      },
+    });
+    expect(narrowed.diagnostics[0]).toMatchObject({ status: 'active', limitedByInstance: true });
+
+    const enabled = DestinationRegistry.fromDiscovery(
+      discovery([
+        destination({
+          arcProperties: { ...writeProps, 'arc1.allow_transport_writes': 'true', 'arc1.allow_git_writes': 'true' },
+        }),
+      ]),
+      { ...DEFAULT_CONFIG, multiTargetAllowWrites: true, multiTargetAllowTransportWrites: true },
+    );
+    expect(enabled.targets[0].effectivePolicy).toEqual({
+      allowDataPreview: false,
+      allowFreeSQL: false,
+      allowWrites: true,
+      allowedPackages: ['$TMP', 'Z*'],
+      allowTransportWrites: true,
+      allowGitWrites: false, // git ceiling off → narrowed
+    });
+  });
+
+  it('quarantines write properties on shared Basic destinations', () => {
+    const registry = DestinationRegistry.fromDiscovery(
+      discovery([destination({ authentication: 'BasicAuthentication', arcProperties: writeProps })]),
+      { ...DEFAULT_CONFIG, multiTargetAllowBasicAuth: true, multiTargetAllowWrites: true },
+    );
+    expect(registry.targets).toHaveLength(0);
+    expect(registry.diagnostics[0]).toMatchObject({
+      status: 'quarantined',
+      code: 'WRITE_REQUIRES_PRINCIPAL_PROPAGATION',
+    });
+  });
+
+  it('changes the fingerprint when any write property changes', () => {
+    const fp = (props: Record<string, string>) =>
+      DestinationRegistry.fromDiscovery(discovery([destination({ arcProperties: props })]), DEFAULT_CONFIG).targets[0]
+        .fingerprint;
+    const base = fp(writeProps);
+    expect(fp({ ...writeProps, 'arc1.allow_writes': 'false' })).not.toBe(base);
+    expect(fp({ ...writeProps, 'arc1.allowed_packages': '$TMP' })).not.toBe(base);
+    expect(fp({ ...writeProps, 'arc1.allow_transport_writes': 'true' })).not.toBe(base);
   });
 
   it('accepts mixed PP and opt-in OnPremise Basic targets and derives identity', () => {

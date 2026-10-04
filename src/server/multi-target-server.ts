@@ -16,7 +16,7 @@ import {
 } from './multi-target-catalog.js';
 import { buildMultiTargetConfig } from './multi-target-runtime.js';
 import type { MultiTargetSharedAuthState } from './multi-target-shared-auth-state.js';
-import { multiTargetInvocationDecision, normalizeTarget } from './multi-target-tools.js';
+import { isWritablePinnedSurface, normalizeTarget, routeInvocationDecision } from './multi-target-tools.js';
 import type { ServerConfig } from './types.js';
 
 export const MULTI_TARGET_SERVER_INSTRUCTIONS = [
@@ -42,6 +42,18 @@ export function buildMultiTargetServerInstructions(options: MultiTargetServerOpt
       'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
       'Offline SAPLint, read-only transport inspection, ATC, and ABAP Unit are available; ATC and Unit run as the shared SAP user.',
       'Writes, activation, transport/Git mutations, and SAP-backed formatter actions are unavailable.',
+    ].join('\n');
+  }
+  const policy = options.target?.effectivePolicy;
+  if (options.target?.identity === 'per-user' && policy?.allowWrites) {
+    return [
+      `ARC-1 gives SAP target ${options.target.target} a read/write interface over SAP ADT.`,
+      'This connection is pinned to that one system/client; there is no target selector. The aggregate /multi/mcp route stays read-only.',
+      'Principal Propagation sends each authenticated caller to SAP as their mapped SAP user; locks, transports and object authorship carry that user.',
+      `Writes are limited to packages ${policy.allowedPackages.join(', ')} and still require the ARC-1 write scope and SAP authorization.`,
+      `Transport mutations are ${policy.allowTransportWrites ? 'enabled' : 'unavailable'}; Git mutations are ${policy.allowGitWrites ? 'enabled' : 'unavailable'}.`,
+      'Data preview and SQL require instance, destination, XSUAA scope, and SAP authorization consent.',
+      'Unavailable or failed syntax/ATC/test checks are not passes.',
     ].join('\n');
   }
   return [
@@ -455,9 +467,10 @@ export async function prepareMultiTargetCall(args: {
   // Use the same canonical arguments as the shared dispatch pipeline. This keeps
   // the early policy/PP gate and the eventual handler decision identical.
   callArgs = normalizeTypeArgsForValidation(toolName, callArgs);
-  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget);
+  const activeConfig = buildMultiTargetConfig(options.instanceConfig, selectedTarget, options.mode);
   const action = invocationPolicyKey(toolName, callArgs);
-  const invocationDecision = multiTargetInvocationDecision(toolName, callArgs, activeConfig);
+  const writableSurface = isWritablePinnedSurface(options.mode, activeConfig);
+  const invocationDecision = routeInvocationDecision(options.mode, toolName, callArgs, activeConfig);
   if (invocationDecision === 'forbidden') {
     logger.emitAudit({
       timestamp: new Date().toISOString(),
@@ -469,13 +482,17 @@ export async function prepareMultiTargetCall(args: {
       target: selectedTarget.target,
       identity: selectedTarget.identity,
       operation: action ? `${toolName}.${action}` : toolName,
-      reason: 'Operation unavailable in read-only multi-target v1',
+      reason: writableSurface
+        ? 'Operation not enabled for this pinned target'
+        : 'Operation unavailable in read-only multi-target v1',
     });
     return {
       handled: true,
       result: error(
         'MULTI_TARGET_OPERATION_FORBIDDEN',
-        'This tool or operation is not available in read-only multi-target v1.',
+        writableSurface
+          ? `This tool or operation is not enabled for target ${selectedTarget.target}.`
+          : 'This tool or operation is not available in read-only multi-target v1.',
       ),
     };
   }
