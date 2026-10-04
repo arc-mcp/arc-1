@@ -170,7 +170,7 @@ Set nothing. Stdio only. Anyone who can pipe stdin to the process is "authentica
 | Flag | Env var | Effect |
 |---|---|---|
 | `--api-keys` | `ARC1_API_KEYS` | Comma-separated `key:profile` pairs. Each profile maps to a scope set (read/write/data/sql/transports/git/admin) **and** a partial SafetyConfig intersected with the server ceiling. Valid profiles: `viewer`, `viewer-data`, `viewer-sql`, `developer`, `developer-data`, `developer-sql`, `admin`. Caller sends `Authorization: Bearer <key>` (or `X-API-Key: <key>`); ARC-1 looks the key up and applies that profile's scopes for the request. |
-| `--allow-http-no-auth` | `ARC1_ALLOW_HTTP_NO_AUTH` | Unsafe local/dev escape hatch. HTTP transport refuses to start without API key, OIDC, or XSUAA auth unless this is explicitly `true`. Never use on a network-reachable instance. |
+| `--allow-http-no-auth` | `ARC1_ALLOW_HTTP_NO_AUTH` | Unsafe local/dev escape hatch. HTTP transport refuses to start without API key, OIDC, or XSUAA auth unless this is explicitly `true`. It never overrides `SAP_XSUAA_AUTH=true`: a missing XSUAA binding still refuses startup. Never use on a network-reachable instance. |
 
 Full reference: [api-key-setup.md](api-key-setup.md). The single-key `ARC1_API_KEY` env var was removed in v0.7 — see [updating.md](updating.md#v07-authorization-refactor-breaking-change).
 
@@ -190,7 +190,7 @@ Full reference: [oauth-jwt-setup.md](oauth-jwt-setup.md).
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
-| `--xsuaa-auth` | `SAP_XSUAA_AUTH` | `false` | When `true`, ARC-1 reads XSUAA credentials from `VCAP_SERVICES`, validates incoming JWTs against XSUAA's keys, and exposes OAuth metadata (RFC 8414), Protected Resource Metadata (RFC 9728), and Dynamic Client Registration endpoints. Required for BTP CF deployments. |
+| `--xsuaa-auth` | `SAP_XSUAA_AUTH` | `false` | When `true`, ARC-1 reads XSUAA credentials from `VCAP_SERVICES`, validates incoming JWTs against XSUAA's keys, and exposes OAuth metadata (RFC 8414), Protected Resource Metadata (RFC 9728), and Dynamic Client Registration endpoints. Required for BTP CF deployments. HTTP startup fails if the XSUAA binding is missing or unreadable — even when API keys or OIDC are also configured. |
 | `--oauth-dcr-ttl-seconds` | `ARC1_OAUTH_DCR_TTL_SECONDS` | `0` (never expire) | Lifetime of a dynamically-registered OAuth `client_id` (Anthropic-style stateless DCR). Default `0` = never expire: there is no per-client revocation at any TTL, so a finite value only produces periodic `invalid_client` re-auth outages (some clients — Eclipse Copilot, Copilot CLI — don't self-heal). Set a positive value to opt into expiry; positive values are clamped to `[60 s, 90 d]`. Only consulted when XSUAA auth is on. |
 | `--dcr-signing-secret` | `ARC1_DCR_SIGNING_SECRET` | unset (falls back to XSUAA `clientsecret`) | Dedicated secret for HMAC-signing DCR `client_id`s. Set this (typically via `cf set-env`) to keep cached `client_id`s valid across `cf deploy` operations that recreate the XSUAA binding. Re-setting the value invalidates every outstanding registration (explicit revocation). Recommended: `openssl rand -base64 48` (≥32 bytes). ARC-1 emits a soft `[warn]` at startup if the trimmed value is shorter than 16 bytes, if it's empty/whitespace-only (falls back to legacy mode instead of crashing), or if set without `--xsuaa-auth=true` (orphan secret, unused). |
 

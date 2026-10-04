@@ -294,6 +294,10 @@ export async function startHttpServer(
   uiDeps?: UiServerDeps,
   multiTargets?: MultiTargetRouting,
 ): Promise<import('node:http').Server> {
+  // Defense in depth: without credentials the XSUAA branch below is skipped and /mcp would be open.
+  if (config.xsuaaAuth && !xsuaaCredentials) {
+    throw new Error('SAP_XSUAA_AUTH=true requires XSUAA credentials; refusing to start an unauthenticated /mcp.');
+  }
   const [host, portStr] = config.httpAddr.split(':');
   const port = Number.parseInt(portStr || '8080', 10);
   const bindHost = host || '0.0.0.0';

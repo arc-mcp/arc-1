@@ -1445,12 +1445,12 @@ export async function createAndStartServer(
           url: xsuaaCredentials.url,
         });
       } catch (err) {
-        logger.error('Failed to load XSUAA credentials — XSUAA auth will not work', {
+        // Fail closed: continuing without credentials would serve /mcp unauthenticated.
+        logger.error('Failed to load XSUAA credentials — refusing to start', {
           error: err instanceof Error ? err.message : String(err),
         });
-        if (config.multiTargetEndpoints) {
-          throw new Error('ARC1_MULTI_TARGET_ENDPOINTS=true requires a valid bound XSUAA service.');
-        }
+        const flag = config.multiTargetEndpoints ? 'ARC1_MULTI_TARGET_ENDPOINTS' : 'SAP_XSUAA_AUTH';
+        throw new Error(`${flag}=true requires a valid bound XSUAA service.`);
       }
     }
 

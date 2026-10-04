@@ -256,7 +256,7 @@ flowchart TD
     AuthMode -->|API keys| ApiKey[Exact bearer token match<br/>profile -> scopes + profile safety]
     AuthMode -->|OIDC| OIDC[JWT verify<br/>issuer + audience + JWKS]
     AuthMode -->|XSUAA| XSUAA[MCP OAuth proxy<br/>authorize/token/register metadata]
-    AuthMode -->|None| Open[Open HTTP endpoint<br/>trusted network only]
+    AuthMode -->|None| Open[Open HTTP endpoint<br/>only with ARC1_ALLOW_HTTP_NO_AUTH=true]
 
     ApiKey --> AuthInfo[authInfo.scopes]
     OIDC --> AuthInfo
@@ -269,7 +269,9 @@ flowchart TD
 
 API-key and OIDC mode expect the client to send `Authorization: Bearer ...` to
 `/mcp`. XSUAA mode additionally exposes MCP OAuth endpoints through the SDK auth
-router, including protected-resource metadata for `/mcp`.
+router, including protected-resource metadata for `/mcp`. Startup is refused when HTTP has no
+auth and `ARC1_ALLOW_HTTP_NO_AUTH` is unset, or when `SAP_XSUAA_AUTH=true` but the XSUAA binding
+cannot be loaded.
 
 ### SAP identity modes
 
