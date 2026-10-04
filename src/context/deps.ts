@@ -93,6 +93,24 @@ function isCustomObject(name: string): boolean {
 }
 
 /**
+ * A function module body as ADT returns it does not parse as it stands. ADT may put the
+ * signature into the statement (`FUNCTION name IMPORTING VALUE(p) TYPE t ... .`), which
+ * abaplint rejects, and a `.fugr.abap` file is read as a function group whose main program is
+ * missing. Either way there is no AST and no dependency is found. Reduced to `FUNCTION name.`
+ * and parsed as a program, the body's statements are found. Signature parameter types are not
+ * part of the result.
+ */
+function functionModuleForParsing(source: string, objectName: string): { filename: string; source: string } | null {
+  const header = /^[ \t]*FUNCTION[ \t]+([^\s.]+)[\s\S]*?\.[ \t]*$/im;
+  const match = header.exec(source);
+  if (!match) return null;
+  return {
+    filename: `${objectName.toLowerCase().replace(/\//g, '#')}.prog.abap`,
+    source: source.replace(header, `FUNCTION ${match[1]}.`),
+  };
+}
+
+/**
  * Extract dependencies from ABAP source using @abaplint/core AST.
  *
  * Parses the source, walks the AST to find all external references,
@@ -111,9 +129,16 @@ export function extractDependencies(
   abaplintVersion?: Version,
 ): Dependency[] {
   // Normalize CRLF → LF (SAP ADT returns CRLF which can break abaplint parsing)
-  const normalizedSource = source.replace(/\r\n/g, '\n');
+  let normalizedSource = source.replace(/\r\n/g, '\n');
   const config = getDefaultAbaplintConfig(abaplintVersion ?? DEFAULT_DEPENDENCY_VERSION);
-  const filename = detectFilename(normalizedSource, objectName);
+  let filename = detectFilename(normalizedSource, objectName);
+  const functionModule = filename.endsWith('.fugr.abap')
+    ? functionModuleForParsing(normalizedSource, objectName)
+    : null;
+  if (functionModule) {
+    filename = functionModule.filename;
+    normalizedSource = functionModule.source;
+  }
   const reg = new Registry(config);
   reg.addFile(new MemoryFile(filename, normalizedSource));
   reg.parse();

@@ -318,4 +318,51 @@ ENDCLASS.`;
       expect(dep.line).toBeGreaterThan(0);
     }
   });
+
+  // ─── Function module bodies ───────────────────────────────────────
+
+  describe('function module bodies', () => {
+    it('extracts dependencies when the signature is inside the FUNCTION statement', () => {
+      // How ADT returns a function module's source/main.
+      const source = [
+        'FUNCTION z_demo_confirm',
+        '  IMPORTING',
+        "    VALUE(iv_mode) TYPE char1 DEFAULT 'X'",
+        '  EXPORTING',
+        '    VALUE(et_return) TYPE bapirettab.',
+        '',
+        '  zcl_demo_cleanup=>run( ).',
+        "  CALL FUNCTION 'Z_DEMO_POST'.",
+        'ENDFUNCTION.',
+      ].join('\r\n');
+      const names = extractDependencies(source, 'Z_DEMO_CONFIRM').map((d) => d.name.toUpperCase());
+      expect(names).toContain('ZCL_DEMO_CLEANUP');
+      expect(names).toContain('Z_DEMO_POST');
+    });
+
+    it('extracts dependencies after a classic header with parameter comments', () => {
+      const source = `FUNCTION z_demo_save.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     VALUE(IV_ID) TYPE  CHAR10
+*"----------------------------------------------------------------------
+  DATA lo_store TYPE REF TO zcl_demo_store.
+  lo_store = NEW #( ).
+ENDFUNCTION.`;
+      const names = extractDependencies(source, 'Z_DEMO_SAVE').map((d) => d.name.toUpperCase());
+      expect(names).toContain('ZCL_DEMO_STORE');
+    });
+
+    it('extracts dependencies of a namespaced function module', () => {
+      const source = [
+        '"! Writes the log',
+        'FUNCTION /demo/log_write.',
+        '  /demo/cl_log=>flush( ).',
+        'ENDFUNCTION.',
+      ].join('\n');
+      const names = extractDependencies(source, '/DEMO/LOG_WRITE').map((d) => d.name.toUpperCase());
+      expect(names).toContain('/DEMO/CL_LOG');
+    });
+  });
 });
