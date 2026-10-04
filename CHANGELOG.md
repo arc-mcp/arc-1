@@ -5,6 +5,19 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.5.1](https://github.com/arc-mcp/arc-1/compare/v1.5.0...v1.5.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **btp:** keep local credentials out of the MTAR ([#913](https://github.com/arc-mcp/arc-1/issues/913)) ([00ef945](https://github.com/arc-mcp/arc-1/commit/00ef94514d5f8df4427c12df234af80e6bf33bd2))
+* extract function body dependencies and resolve exact function groups ([#911](https://github.com/arc-mcp/arc-1/issues/911)) ([f58d98d](https://github.com/arc-mcp/arc-1/commit/f58d98d47d9ba65ba9fd66f62bb43edf369cf7d8))
+* handle namespaced includes and lowercase function-group names ([#905](https://github.com/arc-mcp/arc-1/issues/905)) ([4ad7d16](https://github.com/arc-mcp/arc-1/commit/4ad7d165992b5903909e7376045c8a6093c268c5))
+* recover legacy ADT class and program media types ([#909](https://github.com/arc-mcp/arc-1/issues/909)) ([cf7879b](https://github.com/arc-mcp/arc-1/commit/cf7879bfd75387585e2b6091bb5e4e3e02457730))
+* repair ADT definition navigation and cursor validation ([#910](https://github.com/arc-mcp/arc-1/issues/910)) ([74385fb](https://github.com/arc-mcp/arc-1/commit/74385fb4c503700aa18bb62e417d608204b37c48))
+* resolve CDS view-entity and projection lineage ([#914](https://github.com/arc-mcp/arc-1/issues/914)) ([1d24222](https://github.com/arc-mcp/arc-1/commit/1d242227666c0b1f10735b8ebf35400abf82eaa9))
+* skip post-activation cache promotion when principal propagation is enabled ([#917](https://github.com/arc-mcp/arc-1/issues/917)) ([11e4b89](https://github.com/arc-mcp/arc-1/commit/11e4b8980037348f26da0e285fb586984dfa1019))
+
 ## [1.5.0](https://github.com/arc-mcp/arc-1/compare/v1.4.0...v1.5.0) (2026-10-02)
 
 
