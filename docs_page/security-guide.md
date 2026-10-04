@@ -390,8 +390,8 @@ When ARC-1 runs with `--transport http-streamable`, the default bind address is 
 - Restrict network access using firewall rules, security groups, or VPN.
 - ARC-1 refuses to start HTTP transport without `--api-keys`, `--oidc-issuer`, or `--xsuaa-auth`
   unless `ARC1_ALLOW_HTTP_NO_AUTH=true` / `--allow-http-no-auth true` is set explicitly for local/dev use.
-- With `--xsuaa-auth`, ARC-1 also refuses to start when the XSUAA binding in `VCAP_SERVICES` is missing
-  or unreadable — it never falls back to an unauthenticated `/mcp`.
+- With `--xsuaa-auth`, ARC-1 also refuses to start when the XSUAA binding cannot be loaded — it never
+  falls back to an unauthenticated `/mcp`.
 
 ### HTTP Security Headers (helmet)
 

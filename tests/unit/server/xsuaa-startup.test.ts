@@ -1,7 +1,8 @@
 /**
  * SAP_XSUAA_AUTH=true must fail closed. A missing or unreadable XSUAA binding used to be logged and
  * skipped, leaving /mcp on the no-auth route ("auth: NONE (open)", unauthenticated tools/list → 200).
- * Boots the real createAndStartServer → startHttpServer chain with `listen` stubbed (no port bound).
+ * Boots the real createAndStartServer → startHttpServer chain. ARC-1's listeners are stubbed; supertest
+ * binds its own temporary loopback listener.
  */
 import { EventEmitter } from 'node:events';
 import express from 'express';
@@ -33,10 +34,16 @@ const TOOLS_LIST = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
 
 /** Start ARC-1 over HTTP; resolves to the Express app that would have listened. */
 async function start(overrides: Partial<ServerConfig>, vcapServices?: string): Promise<express.Express | undefined> {
+  // xsenv also reads file-backed and mounted bindings; keep the developer's environment out.
+  vi.stubEnv('VCAP_SERVICES_FILE_PATH', undefined);
+  vi.stubEnv('SERVICE_BINDING_ROOT', '/nonexistent/arc1-service-bindings');
+  vi.stubEnv('SAP_BTP_DESTINATION', undefined);
   vi.stubEnv('VCAP_SERVICES', vcapServices);
   let app: express.Express | undefined;
-  vi.spyOn(express.application, 'listen').mockImplementation(function (this: express.Express) {
+  vi.spyOn(express.application, 'listen').mockImplementation(function (this: express.Express, ...args: unknown[]) {
     app = this;
+    const ready = args.find((arg) => typeof arg === 'function') as (() => void) | undefined;
+    if (ready) queueMicrotask(ready); // the local UI awaits its listen callback
     return new EventEmitter() as never;
   });
   await createAndStartServer({
@@ -64,8 +71,13 @@ describe('SAP_XSUAA_AUTH startup', () => {
     ['no binding', undefined],
     ['malformed VCAP_SERVICES', '{not json'],
     ['binding without credentials', JSON.stringify({ xsuaa: [{ name: 'arc1-xsuaa', tags: ['xsuaa'] }] })],
-  ])('refuses to start with %s, even when API keys or the no-auth escape hatch are set', async (_, vcap) => {
-    for (const extra of [{}, { apiKeys: [{ key: 'k', profile: 'viewer' as const }] }, { allowHttpNoAuth: true }]) {
+  ])('refuses to start with %s, before the local UI and despite API keys or the escape hatch', async (_, vcap) => {
+    for (const extra of [
+      {},
+      { apiKeys: [{ key: 'k', profile: 'viewer' as const }] },
+      { allowHttpNoAuth: true },
+      { uiMode: 'local' as const },
+    ]) {
       await expect(start({ xsuaaAuth: true, ...extra }, vcap)).rejects.toThrow(
         'SAP_XSUAA_AUTH=true requires a valid bound XSUAA service',
       );

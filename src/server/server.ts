@@ -1098,6 +1098,33 @@ export async function createAndStartServer(
     logger.addSink(uiLogBuffer);
   }
   logAuthSummary(config);
+  // Load the XSUAA binding before plugins, UI listeners or SAP traffic so a failure stops startup cleanly.
+  let xsuaaCredentials: import('@arc-mcp/xsuaa-auth').XsuaaCredentials | undefined;
+  if (config.transport === 'http-streamable' && config.xsuaaAuth) {
+    try {
+      const xsenv = await import('@sap/xsenv');
+      const services = xsenv.getServices({ uaa: { tag: 'xsuaa' } });
+      const uaa = services.uaa as Record<string, string>;
+      xsuaaCredentials = {
+        url: uaa.url,
+        clientid: uaa.clientid,
+        clientsecret: uaa.clientsecret,
+        xsappname: uaa.xsappname,
+        uaadomain: uaa.uaadomain,
+      };
+      logger.info('XSUAA credentials loaded', {
+        xsappname: xsuaaCredentials.xsappname,
+        url: xsuaaCredentials.url,
+      });
+    } catch (err) {
+      // Fail closed: continuing without credentials would serve /mcp unauthenticated.
+      logger.error('Failed to load XSUAA credentials — refusing to start', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const flag = config.multiTargetEndpoints ? 'ARC1_MULTI_TARGET_ENDPOINTS' : 'SAP_XSUAA_AUTH';
+      throw new Error(`${flag}=true requires a valid bound XSUAA service.`);
+    }
+  }
   logger.info('Runtime memory envelope', runtimeMemoryEnvelope());
 
   // Effective-policy log + contradiction warnings (Task 8 observability).
@@ -1426,34 +1453,6 @@ export async function createAndStartServer(
     // per request. This is required because MCP SDK's Server can only connect
     // to one transport at a time, and clients like Copilot Studio send
     // concurrent requests.
-    // Load XSUAA credentials if XSUAA auth is enabled
-    let xsuaaCredentials: import('@arc-mcp/xsuaa-auth').XsuaaCredentials | undefined;
-    if (config.xsuaaAuth) {
-      try {
-        const xsenv = await import('@sap/xsenv');
-        const services = xsenv.getServices({ uaa: { tag: 'xsuaa' } });
-        const uaa = services.uaa as Record<string, string>;
-        xsuaaCredentials = {
-          url: uaa.url,
-          clientid: uaa.clientid,
-          clientsecret: uaa.clientsecret,
-          xsappname: uaa.xsappname,
-          uaadomain: uaa.uaadomain,
-        };
-        logger.info('XSUAA credentials loaded', {
-          xsappname: xsuaaCredentials.xsappname,
-          url: xsuaaCredentials.url,
-        });
-      } catch (err) {
-        // Fail closed: continuing without credentials would serve /mcp unauthenticated.
-        logger.error('Failed to load XSUAA credentials — refusing to start', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        const flag = config.multiTargetEndpoints ? 'ARC1_MULTI_TARGET_ENDPOINTS' : 'SAP_XSUAA_AUTH';
-        throw new Error(`${flag}=true requires a valid bound XSUAA service.`);
-      }
-    }
-
     const { startHttpServer } = await import('./http.js');
     const multiTargets =
       registry && btpConfig && buildAggregateServer
