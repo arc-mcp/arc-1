@@ -46,6 +46,17 @@ in the existing shared resolver, and use it from both compressor paths. This rem
 fallback and keeps group names decoded exactly once. Tests include an earlier unrelated search hit.
 No new lookup framework, cache, feature flag, or public schema is needed.
 
+The shared resolver also serves SAPRead, existing-function SAPWrite, SAPActivate, transport,
+version/transport diffs, typed where-used, and editable-source reads. Consequently the fix benefits
+these callers when they already allow an omitted group; it does not make the group optional for
+FUNC creation or SAPContext root-source fetching. Real-package write gates and authorization stay
+in their existing callers. The release note records this wider effect.
+
+Generic `lookupObjects` is a separate unresolved path. On 750, its exact-name comparison discards
+`BAPI_USER_GET_DETAIL (Function Module)` even though the URI identifies the requested function;
+`SAPContext(usages)` without a type then reports no match. The same lookup succeeds on 758.
+COMPAT-09 records this verified follow-up; typed FUNC resolution already uses the repaired resolver.
+
 ## Limits and verification
 
 Signature types remain excluded. Body DDIC types are currently guessed as classes; failed reads

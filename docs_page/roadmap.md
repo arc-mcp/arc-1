@@ -72,6 +72,7 @@ sequence.
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
+| [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
@@ -227,6 +228,23 @@ misleading.
 **Resume with.** Use the existing
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/http-forward-proxy-env-support.md);
 test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and BTP isolation.
+
+<a id="compat-09"></a>
+### COMPAT-09 — Exact lookup with decorated SAP object names
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** On SAP_BASIS 750, quickSearch labels functions such as
+`BAPI_USER_GET_DETAIL` with ` (Function Module)`. `lookupObjects` compares that display name
+literally, discards the hit, and `SAPContext(usages)` without a type reports no object. Both standard
+and `/UI2/` function lookups reproduce this on 750 and succeed on 758. The function-specific group
+resolver repaired by [PR #911](https://github.com/arc-mcp/arc-1/pull/911) does not repair this path;
+provide `type="FUNC"` for usages to select that resolver.
+
+**Resume with.** Establish canonical identity for generic lookup and type-free usages across ADT
+object families, using verified fields or URIs rather than stripping arbitrary display text. Test
+namespaces, ambiguous names, unrelated hits, and both releases before replacing the exact filters.
 
 <a id="compat-07"></a>
 ### COMPAT-07 — CDS view-entity replacement lineage
@@ -690,6 +708,8 @@ Function-module signature parameter types are also omitted. The parser repair in
 **Resume with.** Design bounded, permission-respecting object-kind resolution and useful DDIC
 contracts, then verify source/signature type references and lookup limits on both releases. Keep
 failed attempts distinct from absent objects and preserve the existing source/cache identity policy.
+Evaluate prioritizing known function/class candidates ahead of ambiguous type guesses without
+increasing the lookup limit; verify that any ranking change improves useful coverage.
 
 ## CI and operations
 
