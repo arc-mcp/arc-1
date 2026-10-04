@@ -15,7 +15,7 @@ Three layers gate this traffic, each addressing a distinct threat:
 | **Protects against** | OAuth brute-force / `/mcp` probing | One developer monopolizing slots | SAP work-process exhaustion |
 | **Keyed on** | Source IP | Authenticated user (`userName`/`clientId`) | (global) |
 | **Mechanism** | `express-rate-limit` fixed-window counter | `rate-limiter-flexible` token bucket | FIFO `Semaphore` |
-| **On hit** | HTTP `429` + `Retry-After` | MCP tool error with `retryAfter` | Queue wait (request cancellation/deadlines still apply) |
+| **On hit** | HTTP `429` + `Retry-After` | MCP tool error with `retryAfter` | Queue wait; cancellation/deadline only when supplied by the operation |
 | **Audit event** | `auth_rate_limited` | `mcp_rate_limited` | `http_request` status 429/503 |
 | **Env var** | `ARC1_AUTH_RATE_LIMIT` (OAuth) + optional `ARC1_MCP_HTTP_RATE_LIMIT` (MCP) | `ARC1_RATE_LIMIT` | `ARC1_MAX_CONCURRENT` |
 
@@ -48,7 +48,7 @@ Three layers gate this traffic, each addressing a distinct threat:
 
 These are all the knobs you have. Set values via env vars, CLI flags, or `.env`.
 
-**Defaults are deliberately asymmetric.** Layer 1 and Layer 3 are ON by default — Layer 1 because it closes a CodeQL HIGH alert and protects the OAuth surface from brute-force without affecting normal traffic, Layer 3 because it's the bug fix that started this whole feature (per-PP-user semaphore multiplication). **Layer 2 is OFF by default** because per-user quotas are an operator choice for shared deployments. Layer 1 can also interrupt work with HTTP 429, and queued SAP requests can time out. Operators with multi-user setups opt in by setting `ARC1_RATE_LIMIT>0`. See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
+**Defaults are deliberately asymmetric.** Layer 1 and Layer 3 are ON by default — Layer 1 because it closes a CodeQL HIGH alert and protects the OAuth surface from brute-force without affecting normal traffic, Layer 3 because it's the bug fix that started this whole feature (per-PP-user semaphore multiplication). **Layer 2 is OFF by default** because per-user quotas are an operator choice for shared deployments. Layer 1 can also interrupt work with HTTP 429. Queue cancellation depends on the operation, as described below. Operators with multi-user setups opt in by setting `ARC1_RATE_LIMIT>0`. See [ADR-0004](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0004-layered-rate-limiting.md).
 
 ### `ARC1_AUTH_RATE_LIMIT` — Layer 1 (default `20`)
 
@@ -113,7 +113,7 @@ or SAP request.
 
 ### `ARC1_MAX_CONCURRENT` — Layer 3 (default `10`)
 
-**What it caps.** Concurrent in-flight SAP HTTP requests, **server-wide across all users**. Excess requests wait in a FIFO queue; request cancellation and deadlines still apply. With principal propagation, one shared semaphore enforces the cap across all per-user clients, NOT `10` per user.
+**What it caps.** Concurrent in-flight SAP HTTP requests, **server-wide across all users**. Excess requests wait in a FIFO queue. Cancellation or a deadline applies only when the operation supplies it (for example, bounded data preview and ATC/AUnit). Ordinary source reads and writes have no queue timeout; their fetch timeout starts after a slot is granted. With principal propagation, one shared semaphore enforces the cap across all per-user clients, NOT `10` per user.
 
 **What happens on hit.** New requests wait. No 429 is emitted. Wait time depends on how fast in-flight requests release the slot.
 

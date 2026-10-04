@@ -15,7 +15,7 @@
  * - exception:      RAISING <name>, CATCH <name>
  */
 
-import { Expressions, MemoryFile, Registry, Statements, Version } from '@abaplint/core';
+import { Comment, type Config, Expressions, MemoryFile, Objects, Registry, Statements, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 import { detectFilename } from '../lint/lint.js';
 import type { Dependency, DependencyKind } from './types.js';
@@ -93,6 +93,50 @@ function isCustomObject(name: string): boolean {
 }
 
 /**
+ * ADT returns standalone FUNCTION source, sometimes with inline parameters that abaplint
+ * cannot parse. Use a program file (FUGR needs a separate main file), then blank only the
+ * parameter text. Parser tokens handle dots in comments/defaults; spaces preserve body positions.
+ * This is dependency-only normalization: signature types are not extracted.
+ */
+function parseFunctionModule(source: string, objectName: string, config: Config): Registry | undefined {
+  const filename = `${objectName.toLowerCase().replace(/\//g, '#')}.prog.abap`;
+  const reg = new Registry(config);
+  reg.addFile(new MemoryFile(filename, source));
+  reg.parse();
+  const object = reg.getFirstObject();
+  if (!(object instanceof Objects.Program)) return undefined;
+  const header = object
+    .getMainABAPFile()
+    ?.getStatements()
+    .find((stmt) => !(stmt.get() instanceof Comment));
+  const tokens = header?.getTokens();
+  // FUNCTION-POOL also starts with a FUNCTION token, but is a different repository object.
+  if (header?.get() instanceof Statements.FunctionPool) return undefined;
+  if (
+    !tokens ||
+    tokens.length < 3 ||
+    tokens[0]!.getStr().toUpperCase() !== 'FUNCTION' ||
+    tokens.at(-1)?.getStr() !== '.'
+  ) {
+    return undefined;
+  }
+  if (tokens.length === 3) return reg; // Classic FUNCTION name. already parses.
+
+  const start = tokens[1]!.getEnd();
+  const end = tokens.at(-1)!.getStart();
+  const lines = source.split('\n');
+  for (let row = start.getRow() - 1; row < end.getRow(); row++) {
+    const line = lines[row]!;
+    const from = row === start.getRow() - 1 ? start.getCol() - 1 : 0;
+    const to = row === end.getRow() - 1 ? end.getCol() - 1 : line.length;
+    lines[row] = line.slice(0, from) + ' '.repeat(to - from) + line.slice(to);
+  }
+  reg.updateFile(new MemoryFile(filename, lines.join('\n')));
+  reg.parse();
+  return reg;
+}
+
+/**
  * Extract dependencies from ABAP source using @abaplint/core AST.
  *
  * Parses the source, walks the AST to find all external references,
@@ -114,9 +158,12 @@ export function extractDependencies(
   const normalizedSource = source.replace(/\r\n/g, '\n');
   const config = getDefaultAbaplintConfig(abaplintVersion ?? DEFAULT_DEPENDENCY_VERSION);
   const filename = detectFilename(normalizedSource, objectName);
-  const reg = new Registry(config);
-  reg.addFile(new MemoryFile(filename, normalizedSource));
-  reg.parse();
+  let reg = filename.endsWith('.fugr.abap') ? parseFunctionModule(normalizedSource, objectName, config) : undefined;
+  if (!reg) {
+    reg = new Registry(config);
+    reg.addFile(new MemoryFile(filename, normalizedSource));
+    reg.parse();
+  }
 
   const rawDeps: Dependency[] = [];
 

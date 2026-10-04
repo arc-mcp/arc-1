@@ -372,10 +372,11 @@ active targets or quarantined configuration. It does not prove Destination Servi
 SAP authorization, data/SQL policy, or a usable tool catalog.
 
 For multi-target acceptance, call `SAPTargets` as an Admin, review exclusions and registry revision,
-then perform the same safe read as a Viewer through each endpoint style. Verify the SAP login
-separately using [backend identity evidence](principal-propagation-setup.md#verify-the-backend-identity):
-`SYSTEM.user` can come from configuration or token claims. PP must reach the intended human SAP
-user; shared Basic must reach the approved technical user, with the human XSUAA caller in ARC-1 audit.
+then perform the same safe read as a Viewer through each endpoint style. `SAPRead SYSTEM` alone
+does not prove which SAP user processed the request. Follow
+[Verify the backend identity](principal-propagation-setup.md#verify-the-backend-identity): expect
+the human SAP user for PP or the approved technical user for shared Basic, and correlate the live
+request with SAP-side evidence. The ARC-1 audit record must identify the human XSUAA caller.
 
 ## Pre-customer acceptance
 

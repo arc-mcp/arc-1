@@ -308,7 +308,7 @@ and audit-event reference.
 
 ## Caching
 
-ARC-1 normally revalidates cached source with ETags; a single-identity instance can briefly serve a promoted draft after activation without a GET. See [caching.md](caching.md) for the full design.
+ARC-1 normally revalidates cached source with ETags; a shared-client activation can briefly make its promoted draft available without a GET, including on mixed PP/API-key instances. See [cache security](caching.md#security) before mixing these identities.
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|

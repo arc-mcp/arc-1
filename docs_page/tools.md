@@ -57,7 +57,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. Falls back to a literal search when the pattern is not valid regex. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). |
-| `group` | string | No | For FUNC: function group name |
+| `group` | string | No | For FUNC: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
 | `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Known TABLE_CONTENTS limitation on 758: SAP can return `N+1`; prefer TABLE_QUERY when an exact cap matters. |
 | `maxResults` | number | No | For DEVC: maximum package objects to list (default 200, clamped to 1–1000). SAP may truncate larger packages at the requested limit. |
@@ -303,7 +303,7 @@ For cache-supported source reads, ARC-1 uses the SAP-emitted `ETag`; `format="ed
 - **`200 OK` with new body and ETag** → cache is replaced; no prefix on the response.
 - **`404` / `410`** → cache entry is invalidated and the error is propagated.
 
-External writes (Eclipse activations, gCTS pulls, abapGit imports) are normally caught on the next conditional GET. After activation, a single-identity instance can serve the captured draft as active for up to 120 seconds without revalidation. PP clients use invalidation instead. To force a fresh fetch and bypass the cache for one read, pass `force_refresh: true`.
+External writes (Eclipse activations, gCTS pulls, abapGit imports) are normally caught on the next conditional GET. After a shared-client activation, the captured draft can be served as active for up to 120 seconds without revalidation. PP activations invalidate instead, but mixed PP/API-key instances can still enter the shared window; see [cache security](caching.md#security). To force a fresh fetch and bypass the cache for one read, pass `force_refresh: true`.
 
 The full caching architecture (per-version cache keys, conditional GET, pure parse memoization, inactive-list session cache, write invalidation) is documented in [Caching System](caching.md).
 
@@ -1126,7 +1126,7 @@ The existing actions below are unchanged.
 | `objectType` | string | No | For `references`: keep only results of this ADT type, slash format (`CLAS/OC`, `PROG/P`, `FUGR/FF`). A bare prefix (`CLAS`) matches every subtype. Applied client-side. |
 | `maxResults` | number | No | For `references`: max entries (default 100, max 1000). `total` counts every match of the filter. |
 | `line` | number | No | Line number (1-based) |
-| `column` | number | No | Column number (1-based) |
+| `column` | number | No | ADT cursor column (0-based integer) |
 | `source` | string | No | Current source code |
 
 **Experimental relations parameters (when available):**
@@ -1173,13 +1173,23 @@ not enumerate subclasses or prove a complete inheritance/implementation list.
 
 **Examples:**
 ```
-SAPNavigate(action="definition", uri="/sap/bc/adt/programs/programs/ztest", line=10, column=5)
+SAPNavigate(action="definition", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=5, source="...")
 SAPNavigate(action="references", uri="/sap/bc/adt/oo/classes/zcl_order")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", objectType="PROG/P")
 SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest", line=10, column=15, source="...")
 SAPNavigate(action="hierarchy", name="ZCL_ORDER")
 ```
+
+For `definition`, pass the source URI and current source text, with integer ADT cursor coordinates:
+line starts at 1, column at 0. Place the cursor on the identifier. Returned target coordinates use
+the same convention. Object metadata URIs and `type`+`name` are insufficient.
+The source can contain unsaved changes; ARC-1 does not replace it with a backend read. A returned
+target URI may include a cursor fragment; an explicit new line/column replaces that fragment.
+
+`completion` currently fails on SAP_BASIS 750 and 758 because its request and response handling do
+not match ADT. See [FEAT-80](roadmap.md#feat-80) for the separate repair; this definition fix does not
+restore completion.
 
 ---
 
@@ -1479,6 +1489,10 @@ Returns the target object's KTD first when available, followed by public API con
 **Filtering:** SAP standard objects (`CL_ABAP_*`, `IF_ABAP_*`, `CX_SY_*`) are excluded by default. Custom objects (`Z*`, `Y*`) are prioritized in the output.
 
 **Dependency detection:** Uses `@abaplint/core` AST parsing to find `TYPE REF TO`, `NEW`, `CAST`, `INHERITING FROM`, `INTERFACES`, `CALL FUNCTION`, `RAISING`, `CATCH`, and static method calls (`=>`).
+
+Function-module bodies support classic and ADT inline signatures; parameter types in the signature
+are not dependency candidates. DDIC types referenced in a body may still be tried as classes and
+fail, consuming `maxDeps` before later candidates. Failed lookups do not prove those objects are absent.
 
 **Parameters:**
 

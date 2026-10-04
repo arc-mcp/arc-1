@@ -216,11 +216,14 @@ Set these properties on `arc1-mcp-server` in your deployment extension, using th
 
 ```yaml
 properties:
-  SAP_BTP_DESTINATION: SAP_TRIAL_PP
+  SAP_BTP_DESTINATION: SAP_TRIAL       # least-privileged Basic startup destination
   SAP_BTP_PP_DESTINATION: SAP_TRIAL_PP
   SAP_PP_ENABLED: "true"
   SAP_PP_STRICT: "true"
 ```
+
+The startup destination supports discovery before a user JWT exists. Keep it separate from the
+`PrincipalPropagation` destination used for user calls; see [single-target PP setup](principal-propagation-setup.md#step-4-configure-arc-1).
 
 **2. Verify per-user identity in SAP:**
 

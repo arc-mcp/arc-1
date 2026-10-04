@@ -74,7 +74,7 @@ docker run -i --rm -e SAP_TRANSPORT=stdio \
 ```
 
 > **`-i` is required for stdio mode.** MCP communicates over stdin/stdout.
-> Without `-i` the container exits immediately because stdin is closed.
+> Without `-i`, the MCP client cannot send requests over stdin.
 
 ---
 
@@ -95,10 +95,10 @@ ghcr.io/arc-mcp/arc-1
 | Tag | Example | Description |
 |---|---|---|
 | `latest` | `ghcr.io/arc-mcp/arc-1:latest` | Updated on every push to main (dev builds) and on every release |
-| `x.y.z` | `ghcr.io/arc-mcp/arc-1:1.5.0` | Exact version (immutable, created on release) |
-| `x.y` | `ghcr.io/arc-mcp/arc-1:1.5` | Latest patch within minor (created on release) |
+| `x.y.z` | `ghcr.io/arc-mcp/arc-1:x.y.z` | Exact version (immutable, created on release) |
+| `x.y` | `ghcr.io/arc-mcp/arc-1:x.y` | Latest patch within minor (created on release) |
 
-**`latest`** is rebuilt on every push to `main`, so it always reflects the newest code — even unreleased changes. Use versioned tags for production.
+**`latest`** is rebuilt on every push to `main`, so it always reflects the newest code — even unreleased changes. Use versioned tags for production. Replace `x.y.z` in the commands below with the release your team has reviewed; `x.y` denotes its major/minor tag.
 
 ### Pulling
 
@@ -107,7 +107,7 @@ ghcr.io/arc-mcp/arc-1
 docker pull ghcr.io/arc-mcp/arc-1:latest
 
 # Pinned version (recommended for production/team use)
-docker pull ghcr.io/arc-mcp/arc-1:1.5.0
+docker pull ghcr.io/arc-mcp/arc-1:x.y.z
 ```
 
 ### Supported platforms
@@ -171,7 +171,7 @@ Docker `--label` options if you need custom image metadata.
 ```bash
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/yourorg/arc1:1.5.0 \
+  -t ghcr.io/yourorg/arc1:x.y.z \
   --push .
 ```
 
@@ -218,7 +218,7 @@ MCP Client
   │         │
   │    JSON-RPC over stdin/stdout
   │         │
-  └─────────┴─► container exits when client disconnects
+  └─────────┴─► stdio session ends when client disconnects
 ```
 
 ### Transport / address options
@@ -477,17 +477,17 @@ For a comprehensive update guide covering all deployment modes (Docker, BTP, npm
 
 ```bash
 # Pull a specific version (recommended for production)
-docker pull ghcr.io/arc-mcp/arc-1:1.5.0
+docker pull ghcr.io/arc-mcp/arc-1:x.y.z
 
 # Pull latest (includes unreleased changes from main)
 docker pull ghcr.io/arc-mcp/arc-1:latest
 
 # Stop, remove, restart with new image
 docker stop arc1 && docker rm arc1
-docker run -d --name arc1 -p 127.0.0.1:8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:1.5.0
+docker run -d --name arc1 -p 127.0.0.1:8080:8080 --env-file .env ghcr.io/arc-mcp/arc-1:x.y.z
 
 # Verify version
-docker run --rm ghcr.io/arc-mcp/arc-1:1.5.0 node dist/index.js --version
+docker run --rm ghcr.io/arc-mcp/arc-1:x.y.z node dist/cli.js --version
 ```
 
 ### Pinning a version (recommended)
@@ -496,7 +496,7 @@ For production or shared team environments, always pin to a specific version
 tag rather than `latest`:
 
 ```
-ghcr.io/arc-mcp/arc-1:1.5.0
+ghcr.io/arc-mcp/arc-1:x.y.z
 ```
 
 This ensures every team member uses the same binary regardless
@@ -561,17 +561,12 @@ when a new `ghcr.io/arc-mcp/arc-1` image tag is published.
 
 ### Container exits immediately
 
-In **stdio mode**, arc1 exits if stdin is closed. Use `-i` with `SAP_TRANSPORT=stdio`. In the default HTTP mode, detached `-d` operation is supported; inspect `docker logs` for configuration or authentication errors:
+In **stdio mode**, use `-i` with `SAP_TRANSPORT=stdio` so the MCP client can communicate over stdin/stdout. Do not detach a stdio server. In the default HTTP mode, detached `-d` operation is supported; inspect `docker logs` for configuration or authentication errors.
 
-```bash
-docker run -i --rm ...   # correct
-docker run --rm ...      # wrong — exits immediately
-docker run -d --rm ...   # wrong — detached mode breaks stdio
-```
+<a id="sap-url-is-required-error"></a>
+### No SAP connection configured
 
-### `SAP URL is required` error
-
-Direct connections require `SAP_URL`. Destination and BTP service-key modes resolve their endpoint separately. For direct mode, verify it is being passed:
+Without `SAP_URL` or a BTP connection, ARC-1 warns that no SAP connection is available; this alone does not stop the process. Destination and BTP service-key modes resolve their endpoint separately. For direct mode, pass `SAP_URL`:
 
 ```bash
 docker run -i --rm -e SAP_URL=https://host:44300 ... arc1
@@ -580,7 +575,8 @@ docker run -i --rm -e SAP_URL=https://host:44300 ... arc1
 ### TLS certificate errors
 
 ```
-x509: certificate signed by unknown authority
+UNABLE_TO_VERIFY_LEAF_SIGNATURE
+SELF_SIGNED_CERT_IN_CHAIN
 ```
 
 Either add your CA certificate (see [Network / TLS](#proxy-tls-and-networking)) or use

@@ -311,10 +311,11 @@ above: ambiguous failures require inspection before another execution.
     - **Bake into an immutable artifact.** Ship plugins inside the reviewed deploy image / app bits,
       under the same change control as the rest of the server (see [Deploying](#deploying-extensions-btp-cloud-foundry-docker)).
 
-This is the most important part. An extension tool **inherits ARC-1's full safety pipeline** — it is
-gated exactly like a built-in. Two layers must both pass: the **user's scope** (their MCP role/profile)
-**and** the **server's safety ceiling** (the admin's `allow*` flags). Per-user **principal propagation**
-means the tool acts as the calling SAP user, so SAP-side auth (`S_DEVELOP`, package checks) applies too.
+An extension tool must pass the **user's scope** check (their MCP role/profile). Calls through the
+provided `ctx` APIs also enforce the applicable server opt-ins and use the selected SAP identity,
+including per-user identity for PP calls. These are the extension-specific gates below: built-in
+`SAP_DENY_ACTIONS` rules do not support custom tools, and the package allowlist does not cover raw
+OData/ICF writes. SAP still enforces the selected user's authorizations.
 
 `ctx.client` exposes an explicit set of plain-read methods. Internal session factories,
 metadata/text writers, SQL methods and client internals are absent at runtime and in the public

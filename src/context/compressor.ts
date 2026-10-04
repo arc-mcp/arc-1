@@ -232,35 +232,13 @@ async function fetchSource(
     case 'INTF':
       return cachedGet('INTF', name, (ifNoneMatch) => client.getInterface(name, { ifNoneMatch }));
     case 'FUNC': {
-      // Use cached func group resolution if available
-      if (cachingLayer) {
-        const group = await cachingLayer.resolveFuncGroup(client, name);
-        if (group) {
-          return cachedGet('FUNC', name, (ifNoneMatch) => client.getFunction(group, name, { ifNoneMatch }));
-        }
-        throw new Error(`Cannot determine function group for ${name}`);
-      }
-      // Original fallback: search for function group
-      const results = await client.searchObject(name, 5);
-      const fmResult = results.find(
-        (r) => r.objectName.toUpperCase() === name.toUpperCase() && r.objectType?.includes('FUNC'),
-      );
-      if (fmResult) {
-        // Extract function group from URI: .../groups/<group>/fmodules/<name>
-        const match = fmResult.uri.match(/groups\/([^/]+)/);
-        if (match) {
-          return readResultSource(await client.getFunction(match[1], name));
-        }
-      }
-      // Fallback: try all search results for a URI match
-      for (const r of results) {
-        const match = r.uri.match(/groups\/([^/]+)\/fmodules/);
-        if (match) {
-          return readResultSource(await client.getFunction(match[1], name));
-        }
-      }
-      throw new Error(`Cannot determine function group for ${name}`);
+      const group = cachingLayer
+        ? await cachingLayer.resolveFuncGroup(client, name)
+        : await client.resolveFunctionGroup(name);
+      if (!group) throw new Error(`Cannot determine function group for ${name}`);
+      return cachedGet('FUNC', name, (ifNoneMatch) => client.getFunction(group, name, { ifNoneMatch }));
     }
+
     default:
       // Try as class first, then interface
       try {

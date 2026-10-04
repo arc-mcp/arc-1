@@ -79,10 +79,16 @@ modules:
     build-parameters:
       builder: custom
       commands: []
+      # Root-level only: MBT does not match these in subfolders (an allowlist build-result would).
       ignore:
         - .env*
         - .npmrc
-        - "*service-key*.json"
+        - "*key*.json"
+        - cookie*
+        - .arc1*.json
+        - .arc1-cache.db*
+        - .mcp*.json
+        - default-env*.json
         - "*.key"
         - "*.pem"
         - "*.p12"
@@ -248,6 +254,8 @@ modules:
       supported-platforms: []
       ignore:
         - node_modules/
+        - test/
+        - default-env*.json
     parameters:
       memory: 128M
       disk-quota: 256M

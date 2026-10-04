@@ -352,7 +352,8 @@ For every mode:
 2. inspect all expected XSUAA role collections/roles after a security-descriptor change;
 3. obtain a fresh token when roles changed;
 4. for multi-target, inspect Admin `SAPTargets` and registry revision; and
-5. perform one Viewer `SAPRead SYSTEM` and verify the intended SAP identity.
+5. perform one Viewer `SAPRead SYSTEM`, then confirm the SAP user from SAP-side evidence
+   ([Verify the backend identity](principal-propagation-setup.md#verify-the-backend-identity)).
 
 Keep the previous reviewed MTAR, `.mtaext`, and DCR signing secret available. Roll back through the
 same strategy as the update, explicitly permitting the older archive:
