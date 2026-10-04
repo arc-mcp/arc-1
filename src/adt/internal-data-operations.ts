@@ -8,7 +8,8 @@
  *
  * This registry is NOT a bypass. Every entry still goes through the same
  * `checkOperation(Query|FreeSQL)` capability gate, the same caller scopes, and the same data-source
- * blocklist, in that order. There is deliberately no `internal=true` argument, no caller-settable
+ * blocklist, in that order. The replacement-lineage entry is the fixed catalog read
+ * that implements the policy itself: it checks direct catalog blocks without recursive lineage. There is deliberately no `internal=true` argument, no caller-settable
  * flag, and nothing here is reachable from an MCP tool schema — blocking a table listed below really
  * does disable the feature that reads it, which is the intended, documented behaviour.
  *
@@ -21,7 +22,10 @@
  *              registry exists to prevent.
  */
 
+import type { DataSourcePolicyError } from './data-source-policy.js';
+
 export type InternalDataOperationId =
+  | 'replacement_lineage'
   | 'tadir_lookup_db'
   | 'tran_program_enrichment'
   | 'class_hierarchy'
@@ -40,6 +44,13 @@ export interface InternalDataOperation {
 }
 
 export const INTERNAL_DATA_OPERATIONS: Record<InternalDataOperationId, InternalDataOperation> = {
+  replacement_lineage: {
+    sources: ['DD02L', 'DDLDEPENDENCY'],
+    consumer: 'Data-source policy replacement lineage',
+    criticality: 'core',
+    guidance:
+      'The policy needs both catalog tables to prove replacement lineage. Keep data access disabled if these metadata reads are not permitted.',
+  },
   tadir_lookup_db: {
     sources: ['TADIR'],
     consumer: 'SAPSearch(searchType="tadir_lookup", source="db"|"both")',
@@ -110,15 +121,23 @@ export function internalOperationsBlockedBy(
 /**
  * Model-facing explanation for a denied internal read.
  *
- * `reason` carries the already-redacted policy text, so this adds the affected feature and the
- * alternative without re-deriving anything policy-sensitive.
+ * Takes the error, not its text, so the policy part always honours `ARC1_MINIMAL_ERRORS`. The added
+ * guidance names only the operation's documented sources, never a configured rule or variable.
  */
-export function internalOperationDenial(id: InternalDataOperationId, reason: string): string {
+export function internalOperationDenial(
+  id: InternalDataOperationId,
+  error: DataSourcePolicyError,
+  minimalErrors: boolean,
+): string {
   const operation = INTERNAL_DATA_OPERATIONS[id];
-  return `${reason}\n\nAffected: ${operation.consumer}. ${operation.guidance}`;
+  return `${error.clientMessage(minimalErrors)}\n\nAffected: ${operation.consumer}. ${operation.guidance}`;
 }
 
-/** Warning appended to a degraded-but-correct result when an optional internal read is denied. */
+/**
+ * Warning appended to a degraded-but-correct result when an optional internal read is denied.
+ * `reason` must be stable caller-authored text (normally an error code), never caught policy or
+ * backend text: warnings bypass `ARC1_MINIMAL_ERRORS`.
+ */
 export function internalOperationWarning(id: InternalDataOperationId, reason: string): string {
   const operation = INTERNAL_DATA_OPERATIONS[id];
   return `Incomplete result: ${operation.consumer} could not read ${operation.sources.join(' / ')}. ${operation.guidance} (${reason})`;

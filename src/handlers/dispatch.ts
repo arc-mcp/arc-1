@@ -11,6 +11,7 @@ import type { AdtClient } from '../adt/client.js';
 import { DataSourcePolicyError } from '../adt/data-source-policy.js';
 import {
   AdtApiError,
+  AdtError,
   AdtNetworkError,
   AdtResponseLimitError,
   AdtSafetyError,
@@ -40,7 +41,7 @@ import { type McpRateLimiter, resolveRateLimitUserKey } from '../server/mcp-rate
 import { formatClientInfo } from '../server/trace-context.js';
 import type { ServerConfig } from '../server/types.js';
 import { handleSAPActivate } from './activate.js';
-import { buildCacheSecurityContext } from './cache-security.js';
+import { buildCacheSecurityContext, invalidateInactiveList } from './cache-security.js';
 import { handleSAPContext } from './context.js';
 import { handleSAPDiagnose } from './diagnose.js';
 import { getCachedFeatures } from './feature-cache.js';
@@ -126,7 +127,8 @@ function formatPossibleDataPreviewWafBlock(err: AdtApiError, minimalErrors: bool
 function getWriteInfrastructureHint(err: AdtApiError, tool: string, args: Record<string, unknown>): string | undefined {
   if (tool !== 'SAPWrite') return undefined;
   const action = String(args.action ?? '').toLowerCase();
-  if (!['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'delete'].includes(action)) return undefined;
+  if (!['create', 'update', 'batch_create', 'edit_method', 'edit_unit', 'add_unit', 'delete'].includes(action))
+    return undefined;
 
   // These failures happen around ADT session management, often after SAP has
   // already accepted a mutation. They need cleanup guidance, not DDIC syntax hints.
@@ -154,7 +156,7 @@ function formatErrorForLLM(
   const base = buildBaseErrorMessage(err, message, tool, args, config);
   // Handler-attached remediation hints (e.g., CDS delete blocker list) always
   // appear last so the message reads "what happened → diagnostics → how to fix".
-  if (err instanceof AdtApiError && err.extraHint && !base.includes(err.extraHint)) {
+  if (err instanceof AdtError && err.extraHint && !base.includes(err.extraHint)) {
     return `${base}\n\n${err.extraHint}`;
   }
   return base;
@@ -168,6 +170,30 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtError && err.pluginPostOutcome === 'unknown') {
+    const detail = config.minimalErrors
+      ? err instanceof AdtApiError
+        ? formatMinimalAdtError(err)
+        : 'Extension POST failed. Use the request ID to correlate server-side logs.'
+      : message;
+    return `${detail}\nPOST completion is unconfirmed. Inspect the service's result or business state before retrying. Do not blindly repeat the extension call.`;
+  }
+  if (err instanceof AdtError && err.creationOutcome === 'unknown') {
+    const detail = config.minimalErrors
+      ? err instanceof AdtApiError
+        ? formatMinimalAdtError(err)
+        : 'Create request failed. Use the request ID to correlate server-side logs.'
+      : message;
+    let inspection =
+      'Use SAPRead/SAPSearch to inspect the object identity, package and source, including its inactive version, before updating an existing object.';
+    if (tool === 'SAPTransport') {
+      inspection = 'Use SAPTransport to list requests and inspect their owner, description and contents.';
+    } else if (tool === 'SAPManage' && String(args.action).startsWith('flp_')) {
+      inspection =
+        'Use SAPManage flp_list_catalogs/flp_list_groups/flp_list_tiles to inspect catalogs, groups and catalog tiles. Inspect group membership in SAP Fiori Launchpad Designer.';
+    }
+    return `${detail}\nCreate completion is unconfirmed. ${inspection} Do not blindly repeat create.`;
+  }
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
     return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
   }
@@ -185,6 +211,18 @@ function buildBaseErrorMessage(
       ...(config.targetId ? { target: config.targetId } : {}),
     });
   }
+  if (
+    tool === 'SAPActivate' &&
+    args.action === 'publish_srvb' &&
+    (err instanceof AdtNetworkError || (err instanceof AdtApiError && (err.statusCode === 429 || err.isServerError)))
+  ) {
+    const detail = config.minimalErrors
+      ? err instanceof AdtApiError
+        ? formatMinimalAdtError(err)
+        : 'Publish request failed. Use the request ID to correlate server-side logs.'
+      : message;
+    return `${detail}\nPublish completion is unconfirmed. Use SAPRead to verify publication state before another publish.`;
+  }
   if (err instanceof AdtApiError) {
     if (
       tool === 'SAPNavigate' &&
@@ -197,6 +235,14 @@ function buildBaseErrorMessage(
     }
     if (isPossibleDataPreviewWafBlock(err, tool, args)) {
       return formatPossibleDataPreviewWafBlock(err, config.minimalErrors);
+    }
+    if (err.diagnosticsOmitted) {
+      const detail = config.minimalErrors ? formatMinimalAdtError(err) : message;
+      const statusHint =
+        err.isUnauthorized || err.isForbidden
+          ? ' Ask the operator to check SAP authentication, authorizations, and session state.'
+          : '';
+      return `${detail}\n\nHint: ARC-1 omitted the diagnostic for credential safety. Inspect the full message in SAP; retrying cannot recover omitted detail.${statusHint}`;
     }
     if (config.minimalErrors) return formatMinimalAdtError(err);
 
@@ -277,7 +323,7 @@ function buildBaseErrorMessage(
     if (writeInfrastructureHint) {
       return `${enriched}\n\nHint: ${writeInfrastructureHint}`;
     }
-    // Save hint — applies to create/update/batch_create/edit_method/edit_unit, not delete.
+    // Save hint — applies to create/update/batch_create/edit_method/edit_unit/add_unit, not delete.
     // Delete failures on DDIC types have different remediation (dependency resolution, not annotation fixes).
     const action = String(args.action ?? '').toLowerCase();
     const isSaveAction =
@@ -286,7 +332,8 @@ function buildBaseErrorMessage(
       action === 'update' ||
       action === 'batch_create' ||
       action === 'edit_method' ||
-      action === 'edit_unit';
+      action === 'edit_unit' ||
+      action === 'add_unit';
     if ((err.statusCode === 400 || err.statusCode === 409) && DDIC_SAVE_HINT_TYPES.has(argType) && isSaveAction) {
       return (
         `${enriched}\n\nHint: DDIC save failed. Check the diagnostic details above for specific field or annotation errors. ` +
@@ -345,7 +392,7 @@ function formatMinimalAdtError(err: AdtApiError): string {
   return (
     `ADT API error: status ${err.statusCode}.${category}\n\n` +
     'Hint: Detailed SAP error text is hidden because ARC1_MINIMAL_ERRORS=true. ' +
-    'Use the request ID to correlate server-side audit and SAP-native logs, or retry in a trusted admin session with minimal errors disabled.'
+    'Use the request ID to correlate server-side audit and SAP-native logs.'
   );
 }
 
@@ -591,18 +638,18 @@ export function getToolRegistry(): ToolRegistry {
     if (!policy) throw new Error(`Built-in tool '${name}' has no ACTION_POLICY entry`);
     r.register({ name, source: 'builtin', policy, invoke });
   };
-  reg('SAPRead', (ctx) => handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
-  reg('SAPSearch', (ctx) => handleSAPSearch(ctx.client, ctx.args));
-  reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args));
+  reg('SAPRead', (ctx) => handleSAPRead(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity, ctx.config.minimalErrors));
+  reg('SAPSearch', (ctx) => handleSAPSearch(ctx.client, ctx.args, ctx.config.minimalErrors));
+  reg('SAPQuery', (ctx) => handleSAPQuery(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPWrite', (ctx) => handleSAPWrite(ctx.client, ctx.args, ctx.config, ctx.cache, ctx.cacheSecurity));
   reg('SAPActivate', (ctx) => handleSAPActivate(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
   reg('SAPNavigate', async (ctx) =>
     ctx.args.action === 'relations'
       ? (await import('./live-relations.js')).handleLiveRelations(ctx.client, ctx.config, ctx.args, ctx.cacheSecurity)
-      : handleSAPNavigate(ctx.client, ctx.args),
+      : handleSAPNavigate(ctx.client, ctx.args, ctx.config.minimalErrors),
   );
   reg('SAPLint', (ctx) => handleSAPLint(ctx.client, ctx.args, ctx.config));
-  reg('SAPDiagnose', (ctx) => handleSAPDiagnose(ctx.client, ctx.args));
+  reg('SAPDiagnose', (ctx) => handleSAPDiagnose(ctx.client, ctx.args, ctx.config.minimalErrors));
   reg('SAPTransport', (ctx) => handleSAPTransport(ctx.client, ctx.args, ctx.config));
   reg('SAPGit', (ctx) => handleSAPGit(ctx.client, ctx.args, ctx.authInfo));
   reg('SAPContext', (ctx) => handleSAPContext(ctx.client, ctx.args, ctx.cache, ctx.cacheSecurity));
@@ -946,9 +993,8 @@ export async function handleToolCall(
       tracestate: inherited?.tracestate,
     },
     async () => {
+      const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
       try {
-        const cacheSecurity = buildCacheSecurityContext(authInfo, isPerUserClient);
-
         // FEAT-61: inner dispatch is owned by the ToolRegistry (built-ins + plugin Custom_* tools).
         // The shared pipeline above (rate-limit, scope, deny, Zod, audit) is unchanged; the registry
         // only replaces the former `switch (toolName)`. See extension-framework-spec.md §4.
@@ -1007,6 +1053,17 @@ export async function handleToolCall(
 
         return result;
       } catch (err) {
+        if (err instanceof AdtError && err.creationOutcome === 'unknown') {
+          try {
+            if (toolName === 'SAPWrite' && args.type && args.name) {
+              invalidateInactiveList(cachingLayer, client, cacheSecurity);
+              cachingLayer?.invalidate(canonicalTablType(String(args.type)), String(args.name), 'all');
+            }
+            if (toolName === 'SAPManage' && args.action === 'create_package') client.invalidatePackageHierarchy();
+          } catch {
+            // Best-effort cleanup must not replace the creation error or prevent its audit event.
+          }
+        }
         const message = err instanceof Error ? err.message : String(err);
         const auditErrorMessage =
           err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)

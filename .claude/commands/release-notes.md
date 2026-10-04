@@ -14,8 +14,12 @@ command adds the context next to it, never inside it.
 **While the release-please PR is open**, before merging it. The PR body already contains the exact
 changelog entry for the upcoming version, so the notes can land first and `main` never goes red.
 
-Also run it whenever a released version is missing from the page — `tests/unit/server/release-notes.test.ts`
-fails with the list.
+**Write notes on a main-bound PR, or on the release branch only once nothing else will merge.**
+release-please rebuilds the branch from `main` with [`force: true`](https://github.com/googleapis/release-please/blob/v17.6.0/src/github.ts),
+discarding manual commits when the changelog changes.
+
+`tests/unit/server/release-notes.test.ts` requires every released version and all changelog PR links
+in the newest release annotation. Group related PRs in one row when appropriate.
 
 ## Input
 
@@ -83,3 +87,15 @@ Rules:
 
 `docs:` commit (deliberately no release — see AGENTS.md "Releasing"), e.g.
 `docs: annotate the 1.0.1 release notes`.
+
+Before merging the release-please PR:
+
+1. Merge its intended code and main-bound notes first, then let release-please regenerate.
+   Recheck the generated versions and newest CHANGELOG against the annotations.
+2. On that final release branch, replace `(unreleased)` in the upcoming version's heading
+   with the intended release date `(YYYY-MM-DD)`. Commit and push this finalization so the
+   release PR receives a test run; a bot-generated update alone may not start workflows.
+3. Run the annotation test and strict docs build on that exact branch, and verify the heading
+   has a date. The current annotation test does not reject `(unreleased)`.
+   If another release-producing change lands, repeat after regeneration; it discards manual
+   release-branch commits. Publishing remains a separate approval/merge decision.

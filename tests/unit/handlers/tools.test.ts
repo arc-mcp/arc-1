@@ -356,7 +356,7 @@ describe('Tool Definitions', () => {
     const typeEnum: string[] = schema.properties.type.enum;
     for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
       expect(typeEnum).toContain(t);
-    expect(schema.properties.type.description).toContain('Server-driven objects');
+    expect(sapWrite.description).toContain('Server-driven objects');
   });
 
   it('SAPRead schema includes source version controls', () => {
@@ -365,7 +365,7 @@ describe('Tool Definitions', () => {
     const schema = sapRead.inputSchema as Record<string, any>;
     expect(schema.properties.version.enum).toEqual(['active', 'inactive', 'auto']);
     expect(schema.properties.force_refresh.type).toBe('boolean');
-    expect(sapRead.description).toContain('version parameter');
+    expect(schema.properties.version.description).toContain('Server-driven types return an error');
   });
 
   it('SAPRead schema exposes includeSignature flag for FUNC (issue #252)', () => {
@@ -463,18 +463,18 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('change_method_visibility');
   });
 
-  it('SAPWrite exposes edit_unit only on-prem (issue #558)', () => {
+  it.each(['edit_unit', 'add_unit'])('SAPWrite exposes %s only on-prem', (action) => {
     const onPremTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'onprem' });
     const onPremSchema = onPremTools.find((tool) => tool.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    expect(onPremSchema.properties.action.enum).toContain('edit_unit');
+    expect(onPremSchema.properties.action.enum).toContain(action);
     expect(onPremSchema.properties.unit.description).toMatch(/FORM(?:\/| or )MODULE/i);
-    expect(onPremSchema.properties.source.description).toContain('edit_unit');
+    expect(onPremSchema.properties.source.description).toContain(action);
 
     const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
     const btpSchema = btpTools.find((tool) => tool.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    expect(btpSchema.properties.action.enum).not.toContain('edit_unit');
+    expect(btpSchema.properties.action.enum).not.toContain(action);
     expect(btpSchema.properties.unit).toBeUndefined();
-    expect(btpSchema.properties.source.description).not.toContain('edit_unit');
+    expect(btpSchema.properties.source.description).not.toContain(action);
   });
 
   it('SAPWrite schema exposes visibility + abstract for add_method (issue #303)', () => {
@@ -749,7 +749,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('traces');
     expect(actionEnum).toContain('system_messages');
     expect(actionEnum).toContain('gateway_errors');
-    expect(sapDiagnose.description).toContain('active vs inactive source versions');
+    expect(sapDiagnose.description).toContain('Server-driven types unsupported');
     expect(schema.properties.source).toBeDefined();
     expect(schema.properties.sourceUri).toBeDefined();
     expect(schema.properties.line).toBeDefined();

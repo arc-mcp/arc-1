@@ -2017,6 +2017,16 @@ describe('ADT Integration Tests', () => {
   //   one terminal activateBatch — SAP resolves the cross-reference internally.
 
   describe('SAPWrite batch_create activateAtEnd', () => {
+    // Parent and child reference each other: per-object DELETEs 400 on both sides and leak the pair.
+    const deletePair = async (...names: string[]) => {
+      const { deleteObjectSet } = await import('./crud-harness.js');
+      return deleteObjectSet(
+        client.http,
+        client.safety,
+        names.map((name) => ({ name, objectUrl: `/sap/bc/adt/ddic/ddl/sources/${name.toLowerCase()}` })),
+      );
+    };
+
     it('default (activateAtEnd=false) fails on composition-linked DDLS — documents the failure mode', async (ctx) => {
       requireOrSkip(ctx, process.env.TEST_SAP_URL, SkipReason.NO_CREDENTIALS);
       const { generateUniqueName } = await import('./crud-harness.js');
@@ -2029,6 +2039,7 @@ describe('ADT Integration Tests', () => {
         toolMode: 'standard',
       } as unknown as Parameters<typeof handleToolCall>[1];
 
+      let cleanupFailures: Awaited<ReturnType<typeof deletePair>> = [];
       try {
         const result = await handleToolCall(client, config, 'SAPWrite', {
           action: 'batch_create',
@@ -2065,18 +2076,9 @@ describe('ADT Integration Tests', () => {
         // refused the composition outright. Both confirm the failure mode this PR fixes.
         expect(text).toMatch(/does not exist or is not active|activation failed|Composition target/i);
       } finally {
-        for (const name of [parentName, childName]) {
-          try {
-            await handleToolCall(client, config, 'SAPWrite', {
-              action: 'delete',
-              type: 'DDLS',
-              name,
-            });
-          } catch {
-            // best-effort-cleanup
-          }
-        }
+        cleanupFailures = await deletePair(parentName, childName);
       }
+      expect(cleanupFailures).toEqual([]);
     });
 
     it('activateAtEnd=true activates a composition-linked DDLS pair in a single terminal batch', async (ctx) => {
@@ -2091,6 +2093,7 @@ describe('ADT Integration Tests', () => {
         toolMode: 'standard',
       } as unknown as Parameters<typeof handleToolCall>[1];
 
+      let cleanupFailures: Awaited<ReturnType<typeof deletePair>> = [];
       try {
         const result = await handleToolCall(client, config, 'SAPWrite', {
           action: 'batch_create',
@@ -2136,18 +2139,9 @@ describe('ADT Integration Tests', () => {
           expect(read.isError).toBeUndefined();
         }
       } finally {
-        for (const name of [parentName, childName]) {
-          try {
-            await handleToolCall(client, config, 'SAPWrite', {
-              action: 'delete',
-              type: 'DDLS',
-              name,
-            });
-          } catch {
-            // best-effort-cleanup
-          }
-        }
+        cleanupFailures = await deletePair(parentName, childName);
       }
+      expect(cleanupFailures).toEqual([]);
     });
   });
 
@@ -2455,6 +2449,19 @@ describe('ADT Integration Tests', () => {
       expect(src.navigation).toBeDefined();
     });
 
+    it('reads a DRTY (CDS Type) as DDL text', async (ctx) => {
+      await gateOrSkip(ctx, 'DRTY');
+      // Demo package names differ between 758 and 816. Search the type directly.
+      const objects = await client.searchObject('*', 10, 'DRTY/STY');
+      const drty = objects.find((o) => o.objectType === 'DRTY/STY');
+      requireOrSkip(ctx, drty, `${SkipReason.NO_FIXTURE}: no visible DRTY instance`);
+      const r = await getServerDrivenObject(client.http, unrestrictedSafetyConfig(), 'DRTY', drty.objectName);
+      expect(r.type).toBe('DRTY/STY');
+      expect(typeof r.package).toBe('string');
+      expect(r.source).toBeTypeOf('string');
+      expect(r.source as string).toMatch(/define\s+type/i);
+    });
+
     it('reads an EVTB (RAP Event Binding) with a populated events array', async (ctx) => {
       await gateOrSkip(ctx, 'EVTB');
       const r = await getServerDrivenObject(
@@ -2691,7 +2698,7 @@ describe('BDEF behavior extension create (#10)', () => {
       toolMode: 'standard',
     } as unknown as Parameters<typeof handleToolCall>[1];
     const client = getTestClient();
-    const tab = generateUniqueName('ZARC1_BX');
+    const tab = generateUniqueName('ZARC1B'); // At most 16 characters with a four-letter run ID.
     const root = `ZR_${tab}`;
     const ext = `${root}_X`;
     const W = async (args: Record<string, unknown>) => {

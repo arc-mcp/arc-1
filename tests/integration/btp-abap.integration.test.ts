@@ -841,18 +841,20 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
 
   // ─── BTP-Specific: SDO (server-driven) object-create path ──────────────
   //
-  // The registered 8.16+ server-driven types (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC) create via a minimal
-  // <blue:blueSource> body (buildServerDrivenMetadataXml) that — by construction — carries NO adtcore:responsible,
-  // masterSystem, or abapLanguageVersion, so it needs no cloudify. Live-verified on BTP 919: every type's
-  // body deserializes and reaches package-assignment (structure package → 409 "cannot contain development
-  // objects"; DTSC → 403 resource-auth). A wrong body would 400 at the create simple-transformation.
-  describe('BTP SDO object-create path (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD/DTDC — UIAD excluded)', () => {
+  // Registered server-driven types other than UIAD create via minimal metadata
+  // built by buildServerDrivenMetadataXml, with no adtcore:responsible,
+  // masterSystem, or abapLanguageVersion, so it needs no cloudify. Earlier BTP 919 probes reached
+  // package-assignment (structure package → 409 "cannot contain development objects"; DTSC → 403
+  // resource-auth). A wrong body would 400 at deserialization; registry membership is not live coverage.
+  describe('BTP object-create path for every registered SDO type except UIAD', () => {
     const structurePkg = process.env.TEST_BTP_STRUCTURE_PACKAGE || 'ZLOCAL';
     const writablePkg = process.env.TEST_BTP_PACKAGE;
     // UIAD is excluded: SAP refuses LADI edits outside the ABAP Cloud language version
     // (400 'Editing of LADIs with ALV "Standard" not allowed in workbench tools'), which is a
     // different failure class than the 403/409 package outcomes this test asserts.
-    const codes = Object.keys(SDO_REGISTRY).filter((c) => c !== 'UIAD');
+    // Job objects need an existing class/catalog plus additionalCreationProperties, so they cannot
+    // use this metadata-only create fixture. Their read coverage is in app-objects.integration.test.ts.
+    const codes = Object.keys(SDO_REGISTRY).filter((c) => !['UIAD', 'SAJC', 'SAJT'].includes(c));
 
     // Load ADT discovery so SDO availability is gated per type — these collections are 8.16+ and absent
     // on older tenants (where an unconditional POST would 404/405, not the package-assignment we assert).
@@ -869,7 +871,9 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
           supportsServerDrivenObject(client.http, code) === false ? null : true,
           SkipReason.BACKEND_UNSUPPORTED,
         );
-        const name = generateUniqueName(`ZARC1_SDO_${code}`);
+        // APLO names hold at most 20 characters (BALOBJ-OBJECT): ZARC1<code>_<run><tail> <= 19, and the
+        // ZARC1 prefix keeps leaked objects inside the janitor's TEST_OBJECT_PREFIXES namespace.
+        const name = generateUniqueName(`ZARC1${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         // The blue body must carry no cloud-hostile attrs — the owner comes from the JWT on cloud.
         const body = buildServerDrivenMetadataXml(code, name, structurePkg, `ARC-1 BTP ${code} body check`);
@@ -919,7 +923,9 @@ describeIf('BTP ABAP Environment Integration Tests', () => {
           SkipReason.BACKEND_UNSUPPORTED,
         );
         const pkg = writablePkg as string;
-        const name = generateUniqueName(`ZARC1_SDO_${code}`);
+        // APLO names hold at most 20 characters (BALOBJ-OBJECT): ZARC1<code>_<run><tail> <= 19, and the
+        // ZARC1 prefix keeps leaked objects inside the janitor's TEST_OBJECT_PREFIXES namespace.
+        const name = generateUniqueName(`ZARC1${code}`);
         const objectUrl = serverDrivenObjectUrl(code, name);
         let created = false;
         try {

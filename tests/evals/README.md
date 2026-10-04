@@ -23,6 +23,10 @@ through our tool descriptions** — the same class of bug we found in FEAT-33
 where LLMs text-scanned `DDDDLSRC` via `SAPQuery` instead of calling
 `SAPContext(action="impact")`.
 
+Direct HTTP providers retain call/result IDs across parallel turns. The trace counts executed calls
+within `maxToolCalls` (fractional limits round up); calls beyond it are not executed or scored.
+Payload-only regression tests: `npx vitest run tests/unit/evals` (no API/SAP requests).
+
 ---
 
 ## TL;DR

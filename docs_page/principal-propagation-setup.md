@@ -1,36 +1,84 @@
-# Principal propagation setup
+# Principal Propagation Setup
 
-Configure **on-premise SAP access as each MCP user's own SAP user** through BTP Destination Service and Cloud Connector. Complete this with the Cloud Connector, SAP Basis and identity administrators, then verify one live request's identity.
+Authenticate each MCP user's SAP requests with their own identity via BTP Destination Service and
+Cloud Connector. Multi-target PP-only deployments need no shared SAP password. The current
+single-target `/mcp` topology additionally uses one least-privileged Basic destination for startup
+target resolution and feature discovery; authenticated tool calls remain PP-only and never fall back
+to that identity.
 
-For cloud targets, use [BTP ABAP Environment](btp-abap-environment.md) or [S/4HANA Public Cloud](s4hana-public-cloud.md). For application deployment, use the [Cloud Foundry runbook](btp-cloud-foundry-deployment.md).
+Agree the intended system/client, backend user and application identity with the Connector, Basis
+and IAM owners. The [optional worksheet](btp-setup-worksheet.md) can record this handoff.
 
-## When to use
+## When to Use
 
-Use PP when SAP must apply each human's permissions and record their identity. Multi-target PP needs no startup password. Single-target on-premise `/mcp` uses a separate least-privileged Basic destination for startup discovery only; failed user requests never fall back to it.
+- Enterprise environments requiring per-user SAP authorization
+- Compliance/audit requirements (who did what in SAP)
+- When different users should have different SAP permissions
+- Multi-target PP-only deployments where no shared startup identity is required
 
 ## Architecture
 
-```text
-User JWT → ARC-1 → Destination → Connectivity → Cloud Connector
-                                                   ↓ user certificate
-                                              SAP ICM → SAP user
+```
+MCP Client (JWT)
+  │
+  ▼
+ARC-1 (/mcp or a multi-target route)
+  │  validates JWT (OIDC or XSUAA)
+  │  passes X-User-Token to Destination Service
+  ▼
+BTP Destination Service
+  │  resolves per-user destination (PrincipalPropagation type)
+  ▼
+Connectivity Proxy
+  │
+  ▼
+Cloud Connector
+  │  propagates user identity via client certificate
+  ▼
+SAP ICM
+  │  CERTRULE / VUSREXTID maps certificate to SAP user
+  ▼
+SAP user session (per-user)
 ```
 
-The Connector signs a short-lived user certificate. SAP trusts its issuer and maps the certificate subject through CERTRULE or VUSREXTID.
+The diagram shows an authenticated tool request. For single-target `/mcp`, the separate Basic
+startup destination establishes URL/client configuration before an end-user JWT exists. It is not
+part of this request path and is never a fallback after PP failure.
 
 ## Prerequisites
 
-- ARC-1 on Cloud Foundry with JWT login and Destination/Connectivity bindings.
-- XSUAA for multi-target routes; [XSUAA](xsuaa-setup.md) or supported [OIDC](oauth-jwt-setup.md) for single-target login.
-- Cloud Connector attached to the intended subaccount and able to reach SAP.
-- An agreed SAP system/client, test-user identity and expected backend username; record them in the [worksheet](btp-setup-worksheet.md).
+- JWT-based MCP auth working ([OIDC setup](oauth-jwt-setup.md) or [XSUAA setup](xsuaa-setup.md))
+- ARC-1 deployed on BTP Cloud Foundry
+- Destination + Connectivity service instances bound to ARC-1 app
+- Cloud Connector connected to your BTP subaccount
+- SAP system reachable from Cloud Connector
 
-<a id="fast-path-repeat-this-for-each-sap-system"></a>
-<a id="known-good-route-shape"></a>
+## Fast Path: Repeat This for Each SAP System
 
-## Connection example
+Principal propagation has several layers, but the repeatable setup is short when they are configured
+in this order:
 
-Repeat steps 1–5 for each SAP system. A Connector CA can serve several systems, but each system needs its own trust/mapping and each client needs the intended users and destination.
+| Step | Configure | Completion signal |
+|------|-----------|-------------------|
+| 1 | Choose one stable Cloud Connector virtual host/port and one stable internal SAP DNS name/HTTPS port. | The SAP server certificate contains the internal DNS name in its DNS SANs. |
+| 2 | In Cloud Connector, configure the system certificate, CA certificate, identity-provider trust, and a subject pattern such as `CN=${email}`. | A sample certificate for a real user contains the expected subject and issuer. |
+| 3 | Add an HTTPS mapping with strict user-certificate propagation, expose `/sap/bc/adt` with all sub-paths, and add the SAP server certificate or its issuing CA to the Backend Trust Store. | Cloud Connector's internal connection check succeeds without system-certificate fallback. |
+| 4 | In SAP, trust the Cloud Connector system-certificate issuer and user-certificate CA in the active SSL Server Standard PSE. | The certificates remain present after an ICM or system restart. |
+| 5 | Enable the effective client-certificate and trusted-reverse-proxy profile settings supported by that SAP kernel. | ICM starts without unknown or inactive profile parameters. |
+| 6 | Maintain the user's exact propagated e-mail address in SU01. | The value exactly matches the e-mail claim, including spelling. |
+| 7 | In CERTRULE, map the sample certificate's Subject/CN to E-Mail and restrict the rule to the Cloud Connector CA issuer. | CERTRULE shows both **Certificate mapped with rule ...** and **Mapped email exists**, with the intended SAP user. |
+| 8 | Create the subaccount `PrincipalPropagation` destination and, for multi-target mode, add the ARC-1 properties. For single-target `/mcp`, also create its explicitly named least-privileged Basic startup destination. | The saved URL exactly matches the Cloud Connector virtual host/port and the client is explicit. |
+| 9 | Restart ARC-1, perform a safe read, then [verify the backend identity](#verify-the-backend-identity) with Basis. | Read success and correlated SAP user/client evidence are recorded separately. |
+
+One Cloud Connector CA and subject pattern can serve several SAP systems. Each SAP system still needs
+its own HTTPS trust, ICM/profile settings, CERTRULE mapping, and SAP users. Each SAP system/client also
+needs its own BTP destination and Cloud Connector mapping.
+
+For the SAP ABAP Platform Trial container, the
+[trial guide](sap-trial-setup.md#principal-propagation-via-cloud-connector) lists the
+container-specific values and pitfalls.
+
+### Known-Good Route Shape
 
 The virtual and internal names serve different purposes and do not need to be equal:
 
@@ -47,28 +95,37 @@ The BTP destination URL may use `http://` because it addresses the Cloud Connect
 The connection from Cloud Connector to SAP must use HTTPS so the propagated client certificate can
 be presented and verified.
 
-## Step 1: Create the BTP destination
+## Step 1: Create the BTP Destination
 
-Create the [PP destination](btp-destination-setup.md#per-user-pp-mcp) with:
+Create a subaccount destination in BTP Cockpit (**Connectivity > Destinations**) for every SAP
+system/client that needs per-user access:
 
-```properties
-Name=ARC1_A4H_100_PP
-Type=HTTP
-URL=http://<connector-virtual-host>:<virtual-port>
-ProxyType=OnPremise
-Authentication=PrincipalPropagation
-sap-client=100
-```
+| Property | Value |
+|----------|-------|
+| Name | `ARC1_A4H_100_PP` (your choice) |
+| Type | HTTP |
+| URL | `http://<cloud-connector-virtual-host>:<virtual-port>` |
+| Proxy Type | OnPremise |
+| Authentication | PrincipalPropagation |
+| `sap-client` | SAP client, for example `100` |
 
-For multi-target mode, also set `sap-sysid`, a factual `Description` and `arc1.enabled=true`. One destination per system/client is sufficient.
+For [multi-target v1](multi-target-setup.md), also set `sap-sysid`, `Description`, and
+`arc1.enabled=true`. One PP destination per system/client is sufficient; a Basic-auth technical-user
+destination is not required.
 
-For single-target on-premise `/mcp`, also create the separate [Basic startup destination](btp-destination-setup.md#per-user-pp-mcp). It supplies startup URL/client and feature discovery before a user JWT exists; it is not a fallback identity.
+For the current single-target on-premise `/mcp` runtime, configure both
+`SAP_BTP_DESTINATION=<least-privileged-startup-destination>` and
+`SAP_BTP_PP_DESTINATION=<principal-propagation-destination>`. The startup destination supplies the
+URL/client and supports feature discovery before a JWT exists; start with the release-specific role evidence in
+[Startup user authorizations](btp-destination-setup.md#startup-user-authorizations). With `SAP_PP_ENABLED=true` and
+`SAP_PP_STRICT=true`, authenticated tool calls use only the PP destination; a PP failure never falls
+back to the startup user. See [BTP Destination Reference](btp-destination-setup.md#per-user-pp-mcp).
 
 ## Step 2: Configure Cloud Connector
 
 1. Connect Cloud Connector to the same BTP subaccount and synchronize the subaccount's identity
    provider under **Principal Propagation**. Mark the intended identity provider as trusted.
-2. Under **Configuration > On-Premises**, configure two different certificates:
+2. Under **Configuration > On Premises**, configure two different certificates:
    - the **system certificate**, which authenticates Cloud Connector as the trusted reverse proxy;
    - the **CA certificate**, which signs the short-lived per-user certificates.
 3. Add a subject-pattern rule, for example `CN=${email}`, and generate a sample certificate for a
@@ -76,22 +133,29 @@ For single-target on-premise `/mcp`, also create the separate [Basic startup des
 4. Add the system mapping whose virtual host/port exactly matches the BTP destination. The cloud-side
    URL may be HTTP, but the mapping's internal connection to SAP must be HTTPS.
 5. Select strict X.509 user-certificate propagation without system-certificate fallback. On newer
-   Cloud Connector versions, select **X.509 Certificate** and do not allow the system certificate
-   for user logon. On older versions, select **X.509 Certificate (strict usage)**, sometimes
+   Cloud Connector versions, select **X.509 Certificate** and leave **System Certificate for Logon**
+   unchecked. On older versions, select **X.509 Certificate (strict usage)**, sometimes
    represented internally as `X509_RESTRICTED`. The general mode permits fallback to the system
    certificate and is not appropriate for ARC-1 PP routes.
 6. Make the SAP HTTPS certificate valid for the mapping's internal host name. Prefer a DNS name that
    appears in the certificate's DNS SANs: some Cloud Connector hostname-validation paths do not
    accept an IP SAN when the internal host is an IP literal. Do not solve a name mismatch by disabling
-   backend certificate checks.
+   backend certificate checks. Cloud Connector trusts no backend certificate by default: add the
+   certificate's issuing CA, or the self-signed certificate itself, to the **Backend Trust Store**
+   allowlist under **Configuration > On Premises**.
 
-### Required Cloud Connector resource paths
+<a id="required-cloud-connector-resource-paths"></a>
 
-Expose `/sap/bc/adt` with **Path and all sub-paths**. Add optional UI5/FLP OData paths only for enabled single-target features; use the [path reference](btp-destination-setup.md#cloud-connector-url-path-reference). Do not expose `/` to bypass an access error.
+### Cloud Connector Resource Paths
 
-<a id="step-3-configure-sap-system"></a>
+For the initial ADT-only profiles, expose `/sap/bc/adt` with **Path and all sub-paths**. These
+profiles disable the gCTS, FLP and UI5 Repository probes. The
+[Cloud Connector URL path reference](btp-destination-setup.md#cloud-connector-url-path-reference)
+owns the optional paths, feature settings and probe behavior. Use it when enabling additional
+capabilities within the selected topology's supported tool surface. Avoid exposing `/` unless
+another documented integration needs it.
 
-## Step 3: Configure the SAP system
+## Step 3: Configure SAP System
 
 The SAP system must trust Cloud Connector's certificates and map them to SAP users.
 
@@ -99,9 +163,18 @@ The SAP system must trust Cloud Connector's certificates and map them to SAP use
 
 In the SAP **SSL Server Standard** PSE, import the trust anchors needed for both parts of the flow:
 
-1. the issuer of the Cloud Connector system certificate (or the system certificate itself when it is
-   self-signed); and
+1. the **direct issuing CA** of the Cloud Connector system certificate (or the system certificate
+   itself when it is self-signed); and
 2. the Cloud Connector CA certificate that signs the short-lived user certificate.
+
+For enterprise PKI, identify the **actual issuer** of the system certificate;
+this can be an intermediate CA. In the reported deployment, trusting only the
+root and the user-certificate CA left mutual authentication broken until the
+system certificate's issuing intermediate was added. Follow SAP's
+[ABAP trust procedure](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/configure-principal-propagation-for-https)
+and verify the issuer in the active PSE's certificate list. Do not import an
+unrelated CA or assume every `502` has this cause. Repeat trust and user-mapping
+verification for each backend system.
 
 Save the PSE and verify the active ICM process uses it. A container image or startup job may recreate
 the PSE during restart; if so, make the repair persistent and test again after a real restart.
@@ -114,10 +187,19 @@ Configure how the certificate's subject is mapped to a SAP user:
   e-mail address)
 - **VUSREXTID** (table `VUSREXTID` via SM30): Explicit user-to-certificate subject mapping
 
+`login/certificate_mapping_rulebased = 1` selects CERTRULE; SM30 on `VUSREXTID` then reports that
+certificate logon is rule-based. For explicit `VUSREXTID` entries, set the parameter to `0`.
+
 For `CN=${email}`, every SAP user needs the exact same e-mail value in SU01. Import the sample user
 certificate into CERTRULE and test the rule there before testing ARC-1.
 
-Test with the **sample end-user certificate** from the Connector serving this target. Check its subject and issuing CA; the system, CA and SAP server certificates serve different purposes. In the intended SAP client, confirm it maps to the expected backend username. This proves mapping, not the identity of a live ARC-1 request.
+Use the **sample end-user certificate** generated by the Cloud Connector configuration that will
+serve this target—not the CA certificate, Cloud Connector system certificate or SAP TLS server
+certificate. Those have different trust/transport purposes. A filename such as `2025.der` does not
+establish applicability: compare its actual subject and issuing CA with the intended connector
+configuration. Use only the public certificate for this mapping test; never import a private key.
+In the intended SAP client, verify the rule resolves to the intended backend username. Green
+CERTRULE status is mapping evidence, not proof that a live ARC-1 request used that client/user.
 
 For the common `CN=${email}` setup, the CERTRULE rule is:
 
@@ -133,39 +215,76 @@ Save the rule, select the imported sample certificate, and confirm that CERTRULE
 intended SAP user. Do not create an issuer-free catch-all `CN=*` rule: it could allow certificates
 from an unrelated trusted CA to participate in SAP-user mapping.
 
+On one SAP_BASIS 750 system, **Generate** and a manually entered `CN=*, *`
+subject filter raised `SUSR_CERT116`; leaving that field empty saved `CN=*`.
+If you encounter this, keep the explicit issuer constraint, inspect the saved
+rule, and test the sample certificate before enabling access. Have the Basis
+owner correct or recreate the affected rule if the GUI refuses an edit; do not
+delete unrelated rules or replace them with an issuer-free catch-all.
+
 ### ICM parameters
 
-Verify these profile parameters (transaction `/nRZ10`):
+Verify these profile parameters (transaction `/nRZ11` shows the effective values, including defaults):
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
-| `icm/HTTPS/verify_client` | `1` | Accept client certificates |
+| `icm/HTTPS/verify_client` | `1` (default) | Accept client certificates |
 | HTTPS `icm/server_port_<n>` | `..., VCLIENT=1` | Ask Cloud Connector for a client certificate |
-| `login/certificate` | `1` | Enable certificate logon |
-| `login/certificate_mapping` | `1` | Enable certificate-to-user mapping |
 | `login/certificate_mapping_rulebased` | `1` | Enable CERTRULE mapping |
 | `icm/trusted_reverse_proxy_<n>` | Exact system-certificate subject and issuer | Trust `SSL_CLIENT_CERT` only from Cloud Connector |
 
-Confirm supported parameters for the target kernel. SAP_BASIS 750 SP02, for example, rejects `login/certificate` and `login/certificate_mapping`; it uses `VCLIENT=1`, `icm/HTTPS/verify_client=1`, rule-based mapping and the trusted-proxy entry.
+Validate the profile against the target kernel instead of copying parameters blindly, and do not
+leave unknown parameters in it. `login/certificate` and `login/certificate_mapping` are not needed:
+the SAP_BASIS 750, 758 and 816 systems all report them as unknown, so remove them if present.
 
-Match the reverse-proxy subject/issuer DN exactly. Preserve existing ICF logon procedures, including Basic where required. If SAP returns 401 after certificate generation, verify that the ADT service permits **Logon with SSL Certificate**; do not make certificate logon mandatory for unrelated clients.
+The reverse-proxy DN must match exactly. Write it as SAP displays a DN, CN first with a comma and a
+space between attributes:
+
+```ini
+icm/trusted_reverse_proxy_0 = SUBJECT="CN=scc-system, OU=IT, O=Example, C=XX", ISSUER="CN=Example Issuing CA, O=Example, C=XX"
+```
+
+OpenSSL's default output lists the attributes in reverse order. This prints SAP's form from the
+Cloud Connector system certificate:
+
+```bash
+openssl x509 -in <system-certificate>.pem -noout -subject -issuer -nameopt RFC2253 | sed 's/,/, /g'
+```
+
+Long profile values can be truncated on import into RZ10; SAP documents this in
+[KBA 2215040](https://userapps.support.sap.com/sap/support/knowledge/en/2215040).
+The contributor observed a 128-character cutoff on SAP_BASIS 758. Compare the
+intended full DN with the persisted profile and effective RZ11/SMICM value;
+a shortened GUI/history display alone does not establish what ICM is using.
+Have the Basis owner apply the release-specific correction from the full SAP
+article (login required), preserving both subject and issuer. See also
+[KBA 3371621](https://userapps.support.sap.com/sap/support/knowledge/en/3371621)
+for common Cloud Connector ICM parameter mistakes.
+
+Do not make SSL-certificate logon mandatory solely for ARC-1 or replace existing ICF logon procedures;
+single-target applications may still depend on Basic authentication. No SICF change was required on
+the live-verified SAP_BASIS 758 and 816 systems, and the 750 setup also preserved its existing ICF
+procedures. If SAP still returns `401` after Cloud Connector has generated the user certificate,
+verify that the affected ICF service permits **Logon with SSL Certificate** while preserving the
+existing compatible procedures.
 
 ## Step 4: Configure ARC-1
 
-For single-target on-premise `/mcp`, set these properties in the customer `.mtaext`:
-
-```yaml
-SAP_BTP_DESTINATION: SAP_STARTUP
-SAP_BTP_PP_DESTINATION: SAP_PP
-SAP_PP_ENABLED: "true"
-SAP_PP_STRICT: "true"
+```bash
+export SAP_BTP_DESTINATION=SAP_TRIAL
+export SAP_BTP_PP_DESTINATION=SAP_TRIAL_PP
+export SAP_PP_ENABLED=true
+# Recommended production topology: accept only JWT-backed per-user tool calls.
+export SAP_PP_STRICT=true
 ```
 
-Use the actual destination names and follow the [single-PP deployment profile](btp-cloud-foundry-deployment.md#single-target-read-only-pp-profile).
+For multi-target v1, destination discovery replaces both destination-name variables. Enable
+`ARC1_MULTI_TARGET_ENDPOINTS=true`, set `ARC1_CACHE=none`, and mark each PP destination with
+`arc1.enabled=true`. Discovered PP targets force strict per-user PP independently.
+`SAP_PP_ENABLED` and `SAP_PP_STRICT` govern only an optional side-by-side single-target `/mcp`; the
+safe values in the base MTA are inert when that endpoint is not configured.
 
-For multi-target PP, use [the multi-PP profile](btp-cloud-foundry-deployment.md#multi-target-pp-only-profile) and destination markers. Discovered PP targets always enforce strict per-user access; the single-target destination-name variables remain absent unless `/mcp` is configured separately.
-
-### What must be restarted?
+### What Must Be Restarted?
 
 | Change | Required action |
 |--------|-----------------|
@@ -175,6 +294,10 @@ For multi-target PP, use [the multi-PP profile](btp-cloud-foundry-deployment.md#
 | Change STRUST certificate trust | Save the PSE and ensure the active ICM process has loaded it. An ICM reload/restart may be required. |
 | Change ICM or SAP profile parameters | Activate the profile and restart the affected ICM/SAP instance as required by that parameter. |
 
+This separation makes later systems quick to add: deploy ARC-1 once, finish each SAP/Cloud Connector
+setup independently, create its destination, and restart the CF application once after the destination
+set is ready.
+
 ### Behavior
 
 - **JWT request** → ARC-1 uses the per-user destination (`SAP_BTP_PP_DESTINATION`), passing the JWT as `X-User-Token`
@@ -182,27 +305,50 @@ For multi-target PP, use [the multi-PP profile](btp-cloud-foundry-deployment.md#
 - **API key / non-JWT request** → rejected because `SAP_PP_STRICT=true` is explicit
 
 For automation that requires API keys, a separate ARC-1 instance with `SAP_PP_ENABLED=false` and a
-least-privileged technical SAP identity is recommended. Mixed mode permits configured API keys
-through the shared SAP client when `SAP_PP_STRICT` is unset or `false`, and startup logs a warning.
-JWT calls still use PP and never fall back.
+least-privileged technical SAP identity is recommended. It is not mandatory: set
+`SAP_PP_STRICT=false` for supported mixed operation, where JWT calls use PP and API-key calls use the
+shared SAP identity.
 
 ## Cloud targets: S/4HANA Public Cloud & BTP ABAP (no Cloud Connector)
 
-Cloud targets use Internet destinations and do not need Cloud Connector:
+The Steps above describe **on-premise** propagation via the Cloud Connector (destination type
+`PrincipalPropagation`). For **cloud** targets reached over the Internet, there is no Cloud Connector
+— ARC-1 connects directly and the per-user identity rides in the destination's auth token. Pick the
+destination `Authentication` type the target supports:
 
-| Target | Authentication | Guide |
-|---|---|---|
-| BTP ABAP, same subaccount | `OAuth2UserTokenExchange` | [ABAP Environment](btp-abap-environment.md) |
-| S/4HANA Public Cloud | `SAMLAssertion` | [Public Cloud](s4hana-public-cloud.md) |
-| Supported cross-subaccount trust | `SAMLAssertion` / `OAuth2SAMLBearerAssertion` | [Cross-subaccount requirements](btp-abap-environment.md#cross-subaccount-principal-propagation-fails) |
+| Target | Destination `Authentication` | `ProxyType` | Per-user credential ARC-1 sends |
+|--------|------------------------------|-------------|---------------------------------|
+| **S/4HANA Public Cloud** (developer extensibility) | `SAMLAssertion` | `Internet` | `Authorization: SAML2.0 …` + `x-sap-security-session: create` — the **same flow BAS uses** |
+| S/4HANA Public Cloud / BTP ABAP (OAuth client configured) | `OAuth2SAMLBearerAssertion` | `Internet` | `Authorization: Bearer …` |
+| BTP ABAP, same subaccount | `OAuth2UserTokenExchange` | `Internet` | `Authorization: Bearer …` |
 
-Leave `SAP_DISABLE_SAML` unset or false for these targets.
+For all of these you only need the **Destination + XSUAA** service instances bound (no Connectivity
+service / Cloud Connector). ARC-1 detects `ProxyType: Internet` and connects directly — the
+connectivity proxy is used **only** for `OnPremise` destinations.
+
+For the full **S/4HANA Public Cloud** walkthrough (the `SAMLAssertion` destination + S/4HC SAML trust,
+identical to the BAS setup, plus ARC-1 configuration), see the dedicated guide:
+**[SAP S/4HANA Public Cloud Setup](s4hana-public-cloud.md)**.
+
+> `OAuth2SAMLBearerAssertion` is SAP's *recommended* alternative (the SDK warns about raw
+> `SAMLAssertion`), but it needs an OAuth 2.0 client/communication arrangement on the S/4HC side.
+> `SAMLAssertion` reuses the SAML trust BAS already established, so it's usually the lower-config path.
+> Either way, keep `SAP_DISABLE_SAML` **unset/false** — never disable SAML on S/4HANA Public Cloud.
+
+!!! warning "JWT principal propagation always fails closed"
+    With `SAP_PP_ENABLED=true`, a JWT request never falls back to the shared service account after a PP error. `SAP_PP_STRICT=false` enables supported shared-client access for API-key / non-JWT requests; it does not change the identity of a failed JWT request. Separate PP-only and API-key instances are recommended, not required.
 
 ### All PP-related config
 
-See the [configuration reference](configuration-reference.md) for `SAP_PP_ENABLED`, `SAP_PP_STRICT` and `SAP_PP_ALLOW_SHARED_COOKIES`, and the [authentication coexistence matrix](enterprise-auth.md#coexistence-matrix).
+| Flag | Env Var | Default | Description |
+|------|---------|---------|-------------|
+| `--pp-enabled` | `SAP_PP_ENABLED` | `false` | Enable principal propagation |
+| `--pp-strict` | `SAP_PP_STRICT` | `true` when PP is enabled | JWT PP errors always fail closed. Set `true` explicitly to reject non-JWT calls; the derived default alone does not enforce that rejection. Explicit `true` gives the recommended strict topology and rejects API-key / non-JWT tool calls. Explicit `false` enables supported mixed mode for non-JWT calls but never enables JWT fallback. |
+| `--pp-allow-shared-cookies` | `SAP_PP_ALLOW_SHARED_COOKIES` | `false` | Escape hatch — allow cookies to coexist with PP (cookies stay on shared client only) |
+| — | `SAP_BTP_DESTINATION` | — | Shared destination for startup work and API-key calls in mixed mode |
+| — | `SAP_BTP_PP_DESTINATION` | — | Per-user PP destination name |
 
-Shared cookies are refused with PP unless the explicit single-target escape hatch is enabled. Per-user requests never inherit shared Basic credentials or cookies.
+> **Auth safety (SEC-09):** ARC-1 fails fast at startup if `SAP_PP_ENABLED=true` is combined with `SAP_COOKIE_FILE` / `SAP_COOKIE_STRING` — per-user sessions must not inherit a shared cookie. Set `SAP_PP_ALLOW_SHARED_COOKIES=true` only if you accept that the cookie stays on the shared client used for API-key calls in mixed mode. Per-user auth never inherits shared Basic/cookie credentials. See [Coexistence Matrix](enterprise-auth.md#coexistence-matrix).
 
 ## Step 5: Test
 
@@ -219,11 +365,13 @@ certificate.
    cf logs arc1-mcp-server --recent | grep -E "Principal propagation|per-user|BTP destination"
    ```
 
-3. Run this short MCP smoke-test ladder for every target:
-   1. `SAPRead` with `type: "SYSTEM"` — checks discovery access; its user field is not proof of SAP login.
+3. **Check SAP** using the [backend identity procedure](#verify-the-backend-identity) below.
+
+4. Run this short MCP smoke-test ladder for every target:
+   1. `SAPRead` with `type: "SYSTEM"` — checks discovery access; its user field is not SAP login evidence.
    2. `SAPRead` with `type: "COMPONENTS"` — proves a normal ADT read.
-   3. `SAPSearch` for a known object — verifies repository search access.
-   4. Verify the [backend identity](#verify-the-backend-identity) for the request. Test data/SQL separately only when explicitly enabled and needed.
+   3. `SAPSearch` for a known object — proves a POST-style ADT read.
+   4. Optionally test table data or SQL only when the destination explicitly enables those scopes.
 
 Use the failure boundary to avoid changing unrelated layers:
 
@@ -232,7 +380,7 @@ Use the failure boundary to avoid changing unrelated layers:
 | Connectivity/Cloud Connector `502` with invalid server certificate | User mapping was not reached | Fix the SAP HTTPS certificate and internal-host match |
 | SAP `401` after Cloud Connector generated a user certificate | Network and token-to-certificate conversion work | Check STRUST, trusted reverse proxy, ICF logon, CERTRULE, and SU01 |
 | SAP `403` after successful logon | Authentication worked | Check the propagated user's SAP authorizations |
-| `SAPRead SYSTEM` succeeds | ADT discovery is readable | Correlate the live request with SAP user/client checks below |
+| `SAPRead SYSTEM` succeeds | ADT discovery is readable | Correlate the live request with SAP user/client evidence below |
 
 ### Verify the backend identity
 
@@ -243,19 +391,19 @@ live ARC-1 request used.
 1. Agree the expected SAP username/client with Basis and record the application test identity.
 2. Run one known-object read through the selected ARC-1 endpoint/target. Record its time/time zone,
    target, outcome and request correlation ID if available; keep tokens out of the record.
-3. Ask Basis to correlate that request with SAP logs showing the actual username and
+3. Ask Basis to correlate that request with SAP-side evidence showing the actual username and
    client. Where the relevant events are already recorded, use
    [SM20 audit analysis](https://help.sap.com/saphelp_em92/helpdata/en/4d/41bcc4aa601c86e10000000a42189b/content.htm)
    with a narrow time/user selection and inspect the matching logon details. A same-user SAP GUI
    session or unrelated event is not enough. Audit coverage depends on the system's configured
    [event filters](https://help.sap.com/docs/ABAP_PLATFORM_NEW/025d1fb2f02c42c097f04f45df09106a/4d42b2f89b88122be10000000a42189b.html);
    no matching event is inconclusive, not proof of failed PP.
-4. If the existing logs cannot identify the request, record identity as **unverified** and ask
+4. If the existing evidence cannot identify the request, record identity as **unverified** and ask
    Basis for an approved, scoped verification method. Do not enable broad tracing, grant SAP_ALL,
    create an ABAP helper, or widen data/SQL access as an automatic setup step.
 
 Repeat for each client. Keep safe-read success, backend identity and negative-access results
-separate in the setup record.
+separate in the acceptance record.
 
 ## Troubleshooting
 
@@ -270,18 +418,50 @@ Current ARC-1 releases never route a failed JWT principal-propagation request th
 
 ### SAP returns 401 for propagated user
 
-1. **Check STRUST:** Is the Cloud Connector system cert in the certificate list?
-2. **Check ICM:** Is `icm/HTTPS/verify_client = 1`?
+1. **Check STRUST:** Does the active SSL Server PSE trust the system certificate's
+   direct issuer (or the certificate itself if self-signed)? See [Certificate trust](#certificate-trust-strust).
+2. **Check proxy trust:** Does the effective `icm/trusted_reverse_proxy_<n>` contain
+   the complete subject/issuer DN pair of the Cloud Connector system certificate?
+   Verify the active values, including possible truncation, in [ICM parameters](#icm-parameters).
 3. **Check certificate mapping:** Does CERTRULE or VUSREXTID map the certificate subject to a valid SAP user?
 4. **Check user exists:** Does the SAP user exist and is it unlocked?
+5. **Check the Cloud Connector mapping:** for this runbook's combination of Basic
+   startup authentication and propagated user certificates, leave **System Certificate
+   for Logon** unchecked (Cloud Connector 2.15+). The system certificate still establishes
+   mTLS trust. Enabling it can select certificate logon instead of the startup Basic
+   credentials; follow SAP's [ICF access guidance](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/configure-principal-propagation-for-https)
+   when the same mapping serves other applications with different logon requirements.
+
+### SAP returns 502 "not mutually authenticated"
+
+Use the Cloud Connector connection check and ICM trace to verify mutual TLS.
+Confirm the effective HTTPS port requests a client certificate (`VCLIENT=1` for
+this Basic + PP setup) and that its active SSL Server PSE trusts the system
+certificate's direct issuer. The reported case lacked that issuing intermediate
+CA. See [Certificate trust](#certificate-trust-strust) and SAP's
+[HTTPS propagation configuration](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/configure-principal-propagation-for-https).
+If TLS succeeds but SAP returns 401, follow the proxy-trust and user-mapping checks
+[above](#sap-returns-401-for-propagated-user).
 
 ### Cloud Connector issues
 
-Check Connector status/logs, mapping host/port, trusted identity provider, required resource paths and the SAP `icm/trusted_reverse_proxy` subject/issuer. Request scoped diagnostics from the Cloud Connector administrator if ordinary logs do not explain the failure.
+1. Check Cloud Connector logs (All/Payload trace)
+2. Verify `icm/trusted_reverse_proxy` parameter matches Cloud Connector system certificate
+3. Ensure principal propagation is enabled in Cloud Connector access control
 
-<a id="whats-not-supported"></a>
+### Cloud Connector and ICM messages
 
-## Unsupported options
+| Message | Seen in | Cause | Fix |
+|---------|---------|-------|-----|
+| `Invalid server certificate` (HTTP 502) | Cloud Connector | The SAP server certificate does not match the mapping's internal host | Serve a certificate whose DNS SAN is the internal host name ([Step 2](#step-2-configure-cloud-connector)) |
+| `Unable to generate authorization token` | Cloud Connector | Cloud Connector cannot issue the user certificate | Check the subject pattern, the synchronized and trusted identity provider, and the CA certificate |
+| `variable 'mail' not available in context` | Cloud Connector | The subject pattern uses a variable the token does not provide | Use `CN=${email}` |
+| `Will not use certificate for authentication` | Cloud Connector | The mapping still uses the system certificate for logon | Uncheck **System Certificate for Logon** in the mapping |
+| `received via HTTPS without certificate` | ICM trace (`dev_icm`) | ICM did not request or receive the Cloud Connector client certificate | Add `VCLIENT=1` to the HTTPS port and trust its direct issuer in the active SSL Server PSE (the certificate itself if self-signed) |
+| `intermediary is NOT trusted` | ICM trace (`dev_icm`) | `icm/trusted_reverse_proxy_<n>` does not match the system certificate | Copy subject and issuer in SAP's DN form ([ICM parameters](#icm-parameters)) |
+| HTML page `401 Logon failed` | SAP response | Proxy trust or user mapping failed | See [SAP returns 401 for propagated user](#sap-returns-401-for-propagated-user) |
+
+## What's NOT supported
 
 ARC-1 does **not** support local ephemeral X.509 certificate generation. The following flags do not exist:
 
@@ -289,14 +469,14 @@ ARC-1 does **not** support local ephemeral X.509 certificate generation. The fol
 - `--client-cert`, `--client-key`
 - `--oidc-username-claim`, `--oidc-user-mapping`
 
-On-premise principal propagation uses BTP Destination Service and Cloud Connector; cloud propagation uses destination-provided tokens/assertions.
+Principal propagation is exclusively via BTP Destination Service + Cloud Connector.
 
-## SAP documentation references
+## SAP Documentation References
 
 - [Authenticating Users Against On-Premise Systems](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/authenticating-users-against-on-premise-systems) — Principal Propagation via Cloud Connector
 - [Setting Up Trust Between Identity Provider and SAP](https://help.sap.com/docs/btp/sap-business-technology-platform/principal-propagation) — BTP principal propagation overview
 - [CERTRULE - Rule-Based Certificate Mapping (SAP Note 2275087)](https://me.sap.com/notes/2275087) — Rule-based certificate-to-user mapping
 - [Cloud Connector - Principal Propagation](https://help.sap.com/docs/connectivity/sap-btp-connectivity-cf/configuring-principal-propagation) — Cloud Connector principal propagation setup
-- [Routing via Destination (BTP ABAP Environment)](https://help.sap.com/docs/btp/sap-business-technology-platform/routing-via-destination) — same subaccount → `OAuth2UserTokenExchange`; different subaccounts → `SAMLAssertion`
+- [Routing via Destination (BTP ABAP Environment)](https://help.sap.com/docs/ABAP_ENVIRONMENT/250515df61b74848810389e964f8c367/97d7a02cd6fd4f579fd96f41ee0d0c1d.html) — same subaccount → `OAuth2UserTokenExchange`; different subaccounts → `OAuth2SAMLBearerAssertion`
 
 > This page covers **on-premise** principal propagation via Cloud Connector. For a **cloud-to-cloud** BTP ABAP Environment (no Cloud Connector), see [btp-abap-environment.md](btp-abap-environment.md) — including the [cross-subaccount caveat](btp-abap-environment.md#cross-subaccount-principal-propagation-fails).

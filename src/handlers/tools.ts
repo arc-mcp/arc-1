@@ -1,19 +1,4 @@
-/**
- * Tool definitions for ARC-1's 12 intent-based MCP tools.
- *
- * Each tool has:
- * - name: The MCP tool name (SAPRead, SAPWrite, etc.)
- * - description: Rich LLM-friendly description
- * - inputSchema: JSON Schema for tool arguments
- *
- * Group operations by intent, with a `type` parameter for object routing.
- * This keeps the LLM's tool selection simple and the context window small.
- *
- * Tool definitions adapt based on system type (BTP vs on-premise):
- * - BTP ABAP Environment: removes unavailable types (PROG, INCL, VIEW,
- *   TEXT_ELEMENTS, VARIANTS), adjusts descriptions for restricted features
- * - On-premise: full tool set with all types and descriptions
- */
+/** Intent-based tool schemas; BTP omits classic object types and adjusts descriptions. */
 
 import {
   ATC_BATCH_MAX_OBJECTS,
@@ -67,16 +52,11 @@ export interface ToolDefinitionOptions {
 }
 
 /**
- * Read-only / destructive hints for the 12 standard tools. Clients use them to badge tools
- * and to decide auto-approval (read-only tools are safe to auto-run); they are also required
- * for the Claude Desktop Extensions Directory. Hyperfocused mode's universal tool is left
- * unannotated because it can both read and write.
+ * Read-only / destructive hints for standard tools, required by the Claude Desktop Extensions Directory.
+ * Hyperfocused mode stays unannotated because it can both read and write.
  *
- * These MUST agree with ACTION_POLICY (src/authz/policy.ts): a tool is read-only iff none of
- * its actions mutate (opType ∉ MUTATING_OPS), and destructive iff it has a delete action.
- * tool-annotations.test.ts derives the expected values from ACTION_POLICY and fails on drift —
- * e.g. SAPLint is NOT read-only because action=set_formatter_settings PUTs ADT settings, and
- * SAPWrite/SAPTransport/SAPGit are destructive because they can delete/unlink/overwrite objects.
+ * Keep hints consistent with ACTION_POLICY; tool-annotations.test.ts derives expected values.
+ * SAPLint mutates formatter settings; SAPWrite/SAPTransport/SAPGit can delete or unlink objects.
  */
 const TOOL_ANNOTATIONS: Record<string, ToolAnnotations> = {
   // Read-only: every action is non-mutating.
@@ -103,18 +83,16 @@ function isBtpMode(config: ServerConfig): boolean {
 }
 
 const SAPREAD_DESC_ONPREM =
-  'Read SAP ABAP source or metadata. For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
+  'Read SAP ABAP source, metadata or syntax-check results. For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
   'Types: PROG, CLAS, INTF, FUNC, FUGR (expand_includes=true for all include sources), INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (covers both transparent tables AND DDIC structures — no separate STRU type), TTYP, VIEW, DOMA, DTEL, TRAN, TABLE_CONTENTS (single-column filter), TABLE_QUERY (multi-column WHERE via the freestyle endpoint; gated by allowDataPreview; CDS views need SAP_BASIS 752+), DEVC, SOBJ (BOR — method param reads one method), SYSTEM, COMPONENTS, MSAG, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. AUTH/FEATURE_TOGGLE/ENHO/VERSIONS/VERSION_SOURCE are on-prem only. ' +
-  'CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. Details: docs_page SAPRead. ' +
-  'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS. ' +
-  'Optional version parameter: source types default active; "inactive" requests the draft (SAP may return active if none); "auto" uses the developer view. DTEL omitted/auto uses its developer view; explicit values pass through. Active source reads note when a draft exists.';
+  'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
+  'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.';
 
 const SAPREAD_DESC_BTP =
-  'Read SAP ABAP source or metadata (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
+  'Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
   'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list). PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
-  'CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. Details: docs_page SAPRead. ' +
-  'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS. ' +
-  'Optional version parameter: source types default active; "inactive" requests the draft (SAP may return active if none); "auto" uses the developer view. DTEL omitted/auto uses its developer view; explicit values pass through.';
+  'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
+  'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.';
 
 // ─── SAPContext Types ───────────────────────────────────────────────
 
@@ -425,9 +403,9 @@ export function getToolDefinitions(
           type: {
             type: 'string',
             enum: btp ? SAPREAD_TYPES_BTP : SAPREAD_TYPES_ONPREM,
-            description: btp
-              ? 'Object type to read (BTP): CLAS, INTF, FUNC, FUGR, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), DOMA, DTEL, MSAG, TABLE_CONTENTS, TABLE_QUERY, DEVC, SYSTEM, COMPONENTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache), UIAD (Launchpad App Descriptor Item). Deprecated alias: MESSAGES (use MSAG).'
-              : 'Object type to read (on-prem): PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL (transparent tables and DDIC structures), TTYP, VIEW, DOMA, DTEL, MSAG, TRAN, TABLE_CONTENTS, TABLE_QUERY, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE. Server-driven objects (discovery-gated; XML metadata; source is AFF JSON, or DDL text for DTSC/DSFD/DTDC): DESD (Logical External Schema), EVTB (RAP Event Binding), EVTO (RAP Event Object), DTSC (Static Cache), CSNM (CSN Model), COTA (Communication Target), DSFD (Scalar Function Def), DTDC (Dynamic Cache), UIAD (Launchpad App Descriptor Item). Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE).',
+            description:
+              'Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template. Deprecated: MESSAGES→MSAG.' +
+              (btp ? ' ENQU lock object as JSON.' : ' FTG2→FEATURE_TOGGLE. ENQU lock object as JSON.'),
           },
           name: { type: 'string', description: 'Object name (e.g., ZTEST_PROGRAM, ZCL_ORDER, MARA)' },
           action: {
@@ -498,15 +476,15 @@ export function getToolDefinitions(
               }),
           format: {
             type: 'string',
-            enum: ['text', 'structured'],
+            enum: ['text', 'structured', 'editable'],
             description:
-              'Default "text" (TABL/TTYP/DTEL/DOMA/INTF metadata included). DEVC: array in first text block + listing metadata in second; "structured" returns {objects, listing}. CLAS "structured": metadata + all includes; prefer method/grep for targeted reads. action="diff": "structured" returns JSON {hasDifferences, identical, added, removed, diff, version labels}; default is a patch.',
+              'Default text. editable: fresh {source, sourceHash} for guarded SAPWrite; omit version/method/grep, select CLAS include. structured: CLAS metadata+includes, DEVC {objects,listing}, or action=diff JSON. DEVC text returns the array then listing metadata; diff text returns a patch.',
           },
           version: {
             type: 'string',
             enum: ['active', 'inactive', 'auto'],
             description:
-              'Version to read. Source: "active" (default); "inactive" requests the draft (SAP may return active if none); "auto" uses the developer view. DTEL: omitted/"auto" uses its developer view; explicit values pass through.',
+              'Source defaults active; inactive requests a draft (SAP may return active if none); auto selects developer view. DTEL/ENQU/server-driven types default to developer view. Server-driven types return an error if SAP cannot confirm an explicit version (e.g. no draft).',
           },
           includeSignature: {
             type: 'boolean',
@@ -536,8 +514,13 @@ export function getToolDefinitions(
           objectType: {
             type: 'string',
             description:
-              'For API_STATE and VERSIONS: SAP object type (CLAS, INTF, PROG, FUNC, INCL, DDLS, DCLS, BDEF, SRVD, etc.). For API_STATE: auto-detected from name if omitted. For VERSIONS: required to pick the correct revisions endpoint (e.g., "FUNC" + group for function modules); inferred from CL_/IF_/CX_ name prefixes when possible, defaults to PROG.' +
+              'SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint (FUNC needs group); inferred from CL_/IF_/CX_, else PROG.' +
               (btp ? '' : ' TEXT_ELEMENTS: PROG (default), CLAS or FUGR.'),
+          },
+          source: {
+            type: 'string',
+            description:
+              'SYNTAX only: proposed source to check without saving. Omit to check stored version (default active; inactive checks draft). Object must exist; version=auto is unsupported.',
           },
           versionUri: {
             type: 'string',
@@ -597,7 +580,7 @@ export function getToolDefinitions(
               'update',
               'delete',
               'edit_method',
-              ...(btp ? [] : ['edit_unit']),
+              ...(btp ? [] : ['edit_unit', 'add_unit']),
               'edit_class_definition',
               'add_method',
               'edit_method_signature',
@@ -615,7 +598,7 @@ export function getToolDefinitions(
             description:
               'Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). ' +
               'edit_method: replace a single method body — the token-cheap path for class edits. ' +
-              (btp ? '' : 'edit_unit: replace one FORM or MODULE block inside a PROG/INCL. ') +
+              (btp ? '' : 'edit_unit replaces a FORM/MODULE in PROG/INCL; add_unit appends one at EOF. ') +
               'batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. ' +
               'Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; ' +
               'add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); ' +
@@ -631,20 +614,25 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
-              : 'Object type (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. Server-driven objects (discovery-gated): DESD/CSNM/EVTB/EVTO/COTA take AFF JSON in "source"; DTSC/DSFD/DTDC take DDL text — create/update/delete, then SAPActivate. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
+              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
+              : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
           },
           name: {
             type: 'string',
             description: btp
               ? 'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).'
-              : 'Object name (for create/update/delete/edit_method/edit_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
+              : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
+          },
+          expectedSourceHash: {
+            type: 'string',
+            description:
+              'SHA-256 from SAPRead(format=editable). Refuses changed source under the lock. Text-source update and class/procedural surgery only; whole addressed source/include, not just the edited unit. Omitted/blank: no cross-call protection.',
           },
           source: {
             type: 'string',
             description: btp
               ? 'ABAP source. create/update: full body. DDLS: type=DDLS; Cloud permits eligible `extend view entity`, not legacy `extend view`. edit_method: body. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only new METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.'
-              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.',
+              : 'Source. create/update: full body. DDLS: type=DDLS for `extend view`/`extend view entity`; legacy needs a Standard ABAP package. edit_method: body. edit_unit/add_unit: complete FORM/MODULE. edit_class_definition without include=: only global CLASS…DEFINITION…ENDCLASS block (no IMPLEMENTATION); with include=: full replacement include. edit_method_signature: only METHODS clause. Not used by add_method/delete_method/change_method_visibility (use `method`/`visibility`). SKTD/KTD: one "## <node>" section per node (any name or id the SAPRead node index lists); update MERGES, so unaddressed nodes keep their text; an unmatched node-shaped heading aborts it.',
           },
           include: {
             type: 'string',
@@ -672,7 +660,7 @@ export function getToolDefinitions(
             : {
                 unit: {
                   type: 'string',
-                  description: 'edit_unit FORM/MODULE name in a PROG or INCL (case-insensitive).',
+                  description: 'edit_unit/add_unit: existing/new FORM or MODULE name (case-insensitive).',
                 },
               }),
           visibility: {
@@ -733,7 +721,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC: parent function-group name. Required for FUNC create (the FUGR must already exist — create it first via SAPWrite type=FUGR). Auto-resolved via search for FUNC update/delete if omitted.',
+              'FUNC: existing FUGR; required for create, otherwise resolved. INCL: parent FUGR for structural includes; omit for standalone.',
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
@@ -1095,7 +1083,7 @@ export function getToolDefinitions(
         '- "list_rules": list rules + current config (no source).\n' +
         '- "format": pretty-print via SAP\'s ADT formatter (needs source).\n' +
         '- "get_formatter_settings" / "set_formatter_settings": read/update the system\'s global PrettyPrinter (indentation bool, style keywordUpper|keywordLower|keywordAuto|none; set is blocked read-only).\n' +
-        'lint/lint_and_fix/list_rules run locally; format/*_formatter_settings call SAP. For ATC/syntax/unit tests use SAPDiagnose.',
+        'lint/lint_and_fix/list_rules run locally; format/*_formatter_settings call SAP. Syntax: SAPRead(type="SYNTAX"); ATC/unit tests: SAPDiagnose.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1131,16 +1119,16 @@ export function getToolDefinitions(
       name: 'SAPDiagnose',
       description:
         'ABAP diagnostics and runtime analysis. Actions:\n' +
-        '- "syntax": syntax-check (name+type; optional version; optional source = pre-write dry-run, nothing written).\n' +
+        '- "syntax": compatibility check; when available prefer SAPRead(type="SYNTAX", objectType, name, version?, source?).\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
         '- "unittest_ci": harmless package tests with source reconciliation; empty/incomplete runs fail.\n' +
         '- "atc": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
         '- "atc_ci": package ATC CI; requires available API and verified selection.\n' +
         '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
-        '- "object_state": compare active vs inactive source versions (name+type; CLAS compares all includes). Returns ETags/hashes/divergence flags.\n' +
+        '- "object_state": active/inactive ETags, hashes and divergence (name+type; CLAS: all includes). Server-driven types unsupported.\n' +
         '- "quickfix": proposals at name+type+source+line (optional column/sourceUri).\n' +
         '- "apply_quickfix": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n' +
-        '- "dumps": list/read ST22 short dumps (no id = list; id = read; includeFullText, sections).\n' +
+        '- "dumps": list/read ST22 short dumps (no id = list, newest first, user/from/to/maxResults; id = read; includeFullText, sections).\n' +
         '- "traces": list profiler traces; id+analysis analyzes one.\n' +
         '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on).\n' +
         '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
@@ -1279,16 +1267,16 @@ export function getToolDefinitions(
           authObject: { type: 'string', description: 'Authorization object filter, e.g. S_TCODE.' },
           from: {
             type: 'string',
-            description: 'system_messages/gateway_errors lower time bound.',
+            description: 'Inclusive lower time bound for dumps/system_messages/gateway_errors; ISO or YYYYMMDDHHMMSS.',
           },
           to: {
             type: 'string',
-            description: 'system_messages/gateway_errors upper time bound.',
+            description: 'Inclusive upper time bound for dumps/system_messages/gateway_errors; ISO or YYYYMMDDHHMMSS.',
           },
           maxResults: {
             type: 'number',
             description:
-              'Result limit: dumps/system_messages/gateway_errors default 50; authorization_trace 100. Capped.',
+              'Result limit (default 50; authorization_trace 100). Caps: dumps 500, system_messages/gateway_errors 200, authorization_trace 10000.',
           },
           sections: {
             type: 'array',
@@ -1643,6 +1631,10 @@ export function getToolDefinitions(
             type: 'string',
             enum: ['create', 'modify'],
             description: 'Check mode: create (default) or modify.',
+          },
+          group: {
+            type: 'string',
+            description: 'check/history: parent group for INCL L<group>… or a new FUNC; existing FUNC auto-resolves.',
           },
           pgmid: {
             type: 'string',

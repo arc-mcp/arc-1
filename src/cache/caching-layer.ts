@@ -221,17 +221,12 @@ export class CachingLayer {
       return cached;
     }
 
-    const results = await client.searchObject(funcName, 5);
-    for (const r of results) {
-      const match = r.uri.match(/groups\/([^/]+)/);
-      if (match) {
-        const group = match[1]!;
-        this.cache.putFuncGroup(funcName, group);
-        this.recordActivity('func_group_store', { objectType: 'FUNC', objectName: funcName, detail: group });
-        return group;
-      }
+    const group = await client.resolveFunctionGroup(funcName);
+    if (group) {
+      this.cache.putFuncGroup(funcName, group);
+      this.recordActivity('func_group_store', { objectType: 'FUNC', objectName: funcName, detail: group });
     }
-    return null;
+    return group;
   }
 
   // ─── Write Invalidation ───────────────────────────────────────────

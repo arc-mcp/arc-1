@@ -1,0 +1,12 @@
+{
+  "Name": "ARC1_QAS_001_BASIC",
+  "Type": "HTTP",
+  "URL": "http://qas-basic.example.invalid:8080",
+  "ProxyType": "OnPremise",
+  "Authentication": "BasicAuthentication",
+  "User": "<owner-supplied-technical-user>",
+  "Password": "<owner-supplied-managed-secret>",
+  "sap-sysid": "QAS",
+  "sap-client": "001",
+  "Description": "QAS client 001 - shared technical identity"
+}

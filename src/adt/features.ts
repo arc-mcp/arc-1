@@ -172,8 +172,10 @@ export async function probeFeatures(
   // Apply system type: manual override takes precedence over auto-detection
   if (systemTypeOverride && systemTypeOverride !== 'auto') {
     resolved.systemType = systemTypeOverride as SystemType;
+    resolved.systemTypeSource = 'config';
   } else if (systemDetection.systemType) {
     resolved.systemType = systemDetection.systemType;
+    resolved.systemTypeSource = 'probe';
   }
   resolved.textSearch = textSearchResult;
   resolved.authProbe = authProbeResult;

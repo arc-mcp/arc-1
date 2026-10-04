@@ -221,7 +221,7 @@ Full documentation is available at **[docs.arc-1-mcp.com](https://docs.arc-1-mcp
 | [Updating](https://docs.arc-1-mcp.com/updating/) | Update procedures per install method |
 | [Enterprise Auth](https://docs.arc-1-mcp.com/enterprise-auth/) | Layer A / Layer B auth internals, coexistence matrix |
 | [Tool Reference](https://docs.arc-1-mcp.com/tools/) | Complete reference for all 12 tools |
-| [Extensions (Custom Tools)](https://docs.arc-1-mcp.com/extensions/) | Add your own `Custom_*` tools without forking (FEAT-61) — reads, gated non-ADT writes, console-class execute |
+| [Extensions (Custom Tools)](https://docs.arc-1-mcp.com/extensions/) | Add your own `Custom_*` tools without forking (FEAT-61) — reads, gated non-ADT writes, class/report execute |
 | [Architecture](https://docs.arc-1-mcp.com/architecture/) | System architecture with diagrams |
 | [AI Usage Patterns](https://docs.arc-1-mcp.com/mcp-usage/) | Agent workflow patterns and best practices |
 | [Skills](https://docs.arc-1-mcp.com/skills/) | Reusable ARC-1 agent skills, including GitHub Copilot in Eclipse and VS Code ADT setup |

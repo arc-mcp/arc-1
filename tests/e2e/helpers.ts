@@ -293,14 +293,6 @@ export function classifyToolErrorSkip(result: ToolResult): string | null {
   if (/status 423.*invalid lock handle/i.test(text)) {
     return 'Backend feature not supported on this SAP system: lock-handle session correlation differs on this release';
   }
-  // Intermittent backend flake observed in CI: ADT write/session infrastructure
-  // accepts a mutation but the object LOCK/UNLOCK route responds 400
-  // "Service cannot be reached". Treat that routing failure as backend
-  // instability, while still failing authorization, syntax, and non-session
-  // errors normally.
-  if (/_action=(?:LOCK|UNLOCK)\b[^\n]*Service cannot be reached/i.test(text)) {
-    return 'Backend instability on this SAP system: ADT lock/unlock endpoint intermittently unreachable during write session handling';
-  }
   // batch_create aggregates per-object errors and can surface as either isError=false
   // (handler returned a "Batch created 0/N" summary string as success) or isError=true
   // (handler decided the whole batch is a failure). Handle the error path here;

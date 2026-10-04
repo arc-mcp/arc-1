@@ -39,10 +39,6 @@ const SOURCE_ALIAS_STOP_WORDS = new Set([
   'WITH',
 ]);
 
-function withHint(err: AdtApiError, hint: string): string {
-  return `${err.message}\n\nHint: ${hint}`;
-}
-
 export function maskSqlStringLiterals(sql: string): string {
   let masked = '';
   let inString = false;
@@ -117,11 +113,7 @@ function findRowLimit(maskedSql: string): { syntax: string; rows?: string } | un
   return undefined;
 }
 
-export function classifySapQueryParserError(
-  err: AdtApiError,
-  sql: string,
-  chunkingAttempted = false,
-): string | undefined {
+function classifyParserHint(err: AdtApiError, sql: string, chunkingAttempted: boolean): string | undefined {
   const maskedSql = maskSqlStringLiterals(sql);
   const fullJoin = /\bFULL(?:\s+OUTER)?\s+JOIN\b/i.test(maskedSql);
 
@@ -132,10 +124,7 @@ export function classifySapQueryParserError(
   const combined = `${err.message}\n${err.responseBody ?? ''}`;
 
   if (fullJoin) {
-    return withHint(
-      err,
-      'FULL JOIN is not supported by ABAP SQL. Rewrite it using supported INNER, LEFT OUTER, RIGHT OUTER, or CROSS JOINs; if full-outer semantics are required, combine two supported queries client-side.',
-    );
+    return 'FULL JOIN is not supported by ABAP SQL. Rewrite it using supported INNER, LEFT OUTER, RIGHT OUTER, or CROSS JOINs; if full-outer semantics are required, combine two supported queries client-side.';
   }
 
   // Some backends mis-parse a long IN-list as one unterminated literal running into the
@@ -144,148 +133,91 @@ export function classifySapQueryParserError(
     const automaticChunking = chunkingAttempted
       ? 'ARC-1 already chunked the longest literal IN-list in this plain SELECT, but this backend rejected a chunk; reduce the batches further.'
       : 'ARC-1 auto-chunks the longest literal IN-list of plain SELECTs, including queries with multiple IN-clauses. It sends ORDER BY, GROUP BY, DISTINCT, and aggregate queries whole to preserve semantics, so split those manually.';
-    return withHint(
-      err,
-      `A text literal was parsed as >255 characters, typically because this backend mis-read a long IN-list as one literal. Split the largest IN-list into smaller batches (~5–8 values each) and union the results; re-sort client-side if the query is ordered. ${automaticChunking}`,
-    );
+    return `A text literal was parsed as >255 characters, typically because this backend mis-read a long IN-list as one literal. Split the largest IN-list into smaller batches (~5–8 values each) and union the results; re-sort client-side if the query is ordered. ${automaticChunking}`;
   }
 
   const rowLimit = findRowLimit(maskedSql);
   if (rowLimit?.syntax === 'OFFSET') {
-    return withHint(
-      err,
-      'OFFSET pagination is not supported by the ADT freestyle endpoint. Remove OFFSET, constrain the WHERE/ORDER BY keys, and use the SAPQuery maxRows parameter for the returned row cap.',
-    );
+    return 'OFFSET pagination is not supported by the ADT freestyle endpoint. Remove OFFSET, constrain the WHERE/ORDER BY keys, and use the SAPQuery maxRows parameter for the returned row cap.';
   }
   if (rowLimit) {
     const rows = rowLimit.rows ? ` (for example, maxRows: ${rowLimit.rows})` : '';
-    return withHint(
-      err,
-      `${rowLimit.syntax} belongs to another SQL dialect. Remove it from the SQL and pass the SAPQuery maxRows parameter${rows}; ARC-1 applies the ABAP row limit.`,
-    );
+    return `${rowLimit.syntax} belongs to another SQL dialect. Remove it from the SQL and pass the SAPQuery maxRows parameter${rows}; ARC-1 applies the ABAP row limit.`;
   }
 
   if (/^\s*WITH\b/i.test(maskedSql)) {
-    return withHint(
-      err,
-      'The ADT freestyle endpoint accepts a SELECT as its first token and rejects CTEs, including ABAP +cte syntax. Rewrite the CTE as a supported IN/EXISTS subquery or split it into separate SAPQuery calls.',
-    );
+    return 'The ADT freestyle endpoint accepts a SELECT as its first token and rejects CTEs, including ABAP +cte syntax. Rewrite the CTE as a supported IN/EXISTS subquery or split it into separate SAPQuery calls.';
   }
   if (/\b(?:FROM|JOIN)\s*\(\s*SELECT\b/i.test(maskedSql)) {
-    return withHint(
-      err,
-      'Derived tables in FROM/JOIN are not supported by this ADT freestyle endpoint. Move the subquery into WHERE with IN/EXISTS, query a CDS entity, or split the operation into separate calls.',
-    );
+    return 'Derived tables in FROM/JOIN are not supported by this ADT freestyle endpoint. Move the subquery into WHERE with IN/EXISTS, query a CDS entity, or split the operation into separate calls.';
   }
   if (/\bOVER\s*\(/i.test(maskedSql)) {
-    return withHint(
-      err,
-      'Window expressions (OVER/PARTITION BY) are not supported by this ADT freestyle endpoint. Use GROUP BY/aggregates where equivalent, or calculate row numbers and running values client-side.',
-    );
+    return 'Window expressions (OVER/PARTITION BY) are not supported by this ADT freestyle endpoint. Use GROUP BY/aggregates where equivalent, or calculate row numbers and running values client-side.';
   }
 
   const setOperator = maskedSql.match(/\b(INTERSECT|EXCEPT)\b/i)?.[1]?.toUpperCase();
   if (setOperator) {
     const alternative = setOperator === 'INTERSECT' ? 'IN or EXISTS' : 'NOT EXISTS';
-    return withHint(
-      err,
-      `${setOperator} conflicts with the ADT freestyle endpoint's injected ABAP row limit. Rewrite it using ${alternative}; UNION and UNION ALL are supported when their result shape fits the query.`,
-    );
+    return `${setOperator} conflicts with the ADT freestyle endpoint's injected ABAP row limit. Rewrite it using ${alternative}; UNION and UNION ALL are supported when their result shape fits the query.`;
   }
 
   if (/\b(?:INTO|APPENDING|PACKAGE\s+SIZE)\b/i.test(maskedSql)) {
-    return withHint(
-      err,
-      'Remove ABAP target clauses such as INTO, APPENDING, and PACKAGE SIZE. ARC-1 owns the result target; use the SAPQuery maxRows parameter for the row cap.',
-    );
+    return 'Remove ABAP target clauses such as INTO, APPENDING, and PACKAGE SIZE. ARC-1 owns the result target; use the SAPQuery maxRows parameter for the row cap.';
   }
 
   if (/--|\/\*|\*\/|"/.test(maskedSql)) {
-    return withHint(
-      err,
-      'Remove comments and double quotes from the SQL text. In ABAP SQL token input, double quote starts a comment rather than quoting an identifier or string; use bare DDIC/CDS names and single-quoted literals.',
-    );
+    return 'Remove comments and double quotes from the SQL text. In ABAP SQL token input, double quote starts a comment rather than quoting an identifier or string; use bare DDIC/CDS names and single-quoted literals.';
   }
   if (/;/.test(maskedSql)) {
-    return withHint(
-      err,
-      'Submit exactly one SELECT without a trailing semicolon or additional statements. The ADT endpoint supplies the ABAP statement boundary itself.',
-    );
+    return 'Submit exactly one SELECT without a trailing semicolon or additional statements. The ADT endpoint supplies the ABAP statement boundary itself.';
   }
 
   if (/@[A-Za-z_][A-Za-z0-9_]*|:[A-Za-z_][A-Za-z0-9_]*|\?/.test(maskedSql)) {
-    return withHint(
-      err,
-      'The freestyle endpoint has no ABAP host-program or prepared-statement context, so @variables, :parameters, and ? placeholders cannot be resolved. Inline the value as a correctly escaped single-quoted literal.',
-    );
+    return 'The freestyle endpoint has no ABAP host-program or prepared-statement context, so @variables, :parameters, and ? placeholders cannot be resolved. Inline the value as a correctly escaped single-quoted literal.';
   }
 
   if (/\bORDER\s+BY\b[\s\S]*\b(?:ASC|DESC)\b/i.test(maskedSql)) {
-    return withHint(
-      err,
-      'Use the ABAP SQL sort keywords ASCENDING or DESCENDING, not ASC or DESC. Separate multiple ORDER BY fields with commas.',
-    );
+    return 'Use the ABAP SQL sort keywords ASCENDING or DESCENDING, not ASC or DESC. Separate multiple ORDER BY fields with commas.';
   }
 
   const nullComparison = maskedSql.match(/(?:(!=|<>|\bNE\b|=|\bEQ\b)\s*NULL\b|\bNULL\s*(!=|<>|\bNE\b|=|\bEQ\b))/i);
   if (nullComparison) {
     const operator = (nullComparison[1] ?? nullComparison[2] ?? '=').toUpperCase();
     const replacement = operator === '=' || operator === 'EQ' ? 'IS NULL' : 'IS NOT NULL';
-    return withHint(err, `NULL cannot be compared with ${operator}. Use ${replacement} instead.`);
+    return `NULL cannot be compared with ${operator}. Use ${replacement} instead.`;
   }
   if (/!=/.test(maskedSql)) {
-    return withHint(err, 'The != operator is not accepted here. Use the ABAP SQL not-equal operator <> or NE.');
+    return 'The != operator is not accepted here. Use the ABAP SQL not-equal operator <> or NE.';
   }
   if (/\bILIKE\b/i.test(maskedSql)) {
-    return withHint(
-      err,
-      "ILIKE is not part of ABAP SQL. For a case-insensitive match, normalize the column with UPPER(...) and use LIKE with an uppercase single-quoted pattern, for example UPPER(name) LIKE '%ORDER%'.",
-    );
+    return "ILIKE is not part of ABAP SQL. For a case-insensitive match, normalize the column with UPPER(...) and use LIKE with an uppercase single-quoted pattern, for example UPPER(name) LIKE '%ORDER%'.";
   }
   if (/\|\|/.test(maskedSql)) {
-    return withHint(
-      err,
-      'The || concatenation operator is not accepted here. Use the ABAP SQL CONCAT(left, right) function.',
-    );
+    return 'The || concatenation operator is not accepted here. Use the ABAP SQL CONCAT(left, right) function.';
   }
 
   const schemaSource = maskedSql.match(/\b(FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_$]*)\.([A-Za-z_][A-Za-z0-9_$]*)\b/i);
   if (schemaSource) {
-    return withHint(
-      err,
-      `Database schema prefixes are not accepted. Write ${schemaSource[1]!.toUpperCase()} ${schemaSource[3]} instead of ${schemaSource[2]}.${schemaSource[3]}; query the DDIC table or CDS entity name directly.`,
-    );
+    return `Database schema prefixes are not accepted. Write ${schemaSource[1]!.toUpperCase()} ${schemaSource[3]} instead of ${schemaSource[2]}.${schemaSource[3]}; query the DDIC table or CDS entity name directly.`;
   }
 
   const missingSourceAliasAs = findMissingSourceAliasAs(maskedSql);
   if (missingSourceAliasAs) {
-    return withHint(
-      err,
-      `ABAP SQL requires AS for table aliases. Write ${missingSourceAliasAs.table} AS ${missingSourceAliasAs.alias}; qualify its fields as ${missingSourceAliasAs.alias}~field.`,
-    );
+    return `ABAP SQL requires AS for table aliases. Write ${missingSourceAliasAs.table} AS ${missingSourceAliasAs.alias}; qualify its fields as ${missingSourceAliasAs.alias}~field.`;
   }
 
   if (/\bambiguous\b|\bzweideutig\b/i.test(combined)) {
-    return withHint(
-      err,
-      'The column exists in more than one joined source. Qualify it with the declared table alias and a tilde in SELECT, ON, WHERE, GROUP BY, and ORDER BY, for example alias~field.',
-    );
+    return 'The column exists in more than one joined source. Qualify it with the declared table alias and a tilde in SELECT, ON, WHERE, GROUP BY, and ORDER BY, for example alias~field.';
   }
 
   const aliasDot = findAliasDotAccess(maskedSql);
   if (aliasDot) {
-    return withHint(
-      err,
-      `Use a tilde for ABAP SQL field access: write "${aliasDot.replacement}", not "${aliasDot.original}". Only declared table aliases use this conversion; replace every alias.field/alias.* access while leaving DDIC/CDS names unchanged. JOINs, WHERE, and ORDER BY all work with this qualification.`,
-    );
+    return `Use a tilde for ABAP SQL field access: write "${aliasDot.replacement}", not "${aliasDot.original}". Only declared table aliases use this conversion; replace every alias.field/alias.* access while leaving DDIC/CDS names unchanged. JOINs, WHERE, and ORDER BY all work with this qualification.`;
   }
 
   const cdsCastType = maskedSql.match(/\bABAP\.([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(\s*\d+\s*\))?/i)?.[0];
   if (cdsCastType) {
-    return withHint(
-      err,
-      `CDS cast type syntax ${cdsCastType} is not accepted by freestyle ABAP SQL. Use a supported ABAP SQL cast target such as CAST(value AS CHAR), without a CDS/SQL length suffix.`,
-    );
+    return `CDS cast type syntax ${cdsCastType} is not accepted by freestyle ABAP SQL. Use a supported ABAP SQL cast target such as CAST(value AS CHAR), without a CDS/SQL length suffix.`;
   }
 
   const selectListPair = findSimpleSelectListPair(maskedSql);
@@ -293,7 +225,7 @@ export function classifySapQueryParserError(
     const example = selectListPair
       ? ` Separate columns with a comma, or write ${selectListPair.first} AS ${selectListPair.second} if the second identifier is an alias.`
       : '';
-    return withHint(err, `ABAP SQL requires commas between select-list fields and AS before a column alias.${example}`);
+    return `ABAP SQL requires commas between select-list fields and AS before a column alias.${example}`;
   }
 
   if (!hasSqlParserSignature(combined)) return undefined;
@@ -306,5 +238,25 @@ export function classifySapQueryParserError(
   const chunkRetry = chunkingAttempted
     ? ' ARC-1 already split the longest literal IN-list; reduce the query or batches further.'
     : '';
-  return withHint(err, `${hints.join(' ')}${chunkRetry}`);
+  return `${hints.join(' ')}${chunkRetry}`;
+}
+
+/**
+ * Classify a freestyle-SQL failure into an actionable hint.
+ *
+ * `minimalErrors` is the same client-disclosure control dispatch applies to every other ADT error:
+ * the SAP diagnostic and the ADT path are withheld, the ARC-1-authored hint is kept. SAPQuery has to
+ * apply it here because it returns classified failures as tool results, which never reach the
+ * redaction in buildBaseErrorMessage.
+ */
+export function classifySapQueryParserError(
+  err: AdtApiError,
+  sql: string,
+  chunkingAttempted: boolean,
+  minimalErrors: boolean,
+): string | undefined {
+  const hint = classifyParserHint(err, sql, chunkingAttempted);
+  if (hint === undefined) return undefined;
+  const message = minimalErrors ? `ADT API error: status ${err.statusCode}.` : err.message;
+  return `${message}\n\nHint: ${hint}`;
 }

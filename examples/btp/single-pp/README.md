@@ -18,5 +18,10 @@ prove the mappings; ask the Connector/Basis owner to confirm them.
 The startup user is not a PP fallback. Use a least-privileged startup account, not `SAP_ALL` or a
 dialog administrator. Both destinations must exist before ARC-1 starts with this profile.
 
+The initial profile disables gCTS, FLP and UI5 Repository feature probes so Cloud Connector needs
+only `/sap/bc/adt` with all sub-paths. Add an optional resource path and re-enable its feature only
+as one reviewed capability change; see the
+[Cloud Connector path reference](../../../docs_page/btp-destination-setup.md#cloud-connector-url-path-reference).
+
 Acceptance uses safe reads followed by [backend identity verification](../../../docs_page/principal-propagation-setup.md#verify-the-backend-identity).
 `SAPRead(SYSTEM).user` alone is not proof of the SAP login identity.

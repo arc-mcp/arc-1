@@ -5,6 +5,7 @@
  * Safety checks are applied at every entry point.
  */
 
+import { postCreate } from './create-request.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { checkOperation, checkTransport, OperationType, type SafetyConfig } from './safety.js';
@@ -18,7 +19,7 @@ import type {
   TransportTarget,
   TransportTask,
 } from './types.js';
-import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, parseNamedItems, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, findDeepNodes, parseNamedItems, parseXml } from './xml-parser.js';
 
 /**
  * Filter inactive objects (from `getInactiveObjects()`) down to those that belong to transport
@@ -153,7 +154,7 @@ export async function listTransports(
   const url = `/sap/bc/adt/cts/transportrequests?${params.toString()}`;
 
   const resp = await http.get(url, { Accept: CTS_ACCEPT_TREE });
-  let transports = parseTransportList(resp.body);
+  let transports = parseTransportList(resp.body, url);
 
   // Client-side status filter as fallback (some systems ignore requestStatus)
   if (status && status !== '*') {
@@ -171,11 +172,10 @@ export async function getTransport(
 ): Promise<TransportRequest | null> {
   checkTransport(safety, transportId, 'GetTransport', false);
 
-  const resp = await http.get(`/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}`, {
-    Accept: CTS_CONTENT_TYPE_ORGANIZER,
-  });
+  const url = `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}`;
+  const resp = await http.get(url, { Accept: CTS_CONTENT_TYPE_ORGANIZER });
 
-  const transports = parseTransportList(resp.body);
+  const transports = parseTransportList(resp.body, url);
   // NW 7.50 returns HTTP 200 with the caller's full transport list when the
   // requested ID doesn't exist, instead of 404. Verify the parsed id matches.
   const match = transports.find((t) => t.id === transportId);
@@ -209,8 +209,7 @@ export async function getTransport(
  * with no transport routes configured at all (e.g. a standalone dev system) — yields
  * an empty target ("Local Change Requests"), regardless of the value passed. Verified
  * live on a4h (S/4HANA 2023): the param is accepted but a route-less system always
- * resolves to an empty target. So this is a hint, not a guarantee; the request's real
- * target should be read back from the created request (see `handleSAPTransport`).
+ * resolves to an empty target; read back the actual target (see `handleSAPTransport`).
  *
  * @param targetPackage optional — DEVCLASS used by SAP for transport-route lookup; defaults to `$TMP`
  * @param objectUrl optional — ADT object URL hint for transport-route lookup; the object is NOT locked or attached to the transport
@@ -244,15 +243,15 @@ export async function createTransport(
     ? `/sap/bc/adt/cts/transports?transportLayer=${encodeURIComponent(layer)}`
     : '/sap/bc/adt/cts/transports';
 
-  const resp = await http.post(
+  const resp = await postCreate(
+    http,
     url,
     body,
     'application/vnd.sap.as+xml; charset=UTF-8; dataname=com.sap.adt.CreateCorrectionRequest',
     { Accept: 'text/plain' },
   );
 
-  // Response body is a path like "/com.sap.cts/object_record/NPLK900026" —
-  // the transport ID is the last path segment.
+  // The response path ends with the transport ID.
   return (
     String(resp.body ?? '')
       .trim()
@@ -297,7 +296,7 @@ export async function createTransportWithTarget(
   </tm:request>
 </tm:root>`;
 
-  const resp = await http.post('/sap/bc/adt/cts/transportrequests', body, 'text/plain', {
+  const resp = await postCreate(http, '/sap/bc/adt/cts/transportrequests', body, 'text/plain', {
     Accept: CTS_CONTENT_TYPE_ORGANIZER,
   });
 
@@ -403,14 +402,14 @@ export function parseReleaseReports(xml: string): TransportReleaseReport[] {
       return {
         severity: type === 'E' ? 'error' : type === 'W' ? 'warning' : 'info',
         type,
-        text: decodeXmlEntities(String(msg['@_shortText'] ?? '')),
+        text: String(msg['@_shortText'] ?? ''),
         ...(uri ? { uri } : {}),
       };
     });
     return {
       reporter: String(r['@_reporter'] ?? ''),
       status,
-      statusText: decodeXmlEntities(String(r['@_statusText'] ?? '')),
+      statusText: String(r['@_statusText'] ?? ''),
       ...(r['@_triggeringUri'] ? { triggeringUri: String(r['@_triggeringUri']) } : {}),
       released: status === 'released',
       messages,
@@ -1435,8 +1434,16 @@ function findDeepValue(obj: unknown, key: string): unknown {
 
 // ─── Parsers ────────────────────────────────────────────────────────
 
-function parseTransportList(xml: string): TransportRequest[] {
+function parseTransportList(xml: string, path: string): TransportRequest[] {
   const parsed = parseXml(xml);
+  if (!Object.hasOwn(parsed, 'root')) {
+    const explanation =
+      'Transport API unavailable or unexpected CTS response: no transport organizer document was returned. This response does not establish an empty list or a missing request.';
+    const error = new AdtApiError(explanation, 200, path);
+    // Minimal mode hides the message; extraHint preserves this fixed explanation, never SAP response text.
+    error.extraHint = explanation;
+    throw error;
+  }
   const requests = findDeepNodes(parsed, 'request');
 
   return requests.map((req) => {

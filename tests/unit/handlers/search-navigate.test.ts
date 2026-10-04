@@ -12,6 +12,9 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { featuresOff } from './handler-test-config.js';
 import { AdtClient, createClient, mockFetch } from './setup-undici-mock.js';
 
+// Dynamic like every other src import here: server-driven.ts pulls in http.ts (undici), which must
+// not load before setup-undici-mock has installed the mock.
+const { SDO_REGISTRY, SDO_TYPES } = await import('../../../src/adt/server-driven.js');
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const { handleSAPSearch, transliterateQuery, looksLikeFieldName } = await import('../../../src/handlers/search.js');
@@ -81,7 +84,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       const client = createClient();
       const error = new AdtApiError('Forbidden', 403, '/sap/bc/adt/repository/informationsystem/search');
       vi.spyOn(client, 'searchObject').mockRejectedValue(error);
-      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' })).rejects.toBe(error);
+      await expect(handleSAPSearch(client, { query: '*', objectType: 'CLAS' }, false)).rejects.toBe(error);
     });
 
     it('preserves and encodes a slash type without injecting query parameters', async () => {
@@ -699,6 +702,29 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(text).not.toContain('single-table');
     });
 
+    it.each([false, true])(
+      'applies minimalErrors=%s to classified query results through dispatch',
+      async (minimalErrors) => {
+        const diagnostic = 'Private SAP diagnostic\n\nHint: private backend details';
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+        mockFetch.mockResolvedValueOnce(mockResponse(400, diagnostic));
+
+        const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPQuery', {
+          sql: 'SELECT mandt FROM t000 ORDER BY mandt DESC',
+        });
+        const text = result.content[0]?.text ?? '';
+
+        expect(result.isError).toBe(true);
+        expect(text).toContain('ASCENDING or DESCENDING');
+        expect(text.includes('Private SAP diagnostic')).toBe(!minimalErrors);
+        expect(text.includes('private backend details')).toBe(!minimalErrors);
+        expect(text.includes('/sap/bc/adt/datapreview/freestyle')).toBe(!minimalErrors);
+        if (minimalErrors) expect(text).toMatch(/^ADT API error: status 400\.\n\nHint: Use the ABAP SQL/);
+        expect(freestylePostCalls()).toHaveLength(1);
+      },
+    );
+
     it('does not false-flag tilde JOIN with an INTO clause as dot-notation; gives the target-clause hint', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -1247,6 +1273,45 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
   });
 
   describe('SAPNavigate symbolic references', () => {
+    // Exercise every registry entry and a namespace through the public tool dispatch.
+    it.each([
+      ...SDO_TYPES.map((type) => ({
+        type,
+        name: 'ZTEST_OBJECT',
+        expectedUri: `${SDO_REGISTRY[type].href}/ZTEST_OBJECT`,
+      })),
+      { type: 'dsfd', name: '/arc/test', expectedUri: '/sap/bc/adt/ddic/dsfd/sources/%2FARC%2FTEST' },
+    ])('resolves server-driven $type $name to its own collection URI', async ({ type, name, expectedUri }) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
+  <usageReferences:referencedObjects>
+    <usageReferences:referencedObject uri="/sap/bc/adt/oo/classes/zcl_consumer" isResult="true" canHaveChildren="false">
+      <usageReferences:adtObject adtcore:name="ZCL_CONSUMER" adtcore:type="CLAS/OC" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usageReferences:referencedObject>
+  </usageReferences:referencedObjects>
+</usageReferences:usageReferenceResult>`,
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'references',
+        type,
+        name,
+      });
+      expect(result.isError).toBeUndefined();
+      const whereUsedCall = mockFetch.mock.calls.find((c) => String(c[0]).includes('usageReferences'));
+      expect(whereUsedCall).toBeDefined();
+      const requestedUri = new URL(String(whereUsedCall?.[0])).searchParams.get('uri');
+      expect(requestedUri).toBe(expectedUri);
+      expect(requestedUri).not.toContain('/programs/programs/');
+      const parsed = JSON.parse(result.content[0]?.text);
+      expect(parsed.total).toBe(1);
+    });
+
     it('resolves type+name to URI for references action (scope-based Where-Used fails, falls back to simple)', async () => {
       mockFetch.mockReset();
       // First call: CSRF token fetch for the POST

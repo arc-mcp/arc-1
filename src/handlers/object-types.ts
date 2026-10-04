@@ -1,9 +1,11 @@
 /**
- * Object-type normalization + ADT URL building (pure utilities, no project-internal imports).
+ * Object-type normalization + ADT URL building (static utilities, with server-driven paths from the shared registry).
  *
  * Slash-form alias maps, friendly aliases, canonical-type normalization, the objectBasePath/URL builders,
  * LLM arg-stripping, and class-include helpers.
  */
+
+import { SDO_REGISTRY } from '../adt/server-driven.js';
 
 // ─── Object URL Mapping ──────────────────────────────────────────────
 
@@ -58,6 +60,7 @@ export const SLASH_TYPE_MAP: Record<string, string> = {
   'VIEW/DV': 'VIEW', // docs/research/abap-types/types/view.md
   'SKTD/TYP': 'SKTD', // docs/research/abap-types/types/sktd.md
   'TTYP/DA': 'TTYP', // docs/research/abap-types/types/ttyp.md — live a4h 758 + 816 return adtcore:type="TTYP/DA"
+  'ENQU/DL': 'ENQU', // docs/research/abap-types/types/enqu.md — live 758 + 816 return adtcore:type="ENQU/DL"
 };
 
 /**
@@ -90,6 +93,7 @@ export const SLASH_TYPE_EVIDENCE: Record<string, string> = {
   'VIEW/DV': 'docs/research/abap-types/types/view.md',
   'SKTD/TYP': 'docs/research/abap-types/types/sktd.md',
   'TTYP/DA': 'docs/research/abap-types/types/ttyp.md',
+  'ENQU/DL': 'docs/research/abap-types/types/enqu.md',
 };
 
 const FRIENDLY_TYPE_ALIAS_MAP: Record<string, string> = {
@@ -127,6 +131,7 @@ export const KNOWN_BASE_TYPES = new Set([
   'VIEW',
   'SKTD',
   'TTYP',
+  'ENQU',
 ]);
 
 /** Normalize ADT type codes and aliases to ARC-1 canonical short types. */
@@ -393,11 +398,16 @@ export function functionGroupObjectUrl(group: string): string {
   return `/sap/bc/adt/functions/groups/${encodeURIComponent(normalizedGroup.toLowerCase())}`;
 }
 
+export function functionGroupIncludeObjectUrl(group: string, name: string): string {
+  return `${functionGroupObjectUrl(group)}/includes/${encodeURIComponent(name.toLowerCase())}`;
+}
+
 export function functionModuleObjectUrl(group: string, name: string): string {
   return `${functionGroupObjectUrl(group)}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
 }
 
 export function objectBasePath(type: string): string {
+  if (Object.hasOwn(SDO_REGISTRY, type)) return `${SDO_REGISTRY[type as keyof typeof SDO_REGISTRY].href}/`;
   switch (type) {
     case 'PROG':
       return '/sap/bc/adt/programs/programs/';
@@ -457,6 +467,9 @@ export function objectBasePath(type: string): string {
       // DDIC table types. Live a4h 758 + 816 confirm GET/POST/DELETE here; XML-metadata
       // (no source/main). docs/research/abap-types/types/ttyp.md.
       return '/sap/bc/adt/ddic/tabletypes/';
+    case 'ENQU':
+      // DDIC lock objects: XML metadata, no source/main. Live 8.16: docs/research/abap-types/types/enqu.md.
+      return '/sap/bc/adt/ddic/lockobjects/sources/';
     case 'MSAG':
       return '/sap/bc/adt/messageclass/';
     case 'DEVC':
@@ -585,9 +598,4 @@ export function detectLocalHandlerInclude(method: string): ClassWriteInclude | u
   if (/^(lhc|lcl)_/.test(lhs)) return 'implementations';
   if (/^ltc_/.test(lhs)) return 'testclasses';
   return undefined;
-}
-
-/** Strip the leading "=== <include> ===\n" header that `client.getClass(name, include)` prepends. */
-export function stripIncludeHeader(source: string): string {
-  return source.replace(/^=== \w+ ===\n/, '');
 }

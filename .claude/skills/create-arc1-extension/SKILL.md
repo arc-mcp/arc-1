@@ -16,15 +16,17 @@ tools to an ARC-1 instance **without forking**, reusing ARC-1's authenticated SA
   the docs site under *Using ARC-1 → Extensions (Custom Tools)*.
 - **Spec:** `docs/research/2026-06-17-extension-framework-spec.md` (v1) + `extension-framework-v2-spec.md` (what's deferred).
 - **Worked sample:** [`arc-mcp/arc-1-extension-sample`](https://github.com/arc-mcp/arc-1-extension-sample)
-  — ADT + OData **reads**, a **manifest** tool, **`Custom_RunClass`** (gated execute), an OData
-  **write** (`Custom_CreateSalesOrder`), and a full **[LISA](https://github.com/ClementRingot/LISA)
+  — ADT + OData **reads**, a **manifest** tool, **`Custom_RunClass`** and **`Custom_RunReport`**
+  (gated named execution), an OData **write** (`Custom_CreateSalesOrder`), and a full
+  **[LISA](https://github.com/ClementRingot/LISA)
   custom-ICF integration** (`Custom_ListLanguages`/`GetTranslation`/`SetTranslation`) — all
   live-verified on S/4HANA (real HTTP 201/200 writes). Copy the closest tool and adapt.
 
 **v1 reality (do not get this wrong):** reads are open (`ctx.http.get`/`head`). **Writes** (`ctx.http.post`/
 `put`/`delete`) work **only to non-ADT paths** (OData/ICF) behind the opt-in `SAP_ALLOW_PLUGIN_RAW_WRITES`.
-A console class runs via `ctx.run.classRun` (opt-in `SAP_ALLOW_PLUGIN_EXECUTE`). **ADT object** writes
-(CLAS/DDLS/… via `/sap/bc/adt/…`) are **always refused** — those are the v2 package-aware `ctx.write`.
+Console classes and classic reports run via `ctx.run.classRun` / `ctx.run.programRun` (opt-in
+`SAP_ALLOW_PLUGIN_EXECUTE`). **ADT object** writes (CLAS/DDLS/… via `/sap/bc/adt/…`) are **always
+refused** — those are the v2 package-aware `ctx.write`.
 
 ## Trigger
 
@@ -49,7 +51,7 @@ Use `AskUserQuestion`. The first question is a gate:
      GET → return". No logic, no writes.
    - **Code tier** (`defineTool`, TypeScript) — if it needs logic, response shaping, multiple reads,
      a **write** to an OData/ICF service (`ctx.http.post`/`put`/`delete`), or to **execute a console
-     class** (`ctx.run.classRun`).
+     class or classic report** (`ctx.run.classRun` / `ctx.run.programRun`).
 3. **SAP API** — ADT (`/sap/bc/adt/…`), OData (`/sap/opu/odata/…`), or a custom ICF (`/sap/bc/http/…`).
    For a custom endpoint: it **must already exist on SAP** — extensions ship **no ABAP**.
 4. **What it does**, and the **scope** + **opType**:
@@ -59,6 +61,9 @@ Use `AskUserQuestion`. The first question is a gate:
      `SAP_ALLOW_WRITES=true`**. The path must be **non-ADT** (`/sap/opu/odata/…` or `/sap/bc/http/…`).
    - **execute a console class** (`IF_OO_ADT_CLASSRUN`) → `scope: 'write'`, `opType: OperationType.Workflow`
      — uses `ctx.run.classRun`. Refused unless **`SAP_ALLOW_PLUGIN_EXECUTE=true` + `SAP_ALLOW_WRITES=true`**.
+   - **execute a classic report** (`PROG`, on-premise) → `scope: 'write'`,
+     `opType: OperationType.Workflow`, `availableOn: 'onprem'` — uses `ctx.run.programRun`. It is
+     name-in/text-out: no selection parameters or variants. Uses the same execute + write gates.
    - **ADT object create/update/delete** (CLAS/DDLS/… via `/sap/bc/adt/…`) → **NOT available in v1** —
      always refused; that's the v2 package-aware `ctx.write`. If the tool needs it, say so and stop.
 
@@ -113,7 +118,8 @@ Create a new repo `arc1-plugin-<name>` (pure TS, **no ABAP**):
     },
   });
   ```
-- **Execute (code tier)** — run a console class → `src/tools/Custom_<X>.ts`:
+- **Execute (code tier)** — run a console class or classic report → `src/tools/Custom_<X>.ts`.
+  Console class example:
   ```ts
   import { z } from 'zod';
   import { defineTool, OperationType } from 'arc-1/public';
@@ -128,6 +134,25 @@ Create a new repo `arc1-plugin-<name>` (pure TS, **no ABAP**):
     },
   });
   ```
+  Classic report example:
+  ```ts
+  import { z } from 'zod';
+  import { defineTool, OperationType } from 'arc-1/public';
+  export default defineTool({
+    name: 'Custom_<X>',
+    description: 'Execute a classic ABAP report and return SAP list or error text.',
+    schema: z.object({ reportName: z.string().min(1).max(40) }),
+    policy: { scope: 'write', opType: OperationType.Workflow },
+    availableOn: 'onprem',
+    async handler(args, ctx) {
+      const out = await ctx.run.programRun((args as { reportName: string }).reportName);
+      return { content: [{ type: 'text', text: out }] };
+    },
+  });
+  ```
+  `programRun` accepts only the report name. If the report needs runtime input, use a small
+  `IF_OO_ADT_CLASSRUN` class. Both named operations return SAP response text verbatim; SAP can put
+  missing-object or execution errors in an HTTP 200 response.
 - **`src/index.ts`** — `export default { name, version, apiVersion: 1, tools: [...], manifests: ['manifests/Custom_<X>.tool.json'] } satisfies Plugin;`
 - **README** — what it does + the load command.
 
@@ -148,12 +173,17 @@ SAP_ALLOW_PLUGIN_RAW_WRITES=true SAP_ALLOW_WRITES=true \
 # …an EXECUTE tool needs the execute opt-ins:
 SAP_ALLOW_PLUGIN_EXECUTE=true SAP_ALLOW_WRITES=true \
   ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_<X> --json '{"className":"ZCL_FOO"}'
+# …or, for an on-premise classic report:
+SAP_ALLOW_PLUGIN_EXECUTE=true SAP_ALLOW_WRITES=true \
+  ARC1_PLUGINS=$PWD/dist/index.js  arc1-cli call Custom_<X> --json '{"reportName":"ZREPORT"}'
 ```
 
 Read the result, not just the exit. A gate refusal is an **`AdtSafetyError`** ("…disabled" / "may not
 write to an ADT path"); a SAP-side problem (wrong path, missing service, bad payload) is an
 **`AdtApiError`** with the SAP status + body — that means the gate *passed* and the request reached SAP
-(useful signal). Iterate on the path/payload from the SAP error.
+(useful signal). Named class/report execution is the exception: SAP can put execution errors in an
+HTTP 200 text response, which `ctx.run` returns verbatim. Iterate on the path/payload from the SAP
+error; do not infer success from HTTP status alone.
 
 Confirm the tool appears in `tools/list` and the call returns real SAP data. For **deploying** the
 plugin to BTP Cloud Foundry or Docker (the owner-check / `--chown` gotcha, image vs buildpack vs
@@ -174,9 +204,10 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 - **`policy.opType` must match `scope`** — the declared scope has to cover the opType's required scope
   (e.g. `opType:'U'` needs `scope:'write'`), or the plugin **fails server start**. Keep them consistent
   with the examples above.
-- **Executing a class is the one privileged op.** `ctx.run.classRun(name)` runs an `IF_OO_ADT_CLASSRUN`
-  console class. Gated: needs `SAP_ALLOW_PLUGIN_EXECUTE=true` **and** `SAP_ALLOW_WRITES=true` **and** a
-  `write`-scoped tool; the class name is validated (no path injection). Off by default.
+- **Named execution is privileged.** `ctx.run.classRun(name)` runs an `IF_OO_ADT_CLASSRUN` console
+  class; `ctx.run.programRun(name)` runs an on-premise classic report and returns its list/error text
+  (no selections or variants). Both need `SAP_ALLOW_PLUGIN_EXECUTE=true` **and**
+  `SAP_ALLOW_WRITES=true` **and** a `write`-scoped tool; names are validated. Off by default.
 - **OData path discovery — a 403 `/IWFND/MED/170 "No service found"` usually means the WRONG path,
   not just an inactive service.** The service name AND namespace matter: e.g. the EPM demo is
   `/sap/opu/odata/iwbep/GWSAMPLE_BASIC`, *not* `/sap/opu/odata/sap/ZGWSAMPLE_BASIC`. Find the real
@@ -200,7 +231,8 @@ volume trade-offs), point the developer at the **Deploying extensions** section 
 - **`elicit`/`notify`/`sampling`** on `ctx` are **capability-gated** — present only when the MCP client
   supports them (absent on the CLI/stdio path).
 - **Unit-test the handler** with `createMockToolContext` from `arc-1/public/testing` (records
-  `ctx.http`/`ctx.run.classRun` calls, returns configured output — no live SAP needed).
+  `ctx.http`/`ctx.run.classRun`/`ctx.run.programRun` calls, returns configured output — no live SAP
+  needed).
 - **Admin kill switch:** `SAP_DENY_ACTIONS=Custom_*` (all) or `Custom_Foo` (one) removes plugin tools.
 
 ## Deploy (when they ask)

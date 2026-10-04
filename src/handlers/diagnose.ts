@@ -33,7 +33,6 @@ import {
   runAtcCheck,
   runUnitTests,
   supportsCdsTestCases,
-  syntaxCheck,
 } from '../adt/devtools.js';
 import {
   createTraceRequest,
@@ -58,6 +57,7 @@ import {
 } from '../adt/diagnostics.js';
 import { AdtApiError, AdtNetworkError } from '../adt/errors.js';
 import { internalOperationDenial } from '../adt/internal-data-operations.js';
+import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import type {
   DumpDetail,
   FixAffectedObject,
@@ -71,6 +71,7 @@ import { handleCiQuality } from './diagnose-ci.js';
 import { isBtpSystem } from './feature-cache.js';
 import { classIncludeUrl, normalizeObjectType, objectUrlForType, sourceUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
+import { handleSyntaxCheck } from './syntax.js';
 
 const AUNIT_SOURCE_MAX_BLOCKS = 80;
 const AUNIT_SOURCE_MAX_DEPTH = 5;
@@ -639,6 +640,7 @@ export function toLegacyAunitResults(result: AunitRunResult): UnitTestResult[] {
 export async function handleSAPDiagnose(
   client: AdtClient,
   args: Record<string, unknown>,
+  minimalErrors: boolean,
   options: { deadline?: number; signal?: AbortSignal } = {},
 ): Promise<ToolResult> {
   const action = String(args.action ?? '');
@@ -646,39 +648,8 @@ export async function handleSAPDiagnose(
   const type = normalizeObjectType(String(args.type ?? ''));
 
   switch (action) {
-    case 'syntax': {
-      const objectUrl = objectUrlForType(type, name);
-      const version = args.version === 'inactive' ? 'inactive' : args.version === 'active' ? 'active' : undefined;
-      const content = typeof args.source === 'string' ? (args.source as string) : undefined;
-      const opts: { version?: 'active' | 'inactive'; content?: string } = {};
-      if (version) opts.version = version;
-      if (content !== undefined) opts.content = content;
-      const result = await syntaxCheck(
-        client.http,
-        client.safety,
-        objectUrl,
-        Object.keys(opts).length > 0 ? opts : undefined,
-      );
-      // Fail closed: SAP checked nothing (object does not exist yet) → never report "clean", or
-      // callers read hasErrors:false as "SAP will accept this source".
-      if (!result.checked) {
-        return textResult(
-          toolJson({
-            ...result,
-            hasErrors: true,
-            messages: [
-              {
-                severity: 'error',
-                text: `Not checked — ${(result.statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated; create the object first (SAPWrite action="create"), then re-run the syntax check.`,
-                line: 0,
-                column: 0,
-              },
-            ],
-          }),
-        );
-      }
-      return textResult(toolJson(result));
-    }
+    case 'syntax':
+      return handleSyntaxCheck(client, args);
     case 'unittest': {
       const coverage = args.coverage === true;
       const resultFormat = String(args.resultFormat ?? 'legacy');
@@ -880,7 +851,7 @@ export async function handleSAPDiagnose(
     }
     case 'unittest_ci':
     case 'atc_ci':
-      return handleCiQuality(client, args, handleSAPDiagnose);
+      return handleCiQuality(client, args, (c, a, o) => handleSAPDiagnose(c, a, minimalErrors, o));
     case 'atc': {
       if (args.objects !== undefined) {
         const objects = (args.objects as { type: AtcBatchObject['type']; name: string }[]).map((object) => ({
@@ -970,6 +941,11 @@ export async function handleSAPDiagnose(
       return textResult(toolJson(payload));
     }
     case 'object_state': {
+      if (isServerDrivenObjectType(type)) {
+        return errorResult(
+          'object_state cannot verify active/inactive version identity for server-driven objects. SAP may substitute another version. Use SAPRead with an explicit version instead.',
+        );
+      }
       if (!name || !type) return errorResult('"name" and "type" are required for "object_state" action.');
       const sections =
         type === 'CLAS'
@@ -1075,7 +1051,9 @@ export async function handleSAPDiagnose(
 
       const user = args.user as string | undefined;
       const maxResults = args.maxResults ? Number(args.maxResults) : undefined;
-      const dumps = await listDumps(client.http, client.safety, { user, maxResults });
+      const from = args.from as string | undefined;
+      const to = args.to as string | undefined;
+      const dumps = await listDumps(client.http, client.safety, { user, maxResults, from, to });
       return textResult(toolJson(dumps));
     }
     case 'traces': {
@@ -1224,7 +1202,7 @@ export async function handleSAPDiagnose(
           result = await getAuthorizationTrace(client, { user, authObject, onlyFailures, maxResults });
         } catch (error) {
           if (error instanceof DataSourcePolicyError) {
-            return errorResult(internalOperationDenial('authorization_trace', error.message));
+            return errorResult(internalOperationDenial('authorization_trace', error, minimalErrors));
           }
           throw error;
         }

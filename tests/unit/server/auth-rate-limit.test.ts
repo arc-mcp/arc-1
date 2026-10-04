@@ -38,7 +38,7 @@ async function fireRequests(
 ): Promise<{ codes: number[]; lastHeaders: Record<string, string> }> {
   const http = await import('node:http');
   const server = http.createServer(app);
-  await new Promise<void>((r) => server.listen(0, r));
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const addr = server.address();
   if (!addr || typeof addr === 'string') throw new Error('server not listening');
   const port = addr.port;
@@ -220,7 +220,7 @@ describe('/authorize JSON-RPC dispatch (Copilot Studio MCP fix via skip())', () 
   }> {
     const http = await import('node:http');
     const server = http.createServer(app);
-    await new Promise<void>((r) => server.listen(0, r));
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const addr = server.address();
     if (!addr || typeof addr === 'string') throw new Error('server not listening');
     const port = addr.port;

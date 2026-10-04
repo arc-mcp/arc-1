@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +17,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = join(__dirname, '..', '..', 'fixtures', 'xml');
+const PROBE_FIXTURES_DIR = join(__dirname, '..', '..', 'fixtures', 'probe');
 const loadXmlFixture = (name: string): string => readFileSync(join(FIXTURES_DIR, name), 'utf-8');
 
 describe('AdtApiError', () => {
@@ -79,6 +81,35 @@ describe('AdtApiError', () => {
       expect(AdtApiError.extractCleanMessage(raw)).toBe('SAP returned an error (no readable message)');
     });
 
+    // The tag end is found quote-aware, so a quoted run may hold a ">". The attribute parser stopped
+    // at that ">" and never moved on: every one of these bodies hung the process in the constructor.
+    // Run separately so a regression fails by timeout instead of hanging the test worker.
+    it('finishes on malformed attributes and repeated unclosed HTML openers', () => {
+      const source = new URL('../../../src/adt/errors.ts', import.meta.url).href;
+      const inputs = ['<a "b>c">', '{"message":"x < y \\"quoted > text\\" z > w"}', 'a < 5 and "x>y" > 3'];
+      const child = spawnSync(
+        process.execPath,
+        [
+          '--import',
+          'tsx',
+          '--input-type=module',
+          '-e',
+          `
+        import { AdtApiError } from ${JSON.stringify(source)};
+        // Build the large input here so it does not exceed the OS argument-size limit.
+        for (const raw of [...${JSON.stringify(inputs)}, \`x\${' <html>'.repeat(300_000)}\`]) {
+          new AdtApiError(raw, 500, '/p', raw);
+          AdtApiError.extractProperties(raw);
+          AdtApiError.extractAllMessages(raw);
+        }
+      `,
+        ],
+        { timeout: 5000, encoding: 'utf8' },
+      );
+      expect(child.error).toBeUndefined();
+      expect(child.status, child.stderr).toBe(0);
+    }, 10000);
+
     it('extracts msgText from SAP HTML 500 error page', () => {
       const html = `<!DOCTYPE html>
 <html><head><title>Application Server Error</title></head><body>
@@ -109,6 +140,137 @@ describe('AdtApiError', () => {
         '<p class="detailText"><span id="msgText">Syntax error in program ZC_FBCLUBTP===================BD</span></p></body></html>';
       const err = new AdtApiError(shortHtml, 500, '/sap/bc/adt/activation', fullHtml);
       expect(err.message).toContain('Syntax error in program ZC_FBCLUBTP');
+    });
+
+    // The tag stripper is for raw SAP bodies. Run over a composed message it deleted "<id>"-style
+    // placeholders and everything after a lone "<".
+    it('keeps angle brackets in a composed plain-text message', () => {
+      const err = new AdtApiError('Include <ZFOO_TOP> not found; length < 5 required', 400, '/p');
+      expect(err.message).toBe('ADT API error: status 400 at /p: Include <ZFOO_TOP> not found; length < 5 required');
+    });
+
+    it('still cleans a raw body that starts with whitespace', () => {
+      const err = new AdtApiError('\n <error><message lang="EN">Syntax error in line 5</message></error>', 400, '/p');
+      expect(err.message).toBe('ADT API error: status 400 at /p: Syntax error in line 5');
+    });
+  });
+
+  // SAP error bodies never pass through `parseXml`; the raw scanner in errors.ts is their one decode.
+  describe('XML entity decoding', () => {
+    const exception = (inner: string): string =>
+      `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">${inner}</exc:exception>`;
+
+    it('decodes &amp; &lt; &gt; in an exception message', () => {
+      const xml = exception(
+        '<message lang="EN">invalid URI: /sap/bc/adt/x?sap-client=001&amp;x=1 &lt;tag&gt;</message>',
+      );
+      expect(AdtApiError.extractCleanMessage(xml)).toBe('invalid URI: /sap/bc/adt/x?sap-client=001&x=1 <tag>');
+    });
+
+    it('decodes the URI-mapping error recorded live on SAP_BASIS 758', () => {
+      // The recording's own `errorMessage` field predates this decode and still shows `&amp;`.
+      const recorded = JSON.parse(
+        readFileSync(
+          join(
+            PROBE_FIXTURES_DIR,
+            's4hana-2023-onprem-abap-trial/responses/GET__sap_bc_adt_bo_behaviordefinitions.json',
+          ),
+          'utf-8',
+        ),
+      ) as { url: string; statusCode: number; body: string };
+      const uri = '/sap/bc/adt/bo/behaviordefinitions?sap-client=001&';
+
+      const err = new AdtApiError(recorded.body.slice(0, 500), recorded.statusCode, recorded.url, recorded.body);
+      expect(err.message).toBe(
+        `ADT API error: status 400 at /sap/bc/adt/bo/behaviordefinitions: URI-Mapping cannot be performed due to invalid URI: ${uri}`,
+      );
+      expect(AdtApiError.extractProperties(recorded.body)['T100KEY-V1']).toBe(uri);
+    });
+
+    it('keeps a chained &amp;lt; as the literal text &lt;', () => {
+      const xml = exception('<message>a &amp;lt; b &amp;amp; c</message>');
+      expect(AdtApiError.extractCleanMessage(xml)).toBe('a &lt; b &amp; c');
+      expect(new AdtApiError(xml, 400, '/p', xml).message).toBe('ADT API error: status 400 at /p: a &lt; b &amp; c');
+    });
+
+    it('decodes everything the scanner returns: extra messages, property keys and values, DDIC diagnostics', () => {
+      const xml = exception(
+        '<localizedMessage>Save failed</localizedMessage>' +
+          '<localizedMessage>Field &quot;&lt;LS_DATA&gt;&quot; is unknown</localizedMessage>' +
+          '<properties><entry key="T100KEY-MSGID">SBD</entry><entry key="T100KEY-V1">R&amp;D</entry>' +
+          '<entry key="A&amp;B">x &gt; y</entry></properties>',
+      );
+      expect(AdtApiError.extractAllMessages(xml)).toEqual(['Field "<LS_DATA>" is unknown']);
+      expect(AdtApiError.extractProperties(xml)).toEqual({
+        'T100KEY-MSGID': 'SBD',
+        'T100KEY-V1': 'R&D',
+        'A&B': 'x > y',
+      });
+      expect(AdtApiError.formatDdicDiagnostics(xml)).toContain('[SBD/?] V1=R&D: Field "<LS_DATA>" is unknown');
+    });
+
+    it('decodes an HTML error page once, whichever element carries the message', () => {
+      expect(
+        AdtApiError.extractCleanMessage(
+          '<html><head><title>Application Server Error &amp; more</title></head><body><p class="detailText">' +
+            '<span id="msgText">Field &quot;&lt;LS_DATA&gt;&quot; is unknown, see &amp;lt;docs&amp;gt;</span></p></body></html>',
+        ),
+      ).toBe('Application Server Error & more: Field "<LS_DATA>" is unknown, see &lt;docs&gt;');
+      expect(AdtApiError.extractCleanMessage('<html><body><p class="detailText">a &lt; b</p></body></html>')).toBe(
+        'a < b',
+      );
+      expect(AdtApiError.extractCleanMessage('<html><head><title>A &amp; B</title></head></html>')).toBe('A & B');
+      expect(AdtApiError.extractCleanMessage('<html><body><h1>A &gt; &amp;gt; B</h1></body></html>')).toBe(
+        'A > &gt; B',
+      );
+    });
+
+    it('decodes once when the constructor falls back from the truncated page to the full body', () => {
+      const head = `<html><head><title>Application Server Error</title></head><body>${'x'.repeat(400)}`;
+      const full = `${head}<span id="msgText">Unknown &lt;LS_DATA&gt; &amp; &amp;lt;fs&amp;gt;</span></body></html>`;
+      expect(new AdtApiError(head, 500, '/p', full).message).toBe(
+        'ADT API error: status 500 at /p: Application Server Error: Unknown <LS_DATA> & &lt;fs&gt;',
+      );
+    });
+
+    it('decodes the tag-stripping fallback, which a message cut by the 500-character slice takes', () => {
+      const body = exception(`<message lang="EN">a &amp; b &lt;c&gt; &amp;lt; ${'y'.repeat(600)}</message>`);
+      expect(new AdtApiError(body.slice(0, 500), 400, '/p', body).message).toMatch(/ at \/p: a & b <c> &lt; y+$/);
+    });
+
+    it('never rescans text that is not a markup document', () => {
+      // A plain-text body is not XML, so its `&amp;` is literal.
+      expect(AdtApiError.extractCleanMessage('Forbidden &amp; denied')).toBe('Forbidden &amp; denied');
+      // ARC-1's own message keeps its `<placeholder>`.
+      expect(new AdtApiError('Pass group=<function group>.', 400, '/p').message).toBe(
+        'ADT API error: status 400 at /p: Pass group=<function group>.',
+      );
+      // An extracted message fed back in — e.g. re-wrapped in a new AdtApiError — is returned unchanged:
+      // a second pass would strip the literal `<tag>` and turn `&lt;` into `<`.
+      const xml = exception('<message>a &amp;lt; b &lt;tag&gt; c</message>');
+      const message = new AdtApiError(xml, 400, '/p', xml).message;
+      expect(message).toBe('ADT API error: status 400 at /p: a &lt; b <tag> c');
+      expect(new AdtApiError(message, 400, '/p').message).toBe(`ADT API error: status 400 at /p: ${message}`);
+      // The same holds for a direct call, not only through the constructor.
+      expect(AdtApiError.extractCleanMessage(message)).toBe(message);
+    });
+
+    it('does not replace a composed message with details from an unrelated response body', () => {
+      const message = 'Application Server Error: sanitized';
+      const body = '<html><title>Application Server Error</title><span id="msgText">unrelated detail</span></html>';
+      expect(new AdtApiError(message, 500, '/p', body).message).toBe(`ADT API error: status 500 at /p: ${message}`);
+    });
+
+    it('keeps explicitly composed text starting with an angle bracket intact', () => {
+      expect(new AdtApiError('<ZFOO> &lt; rejected', 400, '/p', undefined, { plainText: true }).message).toBe(
+        'ADT API error: status 400 at /p: <ZFOO> &lt; rejected',
+      );
+    });
+
+    it('matches decoded HTML attributes and decodes numeric references once', () => {
+      expect(AdtApiError.extractCleanMessage('<html><span id="msg&#84;ext">&#60;X&#62; &amp;lt;</span></html>')).toBe(
+        '<X> &lt;',
+      );
     });
   });
 
@@ -270,7 +432,31 @@ describe('AdtApiError', () => {
     });
   });
 
+  it('extracts the HTML title after a proxy preamble', () => {
+    const error = new AdtApiError('Proxy error 502 <html><head><title>Bad Gateway</title></head></html>', 502, '/p');
+    expect(error.message).toBe('ADT API error: status 502 at /p: Bad Gateway');
+  });
+
+  it('preserves a closing-tag example in a composed plain-text message', () => {
+    const error = new AdtApiError('Expected </body> after <body>', 400, '/p');
+    expect(error.message).toBe('ADT API error: status 400 at /p: Expected </body> after <body>');
+  });
+
   describe('formatDdicDiagnostics', () => {
+    it('uses the message class key returned by the live abapGit bridge', () => {
+      const xml =
+        '<exception><localizedMessage>Repository not found</localizedMessage><properties>' +
+        '<entry key="T100KEY-ID">00</entry><entry key="T100KEY-NO">001</entry></properties></exception>';
+      expect(AdtApiError.formatDdicDiagnostics(xml)).toContain('[00/001]');
+      expect(classifyAbapgitError(xml).t100Key).toBe('00/001');
+    });
+    it('prefers MSGID when both message-class keys are present', () => {
+      const xml =
+        '<exception><entry key="T100KEY-MSGID">PRIMARY</entry><entry key="T100KEY-ID">FALLBACK</entry><entry key="T100KEY-NO">001</entry></exception>';
+      expect(AdtApiError.formatDdicDiagnostics(xml)).toContain('[PRIMARY/001]');
+      expect(classifyAbapgitError(xml).t100Key).toBe('PRIMARY/001');
+    });
+
     it('formats structured DDIC diagnostics as bullet list', () => {
       const xml = `<exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">
   <exc:localizedMessage lang="EN">Can&apos;t save due to errors in source</exc:localizedMessage>
@@ -602,9 +788,13 @@ describe('AdtApiError', () => {
       expect(classification?.transaction).toBe('SU53');
       // Names the dump-detail resource and the typical SAP authorization objects.
       expect(classification?.hint).toContain('short-dump detail');
-      expect(classification?.hint).toContain('S_ADMI_FCD');
+      expect(classification?.hint).toContain('DUMP_INFO');
+      expect(classification?.hint).toContain('DUMP_CUSER');
+      expect(classification?.hint).toContain('DUMP_CCLNT');
+      expect(classification?.hint).toContain('S_ABAPDUMP');
+      expect(classification?.hint).toContain('7.58');
       expect(classification?.hint).toContain('ST22');
-      expect(classification?.hint).toContain('S_ADT_RES');
+      expect(classification?.hint).toContain('`S_ADT_RES` with `URI`');
       expect(classification?.hint).toContain('/sap/bc/adt/runtime/dump/');
       expect(classification?.hint).toContain('SU53');
     });
@@ -618,9 +808,10 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('authorization');
       // Different wording from the detail case: "Listing" not "Reading the ... detail".
       expect(classification?.hint).toContain('Listing short dumps');
-      expect(classification?.hint).toContain('S_ADMI_FCD');
+      expect(classification?.hint).toContain('S_ABAPDUMP');
+      expect(classification?.hint).toContain('7.58');
       expect(classification?.hint).toContain('ST22');
-      expect(classification?.hint).toContain('S_ADT_RES');
+      expect(classification?.hint).toContain('`S_ADT_RES` with `URI`');
       expect(classification?.hint).not.toContain('short-dump detail');
     });
 
@@ -633,7 +824,8 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('authorization');
       expect(classification?.hint).toContain('SAP Gateway error log');
       expect(classification?.hint).toContain('/IWFND/ERROR_LOG');
-      expect(classification?.hint).toContain('S_ADT_RES');
+      expect(classification?.hint).toContain('STAUTHTRACE');
+      expect(classification?.hint).toContain('`S_ADT_RES` with `URI`');
       expect(classification?.hint).toContain('/sap/bc/adt/gw/errorlog/');
     });
 
@@ -832,6 +1024,16 @@ describe('AdtApiError', () => {
     it('returns empty object for empty payload', () => {
       expect(classifyAbapgitError('')).toEqual({});
     });
+
+    it('returns the message entity-decoded', () => {
+      const xml =
+        '<exc:exception><namespace id="org.abapgit.adt"/>' +
+        '<message>Clone of https://example.com/r.git?a=1&amp;b=2 failed: &lt;unknown&gt;</message></exc:exception>';
+      expect(classifyAbapgitError(xml)).toEqual({
+        namespace: 'org.abapgit.adt',
+        message: 'Clone of https://example.com/r.git?a=1&b=2 failed: <unknown>',
+      });
+    });
   });
 });
 
@@ -892,6 +1094,11 @@ describe('extractUnknownColumn / formatUnknownColumnHint (FEAT-64)', () => {
 
   it('extracts the column from the live DE unknown-column message', () => {
     expect(extractUnknownColumn(unknownColErr('Unbekannter Spaltenname "NOSUCHCOL".'))).toBe('NOSUCHCOL');
+  });
+
+  it('extracts the column when the quotes arrive entity-encoded', () => {
+    // Not seen on the wire (SAP writes `"` literally in element text); decoding makes it match anyway.
+    expect(extractUnknownColumn(unknownColErr('Unknown column name &quot;NOSUCHCOL&quot;.'))).toBe('NOSUCHCOL');
   });
 
   it.each([

@@ -57,6 +57,26 @@ afterEach(() => {
 });
 
 describe('CLI runtime', () => {
+  it('initializes logging from the resolved level for direct tool calls', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const code = await main(
+      ['call', 'SAPRead', '--json', '{"type":"SYSTEM"}'],
+      directDependencies(resolved({ url: 'https://sap.example.test', logLevel: 'error' }), {
+        dispatchToolCall: vi.fn(async () => {
+          logger.info('level-probe-info');
+          logger.warn('level-probe-warn');
+          logger.error('level-probe-error');
+          return successfulToolResult();
+        }),
+      }),
+    );
+    expect(code).toBe(0);
+    const emitted = stderr.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('level-probe-'));
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]).toContain('level-probe-error');
+  });
+
   it.each([
     ['atc_ci', 'text', '{"status":"completed","fail":false}', 0],
     ['atc_ci', 'json', '{"status":"completed","fail":true}', 1],

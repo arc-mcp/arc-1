@@ -11,11 +11,12 @@
  * - configuration-changes: transport releases, activations
  *
  * Authentication uses mTLS (X.509 certificates) via the premium plan binding.
- * Tokens are cached with 60s refresh buffer (same pattern as btp.ts connectivity proxy).
+ * Token acquisition and caching are delegated to SAP's XSUAA client.
  *
- * All writes are fire-and-forget — errors go to stderr, never block tool calls.
+ * All writes are fire-and-forget — delivery errors are reported without blocking tool calls.
  */
 
+import { XsuaaService } from '@sap/xssec';
 import type {
   AuditEvent,
   AuthPPCreatedEvent,
@@ -34,13 +35,15 @@ import type { LogSink } from './types.js';
 export interface BTPAuditLogConfig {
   url: string;
   uaa: {
-    url: string;
     certurl: string;
     clientid: string;
     certificate: string;
     key: string;
   };
 }
+
+const FAILURE_REPORT_INTERVAL_MS = 60_000;
+type ErrorReporter = (message: string) => void;
 
 /** Audit log category endpoints */
 type AuditCategory = 'security-events' | 'data-accesses' | 'data-modifications' | 'configuration-changes';
@@ -93,70 +96,103 @@ export function parseBTPAuditLogConfig(): BTPAuditLogConfig | undefined {
   const vcap = process.env.VCAP_SERVICES;
   if (!vcap) return undefined;
 
+  let services: Record<string, unknown>;
   try {
-    const services = JSON.parse(vcap);
-    // Look for auditlog service with premium plan
-    const auditlogEntries = services.auditlog ?? services['auditlog-api'] ?? [];
-    const premiumBinding = Array.isArray(auditlogEntries)
-      ? auditlogEntries.find((s: Record<string, unknown>) => s.plan === 'premium' || s.plan === 'oauth2')
-      : undefined;
-
-    if (!premiumBinding?.credentials) return undefined;
-
-    const creds = premiumBinding.credentials;
-    return {
-      url: creds.url,
-      uaa: {
-        url: creds.uaa?.url,
-        certurl: creds.uaa?.certurl,
-        clientid: creds.uaa?.clientid,
-        certificate: creds.uaa?.certificate,
-        key: creds.uaa?.key,
-      },
-    };
+    const parsed = JSON.parse(vcap) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    services = parsed;
   } catch {
     return undefined;
   }
+
+  const auditlogEntries = services.auditlog ?? services['auditlog-api'] ?? [];
+  const premiumBinding = Array.isArray(auditlogEntries)
+    ? auditlogEntries.find(
+        (entry): entry is Record<string, unknown> =>
+          isRecord(entry) && (entry.plan === 'premium' || entry.plan === 'oauth2'),
+      )
+    : undefined;
+
+  if (!premiumBinding) return undefined;
+
+  const credentials = isRecord(premiumBinding.credentials) ? premiumBinding.credentials : {};
+  const uaa = isRecord(credentials.uaa) ? credentials.uaa : {};
+  const requiredFields = [
+    ['url', credentials.url],
+    ['uaa.certurl', uaa.certurl],
+    ['uaa.clientid', uaa.clientid],
+    ['uaa.certificate', uaa.certificate],
+    ['uaa.key', uaa.key],
+  ] as const;
+  const missingFields = requiredFields.filter(([, value]) => !isNonEmptyString(value)).map(([path]) => path);
+
+  if (missingFields.length > 0) {
+    throw new Error(
+      `BTP Audit Log binding is missing required X.509 fields: ${missingFields.join(', ')}. ` +
+        'Create the premium instance with xs-security.oauth2-configuration.credential-types=[x509] ' +
+        'and rebind the application with xsuaa.credential-type=x509.',
+    );
+  }
+
+  return {
+    url: credentials.url as string,
+    uaa: {
+      certurl: uaa.certurl as string,
+      clientid: uaa.clientid as string,
+      certificate: uaa.certificate as string,
+      key: uaa.key as string,
+    },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 export class BTPAuditLogSink implements LogSink {
-  private token: string | undefined;
-  private tokenExpiresAt = 0;
-  private pendingWrites: Promise<void>[] = [];
+  private readonly authService: XsuaaService;
+  private readonly pendingWrites = new Set<Promise<void>>();
+  private nextFailureReportAt = 0;
 
-  constructor(private config: BTPAuditLogConfig) {}
+  constructor(
+    private config: BTPAuditLogConfig,
+    private reportError: ErrorReporter = (message) => {
+      process.stderr.write(`[BTPAuditLogSink] Failed to write audit event: ${message}\n`);
+    },
+  ) {
+    this.authService = new XsuaaService(config.uaa);
+  }
 
   write(event: AuditEvent): void {
     const category = categorize(event);
     if (!category) return;
 
     // Fire-and-forget
-    const p = this.sendEvent(event, category).catch((err) => {
-      process.stderr.write(`[BTPAuditLogSink] Failed to write audit event: ${err}\n`);
-    });
-    this.pendingWrites.push(p);
-
-    // Cleanup completed promises periodically
-    if (this.pendingWrites.length > 50) {
-      this.pendingWrites = this.pendingWrites.filter((p) => {
-        let settled = false;
-        p.then(
-          () => (settled = true),
-          () => (settled = true),
-        );
-        return !settled;
-      });
-    }
+    const pending = this.sendEvent(event, category)
+      .catch((error) => this.reportFailure(error))
+      .finally(() => this.pendingWrites.delete(pending));
+    this.pendingWrites.add(pending);
   }
 
   async flush(): Promise<void> {
     await Promise.allSettled(this.pendingWrites);
-    this.pendingWrites = [];
+  }
+
+  private reportFailure(error: unknown): void {
+    const now = Date.now();
+    if (now < this.nextFailureReportAt) return;
+
+    this.nextFailureReportAt = now + FAILURE_REPORT_INTERVAL_MS;
+    this.reportError(error instanceof Error ? error.message : String(error));
   }
 
   private async sendEvent(event: AuditEvent, category: AuditCategory): Promise<void> {
-    const token = await this.getToken();
-    const payload = this.buildPayload(event);
+    const { access_token: token } = await this.authService.getClientCredentialsToken();
+    const payload = this.buildPayload(event, category);
 
     const response = await fetch(`${this.config.url}/audit-log/oauth2/v2/${category}`, {
       method: 'POST',
@@ -173,7 +209,7 @@ export class BTPAuditLogSink implements LogSink {
     }
   }
 
-  private buildPayload(event: AuditEvent): Record<string, unknown> {
+  private buildPayload(event: AuditEvent, category: AuditCategory): Record<string, unknown> {
     const user = event.user ?? '$USER';
     // Security events carry free-text `data`, not attributes — append the calling agent there so a
     // denial or lockout can be attributed to the software that triggered it, not just the user.
@@ -184,6 +220,15 @@ export class BTPAuditLogSink implements LogSink {
       time: event.timestamp,
       tenant: '$PROVIDER',
     };
+    // Data-access records require a subject; use the same system attribution for modifications.
+    // Security and configuration endpoints keep their own schema.
+    if (category === 'data-accesses' || category === 'data-modifications') {
+      base.data_subject = {
+        type: 'sap-system',
+        role: 'data-owner',
+        id: { system: event.target ?? 'configured-target' },
+      };
+    }
 
     switch (event.event) {
       case 'tool_call_start': {
@@ -331,38 +376,5 @@ export class BTPAuditLogSink implements LogSink {
           data: `[${event.event}] ${JSON.stringify(event)}`,
         };
     }
-  }
-
-  private async getToken(): Promise<string> {
-    // Return cached token if still valid (with 60s buffer)
-    if (this.token && Date.now() < this.tokenExpiresAt - 60_000) {
-      return this.token;
-    }
-
-    // For mTLS, we'd need to use the certificate and key from the service binding.
-    // Node.js fetch doesn't support client certificates directly — in production,
-    // the CF buildpack handles certificate injection via the NODE_EXTRA_CA_CERTS
-    // and the service binding provides tokens via the bound app's identity.
-    // For now, use client_credentials grant with the service binding.
-    const tokenUrl = `${this.config.uaa.certurl}/oauth/token`;
-    const params = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: this.config.uaa.clientid,
-    });
-
-    const response = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Token fetch failed: HTTP ${response.status}`);
-    }
-
-    const data = (await response.json()) as { access_token: string; expires_in: number };
-    this.token = data.access_token;
-    this.tokenExpiresAt = Date.now() + data.expires_in * 1000;
-    return this.token;
   }
 }

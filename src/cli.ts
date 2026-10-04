@@ -354,7 +354,7 @@ function createRuntime(argv: readonly string[], state: CliExecutionState, overri
     if (!runtimeState.resolvedConfig) {
       runtimeState.resolvedConfig = deps.resolveConfiguration(configArgv(argv));
       const serverConfig = runtimeState.resolvedConfig.config;
-      initLogger(serverConfig.logFormat, serverConfig.verbose);
+      initLogger(serverConfig.logFormat, serverConfig.logLevel);
     }
     return runtimeState.resolvedConfig;
   };

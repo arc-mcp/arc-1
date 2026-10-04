@@ -1,17 +1,24 @@
-# XSUAA setup
+# XSUAA OAuth for MCP-Native Clients
 
-<a id="xsuaa-oauth-for-mcp-native-clients"></a>
+This guide sets up BTP XSUAA authentication so MCP-native clients (Claude Desktop, Cursor, VS Code, MCP Inspector) can authenticate via OAuth when connecting to ARC-1.
 
-Use XSUAA for browser sign-in to ARC-1 on SAP BTP Cloud Foundry.
-If the repository MTA is already deployed, start at [role assignment](#step-3-assign-role-collections).
-For a first deployment, follow [BTP: Start Here](btp-overview.md).
+**Updating an existing installation?** Start with the [upgrade table](#upgrading-an-existing-deployment)
+to keep existing client settings and UI URLs working.
 
 ## Overview
 
-<a id="architecture"></a>
+MCP-native clients use RFC 8414 OAuth discovery to find authorization endpoints at the MCP server's URL. ARC-1 proxies the OAuth flow to XSUAA using the MCP SDK's `ProxyOAuthServerProvider`.
 
-The client discovers ARC-1's OAuth endpoints, signs in through XSUAA and sends the resulting bearer token to the MCP URL.
-XSUAA roles grant ARC-1 scopes; [SAP identity is configured separately](enterprise-auth.md).
+**Auth flow:**
+
+1. Client discovers OAuth via `/.well-known/oauth-authorization-server`
+2. Client redirects user to ARC-1's `/authorize` endpoint
+3. ARC-1 proxies to XSUAA's login page
+4. After login, XSUAA returns authorization code
+5. Client exchanges code for token via ARC-1's `/token` endpoint
+6. Client sends Bearer token with MCP requests
+
+**Coexistence:** XSUAA OAuth coexists with API key and generic OIDC auth (for example Entra ID, Okta, or Keycloak). All configured methods work on the same `/mcp` endpoint via a chained token verifier.
 
 ## Prerequisites
 
@@ -29,6 +36,11 @@ XSUAA roles grant ARC-1 scopes; [SAP identity is configured separately](enterpri
 its application identifier; inspect credentials locally only when needed and never paste them
 into chat or a ticket. Continue to [Step 3](#step-3-assign-role-collections).
 
+The MTA registers ARC-1's `/oauth/callback` and `/oauth/logged-out` on its deployed route
+automatically. The optional UI extension also registers the AppRouter's `/login/callback`.
+No per-client XSUAA entries are needed. For an external gateway or path
+prefix configured with `ARC1_PUBLIC_URL`, use the [custom public URL example](#custom-public-url).
+
 **Using a manually managed app or customer-owned service?** Agree on the owner first. The create
 command below is only for a new, manually managed XSUAA instance. For an existing instance, inspect
 it and agree on descriptor updates instead of recreating it. MTA and manual lifecycle changes must
@@ -36,22 +48,107 @@ not compete for ownership. See [configuration ownership](btp-administration.md#c
 
 ### Manual path: create only when a new instance is intended
 
-The `xs-security.json` file defines scopes, roles, and OAuth configuration:
+The `xs-security.json` template defines scopes, roles, and local development callbacks.
+Copy it and add the two exact URLs on which ARC-1 is publicly reachable:
 
 ```bash
-cf create-service xsuaa application arc1-xsuaa -c xs-security.json
+cp xs-security.json xs-security.landscape.json
 ```
 
-The base descriptor defines scopes and role templates. The MTA additionally creates the seven
-[ARC-1 role collections](authorization.md#btp-xsuaa-role-templates), with the CF space suffix such as
-`ARC-1 Viewer (dev)`. Manual `cf create-service` / `cf update-service` commands do not create those MTA collections.
+In the copied file, set `oauth2-configuration.redirect-uris` to your actual public URLs:
 
-For a manually managed service, its owner must create the needed collections with roles from the
-current application identifier. For an existing deployment, compare `xsappname`, collections and route
-before changing them; preserve user assignments and the [DCR signing key](#stable-dcr-signing-key-recommended).
+```json
+{
+  "oauth2-configuration": {
+    "redirect-uris": [
+      "https://arc1.example.com/oauth/callback",
+      "https://arc1.example.com/oauth/logged-out"
+    ]
+  }
+}
+```
 
-Start with Viewer for source reads. Developer includes `write`, `transports` and `git`; each still
-requires the matching server flags. For code writes without CTS/Git, define a role with `read` + `write`.
+Merge this property into the copied descriptor; this fragment is not a complete XSUAA descriptor.
+
+Keep the template's localhost entries only when needed for local use;
+add the optional AppRouter's exact `/login/callback` if used. Never trust an entire shared domain
+such as `*.hana.ondemand.com` or `*.applicationstudio.cloud.sap`.
+
+After saving the edited file, create the new service:
+
+```bash
+cf create-service xsuaa application arc1-xsuaa -c xs-security.landscape.json
+```
+
+For an existing customer-owned service, preserve its other settings and required callbacks and
+follow [Updating xs-security.json](#updating-xs-securityjson) instead.
+
+> **`oauth2-configuration.redirect-uris` takes HTTP(S) URLs only.** XSUAA rejects IDE schemes such as
+> `cursor://` and `vscode://` there, and the rejection fails the whole create or update — see
+> [Troubleshooting](#malformed-redirect-uris-detected). IDE callbacks do not belong in this list: ARC-1
+> sends XSUAA its own `/oauth/callback` and validates the client's redirect URI itself.
+
+The included `xs-security.json` defines 7 scopes:
+
+| Scope          | Description                                                    | Gates                                                                                        |
+|----------------|----------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| `read`         | Read SAP objects, search, navigate, lint, diagnose             | `SAPRead`, `SAPSearch`, `SAPNavigate`, `SAPContext`, `SAPLint`, `SAPDiagnose`, SAPManage/SAPTransport/SAPGit read actions |
+| `write`        | Create / update / delete / activate ABAP objects               | `SAPWrite`, `SAPActivate`, `SAPManage` package + FLP mutations                               |
+| `data`         | Preview named table contents                                   | `SAPRead(type=TABLE_CONTENTS)`                                                               |
+| `sql`          | Execute freestyle SQL queries                                  | `SAPQuery`                                                                                   |
+| `transports`   | Create / release / delete CTS transports                       | `SAPTransport.create`/`release`/`delete`                                                     |
+| `git`          | Authorize gated abapGit mutation/egress actions; gCTS mutations remain quarantined | `SAPGit.external_info`/`clone`/`pull`/`push`/branch/unlink actions after server gates          |
+| `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
+
+The MTA additionally defines 7 role collections (assignable in BTP Cockpit). The manual
+`create-service` command above reads only `xs-security.landscape.json`; it does not apply the collections in
+`mta.yaml`. A manual owner must create the required collections and add the current application
+roles before assigning users.
+
+| Role Collection           | Scopes                                                   | Use Case                                  |
+|---------------------------|----------------------------------------------------------|-------------------------------------------|
+| ARC-1 Viewer              | `read`                                                   | Read-only SAP access                      |
+| ARC-1 Developer           | `read`, `write`, `transports`, `git`                     | Full developer (write + CTS + Git)        |
+| ARC-1 Data Viewer         | `read`, `data`                                           | Read-only + table preview                 |
+| ARC-1 Viewer + SQL        | `read`, `data`, `sql`                                    | Read-only + table preview + freestyle SQL |
+| ARC-1 Developer + Data    | `read`, `write`, `data`, `transports`, `git`             | Developer + data preview                  |
+| ARC-1 Developer + SQL     | `read`, `write`, `data`, `sql`, `transports`, `git`      | Developer + data + freestyle SQL          |
+| ARC-1 Admin               | all 7                                                    | Administrative access                     |
+
+> **Multi-space deployments.** `mta.yaml` derives the XSUAA
+> `xsappname` and these role-collection names from the deploy-time `${space}`
+> placeholder, so the same mtar can be deployed into several spaces of one
+> subaccount side by side. The collections therefore appear in the cockpit with
+> the space appended — e.g. `ARC-1 Viewer (dev)` in space `dev`. Assign users to
+> the collection for *your* space (Step 3). The route uses CF's generated default host unless
+> overridden; read the actual route from `cf app <app-name>` instead of guessing it from the space.
+>
+> **Migrating an existing instance:** compare its current `xsappname`, collections and route
+> with the reviewed deployment. Re-assign users if the collection/application identifier changes;
+> update MCP client URLs only if the actual route changes. Preserve the
+> [stable DCR signing key](#stable-dcr-signing-key-recommended) across redeployments.
+>
+> For a manually managed service, applying its landscape file with
+> `cf update-service arc1-xsuaa -c xs-security.landscape.json` updates the scopes and role
+> templates only. It does **not** create role collections declared in
+> `mta.yaml`. Agree on lifecycle ownership before adopting the MTA, then
+> verify in **Security → Role Collections** that all seven collections exist and
+> contain the expected roles. This matters especially for older deployments:
+> seeing `MCPViewer`, `MCPDataViewer`, or `MCPSqlUser` under **Roles** does not
+> mean the corresponding assignable role collections already exist.
+
+**Want a restricted developer** (can write code but cannot transport or push to Git)? Define your own role template in `xs-security.json` with just `[read, write]` scopes, redeploy, and assign it — or use `SAP_DENY_ACTIONS` on the server.
+
+Role collections are only the user-permission gate. Server flags still have to allow the capability: for example, a user in `ARC-1 Developer` still cannot create transports unless the ARC-1 instance also has `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_TRANSPORT_WRITES=true`.
+
+!!! note "Assign the least-privilege collection"
+    `ARC-1 Developer` bundles `transports` + `git` — assigning it authorizes CTS mutations and the
+    gated abapGit mutation/egress family when the matching server flags are on. It does not make gCTS
+    mutations available: those remain quarantined before HTTP. Some accepted abapGit mutations return
+    incomplete when no authoritative postcondition exists. For reviewers, assign `ARC-1 Viewer` (read
+    only); to grant code-write *without* transports/Git, use the `[read, write]`-only template above.
+
+See [authorization.md](authorization.md) for the full three-layer authorization model.
 
 <a id="step-2-bind-service-and-configure"></a>
 
@@ -84,29 +181,19 @@ cf logs arc1-mcp-server --recent | grep XSUAA
 ## Step 3: Assign Role Collections
 
 1. Open **BTP Cockpit** → **Security** → **Role Collections**
-2. Find the shipped collection for your space — the names carry the space suffix, e.g. "ARC-1 Viewer (<space>)", "ARC-1 Developer (<space>)", … "ARC-1 Admin (<space>)".
+2. Find the shipped collection for your space — the names carry the space suffix, e.g. "ARC-1 Viewer (<space>)", "ARC-1 Developer (<space>)", … "ARC-1 Admin (<space>)" (see the multi-space note above)
 3. Click the role collection → **Edit** → **Users** tab
 4. Add your BTP user (email address)
 5. Save
 
 **Assign before you hand out the MCP URL.** The assignment creates the shadow user, so it works for users who have never logged in — use the **Users** tab above, or:
 
-Find the application identity-provider origin first:
-
-```bash
-btp list security/trust --subaccount <subaccount-id>
-```
-
-Match the origin key to the provider users select for application sign-in. Then assign the collection:
-
 ```bash
 btp assign security/role-collection "ARC-1 Viewer (<space>)" \
   --subaccount <subaccount-id> --to-user <email> --of-idp <origin-key>
 ```
 
-The `--of-idp` value is the trust origin, not the identity-provider tenant used to log into the `btp` CLI. See [SAP trust lookup](https://help.sap.com/docs/BTP/btp-cli/btp-get-security-trust.html).
-
-Choose the least-privilege collection for the task (normally Viewer for source-read verification),
+Choose the least-privilege collection for the task (normally Viewer for source-read acceptance),
 not Admin simply to make login work. Use the **application** identity-provider origin; a platform
 CLI/cockpit login is not proof of the user's application assignment.
 
@@ -163,13 +250,31 @@ contract. Multi-target client examples are also available in
 
 ### Claude Desktop
 
-Use the remote-server instructions in [Install in Claude](install-in-claude.md), with the selected
-MCP URL above. The client discovers the OAuth endpoints and prompts for XSUAA sign-in.
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "arc1-sap": {
+      "url": "https://<arc1-route>/mcp"
+    }
+  }
+}
+```
+
+Claude Desktop will automatically discover OAuth via `/.well-known/oauth-authorization-server` and prompt for login.
 
 ### Cursor
 
-Add the selected URL as a remote server using [Cursor's MCP configuration](https://cursor.com/docs/context/mcp).
-Complete the OAuth sign-in, then run a safe SAP read.
+In Cursor settings → MCP Servers, add:
+
+```json
+{
+  "arc1-sap": {
+    "url": "https://<arc1-route>/mcp"
+  }
+}
+```
 
 ### MCP Inspector
 
@@ -180,7 +285,9 @@ https://<arc1-route>/mcp
 
 The inspector will perform OAuth discovery and redirect to XSUAA login.
 
-**Note:** MCP Inspector may use `http://127.0.0.1:6274` as its callback URL. ARC-1 automatically rewrites this to `http://localhost:6274` because XSUAA only allows `http://localhost` for redirect URIs, never `http://127.0.0.1`.
+**Note:** Inspector's DCR registration binds its exact loopback callback, including
+`127.0.0.1` or `[::1]`. XSUAA redirects to ARC-1's callback proxy, so the Inspector callback
+does not need an entry in XSUAA.
 
 ### Copilot Studio (Manual OAuth — recommended)
 
@@ -202,90 +309,146 @@ extra dynamic-registration round trip that some Copilot Studio configurations do
 4. Save — Copilot Studio generates a redirect URL
 5. ARC-1 automatically accepts the redirect URL (dynamic redirect URI registration for the XSUAA client)
 
-Copilot Studio's `https://global.consent.azure-apim.net/redirect/*` pattern is in the shipped
-`xs-security.json`. ARC-1 registers accepted redirect URIs for the SDK's exact-match checks.
+**Why Manual mode:** Manual mode pins the connection to the permanent XSUAA service-binding `clientid`, which sidesteps DCR entirely. Dynamic Discovery (DCR) also works — `client_id`s are now stateless and survive `cf restart`/`cf push`/cell evacuation (see [Stateless DCR](#stateless-dcr) below) — but Copilot Studio adds a `/register` round-trip on first connect that some configurations don't retry cleanly. Manual mode is the more predictable path.
+
+**Redirect URI:** Copilot Studio uses `https://global.consent.azure-apim.net/redirect/*`.
+ARC-1's built-in manual-client policy accepts this fixed-host callback family automatically.
+It does not belong in XSUAA's callback list.
+
+### Which callback list should I change?
+
+| Situation | Action |
+|---|---|
+| Standard MTA deployment or optional browser UI | No new callback setting: deployment registers ARC-1/AppRouter callbacks. Existing installations: check the [upgrade table](#upgrading-an-existing-deployment) first. |
+| New MCP client using Dynamic Client Registration (DCR), including a BAS workspace | Connect with the server URL. The client registers its exact callback automatically. |
+| Supported manual client, such as Copilot Studio | Follow the client setup above; its callback is accepted by ARC-1. |
+| A different client configured with the shared XSUAA client ID | Prefer its DCR mode. Editing XSUAA cannot add it to ARC-1's built-in manual-client policy. |
+| External gateway/custom `ARC1_PUBLIC_URL` or manually managed deployment | Register ARC-1's exact public callback and logged-out URLs in the deployment-owned XSUAA configuration. |
+
+XSUAA validates the first redirect to ARC-1. ARC-1 separately validates the second redirect to
+the MCP client: known manual callbacks use a built-in policy; DCR callbacks must match their
+registration exactly. A shared SAP domain wildcard is unnecessary at either layer.
 
 ## Stateless DCR
 
-Dynamic Client Registration (DCR) issues signed `client_id` values that contain their registration.
-They survive restarts and deployment changes **while the effective signing key remains the same**.
+ARC-1 implements RFC 7591 Dynamic Client Registration (DCR) with a **stateless** design: each issued `client_id` is an HMAC-signed token that carries its own registration payload (redirect URIs, grant types, etc.). The signing key is derived from the XSUAA `clientsecret`, so any process with the same service binding can validate any `client_id` ever issued — **no shared store or persistent state is needed**.
 
-| Setting or event | Effect |
-|---|---|
-| `ARC1_DCR_SIGNING_SECRET` set | Dedicated DCR signing key |
-| Secret unset | XSUAA `clientsecret` signs registrations |
-| `ARC1_OAUTH_DCR_TTL_SECONDS=0` (default) | Registrations do not expire |
-| Positive TTL | Expiry after the configured lifetime, clamped to 60 seconds–90 days |
-| Effective signing key changes | All registrations must be created again |
+This means:
 
-There is no per-client DCR revocation. OAuth endpoints have [HTTP rate limits](rate-limiting.md).
+- DCR registrations survive `cf restart`, `cf push`, `cf restage`, cell evacuations, OOM auto-recovery, and multi-instance scale-out — none of these invalidate cached `client_id`s.
+- The default lifetime is **`0` — never expire**. There is no per-client revocation at any TTL (a `client_id` is a stateless HMAC token, not a store row), so a finite TTL only produces periodic `invalid_client` re-auth outages — and some MCP clients (Eclipse Copilot, Copilot CLI) don't self-heal from it. Configurable via `--oauth-dcr-ttl-seconds` / `ARC1_OAUTH_DCR_TTL_SECONDS`; set a positive value to opt into expiry (clamped to `[60s, 90d]`). Revocation is global, via signing-key rotation (below).
+- Per-client revocation is intentionally not supported. Forced revocation goes through full key rotation (see below) — rotate the DCR signing key (`ARC1_DCR_SIGNING_SECRET`) or rebind the XSUAA service. (A deeper `KDF_LABEL` bump, `arc1-dcr/v1` → `v2`, also revokes everything, but it lives in the `@arc-mcp/xsuaa-auth` package now, not this repo.)
+- `/register`, `/authorize`, `/token`, `/revoke` are per-IP rate-limited by default (`ARC1_AUTH_RATE_LIMIT=20`/min/IP). Closes CodeQL alert `js/missing-rate-limiting`. Tune via the env var or disable with `=0` if an upstream proxy already provides this. See the [Rate Limiting Guide](rate-limiting.md).
 
 ### Stable DCR signing key (recommended)
 
-An MTA redeploy can recreate the XSUAA binding and rotate its `clientsecret`.
-Set a dedicated signing secret once so that binding rotation does not invalidate MCP registrations:
+By default, the DCR signing key derives from the XSUAA `clientsecret`. This is convenient (no secret to manage) but has a subtle side effect: **`cf deploy` of an MTA recreates the XSUAA service binding, which rotates the `clientsecret` and therefore invalidates every cached `client_id`**. Users see `invalid_client` after every redeploy and must re-register their MCP client.
+
+To decouple the two and survive redeploys, set a dedicated signing secret:
 
 ```bash
-ARC1_DCR_SECRET=$(openssl rand -base64 48)
-cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$ARC1_DCR_SECRET"
+SECRET=$(openssl rand -base64 48)
+cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$SECRET"
 cf restage arc1-mcp-server
 ```
 
-Keep this secret outside the MTAR and source-controlled descriptors. Preserve it in the deployment's secret management.
-An undeclared `cf set-env` value normally survives MTA deployment; declaring the same property in a descriptor can override it.
+ARC-1 emits a `[warn]` to stderr if `ARC1_DCR_SIGNING_SECRET` is set without `SAP_XSUAA_AUTH=true` — the secret is only consumed by the XSUAA OAuth proxy path, so this surfaces a misconfiguration where the secret would otherwise be unused.
 
-Check the startup `dcrSigningSource`: `override` means the dedicated key is active; `xsuaa` means fallback.
-Rotating the dedicated key intentionally revokes every DCR registration. Empty/whitespace values fall back with a warning;
-keys shorter than 16 bytes also warn. A secret configured without `SAP_XSUAA_AUTH=true` is unused and warns.
+Properties:
+- `cf set-env` env vars survive `cf deploy` (CF doesn't reset them, and MTA only touches env vars declared in `mta.yaml` properties)
+- Re-setting the value (`cf set-env` with a new secret + `cf restage`) is the explicit revocation knob — invalidates every `client_id` issued under the old secret
+- Falls back to the XSUAA `clientsecret` when unset, preserving the legacy behavior
+- Empty or whitespace-only values are treated as unset (with a `[warn]`), so a misconfigured env var won't crash startup
+- A signing secret shorter than 16 bytes (128 bits) triggers a soft warning at startup; use `openssl rand -base64 48` for the recommended ≥32 bytes
+
+ARC-1 logs the active signing source as `dcrSigningSource: 'override' | 'xsuaa'` in the startup INFO line for observability — `'override'` means the dedicated `ARC1_DCR_SIGNING_SECRET` is in use, `'xsuaa'` means the legacy `clientsecret` fallback.
+
+**Why this is best practice.** A `client_id` issued via [RFC 7591 Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591) is only as durable as the key that signs it — in ARC-1's stateless design the signing key *is* the registration store. Tying that key to a credential that rotates on deploy (the XSUAA `clientsecret`) turns every redeploy into an unintended key rotation — the same failure mode a web framework hits when its session-signing key (Django `SECRET_KEY`, Rails `secret_key_base`) is regenerated per release: all previously-signed artifacts silently become invalid. The fix is the standard one for any signing key — externalize it from the deploy artifact and keep it stable across releases ([12-Factor Config](https://12factor.net/config)), rotating only when you intend to ([OWASP Secrets Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)).
 
 ### Service-binding rotation
 
-Rotate a manually owned binding through its owner-approved procedure:
+The XSUAA `clientsecret` is always an upstream OAuth credential. It is also the DCR signing source
+only while `ARC1_DCR_SIGNING_SECRET` is unset. In that fallback configuration, rebinding XSUAA
+invalidates all DCR registrations. With the recommended dedicated signing secret, rebind/rotation
+does **not** revoke DCR clients; rotate `ARC1_DCR_SIGNING_SECRET` deliberately for global DCR
+revocation.
+
+To rotate the XSUAA binding:
 
 ```bash
 cf unbind-service arc1-mcp-server arc1-xsuaa
-cf bind-service arc1-mcp-server arc1-xsuaa
-cf restage arc1-mcp-server
+cf bind-service   arc1-mcp-server arc1-xsuaa
+cf restage        arc1-mcp-server
 ```
 
-For MTA-owned bindings, use the normal MTA lifecycle. With a dedicated DCR key, registrations stay valid.
-With `dcrSigningSource: xsuaa`, a changed binding secret invalidates them. Either case can still require a fresh upstream OAuth login.
+After this sequence, the DCR effect depends on the active signing source:
+
+- With `dcrSigningSource: 'xsuaa'`, every previously issued DCR `client_id` becomes invalid because
+  the effective signing key changed. Clients must register again; cached access/refresh behavior is
+  client- and token-lifetime-dependent.
+- With `dcrSigningSource: 'override'`, local DCR registrations remain valid because the dedicated
+  signing key did not change. Upstream XSUAA credential rotation can still require a fresh OAuth
+  login, but it is not a DCR revocation event.
+
+DCR state is globally invalidated whenever the **effective signing key** changes: rotate
+`ARC1_DCR_SIGNING_SECRET` in dedicated-key deployments, or rotate/rebind the XSUAA credentials while
+using the fallback. Routine restart, push without rebind, restage, and cell movement preserve DCR
+state while that key remains stable.
 
 ### Recovering a stuck client
 
-| Error | What to refresh |
-|---|---|
-| `invalid_token` | Re-authenticate to replace the expired or rejected access token |
-| `invalid_client` / `Invalid client_id` | Re-register the OAuth client after checking the signing source and TTL |
+After a client has been connected for a while it can fail with one of two errors. They look alike but invalidate **different things, so they have different fixes**:
 
-A restart may reuse cached credentials. Use the client's re-authentication controls first; registration cleanup may be needed for `invalid_client`.
+| Error | What's stale | Cached token still works? | Fix |
+|-------|--------------|---------------------------|-----|
+| `invalid_token` / "not a valid XSUAA, OIDC, or API key token" | the **access token** | no — it expired | **restart the client** — a cold start re-runs auth |
+| `invalid_client` / `Invalid client_id` | the **DCR registration** | usually yes — so tool calls keep working | **clear the cached registration** — a restart alone won't, because the client keeps using its still-valid token and never re-registers |
+
+**Prevent both:** for `invalid_client`, set a stable [`ARC1_DCR_SIGNING_SECRET`](#stable-dcr-signing-key-recommended) + `ARC1_OAUTH_DCR_TTL_SECONDS=0` so a redeploy can't rotate the signing key. For `invalid_token`, the default `refresh-token-validity` in `xs-security.json` is **30 days**, so idle sessions survive far longer.
+
+**Client behaviour varies.** Claude Desktop and MCP Inspector usually re-register on their own and rarely surface either error. **VS Code, Cursor, and Eclipse GitHub Copilot cache the DCR registration and can stay stuck on `invalid_client`** until you clear it — steps per client below. (Eclipse additionally has no per-server "restart MCP" / re-auth action yet — [copilot-for-eclipse#237](https://github.com/microsoft/copilot-for-eclipse/issues/237).)
 
 #### Eclipse GitHub Copilot
 
-For an expired token, quit and reopen Eclipse to trigger sign-in.
-For stale registration, quit Eclipse and back up its MCP login database before removing it:
+**For `invalid_token`** (an expired or long-idle session — you're effectively logged out): **quit and reopen Eclipse**. On the cold start it re-runs the sign-in — its *"… wants to authenticate"* dialog appears — and you're back.
+
+**For `invalid_client`** (the server's signing key rotated, e.g. an MTA `cf deploy`): **a restart usually won't help** — Copilot keeps using its still-valid access token and never re-registers, so the stale `client_id` only resurfaces on the next forced sign-in. You have to clear its cached registration so it calls `/register` again. **Quit Eclipse**, then delete its one cache file:
 
 ```bash
-mv ~/.config/github-copilot/copilot-eclipse.db ~/.config/github-copilot/copilot-eclipse.db.backup
+# macOS / Linux — clears cached MCP logins; you re-authorize each server once
+rm ~/.config/github-copilot/copilot-eclipse.db
 ```
-
-On Windows, check `$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db`. If it is missing, locate it in the affected user's session (Citrix/VDI profiles may be redirected):
-
 ```powershell
-Get-ChildItem -Path $env:LOCALAPPDATA,$env:APPDATA,$env:USERPROFILE -Filter copilot-eclipse.db -File -Recurse -Force -ErrorAction SilentlyContinue |
-  Select-Object -ExpandProperty FullName
+# Windows (PowerShell)
+Remove-Item "$env:LOCALAPPDATA\github-copilot\copilot-eclipse.db"
 ```
 
-With Eclipse closed, rename the matching database to a backup before reopening the client.
-Reopen Eclipse and sign in to each MCP server again. This affects cached MCP logins, not code or Eclipse preferences.
+> **Citrix / VDI / roaming profiles:** `%LOCALAPPDATA%` is often *not* the literal `C:\Users\<you>\AppData\Local` — the profile is redirected into a container, so the file is there under a different path. Resolve the variable in-session instead of guessing (Eclipse closed):
+> ```powershell
+> Get-ChildItem $env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA -Recurse -Filter copilot-eclipse.db -Force -ErrorAction SilentlyContinue | Select FullName
+> ```
+
+Reopen Eclipse → use the server → it registers fresh and prompts you to sign in. Deleting the file is low-impact:
+
+- ✅ The only cost: re-authorize your MCP server(s) once (a browser sign-in each).
+- ❌ It does **not** sign you out of GitHub Copilot itself — that's a separate `auth.db`.
+- ❌ It does **not** touch your code, workspaces, Eclipse preferences, or your MCP server list — only cached MCP auth.
+
+> Want to keep your *other* MCP servers signed in? With the `sqlite3` CLI, delete only this server's rows (the cache is keyed by server URL):
+> ```bash
+> sqlite3 ~/.config/github-copilot/copilot-eclipse.db \
+>   "DELETE FROM state WHERE key LIKE 'dynamicAuthProvider:%your-app.cfapps%';"
+> ```
+
+> Sanity check: a healthy ARC-1 `client_id` looks like `arc1-eyJ2Ijox…` (~280+ chars). A short `arc1-<8 hex>` id predates the stateless store and is always rejected — clear it the same way.
 
 #### Cursor
 
-Cursor also caches its registration and may not re-register on `invalid_client`. Reset it by **removing the MCP server entry, restarting Cursor, then re-adding it**. A stable signing key prevents redeploys from causing this repeatedly.
+Cursor also caches its registration and may not re-register on `invalid_client`. Reset it by **removing the MCP server entry, restarting Cursor, then re-adding it**. With the stable signing key set (above), you only ever do this once.
 
 #### VS Code
 
-VS Code stores DCR registrations by OAuth issuer. Restarting the server or renaming it in `mcp.json` may leave the stale registration intact:
+VS Code caches the DCR registration in its **own secret storage, keyed by the OAuth issuer URL** — so for `invalid_client` (a rotated signing key) **signing out, _Restart Server_, and removing or renaming the server in `mcp.json` do _not_ clear it** (a sign-out drops the access token but keeps the registration; the issuer URL never changes). Clear the registration itself:
 
 1. Command Palette (`Ctrl`/`Cmd`+`Shift`+`P`) → **"Authentication: Remove Dynamic Authentication Providers"**.
 2. Tick the ARC-1 entry — there may be **several** stale ones; remove them all, then **OK**.
@@ -293,17 +456,23 @@ VS Code stores DCR registrations by OAuth issuer. Restarting the server or renam
 
 See [Manage MCP servers in VS Code](https://code.visualstudio.com/docs/agent-customization/mcp-servers) for the Accounts-menu auth controls; the stale-credential cleanup is tracked in [microsoft/vscode#269379](https://github.com/microsoft/vscode/issues/269379).
 
+> **Found an easier way to recover an Eclipse, VS Code, or Cursor MCP login?** MCP-client behavior is still evolving — please [open an issue or PR](https://github.com/arc-mcp/arc-1/issues/new) so these docs can capture the simplest known fix.
+
 ### Browser-based DCR clients (rare)
 
-Browser applications calling `/register` or `/authorize` across origins need an explicit
-`ARC1_ALLOWED_ORIGINS` entry. Native HTTP clients do not need CORS.
-See [CORS setup](security-guide.md#cors-for-browser-based-mcp-clients-opt-in).
+CORS applies when a browser makes a cross-origin request to ARC-1. Native or server-side MCP transports are not subject to it, but browser tools such as MCP Inspector may use a proxy or direct browser requests depending on their configuration. For direct browser requests, add the exact origin to `ARC1_ALLOWED_ORIGINS`. See [Security headers & CORS](security-guide.md#cors-for-browser-based-mcp-clients-opt-in) for the full configuration.
 
 ### Audit events
 
-Use `oauth_client_registered`, `oauth_client_lookup_failed` and `oauth_redirect_uri_registered`
-to diagnose registration changes. Lookup failures include `unknown_prefix`, `malformed`, `bad_signature`,
-`invalid_payload` or `expired`. See [audit fields](security-guide.md#what-gets-logged).
+DCR lifecycle is captured in the audit stream alongside tool calls. Three event types fire:
+
+- `oauth_client_registered` — `info`: a new `client_id` was minted; payload includes the issued id, client name, redirect-URI count, and id length (for tracking URL-budget regressions).
+- `oauth_client_lookup_failed` — `warn` (or `info` for `expired`): a `client_id` failed to resolve; `reason` is one of `unknown_prefix` / `malformed` / `bad_signature` / `invalid_payload` / `expired`. Useful for spotting forgery / probing attempts.
+- `oauth_redirect_uri_registered` — `info`: a redirect URI matched ARC-1's manual-client policy
+  and was added at `/authorize` time to ARC-1's in-memory metadata for that client. This does not
+  update the XSUAA service configuration.
+
+Events flow through the existing audit sinks (stderr / file / BTP Audit Log Service) — same pipeline used for tool-call audit.
 
 ## Updating xs-security.json
 
@@ -315,23 +484,115 @@ For a **manually managed** service, its owner can add approved redirect URIs or 
 the matching descriptor:
 
 ```bash
-# Edit xs-security.json
+# Edit the landscape-specific file used at creation, retaining its callback URLs.
 # Then update the service:
-cf update-service arc1-xsuaa -c xs-security.json
-
-# Restage the app to pick up changes:
-cf restage arc1-mcp-server
+cf update-service arc1-xsuaa -c xs-security.landscape.json
 ```
 
 Existing bindings and service keys inherit `oauth2-configuration` changes — no rebind needed.
 
+Copies of `xs-security.json` taken before September 2026 may still list `cursor://` and `vscode://`
+redirect URIs. Remove them before `cf update-service`; XSUAA rejects the whole update otherwise
+(see [Troubleshooting](#malformed-redirect-uris-detected)).
+
+### Custom public URL
+
+If `ARC1_PUBLIC_URL=https://gateway.example.com/arc1`, merge this resource override into the
+same landscape extension that sets that property. The path prefix is part of both URLs:
+
+```yaml
+resources:
+  - name: arc1-xsuaa
+    parameters:
+      config:
+        oauth2-configuration:
+          redirect-uris:
+            - https://gateway.example.com/arc1/oauth/callback
+            - https://gateway.example.com/arc1/oauth/logged-out
+```
+
+Merge this block into your existing `resources:` entry; do not replace the rest of your extension.
+Extension maps merge recursively, while `redirect-uris` replaces the whole list. The grants and
+token lifetimes from `mta.yaml` remain in effect; retain any intentional customer overrides.
+The standard UI deploy helper adds the AppRouter callback and preserves this list. If the
+AppRouter itself uses an external gateway, also add its exact public `/login/callback`.
+
+A normal backend `host:`/`domain:` override needs no extra callback edits. For a backend using
+explicit `routes:`, set `ARC1_PUBLIC_URL` to the route users connect to and use the exact callback
+list above: MTA's `${default-url}` does not follow the explicit routes list.
+
+### Upgrading an existing deployment
+
+Standard MCP clients keep their server URL and registration. There is no new environment variable,
+service, rebind, or role assignment. Preserve the [stable DCR signing key](#stable-dcr-signing-key-recommended)
+as on any redeploy. The intentional compatibility change is that a client using the shared XSUAA
+client ID can no longer redirect to an arbitrary SAP CF/BAS host; use that client's DCR mode instead.
+
+Before deploying, check every row that applies to your installation:
+
+| Existing setup | Upgrade action |
+|---|---|
+| Repository MTA, ordinary CF backend route, no browser UI | Deploy the updated MTAR with your existing landscape extension. No callback edits. |
+| Optional browser UI with no explicit route in your extension | [Pin the current UI route](#keep-an-existing-ui-url) before deploying to keep bookmarks working. |
+| UI with explicit `host`/`domain`, `hosts`/`domains`, or `routes` | Keep those settings and use the UI deploy command below; the helper registers matching UI callbacks. |
+| Gateway, backend `routes`, or custom `ARC1_PUBLIC_URL` | Keep the public URL and add its exact callbacks using [Custom public URL](#custom-public-url). |
+| An existing `redirect-uris` override | Replace shared-domain wildcards with the exact ARC-1 callback and logged-out URLs. Keep any required AppRouter callback. The override wins over the new defaults. |
+| Manually managed XSUAA | Its owner updates the landscape JSON as described [above](#updating-xs-securityjson), retaining its app name, scopes, grants and lifetimes, then deploys the updated ARC-1 app. |
+| No XSUAA authentication | No callback migration is required. |
+
+For an MTA-owned installation, follow the [normal update procedure](updating.md#updating-on-btp)
+with the updated descriptors and your existing extension. Update both XSUAA and the app: an
+app-only push or restage leaves the old XSUAA policy in place. For the optional UI, build with
+`npm run btp:build-ui-ext`, inspect the artifact as in the deployment runbook, then run
+`npm run btp:deploy-ui-ext`. That command generates `mta-ui-deploy.mtaext` from your
+`mta-overrides.mtaext`; edit the source extension, since the generated file is overwritten.
+
+After deployment, verify a fresh MCP login, a safe read and logout. If using the UI, verify a fresh
+login at its existing URL too. If XSUAA reports an invalid redirect, compare the rejected URL with
+the exact registered list and correct that URL; do not restore a shared-domain wildcard.
+
+**Blue-green deployments:** `${default-url}` can refer to the temporary idle route during testing.
+Keep the stable public `ARC1_PUBLIC_URL` and register its exact callbacks explicitly. If you also
+test OAuth at an idle URL, register those exact temporary callbacks during the test and remove
+them afterward. Check both the test route and the production route before completing the switch.
+
+#### Keep an existing UI URL
+
+Read the current route **before** upgrading:
+
+```bash
+cf app arc1-ui-router
+```
+
+Merge it into the existing `arc1-ui-router` module in `mta-overrides.mtaext`. For example, if the
+route shown is `old-ui.cfapps.eu10.hana.ondemand.com`:
+
+```yaml
+modules:
+  - name: arc1-ui-router
+    parameters:
+      host: old-ui
+      domain: cfapps.eu10.hana.ondemand.com
+```
+
+Use the actual route from your space; do not copy the example hostname. If you already use
+`routes:` or plural `hosts:`/`domains:`, retain those instead of adding a competing singular host.
+The UI helper preserves these settings and registers matching `/login/callback` URLs. Explicit
+routes must use actual hostnames, not module-local `${default-url}`/`${default-uri}` placeholders.
+
+Without a route override, the optional UI uses `arc1-ui-${space-guid}` on the CF domain after this
+upgrade. That changes an older default UI URL; pinning the current route avoids the change. The
+MCP backend URL is unaffected.
+
 ## Calling ARC-1 from another BTP application
 
-A BTP application can exchange its signed-in user's JWT for an ARC-1 token, avoiding a second browser login.
-This requires a caller in the same subaccount and ARC-1 role collections for that user.
+The setup above covers a **human at an MCP client** (Claude, Cursor, Eclipse) logging in through the
+browser. A different case is another BTP application — an AI assistant backend, a CAP service, a
+Fiori app — that already has its users logged in via XSUAA and wants to call ARC-1 **as them**,
+without sending them through a second OAuth login.
 
 That is a `jwt-bearer` token exchange: the caller trades its user's JWT for one audienced to ARC-1.
-The relevant `xs-security.json` setting is:
+`xs-security.json` enables it:
 
 ```json
 {
@@ -340,6 +601,8 @@ The relevant `xs-security.json` setting is:
   }
 }
 ```
+
+This is the relevant fragment of the descriptor, not a replacement for its other settings.
 
 **The exchange runs against ARC-1's own OAuth client**, so the grant belongs in ARC-1's descriptor —
 not the caller's. Create a service key on ARC-1's XSUAA instance and hand its credentials to the
@@ -369,7 +632,7 @@ Then either let the Destination service do it (no code — recommended):
 
 ```http
 POST <xsuaa-url>/oauth/token
-Authorization: Basic <base64(clientid:clientsecret)>
+Authorization: Basic <arc1-clientid>:<arc1-clientsecret>
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=<the user's JWT>
@@ -382,9 +645,19 @@ Present it as `Authorization: Bearer …` on `/mcp`.
 x509 works too: create the key with `-c '{"credential-type":"x509"}'` and exchange against the
 `certurl` host over mTLS. No `credential-types` declaration is needed in `xs-security.json`.
 
-`client_credentials` is not enabled: this path requires a human user. Cross-subaccount exchange is unsupported
-(`Unable to map issuer`). Exchanging a token does not grant additional scopes.
-See [SAP's jwt-bearer walkthrough](https://community.sap.com/t5/technology-blog-posts-by-sap/how-grant-types-keep-your-application-secure-exercise-3/ba-p/13525513).
+SAP's own walkthrough of this flow — same shape, with a generic "Business Logic Application" where
+ARC-1 sits — is [How grant-types keep your application secure, Exercise 3](https://community.sap.com/t5/technology-blog-posts-by-sap/how-grant-types-keep-your-application-secure-exercise-3/ba-p/13525513).
+Note that `grant-types` itself is absent from SAP's documented `oauth2-configuration` property table;
+it is real and broker-honored, just undocumented.
+
+!!! warning "What this does not enable"
+    - **No headless technical user.** `client_credentials` stays off the allowlist deliberately —
+      there is no way to mint an ARC-1 token with no human behind it.
+    - **Same subaccount only.** A caller in another subaccount fails with
+      `Unable to map issuer` ([#434](https://github.com/arc-mcp/arc-1/issues/434)) — the issuer is
+      not trusted there.
+    - **Users still need role collections.** An exchanged token for a user with no ARC-1 collection
+      authenticates but authorizes nothing.
 
 ## Configuration Reference
 
@@ -396,10 +669,16 @@ XSUAA credentials are automatically loaded from `VCAP_SERVICES` when the service
 
 ## How Auth Coexistence Works
 
-The single-target verifier tries configured XSUAA, OIDC and API-key methods in order.
-The first valid identity wins. With PP, explicit `SAP_PP_STRICT=true` rejects non-JWT tool calls.
-Unset or `false` permits API keys to use the configured shared SAP identity and emits a mixed-identity warning. JWT PP errors always fail closed.
-See [authentication combinations](enterprise-auth.md#coexistence-matrix).
+When XSUAA auth is enabled, the chained token verifier tries three methods in order:
+
+1. **XSUAA JWT** — validated by `@sap/xssec` against XSUAA JWKS (offline, cached)
+2. **Generic OIDC JWT** — validated by `jose` against OIDC issuer JWKS (if `SAP_OIDC_ISSUER` is set)
+3. **API Key** — simple string match against `ARC1_API_KEYS` entries
+
+The first successful validation wins. This means:
+- MCP-native clients (Claude Desktop, Cursor, MCP Inspector) use XSUAA OAuth via auto-discovery
+- Copilot Studio uses XSUAA OAuth via Manual mode (or generic OIDC, such as Entra ID, if configured separately)
+- API key auth continues to work for testing and Joule Studio
 
 ## Troubleshooting
 
@@ -409,9 +688,28 @@ owner must compare the redirect URI and application ID in the error with the int
 registration ([Microsoft troubleshooting](https://learn.microsoft.com/en-us/troubleshoot/entra/entra-id/app-integration/error-code-aadsts50011-redirect-uri-mismatch)).
 Changing ARC-1's XSUAA allowlist does not repair that upstream registration.
 
-For a mismatch reported by XSUAA instead, review the intended URI in `xs-security.json` and follow
+For a mismatch reported by XSUAA instead, compare ARC-1's public `/oauth/callback` with the
+effective service configuration and follow
 [Updating xs-security.json](#updating-xs-securityjson) for the MTA or manual lifecycle. Do not add
 another region's wildcard or apply the bare base file to an MTA-owned instance as a shortcut.
+
+If ARC-1 rejects `redirect_uri` before the XSUAA login page, check whether the client is using
+its DCR-issued ID or the shared manual ID. A DCR client must send the exact registered callback;
+an unrecognized manual callback should use DCR. An XSUAA configuration edit cannot fix this check.
+
+### "Malformed redirect URIs detected"
+`cf create-service` or `cf update-service` for the XSUAA instance fails with
+`Error parsing xs-security.json data: Malformed redirect URIs detected. The following URIs are invalid: [cursor://…, vscode://…]`,
+and the instance is not created or updated. XSUAA refuses IDE deep-link schemes in
+`oauth2-configuration.redirect-uris`; descriptors that still carry them are rejected as a whole.
+
+For an MTA-managed service, rebuild and deploy with the corrected descriptor. For a manually managed
+service, remove those entries from its complete landscape descriptor and retry the create/update.
+Preserve its existing app name, scopes and other OAuth settings; do not replace it with an unmodified
+repository template. ARC-1 routes
+the OAuth return through its own `/oauth/callback`, so XSUAA only ever sees that URL. The client's real
+redirect URI, including Cursor and VS Code deep links, is validated by ARC-1's runtime policy
+through `@arc-mcp/xsuaa-auth`, not by XSUAA.
 
 ### "Token has no expiration time"
 API key tokens now include a synthetic expiration (1 year). If you see this error, ensure you're running the latest version of ARC-1.
@@ -427,20 +725,12 @@ well as scopes exceeding the grant ([RFC 6749](https://www.rfc-editor.org/rfc/rf
 Read the exact error description, selected endpoint and intended application identity before
 changing roles or clearing state. Do not share full callback URLs, tokens or binding credentials.
 
-Extract only the callback error code from recent CF logs:
-
-```bash
-cf logs arc1-mcp-server --recent | rg -o '/oauth/callback\?error=[^& ]+'
-```
-
-If it is absent, record the error code from the failed sign-in page; absence in logs does not prove success.
-
 | Evidence | Owner and next check |
 |---|---|
 | Scope name reported as invalid/unknown, e.g. an application-qualified `user_attributes` | Application/deployment owner: compare the request, endpoint metadata and effective XSUAA descriptor. Fix the unsupported scope/name qualification. Do not invent an application scope or grant Admin to suppress the error. |
 | User is not allowed any requested scopes | IAM owner: check the required collection is assigned to the correct application identity and contains roles for the bound application identifier. An assignment alone does not prove those roles exist. |
 | Collection exists but has no roles or references an old application identifier | IAM and deployment owners: inspect current role templates and collection contents; use the owner-safe repair below. |
-| Email is assigned but login uses another IdP origin | IAM owner: use the [role-assignment steps](#step-3-assign-role-collections) to match the application login identity. Platform CLI/cockpit access does not establish application access. |
+| Email is assigned but login uses another IdP origin | IAM owner: use the [IdP-origin check and `--of-idp` example](authorization.md#i-have-two-marianexamplecom-users-in-btp-and-only-one-shows-the-role-i-changed) to match the application login identity. Platform CLI/cockpit access does not establish application access. |
 | Correct current roles/origin are verified, but the browser session predates the change | User: try the application refresh action below, then start sign-in again from the MCP client. |
 | Sign-in succeeds but old permissions/tools remain | User: obtain a fresh token through the client's re-authentication flow, then refresh/reload its tool catalog. Reconnecting alone may reuse a cached token. |
 
@@ -455,7 +745,10 @@ session. The failed ARC-1 sign-in page includes **Role assigned? Refresh access*
 checking the assignment, wait for **Access refreshed**, then return to the MCP client and retry
 sign-in. A new identity-provider login may be required. This cannot repair an unknown scope name.
 
-The action calls XSUAA's documented `/logout.do` endpoint with ARC-1's bound `client_id` and a fixed, allowlisted ARC-1 return URL. Callback query parameters never select the logout host or redirect. Standard Cloud Foundry routes are covered by the `https://*.hana.ondemand.com/**` entry in `xs-security.json`; if `ARC1_PUBLIC_URL` uses a custom domain or path, add its `/oauth/logged-out` URL to `oauth2-configuration.redirect-uris` before deploying.
+The action calls XSUAA's documented `/logout.do` endpoint with ARC-1's bound `client_id` and a
+fixed, allowlisted ARC-1 return URL. Callback query parameters never select the logout host or
+redirect. MTA registers `/oauth/logged-out` on ARC-1's route. For a custom domain or path prefix,
+include that public URL as shown in [Custom public URL](#custom-public-url).
 
 The action ends the XSUAA browser SSO session; it does not revoke already issued access tokens or
 necessarily sign out the upstream IdP. Use the MCP client's re-authentication flow if it retains an
@@ -497,4 +790,23 @@ Fix: re-authenticate the connection. In your bot, open **Test** → **Connection
 Check that the XSUAA client ID matches. Run `cf env <app-name>` and look for the `clientid` in the XSUAA binding credentials.
 
 ### "Authorization Request Error" / XSUAA login fails
-If using MCP Inspector with `http://127.0.0.1:6274`, XSUAA rejects the redirect URI (only `http://localhost` is allowed). ARC-1 handles this automatically by rewriting `127.0.0.1` → `localhost`.
+Check the issuer of the error and the actual `redirect_uri` sent to XSUAA. It should be ARC-1's
+public `/oauth/callback`, not the MCP client's loopback URL. Follow the callback-list guidance above.
+
+## Architecture
+
+```
+MCP Client (Claude Desktop, Cursor, MCP Inspector)
+  │
+  ├── GET /.well-known/oauth-authorization-server  ──→  OAuth metadata
+  ├── GET /authorize?client_id=...&redirect_uri=... ──→  Proxied to XSUAA login
+  ├── POST /token (authorization_code exchange)     ──→  Proxied to XSUAA token endpoint
+  │
+  └── POST /mcp (Bearer token)
+        │
+        ├── requireBearerAuth middleware
+        │     └── Chained verifier: XSUAA → OIDC → API key
+        │
+        └── MCP Server (per-request)
+              └── ADT Client → SAP System
+```

@@ -8,6 +8,8 @@
  * 4. Defaults (all `allow*` flags false — restrictive by default)
  */
 
+import { DEFAULT_USER_AGENT } from '../adt/user-agent.js';
+
 /** MCP transport type */
 export type TransportType = 'stdio' | 'http-streamable';
 
@@ -31,6 +33,7 @@ export interface ServerConfig {
   password: string;
   client: string;
   language: string;
+  userAgent: string;
   insecure: boolean;
   /** Gzip non-empty ADT data-preview POST bodies for approved WAF compatibility. */
   gzipDataPreviewBody: boolean;
@@ -168,10 +171,11 @@ export interface ServerConfig {
   /** Absolute paths to extension plugins to load at startup (from ARC1_PLUGINS, CSV). Each contributes
    *  `Custom_*` tools via the ToolRegistry. Empty (default) = no plugins. NOT npm package names. */
   plugins: string[];
-  /** Opt-in: allow plugin tools to EXECUTE ABAP console classes (`ctx.run.classRun`, IF_OO_ADT_CLASSRUN).
-   *  Default false. Running arbitrary ABAP is a mutation vector, so it ALSO requires `allowWrites=true`
-   *  and the tool must declare `write` scope. A dedicated switch (not implied by `allowWrites`) so
-   *  enabling built-in writes never silently grants plugins code execution. */
+  /** Opt-in: allow plugin tools to EXECUTE ABAP console classes and reports
+   *  (`ctx.run.classRun` / `ctx.run.programRun`). Default false. Running arbitrary ABAP is a mutation
+   *  vector, so it ALSO requires `allowWrites=true` and the tool must declare `write` scope. A
+   *  dedicated switch (not implied by `allowWrites`) means enabling built-in writes never silently
+   *  grants plugins code execution. */
   allowPluginExecute: boolean;
   /** Opt-in: allow plugin tools to make low-level WRITE calls (`ctx.http.post`/`put`/`delete`) to
    *  **non-ADT** SAP paths (OData `/sap/opu/odata/…`, custom ICF `/sap/bc/http/…`). Default false.
@@ -258,6 +262,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   password: '',
   client: '100',
   language: 'EN',
+  userAgent: DEFAULT_USER_AGENT,
   insecure: false,
   gzipDataPreviewBody: false,
   transport: 'stdio',

@@ -7,7 +7,7 @@ import { sleepWithinRequestBudget } from './http-deadline.js';
 import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { CoverageSummary } from './types.js';
-import { decodeXmlEntities, escapeXmlAttr, findDeepNodes, getNestedArray, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, findDeepNodes, getNestedArray, parseXml } from './xml-parser.js';
 
 export type AunitOutcome = 'passed' | 'failed' | 'no_tests' | 'incomplete';
 export type AunitTestStatus = 'passed' | 'failed' | 'error' | 'skipped';
@@ -163,7 +163,7 @@ function collectDetails(node: Record<string, unknown>): string[] {
   const result: string[] = [];
   for (const detail of getNestedArray(node, 'details', 'detail')) {
     const text = String(detail['@_text'] ?? '').trim();
-    if (text) result.push(decodeXmlEntities(text));
+    if (text) result.push(text);
     result.push(...collectDetails(detail));
   }
   return result;
@@ -174,14 +174,14 @@ function parseAlert(
   scope: AunitAlertScope,
   context: { program?: string; testClass?: string; testMethod?: string },
 ): AunitAlert {
-  const title = decodeXmlEntities(nodeText(node.title)).trim();
+  const title = nodeText(node.title).trim();
   const details = collectDetails(node);
   const message = [title, ...details].filter(Boolean).join(' — ');
   const stack = getNestedArray(node, 'stack', 'stackEntry').map((entry) => ({
     ...(entry['@_uri'] ? { uri: String(entry['@_uri']) } : {}),
     ...(entry['@_type'] ? { type: String(entry['@_type']) } : {}),
     ...(entry['@_name'] ? { name: String(entry['@_name']) } : {}),
-    ...(entry['@_description'] ? { description: decodeXmlEntities(String(entry['@_description'])) } : {}),
+    ...(entry['@_description'] ? { description: String(entry['@_description']) } : {}),
   }));
   return {
     scope,

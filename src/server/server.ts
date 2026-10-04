@@ -1,12 +1,11 @@
 /**
- * MCP Server for ARC-1.
- *
  * Creates and starts the MCP server with 12 intent-based tools.
  * Supports two transports:
  * - stdio (default): for local MCP clients (Claude Desktop, Claude Code, Cursor)
  * - http-streamable: for remote/containerized deployments
  */
 
+import type { Server as HttpServer } from 'node:http';
 import { type ApiKeyEntry, createApiKeyVerifier, type Verifier } from '@arc-mcp/xsuaa-auth';
 import type { BTPConfig, BTPProxyConfig, Destination, PerUserAuthTokens } from '@arc-mcp/xsuaa-auth/btp';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -32,6 +31,7 @@ import {
 } from '../handlers/feature-cache.js';
 import type { ToolResult } from '../handlers/shared.js';
 import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
+import { VERSION } from '../version.js';
 import { logAuthSummary } from './auth-summary.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId } from './context.js';
@@ -70,14 +70,14 @@ import { injectTargetSchema, multiTargetToolDefinitions, sapTargetsDefinition } 
 import { loadPlugins } from './plugin-loader.js';
 import { createDataResultSemaphore, runtimeMemoryEnvelope } from './runtime-memory.js';
 import { buildServerInstructions } from './server-instructions.js';
+import { closeHttpServer, registerShutdownHandlers } from './shutdown.js';
 import { FileSink } from './sinks/file.js';
 import { filterToolsByAuthScope } from './tool-auth.js';
 import type { ServerConfig } from './types.js';
 import { startLocalUiServer, type UiServerDeps } from './ui.js';
 import { UiLogBufferSink } from './ui-log-buffer.js';
 
-/** ARC-1 version */
-export const VERSION = '1.2.0'; // x-release-please-version
+export { VERSION } from '../version.js';
 
 // Soft warning for an unusually large served tools/list. It is re-sent on every conversation (a
 // recurring token + latency cost), and some MCP clients cap tool-list size. CI's
@@ -219,6 +219,7 @@ export function buildAdtConfig(
     baseUrl: config.url,
     client: config.client,
     language: config.language,
+    userAgent: config.userAgent,
     insecure: config.insecure,
     gzipDataPreviewBody: config.gzipDataPreviewBody,
     disableSaml: config.disableSaml2,
@@ -422,6 +423,7 @@ export function applyPerUserAuthTokens(
   }
   adtConfig.username = displayUsername;
   adtConfig.password = undefined;
+  adtConfig.http = undefined; // An existing transport can carry another identity's login cookies.
   return adtConfig;
 }
 
@@ -606,14 +608,15 @@ export async function runStartupAuthPreflightWithClient(
   const skipped = skippedStartupAuthPreflight(config);
   if (skipped) return skipped;
   const checkedAt = new Date().toISOString();
-  const endpoint = STARTUP_AUTH_ENDPOINT;
+  let endpoint = STARTUP_AUTH_ENDPOINT;
 
   try {
-    await client.http.get(endpoint);
-    const reason = 'Startup auth preflight succeeded for shared SAP credentials.';
+    endpoint = await client.http.fetchCsrfToken();
+    const reason = 'Startup authentication/CSRF bootstrap succeeded; each tool still checks authorization.';
     logger.info(reason, { endpoint });
     return { status: 'ok', blocking: false, endpoint, checkedAt, reason };
   } catch (err) {
+    if (err instanceof AdtApiError) endpoint = err.path;
     if (err instanceof AdtApiError && (err.statusCode === 401 || err.statusCode === 403)) {
       const reason = buildStartupAuthFailureReason(err.statusCode, config);
       // Non-blocking downgrade only applies to cookieFile mode — that's the path
@@ -637,7 +640,7 @@ export async function runStartupAuthPreflightWithClient(
 
     const detail = err instanceof Error ? err.message : String(err);
     const reason =
-      'Startup auth preflight was inconclusive (non-auth failure). ' +
+      'Startup authentication/CSRF bootstrap was inconclusive (non-auth failure). ' +
       'Continuing and letting runtime requests handle connectivity diagnostics.';
     logger.warn(reason, { endpoint, error: detail });
     return { status: 'inconclusive', blocking: false, endpoint, checkedAt, reason };
@@ -666,7 +669,14 @@ export interface CreateServerOptions {
   dataResultSemaphore?: Semaphore;
   mcpRateLimiter?: McpRateLimiter;
   multiTarget?: MultiTargetServerOptions;
+  /** Shared SAP transport (cookies, CSRF token); each request still gets its own AdtClient and caches. */
+  defaultHttp?: AdtClient['http'];
 }
+
+// Mark startup-401 cookies stale once per transport, preserving cookies refreshed by earlier HTTP calls.
+const staleCookieTransports = new WeakSet<AdtClient['http']>();
+/** Maximum age when selecting a shared transport for a new HTTP request; not a ticket lifetime (R21). */
+export const SHARED_TRANSPORT_MAX_AGE_MS = 10 * 60_000;
 
 export function createServer(config: ServerConfig, options: CreateServerOptions = {}): Server {
   const {
@@ -692,23 +702,14 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
   );
   const apiKeyProvenanceVerifier = createConfiguredApiKeyVerifier(config);
 
-  // Create default ADT client (shared, uses startup-time credentials or OAuth bearer).
-  // Passes the shared server-wide semaphore so per-user PP clients (created at request
-  // time) share the same Layer 3 concurrency cap.
+  // Default ADT client (startup-time credentials or OAuth bearer); per-user PP clients share its semaphore.
   const defaultClient = multiTarget
     ? undefined
-    : new AdtClient(
-        buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
-      );
+    : new AdtClient({
+        ...buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore),
+        http: options.defaultHttp,
+      });
 
-  // Cookie-auth preflight propagation: when startup preflight returned a non-blocking
-  // 401 in SAP_COOKIE_FILE mode, the throwaway preflight client marked itself stale —
-  // but the long-lived defaultClient was constructed independently with cookies read at
-  // startup and is unaware. Without explicit propagation, the first real tool call would
-  // re-emit the same stale cookies and hit 401 again before the lazy reload triggers,
-  // wasting one round-trip per startup-stale-cookie cycle. We propagate the stale state
-  // once on first tool call — idempotent flag keeps later calls O(1).
-  let preflightStalePropagated = false;
   let schemaNullableAutoClientInfoLogged = false;
 
   // Register tool listing — filtered by user's scopes when auth is active
@@ -817,12 +818,10 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
           isError: true,
         } as Record<string, unknown>;
       }
-      // Non-blocking 401 from cookie-auth preflight → mark the runtime client's cookies
-      // stale so its first call goes straight to the lazy reload path instead of repeating
-      // the failure. Fires once per process; subsequent calls early-return.
-      if (!preflightStalePropagated && startupAuth.status === 'inconclusive' && startupAuth.statusCode === 401) {
-        defaultClient?.http.markCookiesStale();
-        preflightStalePropagated = true;
+      const staleStartupCookies = startupAuth.status === 'inconclusive' && startupAuth.statusCode === 401;
+      if (staleStartupCookies && defaultClient && !staleCookieTransports.has(defaultClient.http)) {
+        defaultClient.http.markCookiesStale();
+        staleCookieTransports.add(defaultClient.http);
       }
     }
 
@@ -1092,7 +1091,7 @@ export async function createAndStartServer(
   config: ServerConfig,
   sources?: Record<string, import('./types.js').ConfigSource>,
 ): Promise<Server> {
-  initLogger(config.logFormat, config.verbose);
+  initLogger(config.logFormat, config.logLevel);
   const startedAt = new Date().toISOString();
   const uiLogBuffer = config.uiMode !== 'off' ? new UiLogBufferSink() : undefined;
   if (uiLogBuffer) {
@@ -1119,17 +1118,17 @@ export async function createAndStartServer(
     logger.addSink(new FileSink(config.logFile));
     logger.info('File logging enabled', { logFile: config.logFile });
   }
-
-  // Add BTP Audit Log sink if auditlog service is bound (auto-detected from VCAP_SERVICES)
   try {
     const { BTPAuditLogSink, parseBTPAuditLogConfig } = await import('./sinks/btp-auditlog.js');
     const auditLogConfig = parseBTPAuditLogConfig();
     if (auditLogConfig) {
-      logger.addSink(new BTPAuditLogSink(auditLogConfig));
+      const reportDeliveryError = (error: string) =>
+        logger.warn('BTP Audit Log delivery failed (rate-limited)', { error });
+      logger.addSink(new BTPAuditLogSink(auditLogConfig, reportDeliveryError));
       logger.info('BTP Audit Log sink enabled', { url: auditLogConfig.url });
     }
   } catch (err) {
-    logger.warn('BTP Audit Log sink initialization failed (optional)', {
+    logger.error('BTP Audit Log sink disabled; audit events will remain on stderr and the optional file sink', {
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -1359,6 +1358,18 @@ export async function createAndStartServer(
       })()
     : Promise.resolve();
 
+  // Retire transport state for new HTTP requests, preserving older requests and their late responses.
+  // Configured cookies are reloaded, not revoked; see R21. Stdio builds its server only once.
+  const newDefaultHttp = () =>
+    new AdtClient(buildAdtConfig(config, btpProxy, bearerTokenProvider, undefined, adtSemaphore, dataResultSemaphore))
+      .http;
+  let shared = { http: newDefaultHttp(), since: performance.now() };
+  const defaultHttp = () => {
+    if (performance.now() - shared.since >= SHARED_TRANSPORT_MAX_AGE_MS) {
+      shared = { http: newDefaultHttp(), since: performance.now() };
+    }
+    return shared.http;
+  };
   const buildDefaultServer = () =>
     createServer(config, {
       btpProxy,
@@ -1370,6 +1381,7 @@ export async function createAndStartServer(
       adtSemaphore,
       dataResultSemaphore,
       mcpRateLimiter,
+      defaultHttp: defaultHttp(),
     });
   const aggregateConfig = registry ? buildAggregateToolSurfaceConfig(config, registry.targets) : undefined;
   const buildAggregateServer =
@@ -1399,47 +1411,16 @@ export async function createAndStartServer(
         }
       : undefined;
 
-  // Shutdown hook for SQLite cache cleanup (guard against double-close from multiple signals).
-  // IMPORTANT: registering a SIGINT/SIGTERM listener suppresses Node's default exit behavior,
-  // so we must call process.exit() explicitly after cleanup — otherwise Ctrl+C hangs the process.
-  if (cachingLayer) {
-    let cacheClosed = false;
-    const cleanup = (signal: string) => {
-      if (cacheClosed) return;
-      cacheClosed = true;
-      try {
-        cachingLayer?.cache.close();
-      } catch {
-        // Ignore close errors during shutdown
-      }
-      logger.info(`ARC-1 shutting down (${signal})`);
-      process.exit(0);
-    };
-    process.on('SIGTERM', () => cleanup('SIGTERM'));
-    process.on('SIGINT', () => cleanup('SIGINT'));
-  } else {
-    // No cache — still log clean shutdown on explicit signals so operators see it in logs.
-    process.on('SIGTERM', () => {
-      logger.info('ARC-1 shutting down (SIGTERM)');
-      process.exit(0);
-    });
-    process.on('SIGINT', () => {
-      logger.info('ARC-1 shutting down (SIGINT)');
-      process.exit(0);
-    });
+  const httpServers: HttpServer[] = [];
+  if (uiDeps && config.uiMode === 'local') {
+    httpServers.push(await startLocalUiServer(uiDeps));
   }
 
   if (config.transport === 'stdio') {
-    if (uiDeps && config.uiMode === 'local') {
-      await startLocalUiServer(uiDeps);
-    }
     const transport = new StdioServerTransport();
     await server.connect(transport);
     logger.info('ARC-1 MCP server running on stdio');
   } else {
-    if (uiDeps && config.uiMode === 'local') {
-      await startLocalUiServer(uiDeps);
-    }
     // HTTP Streamable transport — for containerized/BTP deployments
     // Pass the factory function so HTTP server can create fresh server+transport
     // per request. This is required because MCP SDK's Server can only connect
@@ -1491,14 +1472,23 @@ export async function createAndStartServer(
             },
           }
         : undefined;
-    await startHttpServer(
-      serveSingleTargetEndpoint ? buildDefaultServer : undefined,
-      config,
-      xsuaaCredentials,
-      config.uiMode === 'web' ? uiDeps : undefined,
-      multiTargets,
+    httpServers.push(
+      await startHttpServer(
+        serveSingleTargetEndpoint ? buildDefaultServer : undefined,
+        config,
+        xsuaaCredentials,
+        config.uiMode === 'web' ? uiDeps : undefined,
+        multiTargets,
+      ),
     );
   }
 
+  registerShutdownHandlers(
+    async () => {
+      await Promise.all(httpServers.map(closeHttpServer));
+      await server.close();
+    },
+    () => cachingLayer?.cache.close(),
+  );
   return server;
 }

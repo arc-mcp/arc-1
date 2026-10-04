@@ -29,7 +29,7 @@ function toOpenAIMessages(messages: Message[]): Array<Record<string, unknown>> {
       return {
         role: 'tool',
         content: msg.content ?? '',
-        tool_call_id: msg.toolCallId ?? 'call_0',
+        tool_call_id: msg.toolCallId,
       };
     }
 
@@ -37,8 +37,8 @@ function toOpenAIMessages(messages: Message[]): Array<Record<string, unknown>> {
       return {
         role: 'assistant',
         content: msg.content ?? null,
-        tool_calls: msg.toolCalls.map((tc, i) => ({
-          id: `call_${i}`,
+        tool_calls: msg.toolCalls.map((tc) => ({
+          id: tc.id,
           type: 'function',
           function: {
             name: tc.name,
@@ -63,6 +63,7 @@ function parseToolCalls(
   if (!toolCalls?.length) return undefined;
 
   return toolCalls.map((tc) => ({
+    id: tc.id,
     name: tc.function.name,
     arguments: JSON.parse(tc.function.arguments),
   }));

@@ -16,7 +16,7 @@
 
 import { type Config, Edits, MemoryFile, Registry, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from './abaplint-config-cache.js';
-import { buildPreWriteConfig, type LintConfigOptions } from './config-builder.js';
+import { buildPreWriteConfig, getLintSyntaxVersion, type LintConfigOptions } from './config-builder.js';
 import { inspectTablSource } from './pre-write-hints.js';
 
 /** Lint result from @abaplint/core */
@@ -44,6 +44,8 @@ export interface LintFixResult {
 
 /** Result of pre-write validation */
 export interface PreWriteResult {
+  /** Syntax from the same config used for validation, after custom overrides. */
+  syntaxVersion: ReturnType<typeof getLintSyntaxVersion>;
   /** Whether the write should proceed */
   pass: boolean;
   /** Errors that block the write */
@@ -162,6 +164,7 @@ export function validateBeforeWrite(
 
   return {
     pass: errors.length === 0,
+    syntaxVersion: getLintSyntaxVersion(config),
     errors,
     warnings,
   };

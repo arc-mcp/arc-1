@@ -1,6 +1,6 @@
 /**
  * Generic "server-driven object" (SDO) read/write path. Most SDO types need ABAP Platform 2025
- * (SAP_BASIS 8.16+), but some (DTDC, DSFD, EVTB) also ship on S/4HANA 2023 (758) — availability is
+ * (SAP_BASIS 8.16+), but some (DTDC, DSFD, DRTY, EVTB) also ship on S/4HANA 2023 (758) — availability is
  * discovery-gated per type, never a hardcoded release.
  *
  * These repository object types share ONE AFF generic-object contract:
@@ -14,23 +14,25 @@
  *             metadata body (blue:blueSource / dtdc:dtdcSource; adtcore:type/name/description + packageRef) → 201.
  *   - SOURCE = lock (crud.ts) → PUT <url>/source/main?lockHandle=… → unlock. The Content-Type is
  *             per-type (registry `sourceFormat`): application/json for the AFF-JSON types,
- *             text/plain for the DDL-text ones (DTSC, DSFD, DTDC). The wrong one is a hard 415.
+ *             text/plain for entries with sourceFormat='text'. The wrong one is a hard 415.
  *   - DELETE = lock → http.delete(<url>?lockHandle=…) → unlock.
  *   - ACTIVATE is the generic devtools activate() against the object URL (callers use SAPActivate).
- * Create leaves the object inactive — callers follow with SAPActivate (never auto-activated).
+ * Create never auto-activates. APLO (and UIAD source) saves are active immediately; the other
+ * types stay inactive until SAPActivate.
  *
  * The create `adtcore:type` subtype is NOT uniformly "<code>/TYP" (EVTB=EVTB/EVB, DTDC=DTDC/DF) and
  * the metadata content-type varies (blues v1, EVTO=blues v2, DTDC=ddic.dtdc.v1) — all stored per
  * registry entry, verified live: the blue family on 816, DTDC create→activate on 758 + 816.
  */
 import { logger } from '../server/logger.js';
+import { postCreate } from './create-request.js';
 import { lockObject, unlockObject } from './crud.js';
 import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
-import { AdtApiError } from './errors.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { ServerDrivenObjectResult } from './types.js';
-import { escapeXmlAttr, parseServerDrivenMetadata } from './xml-parser.js';
+import { escapeXmlAttr, parseServerDrivenMetadata, parseXml } from './xml-parser.js';
 
 /** Registry entry for a curated server-driven object type. */
 export interface SdoRegistryEntry {
@@ -45,7 +47,7 @@ export interface SdoRegistryEntry {
   createType: string;
   /**
    * Metadata content-type for BOTH the metadata GET (Accept) and the create POST (Content-Type).
-   * Most types use `application/vnd.sap.adt.blues.vN+xml` (EVTO is v2, the rest v1); DTDC uses its
+   * Most types use `application/vnd.sap.adt.blues.vN+xml` (version set per entry); DTDC uses its
    * own `application/vnd.sap.adt.ddic.dtdc.v1+xml`. Matched by `discoveryMarker` in the gate.
    */
   metadataContentType: string;
@@ -69,7 +71,7 @@ export interface SdoRegistryEntry {
   discoveryMarker: string;
   /**
    * Source flavor — drives BOTH the client-side validation and the PUT Content-Type. NOT uniform:
-   * the AFF-JSON types 415 on text/plain, and the DDL-text types (DTSC, DSFD, DTDC) 415 on
+   * the AFF-JSON types 415 on text/plain, and the DDL-text types 415 on
    * application/json. Live-verified per type on 816.
    */
   sourceFormat: SdoSourceFormat;
@@ -79,7 +81,7 @@ export interface SdoRegistryEntry {
 export type SdoSourceFormat = 'json' | 'text';
 
 /**
- * Shared metadata-format fields for the "blue" family (DESD/DTSC/CSNM/EVTB/EVTO/COTA/DSFD) — every
+ * Shared metadata-format fields for registry entries using the "blue" family — every
  * blue type has the identical root element/namespace/discovery marker; only its content-type version
  * (v1/v2) and source flavor differ. Spread into each blue entry so the shape can't drift.
  */
@@ -121,7 +123,21 @@ export function serverDrivenSourceFormat(code: string): SdoSourceFormat {
  * here is the ONLY step needed to expose it — `btp: true` by construction (runtime availability is
  * discovery-gated per system, so a type absent on a release degrades cleanly).
  */
-export const SDO_TYPES = ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD'] as const;
+export const SDO_TYPES = [
+  'DESD',
+  'DTSC',
+  'CSNM',
+  'EVTB',
+  'EVTO',
+  'COTA',
+  'DSFD',
+  'DTDC',
+  'UIAD',
+  'DRTY',
+  'APLO',
+  'SAJC',
+  'SAJT',
+] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
 export const SDO_REGISTRY = {
@@ -202,6 +218,43 @@ export const SDO_REGISTRY = {
     href: '/sap/bc/adt/fiori/uiad',
     label: 'Launchpad App Descriptor Item (LADI)',
     createType: 'UIAD/TYP',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  // Plain blue sibling of DSFD. DRTY/STY covers scalar types AND enums, so create needs no subtype
+  // routing. DDL-text source (JSON PUT = 415). Verified 758/816: docs/research/2026-09-18-drty-cds-type-adt-contract.md
+  DRTY: {
+    href: '/sap/bc/adt/ddic/drty/sources',
+    label: 'CDS Type (scalar type / enum)',
+    createType: 'DRTY/STY',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'text',
+  },
+  // Application Log Object (SLG0 successor for ABAP Cloud): header + subobjects in AFF JSON.
+  APLO: {
+    href: '/sap/bc/adt/applicationlog/objects',
+    label: 'Application Log Object',
+    createType: 'APLO/TYP',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  // Application Job Catalog Entry / Template: blues v2, and SAP reports the bare code (no subtype)
+  // as adtcore:type. Verified 816: docs/research/2026-09-28-aplo-sajc-sajt-adt-contract.md
+  SAJC: {
+    href: '/sap/bc/adt/applicationjob/catalogs',
+    label: 'Application Job Catalog Entry',
+    createType: 'SAJC',
+    metadataContentType: BLUES_V2,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
+  SAJT: {
+    href: '/sap/bc/adt/applicationjob/templates',
+    label: 'Application Job Template',
+    createType: 'SAJT',
     metadataContentType: BLUES_V2,
     ...BLUE_METADATA,
     sourceFormat: 'json',
@@ -301,22 +354,33 @@ export function serverDrivenUnavailableMessage(tool: string, code: string): stri
 /**
  * Read a server-driven object: its metadata (blue:blueSource or dtdc:dtdcSource) + source (AFF JSON
  * or DDL text). The source is JSON-parsed when possible (raw text otherwise). Throws AdtApiError 404
- * for a nonexistent object. Gate availability with supportsServerDrivenObject() on unknown systems.
+ * for a nonexistent object. Explicit versions must match the returned metadata; omission keeps
+ * SAP's developer view. Gate availability with supportsServerDrivenObject() on unknown systems.
  */
 export async function getServerDrivenObject(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
   name: string,
+  version?: 'active' | 'inactive',
 ): Promise<ServerDrivenObjectResult> {
   checkOperation(safety, OperationType.Read, 'GetServerDrivenObject');
   const entry = sdoEntry(code);
   const objUrl = serverDrivenObjectUrl(code, name);
 
-  const metaResp = await http.get(objUrl, { Accept: entry.metadataContentType });
+  const query = version ? `?version=${version}` : '';
+  const metaResp = await http.get(`${objUrl}${query}`, { Accept: entry.metadataContentType });
   const metadata = parseServerDrivenMetadata(metaResp.body, entry.metadataRootLocalName);
 
-  const srcResp = await http.get(`${objUrl}/source/main`, { Accept: 'application/json, */*' });
+  // SAP can substitute the other version when the requested one does not exist.
+  if (version && metadata.version !== version) {
+    throw new AdtError(
+      `Cannot confirm ${version} version of ${code} ${name}: SAP metadata reports ${metadata.version || 'no version'}. ` +
+        'No source returned. Use version="auto" for the available developer view.',
+    );
+  }
+
+  const srcResp = await http.get(`${objUrl}/source/main${query}`, { Accept: 'application/json, */*' });
   let source: unknown = srcResp.body;
   try {
     source = JSON.parse(srcResp.body);
@@ -346,13 +410,14 @@ export function buildServerDrivenMetadataXml(
   pkg: string,
   description: string,
   uiadLanguageVersion?: UiadLanguageVersion,
+  creationProperties?: Record<string, string>,
 ): string {
   const entry = sdoEntry(code);
   const [prefix] = entry.metadataRootQName.split(':');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <${entry.metadataRootQName} xmlns:${prefix}="${entry.metadataNamespace}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${escapeXmlAttr(entry.createType)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}"${code === 'UIAD' && uiadLanguageVersion ? ` adtcore:abapLanguageVersion="${escapeXmlAttr(uiadLanguageVersion)}"` : ''}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
-</${entry.metadataRootQName}>`;
+${creationProperties ? `  <blue:additionalCreationProperties><adtcore:content adtcore:type="application/vnd.sap.adt.objecttype.new.content.additional.v1+json">${escapeXmlAttr(JSON.stringify(creationProperties))}</adtcore:content></blue:additionalCreationProperties>\n` : ''}</${entry.metadataRootQName}>`;
 }
 
 /** Options shared by the SDO write operations. */
@@ -365,28 +430,41 @@ export interface ServerDrivenWriteOptions {
 
 /**
  * Create a server-driven object (metadata only — POST the <blue:blueSource> body to the collection
- * href with the type's blues content-type). Leaves the object INACTIVE; callers follow with source
- * write + activation. Returns the raw response body. Verified live: 201 for all 6 registered types.
+ * href with the type's metadata content-type). APLO is immediately active; other generic types
+ * need activation. Job objects also need their creation reference. Returns the raw response body.
  */
 export async function createServerDrivenObject(
   http: AdtHttpClient,
   safety: SafetyConfig,
   code: string,
   name: string,
-  opts: { package: string; description: string; transport?: string; uiadLanguageVersion?: UiadLanguageVersion },
+  opts: {
+    package: string;
+    description: string;
+    transport?: string;
+    uiadLanguageVersion?: UiadLanguageVersion;
+    creationProperties?: Record<string, string>;
+  },
 ): Promise<string> {
   checkOperation(safety, OperationType.Create, 'CreateServerDrivenObject');
   const entry = sdoEntry(code);
-  const body = buildServerDrivenMetadataXml(code, name, opts.package, opts.description, opts.uiadLanguageVersion);
+  const body = buildServerDrivenMetadataXml(
+    code,
+    name,
+    opts.package,
+    opts.description,
+    opts.uiadLanguageVersion,
+    opts.creationProperties,
+  );
   const url = opts.transport ? `${entry.href}?corrNr=${encodeURIComponent(opts.transport)}` : entry.href;
-  const resp = await http.post(url, body, entry.metadataContentType);
+  const resp = await postCreate(http, url, body, entry.metadataContentType);
   return resp.body;
 }
 
 /**
  * Write the source of a server-driven object: lock → PUT …/source/main → unlock (guaranteed via
  * try-finally). The Content-Type comes from the type's declared sourceFormat — AFF-JSON types take
- * application/json, DDL-text types (DTSC, DSFD) take text/plain; sending the wrong one is a 415.
+ * application/json, entries with sourceFormat='text' take text/plain; the wrong one is a 415.
  * Auto-propagates the lock's corrNr when no explicit transport is supplied (same contract as
  * crud.ts safeUpdateSource).
  */
@@ -427,10 +505,40 @@ export async function updateServerDrivenObjectSource(
   });
 }
 
-/**
- * Delete a server-driven object: lock → http.delete(…?lockHandle=…) → best-effort unlock.
- * The unlock is swallowed on failure (the object is already gone after the delete).
- */
+/** Check only when advertised; older targets still receive the post-delete absence check. */
+async function checkServerDrivenDeletion(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  objUrl: string,
+  lockHandle: string,
+): Promise<void> {
+  const path = '/sap/bc/adt/deletion/check';
+  const contentType = 'application/vnd.sap.adt.deletion.check.request.v1+xml';
+  checkOperation(safety, OperationType.Read, 'CheckDeletion');
+  let advertised = http.discoveryAcceptFor(path);
+  if (!http.hasDiscoveryData()) {
+    const { map } = await fetchDiscoveryDocument(http);
+    if (map.size === 0) throw new AdtError('Deletion check availability could not be determined. No DELETE was sent.');
+    advertised = resolveAcceptType(map, path);
+  }
+  if (!(advertised ?? '').includes(contentType)) return;
+  const response = await http.post(
+    path,
+    `<del:checkRequest xmlns:del="http://www.sap.com/adt/deletion" xmlns:adtcore="http://www.sap.com/adt/core"><del:object adtcore:uri="${escapeXmlAttr(objUrl)}"><del:lockHandle>${escapeXmlAttr(lockHandle)}</del:lockHandle></del:object></del:checkRequest>`,
+    contentType,
+    { Accept: 'application/vnd.sap.adt.deletion.check.response.v1+xml' },
+  );
+  const root = parseXml(response.body).checkResponse as Record<string, unknown> | undefined;
+  const objects = Array.isArray(root?.object) ? root.object : root?.object ? [root.object] : [];
+  const object = objects[0] as Record<string, unknown> | undefined;
+  if (objects.length !== 1 || object?.['@_uri'] !== objUrl || object?.['@_isDeletable'] !== 'true') {
+    throw new AdtError(
+      'SAP did not confirm that this object can be deleted. Review its deletion check in ADT and resolve dependencies or other refusals. No DELETE was sent.',
+    );
+  }
+}
+
+/** Delete under a lock, then verify canonical metadata absence in a fresh request. */
 export async function deleteServerDrivenObject(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -444,6 +552,7 @@ export async function deleteServerDrivenObject(
     const lock = await lockObject(session, safety, objUrl, 'MODIFY');
     const transport = opts.transport ?? (lock.corrNr || undefined);
     try {
+      await checkServerDrivenDeletion(session, safety, objUrl, lock.lockHandle);
       let url = `${objUrl}?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
       if (transport) url += `&corrNr=${encodeURIComponent(transport)}`;
       await session.delete(url);
@@ -451,8 +560,25 @@ export async function deleteServerDrivenObject(
       try {
         await unlockObject(session, objUrl, lock.lockHandle);
       } catch {
-        // Object already deleted — unlock failure is expected.
+        // Best-effort cleanup: deleted objects can reject unlock. The session closes next.
       }
     }
   });
+  checkOperation(safety, OperationType.Read, 'ConfirmDeletion');
+  try {
+    await http.get(
+      objUrl,
+      { Accept: serverDrivenMetadataContentType(code), 'Cache-Control': 'no-cache' },
+      { suppressNotFoundLog: true },
+    );
+  } catch (error) {
+    if (error instanceof AdtApiError && error.isNotFound) return;
+    // A failed confirmation is not proof of absence; keep SAP details out of this guidance.
+    throw new AdtError(
+      `SAP accepted DELETE for ${code} ${name}, but absence could not be verified. Inspect the object in ADT before taking further action; do not blindly repeat DELETE.`,
+    );
+  }
+  throw new AdtError(
+    `SAP accepted DELETE for ${code} ${name}, but the object still exists. Deletion is incomplete. Inspect dependencies and its package entry in ADT; do not blindly repeat DELETE.`,
+  );
 }

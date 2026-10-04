@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<srvb:serviceBinding srvb:published="false" srvb:bindingCreated="true" srvb:allowedAction="PUBLISH" adtcore:version="active" adtcore:name="ZARC1_PUBLISH" adtcore:type="SRVB/SVB" xmlns:srvb="http://www.sap.com/adt/ddic/ServiceBindings" xmlns:adtcore="http://www.sap.com/adt/core">
+  <atom:link href="versions" rel="http://www.sap.com/adt/relations/versions" xmlns:atom="http://www.w3.org/2005/Atom"/>
+  <adtcore:packageRef adtcore:name="ZARC1_TEST" adtcore:type="DEVC/K"/>
+  <srvb:services srvb:name="ZARC1_PUBLISH"><srvb:content srvb:version="0001"><srvb:serviceDefinition adtcore:name="ZARC1_DEF"/></srvb:content></srvb:services>
+  <srvb:binding srvb:type="ODATA" srvb:version="V4" srvb:category="0"/>
+</srvb:serviceBinding>

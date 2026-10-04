@@ -346,13 +346,21 @@ describe('SAPRead handler', () => {
       expect(String(sourceCall?.[0])).toContain('/sap/bc/adt/oo/classes/ZCL_TEST/source/main');
     });
 
-    it("resolves version='auto' to inactive when draft exists", async () => {
+    it.each([
+      { type: 'CLAS', adtType: 'CLAS/OC', name: 'ZCL_TEST', uri: '/sap/bc/adt/oo/classes/zcl_test' },
+      {
+        type: 'INCL',
+        adtType: 'FUGR/I',
+        name: 'LZTESTTOP',
+        uri: '/sap/bc/adt/functions/groups/ztest/includes/lztesttop',
+      },
+    ])('resolves $type auto reads to the $adtType inactive draft', async ({ type, adtType, name, uri }) => {
       mockFetch.mockReset();
       mockFetch
         .mockResolvedValueOnce(
           mockResponse(
             200,
-            `<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core"><ioc:entry><ioc:object ioc:user="admin" ioc:deleted="false"><ioc:ref adtcore:uri="/sap/bc/adt/oo/classes/zcl_test" adtcore:type="CLAS/OC" adtcore:name="ZCL_TEST"/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
+            `<?xml version="1.0"?><ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects" xmlns:adtcore="http://www.sap.com/adt/core"><ioc:entry><ioc:object ioc:user="admin" ioc:deleted="false"><ioc:ref adtcore:uri="${uri}" adtcore:type="${adtType}" adtcore:name="${name}"/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
           ),
         )
         .mockResolvedValueOnce(mockResponse(200, 'inactive source', { etag: 'e1' }));
@@ -362,12 +370,13 @@ describe('SAPRead handler', () => {
         createClient(),
         DEFAULT_CONFIG,
         'SAPRead',
-        { type: 'CLAS', name: 'ZCL_TEST', version: 'auto' },
+        { type, name, version: 'auto' },
         undefined,
         undefined,
         layer,
       );
 
+      expect(result.isError).toBeUndefined();
       const sourceCall = mockFetch.mock.calls.find((call: any[]) => String(call[0]).includes('/source/main'));
       expect(String(sourceCall?.[0])).toContain('version=inactive');
       expect(result.content[0]?.text).toBe('inactive source');

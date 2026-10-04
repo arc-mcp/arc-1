@@ -57,6 +57,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   // ── SAPRead ──────────────────────────────────────────────────────
   // Tool-level default — applies to all SAP object reads (PROG, CLAS, etc.)
   SAPRead: { scope: 'read', opType: OperationType.Read },
+  'SAPRead.SYNTAX': { scope: 'read', opType: OperationType.Read },
   // Per-type overrides
   'SAPRead.TABLE_CONTENTS': { scope: 'data', opType: OperationType.Query },
   // TABLE_QUERY builds the SELECT server-side (no user SQL injection) — same gate as TABLE_CONTENTS.
@@ -83,6 +84,7 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPWrite.update': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.delete': { scope: 'write', opType: OperationType.Delete },
   'SAPWrite.edit_method': { scope: 'write', opType: OperationType.Update },
+  'SAPWrite.add_unit': { scope: 'write', opType: OperationType.Update },
   'SAPWrite.edit_unit': { scope: 'write', opType: OperationType.Update },
   // Class-section surgery actions (issue #303) — all run on type=CLAS and write
   // back to /source/main (or /includes/<inc> when include= is provided). Same

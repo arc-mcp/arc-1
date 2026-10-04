@@ -11,6 +11,7 @@ import {
   getServerDrivenObject,
   isServerDrivenObjectType,
   SDO_REGISTRY,
+  SDO_TYPES,
   serverDrivenObjectUrl,
   serverDrivenSourceContentType,
   supportsServerDrivenObject,
@@ -28,7 +29,10 @@ function mockWriteHttp(overrides: { putThrows?: boolean; unlockThrows?: boolean 
 } {
   const calls: Array<{ method: string; path: string; body?: string; contentType?: string }> = [];
   const lockBody = '<asx:abap><LOCK_HANDLE>LH123</LOCK_HANDLE><CORRNR></CORRNR></asx:abap>';
+  let deleted = false;
   const http = {
+    discoveryAcceptFor: () => undefined,
+    hasDiscoveryData: () => true,
     post: vi.fn(async (path: string, body?: string, contentType?: string) => {
       calls.push({ method: 'POST', path, body, contentType });
       if (path.includes('_action=LOCK')) return { statusCode: 200, headers: {}, body: lockBody };
@@ -42,10 +46,12 @@ function mockWriteHttp(overrides: { putThrows?: boolean; unlockThrows?: boolean 
     }),
     delete: vi.fn(async (path: string) => {
       calls.push({ method: 'DELETE', path });
+      deleted = true;
       return { statusCode: 200, headers: {}, body: '' };
     }),
     get: vi.fn(async (path: string) => {
       calls.push({ method: 'GET', path });
+      if (deleted) throw new AdtApiError('Not found', 404, path);
       return { statusCode: 200, headers: {}, body: '' };
     }),
     withStatefulSession: vi.fn(async (cb: (s: unknown) => Promise<unknown>) => cb(http)),
@@ -287,15 +293,17 @@ describe('getServerDrivenObject', () => {
 describe('SDO registry write metadata', () => {
   it('every entry carries a createType and a metadata content-type', () => {
     for (const e of Object.values(SDO_REGISTRY)) {
-      expect(e.createType).toMatch(/^[A-Z]{4}\/[A-Z]+$/);
+      // SAJC/SAJT report the bare code (no subtype) as adtcore:type — verified live on 816.
+      expect(e.createType).toMatch(/^[A-Z]{4}(\/[A-Z]+)?$/);
       expect(e.metadataContentType).toMatch(/^application\/vnd\.sap\.adt\./);
     }
   });
 
-  it('the blue family uses blues content types (EVTO v2, rest v1); DTDC uses its own (verified live)', () => {
-    expect(SDO_REGISTRY.EVTO.metadataContentType).toContain('blues.v2');
-    expect(SDO_REGISTRY.UIAD.metadataContentType).toContain('blues.v2');
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD'] as const) {
+  it('the blue family uses blues content types (EVTO/UIAD/SAJC/SAJT v2, rest v1); DTDC uses its own (verified live)', () => {
+    for (const code of ['EVTO', 'UIAD', 'SAJC', 'SAJT'] as const) {
+      expect(SDO_REGISTRY[code].metadataContentType).toContain('blues.v2');
+    }
+    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'COTA', 'DSFD', 'DRTY', 'APLO'] as const) {
       expect(SDO_REGISTRY[code].metadataContentType).toContain('blues.v1');
       expect(SDO_REGISTRY[code].discoveryMarker).toBe('blues');
     }
@@ -313,12 +321,19 @@ describe('SDO registry write metadata', () => {
   // hardcoded 'application/json' for every type, which SAP answers with 415 for the DDL-text
   // ones — DTSC write was dead on arrival. Content types live-verified per type on 816.
   it('maps each type to the source content type SAP actually accepts (live-verified 816)', () => {
-    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA'] as const) {
+    for (const code of ['DESD', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'APLO', 'SAJC', 'SAJT'] as const) {
       expect(serverDrivenSourceContentType(code)).toBe('application/json');
     }
-    for (const code of ['DTSC', 'DSFD', 'DTDC'] as const) {
+    for (const code of ['DTSC', 'DSFD', 'DTDC', 'DRTY'] as const) {
       expect(serverDrivenSourceContentType(code)).toBe('text/plain');
     }
+  });
+
+  // Read off the live 816 trial, not inferred from the family: SAP reports DRTY/STY for scalar types
+  // and enums alike, so create needs no subtype routing (unlike TABL /DT vs /DS, #285).
+  it('DRTY is pinned to the collection and subtype read live (816)', () => {
+    expect(SDO_REGISTRY.DRTY.href).toBe('/sap/bc/adt/ddic/drty/sources');
+    expect(SDO_REGISTRY.DRTY.createType).toBe('DRTY/STY');
   });
 });
 
@@ -407,6 +422,17 @@ describe('serverDrivenObjectUrl', () => {
 });
 
 describe('buildServerDrivenMetadataXml', () => {
+  // SAP's SADT_BLUE_SOURCE reads the properties AFTER the main object (packageRef) and SADT_CONTENT
+  // requires this media type; a reordered or renamed element is skipped silently (758: NULL-reference 500).
+  it('emits job creation properties in the exact wire form SAP deserializes', () => {
+    expect(buildServerDrivenMetadataXml('SAJT', 'ZT', '$TMP', 'd', undefined, { catalogName: 'Z"C&' })).toBe(
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<blue:blueSource xmlns:blue="http://www.sap.com/wbobj/blue" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="SAJT" adtcore:name="ZT" adtcore:description="d">\n' +
+        '  <adtcore:packageRef adtcore:name="$TMP"/>\n' +
+        '  <blue:additionalCreationProperties><adtcore:content adtcore:type="application/vnd.sap.adt.objecttype.new.content.additional.v1+json">{&quot;catalogName&quot;:&quot;Z\\&quot;C&amp;&quot;}</adtcore:content></blue:additionalCreationProperties>\n' +
+        '</blue:blueSource>',
+    );
+  });
   it('emits the per-type createType, packageRef, and escapes the description', () => {
     const xml = buildServerDrivenMetadataXml('EVTB', 'ZEVT', '$TMP', 'A & B "x"');
     expect(xml).toContain('adtcore:type="EVTB/EVB"');
@@ -419,7 +445,7 @@ describe('buildServerDrivenMetadataXml', () => {
     // The create body deliberately omits masterLanguage: a4h-2025 (816) silently ignores it
     // (create with "DE" → object read back as the session language). Master language comes from
     // the sap-language request param (session = config.language), as with other source objects.
-    for (const code of ['DESD', 'DTSC', 'CSNM', 'EVTB', 'EVTO', 'COTA', 'DSFD', 'DTDC', 'UIAD']) {
+    for (const code of SDO_TYPES) {
       expect(buildServerDrivenMetadataXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
     }
   });

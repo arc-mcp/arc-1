@@ -317,6 +317,9 @@ export interface TableTypeCreateParams {
   rowType: string;
   /** Defaults to "builtin" for a known ABAP type, else "structure". */
   rowTypeKind?: 'builtin' | 'structure';
+  /** Built-in rows: the stored length/decimals an update carries (CHAR 30, INT4 10). No public input. */
+  rowTypeLength?: string;
+  rowTypeDecimals?: string;
   language?: string;
   responsible?: string;
 }
@@ -352,7 +355,7 @@ export function buildTableTypeXml(params: TableTypeCreateParams): string {
 
   const rowTypeXml =
     kind === 'builtin'
-      ? `<ttyp:typeKind>predefinedAbapType</ttyp:typeKind><ttyp:typeName/><ttyp:builtInType><ttyp:dataType>${escapeXmlAttr(rowType)}</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`
+      ? `<ttyp:typeKind>predefinedAbapType</ttyp:typeKind><ttyp:typeName/><ttyp:builtInType><ttyp:dataType>${escapeXmlAttr(rowType)}</ttyp:dataType><ttyp:length>${formatLength(params.rowTypeLength, 6)}</ttyp:length><ttyp:decimals>${formatLength(params.rowTypeDecimals, 6)}</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`
       : `<ttyp:typeKind>dictionaryType</ttyp:typeKind><ttyp:typeName>${escapeXmlAttr(rowType)}</ttyp:typeName><ttyp:builtInType><ttyp:dataType>STRU</ttyp:dataType><ttyp:length>000000</ttyp:length><ttyp:decimals>000000</ttyp:decimals></ttyp:builtInType><ttyp:rangeType/>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -376,8 +379,14 @@ export interface TableTypeInfo {
   description: string;
   rowType: string;
   rowTypeKind: string;
+  /** Built-in length/decimals as SAP stores them, e.g. "000030" for a CHAR 30 row. */
+  rowTypeLength: string;
+  rowTypeDecimals: string;
   accessType: string;
   keyKind: string;
+  /** Standard table, non-unique standard key, no secondary keys: all that buildTableTypeXml writes. */
+  plainStandardTable: boolean;
+  package: string;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -418,13 +427,28 @@ export function parseTableType(xml: string): TableTypeInfo {
   if (!rowType) {
     throw new Error('Invalid TTYP response: missing row type name.');
   }
+  const accessType = String(tt.accessType ?? '');
+  const keyKind = String(pk.kind ?? '');
+  const secondaryKeys = asRecord(tt.secondaryKeys) ?? {};
   return {
     name: String(tt['@_name'] ?? ''),
     description: String(tt['@_description'] ?? ''),
     rowType,
     rowTypeKind: typeKind,
-    accessType: String(tt.accessType ?? ''),
-    keyKind: String(pk.kind ?? ''),
+    rowTypeLength: String(builtIn.length ?? ''),
+    rowTypeDecimals: String(builtIn.decimals ?? ''),
+    accessType,
+    keyKind,
+    // Mirrors every value buildTableTypeXml hardcodes: an update resets whatever differs.
+    plainStandardTable:
+      Number(tt.initialRowCount ?? 0) === 0 &&
+      accessType === 'standard' &&
+      String(pk.definition ?? '') === 'standard' &&
+      keyKind === 'nonUnique' &&
+      !String(pk.alias ?? '') &&
+      String(secondaryKeys.allowed ?? '') === 'notSpecified' &&
+      secondaryKeys.secondaryKey === undefined,
+    package: String(asRecord(tt.packageRef)?.['@_name'] ?? ''),
   };
 }
 

@@ -2,16 +2,17 @@
  * Token-efficient surgery for procedural ABAP units.
  *
  * Locates named FORM...ENDFORM and MODULE...ENDMODULE blocks with abaplint's
- * structure tree, then replaces exactly one whole block. Event blocks are
+ * structure tree, then replaces or inserts one whole block. Event blocks are
  * deliberately excluded because abaplint does not expose them as structures.
  */
 
-import { MemoryFile, Registry, Structures, Version } from '@abaplint/core';
+import { MemoryFile, Registry, Statements, Structures, type Version } from '@abaplint/core';
+import { ABAPLINT_MAX_RELEASE, mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 
-// edit_unit is on-prem only. Cloud grammar intentionally rejects classic MODULE
+// Procedural unit surgery is on-prem only. Cloud grammar intentionally rejects classic MODULE
 // blocks, so the no-probe fallback must use the on-prem parser ceiling.
-const DEFAULT_VERSION = Version.v758;
+const DEFAULT_VERSION = mapSapReleaseToAbaplintVersion(String(ABAPLINT_MAX_RELEASE));
 
 export type EditableUnitKind = 'FORM' | 'MODULE';
 
@@ -71,11 +72,20 @@ export function listEditableUnits(source: string, objectName: string, abaplintVe
   const units: EditableUnitInfo[] = [];
   for (const object of registry.getObjects()) {
     const file = (object as { getMainABAPFile?: () => unknown }).getMainABAPFile?.() as
-      | { getStructure(): AstNode | undefined }
+      | { getStructure(): AstNode | undefined; getStatements(): { get(): unknown }[] }
       | undefined;
     const structure = file?.getStructure();
-    if (!structure) continue;
-    units.push(...collectUnits(structure, 'FORM'), ...collectUnits(structure, 'MODULE'));
+    if (!structure) throw new Error('Source has an incomplete ABAP structure.');
+    const modules = collectUnits(structure, 'MODULE');
+    // abaplint can retain an unterminated MODULE as flat statements in a valid root.
+    // Every MODULE/ENDMODULE statement must belong to a complete structure.
+    const boundaries = file!
+      .getStatements()
+      .filter(
+        (statement) => statement.get() instanceof Statements.Module || statement.get() instanceof Statements.EndModule,
+      );
+    if (boundaries.length !== modules.length * 2) throw new Error('Source has an incomplete MODULE structure.');
+    units.push(...collectUnits(structure, 'FORM'), ...modules);
   }
   return units.sort((a, b) => a.startLine - b.startLine);
 }
@@ -195,4 +205,47 @@ export function spliceUnit(
   if (hasCRLF) newSource = newSource.replace(/\n/g, '\r\n');
 
   return { newSource, oldUnitSource, newUnitSource, unit, success: true };
+}
+
+/** Append a complete new unit at physical EOF; never reposition INCLUDEs. */
+export function insertUnit(
+  source: string,
+  objectName: string,
+  unitName: string,
+  addition: string,
+  abaplintVersion?: Version,
+): UnitSpliceResult {
+  const fail = (error: string): UnitSpliceResult => ({
+    success: false,
+    error,
+    newSource: '',
+    oldUnitSource: '',
+    newUnitSource: '',
+  });
+  const normalized = source.replace(/\r\n/g, '\n');
+  let units: EditableUnitInfo[];
+  try {
+    units = listEditableUnits(normalized, objectName, abaplintVersion);
+  } catch (error) {
+    return fail(`Could not parse ${objectName}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (units.some((unit) => unit.name.toUpperCase() === unitName.toUpperCase())) {
+    return fail(`Unit "${unitName}" already exists in ${objectName}; use edit_unit to replace it.`);
+  }
+  const kind = addition
+    .trim()
+    .match(/^(FORM|MODULE)\s/i)?.[1]
+    ?.toUpperCase() as EditableUnitKind | undefined;
+  if (!kind) return fail('source must contain one complete FORM...ENDFORM or MODULE...ENDMODULE block.');
+  const unit: EditableUnitInfo = { name: unitName, kind, startLine: 1, endLine: 1 };
+  const invalid = replacementError(unit, addition, objectName, abaplintVersion);
+  if (invalid) return fail(invalid);
+
+  const prefix = normalized && !normalized.endsWith('\n') ? `${normalized}\n` : normalized;
+  const newUnitSource = addition.replace(/\r\n/g, '\n').trim();
+  let newSource = `${prefix}${newUnitSource}\n`;
+  if (source.includes('\r\n')) newSource = newSource.replace(/\n/g, '\r\n');
+  unit.startLine = prefix.split('\n').length;
+  unit.endLine = unit.startLine + newUnitSource.split('\n').length - 1;
+  return { success: true, newSource, newUnitSource, oldUnitSource: '', unit };
 }

@@ -18,11 +18,12 @@ export class FileSink implements LogSink {
   private buffer: string[] = [];
   private flushTimer: ReturnType<typeof setInterval> | undefined;
   private permissionsPromise: Promise<void> | undefined;
+  private pendingWrite: Promise<void> = Promise.resolve();
 
   constructor(private filePath: string) {
     // Flush buffer every 500ms to balance write frequency vs latency
     this.flushTimer = setInterval(() => {
-      this.flushSync();
+      void this.writeBuffer();
     }, 500);
     // Don't prevent process exit
     if (this.flushTimer.unref) {
@@ -42,25 +43,17 @@ export class FileSink implements LogSink {
     await this.writeBuffer();
   }
 
-  private flushSync(): void {
-    if (this.buffer.length === 0) return;
-    const lines = this.buffer.splice(0);
-    const data = `${lines.join('\n')}\n`;
-    // Fire-and-forget — errors go to stderr
-    this.appendPrivate(data).catch((err) => {
-      process.stderr.write(`[FileSink] Failed to write to ${this.filePath}: ${err}\n`);
-    });
-  }
-
-  private async writeBuffer(): Promise<void> {
-    if (this.buffer.length === 0) return;
-    const lines = this.buffer.splice(0);
-    const data = `${lines.join('\n')}\n`;
-    try {
-      await this.appendPrivate(data);
-    } catch (err) {
-      process.stderr.write(`[FileSink] Failed to write to ${this.filePath}: ${err}\n`);
+  private writeBuffer(): Promise<void> {
+    if (this.buffer.length > 0) {
+      const data = `${this.buffer.splice(0).join('\n')}\n`;
+      // Serialize batches so flush() also waits for appends started by the interval.
+      this.pendingWrite = this.pendingWrite
+        .then(() => this.appendPrivate(data))
+        .catch((err) => {
+          process.stderr.write(`[FileSink] Failed to write to ${this.filePath}: ${err}\n`);
+        });
     }
+    return this.pendingWrite;
   }
 
   private async appendPrivate(data: string): Promise<void> {

@@ -25,17 +25,13 @@ No input required. Optionally:
 - **Output path** (default: `./system-info.md`)
 - **Skip feature probe** — if the user only wants identity info and the system is slow
 
-## Step 1: Read Connection and Discovery Information
+## Step 1: Read System Identity
 
 ```
 SAPRead(type="SYSTEM")
 ```
 
-Returns `{ user, collections }`: a configured/token-derived user and ADT discovery collections.
-It does not return SID, client, kernel, language, or release, and the reported user does not prove
-the backend identity after principal propagation. Record those fields only from a known connection
-configuration or a separate verified SAP result; label their source. Use `COMPONENTS` below for
-`SAP_BASIS`. Mark unavailable values as unknown instead of inferring them from a hostname or label.
+Returns: SID, system type (`onprem` | `btp`), release, kernel version, current user, client, language.
 
 ## Step 2: Read Installed Components
 
@@ -72,16 +68,11 @@ Include at minimum:
 SAPLint(action="list_rules")
 ```
 
-Returns `{ preset, abapVersion, syntaxVersion, enabledRules, disabledRules, ... }`.
-The preset (`cloud` or `onprem`) reflects system type detection. `abapVersion` is the detected or
-configured SAP release (for example, `758` or `816`); `syntaxVersion` is the abaplint parser dialect.
-Record both. The parser can lag the backend: releases above its 758 grammar ceiling can use newer
-syntax that needs a SAP-side syntax check. Do not treat a parser limitation as a backend restriction.
+Returns `{ preset, abapVersion, enabledRules, disabledRules, ... }`. The preset (`cloud` or `onprem`) reflects the system type detection; `abapVersion` is the target ABAP dialect (e.g., `v754`, `cloud`, `standard`). Generated code should stay within this dialect.
 
 ## Step 5: Write system-info.md
 
-Create the file at the chosen path. Use this layout; leave unverified identity fields as `unknown`
-and distinguish the configured user from a separately confirmed backend user:
+Create the file at the chosen path. Use exactly this layout:
 
 ```markdown
 # System Info: <SID>
@@ -98,8 +89,7 @@ _Generated: <ISO timestamp>_ · _Source: ARC-1_
 | Kernel | <kernel> |
 | Client | <client> |
 | Language | <lang> |
-| Configured/token user | <user from SYSTEM, or unknown> |
-| Backend user | <independently confirmed SAP user, or unknown> |
+| User | <username> |
 
 ## Core Components
 
@@ -127,8 +117,7 @@ _Generated: <ISO timestamp>_ · _Source: ARC-1_
 ## Lint Configuration
 
 - **Preset**: <cloud / onprem>
-- **SAP release used by lint configuration**: <abapVersion>
-- **Parser dialect**: <syntaxVersion>
+- **ABAP dialect**: <abapVersion>
 - **Enabled rules**: <count>
 - **Disabled rules**: <count>
 
@@ -144,14 +133,11 @@ _Generated: <ISO timestamp>_ · _Source: ARC-1_
 
 ## Coding Guidance
 
-- Target SAP release: **<abapVersion>**; parser dialect: **<syntaxVersion>**. Verify syntax against
-  the backend and the object's ABAP language version; use SAP-side checks when the parser lags.
+- Target ABAP dialect: **<abapVersion>** — do not use syntax beyond this level without verifying per object.
 - System type is **<onprem / btp>**:
   - If `btp`: prefer released APIs (check with `SAPRead(type="API_STATE", ...)`); avoid non-cloud object types (PROG, INCL, FUGR).
-  - If `onprem`: check supported object types and discovered endpoints; prefer released APIs for forward compatibility.
-- Transport endpoints: <available / unavailable / not probed>.
-- Write and package policy: <verified permissions and allowed packages, or unknown>. Endpoint
-  availability does not establish write permission or imply that writes are restricted to `$TMP`.
+  - If `onprem`: full type range available; still prefer released APIs for forward compatibility.
+- Transports <enabled / disabled>: <if disabled, note that writes stay on `$TMP`>.
 - RAP stack <available / not available>: <if not available, skip RAP generation skills>.
 ```
 
@@ -159,7 +145,7 @@ _Generated: <ISO timestamp>_ · _Source: ARC-1_
 
 After writing the file, report in 3-5 lines:
 - Which system was probed (SID, type, release)
-- The SAP release and parser dialect, including any grammar limitation
+- The ABAP dialect ceiling
 - Which headline features are available (RAP, UI5, transports)
 - Key RAP constraints (for example: two-pass recommendation or strict/draft cautions)
 - File path written
@@ -170,9 +156,9 @@ Do not dump the full file contents into chat — the user can open the file.
 
 | Error | Cause | Fix |
 |---|---|---|
-| `SAPRead(type="SYSTEM")` fails with auth error | Check credentials and ADT discovery authorization | Report discovery unavailable; do not claim a confirmed identity |
+| `SAPRead(type="SYSTEM")` fails with auth error | User lacks `S_ADT_RES` for discovery | Continue without identity block; note in output that SID is unknown |
 | `SAPRead(type="COMPONENTS")` empty or 404 | Endpoint unavailable on this system | Note "components endpoint unavailable"; continue with probe + lint |
-| `SAPManage(action="probe")` denied or fails | Missing read scope, a configured deny action, or a SAP error | Report the returned cause. Try `SAPManage(action="features")` if permitted, and label its results as cached. Probe does not require write scope. |
+| `SAPManage(action="probe")` blocked (read-only mode with no `write` scope) | Safety config | Fall back to `SAPManage(action="features")` for cached results |
 | `SAPLint(action="list_rules")` returns no preset | ARC-1 lint config not yet loaded | Report "lint preset: not configured"; still write the file |
 
 ## Notes

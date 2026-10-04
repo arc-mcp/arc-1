@@ -16,6 +16,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { getToolDefinitions } = await import('../../../src/handlers/tools.js');
 
 describe('fabricated FUNC processing metadata does not block unrelated writes (issue #664)', () => {
   const POLLUTION_ERROR = 'processingType and updateTaskKind are only supported';
@@ -28,6 +29,9 @@ describe('fabricated FUNC processing metadata does not block unrelated writes (i
   });
 
   it('creates a PROG despite fabricated processing metadata, and never sends it to SAP', async () => {
+    const tool = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true }).find((t) => t.name === 'SAPWrite');
+    const schema = tool?.inputSchema as { properties: { expectedSourceHash: Record<string, unknown> } };
+    expect(schema.properties.expectedSourceHash).not.toHaveProperty('pattern');
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'create',
       type: 'PROG',
@@ -35,6 +39,7 @@ describe('fabricated FUNC processing metadata does not block unrelated writes (i
       package: '$TMP',
       description: 'Hello World report',
       source: "REPORT zplu_hello_world.\n\nWRITE: / 'Hello World'.",
+      expectedSourceHash: '',
       processingType: 'normal',
       updateTaskKind: 'startImmediate',
     });

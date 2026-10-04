@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AdtClient } from '../../../src/adt/client.js';
+import { AdtClient } from '../../../src/adt/client.js';
 import { AdtSafetyError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
@@ -91,7 +91,7 @@ describe('createSafeHttpClient — gated non-ADT writes (SAP_ALLOW_PLUGIN_RAW_WR
     const u = fakeUnderlying();
     const c = createSafeHttpClient(as(u), unrestrictedSafetyConfig(), 'Custom_W', 'write', true);
     await expect(c.post(ICF, 'payload', 'application/json')).resolves.toBeTruthy();
-    expect(u.post).toHaveBeenCalledWith(ICF, 'payload', 'application/json', undefined);
+    expect(u.post).toHaveBeenCalledWith(ICF, 'payload', 'application/json', undefined, { retryTransientErrors: false });
   });
 
   it('gates PUT and DELETE the same way (allowed to non-ADT when all gates pass)', async () => {
@@ -140,11 +140,83 @@ describe('createPluginRunOps.classRun (gated code execution)', () => {
     const u = fakeUnderlying();
     const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
     await expect(run.classRun('ZCL_ARC1_RUN_DEMO')).resolves.toBe('console output');
-    expect(u.post).toHaveBeenCalledWith('/sap/bc/adt/oo/classrun/zcl_arc1_run_demo');
+    expect(u.post).toHaveBeenCalledWith('/sap/bc/adt/oo/classrun/zcl_arc1_run_demo', undefined, undefined, undefined, {
+      retryTransientErrors: false,
+    });
+  });
+});
+
+describe('createPluginRunOps.programRun (gated report execution)', () => {
+  it('refuses when the SAP_ALLOW_PLUGIN_EXECUTE opt-in is off', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), false, 'write', 'Custom_Run');
+    await expect(run.programRun('ZREPORT')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses a tool that does not declare write scope', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'read', 'Custom_Run');
+    await expect(run.programRun('ZREPORT')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses when allowWrites=false', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), defaultSafetyConfig(), true, 'write', 'Custom_Run');
+    await expect(run.programRun('ZREPORT')).rejects.toBeInstanceOf(AdtSafetyError);
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('refuses invalid report names', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
+    for (const name of ['../../etc/passwd', 'Z REPORT', '/BROKEN', 'Z'.repeat(41)]) {
+      await expect(run.programRun(name)).rejects.toBeInstanceOf(AdtSafetyError);
+    }
+    expect(u.post).not.toHaveBeenCalled();
+  });
+
+  it('POSTs to programrun and returns SAP list output when all gates pass', async () => {
+    const u = fakeUnderlying();
+    const run = createPluginRunOps(as(u), unrestrictedSafetyConfig(), true, 'write', 'Custom_Run');
+    await expect(run.programRun('/ACME/Z_REPORT$1')).resolves.toBe('console output');
+    expect(u.post).toHaveBeenCalledWith(
+      '/sap/bc/adt/programs/programrun/%2Facme%2Fz_report%241',
+      undefined,
+      undefined,
+      undefined,
+      { retryTransientErrors: false },
+    );
   });
 });
 
 describe('createReadOnlyAdtClient (runtime escape-hatch guard, review B1)', () => {
+  it.each([
+    'withStatefulSession',
+    'setApiReleaseState',
+    'writeTextElementPart',
+    'writeClassTextSymbols',
+    'lookupObjectsViaDb',
+    'runQueryWithMetrics',
+    'runQueryBatch',
+    'postDataPreview',
+    'postFreestyleQuery',
+  ])('does not expose %s from a real client', (name) => {
+    const client = new AdtClient();
+    const view = createReadOnlyAdtClient(client) as unknown as Record<string, unknown>;
+    expect(view[name]).toBeUndefined();
+    expect(name in view).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(view, name)).toBeUndefined();
+  });
+
+  it('does not automatically expose a newly added client capability', () => {
+    const client = Object.assign(new AdtClient(), { futureMutation: vi.fn() });
+    const view = createReadOnlyAdtClient(client) as unknown as Record<string, unknown>;
+    expect(view.futureMutation).toBeUndefined();
+    expect(Object.keys(view)).not.toContain('futureMutation');
+  });
+
   // A minimal stand-in for AdtClient: a read method that internally needs `this.http`/`this.safety`,
   // plus the escape-hatch members a plugin must never reach.
   function fakeClient() {

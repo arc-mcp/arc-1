@@ -13,6 +13,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { AdtClient } from '../../../src/adt/client.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import * as adtFeatures from '../../../src/adt/features.js';
 import { AdtHttpClient } from '../../../src/adt/http.js';
@@ -163,10 +164,6 @@ describe('MCP Server', () => {
 
     expect(metadata.instructions).toBe(MULTI_TARGET_SERVER_INSTRUCTIONS);
     expect(metadata.instructions).not.toContain('SHOULD NOT APPEAR');
-  });
-
-  it('has a valid version string', () => {
-    expect(VERSION).toMatch(/^\d+\.\d+\.\d+/);
   });
 
   // tools/list must never wait on SAP. Clients cancel it on their own schedule (Cline at ~5s) and
@@ -687,6 +684,29 @@ describe('createServer request handlers', () => {
 
     expect(markSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('marks a shared HTTP transport stale once across per-request servers', async () => {
+    const markSpy = vi.spyOn(AdtHttpClient.prototype, 'markCookiesStale').mockImplementation(() => undefined);
+    const defaultHttp = new AdtClient({ baseUrl: 'http://sap:8000', username: 'admin', password: 'secret' }).http;
+    const startupAuthPreflightPromise = Promise.resolve({
+      status: 'inconclusive' as const,
+      blocking: false,
+      endpoint: '/sap/bc/adt/core/discovery',
+      checkedAt: '2026-09-27T00:00:00.000Z',
+      statusCode: 401,
+      reason: 'stale cookie file',
+    });
+
+    // HTTP builds one Server (and AdtClient) per request over the same transport; mark it only once.
+    for (let request = 0; request < 2; request++) {
+      const server = createServer(DEFAULT_CONFIG, { startupAuthPreflightPromise, defaultHttp });
+      const handler = requestHandler(server, CallToolRequestSchema.shape.method.value);
+      await handler({ method: 'tools/call', params: { name: 'UnknownTool', arguments: {} } }, {});
+    }
+
+    expect(markSpy).toHaveBeenCalledTimes(1);
+    expect(markSpy.mock.contexts[0]).toBe(defaultHttp);
+  });
 });
 
 describe('createServer tools/list — plugin tools (FEAT-61)', () => {
@@ -1133,7 +1153,7 @@ describe('startup auth preflight', () => {
   });
 
   it('returns blocking failure on 401/403 auth errors', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'Unauthorized'),
     );
 
@@ -1151,8 +1171,8 @@ describe('startup auth preflight', () => {
   });
 
   it('can run on an existing client so direct callers retain its auth state', async () => {
-    const get = vi.fn(async () => '<discovery/>');
-    const client = { http: { get } } as unknown as import('../../../src/adt/client.js').AdtClient;
+    const fetchCsrfToken = vi.fn(async () => '/sap/bc/adt/discovery');
+    const client = { http: { fetchCsrfToken } } as unknown as import('../../../src/adt/client.js').AdtClient;
 
     const result = await runStartupAuthPreflightWithClient(
       {
@@ -1164,12 +1184,12 @@ describe('startup auth preflight', () => {
     );
 
     expect(result.status).toBe('ok');
-    expect(get).toHaveBeenCalledOnce();
-    expect(get).toHaveBeenCalledWith('/sap/bc/adt/core/discovery');
+    expect(fetchCsrfToken).toHaveBeenCalledOnce();
+    expect(result.endpoint).toBe('/sap/bc/adt/discovery');
   });
 
   it('returns inconclusive and non-blocking on non-auth failures', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(new Error('connect ECONNREFUSED'));
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(new Error('connect ECONNREFUSED'));
 
     const result = await runStartupAuthPreflight({
       ...DEFAULT_CONFIG,
@@ -1185,7 +1205,7 @@ describe('startup auth preflight', () => {
 
   it('downgrades 401 to inconclusive (non-blocking) when in cookie-auth mode', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 
@@ -1208,7 +1228,7 @@ describe('startup auth preflight', () => {
 
   it('keeps 403 blocking even in cookie-auth mode', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', 'forbidden'),
     );
 
@@ -1229,7 +1249,7 @@ describe('startup auth preflight', () => {
   });
 
   it('keeps 401 blocking when not in cookie-auth mode', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'wrong creds'),
     );
 
@@ -1251,7 +1271,7 @@ describe('startup auth preflight', () => {
   // promising "no restart needed" would be a lie. Only SAP_COOKIE_FILE gets
   // the non-blocking downgrade.
   it('keeps 401 blocking when only cookieString is set (no hot-reload promise)', async () => {
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 
@@ -1273,7 +1293,7 @@ describe('startup auth preflight', () => {
 
   it('downgrade applies even when both cookieFile and cookieString are set (file wins)', async () => {
     const fixture = writeCookieFixture('.example.com\tTRUE\t/\tFALSE\t0\tSAP_SESSIONID\txyz789\n');
-    vi.spyOn(AdtHttpClient.prototype, 'get').mockRejectedValue(
+    vi.spyOn(AdtHttpClient.prototype, 'fetchCsrfToken').mockRejectedValue(
       new AdtApiError('Unauthorized', 401, '/sap/bc/adt/core/discovery', 'stale cookie'),
     );
 

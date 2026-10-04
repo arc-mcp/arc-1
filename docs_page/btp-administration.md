@@ -1,4 +1,4 @@
-# BTP administration
+# BTP Administration
 
 Operate an ARC-1 deployment on SAP BTP Cloud Foundry after the first successful read. This page
 covers the controls shared by single-target and multi-target deployments. For initial installation,
@@ -7,17 +7,49 @@ and the shared-Basic exception, use [Multi-Target Administration](multi-target-a
 
 ## Know the boundary you operate
 
-Multi-target discovery reads **subaccount destinations**. CF spaces separate apps and service instances, but do not isolate destination inventory within a subaccount. Use a dedicated subaccount when that inventory requires isolation.
+```text
+BTP global account
+└── subaccount
+    ├── trust and subaccount destinations
+    └── Cloud Foundry org
+        └── space
+            ├── ARC-1 application and route
+            └── XSUAA, Destination, and Connectivity service instances
+```
 
-For topology selection, use [BTP: Start here](btp-overview.md).
+ARC-1 multi-target v1 reads **subaccount destinations**. A CF space is not a hard target-inventory
+boundary. Another application with suitable Destination Service access in the same subaccount may
+resolve the same subaccount destinations. Use a dedicated subaccount when destination inventory
+itself requires strong isolation.
+
+SAP Multi-Target Application (MTA) packaging and ARC-1 multi-target routing are unrelated:
+
+- the SAP **MTA** is the `.mtar` deployment format described by `mta.yaml`;
+- ARC-1 **multi-target** is the optional runtime mode that exposes several SAP systems/clients.
 
 ## Responsibilities
 
-Use the [deployment task map](btp-cloud-foundry-deployment.md#2-assign-owners) for CF, Destination, IAM, Connector and SAP changes. Destination administrators also control credentials for shared Basic users.
+One person may hold several roles in a small landscape, but each handoff should remain explicit.
 
-<a id="configuration-ownership"></a>
+| Work | Typical owner |
+|---|---|
+| Entitlements and subaccount isolation | BTP subaccount administrator |
+| MTA deployment, route, app environment, and bindings | CF Space Developer |
+| Destination fields and Basic credentials | Destination Administrator |
+| XSUAA role collections and assignments | User and Role Administrator |
+| Cloud Connector mappings, trust, and resource allowlist | Cloud Connector administrator |
+| STRUST, CERTRULE, ICM/SICF, SU01, and SAP roles | SAP Basis/security |
+| MCP client acceptance and service ownership | ARC-1 service owner |
 
-## Where to store configuration
+Do not solve a missing permission by giving all owners broad BTP or SAP administration. In
+particular, anyone who can read or change a Basic destination is a credential administrator for its
+shared SAP user.
+
+## Configuration ownership
+
+For the OAuth callback-policy upgrade, follow
+[XSUAA upgrade guidance](xsuaa-setup.md#upgrading-an-existing-deployment). It requires a full MTA
+deployment; an app restart alone does not update the XSUAA service policy.
 
 Use one source of truth for each kind of value:
 
@@ -31,7 +63,7 @@ Use one source of truth for each kind of value:
 | Cloud Connector and SAP | Network exposure, certificate trust/mapping, SAP authorization | ARC-1 OAuth roles |
 
 Keep the customer `.mtaext` in an access-controlled configuration repository. It is ignored by the
-ARC-1 repository by default. Never edit generated `mtad.yaml`; rebuild it from the source
+ARC-1 repository by default. Never edit generated `mtad.yaml`; rebuild it from the reviewed source
 descriptor and extension.
 
 An MTA extension can add or override values but cannot remove a base property. Use an explicit off
@@ -64,6 +96,16 @@ a general Destination Service limitation.
 
 ## Role and user administration
 
+Keep these XSUAA concepts separate:
+
+| Concept | Meaning |
+|---|---|
+| Scope | Capability checked by ARC-1, such as `read`, `data`, or `sql` |
+| Role template | Application declaration that groups scopes |
+| Role | XSUAA instance-specific role created from a template |
+| Role collection | Subaccount bundle that administrators assign |
+| Assignment | User/group grant that produces scopes in a new token |
+
 The MTA creates seven role collections with the CF space suffix, for example
 `ARC-1 Viewer (dev)`. After every new or upgraded XSUAA deployment:
 
@@ -75,10 +117,10 @@ The MTA creates seven role collections with the CF space suffix, for example
 5. Have the user sign in again and restart/reconnect the MCP client if its tool catalog is cached.
 
 An older or recreated XSUAA instance can leave same-name collections with empty/orphaned roles.
-First [inspect and reconcile the collection with its administrator](xsuaa-setup.md#repair-missing-or-stale-collection-roles-with-the-owner);
-empty roles alone do not justify deletion. Only when the identity administrator confirms an orphaned collection
+First [inspect and reconcile the collection with its owner](xsuaa-setup.md#repair-missing-or-stale-collection-roles-with-the-owner);
+empty roles alone do not justify deletion. Only when the owner confirms an orphaned collection
 requires replacement, record its roles, user/group assignments and IdP mappings before removal.
-Then deploy the MTA, inspect the recreated roles, restore the approved
+Then perform the reviewed MTA deployment, inspect the recreated roles, restore the approved
 assignments/mappings and verify a fresh user grant. This is not a generic login fix and does not
 require deleting XSUAA.
 
@@ -103,9 +145,79 @@ cf set-env arc1-mcp-server ARC1_DCR_SIGNING_SECRET "$(openssl rand -base64 48)"
 cf restage arc1-mcp-server
 ```
 
-Keep a recoverable copy in the approved secret store. Do not put the key in source, `.mtaext`, MTARs or support tickets; restrict CF environment access. ARC-1 reads it from the environment, so privileged CF operators can read it.
+Treat this as a deployment secret:
 
-Changing this key revokes every cached DCR client registration. Ordinary restart, restage, scaling or XSUAA rebinding preserves registrations when the dedicated key stays the same.
+- never commit it, add it to `.mtaext`, or package it in the MTAR;
+- limit CF roles that can inspect app environment;
+- never attach unredacted `cf env` output to an issue;
+- store a recoverable copy in the customer's approved secret-management process; and
+- rotate it only as a security event, because rotation invalidates every stateless DCR client.
+
+With a dedicated secret, rebinding XSUAA no longer revokes DCR registrations by itself. Rotate
+`ARC1_DCR_SIGNING_SECRET` when global DCR revocation is intended. ARC-1 currently consumes it as an
+environment variable; sufficiently privileged CF operators can therefore read it. A bound/file
+secret is a future hardening item, not a property that documentation can provide today.
+
+## Audit Log delivery evidence
+
+Verify a known event end to end; a startup message only confirms binding fields.
+
+1. Prepare an approved Audit Log Viewer or `auditlog-management` reader (plan
+   `default`) for subaccount-wide API retrieval. Follow SAP's
+   [retrieval setup](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-retrieval-api-usage-for-subaccounts-in-cloud-foundry-environment).
+   Prefer X.509/mTLS credentials, keep keys outside tickets/source control, and
+   recreate reader bindings/keys at least every 90 days or earlier on expiry.
+   A client-secret key is an alternative where credential policy permits it.
+2. Make one successful `SAPRead` call with `type="SYSTEM"` through the intended
+   ARC-1 endpoint. Record the UTC time, authenticated caller and CF space GUID
+   (`cf space <space-name> --guid`). Run
+   `cf logs arc1-mcp-server --recent` and record the matching tool event's request
+   ID. `REQ-n` is process-local and repeats across restarts/instances; it is not
+   a globally unique lookup key.
+3. In the Viewer, or with a valid OAuth token in the retrieval API, search a narrow
+   UTC window around that call. `SAPRead` uses `audit.data-access`, matching this
+   example (other tools can use different categories):
+
+   ```text
+   GET <url>/auditlog/v2/auditlogrecords?time_from=2026-09-17T07:00:00&time_to=2026-09-17T07:05:00&category=audit.data-access
+   Authorization: Bearer <token>
+   ```
+
+   `<url>` comes from the reader credentials. UTC times use `YYYY-MM-DDTHH:MM:SS`;
+   without a time filter the API searches the previous 30 days. Pages contain up
+   to 500 records: URL-encode `Paging: handle=…` as the next request's `handle`
+   parameter. HTTP 204 means an empty result. Back off on 429. If category
+   filtering returns 501 for your landscape, omit it and filter locally. See
+   SAP's linked API contract for current limits.
+4. Match `object.type = "MCP Tool Call"`, tool, user, `space_id`, request ID and the
+   UTC window together. Use `target` when present; a space can serve several SAP
+   systems. Invocation records include redacted `args` (cut after 500 characters
+   with `...` appended); completion records carry the outcome. Retain the matched
+   evidence privately. If these fields do not distinguish concurrent requests,
+   repeat with a fresh known call in a quiet window.
+
+Delivery is asynchronous: one eu10 check took 11 minutes, which is an observation,
+not a delivery guarantee. Recheck the same known event before diagnosing loss.
+Monitor known traffic and certificate expiry; a quiet server alone is not evidence
+of failure. ARC-1 emits throttled `BTP Audit Log delivery failed` warnings but does
+not configure an external alert for you. The reader does not enable writing:
+ARC-1's sink requires the separate `auditlog` **premium** binding.
+
+## Audit Log certificate rotation
+
+The optional Audit Log binding certificate does not renew inside a running process. Before its
+configured validity ends, unbind `arc1-auditlog` from `arc1-mcp-server` during a maintenance window.
+For MTA deployments, redeploy the reviewed MTAR with the same extension to recreate the binding;
+for direct `cf push`, repeat SAP's
+[X.509 binding procedure](https://help.sap.com/docs/btp/sap-business-technology-platform/audit-log-write-api-for-customers)
+and restage. Check the startup log and delivery of a known audit event afterward (see
+[Audit Log delivery evidence](#audit-log-delivery-evidence)). Rotation recreates only the binding;
+the instance keeps its X.509 configuration. Track the expiry in your monitoring or
+calendar and verify a delivered event after rotation. Do not rotate
+ARC-1's XSUAA binding or DCR signing key as part of this operation.
+
+On SIGTERM/SIGINT, ARC-1 allows up to five seconds to drain requests and flush audit sinks before
+exiting. A timeout is logged and exits with status 1; SIGKILL cannot flush pending records.
 
 ## Deployment and scaling by identity mode
 
@@ -139,15 +251,25 @@ E = (ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES / 1,048,576)
     × ARC1_MAX_CONCURRENT_DATA_RESULTS
 ```
 
-At the defaults, `E = 2 MiB × 2 = 4 MiB` per process. This is the admitted raw response size, **not a heap limit**. XML parsing, strings and serialization use additional memory.
+At the defaults, `E = 2 MiB × 2 = 4 MiB` per process. With `N` instances, the fleet can admit
+`N × E`, but every instance still needs enough RAM for its own `E`; horizontal scaling does not
+protect one instance from an oversized result. This product is not a heap bound. The issue #737
+[full parse/result harness](https://github.com/arc-mcp/arc-1/blob/main/docs/research/issues/737-datapreview-response-memory-budget.md#arc-1-memory-amplification)
+measured about 19 times the combined raw XML bytes in incremental peak RSS before the fix, and XML
+shape, string widths, transport, and allocator behavior can change that ratio.
 
-For an unbenchmarked limit combination, estimate:
+For a new limit combination that has not yet been benchmarked, use this conservative planning
+estimate:
 
 ```text
 planning RSS (MiB) = 256 + (32 × E)
 ```
 
-Choose the next CF memory tier **above** that estimate, then measure peak RSS with representative requests at full concurrency. The estimate includes a 256 MiB baseline and a conservative amplification allowance; it is not a guarantee. See the [measurement background](https://github.com/arc-mcp/arc-1/blob/main/docs/research/issues/737-datapreview-response-memory-budget.md#arc-1-memory-amplification).
+Then choose the next available CF memory tier **above** the estimate. The `32×` multiplier rounds
+well above the measured `~19×` amplification; the 256 MiB reserve covers the server baseline,
+native/HTTP buffers, caches, non-data requests, GC movement, and platform variance. This is a
+starting allocation, not a guarantee. Do not use it to justify a smaller instance without a
+representative concurrent peak-RSS test through the deployed direct or BTP/Cloud Connector route.
 
 | Response allowance per tool call | Concurrent data results | Raw envelope `E` | Planning estimate | Recommended starting CF RAM |
 |---:|---:|---:|---:|---:|
@@ -176,7 +298,15 @@ Choose the pair for the workload rather than raising both automatically:
   response and request memory that this table does not model; do not use it as a substitute for the
   data-result limit, and continue to size it against SAP dialog work processes.
 
-The MTA's `OPTIMIZE_MEMORY=true` and `bin/start-cf.sh` launcher derive Node old-space from the buildpack's validated `MEMORY_AVAILABLE`: 75% of CF RAM (384 MiB at 512 MiB; 768 MiB at 1 GiB). Keep that launcher when resizing. The `Runtime memory envelope` log reports total V8 heap, which is slightly larger than old-space.
+The shipped MTA sets `OPTIMIZE_MEMORY=true` and starts through a small fail-closed launcher. The
+launcher validates the buildpack-provided `MEMORY_AVAILABLE`, assigns old-space 75% of it, and
+then `exec`s Node so CF termination signals reach ARC-1 directly: 384 MiB at the shipped 512 MiB
+allocation, 768 MiB at 1 GiB, 1,536 MiB at 2 GiB, and 3,072 MiB at 4 GiB. See the official
+[Node buildpack guidance](https://docs.cloudfoundry.org/buildpacks/node/node-tips.html#low-memory) and
+[`bin/release` policy](https://github.com/cloudfoundry/nodejs-buildpack/blob/master/bin/release).
+Memory overrides therefore remain in sync automatically. The `Runtime memory envelope` log reports
+the total V8 heap limit, which includes more than old space; for example, the 384 MiB old-space
+setting appears as approximately 432 MiB total V8 heap on the validated runtime.
 
 Put the RAM and limit changes together in the durable customer `.mtaext`:
 
@@ -190,15 +320,22 @@ modules:
       ARC1_MAX_CONCURRENT_DATA_RESULTS: "2"
 ```
 
-Build and deploy the MTA so the next deployment retains the new limits. Afterward, check `Runtime memory envelope` and `Data-result safety envelope` in the startup logs, then measure the widest approved rows at full concurrency. A temporary `cf scale -m` change is overwritten by the next descriptor deployment.
+Build and deploy the MTA rather than relying on a temporary `cf scale`; Cloud Foundry's
+[`cf scale -m`](https://docs.cloudfoundry.org/devguide/deploy-apps/cf-scale.html#vertical) changes
+the live per-instance memory limit, but the next MTA deployment reapplies the descriptor. After
+deployment, confirm the `Runtime memory envelope` startup log shows the expected CF memory and V8
+heap limit and the `Data-result safety envelope` log shows the intended raw envelope. Exercise the
+widest approved row shape at full configured data concurrency, inspect `cf app`/platform memory,
+and keep the larger tier until sustained evidence justifies reducing it.
 
 ### Non-rolling update for shared Basic
 
-Before the maintenance window, follow [validate, build and inspect](btp-cloud-foundry-deployment.md#5-validate-build-and-inspect-the-mtar), including validation of your actual `.mtaext`. Set `parameters.instances: 1` in that extension before deploying. During the window, use the inspected artifact without rebuilding; do not pass a rolling strategy or use blue-green deployment:
+Use a maintenance window. Do not pass a rolling strategy and do not use blue-green deployment:
 
 ```bash
-# CF Space Developer, from the source checkout used to build this MTAR
+# CF Space Developer, from the reviewed source checkout
 cf stop arc1-mcp-server
+npm run btp:build
 npm run btp:deploy-ext
 cf scale arc1-mcp-server -i 1
 cf start arc1-mcp-server
@@ -207,20 +344,18 @@ cf app arc1-mcp-server
 
 The normal MTA deploy may already start the application; the explicit start is harmless. The final
 `cf app` output must show exactly one desired/running instance before users reconnect. Roll back by
-stopping the app, deploying the previous MTAR with the same `.mtaext` and DCR secret, and
+stopping the app, deploying the previous reviewed MTAR with the same `.mtaext` and DCR secret, and
 again verifying exactly one process.
 
 `enable-parallel-deployments: true` in `mta.yaml` lets the MTA deployer schedule independent MTA
 operations. It does not authorize two ARC-1 application processes and does not make rolling Basic
 deployment safe.
 
-<a id="monitoring-and-incident-evidence"></a>
-
-## Monitoring and incident investigation
+## Monitoring and incident evidence
 
 Use request IDs to correlate MCP responses, ARC-1 audit events, Connectivity/Cloud Connector logs,
 and SAP logs. Keep log access restricted: even with central redaction, logs contain identities,
-target IDs, paths, statuses, timing, and topology details.
+target IDs, paths, statuses, timing, and topology evidence.
 
 Useful read-only checks:
 
@@ -236,31 +371,34 @@ curl -fsS "https://<route>/health" | jq .
 active targets or quarantined configuration. It does not prove Destination Service, PP, SAP login,
 SAP authorization, data/SQL policy, or a usable tool catalog.
 
-For multi-target checks, call `SAPTargets` as an Admin, review exclusions and registry revision,
-then perform the same safe read as a Viewer through each endpoint style. Verify the actual SAP identity separately with [backend user verification](principal-propagation-setup.md#verify-the-backend-identity). `SYSTEM.user` may come from configuration or token claims. PP must reach the intended human; Basic must reach the approved technical user, with the human caller recorded in ARC-1 audit.
+For multi-target acceptance, call `SAPTargets` as an Admin, review exclusions and registry revision,
+then perform the same safe read as a Viewer through each endpoint style. Verify the SAP login
+separately using [backend identity evidence](principal-propagation-setup.md#verify-the-backend-identity):
+`SYSTEM.user` can come from configuration or token claims. PP must reach the intended human SAP
+user; shared Basic must reach the approved technical user, with the human XSUAA caller in ARC-1 audit.
 
-<a id="pre-customer-acceptance"></a>
+## Pre-customer acceptance
 
-## Before users connect
+Record evidence rather than only checking configuration screens.
 
-Record the checks in the [setup worksheet](btp-setup-worksheet.md). Record the result and the administrator responsible for any unresolved item.
-
-| Area | Required check or record |
-|---|---|
-| Reproducible deployment | Source revision, protected `.mtaext`, route/org/space, inspected MTAR and rollback artifact |
-| Services and roles | Intended bindings; seven space-specific collections with current roles; fresh user tokens |
-| SAP access and identity | Reads succeed; SAP logs identify the intended user; approved unmapped/unauthorized users fail without fallback |
-| Network | Required Connector paths only; verified backend HTTPS |
-| Multi-target catalog | Admin `SAPTargets` explains exclusions, conflicts and narrowing; selected endpoint styles work |
-| Multi-target routing | Unknown/lowercase target routes fail; aggregate calls without `target` fail; bare `/mcp` is unavailable unless explicitly configured; `/targets` is absent |
-| Multi-target roles | Test Viewer, Data Viewer, Viewer + SQL, Admin and no-read users separately; assigned scopes cannot exceed app/target settings |
-| Capabilities | User scopes and app/target settings enforce the [allowed action surface](multi-target-setup.md#allowed-tools); multi-target mutations stay unavailable |
-| Data and SQL | Enabled only where both app and destination permit them; tested only if required |
-| Workload controls | ATC/Unit explicitly allowed or denied; RAM, concurrency and rate limits reviewed |
-| Shared Basic, if enabled | Least-privileged technical user, lockout monitoring, one process and non-rolling rollback rehearsed |
-| Client and operations | Required clients complete login/reconnect and a safe call; audit, secret rotation, incident and rollback responsibilities are assigned |
-
-Do not use ATC/Unit as routine deployment smoke tests. Mark unapproved data/client-isolation checks unverified instead of enabling capabilities just to complete the checklist.
+- [ ] The deployment mode and SAP identity model are written down.
+- [ ] The reviewed `.mtaext`, deployed ARC-1 version, route, CF org/space, and rollback MTAR are recorded.
+- [ ] The built MTAR was inspected and contains no `.env`, service key, private key, certificate, or local operator file.
+- [ ] XSUAA, Destination, and Connectivity bindings point to the intended subaccount and space.
+- [ ] All seven space-specific role collections exist and contain current roles.
+- [ ] Viewer, Data Viewer, Viewer + SQL, Admin, and no-role behavior match the expected tool surface.
+- [ ] Every test user obtains a fresh token after role changes; cached client catalogs were refreshed.
+- [ ] PP maps to the intended SAP human in each target; wrong/unmapped and SAP-unauthorized users fail conclusively and can retry after repair.
+- [ ] Cloud Connector exposes only the required paths and uses verified backend HTTPS.
+- [ ] Multi-target Admin `SAPTargets` shows no unexpected quarantine, duplicate, shadow, or policy narrowing.
+- [ ] Pinned, aggregate, unknown-target, lowercase-route, bare `/mcp`, and absent `/targets` behavior match the selected topology.
+- [ ] Named data preview and SQL work only where both instance and destination allow them.
+- [ ] Multi-target routes expose no writes, activation, transport/Git mutations, SAP-backed formatter/settings actions, plugins, UI, or hyperfocused mode. Permitted lint/transport reads match the [reviewed action surface](multi-target-setup.md#allowed-tools).
+- [ ] ATC and ABAP Unit workload access is deliberately retained or denied; neither is run as a routine deployment smoke test.
+- [ ] Shared Basic, if enabled, uses a least-privilege non-`SAP_ALL` user, monitored lockout/expiry, one CF process, and a rehearsed non-rolling update.
+- [ ] PP-only scale testing includes total process concurrency and consistent registry revisions.
+- [ ] VS Code/GitHub Copilot, Cursor, and any customer-required MCP client completed OAuth, reconnect, catalog refresh, and one safe call.
+- [ ] Logs/audit, backup, incident, secret-rotation, destination-change, and rollback owners accepted the handover.
 
 ## Troubleshooting order
 
@@ -271,7 +409,8 @@ Work from the outer layer inward:
 3. **Registry:** Admin `SAPTargets`, destination marker/fields, duplicates, shadows, revision.
 4. **Destination/Connectivity:** binding, lookup, Cloud Connector location and resource exposure.
 5. **SAP authentication:** certificate generated, STRUST, trusted proxy, CERTRULE/SU01 or Basic credential.
-6. **SAP authorization:** propagated/technical user has only required ADT permissions.
+6. **SAP authorization:** propagated/technical user has only required ADT permissions (for the
+   startup user, see [Startup user authorizations](btp-destination-setup.md#startup-user-authorizations)).
 7. **ARC-1 policy:** instance ceiling, destination data/SQL narrowing, user scope, deny actions.
 
 Do not “fix” a downstream failure by widening an upstream boundary. For example, a SAP `403` after

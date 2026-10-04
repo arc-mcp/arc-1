@@ -54,7 +54,11 @@ export function looksLikeFieldName(query: string): boolean {
   return true;
 }
 
-export async function handleSAPSearch(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+export async function handleSAPSearch(
+  client: AdtClient,
+  args: Record<string, unknown>,
+  minimalErrors: boolean,
+): Promise<ToolResult> {
   const rawQuery = String(args.query ?? '');
   const maxResults = Number(args.maxResults ?? 100);
   const searchType = String(args.searchType ?? 'object');
@@ -95,7 +99,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
         finalLookups = await client.lookupObjectsViaDb(names, { maxResults, objectTypes });
       } catch (error) {
         if (error instanceof DataSourcePolicyError) {
-          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+          return errorResult(internalOperationDenial('tadir_lookup_db', error, minimalErrors));
         }
         throw error;
       }
@@ -110,7 +114,7 @@ export async function handleSAPSearch(client: AdtClient, args: Record<string, un
         ]);
       } catch (error) {
         if (error instanceof DataSourcePolicyError) {
-          return errorResult(internalOperationDenial('tadir_lookup_db', error.message));
+          return errorResult(internalOperationDenial('tadir_lookup_db', error, minimalErrors));
         }
         throw error;
       }

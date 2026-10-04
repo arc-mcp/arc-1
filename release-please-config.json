@@ -6,7 +6,7 @@
       "extra-files": [
         {
           "type": "generic",
-          "path": "src/server/server.ts",
+          "path": "src/version.ts",
           "glob": false
         },
         {
@@ -17,6 +17,11 @@
         {
           "type": "generic",
           "path": "docs_page/deployment.md",
+          "glob": false
+        },
+        {
+          "type": "generic",
+          "path": "docs_page/roadmap.md",
           "glob": false
         },
         {

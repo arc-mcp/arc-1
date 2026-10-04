@@ -11,6 +11,7 @@ import { extractUnknownColumn, formatUnknownColumnHint, isNotFoundError } from '
 import { mapSapReleaseToAbaplintVersion } from '../adt/features.js';
 import { type FmParameter, type FmParameterKind, parseFmSignature } from '../adt/fm-signature.js';
 import { internalOperationDenial, internalOperationWarning } from '../adt/internal-data-operations.js';
+import { getLockObject } from '../adt/lock-object.js';
 import { describePackageListing } from '../adt/package-contents.js';
 import { isOperationAllowed, OperationType } from '../adt/safety.js';
 import {
@@ -24,10 +25,11 @@ import { getAppInfo } from '../adt/ui5-repository.js';
 import { getVersionDiff } from '../adt/version-diff.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { extractCdsElements } from '../context/cds-deps.js';
-import { grepSource } from '../context/grep.js';
+import { grepSource, grepSourceBlocks } from '../context/grep.js';
 import { extractMethod, formatMethodListing, listMethods } from '../context/method-surgery.js';
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
+import { readEditableSource } from './editable-source.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
 import {
   detectLocalHandlerInclude,
@@ -36,6 +38,7 @@ import {
   objectUrlForTypeRaw,
 } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
+import { handleSyntaxCheck } from './syntax.js';
 
 const BTP_HINTS: Record<string, string> = {
   PROG: 'Executable programs (reports) are not available on BTP ABAP Environment. Use CLAS with IF_OO_ADT_CLASSRUN for console applications.',
@@ -144,12 +147,12 @@ function sourceVersionWarning(effectiveVersion: SourceVersion, draft?: InactiveO
  * SWOTLV is a declared internal source and BOR method resolution has no alternative in ARC-1, so a
  * policy denial must name the affected feature rather than surfacing a bare policy error.
  */
-async function swotlv<T>(run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
+async function swotlv<T>(minimalErrors: boolean, run: () => Promise<T>): Promise<T | { policyDenial: ToolResult }> {
   try {
     return await run();
   } catch (error) {
     if (error instanceof DataSourcePolicyError) {
-      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error.message)) };
+      return { policyDenial: errorResult(internalOperationDenial('bor_method_lookup', error, minimalErrors)) };
     }
     throw error;
   }
@@ -160,15 +163,21 @@ export async function handleSAPRead(
   args: Record<string, unknown>,
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
+  minimalErrors: boolean,
 ): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   const requestedVersion = (args.version ?? 'active') as RequestedSourceVersion;
 
+  if (type === 'SYNTAX')
+    return handleSyntaxCheck(client, { type: args.objectType, name, version: args.version, source: args.source });
+
   // BTP: return helpful error for unavailable types
   if (isBtpSystem() && BTP_HINTS[type]) {
     return errorResult(BTP_HINTS[type]);
   }
+
+  if (args.format === 'editable') return readEditableSource(client, args, type, name);
 
   // action="diff": unified diff between two source versions (single system). Bypasses the
   // cache/draft machinery below on purpose — both sides must be RAW source, or the no-draft
@@ -176,6 +185,11 @@ export async function handleSAPRead(
   // See docs/research/2026-06-15-version-diff-saved-read-action.md.
   if (args.action === 'diff') {
     if (!name) return errorResult('SAPRead action="diff" requires a "name".');
+    if (isServerDrivenObjectType(type)) {
+      return errorResult(
+        'SAPRead action="diff" does not support server-driven types; read version="active" and version="inactive" separately.',
+      );
+    }
     const from = typeof args.from === 'string' && args.from ? args.from : 'active';
     const to = typeof args.to === 'string' && args.to ? args.to : 'inactive';
     const fromLabel = typeof args.fromLabel === 'string' && args.fromLabel ? args.fromLabel : undefined;
@@ -222,16 +236,15 @@ export async function handleSAPRead(
     }
   }
 
-  // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+): DESD, EVTB, DTSC, COTA, …
-  // share one AFF generic-object contract (blue:blueSource metadata + JSON or DDL-text source), read
-  // via the discovery-gated generic engine instead of the per-type switch below. They bypass
-  // the version/draft/cache machinery (no /source/main text; JSON output).
+  // Types in SDO_REGISTRY use the discovery-gated engine for metadata and JSON or DDL-text source.
+  // Preserve the unversioned developer view for omitted/auto; explicit selection is checked by SAP metadata.
   if (isServerDrivenObjectType(type)) {
     if (!name) return errorResult(`"name" is required for SAPRead type=${type}.`);
     if (!(await ensureServerDrivenSupport(client.http, client.safety, type))) {
       return errorResult(serverDrivenUnavailableMessage('SAPRead', type));
     }
-    const sdo = await getServerDrivenObject(client.http, client.safety, type, name);
+    const version = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+    const sdo = await getServerDrivenObject(client.http, client.safety, type, name, version);
     return textResult(toolJson(sdo));
   }
 
@@ -471,7 +484,9 @@ export async function handleSAPRead(
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUGR': {
-      const expand = Boolean(args.expand_includes);
+      // grep searches the include sources, so it implies the expansion; without the
+      // sources there is nothing to search and the metadata would ignore the pattern.
+      const expand = Boolean(args.expand_includes) || Boolean(args.grep);
       if (expand) {
         // Recursive expansion: the function module bodies (FUNCTION…ENDFUNCTION) and
         // PBO/PAI modules live in nested includes (LZ<grp>U01, …O…, …I…) pulled in from
@@ -479,10 +494,20 @@ export async function handleSAPRead(
         // the include graph (depth/count-capped, cycle-guarded). Dynpros + GUI status are
         // not included: ADT doesn't expose them over REST (SAPGUI-only).
         const { blocks, truncated } = await client.getFunctionGroupExpanded(name, { version: effectiveVersion });
+        if (args.grep) {
+          // Each include on its own, so a line number counts within the include it names.
+          const g = grepSourceBlocks(blocks, String(args.grep));
+          const note = truncated
+            ? '\n\n=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not searched. ' +
+              'Search a known include with SAPRead(type="INCL", name="...", grep="...") or a function module with type="FUNC", group="...", name="...", grep="...".'
+            : '';
+          const output = `${g.output}${note}`;
+          return g.invalidPattern ? errorResult(output) : textResult(output);
+        }
         const parts = blocks.map((b) => `=== ${b.name} ===\n${b.source}`);
         if (truncated) {
           parts.push(
-            '=== [truncated] ===\nInclude cap reached; some nested includes were not expanded. ' +
+            '=== [truncated] ===\nInclude expansion limit reached (80 source blocks or 5 levels); some nested includes were not expanded. ' +
               'Read remaining includes individually with SAPRead(type="INCL", name="...").',
           );
         }
@@ -631,6 +656,12 @@ export async function handleSAPRead(
       const ttyp = await client.getTableType(name);
       return textResult(toolJson(ttyp));
     }
+    case 'ENQU': {
+      // Omitted/auto keeps SAP's developer view (a pending inactive edit shows up), like DTEL.
+      const enquVersion = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+      const enqu = await getLockObject(client.http, client.safety, name, enquVersion);
+      return textResult(toolJson(enqu));
+    }
     case 'AUTH': {
       const authField = await client.getAuthorizationField(name);
       return textResult(toolJson(authField));
@@ -650,6 +681,11 @@ export async function handleSAPRead(
       return textResult(toolJson(toggle));
     }
     case 'ENHO': {
+      if (args.version === 'active' || args.version === 'inactive') {
+        return errorResult(
+          'ENHO does not support explicit version selection. Omit version or use "auto" for SAP\'s developer view.',
+        );
+      }
       const enhancement = await client.getEnhancementImplementation(name);
       return textResult(toolJson(enhancement));
     }
@@ -778,7 +814,7 @@ export async function handleSAPRead(
       }
       if (safeMethod) {
         // Read specific BOR method implementation via SWOTLV lookup
-        const data = await swotlv(() =>
+        const data = await swotlv(minimalErrors, () =>
           client.runQuery(
             `SELECT PROGNAME, FORMNAME FROM SWOTLV WHERE LOBJTYPE = '${safeName}' AND VERB = '${safeMethod}'`,
             1,
@@ -800,7 +836,7 @@ export async function handleSAPRead(
         );
       }
       // List all methods for this BOR object
-      const methods = await swotlv(() =>
+      const methods = await swotlv(minimalErrors, () =>
         client.runQuery(`SELECT VERB, PROGNAME, FORMNAME, DESCRIPT FROM SWOTLV WHERE LOBJTYPE = '${safeName}'`, 100),
       );
       if ('policyDenial' in methods) return methods.policyDenial;
@@ -896,7 +932,7 @@ export async function handleSAPRead(
     }
     default:
       return errorResult(
-        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TTYP, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
+        `Unknown SAPRead type: "${type}". Supported types: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, TABL, TTYP, ENQU, VIEW, DOMA, DTEL, MSAG, AUTH, FEATURE_TOGGLE, ENHO, VERSIONS, VERSION_SOURCE, TRAN, TABLE_CONTENTS, DEVC, SOBJ, SYSTEM, COMPONENTS, TEXT_ELEMENTS, VARIANTS, BSP, BSP_DEPLOY, API_STATE, INACTIVE_OBJECTS. Deprecated aliases: MESSAGES (use MSAG), FTG2 (use FEATURE_TOGGLE). ` +
           'Tip: Type aliases are auto-normalized (e.g., DDLS/DF → DDLS, DCLS/DL → DCLS, CLAS/OC → CLAS, PROG/P → PROG). ' +
           'Do not pass a URI — use the "type" and "name" parameters instead.',
       );

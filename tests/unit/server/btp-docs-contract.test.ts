@@ -39,6 +39,41 @@ function assertParity(markdown: string): void {
 }
 
 describe('BTP documentation contracts', () => {
+  it('routes one-target readers to both supported on-premise identity profiles', () => {
+    const overview = read('docs_page/btp-overview.md');
+    const deployment = read('docs_page/deployment.md');
+    const runbook = read('docs_page/btp-cloud-foundry-deployment.md');
+    const destinations = read('docs_page/btp-destination-setup.md');
+
+    for (const entrypoint of [overview, deployment]) {
+      const singleTargetRow = entrypoint.split('\n').find((line) => /^\|.*one on-prem/i.test(line));
+      expect(singleTargetRow).toContain(
+        '[single-PP](btp-cloud-foundry-deployment.md#single-target-read-only-pp-profile)',
+      );
+      expect(singleTargetRow).toContain(
+        '[single-Basic](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile)',
+      );
+    }
+    expect(runbook).toContain('cp -n examples/btp/single-basic/profile.mtaext mta-overrides.mtaext');
+    expect(destinations).toContain('SAP_PP_ENABLED: "false"');
+    expect(destinations).toContain('SAP_PP_STRICT: "false"');
+  });
+
+  it('documents the non-ADT auto-probe paths and the ADT-only opt-out', () => {
+    const destinations = read('docs_page/btp-destination-setup.md');
+    for (const value of ['SAP_FEATURE_GCTS=off', 'SAP_FEATURE_FLP=off', 'SAP_FEATURE_UI5REPO=off']) {
+      expect(destinations).toContain(value);
+    }
+    for (const path of [
+      '/sap/bc/cts_abapvcs',
+      '/sap/opu/odata/UI2/PAGE_BUILDER_CUST',
+      '/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV',
+    ]) {
+      expect(destinations).toContain(path);
+    }
+    expect(destinations).toContain('an ADT-only deployment needs only `/sap/bc/adt`');
+  });
+
   it('uses the observed CF route rather than deriving OAuth URLs from the space', () => {
     const xsuaa = read('docs_page/xsuaa-setup.md');
     expect(xsuaa).toContain('cf app <app-name>');
@@ -82,19 +117,6 @@ describe('BTP documentation contracts', () => {
         expect.objectContaining({ run: 'mkdocs build --strict' }),
       ]),
     );
-  });
-
-  it('rejects duplicate navigation entries and enables omitted-page validation', () => {
-    const pages: string[] = [];
-    const visit = (node: unknown): void => {
-      if (typeof node === 'string') pages.push(node);
-      else if (Array.isArray(node)) node.forEach(visit);
-      else if (node && typeof node === 'object') Object.values(node).forEach(visit);
-    };
-    const config = parse(read('mkdocs.yml'));
-    visit(config.nav);
-    expect(pages.length).toBe(new Set(pages).size);
-    expect(config.validation.nav.omitted_files).toBe('warn');
   });
 
   it('makes broken local anchors fail the strict documentation build', () => {

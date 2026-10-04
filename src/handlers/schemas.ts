@@ -22,11 +22,13 @@ import {
 } from '../adt/atc-batch.js';
 import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
+import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
+import { sourcePreconditionError } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
-import { CLASS_WRITE_INCLUDES } from './object-types.js';
+import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
 import {
   ATC_BATCH_TYPES_BTP,
@@ -77,9 +79,48 @@ const SAPREAD_CLAS_INCLUDES = ['main', 'testclasses', 'definitions', 'implementa
 const SAPREAD_CLAS_READ_INCLUDES = [...SAPREAD_CLAS_INCLUDES, 'text_symbols'] as const;
 const SAPREAD_DDLS_INCLUDES = ['elements'] as const;
 function validateSapReadInput(
-  input: { type: string; name?: string; action?: string; include?: string; versionUri?: string; sqlFilter?: string },
+  input: {
+    type: string;
+    name?: string;
+    action?: string;
+    include?: string;
+    versionUri?: string;
+    sqlFilter?: string;
+    objectType?: string;
+    source?: string;
+    version?: string;
+  },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  if (input.type === 'SYNTAX') {
+    for (const key of ['name', 'objectType'] as const) {
+      if (!input[key]?.trim()) ctx.addIssue({ code: 'custom', path: [key], message: `SYNTAX requires ${key}.` });
+    }
+    if (input.objectType && !KNOWN_BASE_TYPES.has(input.objectType) && !isServerDrivenObjectType(input.objectType)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['objectType'],
+        message: 'SYNTAX requires a supported repository object type.',
+      });
+    }
+    const allowed = new Set(['type', 'name', 'objectType', 'version', 'source']);
+    for (const [key, value] of Object.entries<unknown>(input)) {
+      // Ignore strict-client filler, but reject options that would change the requested check.
+      const filler =
+        value === false ||
+        (Array.isArray(value) && value.length === 0) ||
+        (key === 'format' && value === 'text') ||
+        (key === 'maxResults' && value === 0);
+      if (value !== undefined && !allowed.has(key) && !filler) {
+        ctx.addIssue({ code: 'custom', path: [key], message: `SYNTAX does not accept ${key}.` });
+      }
+    }
+    if (input.version === 'auto')
+      ctx.addIssue({ code: 'custom', path: ['version'], message: 'SYNTAX version must be active or inactive.' });
+  } else if (input.source !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['source'], message: 'SAPRead source is only supported for type=SYNTAX.' });
+  }
+
   if (input.action === 'diff' && !input.name) {
     ctx.addIssue({ code: 'custom', path: ['name'], message: 'SAPRead action="diff" requires a "name".' });
   }
@@ -208,9 +249,9 @@ export const SAPReadSchema = z
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     expand_includes: looseOptionalBoolean,
-    format: z.enum(['text', 'structured']).optional(),
-    // Keep omission observable: source handlers still default it to active, while DTEL
-    // uses SAP's version-less developer view for read-after-write consistency.
+    format: z.enum(['text', 'structured', 'editable']).optional(),
+    // Keep omission observable: source handlers still default it to active, while DTEL/ENQU
+    // use SAP's version-less developer view for read-after-write consistency.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
     maxRows: z.coerce.number().optional(),
@@ -218,6 +259,7 @@ export const SAPReadSchema = z
     maxResults: z.coerce.number().optional(),
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
+    source: z.string().optional(),
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: looseOptionalBoolean,
@@ -247,7 +289,7 @@ export const SAPReadSchemaBtp = z
     group: z.string().optional(),
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
-    format: z.enum(['text', 'structured']).optional(),
+    format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep this aligned with the on-prem schema; the handler owns the per-type default.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
     force_refresh: looseOptionalBoolean,
@@ -256,6 +298,7 @@ export const SAPReadSchemaBtp = z
     maxResults: z.coerce.number().optional(),
     sqlFilter: z.string().optional(),
     objectType: z.string().optional(),
+    source: z.string().optional(),
     versionUri: z.string().optional(),
     /** For type=FUNC: when true, response is JSON {source, signature: {importing, exporting, ...}}. */
     includeSignature: looseOptionalBoolean,
@@ -404,9 +447,12 @@ function validateSapWriteInput(
     processingType?: string;
     updateTaskKind?: string;
     shortTexts?: unknown[];
+    expectedSourceHash?: string;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
+  const preconditionError = sourcePreconditionError(input.type ?? '', input.action, input.expectedSourceHash);
+  if (preconditionError) ctx.addIssue({ code: 'custom', path: ['expectedSourceHash'], message: preconditionError });
   // Treat empty/whitespace include as "not provided" — some MCP clients serialize
   // an omitted optional string as "" and shouldn't trip the include validation.
   if (input.include && input.include.trim() !== '') {
@@ -615,6 +661,7 @@ export const SAPWriteSchema = z
       'delete',
       'edit_method',
       'edit_unit',
+      'add_unit',
       'edit_class_definition',
       'add_method',
       'edit_method_signature',
@@ -628,6 +675,7 @@ export const SAPWriteSchema = z
     type: z.enum(SAPWRITE_TYPES_ONPREM).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
+    expectedSourceHash: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
@@ -635,7 +683,7 @@ export const SAPWriteSchema = z
     /** For action="edit_text_symbols": which textpool subobject to write. Defaults to symbols. */
     textPart: z.enum(SAPREAD_TEXT_ELEMENT_INCLUDES).optional(),
     method: z.string().optional(),
-    /** For action="edit_unit": FORM or MODULE name to replace. */
+    /** For edit_unit/add_unit: FORM or MODULE name to replace/add. */
     unit: z.string().optional(),
     /**
      * Visibility section. For action="add_method": the section to insert into (default 'public').
@@ -649,7 +697,8 @@ export const SAPWriteSchema = z
     package: z.string().optional(),
     transport: z.string().optional(),
     // Required for FUNC create (the parent function-group name); optional for FUNC
-    // update/delete (auto-resolved via search). Ignored for other types.
+    // update/delete (auto-resolved via search). Also used by INCL to address a
+    // FUGR structural include (see tools.ts description) — ignored for all other types.
     group: z.string().optional(),
     /** FUNC creation kind as represented by ADT: normal, RFC-enabled, or update task. */
     processingType: functionProcessingTypeSchema.optional(),
@@ -739,6 +788,7 @@ export const SAPWriteSchemaBtp = z
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
     source: z.string().optional(),
+    expectedSourceHash: z.string().optional(),
     include: z.preprocess(
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
@@ -1116,6 +1166,8 @@ export const SAPTransportSchema = z
     user: z.string().optional(),
     status: z.string().optional(),
     type: z.string().optional(),
+    // Parent FUGR for FUNC or group-scoped INCL check/history.
+    group: z.string().optional(),
     operation: z.enum(['create', 'modify']).optional(),
     owner: z.string().optional(),
     // looseOptionalBoolean (not z.boolean()) so GPT/OpenAI clients sending stringified
@@ -1299,6 +1351,7 @@ export const SAPHyperfocusedSchema = z
     action: z.string(),
     type: z.string().optional(),
     name: z.string().optional(),
+    version: z.enum(['active', 'inactive', 'auto']).optional(),
     params: z.record(z.string(), z.any()).optional(),
   })
   .strict();

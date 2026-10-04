@@ -8,6 +8,7 @@ import {
   getHyperfocusedScope,
   getHyperfocusedToolDefinition,
 } from '../../../src/handlers/hyperfocused.js';
+import { SAPHyperfocusedSchema } from '../../../src/handlers/schemas.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
@@ -33,19 +34,21 @@ describe('hyperfocused mode', () => {
       }
     });
 
-    it('routes write action to SAPWrite', () => {
+    it('routes write action to SAPWrite without overriding the service version', () => {
       const result = expandHyperfocusedArgs({
         action: 'write',
-        type: 'CLAS',
-        name: 'ZCL_TEST',
-        params: { action: 'update', source: 'CLASS zcl_test...' },
+        type: 'SRVB',
+        name: 'ZSB_TEST',
+        version: 'active',
+        params: { action: 'update', serviceDefinition: 'ZSD_TEST', version: '0002' },
       });
       expect('error' in result).toBe(false);
       if (!('error' in result)) {
         expect(result.toolName).toBe('SAPWrite');
-        expect(result.expandedArgs.type).toBe('CLAS');
+        expect(result.expandedArgs.type).toBe('SRVB');
         expect(result.expandedArgs.action).toBe('update');
-        expect(result.expandedArgs.source).toBe('CLASS zcl_test...');
+        expect(result.expandedArgs.serviceDefinition).toBe('ZSD_TEST');
+        expect(result.expandedArgs.version).toBe('0002');
       }
     });
 
@@ -206,5 +209,9 @@ describe('hyperfocused mode', () => {
     const tool = tools[0]!;
     expect(tool.name).toBe('SAP');
     expect((tool.inputSchema as Record<string, unknown>).additionalProperties).toBe(false);
+    // schema-key-sync.test.ts covers only the 12 standard tools; an advertised key missing here was rejected.
+    expect(Object.keys((tool.inputSchema as { properties: object }).properties).sort()).toEqual(
+      Object.keys(SAPHyperfocusedSchema.shape).sort(),
+    );
   });
 });

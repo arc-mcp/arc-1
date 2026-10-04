@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><SEVERITY>ERROR</SEVERITY><SHORT_TEXT>Local Publish of ZARC1_PUBLISH failed</SHORT_TEXT><LONG_TEXT>Inbound service ZARC1_PUBLISH_0001_G4BA does not exist</LONG_TEXT></DATA></asx:values></asx:abap>

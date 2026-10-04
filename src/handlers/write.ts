@@ -11,10 +11,10 @@
 import type { AdtClient } from '../adt/client.js';
 import { AdtSafetyError } from '../adt/errors.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
-import type { ClassStructure } from '../adt/types.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import type { ServerConfig } from '../server/types.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
+import { sourcePreconditionError } from './editable-source.js';
 import {
   isDomainsEndpointAvailable,
   isTablesEndpointAvailable,
@@ -22,13 +22,13 @@ import {
 } from './feature-cache.js';
 import {
   canonicalTablType,
+  functionGroupIncludeObjectUrl,
   functionModuleObjectUrl,
   normalizeClassWriteInclude,
   normalizeWriteObjectType,
   objectUrlForType,
   sourceUrlForType,
 } from './object-types.js';
-import { resolveVersionAndDraftInfo, type SourceVersion } from './read.js';
 import { errorResult, type ToolResult } from './shared.js';
 import {
   writeActionAddMethod,
@@ -42,7 +42,7 @@ import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
 import { writeUiad } from './write/uiad.js';
-import { writeActionEditUnit } from './write/unit-surgery.js';
+import { writeActionUnit } from './write/unit-surgery.js';
 import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
 import {
   DOMA_WRITE_UNAVAILABLE_HINT,
@@ -98,11 +98,10 @@ export async function handleSAPWrite(
     );
   }
 
-  // Server-driven objects (mostly SAP_BASIS 8.16+): DESD, EVTB, DTSC, CSNM, EVTO, COTA, DSFD, DTDC
-  // share one AFF generic-object write contract (POST metadata (blue:blueSource / dtdc:dtdcSource) → PUT source (JSON or DDL text per type)
-  // → activate). They route through the dedicated engine instead of the per-type switch below —
-  // objectBasePath(<sdo>) throws, so this MUST come before the objectUrl computation. Mirrors the
-  // server-driven branch in handleSAPRead.
+  const preconditionError = sourcePreconditionError(type, action, args.expectedSourceHash);
+  if (preconditionError) return errorResult(preconditionError);
+
+  // Types in SDO_REGISTRY use the shared engine (POST metadata → PUT source → activate).
   if (isServerDrivenObjectType(type)) {
     if (type === 'UIAD' && (action === 'create' || action === 'update')) {
       return writeUiad(client, action, name, args, config, cachingLayer, cacheSecurity);
@@ -111,8 +110,8 @@ export async function handleSAPWrite(
   }
 
   // For TABL update/delete/edit_method, the existing object may live at /tables/
-  // (transparent) or /structures/ (DDIC structure). Resolve once via the client's
-  // cached URL probe. For 'create' the default /tables/ URL is correct (we only
+  // (transparent) or /structures/ (DDIC structure). Resolve it fresh from SAP on every
+  // mutation (resolveTablObjectUrlForWrite). For 'create' the default /tables/ URL is correct (we only
   // create transparent tables today; structure creation is out of scope).
   //
   // For FUNC, the URL has the parent function group baked into the path:
@@ -173,9 +172,10 @@ export async function handleSAPWrite(
     // (live-verified a4h 816 + 758). A bare INCL with no group stays a standalone /programs/includes/.
     const group = String(args.group).trim();
     if (action === 'create' || action === 'delete') {
-      // SAP derives the include's identity from the group: anything not named L<GROUP>… earns an
+      // SAP names includes [namespace/]L<GROUP>…: a different prefix earns an
       // opaque 500 "Attributes for program X have not been saved". Reject it with a usable message.
-      const expectedPrefix = `L${group.toUpperCase()}`;
+      const match = group.toUpperCase().match(/^(\/[^/]+\/)(.+)$/);
+      const expectedPrefix = match ? `${match[1]}L${match[2]}` : `L${group.toUpperCase()}`;
       if (!name.toUpperCase().startsWith(expectedPrefix)) {
         return errorResult(
           `FUGR structural include names must start with ${expectedPrefix} — got "${name}". ` +
@@ -184,8 +184,7 @@ export async function handleSAPWrite(
         );
       }
     }
-    const groupLc = encodeURIComponent(group.toLowerCase());
-    objectUrl = `/sap/bc/adt/functions/groups/${groupLc}/includes/${encodeURIComponent(name.toLowerCase())}`;
+    objectUrl = functionGroupIncludeObjectUrl(group, name);
     srcUrl = `${objectUrl}/source/main`;
   } else if (type === 'INCL' && (action === 'create' || action === 'delete') && name.toUpperCase().startsWith('L')) {
     // SAP rejects L* names on /programs/includes ("reserved for function group includes"), but as a
@@ -231,39 +230,6 @@ export async function handleSAPWrite(
     return enforceAllowedPackageForObjectUrl(client, objectUrl, `Operations on ${type} '${name}'`);
   }
 
-  // Helper for class-section surgery (issue #303): fetch the class structure AND
-  // /source/main at the SAME effective version, so the spliced line ranges line
-  // up with the bytes being edited. resolveVersionAndDraftInfo picks 'inactive'
-  // when an unactivated draft exists. We pass that version to BOTH getClassStructure
-  // (the /objectstructure?version= read) and the source read, AND to the cache opts
-  // (so inactive bytes aren't cached under the 'active' key). Without this, a chained
-  // surgery call on a draft would splice active-version line ranges into inactive
-  // source and silently corrupt the draft.
-  async function fetchClassStructureAndMain(
-    clsName: string,
-  ): Promise<{ structure: ClassStructure; main: string; effectiveVersion: SourceVersion }> {
-    const { effectiveVersion } = await resolveVersionAndDraftInfo(
-      client,
-      cachingLayer,
-      'CLAS',
-      clsName,
-      'auto',
-      cacheSecurity,
-    );
-    const structure = await client.getClassStructure(clsName, effectiveVersion);
-    const main = cachingLayer
-      ? (
-          await cachingLayer.getSource(
-            'CLAS',
-            clsName,
-            (ifNoneMatch) => client.getClass(clsName, undefined, { ifNoneMatch, version: effectiveVersion }),
-            { version: effectiveVersion },
-          )
-        ).source
-      : (await client.getClass(clsName, undefined, { version: effectiveVersion })).source;
-    return { structure, main, effectiveVersion };
-  }
-
   const ctx: SapWriteContext = {
     client,
     args,
@@ -284,7 +250,6 @@ export async function handleSAPWrite(
     srcUrl,
     invalidateWrittenObject,
     enforcePackageForExistingObject,
-    fetchClassStructureAndMain,
   };
 
   switch (action) {
@@ -294,8 +259,9 @@ export async function handleSAPWrite(
       return writeActionCreate(ctx);
     case 'edit_method':
       return writeActionEditMethod(ctx);
+    case 'add_unit':
     case 'edit_unit':
-      return writeActionEditUnit(ctx);
+      return writeActionUnit(ctx);
 
     // Class-section surgery actions (issue #303) — see write/class-surgery.ts.
     case 'edit_class_definition':
@@ -327,7 +293,7 @@ export async function handleSAPWrite(
       return writeActionEditTextSymbols(ctx);
     default:
       return errorResult(
-        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
+        `Unknown SAPWrite action: ${action}. Supported: create, update, delete, edit_method, edit_unit, add_unit, batch_create, scaffold_rap_handlers, generate_behavior_implementation`,
       );
   }
 }

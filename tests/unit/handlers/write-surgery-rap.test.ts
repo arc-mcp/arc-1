@@ -61,8 +61,8 @@ describe('SAPWrite handler — class surgery / RAP', () => {
 
     /**
      * Build a mock that satisfies the edit_method flow against a CCIMP
-     * include: GET class metadata (for package check), GET include source,
-     * POST lock, PUT new source, POST unlock. Returns the captured call
+     * include: GET class metadata (for package check), POST lock,
+     * GET include source, PUT new source, POST unlock. Returns the captured call
      * trace so tests can assert URL routing.
      */
     function mockEditMethodIncludeFlow(opts: {
@@ -70,11 +70,7 @@ describe('SAPWrite handler — class surgery / RAP', () => {
       includeName: string;
       includeSource: string;
       /**
-       * When set, simulates an inactive draft: GET `?version=inactive` returns
-       * this body; GET `?version=active` (or no version) returns
-       * `opts.includeSource` (the active baseline). The inactive-list endpoint
-       * also reports a draft for the class so `resolveVersionAndDraftInfo`
-       * picks the inactive branch.
+       * Omitted version returns the editable draft; explicit active returns the baseline.
        */
       inactiveIncludeSource?: string;
       packageName?: string;
@@ -86,6 +82,9 @@ describe('SAPWrite handler — class surgery / RAP', () => {
           const method = fetchOpts?.method ?? 'GET';
           const urlStr = String(url);
           calls.push({ method, url: urlStr, body: typeof fetchOpts?.body === 'string' ? fetchOpts.body : undefined });
+          if ((method === 'GET' || method === 'HEAD') && urlStr.includes('/discovery')) {
+            return Promise.resolve(mockResponse(200, '<service/>', { 'x-csrf-token': 'T' }));
+          }
           // Inactive-object list (used by resolveVersionAndDraftInfo to decide
           // whether the class has any unactivated draft). Format matches
           // tests/fixtures/xml/inactive-objects.xml — parseInactiveObjects
@@ -119,8 +118,8 @@ describe('SAPWrite handler — class surgery / RAP', () => {
             urlStr.includes(`/sap/bc/adt/oo/classes/${opts.className}/includes/${opts.includeName}`)
           ) {
             // Version-aware: when an inactiveIncludeSource is provided, return
-            // it for ?version=inactive and the regular source for active.
-            const wantsInactive = urlStr.includes('version=inactive');
+            // it unless active was explicitly requested (verified on SAP 7.58).
+            const wantsInactive = !urlStr.includes('version=active');
             const body =
               wantsInactive && opts.inactiveIncludeSource !== undefined
                 ? opts.inactiveIncludeSource
@@ -380,11 +379,7 @@ ENDCLASS.`,
     });
 
     it('reads inactive CCIMP when an inactive draft exists (PR-D review fix)', async () => {
-      // Reproduces the RUN-NOTES Run 3 scenario: after `update include=` or
-      // `scaffold_rap_handlers`, the real handler body lives in the inactive
-      // CCIMP draft, while the active CCIMP is still the empty placeholder
-      // shipped with class creation. Without `version=inactive`, edit_method
-      // would read the active placeholder and report "method not found".
+      // An inactive CCIMP must be edited even when the active include is only a placeholder.
       const calls = mockEditMethodIncludeFlow({
         className: 'ZBP_DM_PROJECT',
         includeName: 'implementations',
@@ -413,9 +408,9 @@ ENDCLASS.`,
       expect(result.isError).toBeUndefined();
       expect(result.content[0]?.text).toContain('include: implementations');
 
-      // Must have asked for ?version=inactive
+      // Omitted version selects the editable draft directly under the class lock.
       const inactiveGets = calls.filter(
-        (c) => c.method === 'GET' && c.url.includes('/includes/implementations') && c.url.includes('version=inactive'),
+        (c) => c.method === 'GET' && c.url.includes('/includes/implementations') && !c.url.includes('version='),
       );
       expect(inactiveGets.length).toBe(1);
 
@@ -448,9 +443,8 @@ ENDCLASS.`,
 
       expect(result.isError).toBeUndefined();
       const includeGets = calls.filter((c) => c.method === 'GET' && c.url.includes('/includes/implementations'));
-      // One GET reads the include for method splicing; the second is the locked
-      // existence probe in safeUpdateClassInclude. Neither comes from the cache.
-      expect(includeGets.length).toBe(2);
+      // One fresh read under the lock also proves the include exists.
+      expect(includeGets.length).toBe(1);
     });
   });
 
@@ -1599,6 +1593,124 @@ ENDCLASS.`;
       expect(putCall?.body ?? '').toContain('ENDMETHOD.');
     });
 
+    it.each([
+      { method: '/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM', lintBeforeWrite: true },
+      { method: 'ZIF_SERVICE~GET_STREAM', lintBeforeWrite: true },
+      // SAP accepts namespaced components; abaplint cannot parse this syntax yet.
+      { method: 'ZIF_SERVICE~/NS/RUN', lintBeforeWrite: false },
+    ])('add_method inserts an inherited interface redefinition $method', async ({ method, lintBeforeWrite }) => {
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: PROBE_MAIN,
+        structureXml: PROBE_STRUCTURE,
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'add_method',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: `METHODS ${method.toLowerCase()} REDEFINITION.`,
+        lintBeforeWrite,
+      });
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      const body = calls.find((c) => c.method === 'PUT')?.body;
+      expect(body).toContain(`METHODS ${method.toLowerCase()} REDEFINITION.`);
+      expect(body).toContain(`METHOD ${method.toLowerCase()}.`);
+      expect(body).toContain("result = 'Goodbye!'.");
+    });
+
+    it.each(['duplicate', 'bare-name-add', 'bare-name-definition'] as const)(
+      'distinguishes interface bodies from bare method names: %s',
+      async (scenario) => {
+        const main = `CLASS zcl_probe DEFINITION PUBLIC CREATE PUBLIC.
+  PUBLIC SECTION.
+    INTERFACES zif_svc.
+    METHODS other.
+ENDCLASS.
+
+CLASS zcl_probe IMPLEMENTATION.
+  METHOD zif_svc~run.
+    rv = 42.
+  ENDMETHOD.
+  METHOD other.
+  ENDMETHOD.
+ENDCLASS.`;
+        const structure = `<abapsource:objectStructureElement xmlns:adtcore="http://www.sap.com/adt/core" xmlns:abapsource="http://www.sap.com/adt/abapsource" xmlns:atom="http://www.w3.org/2005/Atom" adtcore:name="ZCL_PROBE" adtcore:type="CLAS/OC">
+  <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=1,0;end=5,8"/>
+  <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=7,0;end=13,8"/>
+  <abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="ZIF_SVC~RUN" visibility="public">
+    <atom:link rel="http://www.sap.com/adt/relations/source/definitionIdentifier" href="./source/main#start=3,15;end=3,22"/>
+    <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=8,2;end=10,11"/>
+  </abapsource:objectStructureElement>
+  <abapsource:objectStructureElement adtcore:type="CLAS/OM" adtcore:name="OTHER" visibility="public">
+    <atom:link rel="http://www.sap.com/adt/relations/source/definitionBlock" href="./source/main#start=4,4;end=4,18"/>
+    <atom:link rel="http://www.sap.com/adt/relations/source/implementationBlock" href="./source/main#start=11,2;end=12,11"/>
+  </abapsource:objectStructureElement>
+</abapsource:objectStructureElement>`;
+        const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: main, structureXml: structure });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: scenario === 'bare-name-definition' ? 'edit_class_definition' : 'add_method',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          ...(scenario === 'bare-name-definition'
+            ? {
+                source: main
+                  .slice(0, main.indexOf('\n\n'))
+                  .replace('METHODS other.', 'METHODS other.\n    METHODS zif_svc.'),
+              }
+            : { method: scenario === 'duplicate' ? 'METHODS zif_svc~run REDEFINITION.' : 'METHODS zif_svc.' }),
+          lintBeforeWrite: false,
+        });
+        if (scenario === 'bare-name-add') {
+          expect(result.isError, result.content[0]?.text).toBeUndefined();
+          expect(calls.find((c) => c.method === 'PUT')?.body).toContain('METHOD zif_svc.');
+        } else {
+          expect(result.isError).toBe(true);
+          expect(result.content[0]?.text).toContain(
+            scenario === 'duplicate' ? 'already implements' : 'no matching METHOD',
+          );
+        }
+        expect(calls.some((c) => c.url.includes('_action=LOCK'))).toBe(true);
+        expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+        expect(calls.some((c) => c.method === 'PUT')).toBe(scenario === 'bare-name-add');
+      },
+    );
+
+    it.each(['keep', 'remove', 'duplicate', 'add'] as const)('handles qualified declarations: %s', async (change) => {
+      const method = '/IWBEP/IF_MGW_APPL_SRV_RUNTIME~GET_STREAM';
+      const main = PROBE_MAIN.replaceAll('hello', method.toLowerCase()).replace(
+        'IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.',
+        'FINAL\n      REDEFINITION.',
+      );
+      const structure = PROBE_STRUCTURE.replaceAll('HELLO', method);
+      const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: main, structureXml: structure });
+      let definition = main.slice(0, main.indexOf('ENDCLASS.') + 'ENDCLASS.'.length).replace(' FINAL', '');
+      if (change === 'add')
+        definition = definition.replace(
+          'ENDCLASS.',
+          'METHODS /iwbep/if_mgw_appl_srv_runtime~other REDEFINITION.\nENDCLASS.',
+        );
+      if (change === 'remove') definition = definition.replace(/ {4}METHODS \/iwbep\/[^.]+\./i, '');
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        ...(change === 'duplicate'
+          ? { action: 'add_method', method: `METHODS ${method} REDEFINITION.` }
+          : { action: 'edit_class_definition', source: definition }),
+      });
+      if (change === 'keep') {
+        expect(result.isError, result.content[0]?.text).toBeUndefined();
+        expect(calls.find((c) => c.method === 'PUT')?.body).toContain(
+          main.slice(main.indexOf('CLASS zcl_probe IMPLEMENTATION.')),
+        );
+      } else {
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain(
+          change === 'remove' ? 'orphan implementation' : change === 'add' ? 'no matching METHOD' : 'already exists',
+        );
+        expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      }
+    });
+
     it('add_method with abstract=true inserts no IMPL stub', async () => {
       const calls = mockClassSurgeryFlow({
         className: 'ZCL_PROBE',
@@ -1744,7 +1856,24 @@ ENDCLASS.`;
       expect(calls.some((c) => c.method === 'PUT')).toBe(true);
     });
 
-    it('add_method rejects an interface-qualified method name (would emit invalid ABAP)', async () => {
+    it.each(['protected', 'private'])(
+      'add_method refuses an interface redefinition in %s visibility',
+      async (visibility) => {
+        mockFetch.mockReset();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'add_method',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          method: 'METHODS zif_service~run REDEFINITION.',
+          visibility,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('public');
+        expect(mockFetch).not.toHaveBeenCalled();
+      },
+    );
+
+    it('add_method rejects a new interface method and explains how to add its body', async () => {
       mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: PROBE_MAIN, structureXml: PROBE_STRUCTURE });
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'add_method',
@@ -1754,6 +1883,8 @@ ENDCLASS.`;
       });
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toMatch(/interface-qualified|INTERFACES/);
+      expect(result.content[0]?.text).toContain('action="update"');
+      expect(result.content[0]?.text).toContain('edit_method only replaces an existing body');
     });
 
     it('add_method (concrete) refuses on a purely-abstract class with no IMPLEMENTATION block', async () => {
@@ -1798,6 +1929,35 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
     });
 
     // ── change_method_visibility (issue #303 follow-up) ───────────────
+
+    it.each(['protected', 'private'] as const)(
+      'change_method_visibility refuses to move an interface redefinition to %s',
+      async (visibility) => {
+        const calls = mockClassSurgeryFlow({
+          className: 'ZCL_PROBE',
+          mainSource: PROBE_MAIN.replace('FINAL CREATE PUBLIC', 'INHERITING FROM zcl_parent CREATE PUBLIC')
+            .replace(
+              'METHODS hello\n      IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.',
+              'METHODS zif_svc~run\n      REDEFINITION\n      .',
+            )
+            .replace('METHOD hello.', 'METHOD zif_svc~run.')
+            .replace('DATA mv_counter TYPE i.', 'PROTECTED SECTION.'),
+          structureXml: PROBE_STRUCTURE.replace('adtcore:name="HELLO"', 'adtcore:name="ZIF_SVC~RUN"'),
+        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'change_method_visibility',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          method: 'zif_svc~run',
+          visibility,
+          lintBeforeWrite: false,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('Interface method redefinitions must keep public visibility');
+        expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+        expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+      },
+    );
 
     it('change_method_visibility moves a method public→private and preserves the body', async () => {
       const calls = mockClassSurgeryFlow({
@@ -1862,6 +2022,92 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       // No write should have happened.
       expect(calls.some((c) => c.method === 'PUT')).toBe(false);
     });
+
+    it.each([
+      { from: 'public', to: 'private' },
+      { from: 'protected', to: 'public' },
+    ] as const)('refuses to move an ordinary redefinition from $from to $to', async ({ from, to }) => {
+      const main = PROBE_MAIN.replace('FINAL CREATE PUBLIC', 'INHERITING FROM zcl_parent CREATE PUBLIC')
+        .replace('PUBLIC SECTION.', `${from.toUpperCase()} SECTION.`)
+        .replace('DATA mv_counter TYPE i.', 'PUBLIC SECTION.')
+        .replace(
+          'IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.',
+          'FINAL " inherited implementation\n      REDEFINITION ##NEEDED.',
+        );
+      const structure = PROBE_STRUCTURE.replace(
+        'adtcore:name="HELLO" level="instance" visibility="public"',
+        `adtcore:name="HELLO" redefinition="true" level="instance" visibility="${from}"`,
+      );
+      const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: main, structureXml: structure });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        visibility: to,
+        lintBeforeWrite: false,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Redefined methods must keep their inherited visibility');
+      expect(result.content[0]?.text).toContain(
+        'use edit_class_definition with the visibility declared by the superclass',
+      );
+      expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it('edit_class_definition repairs a redefinition in the wrong section without changing its body', async () => {
+      const broken = PROBE_MAIN.replace('FINAL CREATE PUBLIC', 'INHERITING FROM zcl_parent CREATE PUBLIC')
+        .replace('PUBLIC SECTION.', 'PROTECTED SECTION.')
+        .replace('IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.', 'REDEFINITION\n      .');
+      const repaired = broken.replace('PROTECTED SECTION.', 'PUBLIC SECTION.');
+      const calls = mockClassSurgeryFlow({
+        className: 'ZCL_PROBE',
+        mainSource: broken,
+        structureXml: PROBE_STRUCTURE.replace(
+          'adtcore:name="HELLO" level="instance" visibility="public"',
+          'adtcore:name="HELLO" redefinition="true" level="instance" visibility="protected"',
+        ),
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'edit_class_definition',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        source: repaired.split('CLASS zcl_probe IMPLEMENTATION.')[0]!.trim(),
+      });
+      expect(result.isError).toBeUndefined();
+      expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(1);
+      expect(calls.find((c) => c.method === 'PUT')?.body).toBe(repaired);
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
+    it.each(['hello', 'zif_svc~run'])(
+      'keeps redefinition %s public as a no-op and releases its lock',
+      async (method) => {
+        const main = PROBE_MAIN.replace('FINAL CREATE PUBLIC', 'INHERITING FROM zcl_parent CREATE PUBLIC')
+          .replaceAll('hello', method)
+          .replace('IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.', 'REDEFINITION\n      .');
+        const calls = mockClassSurgeryFlow({
+          className: 'ZCL_PROBE',
+          mainSource: main,
+          structureXml: PROBE_STRUCTURE.replace(
+            'adtcore:name="HELLO"',
+            `adtcore:name="${method.toUpperCase()}" redefinition="true"`,
+          ),
+        });
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'change_method_visibility',
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          method,
+          visibility: 'public',
+        });
+        expect(result.isError).toBeUndefined();
+        expect(result.content[0]?.text).toContain('No change made');
+        expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+        expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+      },
+    );
 
     it('change_method_visibility refuses when the target section header is missing', async () => {
       // Probe class has no PROTECTED SECTION → moving to protected refuses with hint.
@@ -1934,7 +2180,7 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
   // ── FUGR structural-include update (FEAT-18 sibling) ─────────────────
   // Routing only — the full live lifecycle (create FUGR → update TOP include → activate →
   // read-back) is covered by the integration test, verified on a4h 758 + 816.
-  describe('SAPWrite FUGR structural include update', () => {
+  describe('SAPWrite FUGR structural includes', () => {
     function captureLockingFlow(): { method: string; url: string; contentType?: string; body?: string }[] {
       const calls: { method: string; url: string; contentType?: string; body?: string }[] = [];
       mockFetch.mockImplementation(
@@ -1977,66 +2223,93 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(lock?.url).not.toContain('/source/main');
     });
 
-    it('creates a FUGR structural include on the group collection with the fincludes v2 type', async () => {
-      // ADT supports this on 7.50 and 758 alike: POST /functions/groups/{g}/includes with
-      // Content-Type …fincludes.v2+xml. No group lock, no _package — the include inherits the
-      // group's package. Live-verified 2026-07-29 (dossier §8.2).
-      const calls: { method: string; url: string; contentType?: string; body?: string }[] = [];
-      mockFetch.mockImplementation(
-        (url: string | URL, opts?: { method?: string; headers?: Record<string, string>; body?: string }) => {
-          const method = opts?.method ?? 'GET';
-          const urlStr = String(url);
-          calls.push({
-            method,
-            url: urlStr,
-            contentType: opts?.headers?.['Content-Type'],
-            body: typeof opts?.body === 'string' ? opts.body : undefined,
-          });
-          // The include inherits the group's package — the create path resolves it to gate on the
-          // REAL package, so the group metadata must carry a packageRef.
-          if (method === 'GET' && urlStr.includes('/functions/groups/zmy_fg') && !urlStr.includes('/includes')) {
-            return Promise.resolve(
-              mockResponse(
-                200,
-                '<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZMY_FG"><adtcore:packageRef adtcore:name="$TMP"/></group:abapFunctionGroup>',
-                { 'x-csrf-token': 'T' },
-              ),
-            );
-          }
-          return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
-        },
-      );
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'INCL',
-        name: 'LZMY_FGF01',
-        group: 'ZMY_FG',
-        package: '$TMP',
-      });
-      expect(result.isError).toBeUndefined();
-      const post = calls.find((c) => c.method === 'POST' && c.url.includes('/includes'));
-      expect(post?.url).toContain('/sap/bc/adt/functions/groups/zmy_fg/includes');
-      expect(post?.url).not.toContain('_package=');
-      expect(post?.contentType).toBe('application/vnd.sap.adt.functions.fincludes.v2+xml');
-      expect(post?.body).toContain('finclude:abapFunctionGroupInclude');
-      expect(post?.body).toContain('adtcore:name="LZMY_FGF01"');
-      expect(post?.body).toContain('adtcore:uri="/sap/bc/adt/functions/groups/zmy_fg"');
-      expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
-    });
+    it.each([
+      { group: 'ZMY_FG', name: 'LZMY_FGF01', groupPath: 'zmy_fg', includePath: 'lzmy_fgf01' },
+      { group: ' zmy_fg ', name: 'LZMY_FGF01', groupPath: 'zmy_fg', includePath: 'lzmy_fgf01' },
+      { group: '/ABC/NAME', name: '/ABC/LNAMEB03', groupPath: '%2Fabc%2Fname', includePath: '%2Fabc%2Flnameb03' },
+      { group: ' /abc/name ', name: '/ABC/LNAMEB04', groupPath: '%2Fabc%2Fname', includePath: '%2Fabc%2Flnameb04' },
+    ])(
+      'creates $name in $group with source and the fincludes v2 type',
+      async ({ group, name, groupPath, includePath }) => {
+        // ADT supports this on 7.50 and 758 alike: POST /functions/groups/{g}/includes with
+        // Content-Type …fincludes.v2+xml. No group lock, no _package — the include inherits the
+        // group's package. Live-verified 2026-07-29 (dossier §8.2).
+        const calls: { method: string; url: string; contentType?: string; body?: string }[] = [];
+        mockFetch.mockImplementation(
+          (url: string | URL, opts?: { method?: string; headers?: Record<string, string>; body?: string }) => {
+            const method = opts?.method ?? 'GET';
+            const urlStr = String(url);
+            calls.push({
+              method,
+              url: urlStr,
+              contentType: opts?.headers?.['Content-Type'],
+              body: typeof opts?.body === 'string' ? opts.body : undefined,
+            });
+            // The include inherits the group's package — the create path resolves it to gate on the
+            // REAL package, so the group metadata must carry a packageRef.
+            if (
+              method === 'GET' &&
+              urlStr.includes(`/functions/groups/${groupPath}`) &&
+              !urlStr.includes('/includes')
+            ) {
+              return Promise.resolve(
+                mockResponse(
+                  200,
+                  `<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${group.trim().toUpperCase()}"><adtcore:packageRef adtcore:name="$TMP"/></group:abapFunctionGroup>`,
+                  { 'x-csrf-token': 'T' },
+                ),
+              );
+            }
+            if (method === 'POST' && urlStr.includes('_action=LOCK')) {
+              return Promise.resolve(mockResponse(200, '<DATA><LOCK_HANDLE>LH123</LOCK_HANDLE></DATA>'));
+            }
+            return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+          },
+        );
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'create',
+          type: 'INCL',
+          name,
+          group,
+          package: '$TMP',
+          source: 'FORM issue_904.\nENDFORM.',
+          lintBeforeWrite: false,
+        });
+        expect(result.isError).toBeUndefined();
+        const post = calls.find((c) => c.method === 'POST' && c.url.includes('/includes'));
+        expect(post?.url).toContain(`/sap/bc/adt/functions/groups/${groupPath}/includes`);
+        expect(post?.url).not.toContain('_package=');
+        expect(post?.contentType).toBe('application/vnd.sap.adt.functions.fincludes.v2+xml');
+        expect(post?.body).toContain('finclude:abapFunctionGroupInclude');
+        const put = calls.find((c) => c.method === 'PUT');
+        expect(put?.url).toContain(`/functions/groups/${groupPath}/includes/${includePath}/source/main`);
+        expect(put?.body).toBe('FORM issue_904.\nENDFORM.');
+        const lock = calls.find((c) => c.method === 'POST' && c.url.includes('_action=LOCK'));
+        expect(lock?.url).toContain(`/functions/groups/${groupPath}/includes/${includePath}?`);
+        expect(post?.body).toContain(`adtcore:name="${name}"`);
+        expect(post?.body).toContain(`<adtcore:containerRef adtcore:name="${group.trim().toUpperCase()}"`);
+        expect(post?.body).toContain(`adtcore:uri="/sap/bc/adt/functions/groups/${groupPath}"`);
+        expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
+      },
+    );
 
-    it('deletes a FUGR structural include by locking the include itself', async () => {
+    it.each([
+      { group: 'ZMY_FG', name: 'LZMY_FGF01', path: 'zmy_fg/includes/lzmy_fgf01' },
+      { group: '/ABC/NAME', name: '/ABC/LNAMEB03', path: '%2Fabc%2Fname/includes/%2Fabc%2Flnameb03' },
+      { group: ' /abc/name ', name: '/ABC/LNAMEB04', path: '%2Fabc%2Fname/includes/%2Fabc%2Flnameb04' },
+    ])('deletes $name by locking the include itself', async ({ group, name, path }) => {
       const calls = captureLockingFlow();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'delete',
         type: 'INCL',
-        name: 'LZMY_FGF01',
-        group: 'ZMY_FG',
+        name,
+        group,
       });
       expect(result.isError).toBeUndefined();
       const lock = calls.find((c) => c.method === 'POST' && c.url.includes('_action=LOCK'));
-      expect(lock?.url).toContain('/functions/groups/zmy_fg/includes/lzmy_fgf01');
+      expect(lock?.url).toContain(`/functions/groups/${path}`);
       const del = calls.find((c) => c.method === 'DELETE');
-      expect(del?.url).toContain('/functions/groups/zmy_fg/includes/lzmy_fgf01');
+      expect(del?.url).toContain(`/functions/groups/${path}`);
       expect(del?.url).toContain('lockHandle=LH123');
       expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
     });
@@ -2054,16 +2327,19 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(calls.some((c) => c.url.includes('/sap/bc/adt/programs/includes'))).toBe(false);
     });
 
-    it('gates a structural include against the GROUP package, not the caller-supplied one', async () => {
+    it.each([
+      { group: 'ZRESTRICTED_FG', name: 'LZRESTRICTED_FGF01', groupPath: 'zrestricted_fg' },
+      { group: '/ABC/NAME', name: '/ABC/LNAMEB03', groupPath: '%2Fabc%2Fname' },
+    ])('gates $name against the GROUP package, not the caller-supplied one', async ({ group, name, groupPath }) => {
       // The include inherits its package from the parent group — SAP ignores _package here — so
       // gating on args.package would let a caller write into a disallowed package by claiming $TMP.
       mockFetch.mockImplementation((url: string | URL) => {
         const urlStr = String(url);
-        if (urlStr.includes('/functions/groups/zrestricted_fg') && !urlStr.includes('/includes')) {
+        if (urlStr.includes(`/functions/groups/${groupPath}`) && !urlStr.includes('/includes')) {
           return Promise.resolve(
             mockResponse(
               200,
-              '<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZRESTRICTED_FG"><adtcore:packageRef adtcore:name="ZFINANCE"/></group:abapFunctionGroup>',
+              '<group:abapFunctionGroup xmlns:adtcore="http://www.sap.com/adt/core" ><adtcore:packageRef adtcore:name="ZFINANCE"/></group:abapFunctionGroup>',
               { 'x-csrf-token': 'T' },
             ),
           );
@@ -2079,8 +2355,8 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
         type: 'INCL',
-        name: 'LZRESTRICTED_FGF01',
-        group: 'ZRESTRICTED_FG',
+        name,
+        group,
         package: '$TMP',
         description: 'forms',
       });
@@ -2088,20 +2364,63 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(result.content[0]?.text).toMatch(/ZFINANCE/);
     });
 
-    it('rejects an include name that does not start with L<GROUP> before any HTTP call', async () => {
-      // SAP derives the include from its group; anything else earns an opaque
-      // 500 "Attributes for program X have not been saved".
-      const calls = captureLockingFlow();
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'INCL',
-        name: 'ZZ_ARBITRARY_INC',
-        group: 'ZMY_FG',
-        package: '$TMP',
+    it.each(['ZFINANCE', undefined])(
+      'refuses namespaced delete with package %s before mutation',
+      async (packageName) => {
+        const calls: string[] = [];
+        mockFetch.mockImplementation((_url, opts) => {
+          calls.push(opts?.method ?? 'GET');
+          const packageAttr = packageName ? `adtcore:packageName="${packageName}"` : '';
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<finclude:abapFunctionGroupInclude xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="/ABC/LNAMEB03"><adtcore:containerRef adtcore:name="/ABC/NAME" ${packageAttr}/></finclude:abapFunctionGroupInclude>`,
+              { 'x-csrf-token': 'T' },
+            ),
+          );
+        });
+        const restrictedClient = new AdtClient({
+          baseUrl: 'http://sap:8000',
+          username: 'admin',
+          password: 'secret',
+          safety: { ...unrestrictedSafetyConfig(), allowedPackages: ['$TMP'] },
+        });
+        const result = await handleToolCall(restrictedClient, DEFAULT_CONFIG, 'SAPWrite', {
+          action: 'delete',
+          type: 'INCL',
+          name: '/ABC/LNAMEB03',
+          group: '/ABC/NAME',
+          package: '$TMP',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain(packageName ?? 'Fail-closed');
+        expect(calls.length).toBeGreaterThan(0);
+        expect(calls.every((method) => method === 'GET')).toBe(true);
+      },
+    );
+
+    describe.each(['create', 'delete'])('%s name validation', (action) => {
+      it.each([
+        { group: 'ZMY_FG', name: 'ZZ_ARBITRARY_INC', prefix: 'LZMY_FG' },
+        { group: '/ABC/NAME', name: 'L/ABC/NAMEB03', prefix: '/ABC/LNAME' },
+        { group: '/ABC/NAME', name: '/OTHER/LNAMEB03', prefix: '/ABC/LNAME' },
+        { group: '/ABC/NAME', name: '/ABC/LOTHERB03', prefix: '/ABC/LNAME' },
+        { group: '/ABC/NAME', name: 'LNAMEB03', prefix: '/ABC/LNAME' },
+        { group: 'ZMY_FG', name: '/ABC/LZMY_FGF01', prefix: 'LZMY_FG' },
+      ])('rejects $name in $group before HTTP', async ({ group, name, prefix }) => {
+        const calls = captureLockingFlow();
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action,
+          type: 'INCL',
+          name,
+          group,
+          package: '$TMP',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain(`must start with ${prefix}`);
+        expect(result.content[0]?.text).toContain(`${prefix}F01`);
+        expect(calls).toHaveLength(0);
       });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('LZMY_FG');
-      expect(calls).toHaveLength(0);
     });
 
     it('fails closed cleanly when FUGR include metadata has no packageRef or packageName', async () => {

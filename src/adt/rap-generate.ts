@@ -34,14 +34,17 @@
 import type { AdtClient } from './client.js';
 import { lockObject, unlockObject, updateSource } from './crud.js';
 import { activateBatch } from './devtools.js';
-import { AdtApiError, AdtSafetyError } from './errors.js';
+import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
+import type { AdtHttpClient } from './http.js';
 import {
   applyRapHandlerScaffold,
   extractRapHandlerRequirements,
   findMissingRapHandlerImplementationStubs,
   findMissingRapHandlerRequirements,
   type RapHandlerRequirement,
+  type RapHandlerSourceSections,
 } from './rap-handlers.js';
+import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 
 /** Options for `generateBehaviorImplementation`. */
 export interface RapGenerateOptions {
@@ -208,144 +211,117 @@ export async function generateBehaviorImplementation(
   }
   bdefName = bdefName.toUpperCase();
 
-  // ── Phase 2: read sources + cross-validate ────────────────────────────
-  const structured = await client.getClassStructured(cleanClassName);
-  const mainSource = structured.main ?? '';
-  const definitionsSource = structured.definitions ?? '';
-  const implementationsSource = structured.implementations ?? '';
   const bdefRead = await client.getBdef(bdefName);
   const bdefSource = bdefRead.source;
-
-  const mainBdefMatch = FOR_BEHAVIOR_OF_RE.exec(mainSource);
-  const bdefClassMatch = MANAGED_IMPL_RE.exec(bdefSource);
-  const mainBdefRef = mainBdefMatch?.[1]?.toUpperCase();
-  const bdefClassRef = bdefClassMatch?.[1]?.toUpperCase();
-
-  const validation: RapGenerateValidation = {
-    mainHasForBehaviorOf: Boolean(mainBdefRef),
-    bdefBindsClass: Boolean(bdefClassRef),
-  };
-  const mismatches: string[] = [];
-  if (!mainBdefRef) {
-    mismatches.push(`MAIN source for ${cleanClassName} does not contain "FOR BEHAVIOR OF <bdef>"`);
-  } else if (mainBdefRef !== bdefName) {
-    mismatches.push(`MAIN binds BDEF ${mainBdefRef} but discovery resolved to ${bdefName}`);
-  }
-  if (!bdefClassRef) {
-    mismatches.push(`BDEF ${bdefName} does not contain "managed implementation in class <class> unique"`);
-  } else if (bdefClassRef !== cleanClassName.toUpperCase()) {
-    mismatches.push(`BDEF ${bdefName} binds class ${bdefClassRef} but we are generating for ${cleanClassName}`);
-  }
-  if (mismatches.length > 0) {
-    validation.mismatchReason = mismatches.join('; ');
-  }
-  if (validation.mismatchReason && !dryRun) {
-    throw new AdtSafetyError(
-      `generate_behavior_implementation: cross-reference validation failed (${validation.mismatchReason}). ` +
-        `Refusing to mutate. Re-run with dryRun=true to inspect the report and fix the source files first.`,
-    );
-  }
-
-  // ── Phase 3: scaffold plan ────────────────────────────────────────────
-  let requirements = extractRapHandlerRequirements(bdefSource);
-  if (targetAlias) {
-    requirements = requirements.filter((req) => req.entityAlias.toLowerCase() === targetAlias);
-  }
-
-  const combinedSource = [mainSource, definitionsSource, implementationsSource].filter(Boolean).join('\n\n');
-  const missingSignatures = findMissingRapHandlerRequirements(requirements, combinedSource);
-  const missingStubs = findMissingRapHandlerImplementationStubs(requirements, combinedSource);
-
-  const scaffoldPlan = applyRapHandlerScaffold(
-    {
-      main: mainSource,
-      definitions: definitionsSource || undefined,
-      implementations: implementationsSource || undefined,
-    },
-    missingSignatures,
-    missingStubs,
-  );
-
-  const result: RapGenerateResult = {
-    discovery: {
-      className: cleanClassName,
-      bdefName,
-      source: discoverySource,
-      classCategory: metadata.category,
-    },
-    validation,
-    scaffoldChanged: scaffoldPlan.changedSections.length > 0,
-    changedSections: scaffoldPlan.changedSections.filter(
-      (section): section is 'main' | 'definitions' | 'implementations' =>
-        section === 'main' || section === 'definitions' || section === 'implementations',
-    ),
-    inserted: {
-      signatures: scaffoldPlan.insertedSignatureCount,
-      stubs: scaffoldPlan.insertedImplementationStubCount,
-      autoCreatedSkeletons:
-        (scaffoldPlan.skeletons?.createdDefinitions.length ?? 0) +
-        (scaffoldPlan.skeletons?.createdImplementations.length ?? 0),
-    },
-    required: requirements,
-    dryRun,
-  };
-
-  // Dry-run short-circuits before any side effects.
-  if (dryRun) {
-    return result;
-  }
-
   const objectUrl = classObjectUrl(cleanClassName);
+  const scaffold = async (
+    session: AdtHttpClient,
+    save?: (url: string, source: string) => Promise<void>,
+  ): Promise<RapGenerateResult> => {
+    // Read the editable view through the locked session before deriving replacements.
+    const structured = await readRapClassSources(session, client.safety, cleanClassName);
+    const mainSource = structured.main;
+    const definitionsSource = structured.definitions ?? '';
+    const implementationsSource = structured.implementations ?? '';
 
-  // ── Phase 4: write (only when scaffold has changes) ───────────────────
-  // When scaffoldChanged=false, all handlers are already in place — skip the
-  // lock+write cycle entirely. Activation still runs below if requested, because
-  // a populated-but-inactive class is a realistic rerun/recovery state after
-  // earlier manual include writes (Codex review note on PR #260).
-  if (result.scaffoldChanged) {
-    await client.http.withStatefulSession(async (session) => {
-      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY');
-      const effectiveTransport = transport ?? (lock.corrNr || undefined);
-      try {
-        if (scaffoldPlan.changed.main && scaffoldPlan.sections.main !== mainSource) {
-          await updateSource(
-            session,
-            client.safety,
-            classMainSourceUrl(cleanClassName),
-            scaffoldPlan.sections.main,
-            lock.lockHandle,
-            effectiveTransport,
-          );
-        }
-        if (scaffoldPlan.changed.definitions && scaffoldPlan.sections.definitions) {
-          await updateSource(
-            session,
-            client.safety,
-            classIncludeUrlFor(cleanClassName, 'definitions'),
-            scaffoldPlan.sections.definitions,
-            lock.lockHandle,
-            effectiveTransport,
-          );
-        }
-        if (scaffoldPlan.changed.implementations && scaffoldPlan.sections.implementations) {
-          await updateSource(
-            session,
-            client.safety,
-            classIncludeUrlFor(cleanClassName, 'implementations'),
-            scaffoldPlan.sections.implementations,
-            lock.lockHandle,
-            effectiveTransport,
-          );
-        }
-      } finally {
-        try {
-          await unlockObject(session, objectUrl, lock.lockHandle);
-        } catch {
-          // best-effort-cleanup: surface the original error, not an unlock failure
-        }
-      }
-    });
-  }
+    const mainBdefMatch = FOR_BEHAVIOR_OF_RE.exec(mainSource);
+    const bdefClassMatch = MANAGED_IMPL_RE.exec(bdefSource);
+    const mainBdefRef = mainBdefMatch?.[1]?.toUpperCase();
+    const bdefClassRef = bdefClassMatch?.[1]?.toUpperCase();
+
+    const validation: RapGenerateValidation = {
+      mainHasForBehaviorOf: Boolean(mainBdefRef),
+      bdefBindsClass: Boolean(bdefClassRef),
+    };
+    const mismatches: string[] = [];
+    if (!mainBdefRef) {
+      mismatches.push(`MAIN source for ${cleanClassName} does not contain "FOR BEHAVIOR OF <bdef>"`);
+    } else if (mainBdefRef !== bdefName) {
+      mismatches.push(`MAIN binds BDEF ${mainBdefRef} but discovery resolved to ${bdefName}`);
+    }
+    if (!bdefClassRef) {
+      mismatches.push(`BDEF ${bdefName} does not contain "managed implementation in class <class> unique"`);
+    } else if (bdefClassRef !== cleanClassName.toUpperCase()) {
+      mismatches.push(`BDEF ${bdefName} binds class ${bdefClassRef} but we are generating for ${cleanClassName}`);
+    }
+    if (mismatches.length > 0) {
+      validation.mismatchReason = mismatches.join('; ');
+    }
+    if (validation.mismatchReason && !dryRun) {
+      throw new AdtSafetyError(
+        `generate_behavior_implementation: cross-reference validation failed (${validation.mismatchReason}). ` +
+          `Refusing to mutate. Re-run with dryRun=true to inspect the report and fix the source files first.`,
+      );
+    }
+
+    // ── Phase 3: scaffold plan ────────────────────────────────────────────
+    let requirements = extractRapHandlerRequirements(bdefSource);
+    if (targetAlias) {
+      requirements = requirements.filter((req) => req.entityAlias.toLowerCase() === targetAlias);
+    }
+
+    const combinedSource = [mainSource, definitionsSource, implementationsSource].filter(Boolean).join('\n\n');
+    const missingSignatures = findMissingRapHandlerRequirements(requirements, combinedSource);
+    const missingStubs = findMissingRapHandlerImplementationStubs(requirements, combinedSource);
+
+    const scaffoldPlan = applyRapHandlerScaffold(
+      {
+        main: mainSource,
+        definitions: definitionsSource || undefined,
+        implementations: implementationsSource || undefined,
+      },
+      missingSignatures,
+      missingStubs,
+    );
+
+    const result: RapGenerateResult = {
+      discovery: {
+        className: cleanClassName,
+        bdefName,
+        source: discoverySource,
+        classCategory: metadata.category,
+      },
+      validation,
+      scaffoldChanged: scaffoldPlan.changedSections.length > 0,
+      changedSections: scaffoldPlan.changedSections.filter(
+        (section): section is 'main' | 'definitions' | 'implementations' =>
+          section === 'main' || section === 'definitions' || section === 'implementations',
+      ),
+      inserted: {
+        signatures: scaffoldPlan.insertedSignatureCount,
+        stubs: scaffoldPlan.insertedImplementationStubCount,
+        autoCreatedSkeletons:
+          (scaffoldPlan.skeletons?.createdDefinitions.length ?? 0) +
+          (scaffoldPlan.skeletons?.createdImplementations.length ?? 0),
+      },
+      required: requirements,
+      dryRun,
+    };
+
+    if (!save) return result;
+    if (scaffoldPlan.changed.main && scaffoldPlan.sections.main !== mainSource) {
+      await save(classMainSourceUrl(cleanClassName), scaffoldPlan.sections.main);
+    }
+    if (scaffoldPlan.changed.definitions && scaffoldPlan.sections.definitions) {
+      await save(classIncludeUrlFor(cleanClassName, 'definitions'), scaffoldPlan.sections.definitions);
+    }
+    if (scaffoldPlan.changed.implementations && scaffoldPlan.sections.implementations) {
+      await save(classIncludeUrlFor(cleanClassName, 'implementations'), scaffoldPlan.sections.implementations);
+    }
+    return result;
+  };
+  if (dryRun) return scaffold(client.http);
+  // Even activation-only reruns need the lock to establish that no source change is needed.
+  const result = await client.http.withStatefulSession(async (session) => {
+    const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY');
+    try {
+      return await scaffold(session, (url, source) =>
+        updateSource(session, client.safety, url, source, lock.lockHandle, transport ?? (lock.corrNr || undefined)),
+      );
+    } finally {
+      await unlockObject(session, objectUrl, lock.lockHandle);
+    }
+  });
 
   // ── Phase 5: optional activation ──────────────────────────────────────
   if (activateRequested) {
@@ -384,4 +360,32 @@ export async function generateBehaviorImplementation(
   }
 
   return result;
+}
+
+/** Read only the three RAP source sections. Serial reads keep one stateful SAP context in order. */
+export async function readRapClassSources(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  name: string,
+): Promise<RapHandlerSourceSections> {
+  checkOperation(safety, OperationType.Read, 'GetRapClassSources');
+  const sections: RapHandlerSourceSections = {
+    main: (await http.get(classMainSourceUrl(name), { 'Cache-Control': 'no-cache' })).body,
+  };
+  for (const include of ['definitions', 'implementations'] as const) {
+    try {
+      sections[include] = (
+        await http.get(
+          classIncludeUrlFor(name, include),
+          { 'Cache-Control': 'no-cache' },
+          {
+            suppressNotFoundLog: true,
+          },
+        )
+      ).body;
+    } catch (err) {
+      if (!isNotFoundError(err)) throw err;
+    }
+  }
+  return sections;
 }

@@ -1,6 +1,95 @@
 import { describe, expect, it } from 'vitest';
 import { buildTableQuerySql } from '../../../src/adt/client.js';
-import { exactSqlIdentifier } from '../../../src/adt/table-query.js';
+import { exactSqlIdentifier, fitFreestyleSqlLines } from '../../../src/adt/table-query.js';
+
+describe('fitFreestyleSqlLines', () => {
+  it.each(['SELECT * FROM t000', 'SELECT mandt\nFROM t000', 'SELECT mandt\r\nFROM t000', `${'x'.repeat(255)}\r\n`])(
+    'preserves already-fitting input: %s',
+    (sql) => {
+      expect(fitFreestyleSqlLines(sql)).toBe(sql);
+    },
+  );
+
+  it('keeps a long statement intact while fitting every physical line', () => {
+    const sql = `SELECT mandt FROM t000 WHERE ${Array(30).fill("mandt <> '999'").join(' AND ')}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result).toContain('\n');
+    expect(result.replaceAll('\n', ' ')).toBe(sql);
+    expect(result.split('\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it.each(["'", '`'])('preserves spaces and doubled %s delimiters inside literals', (quote) => {
+    const literal = quote + `a ${quote}${quote} b " | * `.repeat(12) + quote;
+    const sql = `SELECT mandt FROM t000 WHERE mtext = ${literal} OR mtext = ${literal}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result.split(literal)).toHaveLength(3);
+    expect(result.replaceAll('\n', ' ')).toBe(sql);
+    expect(result.split('\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it.each([
+    ["'", 254],
+    ["'", 255],
+    ["'", 256],
+    ['`', 254],
+    ['`', 255],
+    ['`', 256],
+  ] as const)('preserves a doubled %s delimiter starting at column %i', (quote, column) => {
+    const prefix = 'SELECT mandt FROM t000 WHERE mtext = ';
+    const literal = `${quote}${'x'.repeat(column - prefix.length - 2)}${quote}${quote} y z${quote}`;
+    const sql = `${prefix}${literal} OR mtext = ${literal}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result.split(literal)).toHaveLength(3);
+    expect(result.replaceAll('\n', ' ')).toBe(sql);
+    expect(result.split('\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it('preserves a short inline comment and its CRLF boundary when wrapping the preceding SQL', () => {
+    const commentAndNextLine = "\" keep this comment\r\nWHERE mandt <> '999'";
+    const sql = `SELECT ${'mandt, '.repeat(35)}mandt FROM t000 ${commentAndNextLine}`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result).toContain(commentAndNextLine);
+    expect(
+      result
+        .replaceAll('\r\n', '\n')
+        .split('\n')
+        .every((line) => line.length <= 255),
+    ).toBe(true);
+  });
+
+  it('allows a break at exactly 255 without creating a column-one star comment', () => {
+    const sql = `SELECT ${' '.repeat(248)}* FROM t000`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result.replaceAll('\n', ' ')).toBe(sql);
+    expect(result.split('\n').every((line) => line.length <= 255 && !line.startsWith('*'))).toBe(true);
+    expect(fitFreestyleSqlLines(`${'x'.repeat(255)} FROM t000`)).toBe(`${'x'.repeat(255)}\nFROM t000`);
+  });
+
+  it('wraps at tabs without changing the surrounding tokens', () => {
+    expect(fitFreestyleSqlLines(`${'x'.repeat(255)}\tFROM t000`)).toBe(`${'x'.repeat(255)}\nFROM t000`);
+  });
+
+  it('keeps a source identifier intact when it crosses character 255', () => {
+    const prefix = 'SELECT field FROM ';
+    const sql = `${prefix}${' '.repeat(250 - prefix.length)}zexample_table`;
+    const result = fitFreestyleSqlLines(sql);
+    expect(result).toContain('zexample_table');
+    expect(result.replaceAll('\n', ' ')).toBe(sql);
+    expect(result.split('\n').every((line) => line.length <= 255)).toBe(true);
+  });
+
+  it.each([
+    'x'.repeat(256),
+    ` ${'x'.repeat(255)}`, // A break at the segment start would create an empty line.
+    `SELECT '${'x '.repeat(130)}' FROM t000`,
+    `SELECT \`${'x '.repeat(130)}\` FROM t000`,
+    `SELECT mandt FROM t000 "${'comment '.repeat(40)}`,
+    `*${'comment '.repeat(40)}`,
+    `SELECT |${'template '.repeat(40)}| FROM t000`,
+  ])('refuses an unsplittable token, literal, comment or template', (sql) => {
+    expect(() => fitFreestyleSqlLines(sql)).toThrow('Cannot fit freestyle SQL');
+  });
+});
 
 describe('buildTableQuerySql', () => {
   // ─── Basic SELECT ──────────────────────────────────────────────────

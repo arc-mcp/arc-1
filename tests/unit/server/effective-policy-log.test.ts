@@ -12,7 +12,7 @@ function makeConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
 
 describe('logEffectivePolicy', () => {
   it('emits structured log with safety fields and data-preview gzip state', () => {
-    const logger = new Logger('text', false);
+    const logger = new Logger('text', 'info');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
 
     logEffectivePolicy(makeConfig({ allowWrites: true, allowedPackages: ['Z*'] }), {}, logger);
@@ -39,7 +39,7 @@ describe('logEffectivePolicy', () => {
   });
 
   it('emits human-readable one-liner with YES/NO values', () => {
-    const logger = new Logger('text', false);
+    const logger = new Logger('text', 'info');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
 
     logEffectivePolicy(
@@ -76,7 +76,7 @@ describe('logEffectivePolicy', () => {
   });
 
   it('emits source attribution at debug level', () => {
-    const logger = new Logger('text', true); // verbose for debug
+    const logger = new Logger('text', 'debug');
     const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
 
     const sources: Record<string, ConfigSource> = {

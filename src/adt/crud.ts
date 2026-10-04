@@ -10,9 +10,11 @@
  * leaked locks on error, blocking the object for other developers.
  */
 
+import { postCreate } from './create-request.js';
 import { AdtApiError, extractExceptionType, isNotFoundError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { assertSourceHash } from './source-precondition.js';
 /** Lock result from SAP */
 export interface LockResult {
   lockHandle: string;
@@ -111,9 +113,11 @@ export async function createObject(
   const url = params.length > 0 ? `${objectUrl}?${params.join('&')}` : objectUrl;
 
   try {
-    const resp = await http.post(url, body, contentType);
+    const resp = await postCreate(http, url, body, contentType);
     return resp.body;
   } catch (err) {
+    // Preserve uncertain 429/5xx outcomes instead of reclassifying them as definitive 4xx rejections.
+    if (err instanceof AdtApiError && err.creationOutcome === 'unknown') throw err;
     // Reclassify lock/exists conflicts that arrive as HTML or via structured
     // exception type — same precedence as the lockObject path.
     const conv = convertHtmlConflictToProperError(err, objectUrl, {
@@ -125,7 +129,7 @@ export async function createObject(
     if (conv) throw conv;
     const fallback = CONTENT_TYPE_FALLBACKS[contentType];
     if (fallback && isUnsupportedMediaTypeError(err)) {
-      const resp = await http.post(url, body, fallback);
+      const resp = await postCreate(http, url, body, fallback);
       return resp.body;
     }
     throw err;
@@ -213,22 +217,33 @@ export async function deleteObject(
 
 /**
  * High-level: update source with guaranteed unlock.
- * lock → updateSource → unlock (in try-finally)
+ * lock → optional fresh read/transform and hash check → updateSource → unlock (in try-finally)
  */
 export async function safeUpdateSource(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
   sourceUrl: string,
-  source: string,
+  source: string | ((current: string, session: AdtHttpClient) => Promise<string>),
   transport?: string,
   abapRelease?: string,
+  expectedSourceHash?: string,
 ): Promise<void> {
+  checkOperation(safety, OperationType.Update, 'UpdateSource');
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, objectUrl, 'MODIFY', abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
     try {
-      await updateSource(session, safety, sourceUrl, source, lock.lockHandle, effectiveTransport);
+      let replacement: string;
+      if (expectedSourceHash !== undefined || typeof source === 'function') {
+        checkOperation(safety, OperationType.Read, 'GetSource');
+        const current = await session.get(sourceUrl, { 'Cache-Control': 'no-cache' });
+        assertSourceHash(current.body, expectedSourceHash, sourceUrl);
+        replacement = typeof source === 'function' ? await source(current.body, session) : source;
+      } else {
+        replacement = source;
+      }
+      await updateSource(session, safety, sourceUrl, replacement, lock.lockHandle, effectiveTransport);
     } finally {
       await unlockObject(session, objectUrl, lock.lockHandle);
     }
@@ -271,7 +286,7 @@ export async function initClassInclude(
   if (transport) {
     url += `&corrNr=${encodeURIComponent(transport)}`;
   }
-  await http.post(url, '', undefined);
+  await postCreate(http, url, '');
 }
 
 /**
@@ -299,7 +314,9 @@ export async function safeUpdateClassInclude(
   source: string,
   transport?: string,
   abapRelease?: string,
+  expectedSourceHash?: string,
 ): Promise<{ initialized: boolean }> {
+  checkOperation(safety, OperationType.Update, 'UpdateSource');
   return await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, classObjectUrl, 'MODIFY', abapRelease);
     const effectiveTransport = transport ?? (lock.corrNr || undefined);
@@ -308,9 +325,11 @@ export async function safeUpdateClassInclude(
       // Probe whether the include exists. 404 → not initialised yet.
       let exists = true;
       try {
-        await session.get(includeUrl, undefined, { suppressNotFoundLog: true });
+        checkOperation(safety, OperationType.Read, 'GetClassInclude');
+        const current = await session.get(includeUrl, { 'Cache-Control': 'no-cache' }, { suppressNotFoundLog: true });
+        assertSourceHash(current.body, expectedSourceHash, includeUrl);
       } catch (err) {
-        if (isNotFoundError(err)) {
+        if (isNotFoundError(err) && expectedSourceHash === undefined) {
           exists = false;
         } else {
           throw err;
