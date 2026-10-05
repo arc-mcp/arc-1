@@ -3,6 +3,7 @@
  * The undici mock + AdtClient + createClient live in ./setup-undici-mock.ts — import that helper
  * and keep all other src-module imports dynamic (see its header for the ordering rules).
  */
+import { readFileSync } from 'node:fs';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FLP_TILE_PAGE_SIZE } from '../../../src/adt/flp.js';
@@ -486,6 +487,61 @@ describe('SAPManage / SAPContext handlers', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain('could not determine');
       expect(result.content[0]?.text).toContain('Fail-closed');
+      expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/apireleases/'))).toBe(false);
+    });
+
+    it('set_api_state for name + objectType FUNC resolves the function group and targets the function module URI', async () => {
+      const unreleased = readFileSync(
+        new URL('../../fixtures/xml/api-release-unreleased.xml', import.meta.url),
+        'utf-8',
+      );
+      const released = unreleased
+        .replace(
+          '<ars:status ars:state="NOT_RELEASED" ars:stateDescription="Not Released"/>',
+          '<ars:status ars:state="RELEASED" ars:stateDescription="Released"/>',
+        )
+        .replace('ars:useInSAPCloudPlatform="false"', 'ars:useInSAPCloudPlatform="true"')
+        .replace('ars:isAnyContractReleased="false"', 'ars:isAnyContractReleased="true"');
+      mockFetch.mockReset();
+      mockFetch
+        .mockResolvedValueOnce(
+          mockResponse(
+            200,
+            '<objectReferences><objectReference type="FUGR/FF" name="Z_MY_FUNC" uri="/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func" packageName="$TMP" description="Test FM"/></objectReferences>',
+            { 'x-csrf-token': 'T' },
+          ),
+        )
+        .mockResolvedValueOnce(mockResponse(200, unreleased, { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, released, { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(mockResponse(200, released, { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'set_api_state',
+        name: 'Z_MY_FUNC',
+        objectType: 'FUNC',
+        apiState: 'RELEASED',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0]?.text).toContain('/sap/bc/adt/functions/groups/zgroup/fmodules/z_my_func');
+      const releaseUrls = mockFetch.mock.calls.map((c) => String(c[0])).filter((u) => u.includes('/apireleases/'));
+      expect(releaseUrls).toHaveLength(3);
+      for (const url of releaseUrls) expect(url).toContain('functions%2Fgroups%2Fzgroup%2Ffmodules%2Fz_my_func');
+    });
+
+    it('set_api_state for FUNC refuses before any apireleases request when the function group is unknown', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '<objectReferences/>', { 'x-csrf-token': 'T' }));
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        action: 'set_api_state',
+        name: 'Z_NONEXIST_FM',
+        objectType: 'FUNC',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Cannot resolve function group');
+      expect(result.content[0]?.text).toContain('objectUri');
       expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/apireleases/'))).toBe(false);
     });
 

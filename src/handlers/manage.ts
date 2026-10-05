@@ -31,7 +31,12 @@ import {
   setCachedDiscovery,
   setCachedFeatures,
 } from './feature-cache.js';
-import { inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
+import {
+  functionModuleObjectUrlRaw,
+  inferObjectType,
+  normalizeObjectType,
+  objectUrlForTypeRaw,
+} from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import {
   DEVC_WRITE_UNAVAILABLE_HINT,
@@ -88,7 +93,18 @@ export async function handleSAPManage(
             `Cannot infer object type from name "${name}". Specify objectType (e.g. CLAS, INTF, DDLS, TABL).`,
           );
         }
-        objectUri = objectUrlForTypeRaw(inferred, name);
+        if (inferred === 'FUNC') {
+          // A function module URI needs its parent group; objectBasePath('FUNC') throws by design (#928).
+          const group = await client.resolveFunctionGroup(name);
+          if (!group) {
+            return errorResult(
+              `Cannot resolve function group for "${name}". Pass objectUri="/sap/bc/adt/functions/groups/<group>/fmodules/<name>" instead.`,
+            );
+          }
+          objectUri = functionModuleObjectUrlRaw(group, name);
+        } else {
+          objectUri = objectUrlForTypeRaw(inferred, name);
+        }
       }
       // Fail-closed package gate against the object's REAL package (resolves via the object URI).
       await enforceAllowedPackageForObjectUrl(client, objectUri, `set_api_state on ${objectUri}`);

@@ -406,6 +406,19 @@ export function functionModuleObjectUrl(group: string, name: string): string {
   return `${functionGroupObjectUrl(group)}/fmodules/${encodeURIComponent(name.toLowerCase())}`;
 }
 
+/**
+ * Function module URI WITHOUT encoding group or name — the FUNC counterpart of
+ * objectUrlForTypeRaw, for callers that encode the whole URI as one path segment
+ * (API release state, #928). functionModuleObjectUrl would double-encode namespaced names.
+ */
+export function functionModuleObjectUrlRaw(group: string, name: string): string {
+  const normalizedGroup = group.trim();
+  if (!normalizedGroup) {
+    throw new Error('functionModuleObjectUrlRaw requires a function group.');
+  }
+  return `/sap/bc/adt/functions/groups/${normalizedGroup.toLowerCase()}/fmodules/${name.toLowerCase()}`;
+}
+
 export function objectBasePath(type: string): string {
   if (Object.hasOwn(SDO_REGISTRY, type)) return `${SDO_REGISTRY[type as keyof typeof SDO_REGISTRY].href}/`;
   switch (type) {
@@ -433,7 +446,7 @@ export function objectBasePath(type: string): string {
           `single base path — it requires the parent function group via ` +
           `client.getFunction(group, name) or an explicit /sap/bc/adt/functions/` +
           `groups/{group}/fmodules/{name} URI. Caller must take the FUNC-aware ` +
-          `path or pass 'uri' directly. See PR #223 codex follow-up.`,
+          `path and resolve the function group first. See PR #223 codex follow-up.`,
       );
     case 'INCL':
       return '/sap/bc/adt/programs/includes/';

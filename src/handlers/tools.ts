@@ -446,7 +446,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC/VERSIONS type. The function group containing the function module. Optional for FUNC — auto-resolved via SAPSearch if omitted. Required for VERSIONS when querying a function module revision feed.',
+              'Function group of the function module for FUNC, VERSIONS, or API_STATE with objectType=FUNC. Auto-resolved via SAPSearch if omitted; required for VERSIONS of a function module.',
           },
           method: {
             type: 'string',
