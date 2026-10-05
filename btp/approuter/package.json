@@ -15,7 +15,6 @@
   "overrides": {
     "@sap/logging": "9.2.3",
     "axios": "1.20.0",
-    "body-parser": "2.3.0",
-    "decode-uri-component": "file:./vendor/decode-uri-component-cjs"
+    "body-parser": "2.3.0"
   }
 }
