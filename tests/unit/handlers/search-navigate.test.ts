@@ -1272,6 +1272,63 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
     });
   });
 
+  describe('SAPNavigate completion', () => {
+    const answer = (...identifiers: string[]) =>
+      `<?xml version="1.0" encoding="utf-8"?><asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA>${identifiers
+        .map((id) => `<SCC_COMPLETION><KIND>2</KIND><IDENTIFIER>${id}</IDENTIFIER></SCC_COMPLETION>`)
+        .join('')}</DATA></asx:values></asx:abap>`;
+    const complete = async (args: Record<string, unknown>, body = answer('DATA')) => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, body));
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+        action: 'completion',
+        ...args,
+      });
+      const call = mockFetch.mock.calls.find((c) => String(c[0]).includes('codecompletion'));
+      return { result, url: call ? new URL(String(call[0])) : undefined };
+    };
+    const valid = {
+      uri: '/sap/bc/adt/programs/programs/ztest/source/main',
+      line: 2,
+      column: 3,
+      source: 'REPORT ztest.\nDAT',
+    };
+
+    it('posts the cursor in the uri fragment and returns the proposals', async () => {
+      const { result, url } = await complete(valid);
+      expect(result.isError).toBeUndefined();
+      expect(url?.pathname).toBe('/sap/bc/adt/abapsource/codecompletion/proposal');
+      expect(url?.searchParams.get('uri')).toBe('/sap/bc/adt/programs/programs/ztest/source/main#start=2,3');
+      expect(JSON.parse(result.content[0]?.text as string)).toEqual({
+        proposals: [{ text: 'DATA' }],
+        truncated: false,
+      });
+    });
+
+    it('flags a list SAP cut off and suggests a longer prefix', async () => {
+      const { result } = await complete(valid, answer('CL_A', 'CL_B', '@end'));
+      const parsed = JSON.parse(result.content[0]?.text as string);
+      expect(parsed.proposals).toEqual([{ text: 'CL_A' }, { text: 'CL_B' }]);
+      expect(parsed.truncated).toBe(true);
+      expect(parsed.hint).toContain('first 2 matches');
+    });
+
+    it.each([
+      ['without uri', { ...valid, uri: undefined }, 'Provide uri'],
+      ['without line', { ...valid, line: undefined }, 'Completion needs line, column and source'],
+      ['without column', { ...valid, column: undefined }, 'Completion needs line, column and source'],
+      ['without source', { ...valid, source: '  ' }, 'Completion needs line, column and source'],
+      ['with a line below 1', { ...valid, line: 0 }, 'Completion needs line, column and source'],
+      ['with a negative column', { ...valid, column: -1 }, 'Completion needs line, column and source'],
+    ])('refuses a call %s before contacting SAP', async (_label, args, message) => {
+      const { result, url } = await complete(args);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain(message);
+      expect(url).toBeUndefined();
+    });
+  });
+
   describe('SAPNavigate symbolic references', () => {
     // Exercise every registry entry and a namespace through the public tool dispatch.
     it.each([

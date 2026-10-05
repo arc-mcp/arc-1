@@ -28,11 +28,16 @@ export interface ReferenceResult {
   column: number;
 }
 
-/** Completion proposal */
+/** Completion proposal: an identifier or keyword SAP offers at the cursor. */
 export interface CompletionProposal {
   text: string;
-  description: string;
-  type: string;
+}
+
+/** Completion proposals at a cursor. */
+export interface CompletionResult {
+  proposals: CompletionProposal[];
+  /** SAP cut the list off: more matches exist than it returned (its `@end` marker). */
+  truncated: boolean;
 }
 
 /** Available object type from Where-Used scope discovery */
@@ -301,7 +306,15 @@ function parseOptionalBoolean(value: unknown): boolean | undefined {
   return undefined;
 }
 
-/** Get code completion proposals */
+/**
+ * Get code completion proposals at an ADT cursor (1-based line, 0-based column) in `source`.
+ *
+ * ADT reads the cursor from the URI fragment (`#start=<line>,<column>`), as for definition, and
+ * answers with `asx:abap` / `SCC_COMPLETION` records in `application/vnd.sap.as+xml` (the only type
+ * it accepts; `application/xml` is refused with 406). With `signalCompleteness=true` SAP appends an
+ * `@end` record when it stopped before the last match (observed after 50 repository matches) and
+ * none when the list is complete; `@end` is that marker, not a proposal.
+ */
 export async function getCompletion(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -309,21 +322,22 @@ export async function getCompletion(
   line: number,
   column: number,
   source: string,
-): Promise<CompletionProposal[]> {
+): Promise<CompletionResult> {
   checkOperation(safety, OperationType.Intelligence, 'GetCompletion');
 
+  const target = `${sourceUrl.split('#')[0]}#start=${line},${column}`;
   const resp = await http.post(
-    `/sap/bc/adt/abapsource/codecompletion/proposals?uri=${encodeURIComponent(sourceUrl)}&line=${line}&column=${column}`,
+    `/sap/bc/adt/abapsource/codecompletion/proposal?uri=${encodeURIComponent(target)}&signalCompleteness=true`,
     source,
     'text/plain',
-    { Accept: 'application/xml' },
+    { Accept: 'application/vnd.sap.as+xml' },
   );
 
-  const parsed = parseXml(resp.body);
-  const nodes = findDeepNodes(parsed, 'proposal');
-  return nodes.map((node) => ({
-    text: String(node['@_text'] ?? ''),
-    description: String(node['@_description'] ?? ''),
-    type: String(node['@_type'] ?? ''),
-  }));
+  const identifiers = findDeepNodes(parseXml(resp.body), 'SCC_COMPLETION')
+    .map((node) => String(node.IDENTIFIER ?? ''))
+    .filter((identifier) => identifier.length > 0);
+  return {
+    proposals: identifiers.filter((identifier) => identifier !== '@end').map((text) => ({ text })),
+    truncated: identifiers.includes('@end'),
+  };
 }

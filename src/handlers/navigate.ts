@@ -15,6 +15,19 @@ import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPNavigate Handler ─────────────────────────────────────────────
 
+/** SAP resolves definition and completion against the posted text: without it the answer is empty. */
+function hasCursorAndSource(args: Record<string, unknown>, line: number, column: number, source: string): boolean {
+  return (
+    args.line !== undefined &&
+    args.column !== undefined &&
+    Number.isInteger(line) &&
+    line >= 1 &&
+    Number.isInteger(column) &&
+    column >= 0 &&
+    source.trim().length > 0
+  );
+}
+
 export async function handleSAPNavigate(
   client: AdtClient,
   args: Record<string, unknown>,
@@ -42,16 +55,7 @@ export async function handleSAPNavigate(
       if (!uri) {
         return errorResult('Provide uri pointing to the source (e.g. /source/main) for definition lookup.');
       }
-      // SAP resolves the position against the posted text: without it the answer is empty.
-      if (
-        args.line === undefined ||
-        args.column === undefined ||
-        !Number.isInteger(line) ||
-        line < 1 ||
-        !Number.isInteger(column) ||
-        column < 0 ||
-        !source.trim()
-      ) {
+      if (!hasCursorAndSource(args, line, column, source)) {
         return errorResult(
           'Definition lookup needs line, column and source: pass current source text and integer ADT cursor coordinates (line >= 1, column >= 0).',
         );
@@ -97,8 +101,25 @@ export async function handleSAPNavigate(
       );
     }
     case 'completion': {
-      const proposals = await getCompletion(client.http, client.safety, uri, line, column, source);
-      return textResult(toolJson(proposals));
+      if (!uri) {
+        return errorResult('Provide uri pointing to the source (e.g. /source/main) for completion.');
+      }
+      if (!hasCursorAndSource(args, line, column, source)) {
+        return errorResult(
+          'Completion needs line, column and source: pass current source text and integer ADT cursor coordinates (line >= 1, column >= 0), with the cursor right after the typed prefix.',
+        );
+      }
+      const result = await getCompletion(client.http, client.safety, uri, line, column, source);
+      return textResult(
+        toolJson({
+          ...result,
+          ...(result.truncated
+            ? {
+                hint: `SAP returned its first ${result.proposals.length} matches; type a longer prefix to narrow them.`,
+              }
+            : {}),
+        }),
+      );
     }
     case 'hierarchy': {
       const className = String(args.name ?? '').toUpperCase();

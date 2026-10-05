@@ -378,40 +378,97 @@ describe('Code Intelligence', () => {
   // ─── getCompletion ─────────────────────────────────────────────────
 
   describe('getCompletion', () => {
-    it('returns completion proposals', async () => {
-      const xml = `<proposals>
-        <proposal text="WRITE" description="WRITE statement" type="keyword"/>
-        <proposal text="WHILE" description="WHILE loop" type="keyword"/>
-      </proposals>`;
-      const http = mockHttp(xml);
+    // Record shape as returned by SAP_BASIS 816 (ABAP Cloud Developer Trial 2025).
+    const record = (identifier: string, kind = 2) =>
+      `<SCC_COMPLETION><KIND>${kind}</KIND><IDENTIFIER>${identifier}</IDENTIFIER><ICON>5</ICON><SUBICON>0</SUBICON><BOLD>0</BOLD><COLOR>0</COLOR><QUICKINFO_EVENT>1</QUICKINFO_EVENT><INSERT_EVENT>1</INSERT_EVENT><IS_META>0</IS_META><PREFIXLENGTH>3</PREFIXLENGTH><ROLE>57</ROLE><LOCATION>3</LOCATION><GRADE>1</GRADE><VISIBILITY>0</VISIBILITY><IS_INHERITED>0</IS_INHERITED><PROP1>0</PROP1><PROP2>0</PROP2><PROP3>0</PROP3><SYNTCNTXT>0</SYNTCNTXT></SCC_COMPLETION>`;
+    const answer = (...records: string[]) =>
+      `<?xml version="1.0" encoding="utf-8"?><asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA>${records.join('')}</DATA></asx:values></asx:abap>`;
+
+    it('returns the SCC_COMPLETION identifiers of a complete list', async () => {
+      const http = mockHttp(answer(record('DATA', 52), record('DATA BEGIN OF', 52), record('DATA END OF', 52)));
       const results = await getCompletion(
         http,
         unrestrictedSafetyConfig(),
-        '/sap/bc/adt/programs/programs/ZTEST/source/main',
-        5,
+        '/sap/bc/adt/programs/programs/ztest/source/main',
+        2,
         3,
-        'WR',
+        'REPORT ztest.\nDAT',
       );
-      expect(results).toHaveLength(2);
-      expect(results[0]?.text).toBe('WRITE');
-      expect(results[0]?.type).toBe('keyword');
+      expect(results).toEqual({
+        proposals: [{ text: 'DATA' }, { text: 'DATA BEGIN OF' }, { text: 'DATA END OF' }],
+        truncated: false,
+      });
     });
 
-    it('returns empty for no completions', async () => {
-      const http = mockHttp('<proposals/>');
-      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, '');
-      expect(results).toEqual([]);
+    it('reads the @end record as SAP cutting the list off, not as a proposal', async () => {
+      const matches = Array.from({ length: 50 }, (_, i) => record(`CL_MATCH_${i}`));
+      const http = mockHttp(answer(...matches, record('@end', 0)));
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 2, 3, 'REPORT x.\ncl_');
+      expect(results.truncated).toBe(true);
+      expect(results.proposals).toHaveLength(50);
+      expect(results.proposals.some((p) => p.text === '@end')).toBe(false);
     });
 
-    it('sends source as POST body to codecompletion endpoint', async () => {
-      const http = mockHttp('<proposals/>');
-      const source = 'REPORT ztest.';
-      await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 14, source);
-      expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('/sap/bc/adt/abapsource/codecompletion/proposals'),
+    it('returns a single proposal (one record is not an array)', async () => {
+      const http = mockHttp(answer(record('CL_IDENTITY_FACTORY')));
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(results).toEqual({ proposals: [{ text: 'CL_IDENTITY_FACTORY' }], truncated: false });
+    });
+
+    it('keeps identifiers that look like numbers as text', async () => {
+      const http = mockHttp(answer(record('001')));
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(results.proposals).toEqual([{ text: '001' }]);
+    });
+
+    it('returns empty when SAP has no proposals', async () => {
+      const http = mockHttp(answer());
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(results).toEqual({ proposals: [], truncated: false });
+    });
+
+    it('sends the cursor as a #start fragment of the uri, with the source as body', async () => {
+      const http = mockHttp(answer());
+      const source = 'REPORT ztest.\nDAT';
+      await getCompletion(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ztest/source/main',
+        2,
+        3,
         source,
-        'text/plain',
-        expect.objectContaining({ Accept: 'application/xml' }),
+      );
+      const [url, body, contentType, headers] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [
+        string,
+        string,
+        string,
+        Record<string, string>,
+      ];
+      const parsed = new URL(url, 'http://sap');
+      expect(parsed.pathname).toBe('/sap/bc/adt/abapsource/codecompletion/proposal');
+      expect(parsed.searchParams.get('uri')).toBe('/sap/bc/adt/programs/programs/ztest/source/main#start=2,3');
+      expect(parsed.searchParams.get('signalCompleteness')).toBe('true');
+      expect(parsed.searchParams.has('line')).toBe(false);
+      expect(parsed.searchParams.has('column')).toBe(false);
+      expect(body).toBe(source);
+      expect(contentType).toBe('text/plain');
+      // The only type SAP accepts here; application/xml is refused with 406.
+      expect(headers).toEqual({ Accept: 'application/vnd.sap.as+xml' });
+    });
+
+    it('replaces a fragment already in the uri and keeps an escaped namespace', async () => {
+      const http = mockHttp(answer());
+      await getCompletion(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/%2fdmo%2fcl_x/source/main#start=9,9',
+        4,
+        7,
+        'x',
+      );
+      const [url] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+      expect(new URL(url, 'http://sap').searchParams.get('uri')).toBe(
+        '/sap/bc/adt/oo/classes/%2fdmo%2fcl_x/source/main#start=4,7',
       );
     });
   });
