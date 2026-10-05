@@ -1428,6 +1428,94 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.references[0].objectDescription).toBe('Test Program');
     });
 
+    describe('references at a position', () => {
+      const scopedResult = (description: string) => `<?xml version="1.0" encoding="utf-8"?>
+<usagereferences:usageReferenceResult numberOfResults="1" resultDescription="${description}" xmlns:usagereferences="http://www.sap.com/adt/ris/usageReferences">
+  <usagereferences:referencedObjects>
+    <usagereferences:referencedObject uri="/sap/bc/adt/programs/programs/zcaller" isResult="true">
+      <usagereferences:adtObject adtcore:name="ZCALLER" adtcore:type="PROG/P" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usagereferences:referencedObject>
+  </usagereferences:referencedObjects>
+</usagereferences:usageReferenceResult>`;
+
+      const navigate = async (
+        args: Record<string, unknown>,
+        description = 'References for: ZCL_TEST - RUN (Method) [SID]',
+      ) => {
+        mockFetch.mockReset();
+        mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        mockFetch.mockResolvedValueOnce(mockResponse(200, scopedResult(description)));
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPNavigate', {
+          action: 'references',
+          ...args,
+        });
+        const call = mockFetch.mock.calls.find((c) => String(c[0]).includes('usageReferences'));
+        return {
+          result,
+          requestedUri: call ? new URL(String(call[0])).searchParams.get('uri') : undefined,
+          body: call ? String((call[1] as { body?: unknown })?.body ?? '') : undefined,
+        };
+      };
+
+      it('sends line/column as the URI fragment and reports what SAP searched', async () => {
+        const { result, requestedUri, body } = await navigate({
+          uri: '/sap/bc/adt/oo/classes/zcl_test',
+          line: 12,
+          column: 10,
+        });
+        expect(result.isError).toBeUndefined();
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test#start=12,10');
+        expect(body).toContain('uri="/sap/bc/adt/oo/classes/zcl_test#start=12,10"');
+        const parsed = JSON.parse(result.content[0]?.text as string);
+        expect(parsed.searchedFor).toBe('References for: ZCL_TEST - RUN (Method) [SID]');
+        expect(parsed.total).toBe(1);
+      });
+
+      it('applies the position to a type+name root', async () => {
+        const { requestedUri } = await navigate({ type: 'CLAS', name: 'ZCL_TEST', line: 3, column: 0 });
+        expect(requestedUri).toMatch(/^\/sap\/bc\/adt\/oo\/classes\/[^#]+#start=3,0$/);
+      });
+
+      it('replaces a fragment already in the uri', async () => {
+        const { requestedUri } = await navigate({
+          uri: '/sap/bc/adt/oo/classes/zcl_test/source/main#start=1,1',
+          line: 12,
+          column: 10,
+        });
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test/source/main#start=12,10');
+      });
+
+      it('keeps a fragment passed in the uri and reports what SAP searched', async () => {
+        const { result, requestedUri } = await navigate({ uri: '/sap/bc/adt/oo/classes/zcl_test#start=12,10' });
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test#start=12,10');
+        expect(JSON.parse(result.content[0]?.text as string).searchedFor).toBe(
+          'References for: ZCL_TEST - RUN (Method) [SID]',
+        );
+      });
+
+      it('searches the whole object without a position and omits searchedFor', async () => {
+        const { result, requestedUri } = await navigate(
+          { uri: '/sap/bc/adt/oo/classes/zcl_test' },
+          'References for: ZCL_TEST (Class) [SID]',
+        );
+        expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test');
+        expect(JSON.parse(result.content[0]?.text as string)).not.toHaveProperty('searchedFor');
+      });
+
+      it.each([
+        [{ line: 12 }],
+        [{ column: 10 }],
+        [{ line: 0, column: 10 }],
+        [{ line: 12, column: -1 }],
+        [{ line: 1.5, column: 10 }],
+      ])('rejects an incomplete or invalid position %j before calling SAP', async (position) => {
+        const { result, requestedUri } = await navigate({ uri: '/sap/bc/adt/oo/classes/zcl_test', ...position });
+        expect(result.isError).toBe(true);
+        expect(result.content[0]?.text).toContain('need both line and column');
+        expect(requestedUri).toBeUndefined();
+      });
+    });
+
     /** usageReferences result with `count` PROG/P entries plus one CLAS/OC entry. */
     function whereUsedXmlBulk(count: number): string {
       const rows = Array.from(

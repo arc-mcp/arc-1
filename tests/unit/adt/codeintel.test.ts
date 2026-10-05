@@ -6,6 +6,7 @@ import {
   findInterfaceImplementersViaSeoMetaRel,
   findReferences,
   findWhereUsed,
+  findWhereUsedWithScope,
   getCompletion,
   getWhereUsedScope,
 } from '../../../src/adt/codeintel.js';
@@ -319,6 +320,75 @@ describe('Code Intelligence', () => {
           Accept: 'application/vnd.sap.adt.repository.usagereferences.result.v1+xml',
         }),
       );
+    });
+  });
+
+  describe('findWhereUsedWithScope', () => {
+    const result = (resultDescription: string, scope = '') => `<?xml version="1.0" encoding="utf-8"?>
+<usagereferences:usageReferenceResult numberOfResults="1" resultDescription="${resultDescription}" referencedObjectIdentifier="" xmlns:usagereferences="http://www.sap.com/adt/ris/usageReferences">${scope}
+  <usagereferences:referencedObjects>
+    <usagereferences:referencedObject uri="/u1" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
+      <usagereferences:adtObject adtcore:name="A" adtcore:type="PROG/P" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usagereferences:referencedObject>
+  </usagereferences:referencedObjects>
+</usagereferences:usageReferenceResult>`;
+
+    it('reports SAP_BASIS 816 result descriptions verbatim', async () => {
+      // 816 also sends a scope element; the description is read from the result root on every release.
+      const http = mockHttp(
+        result(
+          '[A4H] Where-Used List: /DMO/BOOKING_DATA (Structure)',
+          '<usagereferences:scope><usagereferences:objectIdentifier displayName="/DMO/BOOKING_DATA (Structure)" globalType="TABL/DS"/></usagereferences:scope>',
+        ),
+      );
+      const lookup = await findWhereUsedWithScope(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/ddic/structures/%2fdmo%2fbooking_data',
+      );
+      expect(lookup.searchedFor).toBe('[A4H] Where-Used List: /DMO/BOOKING_DATA (Structure)');
+      expect(lookup.results).toHaveLength(1);
+      expect(lookup.results[0]?.name).toBe('A');
+    });
+
+    it('reports SAP_BASIS 757 result descriptions verbatim (no scope element)', async () => {
+      const http = mockHttp(result('References for: /SCWM/CL_TM - CLEANUP (Method) [SID]'));
+      const lookup = await findWhereUsedWithScope(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/%2fscwm%2fcl_tm#start=30,16',
+      );
+      expect(lookup.searchedFor).toBe('References for: /SCWM/CL_TM - CLEANUP (Method) [SID]');
+    });
+
+    it('omits searchedFor when SAP sends no description', async () => {
+      const xml = result('').replace(' resultDescription=""', '');
+      const lookup = await findWhereUsedWithScope(
+        mockHttp(xml),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/X',
+      );
+      expect(lookup).not.toHaveProperty('searchedFor');
+      expect(lookup.results).toHaveLength(1);
+    });
+
+    it('reads the description of the recorded fixture', async () => {
+      const xml = readFileSync(join(fixturesDir, 'where-used-results.xml'), 'utf-8');
+      const lookup = await findWhereUsedWithScope(
+        mockHttp(xml),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/X',
+      );
+      expect(lookup.searchedFor).toBe('[A4H] Where-Used List: ZCL_TEST (Class)');
+    });
+
+    it('sends a cursor fragment unchanged in the query and the body', async () => {
+      const http = mockHttp(result('References for: ZCL_TEST - RUN (Method) [SID]'));
+      const uri = '/sap/bc/adt/oo/classes/zcl_test#start=12,10';
+      await findWhereUsedWithScope(http, unrestrictedSafetyConfig(), uri);
+      const [url, body] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+      expect(new URL(url, 'http://sap').searchParams.get('uri')).toBe(uri);
+      expect(body).toContain(`uri="${uri}"`);
     });
   });
 

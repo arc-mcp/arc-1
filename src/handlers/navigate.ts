@@ -66,6 +66,23 @@ export async function handleSAPNavigate(
       if (!uri) {
         return errorResult('Provide uri or type+name to find references.');
       }
+      // A cursor narrows where-used to the symbol at that position (a method, an attribute, …). ADT
+      // reads it from the URI fragment, as for definition; without one SAP searches the whole object.
+      if (args.line !== undefined || args.column !== undefined) {
+        if (
+          args.line === undefined ||
+          args.column === undefined ||
+          !Number.isInteger(line) ||
+          line < 1 ||
+          !Number.isInteger(column) ||
+          column < 0
+        ) {
+          return errorResult(
+            'References at a position need both line and column as integer ADT cursor coordinates (line >= 1, column >= 0) in the source behind uri. Omit both to search the whole object.',
+          );
+        }
+        uri = `${uri.split('#')[0]}#start=${line},${column}`;
+      }
       // objectType keeps its slash format (CLAS/OC, PROG/P) — do NOT normalize; the suffix is
       // semantically meaningful. Filtering happens client-side (SAP ignores objectTypeFilter).
       const objectType = args.objectType ? String(args.objectType) : undefined;
@@ -81,6 +98,9 @@ export async function handleSAPNavigate(
           countMeaning: 'Reference entries, not distinct objects or runtime calls; not a complete inventory.',
           shown: results.length,
           truncated,
+          // SAP falls back to the whole object when the cursor is not on an identifier, so a
+          // position search reports what was actually searched.
+          ...(lookup.searchedFor && uri.includes('#start=') ? { searchedFor: lookup.searchedFor } : {}),
           ...(lookup.warning ? { warning: lookup.warning } : {}),
           ...(truncated
             ? {

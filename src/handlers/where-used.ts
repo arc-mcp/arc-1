@@ -2,7 +2,7 @@ import { type AdtClient, clampSearchResults } from '../adt/client.js';
 import {
   findInterfaceImplementersViaSeoMetaRel,
   findReferences,
-  findWhereUsed,
+  findWhereUsedWithScope,
   type ReferenceResult,
   type WhereUsedResult,
 } from '../adt/codeintel.js';
@@ -27,6 +27,8 @@ export interface LiveUsageLookup {
   fallbackUsed: boolean;
   /** Present when an optional internal lookup was denied and the result may be incomplete. */
   warning?: string;
+  /** The symbol SAP searched for, from its result scope (absent on the fallback endpoint). */
+  searchedFor?: string;
 }
 
 /** Match a result's ADT type against a filter: "CLAS" matches "CLAS/OC", "CLAS/OC" matches exactly.
@@ -81,9 +83,10 @@ export async function lookupLiveUsages(
   const filter = objectType?.trim() ? objectType.trim() : undefined;
 
   let results: LiveUsageResult[];
+  let searchedFor: string | undefined;
   let fallbackUsed = false;
   try {
-    results = await findWhereUsed(client.http, client.safety, uri, filter);
+    ({ results, searchedFor } = await findWhereUsedWithScope(client.http, client.safety, uri, filter));
   } catch (err) {
     if (!(err instanceof AdtApiError) || ![404, 405, 415, 501].includes(err.statusCode)) throw err;
     results = await findReferences(client.http, client.safety, uri);
@@ -104,6 +107,7 @@ export async function lookupLiveUsages(
     truncated: filtered.length > limit,
     fallbackUsed,
     ...(warning ? { warning } : {}),
+    ...(searchedFor ? { searchedFor } : {}),
   };
 }
 
