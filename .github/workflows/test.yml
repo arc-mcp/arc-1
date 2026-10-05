@@ -17,6 +17,8 @@ permissions:
 
 env:
   SAP_CI_TARGET_LABEL: A4H 2025
+  # Suppress automatic dependency hooks; explicit npm run/test commands still run.
+  NPM_CONFIG_IGNORE_SCRIPTS: 'true'
 
 jobs:
   # Smoke check that mta.yaml + the .mtaext.example template are valid MTA
@@ -74,20 +76,24 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
       # Block PRs that introduce known HIGH/CRITICAL advisories before
-      # slower steps run. Audits production AND dev deps — a compromised
+      # installing dependencies. Audits production, dev AND optional deps — a compromised
       # dev dep (test runner, linter) can poison the published artifact.
       # Threshold = high (moderate is too noisy for transitive deps).
       - name: Security audit (npm audit)
-        run: npm audit --audit-level=high --omit=optional
+        run: npm audit --package-lock-only --audit-level=high
 
       # The optional BTP UI AppRouter has an independent lockfile and is not
       # included in the root npm audit above.
       - name: Security audit (BTP AppRouter)
-        run: npm audit --prefix btp/approuter --audit-level=high --omit=optional
+        run: npm audit --prefix btp/approuter --package-lock-only --audit-level=high
+
+      - name: Install dependencies
+        # Keep optional platform binaries: esbuild needs them with hooks disabled.
+        run: npm ci
+
+      - name: Dependency runtime smoke test
+        run: node scripts/ci/check-dependency-runtime.mjs
 
       # The AppRouter's decode-uri-component fix is a CommonJS bridge around an
       # ESM-only package, so it needs a real install to verify. Also fails if the

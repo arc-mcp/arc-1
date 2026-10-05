@@ -508,7 +508,10 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | Control | Workflow | Severity gate |
 |---|---|---|
 | Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
-| `npm audit` PR gates | `.github/workflows/test.yml` (root + `btp/approuter`) | fail on `high` / `critical` |
+| `npm audit` PR gates | `.github/workflows/test.yml` (root + `btp/approuter`, before installation) | fail on `high` / `critical` |
+| Daily lockfile audits | `.github/workflows/dependency-audit.yml` (root + `btp/approuter`) | fail independently on `high` / `critical`; no install |
+| npm publication audits | `.github/workflows/release.yml` (`publish-npm`) | fail on `high` / `critical`, before install and again before publish |
+| Automatic npm lifecycle suppression | `test.yml` + `release.yml`, direct npm jobs | `NPM_CONFIG_IGNORE_SCRIPTS=true`; explicit build/test commands retained |
 | GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
 | CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
 | Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
@@ -519,6 +522,17 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | npm provenance | `.github/workflows/release.yml` (`npm publish --provenance`) | every release tarball is Sigstore-attested |
 | npm production SBOM | `.github/workflows/release.yml` (`npm sbom --package-lock-only --omit=dev`) | best-effort, non-gating CycloneDX JSON release asset |
 | `SECURITY.md` policy | repo root | private vulnerability reporting + severity-tiered response SLAs |
+
+Lockfile audits include production, development and optional dependencies. Unpatched advisories
+remain blocking; reachability analysis does not silently exempt a vulnerable package.
+Script-free installs retain optional platform binaries and verify SQLite with an in-memory query
+and esbuild with a real transformation. Disabling lifecycle hooks does not sandbox explicitly
+invoked dependency code or detect all malicious packages.
+
+This lifecycle policy covers direct npm commands in the test and release workflows, not commands
+inside Docker builds, local MTA builds, or the separate SAP slow-test workflow. Ad hoc `npx`
+tool downloads are not covered by the root lockfile audit. Container scanning and best-effort
+SBOM publication retain their independent policies below.
 
 Docker BuildKit does not automatically invalidate a cached `RUN apk upgrade` when Alpine's
 package repository changes. ARC-1 therefore names the final Dockerfile stage `runtime` and every

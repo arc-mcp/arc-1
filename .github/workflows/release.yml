@@ -11,6 +11,11 @@ on:
   # this trigger; the tag, GitHub Release, Docker images and .mcpb already shipped.
   workflow_dispatch:
 
+env:
+  # Keep automatic install/pack/publish hooks disabled in direct npm jobs.
+  # Explicit build and test commands remain mandatory below.
+  NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
@@ -51,15 +56,20 @@ jobs:
           cache: 'npm'
 
       - name: Install npm 11.5+ (required for OIDC trusted publishing)
-        # Pin a known-good 11.x: >=11.5 enables OIDC trusted publishing, and `npm ci` still
-        # builds the better-sqlite3 native binding. npm@latest is now 12.x, under which `npm ci`
-        # leaves better_sqlite3.node unbuilt -> the sqlite cache tests fail (blocked 0.9.26).
+        # >=11.5 enables OIDC trusted publishing. Current better-sqlite3 ships prebuilds;
+        # the runtime smoke below verifies native loading without lifecycle hooks.
         # Installing a pinned version (not the `latest` tag) also sidesteps the Node 22.22.x
         # bundled-npm self-upgrade bug (https://github.com/npm/cli/issues/9151). Bump deliberately.
         run: npm install --global npm@11.11.1
 
+      - name: Security audit before installation
+        run: npm audit --package-lock-only --audit-level=high
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Dependency runtime smoke test
+        run: node scripts/ci/check-dependency-runtime.mjs
 
       # Sole test gate for the release: release-please opens its PR with the default
       # GITHUB_TOKEN, so test.yml never runs on it (GITHUB_TOKEN events don't trigger
@@ -79,6 +89,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Security audit before publication
+        run: npm audit --package-lock-only --audit-level=high
 
       - name: Publish to npm
         run: npm publish --provenance --access public
