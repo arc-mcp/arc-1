@@ -1,0 +1,3 @@
+# Deliberately missing required ID/version: a non-running validator must not pass CI.
+_schema-version: '3.3'
+modules: []

@@ -116,4 +116,24 @@ describe('dependency lifecycle and audit gates', () => {
     });
     expect(output).toContain('Dependency runtime smoke passed');
   });
+
+  it('uses a verified real MTA binary and rejects a false-green validator', () => {
+    const job = workflow('test').jobs['mta-validate'];
+    const install = step(job, 'Install verified MTA validator');
+    expect(install.env?.MBT_VERSION).toBe('1.2.49');
+    expect(install.env?.MBT_SHA256).toBe('9f1ed652317dedcad5a0c8dc3239ca088d18fddb4d6422cf5eaa5a05d007a059');
+    expect(install.run).toContain('sha256sum --check --strict');
+    expect(install.run?.indexOf('sha256sum')).toBeLessThan(install.run!.indexOf('tar -xzf'));
+    const control = step(job, 'Reject invalid MTA descriptor (validator control)');
+    expect(control.run).toContain('if mbt validate --source tests/fixtures/ci/invalid-mta; then');
+    expect(control.run).toContain('exit 1');
+    const validate = step(job, 'Validate mta.yaml + mta-overrides.mtaext.example');
+    const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts;
+    // Keep the same six profiles as local validation, without the npm wrapper.
+    expect(validate.run?.trim().split('\n')).toEqual(
+      scripts['btp:validate'].split(' && ').map((command: string) => command.replace(/^npx /, '')),
+    );
+    expect(job.steps.indexOf(control)).toBeLessThan(job.steps.indexOf(validate));
+    expect(readFileSync('tests/fixtures/ci/invalid-mta/mta.yaml', 'utf8')).not.toMatch(/^ID:/m);
+  });
 });

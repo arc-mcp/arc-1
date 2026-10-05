@@ -532,7 +532,9 @@ invoked dependency code or detect all malicious packages.
 This lifecycle policy covers direct npm commands in the test and release workflows, not commands
 inside Docker builds, local MTA builds, or the separate SAP slow-test workflow. Ad hoc `npx`
 tool downloads are not covered by the root lockfile audit. Container scanning and best-effort
-SBOM publication retain their independent policies below.
+SBOM publication retain their independent policies below. MTA validation uses a version-pinned,
+SHA-256-verified SAP executable instead of the npm wrapper, and first checks that an invalid
+descriptor fails. This prevents script suppression from turning the validator into a silent no-op.
 
 Docker BuildKit does not automatically invalidate a cached `RUN apk upgrade` when Alpine's
 package repository changes. ARC-1 therefore names the final Dockerfile stage `runtime` and every

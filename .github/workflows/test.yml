@@ -30,13 +30,39 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
+      # The npm mbt wrapper silently exits 0 when its install hook did not download
+      # a binary. Use the pinned upstream executable, not that lifecycle-dependent wrapper.
+      - name: Install verified MTA validator
+        env:
+          MBT_VERSION: '1.2.49'
+          MBT_SHA256: '9f1ed652317dedcad5a0c8dc3239ca088d18fddb4d6422cf5eaa5a05d007a059'
+        run: |
+          set -euo pipefail
+          mbt_dir="$(mktemp -d "$RUNNER_TEMP/arc1-mbt.XXXXXX")"
+          curl --fail --silent --show-error --location \
+            "https://github.com/SAP/cloud-mta-build-tool/releases/download/v${MBT_VERSION}/cloud-mta-build-tool_${MBT_VERSION}_Linux_amd64.tar.gz" \
+            --output "$mbt_dir/mbt.tar.gz"
+          printf '%s  %s\n' "$MBT_SHA256" "$mbt_dir/mbt.tar.gz" | sha256sum --check --strict
+          tar -xzf "$mbt_dir/mbt.tar.gz" -C "$mbt_dir" mbt
+          chmod 755 "$mbt_dir/mbt"
+          "$mbt_dir/mbt" --version
+          echo "$mbt_dir" >> "$GITHUB_PATH"
+
+      - name: Reject invalid MTA descriptor (validator control)
+        run: |
+          if mbt validate --source tests/fixtures/ci/invalid-mta; then
+            echo "::error::MTA validator accepted a descriptor without required ID/version"
+            exit 1
+          fi
 
       - name: Validate mta.yaml + mta-overrides.mtaext.example
-        run: npm run btp:validate
+        run: |
+          mbt validate
+          mbt validate -e mta-overrides.mtaext.example
+          mbt validate -e mta-overrides.mtaext.example -e mta-ui-approuter.mtaext
+          mbt validate -e examples/btp/single-basic/profile.mtaext
+          mbt validate -e examples/btp/single-pp/profile.mtaext
+          mbt validate -e examples/btp/multi-pp/profile.mtaext
 
   # Gates only the SAP-hitting jobs below based on PR title (conventional
   # commit prefix). Cheap checks in the `test` job always run. SAP jobs skip on
