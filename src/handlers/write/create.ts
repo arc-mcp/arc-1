@@ -286,9 +286,17 @@ const KTD_REF_OBJECT_TYPES_ROUTABLE_BY_ARC = new Set([
   'BDEF/BVA',
   'DDLS/DF',
   'DEVC/K',
+  'SMBC/TYP',
   'SRVB/SVB',
   'SRVD/SRV',
 ]);
+
+// Parent types without a canonical ARC-1 object type (no objectBasePath case); the KTD parent
+// adtcore:uri is built from this base path. SMBC = Business Configuration Maintenance Object,
+// ADT returns /sap/bc/adt/bct/smbctyp/<name> for it (e.g. in package object listings).
+const KTD_PARENT_BASE_PATHS: Record<string, string> = {
+  SMBC: '/sap/bc/adt/bct/smbctyp/',
+};
 
 // Live WBOBJTYPES_SCOPE registry entries for SCOPE_ID = 'DOCUMENTATION' observed on
 // SAP_BASIS 758 and 816. This is diagnostic evidence, not a create allowlist:
@@ -307,12 +315,11 @@ const KTD_REF_OBJECT_TYPES_SAP_DOCUMENTATION_SCOPE = new Set([
   'EVTB/EVB',
   'PARA/R',
   'RONT/ROT',
-  'SMBC/TYP',
   'SOD1',
   'SOD2',
 ]);
 
-const KTD_REF_OBJECT_TYPES_HINT = 'DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB, DEVC/K';
+const KTD_REF_OBJECT_TYPES_HINT = 'DDLS/DF, BDEF/BDO, SRVD/SRV, SRVB/SVB, DEVC/K, SMBC/TYP';
 const KTD_SAP_DOCUMENTATION_SCOPE_HINT =
   'APIC/TYP, BDEF/*, CFDB/CFB, CFDG/CFG, CFDS/CFS, CHKO/TYP, DDLA/ADF, DDLS/DF, DEVC/K, ' +
   'DRTY/STY, DSFD/SCF, EEEC/EVC, EVTB/EVB, PARA/R, RONT/ROT, SMBC/TYP, SOD1, SOD2, ' +
@@ -549,7 +556,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     const refDescription = String(args.refObjectDescription ?? '');
     // Build the parent URI. ADT URIs use lowercase names by convention (matches the Eclipse trace).
     const refParentType = refType.split('/')[0] ?? '';
-    const refUri = `${objectBasePath(refParentType)}${encodeURIComponent(refName.toLowerCase())}`;
+    const refUri = `${KTD_PARENT_BASE_PATHS[refParentType] ?? objectBasePath(refParentType)}${encodeURIComponent(refName.toLowerCase())}`;
 
     const ktdLang = normalizeAdtLanguage(config.language);
     const ktdBody = `<?xml version="1.0" encoding="UTF-8"?>
