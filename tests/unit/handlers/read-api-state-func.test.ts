@@ -4,6 +4,8 @@
  * Kept apart from read.test.ts, which is at its file-size budget.
  */
 import { describe, expect, it } from 'vitest';
+import { CachingLayer } from '../../../src/cache/caching-layer.js';
+import { MemoryCache } from '../../../src/cache/memory.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
@@ -77,7 +79,7 @@ describe('SAPRead API_STATE for function modules', () => {
     expect(mockFetch.mock.calls.some((c) => String(c[0]).includes('/apireleases/'))).toBe(false);
   });
 
-  it('API_STATE for a namespaced FUNC encodes the function module URI exactly once', async () => {
+  it('API_STATE preserves encoded namespaced FUNC segments inside the API release URI', async () => {
     mockFetch.mockReset();
     mockFetch.mockResolvedValueOnce(mockResponse(200, fmApiReleaseXml));
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
@@ -88,7 +90,36 @@ describe('SAPRead API_STATE for function modules', () => {
     });
     expect(result.isError).toBeUndefined();
     const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
-    expect(calledUrl).toContain('groups%2F%2Fns%2Fgroup%2Ffmodules%2F%2Fns%2Fmy_func');
-    expect(calledUrl).not.toContain('%252F');
+    expect(calledUrl).toContain('groups%2F%252Fns%252Fgroup%2Ffmodules%2F%252Fns%252Fmy_func');
+  });
+
+  it('resolves a namespaced group from SAP search and caches routing, while reading API state afresh', async () => {
+    mockFetch.mockReset();
+    mockFetch
+      .mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<objectReferences><objectReference type="FUGR/FF" name="/NS/MY_FUNC" uri="/sap/bc/adt/functions/groups/%2fns%2fgroup/fmodules/%2fns%2fmy_func"/></objectReferences>',
+        ),
+      )
+      .mockResolvedValueOnce(mockResponse(200, fmApiReleaseXml))
+      .mockResolvedValueOnce(
+        mockResponse(200, fmApiReleaseXml.replace('isAnyContractReleased="false"', 'isAnyContractReleased="true"')),
+      );
+    const cache = new CachingLayer(new MemoryCache());
+    const client = createClient();
+    const args = { type: 'API_STATE', name: '/NS/MY_FUNC', objectType: 'FUNC' };
+    const first = await handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', args, undefined, undefined, cache);
+    const second = await handleToolCall(client, DEFAULT_CONFIG, 'SAPRead', args, undefined, undefined, cache);
+    expect(first.isError).toBeUndefined();
+    expect(second.isError).toBeUndefined();
+    expect(JSON.parse(first.content[0]!.text).isAnyContractReleased).toBe(false);
+    expect(JSON.parse(second.content[0]!.text).isAnyContractReleased).toBe(true);
+    const urls = mockFetch.mock.calls.map((c) => String(c[0]));
+    expect(urls).toHaveLength(3);
+    expect(urls.filter((url) => url.includes('/search?'))).toHaveLength(1);
+    for (const url of urls.slice(1)) {
+      expect(url).toContain('groups%2F%252Fns%252Fgroup%2Ffmodules%2F%252Fns%252Fmy_func');
+    }
   });
 });

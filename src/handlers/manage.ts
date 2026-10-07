@@ -31,12 +31,7 @@ import {
   setCachedDiscovery,
   setCachedFeatures,
 } from './feature-cache.js';
-import {
-  functionModuleObjectUrlRaw,
-  inferObjectType,
-  normalizeObjectType,
-  objectUrlForTypeRaw,
-} from './object-types.js';
+import { functionModuleObjectUrl, inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import {
   DEVC_WRITE_UNAVAILABLE_HINT,
@@ -101,7 +96,7 @@ export async function handleSAPManage(
               `Cannot resolve function group for "${name}". Pass objectUri="/sap/bc/adt/functions/groups/<group>/fmodules/<name>" instead.`,
             );
           }
-          objectUri = functionModuleObjectUrlRaw(group, name);
+          objectUri = functionModuleObjectUrl(group, name);
         } else {
           objectUri = objectUrlForTypeRaw(inferred, name);
         }
