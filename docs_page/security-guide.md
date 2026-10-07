@@ -508,7 +508,7 @@ ARC-1 ships as an [npm package](https://www.npmjs.com/package/arc-1) and a [Dock
 | Control | Workflow | Severity gate |
 |---|---|---|
 | Dependabot — root npm + BTP AppRouter npm + GitHub Actions + Docker | `.github/dependabot.yml` | weekly + same-day security advisories |
-| `npm audit` PR gates | `.github/workflows/test.yml` (root + `btp/approuter`) | fail on `high` / `critical` |
+| `npm audit` PR gates via `audit-ci` | `.github/workflows/test.yml` (root + `btp/approuter`) | fail on `high` / `critical`, subject to the expiring advisory exception below |
 | GitHub Dependency Review (PR diff) | `.github/workflows/dependency-review.yml` | fails on `high`; license allow/deny lists |
 | CodeQL SAST (JavaScript/TypeScript) | GitHub Default Setup | findings on Security tab; PR check fails on `High or higher` |
 | Trivy container scan — dev push | `.github/workflows/docker.yml` | non-gating; SARIF uploaded to Security tab |
@@ -525,6 +525,23 @@ package repository changes. ARC-1 therefore names the final Dockerfile stage `ru
 CI image build uses `no-cache-filters: runtime` plus `pull: true`. The comparatively expensive
 native-module builder stage stays cached, while the runtime package upgrade is re-executed and can
 pick up newly published OS security fixes.
+
+### Temporary node-forge audit exception
+
+`audit-ci.json` temporarily accepts only
+[`GHSA-86w9-cpqp-85rv`](https://github.com/advisories/GHSA-86w9-cpqp-85rv), the RSA
+signature-verification advisory affecting `node-forge` through 1.4.0 with no published patch as of
+7 October 2026. The exception expires automatically at **00:00 Europe/Berlin on 21 October 2026**.
+It lets unrelated dependency maintenance proceed; it does not fix the vulnerability or establish
+that ARC-1 cannot be affected. Remove the exception when the affected dependency paths are fixed,
+or reassess it before expiry in a separate reviewed change.
+
+Run `npm run audit:ci` and `npm run audit:ci -- --directory btp/approuter` to reproduce the PR
+gates. Both retain the high/critical threshold, development dependencies, and the existing optional
+dependency omission. Other advisories, including future node-forge advisories, still fail. The
+accepted advisory remains visible in the output; after expiry it blocks again. Plain `npm audit`,
+Dependabot alerts and update PRs, GitHub Dependency Review, and container scans keep their existing
+behavior. The exception is specific to these two PR audit steps.
 
 ### GitHub-native security features (verified enabled)
 
