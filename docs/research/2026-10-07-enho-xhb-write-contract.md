@@ -1,8 +1,8 @@
 # ENHO/XHB (BAdI implementation) write contract
 
-Status: **implemented; live-verified in `$TMP` on SAP_BASIS 816 on-prem (2026-10-07). Create in a transportable
-package FAILED on the same system (see below) — do not ship as supported until that is understood.** The payload is
-derived from SAP's own GET serialization, not from a captured Eclipse create.
+Status: **implemented; live-verified on SAP_BASIS 816 on-prem (2026-10-07) in `$TMP` and in a transportable
+package with a transport request.** The create sequence follows a captured Eclipse ADT create; the payload is
+derived from SAP's own GET serialization.
 
 ## Why
 
@@ -16,8 +16,8 @@ because ARC-1 could only read ENHO. The full plan is in `docs/plans/enho-badi-im
 | Step | Request | Notes |
 |---|---|---|
 | Gate | ADT discovery advertises `/sap/bc/adt/enhancements/enhoxhb` | Advertised on 758/816 (S/4HANA 2023 and ABAP Platform 2025 trial probes); 750 only advertises `enhoxh`. An unprobed session is not blocked. |
-| Create | `POST /sap/bc/adt/enhancements/enhoxhb?corrNr=…` with `application/vnd.sap.adt.enh.enhoxhb.v4+xml` | Full `enho:objectData` body. |
-| Confirm implementations | GET the object; only if an implementation is missing: lock → `PUT …/{name}?lockHandle=…` → unlock | Same body. On 816 the POST already stores them, so no lock or PUT happens. Kept for releases where the POST might only create the container. |
+| Create | `POST /sap/bc/adt/enhancements/enhoxhb?corrNr=…` with `application/vnd.sap.adt.enh.enhoxhb.v4+xml` | `enho:objectData` with the spot usage and **no** BAdI implementations (`badiContainerXml`), as Eclipse sends it. |
+| Save implementations | lock → `PUT …/{name}?lockHandle=…&corrNr=…` → unlock | Full document. Eclipse does the same when the form editor is saved. |
 | Update | lock → GET (developer view) → merge → PUT → unlock | `src/handlers/write/metadata-update.ts`. |
 | Activate | `adtcore:uri="/sap/bc/adt/enhancements/enhoxhb/{name}"` | Before this change `objectBasePath('ENHO')` fell back to `/sap/bc/adt/programs/programs/`, so activation, transport history and the package gate hit the wrong object. |
 | Delete | lock → DELETE → unlock | Generic path. |
@@ -53,9 +53,8 @@ All objects used the `ZARC1` test prefix and were deleted afterwards (GET 404 co
   `SD_APM_SET_APPROVAL_REASON` (spot `ES_SD_SLS_EXTEND`) with a temporary class implementing its interface:
   create → SAPRead returned the expected JSON → update (SAPRead output with `active` flipped) read back
   → SAPActivate → delete.
-- **POST alone stores the implementations.** A raw collection POST with the full body, without the
-  follow-up PUT, read back with the BAdI implementation in place. ARC-1 therefore reads back after the POST
-  and PUTs only when an implementation is missing; on 816 no lock or PUT follows the create.
+- **In `$TMP` a POST with the implementations also stores them**, but the same POST fails in a transportable
+  package (next section), so ARC-1 always creates the container first.
 - **Activation needs the object name.** `batch_create` activated inline with only `adtcore:uri` in the
   reference; SAP answered HTTP 403 `Resource   could not be locked` (blank name) every time. With
   `adtcore:name` added, as `SAPActivate` and `activateAtEnd` already send it, activation succeeded.
@@ -97,17 +96,32 @@ changed BAdI definition on an implementation that has filters, instead of droppi
 needs the filter declaration (`filterProperty`, check object) from the BAdI definition, which ARC-1 cannot
 read yet.
 
-### Transportable package: create failed (816, 2026-10-07)
+### Transportable package: implementations in the create POST fail (816, 2026-10-07)
 
-In a temporary transportable package with a transport request (target set, never released):
+First attempts posted the full document, implementations included. In a transportable package with a
+transport request (target set, never released):
 
 - The create POST returned **HTTP 500 `Screen output without connection to user`**: SAP tried to show a dialog.
 - The POST still wrote a TADIR entry `R3TR ENHO` without enhancement content (no `ENHHEADER` row). ADT could
   not delete it afterwards: DELETE failed with `Could not determine recipients for message type CONDAT`,
   `Parameter corrNr could not be found` (no request) and `No documentation class is assigned to object R3TR ENHO`.
   The orphaned entry blocks deleting its package and needs SAP GUI (SE03 object directory) to remove.
-- `$TMP` creates on the same system never showed this. Whether the dialog comes from the payload (something
-  Eclipse sends and ARC-1 does not) or from that system's configuration (ALE message type `CONDAT`) is open.
+- Repeated in a package that was recorded on a transport request, with that request as `corrNr`: same HTTP 500,
+  and the object was entered on the request (`R3TR ENHO`, locked) although its content was never created.
+  So the failure is not caused by an unrecorded package.
+- `$TMP` creates on the same system never showed this.
+
+**Eclipse ADT does it in two steps** (ABAP Communication Log, same package and request): `POST
+…/enhoxhb/validation?objtype=enhoxhb&objname=…&spotname=…&package=…` and `POST /sap/bc/adt/cts/transportchecks`,
+then `POST /sap/bc/adt/enhancements/enhoxhb?corrNr=…` with the empty container (≈1 KB, 201). Adding a BAdI
+implementation in the form editor reads `GET …/enhsxsb/{spot}/enhancements/definitions?badiImplName=…&packageName=…`
+and saves with `LOCK` → `PUT …?lockHandle=…&corrNr=…` (200) → `UNLOCK`. Eclipse also refuses to save an
+implementing class that does not implement the BAdI interface (client-side check); ARC-1 leaves that check to
+activation.
+
+**With the same two steps ARC-1 succeeds:** container POST (201) → PUT with the implementation and `corrNr` →
+read back → update → activation → the request lists `R3TR ENHO … (ENHO/XHB)` → delete (TADIR keeps the
+deletion record `DELFLAG = X` on the request, as for any transportable deletion).
 
 ### BTP ABAP environment (trial, 2026-10-07, read-only)
 
@@ -117,11 +131,11 @@ customer implementations was not checked. SAPWrite stays `btp: false`.
 
 ## Open points
 
-1. **Blocking:** capture Eclipse's create of a BAdI implementation in a transportable package (ABAP
-   Communication Log) and compare with ARC-1's POST; find the dialog behind the HTTP 500.
-2. Avoid or clean up the orphaned TADIR entry a failed create leaves behind.
-3. Filter values: write support needs the BAdI definition's filter declaration.
-4. BTP: find a released BAdI and test a create in a BTP package.
+1. Filter values: write support needs the BAdI definition's filter declaration; Eclipse reads it from
+   `…/enhsxsb/{spot}/enhancements/definitions?badiImplName=…&packageName=…`.
+2. BTP: find a released BAdI and test a create in a BTP package.
+3. Optional: Eclipse's `…/enhoxhb/validation` and `transportchecks` calls before the create; ARC-1 resolves the
+   transport itself and relies on activation for consistency checks.
 
 ## Verification so far
 

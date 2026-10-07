@@ -18,13 +18,13 @@ import {
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
 import { activate, activateBatch } from '../../adt/devtools.js';
-import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js';
+import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
-import { escapeXmlAttr, parseEnhancementImplementation, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
+import { escapeXmlAttr, parseFunctionModuleProperties } from '../../adt/xml-parser.js';
 import { validateAffHeader } from '../../aff/validator.js';
 import { activationDetailMatchesObject } from '../activation-results.js';
 import { guardCdsSyntax } from '../cds-hints.js';
@@ -279,9 +279,9 @@ async function putTtypMetadataAfterCreate(
 }
 
 /**
- * ENHO create: the POST already stores the BAdI implementations on SAP_BASIS 816 (live 2026-10-07).
- * Read the object back and PUT the same body only when an implementation is missing, so a create
- * needs no lock/update round trip where SAP did not ask for one.
+ * ENHO create, step 2 (as Eclipse does it): the POST created the empty container; save the BAdI
+ * implementations with lock → PUT (with the transport) → unlock. Posting them with the create fails in a
+ * transportable package (live 816, 2026-10-07; see badiContainerXml).
  */
 async function saveBadiImplementationsAfterCreate(
   client: SapWriteContext['client'],
@@ -292,10 +292,7 @@ async function saveBadiImplementationsAfterCreate(
   transport: string | undefined,
 ): Promise<void> {
   try {
-    const expected = parseEnhancementImplementation(body).badiImplementations.map((impl) => impl.name.toUpperCase());
-    const stored = await getBadiEnhancementImplementation(client.http, client.safety, name);
-    const storedNames = new Set(stored.badiImplementations.map((impl) => impl.name.toUpperCase()));
-    if (expected.every((implName) => storedNames.has(implName))) return;
+    if (!hasBadiImplementations(body)) return;
     await client.http.withStatefulSession(async (session) => {
       const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
       try {
@@ -315,7 +312,7 @@ async function saveBadiImplementationsAfterCreate(
   } catch (err) {
     // The POST already succeeded: the object exists. A blind retry of create would 409.
     throw new Error(
-      `Created ENHO ${name}, but its BAdI implementations could not be confirmed or saved: ` +
+      `Created ENHO ${name}, but its BAdI implementations were not saved: ` +
         `${err instanceof Error ? err.message : String(err)}\n` +
         `The object exists — check it with SAPRead(type="ENHO", name="${name}"), fix the input, then use ` +
         `SAPWrite(action="update", type="ENHO", name="${name}", source=…); do not retry create.`,
@@ -700,7 +697,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       client.http,
       client.safety,
       createUrl,
-      body,
+      type === 'ENHO' ? badiContainerXml(body) : body,
       contentType,
       effectiveTransport,
       needsPackageParam ? pkg : undefined,
@@ -1071,7 +1068,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           client.http,
           client.safety,
           plan.objectUrl.replace(/\/[^/]+$/, ''),
-          plan.body,
+          plan.type === 'ENHO' ? badiContainerXml(plan.body) : plan.body,
           plan.contentType,
           plan.transport,
           needsPackage ? plan.packageName : undefined,

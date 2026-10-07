@@ -9,8 +9,8 @@
  *       enhancementSpot, badiDefinition (ENHS/XB), implementingClass (CLAS/OC)
  *
  * The body mirrors SAP's own GET serialization (tests/fixtures/xml/enhancement-implementation.xml).
- * Create is a POST of the full document to the collection. On SAP_BASIS 816 the POST already stores the
- * BAdI implementations; the create handler reads back and PUTs the same body only if they are missing.
+ * Create follows Eclipse: POST the container (spot, no implementations), then lock → PUT the full
+ * document with the transport → unlock (`badiContainerXml`).
  * Live evidence: docs/research/2026-10-07-enho-xhb-write-contract.md.
  *
  * SAPRead returns the implementation as JSON and SAPWrite takes the same JSON in "source", so a
@@ -293,6 +293,24 @@ export interface BadiImplementationXmlParams {
   masterLanguage: string;
   /** Pre-built ` adtcore:responsible="…"` attribute, or ''. */
   responsibleAttr: string;
+}
+
+/**
+ * The create POST body: the same document without BAdI implementations. Eclipse creates the empty
+ * container first and saves the implementations with a locked PUT. Posting them with the create fails in
+ * a transportable package with HTTP 500 "Screen output without connection to user" and leaves a TADIR
+ * entry without content (live 816, 2026-10-07); in $TMP both ways work.
+ */
+export function badiContainerXml(xml: string): string {
+  return xml.replace(
+    /<enho:badiImplementations>[\s\S]*<\/enho:badiImplementations>/,
+    '<enho:badiImplementations></enho:badiImplementations>',
+  );
+}
+
+/** True when the document carries at least one BAdI implementation. */
+export function hasBadiImplementations(xml: string): boolean {
+  return /<enho:badiImplementation\s/.test(xml);
 }
 
 function normalizeFilter(filter: string): string {

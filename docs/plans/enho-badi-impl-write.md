@@ -107,7 +107,7 @@ whether its errors are clear enough:
    Create/Update/Delete/Lock.
 3. Wire the metadata-write branch in `src/handlers/write-helpers.ts` (`isMetadataWriteType`, content type,
    `getMetadataWriteProperties`, `mergeMetadataWriteProperties`, `buildCreateXml`) and the discovery gate +
-   post-create read-back (PUT only if the POST did not store the implementations) in
+   container POST followed by a locked PUT of the implementations (the Eclipse sequence) in
    `src/handlers/write/create.ts` (single and batch create).
 4. `src/handlers/object-types.ts`: `objectBasePath('ENHO')` → `/sap/bc/adt/enhancements/enhoxhb/` and add ENHO
    to `KNOWN_BASE_TYPES`. Activation is URI-based (no `adtcore:type`), so this fixes activation, transport,

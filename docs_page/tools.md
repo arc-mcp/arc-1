@@ -591,10 +591,9 @@ returns**. Writable keys are `enhancementSpot` and `badiImplementations`; each e
 are ignored; change the short text with the separate `SAPWrite.description` argument. Unknown keys are
 rejected. One enhancement implementation belongs to one enhancement spot.
 
-- **`create`** needs `enhancementSpot` and the BAdI implementations. ARC-1 POSTs the full document,
-  reads it back, and saves the implementations with a locked PUT only if SAP did not store them with the
-  POST. If that step fails the object already exists: fix the input and use `update`, do not repeat
-  `create`. Create and activate the implementing class first, then `SAPActivate(type="ENHO", name=…)`.
+- **`create`** needs `enhancementSpot` and the BAdI implementations. Like Eclipse, ARC-1 POSTs the empty
+  container and then saves the implementations with a locked PUT; both carry the transport. If the PUT
+  fails the object already exists: fix the input and use `update`, do not repeat `create`. Create and activate the implementing class first, then `SAPActivate(type="ENHO", name=…)`.
 - **`update`** reads the developer view under the SAP lock. A supplied `badiImplementations` list
   replaces the stored one; within an entry that already exists, omitted `shortText`/`active`/`default`
   keep their stored values. The spot cannot change.
@@ -603,8 +602,8 @@ rejected. One enhancement implementation belongs to one enhancement spot.
 SAP checks that the BAdI belongs to the spot and that the class implements the BAdI interface only at
 activation: such a create is saved inactive and `SAPActivate` reports the error. `SAPRead` shows an implementation's filter values read-only as `filter` (e.g. `"COUNTRY = 'BE'"`). An update keeps
 them and other stored attributes (`customizingLock`, `example`) unchanged; changing or adding filter values is
-refused — use Eclipse ADT for that. Create in a transportable package failed on the tested 816 system
-(HTTP 500 from a SAP dialog, see the research note); `$TMP` creates work.
+refused — use Eclipse ADT for that. Create, update, activation and delete were verified on
+SAP_BASIS 816 in `$TMP` and in a transportable package with a request.
 
 ```json
 {"action":"create","type":"ENHO","name":"ZMY_ENH_APPROVAL_REASON","package":"$TMP","description":"Approval Reason BAdI",

@@ -172,20 +172,28 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     expect(put?.body).toContain('adtcore:description="TCD Lookup, Assignment..."');
   });
 
-  it('SAPWrite create skips the PUT when the POST already stored the BAdI implementations', async () => {
-    const stored = XHB.replace('enho:name="SFW_TCD"', 'enho:name="ZMY_BADI_APPROVAL_REASON"');
-    const calls = mockSap(stored);
-    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-      action: 'create',
-      type: 'ENHO',
-      name: 'ZMY_ENH_APPROVAL_REASON',
-      package: '$TMP',
-      source: createSource,
-    });
-    expect(result.isError).toBeUndefined();
-    expect(calls.some((c) => c.method === 'GET' && c.url.includes(`${ENHO_URL}/ZMY_ENH_APPROVAL_REASON`))).toBe(true);
-    expect(calls.some((c) => c.method === 'PUT' || c.url.includes('_action=LOCK'))).toBe(false);
-  });
+  it.each(['create', 'batch_create'] as const)(
+    '%s POSTs only the container and saves the implementations with the transport, like Eclipse',
+    async (action) => {
+      const calls = mockSap();
+      const entry = { type: 'ENHO', name: 'ZMY_ENH_APPROVAL_REASON', source: createSource };
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action,
+        package: 'ZMY_PKG',
+        transport: 'A4HK900123',
+        ...(action === 'create' ? entry : { objects: [entry] }),
+      });
+      expect(result.content[0].text).toContain('ZMY_ENH_APPROVAL_REASON');
+      // Live 816: implementations in the create POST of a transportable object → HTTP 500 from a SAP dialog.
+      const post = calls.find((c) => c.method === 'POST' && /enhoxhb\?/.test(c.url) && !c.url.includes('_action'));
+      expect(post?.url).toContain('corrNr=A4HK900123');
+      expect(post?.body).toContain('adtcore:name="ES_SD_SLS_EXTEND"');
+      expect(post?.body).not.toContain('<enho:badiImplementation ');
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put?.url).toContain('corrNr=A4HK900123');
+      expect(put?.body).toContain('enho:name="ZMY_BADI_APPROVAL_REASON"');
+    },
+  );
 
   it('batch_create reports the post-create save as a write step', async () => {
     const calls = mockSap();
