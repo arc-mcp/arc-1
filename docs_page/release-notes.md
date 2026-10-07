@@ -22,13 +22,21 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
-## Unreleased
+## 1.5.1 — authentication safeguards and SAP compatibility (2026-10-04)
 
-These changes are not included in a published release.
+Stricter authentication and cache isolation, safer deployment archives, and compatibility fixes.
+No new mandatory settings; check the actions below if you use XSUAA or definition navigation.
 
 | Change | Impact | Action |
 |---|---|---|
 | Function-module dependencies and group lookup ([#911](https://github.com/arc-mcp/arc-1/pull/911)) | `SAPContext(deps)` extracts dependencies from function bodies. Automatic group lookup also recognizes SAP_BASIS 750's decorated function names in existing callers, including `SAPRead FUNC`, update/delete, activation and typed where-used. | `none` — existing explicit-group requirements and authorization checks remain in place. |
+| XSUAA startup guard ([#916](https://github.com/arc-mcp/arc-1/pull/916)) | HTTP startup fails closed when configured XSUAA credentials cannot be loaded, even with another authentication method configured. | Ensure a valid XSUAA binding before starting with XSUAA enabled. |
+| Principal-propagation cache isolation ([#917](https://github.com/arc-mcp/arc-1/pull/917)) | Activation invalidates shared cached source in PP-enabled setups instead of promoting it across identities. Subsequent reads return to SAP for authorization. | `none` — single-identity cache behavior is unchanged. |
+| Deployment archive exclusions ([#913](https://github.com/arc-mcp/arc-1/pull/913)) | MTAR packaging excludes additional root credential/cache artifacts and AppRouter test/local-environment files. | Rebuild and inspect deployment archives; see [BTP deployment](btp-cloud-foundry-deployment.md). |
+| Namespaced function-group includes ([#905](https://github.com/arc-mcp/arc-1/pull/905)) | Include creation accepts namespace-correct names and normalizes lowercase parent-group names. | Check the group's main-program INCLUDE statement after creation; insertion behavior varies by system. |
+| Legacy ADT media types ([#909](https://github.com/arc-mcp/arc-1/pull/909)) | Class metadata reads and class/program creation retry narrowly matched legacy content-handler errors with concrete media types. | `none` — source/include media types remain unchanged. |
+| Definition navigation ([#910](https://github.com/arc-mcp/arc-1/pull/910)) | Navigation sends the current source and position to SAP's definition resolver. | Supply the source URI, non-empty source, a 1-based line and 0-based column. |
+| CDS lineage ([#914](https://github.com/arc-mcp/arc-1/pull/914)) | Blocked-source checks traverse ordinary view entities and projections. Transient analytical queries still fail closed. | `none` — existing [lineage policy limits](authorization.md) still apply. |
 
 ## 1.5.0 — guarded source edits and verified reads (2026-10-02)
 

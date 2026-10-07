@@ -327,10 +327,8 @@ listing useless here:
   which one.
 - **A gate that cannot find anything must fail, not pass.** No archive, no `data.zip` member, or an
   unreadable payload has to be an error; otherwise a broken workspace reports a clean release.
-- **The UI AppRouter has one audited `.npmrc`.** Its `install-links=true` setting is required to
-  install the local `decode-uri-component` compatibility bridge reliably. The checks below allow
-  only the root `.npmrc` in `arc1-ui-router/data.zip`, and only when it is byte-for-byte identical
-  to the reviewed `btp/approuter/.npmrc`; every other `.npmrc` remains denied.
+- **No module needs a packaged `.npmrc`.** AppRouter 23.3 no longer uses the local decoder
+  compatibility bridge, so the checks below deny npm configuration in every payload.
 
 ```bash
 inspect_mtar() (
@@ -350,15 +348,6 @@ inspect_mtar() (
     n=$(printf '%s\n' "$entries" | wc -l) || { echo "FAIL: cannot count $member"; return 1; }
     echo "-- $member: $n entries"
     bad=$(printf '%s\n' "$entries" | grep -Ei "$deny" || true)
-    if [ "$member" = 'arc1-ui-router/data.zip' ]; then
-      printf '%s\n' "$entries" | grep -Fx '.npmrc' >/dev/null ||
-        { echo 'FAIL: arc1-ui-router/data.zip is missing its required .npmrc'; return 1; }
-      unzip -p "$tmp/payload.zip" .npmrc > "$tmp/approuter.npmrc" ||
-        { echo 'FAIL: cannot extract arc1-ui-router/.npmrc'; return 1; }
-      cmp -s "$tmp/approuter.npmrc" btp/approuter/.npmrc ||
-        { echo 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'; return 1; }
-      bad=$(printf '%s\n' "$bad" | grep -Ev '^\.npmrc$' || true)
-    fi
     [ -z "$bad" ] || { printf '%s\n' "$bad"; echo "FAIL: denied path in $member"; return 1; }
   done <<< "$members"
   echo 'PASS: every payload inspected, no denied paths or unreviewed npm config'
@@ -401,21 +390,7 @@ try {
     $files = @(Get-ChildItem $dest -Recurse -File)
     if ($files.Count -eq 0) { throw "FAIL: empty payload $($member.Directory.Name)" }
     "-- $($member.Directory.Name): $($files.Count) files"
-    $allowedNpmrc = $null
-    if ($member.Directory.Name -eq 'arc1-ui-router') {
-      $allowedNpmrc = Join-Path $dest '.npmrc'
-      if (-not (Test-Path $allowedNpmrc -PathType Leaf)) {
-        throw 'FAIL: arc1-ui-router/data.zip is missing its required .npmrc'
-      }
-      $sourceNpmrc = (Resolve-Path 'btp/approuter/.npmrc').Path
-      if ((Get-FileHash $allowedNpmrc -Algorithm SHA256).Hash -ne
-          (Get-FileHash $sourceNpmrc -Algorithm SHA256).Hash) {
-        throw 'FAIL: packaged arc1-ui-router/.npmrc differs from the reviewed source'
-      }
-    }
-    $bad += $files | Where-Object {
-      $_.Name -match $deny -and (!$allowedNpmrc -or $_.FullName -ne $allowedNpmrc)
-    }
+    $bad += $files | Where-Object { $_.Name -match $deny }
   }
   if ($bad) { $bad.FullName; throw 'FAIL: denied path in payload' }
   'PASS: every payload inspected, no denied paths or unreviewed npm config'
@@ -427,8 +402,8 @@ try {
 A checksum is not a substitute: it proves the archive did not change, not that no secret was packaged.
 
 The application payload must not contain `.env*`, service-key exports, customer `.mtaext` files,
-private keys, certificates, local MCP configuration, source tests, operator artifacts, or an
-`.npmrc` other than the exact reviewed `btp/approuter/.npmrc` in the UI AppRouter payload. The MTA
+private keys, certificates, local MCP configuration, source tests, operator artifacts, or any
+`.npmrc`. The MTA
 build has an explicit denylist and CI coverage for critical names; archive inspection is still a
 release gate because a future file type can evade a denylist.
 
