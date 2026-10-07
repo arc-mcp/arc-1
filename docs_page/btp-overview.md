@@ -17,6 +17,10 @@ its artifact; ask the deployment owner if that revision is unknown. Proposed set
     Follow [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md). Step 4 selects a
     single-PP or multi-PP example from the same checkout; keep following that runbook through acceptance.
 
+    If users must see only assigned system/client targets, first check
+    [target authorization readiness and setup](multi-target-authorization.md). The multi-PP profile
+    alone retains legacy all-reader visibility; choose the opt-in path before assigning users.
+
     If a shared SAP identity is acceptable for one target, use the
     [single-Basic profile](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile)
     in the same runbook. XSUAA still authenticates the MCP users.
@@ -29,7 +33,7 @@ its artifact; ask the deployment owner if that revision is unknown. Proposed set
 |--------------------|-------------|--------------|---------------|
 | One on-premise SAP system/client | One `/mcp` endpoint | Principal Propagation recommended; shared Basic supported | Cloud Foundry Deployment — [single-PP](btp-cloud-foundry-deployment.md#single-target-read-only-pp-profile) or [single-Basic](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile) |
 | Several on-premise systems or clients, mutation-free access | Pinned `/<SYSTEM>/<CLIENT>/mcp` routes plus `/multi/mcp` | Principal Propagation recommended; shared Basic is an explicit exception | [Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) — multi-PP profile |
-| One general `/mcp` endpoint beside mutation-free multi-target routes | Independent single-target and multi-target configurations in one app | Configure each path independently | Read the [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) before deployment |
+| One general `/mcp` endpoint beside mutation-free multi-target routes | Legacy mode only; opt-in target enforcement rejects this topology | Configure each path independently | Read the [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) before deployment |
 | BTP ABAP Environment | One `/mcp` endpoint | `OAuth2UserTokenExchange` | [BTP ABAP Environment](btp-abap-environment.md) |
 | S/4HANA Public Cloud developer extensibility | One `/mcp` endpoint | Per-user SAML/OAuth exchange | [S/4HANA Public Cloud](s4hana-public-cloud.md) |
 | Writable access to several SAP systems with stronger isolation | One ARC-1 instance and MCP connection per target | Identity and safety policy per instance | [Separate instances](multi-target-administration.md#when-separate-instances-are-safer) |
@@ -37,8 +41,8 @@ its artifact; ask the deployment owner if that revision is unknown. Proposed set
 !!! warning "Multi-target v1 is mutation-free"
 
     The discovered multi-target routes do not expose object writes, activation, transport mutation,
-    Git mutation, plugins, or controlled execution. A writable single-target `/mcp` may coexist,
-    but it remains an independent configuration. Do not widen multi-target access by copying
+    Git mutation, plugins, or controlled execution. A writable single-target `/mcp` may coexist
+    only in legacy mode, as an independent configuration. Do not widen multi-target access by copying
     single-target write settings into destinations.
 
 ## Follow the setup in this order
@@ -63,9 +67,9 @@ different activation rules; the linked administration guides own those details.
 | Control plane | Store here | Do not store here |
 |---------------|------------|-------------------|
 | Repository `mta.yaml` | Product defaults, service topology, bindings, role templates and collections | Customer destinations or secrets |
-| Customer `.mtaext` | Durable route, instance count, selected single target, and application safety ceilings | Destination credentials |
+| Customer `.mtaext` | Durable route, instance count, selected topology, target-authorization mode, and application safety ceilings | Destination credentials or per-user target assignments |
 | BTP subaccount destination | SAP URL/client, authentication mode, Cloud Connector location, and supported target-local multi-target policy | Global ARC-1 authorization or write policy |
-| XSUAA role collections | Human ARC-1 scopes | SAP users, passwords, or per-target assumptions in v1 |
+| XSUAA roles and role collections | Human ARC-1 scopes; with opt-in enforcement, roles also carry `arc1_targets` grants | SAP users/passwords; target attributes do not restrict legacy mode |
 | Cloud Connector and SAP | Network resources, trust, certificate mapping, SAP roles | MCP OAuth roles |
 | MCP client | ARC-1 endpoint URL and OAuth registration state | Destination or SAP credentials |
 
@@ -85,6 +89,8 @@ Before handing the endpoint to users:
       technical user and remains an explicitly accepted exception.
 - [ ] Multi-target Admin diagnostics explain every accepted and excluded destination without
       exposing credentials or internal URLs.
+- [ ] If opting into target authorization, its [readiness and acceptance checks](multi-target-authorization.md)
+      pass, including permitted/denied targets and Admin diagnostics without execution grants.
 - [ ] Rate limits, SAP concurrency, instance count, audit access, upgrade, and rollback ownership are
       documented.
 - [ ] Unsupported capabilities are explicit to users and MCP client owners.
@@ -106,6 +112,7 @@ results. It does not add setup steps.
 | How do roles, scopes, and the instance ceiling interact? | [Authorization & Roles](authorization.md) |
 | Why does XSUAA login, DCR, or a role assignment fail? | [XSUAA](xsuaa-setup.md) |
 | How do I add several system/client targets? | [Multi-Target Setup](multi-target-setup.md) |
+| How do I restrict each user to selected systems and clients? | [Target access setup and example](multi-target-authorization.md) |
 | Why was a destination excluded or quarantined? | [Multi-Target Administration](multi-target-administration.md) |
 | Does this change need restart, restage, or redeploy? | [BTP Administration](btp-administration.md#change-and-restart-matrix) |
 | How do I update or roll back ARC-1? | [Updating](updating.md) and [BTP Administration](btp-administration.md) |

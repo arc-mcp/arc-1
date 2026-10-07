@@ -31,7 +31,8 @@ For opt-in filtering, use the target-authorization overlay **after** that profil
 extension. Its `extends` references that profile's ID, not the base MTA ID. `npm run btp:validate`
 also generates and checks the effective merged descriptor; schema validation alone is insufficient.
 It is not a complete profile by itself and does not assign users or modify destinations.
-Follow [Multi-Target Setup](../../../docs_page/multi-target-setup.md) for activation and rollback;
+Follow [Restrict access to systems and clients](../../../docs_page/multi-target-authorization.md)
+for readiness, activation and acceptance, and its linked administration procedure for rollback;
 removing enforcement restores broader legacy access, not a security-neutral fallback.
 
 Start with a static `MCPTargetReadAccess` role containing exact `arc1_targets` values such as

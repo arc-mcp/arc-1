@@ -363,11 +363,11 @@ See [XSUAA Setup](xsuaa-setup.md) for BTP Cockpit assignment steps.
 
 ### Opt-in multi-target grants
 
-The **PR #677 implementation candidate**, not yet customer-ready, adds a separate target boundary
+The **PR #677 implementation candidate** adds a separate target boundary
 only when the deployment owner selects `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`.
 Unset/`legacy` preserves existing access. The
-[canonical setup and validation status](multi-target-setup.md#optional-target-authorization)
-cover activation, the integrated auth-library 1.1.0 release, and remaining live acceptance.
+[canonical setup and readiness](multi-target-authorization.md)
+cover availability, activation and acceptance; check them before assigning restricted users.
 
 The additive `MCPTargetReadAccess` role template supplies `read` plus required `arc1_targets`
 values with **no default grant**. One static cohort can contain multiple exact public IDs, such as

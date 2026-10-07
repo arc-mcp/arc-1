@@ -6,15 +6,16 @@
     256 isolated ARC-1 instances.
 
 This page is the operator reference for security boundaries, registry behavior, diagnostics,
-capacity, and incident handling. Follow [Multi-System Setup](multi-target-setup.md) first for the
-copy-paste deployment, destination, role, and MCP client configuration. Common BTP configuration
-ownership, XSUAA collection lifecycle, DCR secrets, upgrades, scaling, rollback, logging, and
+capacity, and incident handling. Follow [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md)
+for deployment and [Multi-System Setup](multi-target-setup.md) for the destination/endpoint reference.
+For restricted users, choose [target access setup](multi-target-authorization.md) before assigning roles.
+Common BTP configuration ownership, XSUAA collection lifecycle, DCR secrets, upgrades, scaling,
+rollback, logging, and
 customer handover live in [BTP Administration](btp-administration.md).
 
 This page distinguishes existing **legacy** behavior from the **PR #677 target-authorization
-candidate**. The latter is opt-in and is not customer-ready while live acceptance remains pending.
-The published auth-library 1.1.0 dependency is integrated; see
-[setup and validation status](multi-target-setup.md#optional-target-authorization).
+candidate**. Check its authoritative [availability and readiness](multi-target-authorization.md#availability-and-readiness)
+before planning activation.
 
 <a id="administration-model"></a>
 <a id="4-configure-xsuaa-roles"></a>
@@ -102,7 +103,7 @@ limitation predates target grants. The feature does not introduce a SQL parser/r
 
 #### Activation and rollback
 
-For the PR candidate, follow the [static-cohort setup](multi-target-setup.md#optional-target-authorization):
+For the PR candidate, follow the [static-cohort setup](multi-target-authorization.md):
 prepare roles unassigned, activate and verify `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`,
 then assign restricted users. Target roles include global `read`, so assigning them to a reachable
 legacy instance would expose all its targets. Existing deployments stay

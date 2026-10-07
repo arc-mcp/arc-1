@@ -12,8 +12,10 @@ reflect the post-consolidation handler layout (dispatch.ts + per-tool modules + 
 
 `docs_page/btp-overview.md` is the shared task map for people and assistants; the deployment
 runbook owns the ordered commands. Example READMEs explain their files, not another setup sequence.
-Keep the map readable as raw Markdown as well as HTML. `docs_page/llms.txt` is only a short link to
-that entry point, copied unchanged by MkDocs; there is no manifest or custom build hook.
+Keep the map readable as raw Markdown as well as HTML. `docs_page/multi-target-authorization.md`
+owns target-access readiness and the static-role procedure; the old setup anchor links there.
+`docs_page/llms.txt` is only a short entry/task map, copied unchanged by MkDocs; there is no manifest
+or custom build hook. The optional worksheet owns handoff inputs, expected evidence and stop conditions.
 
 When changing setup guidance, check the relevant runtime/descriptor and existing examples together.
 Run the focused documentation/profile tests and strict MkDocs build, then follow the affected task

@@ -182,6 +182,11 @@ startup/request pairing. Its least-privileged startup user is not a PP fallback.
 
 ### Multi-target PP-only profile
 
+For per-user target restrictions, first follow the
+[target-access setup order and readiness check](multi-target-authorization.md). The profile below
+alone retains legacy all-reader visibility. Prepare the enforcement setting before deploying and
+do not assign restricted users until it is verified on every serving process.
+
 ```bash
 cp -n examples/btp/multi-pp/profile.mtaext mta-overrides.mtaext
 ```
@@ -482,7 +487,7 @@ As User and Role Administrator:
 
 Leave `ARC-1 All Targets (<space>)` unassigned unless explicitly approved: it grants `read` and
 literal `*`, including future targets. It is not a harmless catalog-viewer role. For restricted
-target users, follow the [opt-in setup order](multi-target-setup.md#optional-target-authorization)
+target users, follow the [opt-in setup order](multi-target-authorization.md)
 instead of step 4: verify enforcement before assigning any role that supplies `read`.
 
 Do not stop after seeing the role templates under **Roles**. Older/recreated XSUAA deployments can

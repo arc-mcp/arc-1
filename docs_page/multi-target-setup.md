@@ -1,8 +1,8 @@
 # Multi-System Setup (Multi-Target v1)
 
-If ARC-1 and its BTP services are not deployed yet, begin with
-[BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md), then return here for the
-multi-target-specific override, destinations, endpoints, and acceptance test. Common role, secret,
+Use [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) for the ordered deployment;
+this page is its multi-target reference for settings, destinations, endpoints, and safe reads,
+not a second deployment to perform afterward. Common role, secret,
 restart, upgrade, scaling, and handover procedures live in
 [BTP Administration](btp-administration.md).
 
@@ -42,7 +42,7 @@ if they know its ID. The propagated
 SAP identity and authorization decide whether the call succeeds. With BasicAuthentication, that
 identity is the same technical user for every authorized caller. Use separate ARC-1 applications
 when target inventory itself must be restricted on a released deployment; the
-[opt-in target authorization candidate](#optional-target-authorization) below adds an IAM boundary
+[opt-in target authorization candidate](multi-target-authorization.md) adds an IAM boundary
 without changing legacy deployments on upgrade.
 
 ### Choose the SAP identity model
@@ -65,8 +65,9 @@ per-user SAP authorization, human attribution inside SAP, or horizontal CF scali
 
 This path starts with the mutation-free Viewer role. It includes source/metadata access and permitted
 read-only diagnostics; data preview and freestyle SQL are separate opt-ins described later.
-It retains default legacy target visibility. The [optional target-authorization section](#optional-target-authorization)
-adds a separate pilot after this basic multi-only setup works.
+It retains default legacy target visibility. If users must be restricted to selected targets,
+choose the [opt-in setup path](multi-target-authorization.md) **before assigning users**, not after
+completing the legacy role-assignment step. Its readiness and cutover requirements also apply.
 
 The sequence crosses separate responsibilities:
 
@@ -104,11 +105,10 @@ You need:
 
 ### 2. Enable the mode in a deployment override
 
-Copy the tracked template and uncomment only the mandatory multi-target settings:
-
-```bash
-cp mta-overrides.mtaext.example mta-overrides.mtaext
-```
+Use the [multi-PP profile in the deployment runbook](btp-cloud-foundry-deployment.md#multi-target-pp-only-profile).
+If `mta-overrides.mtaext` already exists, compare and adapt it; do not overwrite it with a template.
+The profile includes conservative safety settings beyond the minimum below. This fragment explains
+the mandatory mode settings, not a replacement for the complete profile or an existing extension:
 
 ```yaml
 modules:
@@ -150,11 +150,9 @@ Before opening a shared beta to multiple users, choose a positive per-user limit
 
 ### 3. Build and deploy once
 
-```bash
-npm ci
-npx mbt validate -e mta-overrides.mtaext
-npm run btp:build-deploy-ext
-```
+Continue the [canonical deployment runbook](btp-cloud-foundry-deployment.md#4-create-the-landscape-extension)
+through validation and deployment of the actual landscape extension. Do not copy another template
+or deploy a second time because you followed this reference link.
 
 For a Basic-enabled v1 deployment, do not use rolling, blue/green, or parallel app-process
 replacement: even a desired count of one can temporarily run two independent credential guards.
@@ -270,7 +268,9 @@ Non-secret destination changes require a restart, not another MTAR build or depl
 
 ### 6. Assign a role and connect
 
-Assign `ARC-1 Viewer (<space>)` to a test user. For the full configuration check in the next step,
+For the **legacy** path, assign `ARC-1 Viewer (<space>)` to a test user. For opt-in enforcement,
+use the [target-role assignment order](multi-target-authorization.md#minimal-static-role-setup) instead.
+For the full configuration check in the next step,
 assign `ARC-1 Admin (<space>)` to a separate trusted operator and use a separate MCP connection; do
 not add Admin to the Viewer test user because XSUAA combines that user's scopes. Connect the Viewer
 to either the pinned URL or `/multi/mcp`. For a quick aggregate connection, create
@@ -497,11 +497,9 @@ modules:
 ```
 
 Apply the application ceiling first: add only the required `SAP_ALLOW_*` properties to the same
-`mta-overrides.mtaext`, then rebuild and deploy it:
-
-```bash
-npm run btp:build-deploy-ext
-```
+`mta-overrides.mtaext`, then follow the
+[BTP change procedure](btp-administration.md#change-and-restart-matrix) to validate and deploy that
+extension. Preserve the selected authorization mode and, for Basic, the non-rolling constraint.
 
 This application-environment change requires deployment; a destination-only restart cannot enable
 the ceiling. After the deployment succeeds, add the target properties below and restart ARC-1 so
@@ -578,96 +576,10 @@ filtered by user target grants.
 
 ### Optional target authorization
 
-!!! warning "PR #677 implementation candidate — not customer-ready yet"
-
-    This section describes the accepted opt-in design and current PR implementation, not a released
-    feature. The required companion API is published in `@arc-mcp/xsuaa-auth` 1.1.0 and integrated
-    in this PR's manifest/lockfile; clean-install tests pass. Live acceptance remains incomplete.
-    Use an isolated maintainer test deployment until those gates are closed. See the
-    [accepted specification](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/docs/plans/xsuaa-target-authorization.md),
-    [ADR-0008](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/docs/adr/0008-opt-in-xsuaa-target-authorization.md), and
-    [validation snapshot](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/docs/research/2026-09-15-pr677-target-authorization-implementation.md).
-    These links pin the reviewed candidate; see [PR #677](https://github.com/arc-mcp/arc-1/pull/677)
-    for subsequent changes and readiness updates.
-
-Keep the first pilot simple: **one static cohort role, one collection, one test user**. No IAS
-change, HANA store, extra runtime service, new OAuth scope, or SAP login sweep is needed.
-
-**Ordering matters:** target roles also supply global `read`. Assigning them while a reachable
-instance is still `legacy` grants that user access to **all** its configured targets, not just the
-role's cohort. Prepare roles unassigned; activate and verify enforcement before assigning restricted
-users. An isolated pilot needs its own app/XSUAA identity, not a second route to a legacy instance.
-
-1. The service owner prepares the additive descriptor through the existing
-   [XSUAA lifecycle owner](xsuaa-setup.md#step-1-identify-the-xsuaa-lifecycle-owner), preserving the
-   application identity, existing functional roles and assignments. For the pilot, use an isolated
-   app/XSUAA identity. Descriptor installation alone does not activate enforcement or assign users.
-2. In BTP Cockpit **Security → Roles**, select the correct application's `MCPTargetReadAccess`
-   template and create a role such as `FinanceTargets`. Set `arc1_targets` to **Static**, with
-   separate exact values such as `A4H/001` and `A4H/100`; do not enter a comma-separated value.
-   Use the public alias/client ID when an alias is configured.
-3. Add that role to one deliberately named role collection, **without assigning restricted users
-   yet**. Review other apps bound to the same XSUAA identity: another app's unrestricted endpoint
-   is not protected by this app's setting.
-4. Keep the deployment multi-only: remove independently configured `SAP_BTP_DESTINATION` and
-   `SAP_BTP_PP_DESTINATION` through the owning deployment configuration. If a single-target app is
-   still required, separate its app, XSUAA identity and role assignments instead of bypassing the guard.
-5. Add **only** this setting to the existing multi-only landscape extension, validate that actual
-   extension, and use the normal [deployment procedure](btp-cloud-foundry-deployment.md):
-
-   ```yaml
-   ARC1_MULTI_TARGET_AUTHORIZATION: xsuaa-attribute
-   ```
-
-   It belongs under the app's `modules[].properties`. The optional
-   [`target-authorization.mtaext` overlay](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/examples/btp/multi-pp/target-authorization.mtaext)
-   supplies exactly this property after the conservative multi-PP profile. On CF, `.env` is not
-   deployed. Verify the effective mode on every serving process after deployment. For an existing
-   shared route, quiesce legacy replicas before cutover; do not serve both modes during rollout.
-6. Only after enforcement is verified, assign the collection to the pilot user under the actual
-   application IdP origin and start a fresh application sign-in. Verify the effective grants locally;
-   never paste JWTs into chat or a public decoder. Later, map the collection to an existing corporate
-   group if desired; one role can contain several systems/clients.
-7. Reconnect the pilot MCP client and reload its tool catalog. With two granted active targets,
-   check `SAPTargets`; with one, check its explicit target enum and absence of `SAPTargets`.
-   With zero, expect `tools: []` and a caller-only no-target explanation. Check one permitted
-   safe read, and a direct call to a known ungranted target through both aggregate and pinned routes.
-   The latter must be denied without a SAP call. Repeat with a second, disjoint user; verify PP/SAP
-   identity separately. A grant is not proof of backend access.
-
-Unset or explicit `legacy` leaves existing authorization, paging and tool visibility unchanged.
-Display-label sanitization applies in both modes; see the [compatibility note](multi-target-administration.md#enforced-catalog-differences).
-
-Empty/unknown mode values fail
-configuration; a missing or malformed grant in `xsuaa-attribute` mode never falls back to legacy.
-Here, unset means absent from the effective runtime configuration, not merely deleted from an
-MTA extension. For an approved CF rollback, write `ARC1_MULTI_TARGET_AUTHORIZATION: legacy`
-explicitly in the owning `.mtaext`; a deleted line may leave the deployed CF value intact. Verify
-the actual CF environment and logged mode on every serving process after deployment.
-Use the [administration lifecycle](multi-target-administration.md#target-authorization-lifecycle)
-for refresh, diagnosis and a security-reviewed rollback.
-
-**All targets is an explicit IAM assignment.** The separate `ARC-1 All Targets (<space>)` collection
-contributes literal `*`, including future configured targets, and `read`; deployment assigns it to
-nobody. Combine it with Data, SQL or Admin collections only when needed. Do not use `A4H/*`, regular
-expressions, or XSUAA **Unrestricted**. Existing functional collections do not acquire target grants;
-Admin sees operator diagnostics but cannot execute on an ungranted target.
-
-**Capabilities are global over the grant union.** SQL capability plus a grant for A, combined with
-another role granting B, makes SQL eligible on **both A and B**, where instance/destination/SAP
-policy also permits it. The same applies to data and Admin. Do not label a collection “SQL only on
-A”; use separate applications/XSUAA identities if that per-target capability distinction is needed.
-See [Authorization & Roles](authorization.md#opt-in-multi-target-grants).
-
-Target grants authorize the selected destination/logon client, not a SQL row-isolation policy.
-Before allowing freestyle SQL, review the [client-isolation limitation](multi-target-administration.md#sql-and-client-isolation).
-
-**IAS-fed values are optional and not yet a verified operator recipe.** They use the same verified
-XSUAA `arc1_targets` attribute as static roles, not another ARC-1 mode. Before adopting them, IAM
-must prove a dedicated administrator-controlled attribute emits exact multi-valued IDs, unrelated
-groups are excluded, and combined static/IAS grants and refresh behave correctly. Do not pass raw
-`groups`, use self-editable profile fields, or assume IAS discovers SAP accounts. Start with static
-cohorts while those live gates remain open.
+For per-user target filtering, follow [Restrict access to systems and clients](multi-target-authorization.md).
+It owns the feature's readiness status, static-role setup order, worked example and acceptance
+checks. Existing deployments remain legacy unless the operator explicitly opts in. Do not assign
+restricted users while a reachable app still uses legacy authorization.
 
 ### OAuth scopes on first sign-in
 

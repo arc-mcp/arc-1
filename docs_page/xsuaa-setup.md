@@ -34,7 +34,9 @@ MCP-native clients use RFC 8414 OAuth discovery to find authorization endpoints 
 `SAP_XSUAA_AUTH`. Do not create a second service or bind it again. Check `cf target`, then
 `cf services` and `cf app <app-name>` in the intended space. Record the bound XSUAA instance and
 its application identifier; inspect credentials locally only when needed and never paste them
-into chat or a ticket. Continue to [Step 3](#step-3-assign-role-collections).
+into chat or a ticket. For ordinary functional roles, continue to [Step 3](#step-3-assign-role-collections).
+For per-target restrictions, return to the [target-access procedure](multi-target-authorization.md)
+after this check; it requires verified enforcement before restricted-user assignment.
 
 The MTA registers ARC-1's `/oauth/callback` and `/oauth/logged-out` on its deployed route
 automatically. The optional UI extension also registers the AppRouter's `/login/callback`.
@@ -147,9 +149,9 @@ roles before assigning users.
 Role collections are only the user-permission gate. Server flags still have to allow the capability: for example, a user in `ARC-1 Developer` still cannot create transports unless the ARC-1 instance also has `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_TRANSPORT_WRITES=true`.
 
 For optional per-target visibility, follow the
-[static-cohort setup](multi-target-setup.md#optional-target-authorization), not a second XSUAA
-service-creation sequence. It describes the **unreleased PR candidate**, pending dependency/live
-acceptance, the `MCPTargetReadAccess` template (required `arc1_targets`, no default role), and
+[static-cohort setup](multi-target-authorization.md), not a second XSUAA
+service-creation sequence. That guide owns the candidate's readiness status and describes the
+`MCPTargetReadAccess` template (required `arc1_targets`, no default role) and
 `MCPAllTargetReadAccess` (explicit `*` default). A manually managed service still needs an owner to
 create the corresponding collection; MTA owns its additional `ARC-1 All Targets (<space>)` collection.
 Do not put the all-target role into an already assigned functional collection during an update.
