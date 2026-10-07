@@ -104,7 +104,7 @@
     "audit:ci": "audit-ci --config audit-ci.json"
   },
   "dependencies": {
-    "@abaplint/core": "^2.120.60",
+    "@abaplint/core": "^2.120.65",
     "@arc-mcp/xsuaa-auth": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
