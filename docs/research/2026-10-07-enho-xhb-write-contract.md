@@ -90,11 +90,31 @@ Filter trees look like this (816; SAP's newer `badiDefinition` URI is
 </enho:filterTree>
 ```
 
-`SAPRead` shows the condition read-only as `"filter": "LGNUM = '1000' OR LGNUM = '2000'"` (synthetic fixture
-`tests/fixtures/xml/enhancement-implementation-filter.xml`). SAPWrite refuses a changed or new `filter`, and a
-changed BAdI definition on an implementation that has filters, instead of dropping them. Writing filters
-needs the filter declaration (`filterProperty`, check object) from the BAdI definition, which ARC-1 cannot
-read yet.
+`SAPRead` shows the condition as `"filter": "LGNUM = '1000' OR LGNUM = '2000'"` (synthetic fixture
+`tests/fixtures/xml/enhancement-implementation-filter.xml`), and SAPWrite accepts the same text back.
+
+### Writing filters (816, 2026-10-07)
+
+The `filterProperty` content is the BAdI definition's filter declaration. The spot document
+`GET /sap/bc/adt/enhancements/enhsxsb/{spot}` lists, per `<enhs:badiDefinition>`, the interface and
+`<enhs:filters><enhs:filter enhs:filterName enhs:filterType><enhs:filterCheck …>` (synthetic fixture
+`tests/fixtures/xml/enhancement-spot.xml`). ARC-1 copies the check element, renamed to `enho:filterCheck`;
+a filter without a DDIC check (type `S`) becomes `<enho:filterProperty … enho:filterType="S"/>`. The
+endpoint Eclipse calls while adding an implementation,
+`…/enhsxsb/{spot}/enhancements/definitions?badiImplName=…&packageName=…`, only lists the BAdI names.
+
+Live in `$TMP` with BAdI `EDOC_ADAPTOR` (spot `ES_EDOCUMENT`, filters `COUNTRY` with DDIC check and
+`GENERIC_FILTER` of type `S`) and a class implementing its interface; every step was activated successfully:
+
+- `COUNTRY = 'BE' OR COUNTRY = 'NL'` (create), `(COUNTRY = 'DE' OR COUNTRY = 'AT') AND GENERIC_FILTER CP 'X*'`
+  and `COUNTRY <> 'US' AND GENERIC_FILTER NP 'TEST*'` (updates): SAP stored the trees as built (`enho:And`,
+  nested `enho:Or`, comparators `CP`, `NP`, `&lt;&gt;`) and SAPRead returned the same text.
+- Writing SAPRead's JSON back left the stored tree byte-identical; `"filter": ""` removed it.
+- An undeclared filter name and a BAdI outside the spot were refused before any write.
+
+abapGit takes a different route: it calls `CL_ENH_TOOL_BADI_IMPL` in ABAP (`add_implementation`, then
+`save( run_dark = abap_true )`), which suppresses the dialogs that make an ADT create with implementations
+fail in a transportable package.
 
 ### Transportable package: implementations in the create POST fail (816, 2026-10-07)
 
@@ -131,10 +151,8 @@ customer implementations was not checked. SAPWrite stays `btp: false`.
 
 ## Open points
 
-1. Filter values: write support needs the BAdI definition's filter declaration; Eclipse reads it from
-   `…/enhsxsb/{spot}/enhancements/definitions?badiImplName=…&packageName=…`.
-2. BTP: find a released BAdI and test a create in a BTP package.
-3. Optional: Eclipse's `…/enhoxhb/validation` and `transportchecks` calls before the create; ARC-1 resolves the
+1. BTP: find a released BAdI and test a create in a BTP package.
+2. Optional: Eclipse's `…/enhoxhb/validation` and `transportchecks` calls before the create; ARC-1 resolves the
    transport itself and relies on activation for consistency checks.
 
 ## Verification so far

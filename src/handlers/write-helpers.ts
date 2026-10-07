@@ -29,6 +29,7 @@ import {
   getBadiEnhancementImplementation,
   mergeBadiImplementationDefinition,
   parseBadiImplementationDefinition,
+  resolveBadiFilters,
 } from '../adt/enhancement-impl.js';
 import { AdtError, AdtSafetyError } from '../adt/errors.js';
 import {
@@ -367,7 +368,11 @@ export async function mergeMetadataWriteProperties(
     return {
       _description: existing.description,
       _package: existing.package,
-      enhancementDefinition: mergeBadiImplementationDefinition(existing, definition),
+      enhancementDefinition: await resolveBadiFilters(
+        client.http,
+        client.safety,
+        mergeBadiImplementationDefinition(existing, definition),
+      ),
     };
   }
   if (type === 'SRVB') {
@@ -1348,6 +1353,15 @@ export const ENQU_WRITE_UNAVAILABLE_HINT =
   'Lock object (ENQU) writes are not available on this system ' +
   '(/sap/bc/adt/ddic/lockobjects/sources is not exposed by ADT discovery). ' +
   'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the lock-object endpoint.';
+
+/** ENHO create: parse the JSON source, check it against the spot and build new filter trees (before any write). */
+export async function prepareEnhoCreateProperties(
+  client: AdtClient,
+  properties: Record<string, unknown>,
+): Promise<void> {
+  const definition = parseBadiImplementationDefinition(String(properties.enhancementSource ?? '{}'));
+  properties.enhancementDefinition = await resolveBadiFilters(client.http, client.safety, definition);
+}
 
 export const ENHO_WRITE_UNAVAILABLE_HINT =
   'BAdI implementation (ENHO) writes are not available on this system ' +

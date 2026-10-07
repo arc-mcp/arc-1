@@ -1177,7 +1177,7 @@ export interface EnhancementImplementationInfo {
     enhancementSpot: string;
     active: boolean;
     default: boolean;
-    /** Filter condition of a filter-dependent BAdI implementation, e.g. `COUNTRY = 'BE'` (read-only). */
+    /** Filter condition of a filter-dependent BAdI implementation, e.g. `COUNTRY = 'BE'` (SAPWrite accepts it back). */
     filter?: string;
   }>;
 }

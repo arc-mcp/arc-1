@@ -14,6 +14,7 @@ const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 
 const XHB = readFileSync(new URL('../../fixtures/xml/enhancement-implementation.xml', import.meta.url), 'utf8');
+const SPOT = readFileSync(new URL('../../fixtures/xml/enhancement-spot.xml', import.meta.url), 'utf8');
 const FILTERED = readFileSync(
   new URL('../../fixtures/xml/enhancement-implementation-filter.xml', import.meta.url),
   'utf8',
@@ -51,6 +52,10 @@ function mockSap(metadata = XHB): Call[] {
             'x-csrf-token': 'T',
           }),
         );
+      }
+      // Only the synthetic spot is served; other spots get a non-spot body, so the check is skipped.
+      if (method === 'GET' && urlStr.includes('/enhancements/enhsxsb/es_my_spot')) {
+        return Promise.resolve(mockResponse(200, SPOT, { 'x-csrf-token': 'T' }));
       }
       if (method === 'GET' && urlStr.includes(ENHO_URL)) {
         return Promise.resolve(mockResponse(200, metadata, { 'x-csrf-token': 'T' }));
@@ -269,40 +274,98 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     );
   });
 
-  it.each([
-    [
-      {
-        name: 'ZMY_IMPL_COUNTRY',
-        badiDefinition: 'BADI_MY_FILTERED',
-        implementingClass: 'ZCL_MY_COUNTRY',
-        filter: "COUNTRY = 'DE'",
-      },
-      'filter values cannot be changed',
-    ],
-    [
-      { name: 'ZMY_IMPL_COUNTRY', badiDefinition: 'BADI_OTHER', implementingClass: 'ZCL_MY_COUNTRY' },
-      'BAdI definition cannot change',
-    ],
-    [
-      {
-        name: 'ZMY_IMPL_NEW',
-        badiDefinition: 'BADI_MY_FILTERED',
-        implementingClass: 'ZCL_NEW',
-        filter: "COUNTRY = 'DE'",
-      },
-      'filter values cannot be changed',
-    ],
-  ])('SAPWrite update refuses an unsupported filter change without writing: %j', async (entry, message) => {
+  const updateFiltered = async (entries: Record<string, unknown>[]) => {
     const calls = mockSap(FILTERED);
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'update',
       type: 'ENHO',
       name: 'ZMY_ENH_FILTERED',
-      source: JSON.stringify({ badiImplementations: [entry] }),
+      source: JSON.stringify({ badiImplementations: entries }),
     });
+    return { result, put: calls.find((c) => c.method === 'PUT') };
+  };
+  const warehouse = {
+    name: 'ZMY_IMPL_WAREHOUSE',
+    badiDefinition: 'BADI_MY_FILTERED',
+    implementingClass: 'ZCL_MY_WAREHOUSE',
+  };
+  const country = { name: 'ZMY_IMPL_COUNTRY', badiDefinition: 'BADI_MY_FILTERED', implementingClass: 'ZCL_MY_COUNTRY' };
+
+  it('SAPWrite update rebuilds a changed filter and keeps the unchanged one verbatim', async () => {
+    const { result, put } = await updateFiltered([
+      warehouse,
+      { ...country, filter: "country = 'DE' or country = 'AT'" },
+    ]);
+    expect(result.isError).toBeUndefined();
+    const body = put?.body ?? '';
+    expect(body).toContain('enho:value="1000"'); // warehouse tree untouched
+    expect(body).not.toContain('enho:value="BE"');
+    expect(body).toContain(
+      '<enho:filterToken xsi:type="enho:Or" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><enho:filterToken xsi:type="enho:Filter" enho:filterName="COUNTRY" enho:comparator="=" enho:value="DE"',
+    );
+    expect(body).toContain('filterProperty.COUNTRY');
+    expect(body).toContain('adtcore:name="LAND1"'); // DDIC check copied from the spot's BAdI definition
+  });
+
+  it('SAPWrite update removes a filter with "filter": ""', async () => {
+    const { result, put } = await updateFiltered([warehouse, { ...country, filter: '' }]);
+    expect(result.isError).toBeUndefined();
+    const body = put?.body ?? '';
+    expect(body).not.toContain('enho:value="BE"');
+    expect(body.match(/<enho:filterTree>/g)).toHaveLength(1);
+  });
+
+  it('SAPWrite update adds a new implementation with a filter', async () => {
+    const { result, put } = await updateFiltered([
+      warehouse,
+      country,
+      {
+        name: 'ZMY_IMPL_NEW',
+        badiDefinition: 'BADI_MY_FILTERED',
+        implementingClass: 'ZCL_NEW',
+        filter: "LGNUM = '3000'",
+      },
+    ]);
+    expect(result.isError).toBeUndefined();
+    expect(put?.body).toContain('filterProperty.LGNUM" xmlns:xsi');
+    expect(put?.body).toContain('#//badi/contentSpecific///ZMY_IMPL_NEW/filterTree/filterProperty.LGNUM');
+  });
+
+  it.each([
+    [{ ...country, filter: "REGION = 'EU'" }, 'declares no filter REGION'],
+    [{ ...country, filter: "COUNTRY 'DE'" }, 'expected one of'],
+    [{ ...country, badiDefinition: 'BADI_MY_PLAIN' }, 'Give the filter for the new BAdI definition'],
+    [
+      { name: 'ZMY_X', badiDefinition: 'BADI_NOT_THERE', implementingClass: 'ZCL_X' },
+      'not defined in enhancement spot',
+    ],
+    [
+      { name: 'ZMY_X', badiDefinition: 'BADI_MY_PLAIN', implementingClass: 'ZCL_X', filter: "COUNTRY = 'DE'" },
+      'declares no filter COUNTRY',
+    ],
+  ])('SAPWrite update refuses %j before writing', async (entry, message) => {
+    const { result, put } = await updateFiltered([warehouse, entry]);
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain(message);
-    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+    expect(put).toBeUndefined();
+  });
+
+  it('SAPWrite create builds the filter tree into the PUT, not the container POST', async () => {
+    const calls = mockSap();
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'create',
+      type: 'ENHO',
+      name: 'ZMY_ENH_NEW',
+      package: '$TMP',
+      source: JSON.stringify({
+        enhancementSpot: 'ES_MY_SPOT',
+        badiImplementations: [{ ...country, filter: "COUNTRY = 'BE'" }],
+      }),
+    });
+    expect(result.isError).toBeUndefined();
+    const post = calls.find((c) => c.method === 'POST' && /enhoxhb\?/.test(c.url));
+    expect(post?.body).not.toContain('filterTree');
+    expect(calls.find((c) => c.method === 'PUT')?.body).toContain('enho:value="BE"');
   });
 
   it('SAPWrite update refuses a spot change and never PUTs', async () => {

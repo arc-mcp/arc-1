@@ -2,14 +2,19 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   buildBadiImplementationXml,
+  getEnhancementSpotBadis,
   mergeBadiImplementationDefinition,
   parseBadiImplementationDefinition,
 } from '../../../src/adt/enhancement-impl.js';
 import { parseEnhancementMetadata } from '../../../src/adt/enhancements.js';
+import { buildFilterTreeXml, normalizeFilterCondition, parseFilterCondition } from '../../../src/adt/enho-filter.js';
+import type { AdtHttpClient } from '../../../src/adt/http.js';
+import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { parseEnhancementImplementation } from '../../../src/adt/xml-parser.js';
 import { objectUrlForType } from '../../../src/handlers/object-types.js';
 
 const XHB = readFileSync(new URL('../../fixtures/xml/enhancement-implementation.xml', import.meta.url), 'utf8');
+const SPOT = readFileSync(new URL('../../fixtures/xml/enhancement-spot.xml', import.meta.url), 'utf8');
 const FILTERED = readFileSync(
   new URL('../../fixtures/xml/enhancement-implementation-filter.xml', import.meta.url),
   'utf8',
@@ -225,7 +230,7 @@ describe('filter-dependent BAdI implementations', () => {
     expect(parseEnhancementMetadata(XHB).badiImplementations[0]).not.toHaveProperty('filter');
   });
 
-  it('rejects a filter on a new implementation', () => {
+  it('refuses to build a filter that was not resolved against the spot', () => {
     expect(() =>
       buildBadiImplementationXml(
         xmlParams({
@@ -233,7 +238,68 @@ describe('filter-dependent BAdI implementations', () => {
           badiImplementations: [{ name: 'ZI', badiDefinition: 'B', implementingClass: 'ZC', filter: "COUNTRY = 'DE'" }],
         }),
       ),
-    ).toThrow('filter values cannot be written through ARC-1 yet');
+    ).toThrow('the filter was not resolved against the spot');
+  });
+});
+
+describe('filter conditions', () => {
+  it.each([
+    ["COUNTRY = 'BE'", "COUNTRY = 'BE'"],
+    ['country = BE', "COUNTRY = 'BE'"],
+    ["A = '1' OR B = '2' AND C = '3'", "A = '1' OR (B = '2' AND C = '3')"],
+    ["(A = '1' OR B = '2') AND C <> '3'", "(A = '1' OR B = '2') AND C <> '3'"],
+    ["A = '1' OR (B = '2' OR C = '3')", "A = '1' OR B = '2' OR C = '3'"],
+    ["X cp 'AB*' and Y NP '*Z'", "X CP 'AB*' AND Y NP '*Z'"],
+    ["T = 'it''s'", "T = 'it''s'"],
+    ["N >= '10' AND N < '20'", "N >= '10' AND N < '20'"],
+  ])('normalizes %s', (input, canonical) => {
+    expect(normalizeFilterCondition(input)).toBe(canonical);
+    expect(normalizeFilterCondition(canonical)).toBe(canonical);
+  });
+
+  it.each([
+    ['', 'empty'],
+    ["COUNTRY 'BE'", 'expected one of'],
+    ['COUNTRY =', 'needs a value'],
+    ["(A = '1'", 'closing parenthesis'],
+    ["A = '1' B = '2'", 'combine conditions with AND or OR'],
+    ["A = 'open", 'unterminated quote'],
+  ])('rejects %j', (input, message) => {
+    expect(() => parseFilterCondition(input)).toThrow(message);
+  });
+
+  it('builds the same filter tree SAP stores (816 shape)', async () => {
+    const http = { get: async () => ({ body: SPOT }) } as unknown as AdtHttpClient;
+    const badis = await getEnhancementSpotBadis(http, unrestrictedSafetyConfig(), 'ES_MY_SPOT');
+    expect([...badis.keys()]).toEqual(['BADI_MY_FILTERED', 'BADI_MY_PLAIN']);
+    expect(badis.get('BADI_MY_FILTERED')?.interfaceName).toBe('IF_MY_FILTERED');
+    expect([...(badis.get('BADI_MY_PLAIN')?.filters.keys() ?? [])]).toEqual([]);
+    const filters = badis.get('BADI_MY_FILTERED')?.filters ?? new Map();
+    const stored = FILTERED.split('enho:name="ZMY_IMPL_COUNTRY"')[1]?.match(
+      /<enho:filterTree>[\s\S]*?<\/enho:filterTree>/,
+    )?.[0];
+    const built = buildFilterTreeXml(
+      parseFilterCondition("COUNTRY = 'BE'"),
+      'ZMY_IMPL_COUNTRY',
+      filters,
+      'BADI_MY_FILTERED',
+    );
+    expect(built).toBe(stored);
+    // A filter without a DDIC check gets a bare property; groups nest as SAP writes them.
+    const group = buildFilterTreeXml(
+      parseFilterCondition("(COUNTRY = 'DE' OR COUNTRY = 'AT') AND GENERIC_FILTER = 'X'"),
+      'ZI',
+      filters,
+      'BADI_MY_FILTERED',
+    );
+    expect(group).toContain(
+      '<enho:filterToken xsi:type="enho:And" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><enho:filterToken xsi:type="enho:Or">',
+    );
+    expect(group).toContain('<enho:filterProperty enho:filterName="GENERIC_FILTER" enho:filterType="S"/>');
+    expect(group.match(/<enho:filterProperty enho:filterName="COUNTRY"/g)).toHaveLength(1);
+    expect(() => buildFilterTreeXml(parseFilterCondition("REGION = 'X'"), 'ZI', filters, 'BADI_MY_FILTERED')).toThrow(
+      'declares no filter REGION (declared: COUNTRY, LGNUM, GENERIC_FILTER)',
+    );
   });
 });
 

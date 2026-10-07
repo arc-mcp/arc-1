@@ -16,7 +16,14 @@
  * SAPRead returns the implementation as JSON and SAPWrite takes the same JSON in "source", so a
  * read → edit → write cycle needs no reshaping. Read-only keys (name, package, technology, …) are ignored.
  */
-import { withFilterConditions } from './enho-filter.js';
+import {
+  buildFilterTreeXml,
+  type FilterDeclaration,
+  normalizeFilterCondition,
+  parseFilterCondition,
+  withFilterConditions,
+} from './enho-filter.js';
+import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { EnhancementImplementationInfo } from './types.js';
@@ -32,8 +39,12 @@ export interface BadiImplementationEntry {
   shortText?: string;
   active?: boolean;
   default?: boolean;
-  /** SAPRead's read-only filter condition; it must match the stored one (filters cannot be written yet). */
+  /** Filter condition as SAPRead shows it, e.g. `COUNTRY = 'BE'`; '' removes a stored filter. */
   filter?: string;
+  /** Set by the merge: the stored `<enho:filterTree>` stays as it is (filter unchanged or not given). */
+  keepStoredFilter?: boolean;
+  /** Set by resolveBadiFilters: a new filter tree built from `filter` and the BAdI's declarations. */
+  filterTreeXml?: string;
   /** Stored content ARC-1 does not model, carried through an update unchanged (set by the merge only). */
   preserved?: PreservedImplementation;
 }
@@ -213,7 +224,11 @@ export function parseBadiImplementationDefinition(source: string): BadiImplement
       if (active !== undefined) parsed.active = active;
       const isDefault = optionalBoolean(erec.default, `${where}.default`);
       if (isDefault !== undefined) parsed.default = isDefault;
-      if (erec.filter !== undefined && text(erec.filter) !== '') parsed.filter = text(erec.filter);
+      if (erec.filter !== undefined && erec.filter !== null) {
+        if (typeof erec.filter !== 'string') throw invalid(`${where}.filter must be a text such as "COUNTRY = 'DE'".`);
+        // Check the syntax now; the BAdI's declared filter names are checked against the spot later.
+        parsed.filter = erec.filter.trim() === '' ? '' : normalizeFilterCondition(erec.filter);
+      }
       return parsed;
     });
   }
@@ -231,8 +246,9 @@ export function parseBadiImplementationDefinition(source: string): BadiImplement
  * flag cannot silently reset the others. The spot cannot change.
  *
  * SAP stores only what the PUT sends (live 816: `example`, `customizingLock` and filter trees were reset
- * by a rebuilt document), so stored content outside the JSON model is carried over per entry. Filter
- * values are kept as stored and cannot be changed; a changed BAdI definition would invalidate them.
+ * by a rebuilt document), so stored content outside the JSON model is carried over per entry. An omitted
+ * or unchanged `filter` keeps SAP's stored filter tree verbatim; a changed one is rebuilt by
+ * resolveBadiFilters; `filter: ""` removes it.
  */
 export function mergeBadiImplementationDefinition(
   existing: StoredBadiImplementation,
@@ -258,17 +274,14 @@ export function mergeBadiImplementationDefinition(
     badiImplementations: entries.map((entry) => {
       const previous = stored.get(entry.name.toUpperCase());
       const preserved = existing.preserved?.get(entry.name.toUpperCase());
-      const storedFilter = preserved?.filter ?? '';
-      if (entry.filter !== undefined && normalizeFilter(entry.filter) !== normalizeFilter(storedFilter)) {
+      const storedFilter = preserved?.filterTreeXml ? preserved.filter : '';
+      const sameBadi = preserved?.badiDefinition === entry.badiDefinition.toUpperCase();
+      const keepStoredFilter =
+        !!storedFilter && sameBadi && (entry.filter === undefined || entry.filter === storedFilter);
+      if (storedFilter && !sameBadi && entry.filter === undefined) {
         throw invalid(
-          `${entry.name}: filter values cannot be changed through ARC-1 yet ` +
-            `(stored: ${storedFilter ? `"${storedFilter}"` : 'none'}). Change them in Eclipse ADT or SE19.`,
-        );
-      }
-      if (preserved?.filterTreeXml && preserved.badiDefinition !== entry.badiDefinition.toUpperCase()) {
-        throw invalid(
-          `${entry.name}: its BAdI definition cannot change while it has filter values (${storedFilter}). ` +
-            'Remove the entry and add a new implementation instead.',
+          `${entry.name}: its filter (${storedFilter}) belongs to BAdI ${preserved?.badiDefinition}. ` +
+            'Give the filter for the new BAdI definition explicitly, or "filter": "" to remove it.',
         );
       }
       return {
@@ -278,6 +291,7 @@ export function mergeBadiImplementationDefinition(
         shortText: entry.shortText ?? previous?.shortText,
         active: entry.active ?? previous?.active,
         default: entry.default ?? previous?.default,
+        ...(keepStoredFilter ? { keepStoredFilter } : entry.filter ? { filter: entry.filter } : {}),
         ...(preserved ? { preserved } : {}),
       };
     }),
@@ -313,8 +327,96 @@ export function hasBadiImplementations(xml: string): boolean {
   return /<enho:badiImplementation\s/.test(xml);
 }
 
-function normalizeFilter(filter: string): string {
-  return filter.replace(/\s+/g, ' ').trim();
+/** One BAdI definition of an enhancement spot: its interface and declared filters. */
+export interface SpotBadiDefinition {
+  interfaceName: string;
+  filters: Map<string, FilterDeclaration>;
+}
+
+/**
+ * Read the BAdI definitions of an enhancement spot (`GET /sap/bc/adt/enhancements/enhsxsb/{spot}`).
+ * Each `<enhs:badiDefinition>` names its interface and declares its filters with type and DDIC check.
+ */
+export async function getEnhancementSpotBadis(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  spot: string,
+): Promise<Map<string, SpotBadiDefinition>> {
+  checkOperation(safety, OperationType.Read, 'GetEnhancementSpot');
+  const resp = await http.get(`/sap/bc/adt/enhancements/enhsxsb/${encodeURIComponent(spot.toLowerCase())}`);
+  const result = new Map<string, SpotBadiDefinition>();
+  for (const badi of resp.body.matchAll(/<enhs:badiDefinition\s([^>]*?)>([\s\S]*?)<\/enhs:badiDefinition>/g)) {
+    const name = badi[1].match(/enhs:name="([^"]*)"/)?.[1]?.toUpperCase();
+    if (!name) continue;
+    const body = badi[2];
+    const filters = new Map<string, FilterDeclaration>();
+    // `<enhs:filter\s` does not match the `<enhs:filters>` wrapper or `<enhs:filterCheck>`.
+    for (const filter of body.matchAll(/<enhs:filter\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enhs:filter>)/g)) {
+      const filterName = filter[1].match(/enhs:filterName="([^"]*)"/)?.[1]?.toUpperCase();
+      if (!filterName) continue;
+      const check = (filter[2] ?? '').match(
+        /<enhs:filterCheck[\s>][\s\S]*?<\/enhs:filterCheck>|<enhs:filterCheck[^>]*\/>/,
+      )?.[0];
+      filters.set(filterName, {
+        type: filter[1].match(/enhs:filterType="([^"]*)"/)?.[1] ?? '',
+        checkXml: check ? check.replace(/<(\/?)enhs:filterCheck/g, '<$1enho:filterCheck') : '',
+      });
+    }
+    result.set(name, {
+      interfaceName: body.match(/<enhs:interface\s[^>]*adtcore:name="([^"]*)"/)?.[1] ?? '',
+      filters,
+    });
+  }
+  return result;
+}
+
+/**
+ * Check every BAdI implementation against the spot and build the filter trees that are new or changed.
+ * The spot read is best-effort for the check alone (SAP repeats it at activation), but required when a
+ * filter has to be built, because its type and DDIC check come from the BAdI definition.
+ */
+export async function resolveBadiFilters(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  definition: BadiImplementationDefinition,
+): Promise<BadiImplementationDefinition> {
+  const spot = definition.enhancementSpot;
+  const entries = definition.badiImplementations ?? [];
+  const needTree = entries.filter((entry) => entry.filter && !entry.keepStoredFilter);
+  if (!spot || !entries.length) return definition;
+  let badis = new Map<string, SpotBadiDefinition>();
+  try {
+    badis = await getEnhancementSpotBadis(http, safety, spot);
+  } catch (err) {
+    if (err instanceof AdtApiError && err.statusCode === 404) throw invalid(`enhancement spot ${spot} does not exist.`);
+    if (needTree.length) throw err;
+  }
+  if (badis.size) {
+    for (const entry of entries) {
+      if (!badis.has(entry.badiDefinition)) {
+        throw invalid(
+          `BAdI ${entry.badiDefinition} is not defined in enhancement spot ${spot} ` +
+            `(defined: ${[...badis.keys()].join(', ')}).`,
+        );
+      }
+    }
+  }
+  return {
+    ...definition,
+    badiImplementations: entries.map((entry) => {
+      if (!entry.filter || entry.keepStoredFilter) return entry;
+      const filters = badis.get(entry.badiDefinition)?.filters ?? new Map<string, FilterDeclaration>();
+      return {
+        ...entry,
+        filterTreeXml: buildFilterTreeXml(
+          parseFilterCondition(entry.filter),
+          entry.name,
+          filters,
+          entry.badiDefinition,
+        ),
+      };
+    }),
+  };
 }
 
 function lowerUriName(name: string): string {
@@ -338,12 +440,9 @@ export function buildBadiImplementationXml(params: BadiImplementationXmlParams):
   const implementations = (definition.badiImplementations ?? [])
     .map((impl) => {
       const kept = impl.preserved;
-      if (impl.filter && !kept?.filterTreeXml) {
-        throw invalid(
-          `${impl.name}: filter values cannot be written through ARC-1 yet. Create the implementation without ` +
-            '"filter" and maintain the filter in Eclipse ADT or SE19.',
-        );
-      }
+      const filterTree = impl.filterTreeXml ?? (impl.keepStoredFilter ? kept?.filterTreeXml : '') ?? '';
+      // Guard: a new filter must have been resolved against the spot (resolveBadiFilters) before building.
+      if (impl.filter && !filterTree) throw invalid(`${impl.name}: the filter was not resolved against the spot.`);
       // Stored values of attributes outside the JSON model; omitted on create, where SAP sets its defaults.
       const example = kept?.example === 'true' ? 'true' : 'false';
       const lock = kept ? ` enho:customizingLock="${escapeXmlAttr(kept.customizingLock)}"` : '';
@@ -352,8 +451,8 @@ export function buildBadiImplementationXml(params: BadiImplementationXmlParams):
         `<enho:enhancementSpot ${spotRef}/>` +
         `<enho:badiDefinition adtcore:uri="/sap/bc/adt/vit/wb/object_type/enhsxb/object_name/${encodeURIComponent(spot)}" adtcore:type="ENHS/XB" adtcore:name="${escapeXmlAttr(impl.badiDefinition)}"/>` +
         `<enho:implementingClass adtcore:uri="/sap/bc/adt/oo/classes/${lowerUriName(impl.implementingClass)}" adtcore:type="CLAS/OC" adtcore:name="${escapeXmlAttr(impl.implementingClass)}"/>` +
-        // SAP's own filter tree, re-sent verbatim so an update does not delete the filter values.
-        (kept?.filterTreeXml ?? '') +
+        // SAP's stored tree re-sent verbatim, or the one built from `filter`; an update must not drop it.
+        filterTree +
         '</enho:badiImplementation>'
       );
     })

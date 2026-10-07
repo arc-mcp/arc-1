@@ -599,11 +599,19 @@ rejected. One enhancement implementation belongs to one enhancement spot.
   keep their stored values. The spot cannot change.
 - **`delete`** uses the standard lock → DELETE → unlock path.
 
-SAP checks that the BAdI belongs to the spot and that the class implements the BAdI interface only at
-activation: such a create is saved inactive and `SAPActivate` reports the error. `SAPRead` shows an implementation's filter values read-only as `filter` (e.g. `"COUNTRY = 'BE'"`). An update keeps
-them and other stored attributes (`customizingLock`, `example`) unchanged; changing or adding filter values is
-refused — use Eclipse ADT for that. Create, update, activation and delete were verified on
-SAP_BASIS 816 in `$TMP` and in a transportable package with a request.
+**Filters.** For filter-dependent BAdIs, each entry takes an optional `filter` condition in the form
+`SAPRead` shows it, e.g. `"COUNTRY = 'BE' OR COUNTRY = 'NL'"` or
+`"(COUNTRY = 'DE' OR COUNTRY = 'AT') AND GENERIC_FILTER CP 'X*'"`. Comparators are `=`, `<>`, `<`, `<=`, `>`,
+`>=`, `CP` and `NP`; AND binds tighter than OR; values are quoted (`''` escapes a quote). Omitting `filter`
+or passing it unchanged keeps SAP's stored filter as it is; `"filter": ""` removes it. ARC-1 reads the
+enhancement spot first: it refuses a BAdI that is not defined in the spot and a filter name the BAdI does not
+declare, and copies each filter's type and DDIC check from the BAdI definition. An update also keeps the
+stored `customizingLock` and `example` attributes.
+
+SAP checks that the class implements the BAdI interface and the filter values against their DDIC check
+only at activation: such a write is saved inactive and `SAPActivate` reports the error. Create, update,
+filters, activation and delete were verified on SAP_BASIS 816 in `$TMP` and in a transportable package
+with a request.
 
 ```json
 {"action":"create","type":"ENHO","name":"ZMY_ENH_APPROVAL_REASON","package":"$TMP","description":"Approval Reason BAdI",

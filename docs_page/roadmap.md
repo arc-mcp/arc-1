@@ -343,15 +343,15 @@ hard-coded table list without proving its completeness.
 - **Priority / effort / status:** P2 / L / Needs research
 - **Category:** ABAP authoring
 
-**Idea.** Extend guarded enhancement authoring past BAdI implementations: BAdI filter values,
-source-code plug-ins (`ENHO/XHH`), enhancement spots and BAdI definitions.
+**Idea.** Extend guarded enhancement authoring past BAdI implementations: source-code plug-ins
+(`ENHO/XHH`), enhancement spots and BAdI definitions.
 
 **Why it remains.** `SAPWrite type="ENHO"` creates, updates and deletes BAdI implementations
-(`ENHO/XHB`) on-prem, without filter values. Hook, class and spot authoring have no proven
-create/update contract, and BTP availability is untested.
+(`ENHO/XHB`) on-prem, including filter values. Hook, class and spot authoring have no proven
+create/update contract, and BTP availability is untested (the trial advertises `enhoxhb`).
 
-**Resume with.** Capture live ADT traffic for a filter-dependent BAdI implementation and for one
-source-code plug-in, then follow the XHB pattern (discovery gate, package gate, read-back).
+**Resume with.** Capture live ADT traffic for one source-code plug-in, then follow the XHB pattern
+(discovery gate, package gate, read-back).
 
 <a id="feat-05"></a>
 ### FEAT-05 — Safe rename and extract refactorings
