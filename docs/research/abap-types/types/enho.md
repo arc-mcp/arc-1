@@ -2,7 +2,9 @@
 
 Use `SAPRead(type="ENHO", name="...")` on on-prem systems. The R3TR type covers
 BAdIs, source-code plug-ins and other enhancement technologies; it does not identify
-one ADT resource. There is no public slash alias or enhancement write operation.
+one ADT resource. There is no public slash alias. Only BAdI implementations (`ENHO/XHB`)
+are writable: `SAPWrite type="ENHO"` takes SAPRead's JSON (see
+[the write contract](../../2026-10-07-enho-xhb-write-contract.md)).
 
 ## Verified read routes (2026-10-01, issue #896)
 
@@ -36,7 +38,7 @@ modern `active` / `default` attributes. See the reduced [hook fixture](../../../
 ENHO uses SAP's unversioned developer view. Explicit `active`/`inactive` requests
 are refused rather than silently ignored; omit `version` or use `auto`. No atomic
 metadata/source snapshot or inactive-draft contract is claimed. There is no ENHO
-source cache, grep, method extraction or write support.
+source cache, grep or method extraction; writes cover XHB only.
 
 ### Live observations and limits
 
@@ -62,7 +64,7 @@ local evidence; mocks are separate from these observations.
 [SAP's source-code plug-in documentation](https://help.sap.com/docs/ABAP_PLATFORM_NEW/c238d694b825421f940829321ffa326a/4ec1abd36e391014adc9fffe4e204223.html)
 describes ADT editing from 7.53 and creation from 7.54, and excludes class/function
 group enhancements from that support. These are authoring limits, not a promise
-about all read endpoints. Enhancement authoring remains [FEAT-03](../../../../docs_page/roadmap.md#feat-03).
+about all read endpoints. Authoring beyond BAdI implementations remains [FEAT-03](../../../../docs_page/roadmap.md#feat-03).
 
 ## Relation Explorer identity evidence — SAP_BASIS 758 (2026-09-10)
 

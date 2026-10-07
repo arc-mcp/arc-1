@@ -153,6 +153,8 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'MSAG', btp: true },
   { type: 'TTYP', btp: false },
   { type: 'ENQU', btp: true },
+  // BAdI implementations (ENHO/XHB) only; on-prem until verified on BTP like the SAPRead row.
+  { type: 'ENHO', btp: false },
   // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
   // Rows derive from SDO_TYPES exactly like the SAPRead table above.
   ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),

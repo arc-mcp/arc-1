@@ -22,6 +22,14 @@ import {
   type ServiceBindingCreateParams,
 } from '../adt/ddic-xml.js';
 import { syntaxCheck } from '../adt/devtools.js';
+import {
+  type BadiImplementationDefinition,
+  buildBadiImplementationXml,
+  ENHO_XHB_CONTENT_TYPE,
+  getBadiEnhancementImplementation,
+  mergeBadiImplementationDefinition,
+  parseBadiImplementationDefinition,
+} from '../adt/enhancement-impl.js';
 import { AdtError, AdtSafetyError } from '../adt/errors.js';
 import {
   buildLockObjectXml,
@@ -109,7 +117,15 @@ const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules
 const FUNCTION_INCLUDE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fincludes.v2+xml';
 
 export function isMetadataWriteType(type: string): boolean {
-  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP' || type === 'ENQU';
+  return (
+    type === 'DOMA' ||
+    type === 'DTEL' ||
+    type === 'MSAG' ||
+    type === 'SRVB' ||
+    type === 'TTYP' ||
+    type === 'ENQU' ||
+    type === 'ENHO'
+  );
 }
 
 /** Types that require a specific vendor content type for creation (not application/*) */
@@ -122,6 +138,7 @@ function needsVendorContentType(type: string): boolean {
     type === 'SKTD' ||
     type === 'TTYP' ||
     type === 'ENQU' ||
+    type === 'ENHO' ||
     type === 'FUGR' ||
     type === 'FUNC'
   );
@@ -160,6 +177,8 @@ export function vendorContentTypeForType(type: string): string {
       return TABLETYPE_CONTENT_TYPE;
     case 'ENQU':
       return LOCKOBJECT_CONTENT_TYPE;
+    case 'ENHO':
+      return ENHO_XHB_CONTENT_TYPE;
     case 'FUGR':
       return FUNCTION_GROUP_CONTENT_TYPE;
     case 'FUNC':
@@ -228,6 +247,8 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     updateTaskKind: input.updateTaskKind,
     // ENQU carries its definition as JSON in "source" (the same shape SAPRead returns).
     lockObjectSource: input.source,
+    // ENHO (BAdI implementation, XHB) likewise takes SAPRead's JSON in "source".
+    enhancementSource: input.source,
   };
 
   return props;
@@ -333,6 +354,20 @@ export async function mergeMetadataWriteProperties(
       _description: existing.description,
       _package: existing.package,
       lockObjectDefinition: mergeLockObjectDefinition(existing, definition),
+    };
+  }
+  if (type === 'ENHO') {
+    // Merge over the developer view so consecutive unactivated edits accumulate.
+    const existing = await getBadiEnhancementImplementation(client.http, client.safety, name);
+    const source = provided.enhancementSource;
+    const definition =
+      source === undefined || source === null || String(source).trim() === ''
+        ? {}
+        : parseBadiImplementationDefinition(String(source));
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      enhancementDefinition: mergeBadiImplementationDefinition(existing, definition),
     };
   }
   if (type === 'SRVB') {
@@ -706,6 +741,20 @@ function buildCreateXmlBody(
         (properties?.lockObjectDefinition as LockObjectDefinition | undefined) ??
         parseLockObjectDefinition(String(properties?.lockObjectSource ?? '{}'));
       return buildLockObjectXml({ name, description, package: pkg, definition, masterLanguage, responsibleAttr });
+    }
+    case 'ENHO': {
+      // Update passes the merged definition; create parses the caller's JSON source.
+      const definition =
+        (properties?.enhancementDefinition as BadiImplementationDefinition | undefined) ??
+        parseBadiImplementationDefinition(String(properties?.enhancementSource ?? '{}'));
+      return buildBadiImplementationXml({
+        name,
+        description,
+        package: pkg,
+        definition,
+        masterLanguage,
+        responsibleAttr,
+      });
     }
     case 'DTEL': {
       const typeKindRaw = String(properties?.typeKind ?? '');
@@ -1299,6 +1348,11 @@ export const ENQU_WRITE_UNAVAILABLE_HINT =
   'Lock object (ENQU) writes are not available on this system ' +
   '(/sap/bc/adt/ddic/lockobjects/sources is not exposed by ADT discovery). ' +
   'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the lock-object endpoint.';
+
+export const ENHO_WRITE_UNAVAILABLE_HINT =
+  'BAdI implementation (ENHO) writes are not available on this system ' +
+  '(/sap/bc/adt/enhancements/enhoxhb is not exposed by ADT discovery). ' +
+  'Use SE19 in SAPGUI or Eclipse ADT, or connect ARC-1 to a system that exposes the endpoint.';
 
 export const TTYP_WRITE_UNAVAILABLE_HINT =
   'Table type (TTYP) writes are not available on this system ' +

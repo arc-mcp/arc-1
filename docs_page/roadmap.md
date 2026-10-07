@@ -77,7 +77,7 @@ sequence.
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
-| [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
+| [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
 | [FEAT-23](#feat-23) | Recursive program include reading | P2 | M | Needs research | Developer workflow |
@@ -338,19 +338,20 @@ hard-coded table list without proving its completeness.
 ## Developer workflows
 
 <a id="feat-03"></a>
-### FEAT-03 — BAdI and enhancement authoring
+### FEAT-03 — Enhancement authoring beyond BAdI implementations
 
 - **Priority / effort / status:** P2 / L / Needs research
 - **Category:** ABAP authoring
 
-**Idea.** Add guarded creation or editing workflows for enhancement implementations and BAdIs.
+**Idea.** Extend guarded enhancement authoring past BAdI implementations: BAdI filter values,
+source-code plug-ins (`ENHO/XHH`), enhancement spots and BAdI definitions.
 
-**Why it remains.** ARC-1 can read BAdI metadata, source-code plug-ins and qualified BAdI relations,
-but that is not authoring support. The create/update wire contracts and activation behavior are not proven
-across supported releases.
+**Why it remains.** `SAPWrite type="ENHO"` creates, updates and deletes BAdI implementations
+(`ENHO/XHB`) on-prem, without filter values. Hook, class and spot authoring have no proven
+create/update contract, and BTP availability is untested.
 
-**Resume with.** Capture live ADT traffic for one narrowly scoped enhancement type, define package
-and transport gates, and add read-back verification before exposing writes.
+**Resume with.** Capture live ADT traffic for a filter-dependent BAdI implementation and for one
+source-code plug-in, then follow the XHB pattern (discovery gate, package gate, read-back).
 
 <a id="feat-05"></a>
 ### FEAT-05 — Safe rename and extract refactorings

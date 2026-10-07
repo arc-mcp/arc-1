@@ -88,6 +88,14 @@ export function isLockObjectsEndpointAvailable(destination?: string): boolean | 
   return map.has('/sap/bc/adt/ddic/lockobjects/sources');
 }
 
+/** True/false if the ADT BAdI-implementation (ENHO/XHB) collection is advertised by discovery; undefined if not probed. */
+export function isEnhoXhbEndpointAvailable(destination?: string): boolean | undefined {
+  const store = storeFor(destination);
+  const map = store.features?.discoveryMap ?? store.discovery;
+  if (!map || map.size === 0) return undefined;
+  return map.has('/sap/bc/adt/enhancements/enhoxhb');
+}
+
 /**
  * True/false if the ADT /ddic/domains endpoint is advertised by discovery; undefined if not probed.
  * Live-verified absent on NW 7.50 (404 + not in discovery, on both a dev-edition and a real

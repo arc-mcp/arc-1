@@ -259,8 +259,9 @@ navigation links). A failed source read returns an error, not successful partial
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
-integration when the error identifies an unavailable ADT route. No enhancement writes
-or ENHO source filtering (`grep`, method or line selection) are supported.
+integration when the error identifies an unavailable ADT route. Only BAdI implementations
+are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
+(`grep`, method or line selection) is not supported.
 
 ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
@@ -380,7 +381,7 @@ keep their separate behavior.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `ENQU`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `ENQU`, `ENHO` (on-prem, BAdI implementations), `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, and `add_unit`. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
 | `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. An update keeps the stored kind while the row type is unchanged. |
@@ -579,6 +580,40 @@ ABAP Cloud code uses `CL_ABAP_LOCK_OBJECT_FACTORY` to acquire runtime locks.
 
 Create, partial update, table/parameter changes, activation, batch create, concurrent edits and deletion were verified on SAP_BASIS 758/816 and a BTP 920 trial. The collection was absent on the tested 7.50 system. SAP can normalize parameters joined through foreign keys; read back the activated definition before editing it. See the [wire contract and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-enqu-lock-object-adt-contract.md).
 
+#### BAdI implementation writes (ENHO)
+
+`SAPWrite` supports `create`, `update` and `delete` for BAdI enhancement implementations (`ENHO/XHB`) on
+on-premise systems that expose `/sap/bc/adt/enhancements/enhoxhb`. Source-code plug-ins (`XHH`) and
+other enhancement technologies stay read-only. `source` is **JSON in the shape `SAPRead type="ENHO"`
+returns**. Writable keys are `enhancementSpot` and `badiImplementations`; each entry has `name`,
+`badiDefinition`, `implementingClass` and optional `shortText`, `active` (default `true`) and `default`
+(default `false`). Read-only keys (`name`, `description`, `package`, `technology`, `switchSupported`)
+are ignored; change the short text with the separate `SAPWrite.description` argument. Unknown keys are
+rejected. One enhancement implementation belongs to one enhancement spot.
+
+- **`create`** needs `enhancementSpot` and the BAdI implementations. ARC-1 POSTs the full document,
+  reads it back, and saves the implementations with a locked PUT only if SAP did not store them with the
+  POST. If that step fails the object already exists: fix the input and use `update`, do not repeat
+  `create`. Create and activate the implementing class first, then `SAPActivate(type="ENHO", name=…)`.
+- **`update`** reads the developer view under the SAP lock. A supplied `badiImplementations` list
+  replaces the stored one; within an entry that already exists, omitted `shortText`/`active`/`default`
+  keep their stored values. The spot cannot change.
+- **`delete`** uses the standard lock → DELETE → unlock path.
+
+SAP checks that the BAdI belongs to the spot and that the class implements the BAdI interface only at
+activation: such a create is saved inactive and `SAPActivate` reports the error. `SAPRead` shows an implementation's filter values read-only as `filter` (e.g. `"COUNTRY = 'BE'"`). An update keeps
+them and other stored attributes (`customizingLock`, `example`) unchanged; changing or adding filter values is
+refused — use Eclipse ADT for that. Create in a transportable package failed on the tested 816 system
+(HTTP 500 from a SAP dialog, see the research note); `$TMP` creates work.
+
+```json
+{"action":"create","type":"ENHO","name":"ZMY_ENH_APPROVAL_REASON","package":"$TMP","description":"Approval Reason BAdI",
+ "source":"{\"enhancementSpot\":\"ES_SD_SLS_EXTEND\",\"badiImplementations\":[{\"name\":\"ZMY_BADI_APPROVAL_REASON\",\"badiDefinition\":\"SD_APM_SET_APPROVAL_REASON\",\"implementingClass\":\"ZCL_MY_APPROVAL_REASON\"}]}"}
+```
+
+The payload follows SAP's GET serialization and was verified on SAP_BASIS 816 on-prem. See the
+[wire contract](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-07-enho-xhb-write-contract.md).
+
 #### SAPWrite for FUNC: create / update with structured parameters
 
 Issue [#252](https://github.com/arc-mcp/arc-1/issues/252) added structured FM parameter management. Pass a `parameters` array to declare the function module's signature; ARC-1 builds the ABAP-source-based `IMPORTING / EXPORTING / CHANGING / TABLES / EXCEPTIONS / RAISING` clause and splices it into the source body before PUT. SAP ADT exposes parameters ONLY through `/source/main` (verified live on a4h S/4HANA 2023 + NPL 7.50 SP02) — there is no separate metadata endpoint.
@@ -677,6 +712,7 @@ Ordinary-group create/delete verified on NW 7.50 SP02 and S/4HANA 2023 (758). Na
 | `SAPWrite create type="DOMA"` | `/sap/bc/adt/ddic/domains` | SE11. Data elements that reference a domain are blocked with it |
 | `SAPWrite create type="TTYP"` | `/sap/bc/adt/ddic/tabletypes` | SE11 |
 | `SAPWrite create type="ENQU"` | `/sap/bc/adt/ddic/lockobjects/sources` | SE11 (present on tested 758/816 systems; absent on tested 7.50) |
+| `SAPWrite create type="ENHO"` | `/sap/bc/adt/enhancements/enhoxhb` | SE19 or Eclipse ADT (advertised on 758/816; only `enhoxh` on 750) |
 | `SAPManage action="create_package"` | `/sap/bc/adt/packages` | SE80 / SE21 |
 
 Endpoint absence verified on two independent NW 7.50 systems (a dev edition and an ECC EhP8 7.50 SP31 production system); all four are present on S/4HANA 2023 (758) and ABAP Platform 2025 (816). Structures (`TABL/DS`), data elements, function groups, function modules and includes **do** work on 7.50 — note that DDIC structure source there uses `define type <name> { … }`, not `define structure`.

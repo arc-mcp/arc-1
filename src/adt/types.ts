@@ -1177,6 +1177,8 @@ export interface EnhancementImplementationInfo {
     enhancementSpot: string;
     active: boolean;
     default: boolean;
+    /** Filter condition of a filter-dependent BAdI implementation, e.g. `COUNTRY = 'BE'` (read-only). */
+    filter?: string;
   }>;
 }
 

@@ -18,6 +18,7 @@ const SAPWRITE_BODY_ONPREM =
   // The purpose and supported types already live in SAPWRITE_LEAD and the type property.
   'Handles lock/modify/unlock automatically. TTYP needs rowType + optional rowTypeKind. ' +
   'ENQU: SAPRead JSON in source; create needs primaryTable. Entries need explicit lockMode/parameterWanted; update refuses lockParameters=[]. Then SAPActivate. ' +
+  'ENHO (BAdI impl/XHB): SAPRead JSON in source; create needs enhancementSpot + badiImplementations[{name,badiDefinition,implementingClass}]; update replaces the list. Then SAPActivate. ' +
   'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). For delete, only type and name are required (plus optional transport). ' +
   'Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. ' +
   'TABL create: "TABL"/"TABL/DT" → transparent table (16-char name); "TABL/DS" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. ' +
