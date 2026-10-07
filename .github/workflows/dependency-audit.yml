@@ -1,0 +1,36 @@
+name: Dependency Audit
+
+on:
+  schedule:
+    - cron: '37 6 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/dependency-audit.yml'
+
+permissions:
+  contents: read
+
+env:
+  NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        directory: ['.', 'btp/approuter']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # Query fresh advisories without installing or executing either dependency graph.
+      - name: Audit locked dependencies
+        working-directory: ${{ matrix.directory }}
+        run: npm audit --package-lock-only --audit-level=high
