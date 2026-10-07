@@ -8,7 +8,7 @@
  * Evidence (SAP_BASIS 816): docs/research/2026-10-07-enho-xhb-write-contract.md.
  */
 import type { EnhancementImplementationInfo } from './types.js';
-import { escapeXmlAttr, parseXml } from './xml-parser.js';
+import { escapeXmlAttr, getNestedArray, parseXml, toRecordArray } from './xml-parser.js';
 
 export type FilterNode =
   | { kind: 'Filter'; name: string; comparator: string; value: string }
@@ -26,11 +26,6 @@ export interface FilterDeclaration {
 
 type XmlNode = Record<string, unknown>;
 
-function nodes(value: unknown): XmlNode[] {
-  const list = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
-  return list.filter((item): item is XmlNode => typeof item === 'object' && item !== null);
-}
-
 /** Same-kind groups are flattened so `A OR (B OR C)` and `A OR B OR C` compare equal. */
 function group(kind: 'And' | 'Or', children: FilterNode[]): FilterNode {
   const flat = children.flatMap((child) => (child.kind === kind ? child.children : [child]));
@@ -38,7 +33,7 @@ function group(kind: 'And' | 'Or', children: FilterNode[]): FilterNode {
 }
 
 function fromTokens(token: unknown): FilterNode | undefined {
-  const parts = nodes(token).flatMap((node): FilterNode[] => {
+  const parts = toRecordArray(token).flatMap((node): FilterNode[] => {
     const kind = String(node['@_type'] ?? '').replace(/^.*:/, '');
     if (kind === 'Filter') {
       return [
@@ -50,7 +45,7 @@ function fromTokens(token: unknown): FilterNode | undefined {
         },
       ];
     }
-    const children = nodes(node.filterToken)
+    const children = toRecordArray(node.filterToken)
       .map(fromTokens)
       .filter((child): child is FilterNode => !!child);
     if (!children.length) return [];
@@ -184,10 +179,13 @@ export function withFilterConditions(xml: string, info: EnhancementImplementatio
   const root = parseXml(xml).objectData as XmlNode | undefined;
   const specific = (root?.contentSpecific ?? {}) as XmlNode;
   const tech = (typeof specific.badiTechnology === 'object' ? specific.badiTechnology : {}) as XmlNode;
-  const container = (tech.badiImplementations ?? specific.badiImplementations ?? {}) as XmlNode;
+  const implementations = [
+    ...getNestedArray(tech, 'badiImplementations', 'badiImplementation'),
+    ...getNestedArray(specific, 'badiImplementations', 'badiImplementation'),
+  ];
   const filters = new Map<string, string>();
-  for (const node of nodes(container.badiImplementation)) {
-    const tree = nodes(node.filterTree)[0];
+  for (const node of implementations) {
+    const tree = toRecordArray(node.filterTree)[0];
     const parsed = tree ? fromTokens(tree.filterToken) : undefined;
     if (parsed) filters.set(String(node['@_name'] ?? '').toUpperCase(), renderFilter(parsed));
   }

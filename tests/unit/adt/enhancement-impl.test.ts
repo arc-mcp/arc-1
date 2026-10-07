@@ -5,9 +5,11 @@ import {
   getEnhancementSpotBadis,
   mergeBadiImplementationDefinition,
   parseBadiImplementationDefinition,
+  resolveBadiFilters,
 } from '../../../src/adt/enhancement-impl.js';
 import { parseEnhancementMetadata } from '../../../src/adt/enhancements.js';
 import { buildFilterTreeXml, normalizeFilterCondition, parseFilterCondition } from '../../../src/adt/enho-filter.js';
+import { AdtApiError } from '../../../src/adt/errors.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 import { parseEnhancementImplementation } from '../../../src/adt/xml-parser.js';
@@ -272,9 +274,8 @@ describe('filter conditions', () => {
     const http = { get: async () => ({ body: SPOT }) } as unknown as AdtHttpClient;
     const badis = await getEnhancementSpotBadis(http, unrestrictedSafetyConfig(), 'ES_MY_SPOT');
     expect([...badis.keys()]).toEqual(['BADI_MY_FILTERED', 'BADI_MY_PLAIN']);
-    expect(badis.get('BADI_MY_FILTERED')?.interfaceName).toBe('IF_MY_FILTERED');
-    expect([...(badis.get('BADI_MY_PLAIN')?.filters.keys() ?? [])]).toEqual([]);
-    const filters = badis.get('BADI_MY_FILTERED')?.filters ?? new Map();
+    expect([...(badis.get('BADI_MY_PLAIN')?.keys() ?? [])]).toEqual([]);
+    const filters = badis.get('BADI_MY_FILTERED') ?? new Map();
     const stored = FILTERED.split('enho:name="ZMY_IMPL_COUNTRY"')[1]?.match(
       /<enho:filterTree>[\s\S]*?<\/enho:filterTree>/,
     )?.[0];
@@ -300,6 +301,56 @@ describe('filter conditions', () => {
     expect(() => buildFilterTreeXml(parseFilterCondition("REGION = 'X'"), 'ZI', filters, 'BADI_MY_FILTERED')).toThrow(
       'declares no filter REGION (declared: COUNTRY, LGNUM, GENERIC_FILTER)',
     );
+  });
+});
+
+describe('resolveBadiFilters', () => {
+  const definition = (filter?: string) => ({
+    enhancementSpot: 'ES_MY_SPOT',
+    badiImplementations: [
+      { name: 'ZI', badiDefinition: 'BADI_MY_FILTERED', implementingClass: 'ZC', ...(filter ? { filter } : {}) },
+    ],
+  });
+  const failingHttp = (status: number) =>
+    ({
+      get: async () => {
+        throw new AdtApiError('spot read failed', status, '/sap/bc/adt/enhancements/enhsxsb/es_my_spot');
+      },
+    }) as unknown as AdtHttpClient;
+  const safety = unrestrictedSafetyConfig();
+
+  it('reports a missing spot', async () => {
+    await expect(resolveBadiFilters(failingHttp(404), safety, definition())).rejects.toThrow(
+      'enhancement spot ES_MY_SPOT does not exist',
+    );
+  });
+
+  it('continues without the spot check when no filter has to be built', async () => {
+    const result = await resolveBadiFilters(failingHttp(403), safety, definition());
+    expect(result.badiImplementations?.[0].filterTreeXml).toBeUndefined();
+  });
+
+  it('fails when a filter has to be built but the spot cannot be read', async () => {
+    await expect(resolveBadiFilters(failingHttp(403), safety, definition("COUNTRY = 'DE'"))).rejects.toThrow(
+      'spot read failed',
+    );
+    const unparsable = { get: async () => ({ body: '<html/>' }) } as unknown as AdtHttpClient;
+    await expect(resolveBadiFilters(unparsable, safety, definition("COUNTRY = 'DE'"))).rejects.toThrow(
+      'could not read the BAdI filter declarations',
+    );
+  });
+
+  it('builds the tree for a new filter and leaves kept filters alone', async () => {
+    const http = { get: async () => ({ body: SPOT }) } as unknown as AdtHttpClient;
+    const result = await resolveBadiFilters(http, safety, definition("COUNTRY = 'DE'"));
+    expect(result.badiImplementations?.[0].filterTreeXml).toContain('enho:value="DE"');
+    const kept = await resolveBadiFilters(http, safety, {
+      ...definition("COUNTRY = 'BE'"),
+      badiImplementations: [
+        { ...definition().badiImplementations[0], filter: "COUNTRY = 'BE'", keepStoredFilter: true },
+      ],
+    });
+    expect(kept.badiImplementations?.[0].filterTreeXml).toBeUndefined();
   });
 });
 

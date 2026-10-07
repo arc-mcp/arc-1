@@ -350,6 +350,49 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     expect(put).toBeUndefined();
   });
 
+  it('batch_create builds the filter tree from the spot before the first write', async () => {
+    const calls = mockSap();
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'batch_create',
+      package: '$TMP',
+      objects: [
+        {
+          type: 'ENHO',
+          name: 'ZMY_ENH_NEW',
+          source: JSON.stringify({
+            enhancementSpot: 'ES_MY_SPOT',
+            badiImplementations: [{ ...country, filter: "COUNTRY = 'BE'" }],
+          }),
+        },
+      ],
+    });
+    expect(result.content[0].text).toContain('ZMY_ENH_NEW');
+    expect(calls.find((c) => c.method === 'PUT')?.body).toContain('enho:value="BE"');
+  });
+
+  it('batch_create refuses an undeclared filter in preflight, before any create', async () => {
+    const calls = mockSap();
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'batch_create',
+      package: '$TMP',
+      objects: [
+        {
+          type: 'ENHO',
+          name: 'ZMY_ENH_NEW',
+          source: JSON.stringify({
+            enhancementSpot: 'ES_MY_SPOT',
+            badiImplementations: [{ ...country, filter: "REGION = 'EU'" }],
+          }),
+        },
+      ],
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('declares no filter REGION');
+    expect(calls.filter((c) => (c.method === 'POST' && !c.url.includes('_action')) || c.method === 'PUT')).toHaveLength(
+      0,
+    );
+  });
+
   it('SAPWrite create builds the filter tree into the PUT, not the container POST', async () => {
     const calls = mockSap();
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

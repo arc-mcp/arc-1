@@ -292,24 +292,17 @@ async function saveBadiImplementationsAfterCreate(
   contentType: string,
   transport: string | undefined,
 ): Promise<void> {
+  if (!hasBadiImplementations(body)) return;
   try {
-    if (!hasBadiImplementations(body)) return;
-    await client.http.withStatefulSession(async (session) => {
-      const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
-      try {
-        await updateObject(
-          session,
-          client.safety,
-          objectUrl,
-          body,
-          lock.lockHandle,
-          contentType,
-          transport ?? (lock.corrNr || undefined),
-        );
-      } finally {
-        await unlockObject(session, objectUrl, lock.lockHandle);
-      }
-    });
+    await safeUpdateObject(
+      client.http,
+      client.safety,
+      objectUrl,
+      body,
+      contentType,
+      transport,
+      getCachedFeatures()?.abapRelease,
+    );
   } catch (err) {
     // The POST already succeeded: the object exists. A blind retry of create would 409.
     throw new Error(

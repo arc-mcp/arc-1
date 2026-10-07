@@ -27,7 +27,13 @@ import { AdtApiError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 import type { EnhancementImplementationInfo } from './types.js';
-import { escapeXmlAttr, parseEnhancementImplementation, parseXml } from './xml-parser.js';
+import {
+  escapeXmlAttr,
+  getNestedArray,
+  parseEnhancementImplementation,
+  parseXml,
+  toRecordArray,
+} from './xml-parser.js';
 
 export const ENHO_XHB_CONTENT_TYPE = 'application/vnd.sap.adt.enh.enhoxhb.v4+xml';
 export const ENHO_XHB_COLLECTION = '/sap/bc/adt/enhancements/enhoxhb';
@@ -51,10 +57,8 @@ export interface BadiImplementationEntry {
 
 /** Per-implementation content an update must not drop: SAP keeps only what the PUT sends (live 816). */
 export interface PreservedImplementation {
-  badiDefinition: string;
   example: string;
   customizingLock: string;
-  filter: string;
   /** SAP's own `<enho:filterTree>` element, re-sent verbatim. */
   filterTreeXml: string;
 }
@@ -73,12 +77,8 @@ export type StoredBadiImplementation = EnhancementImplementationInfo & {
 };
 
 /** Cut each `<enho:badiImplementation>` out of SAP's XML and keep what the JSON model does not carry. */
-function preservedImplementations(
-  xml: string,
-  info: EnhancementImplementationInfo,
-): Map<string, PreservedImplementation> {
+function preservedImplementations(xml: string): Map<string, PreservedImplementation> {
   const result = new Map<string, PreservedImplementation>();
-  const filters = new Map(info.badiImplementations.map((impl) => [impl.name.toUpperCase(), impl]));
   for (const match of xml.matchAll(
     /<enho:badiImplementation\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enho:badiImplementation>)/g,
   )) {
@@ -86,12 +86,9 @@ function preservedImplementations(
     const attr = (key: string) => attrs.match(new RegExp(`enho:${key}="([^"]*)"`))?.[1] ?? '';
     const name = attr('name').toUpperCase();
     if (!name) continue;
-    const parsed = filters.get(name);
     result.set(name, {
-      badiDefinition: (parsed?.badiDefinition ?? '').toUpperCase(),
       example: attr('example'),
       customizingLock: attr('customizingLock'),
-      filter: parsed?.filter ?? '',
       filterTreeXml:
         (match[2] ?? '').match(/<enho:filterTree[\s>][\s\S]*<\/enho:filterTree>|<enho:filterTree\/>/)?.[0] ?? '',
     });
@@ -101,15 +98,11 @@ function preservedImplementations(
 
 /** The ENHS/XSB spot from `<enho:contentCommon><enho:usages>`, or '' when the document names none. */
 function usageSpot(xml: string): string {
-  const root = asRecord(parseXml(xml).objectData);
-  const usages = asRecord(asRecord(root?.contentCommon)?.usages);
-  const refs = usages?.referencedObject;
-  const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : value === undefined ? [] : [value]);
-  for (const ref of list(refs)) {
-    const rec = asRecord(ref);
+  const common = asRecord(asRecord(parseXml(xml).objectData)?.contentCommon) ?? {};
+  for (const ref of getNestedArray(common, 'usages', 'referencedObject')) {
     // The parser yields objectReference as an array; mainObjectReference as a single node.
-    for (const target of [...list(rec?.objectReference), ...list(rec?.mainObjectReference)].map(asRecord)) {
-      if (text(target?.['@_type']) === 'ENHS/XSB') return text(target?.['@_name']).toUpperCase();
+    for (const target of [...toRecordArray(ref.objectReference), ...toRecordArray(ref.mainObjectReference)]) {
+      if (text(target['@_type']) === 'ENHS/XSB') return text(target['@_name']).toUpperCase();
     }
   }
   return '';
@@ -126,7 +119,7 @@ export async function getBadiEnhancementImplementation(
   const info: StoredBadiImplementation = withFilterConditions(resp.body, parseEnhancementImplementation(resp.body));
   const spot = usageSpot(resp.body);
   if (spot) info.enhancementSpot = spot;
-  info.preserved = preservedImplementations(resp.body, info);
+  info.preserved = preservedImplementations(resp.body);
   return info;
 }
 
@@ -274,13 +267,13 @@ export function mergeBadiImplementationDefinition(
     badiImplementations: entries.map((entry) => {
       const previous = stored.get(entry.name.toUpperCase());
       const preserved = existing.preserved?.get(entry.name.toUpperCase());
-      const storedFilter = preserved?.filterTreeXml ? preserved.filter : '';
-      const sameBadi = preserved?.badiDefinition === entry.badiDefinition.toUpperCase();
+      const storedFilter = preserved?.filterTreeXml ? (previous?.filter ?? '') : '';
+      const sameBadi = previous?.badiDefinition.toUpperCase() === entry.badiDefinition.toUpperCase();
       const keepStoredFilter =
         !!storedFilter && sameBadi && (entry.filter === undefined || entry.filter === storedFilter);
       if (storedFilter && !sameBadi && entry.filter === undefined) {
         throw invalid(
-          `${entry.name}: its filter (${storedFilter}) belongs to BAdI ${preserved?.badiDefinition}. ` +
+          `${entry.name}: its filter (${storedFilter}) belongs to BAdI ${previous?.badiDefinition}. ` +
             'Give the filter for the new BAdI definition explicitly, or "filter": "" to remove it.',
         );
       }
@@ -327,24 +320,18 @@ export function hasBadiImplementations(xml: string): boolean {
   return /<enho:badiImplementation\s/.test(xml);
 }
 
-/** One BAdI definition of an enhancement spot: its interface and declared filters. */
-export interface SpotBadiDefinition {
-  interfaceName: string;
-  filters: Map<string, FilterDeclaration>;
-}
-
 /**
- * Read the BAdI definitions of an enhancement spot (`GET /sap/bc/adt/enhancements/enhsxsb/{spot}`).
- * Each `<enhs:badiDefinition>` names its interface and declares its filters with type and DDIC check.
+ * Read the BAdI definitions of an enhancement spot (`GET /sap/bc/adt/enhancements/enhsxsb/{spot}`):
+ * BAdI name → its declared filters (type and DDIC check) from `<enhs:badiDefinition><enhs:filters>`.
  */
 export async function getEnhancementSpotBadis(
   http: AdtHttpClient,
   safety: SafetyConfig,
   spot: string,
-): Promise<Map<string, SpotBadiDefinition>> {
+): Promise<Map<string, Map<string, FilterDeclaration>>> {
   checkOperation(safety, OperationType.Read, 'GetEnhancementSpot');
   const resp = await http.get(`/sap/bc/adt/enhancements/enhsxsb/${encodeURIComponent(spot.toLowerCase())}`);
-  const result = new Map<string, SpotBadiDefinition>();
+  const result = new Map<string, Map<string, FilterDeclaration>>();
   for (const badi of resp.body.matchAll(/<enhs:badiDefinition\s([^>]*?)>([\s\S]*?)<\/enhs:badiDefinition>/g)) {
     const name = badi[1].match(/enhs:name="([^"]*)"/)?.[1]?.toUpperCase();
     if (!name) continue;
@@ -362,10 +349,7 @@ export async function getEnhancementSpotBadis(
         checkXml: check ? check.replace(/<(\/?)enhs:filterCheck/g, '<$1enho:filterCheck') : '',
       });
     }
-    result.set(name, {
-      interfaceName: body.match(/<enhs:interface\s[^>]*adtcore:name="([^"]*)"/)?.[1] ?? '',
-      filters,
-    });
+    result.set(name, filters);
   }
   return result;
 }
@@ -384,12 +368,15 @@ export async function resolveBadiFilters(
   const entries = definition.badiImplementations ?? [];
   const needTree = entries.filter((entry) => entry.filter && !entry.keepStoredFilter);
   if (!spot || !entries.length) return definition;
-  let badis = new Map<string, SpotBadiDefinition>();
+  let badis = new Map<string, Map<string, FilterDeclaration>>();
   try {
     badis = await getEnhancementSpotBadis(http, safety, spot);
   } catch (err) {
     if (err instanceof AdtApiError && err.statusCode === 404) throw invalid(`enhancement spot ${spot} does not exist.`);
     if (needTree.length) throw err;
+  }
+  if (!badis.size && needTree.length) {
+    throw invalid(`could not read the BAdI filter declarations of enhancement spot ${spot}.`);
   }
   if (badis.size) {
     for (const entry of entries) {
@@ -405,7 +392,7 @@ export async function resolveBadiFilters(
     ...definition,
     badiImplementations: entries.map((entry) => {
       if (!entry.filter || entry.keepStoredFilter) return entry;
-      const filters = badis.get(entry.badiDefinition)?.filters ?? new Map<string, FilterDeclaration>();
+      const filters = badis.get(entry.badiDefinition) ?? new Map<string, FilterDeclaration>();
       return {
         ...entry,
         filterTreeXml: buildFilterTreeXml(
