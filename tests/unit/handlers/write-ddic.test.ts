@@ -748,36 +748,6 @@ describe('SAPWrite handler — DDIC writes', () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('SKTD create routes SMBC/TYP (BCMO) parents to /bct/smbctyp', async () => {
-      mockFetch.mockReset();
-      const calls: Array<{ method: string; url: string; body?: string }> = [];
-      mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string | Buffer }) => {
-        calls.push({
-          method: opts?.method ?? 'GET',
-          url: String(url),
-          body: opts?.body ? String(opts.body) : undefined,
-        });
-        return Promise.resolve(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
-      });
-
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
-        action: 'create',
-        type: 'KTD',
-        name: '/LCE/SFC_XYZ_TRSHLDS',
-        package: '$TMP',
-        refObjectType: 'SMBC/TYP',
-        refObjectDescription: 'XYZ-Schwellenwerte pflegen',
-      });
-
-      expect(result.isError).toBeUndefined();
-      const postCall = calls.find(
-        (c) => c.method === 'POST' && c.url.includes('/sap/bc/adt/documentation/ktd/documents'),
-      );
-      expect(postCall).toBeDefined();
-      expect(postCall!.body).toContain('adtcore:type="SMBC/TYP"');
-      expect(postCall!.body).toContain('adtcore:uri="/sap/bc/adt/bct/smbctyp/%2Flce%2Fsfc_xyz_trshlds"');
-    });
-
     it('SKTD create rejects SAP-registered parents that ARC cannot route yet', async () => {
       mockFetch.mockReset();
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

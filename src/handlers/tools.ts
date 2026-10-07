@@ -852,7 +852,7 @@ export function getToolDefinitions(
           refObjectType: {
             type: 'string',
             description:
-              'SKTD/KTD create (required): ADT type+subtype of the documented parent (e.g. "DDLS/DF", "BDEF/BDO", "SRVD/SRV", "DEVC/K"). Not CLAS/INTF/PROG (use ABAP Doc for code).',
+              'SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO). CLAS/INTF/PROG use ABAP Doc.',
           },
           refObjectName: {
             type: 'string',
@@ -860,7 +860,7 @@ export function getToolDefinitions(
           },
           refObjectDescription: {
             type: 'string',
-            description: 'SKTD/KTD create: description of the parent object (shown in Eclipse tooltips).',
+            description: 'SKTD/KTD create: parent description; required and nonempty for SMBC/TYP (BCMO).',
           },
           shortTexts: {
             type: 'array',
