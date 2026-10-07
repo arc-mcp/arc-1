@@ -430,7 +430,7 @@ The deployment creates/updates:
 
 - `arc1-mcp-server`, one 512 MB process by default;
 - XSUAA with ARC-1 scopes, templates, and eight space-qualified role collections (seven functional
-  collections plus the unassigned `ARC-1 All Targets` collection in the PR #677 candidate), and exact
+  collections plus the unassigned `ARC-1 All Targets` collection), and exact
   backend `/oauth/callback` and `/oauth/logged-out` URLs;
 - Destination and Connectivity service instances and bindings;
 - the Audit Log premium instance and X.509 binding only when `arc1-auditlog` is activated; and
@@ -480,7 +480,7 @@ As User and Role Administrator:
 
 1. Open **BTP Cockpit → Security → Role Collections**.
 2. Find the seven functional collections for the CF space, for example `ARC-1 Viewer (dev)` through
-   `ARC-1 Admin (dev)`. This candidate also defines an eighth, `ARC-1 All Targets (dev)`.
+   `ARC-1 Admin (dev)`. The eighth is `ARC-1 All Targets (dev)`.
 3. Open each collection and confirm its **Roles** tab contains the expected current
    `arc1-mcp-<space>!t...` application role.
 4. Assign `ARC-1 Viewer (<space>)` to the initial test user before their first login.
@@ -656,7 +656,7 @@ cf push -f <reviewed-customer-manifest.yml>
 This is an advanced alternative. Validate it against `mta.yaml`, `xs-security.json`, the selected
 single/multi startup contract, the MTAR secret exclusions, and the acceptance checklist. A raw
 buildpack push does not create the MTA role collections for you (seven functional plus the
-candidate's unassigned All Targets collection).
+unassigned All Targets collection).
 
 ## Troubleshooting deployment
 

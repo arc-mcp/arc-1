@@ -41,8 +41,8 @@ default **legacy** mode, every user with global ARC-1 read scope can try every a
 if they know its ID. The propagated
 SAP identity and authorization decide whether the call succeeds. With BasicAuthentication, that
 identity is the same technical user for every authorized caller. Use separate ARC-1 applications
-when target inventory itself must be restricted on a released deployment; the
-[opt-in target authorization candidate](multi-target-authorization.md) adds an IAM boundary
+when target inventory itself must be restricted without enabling target authorization. Alternatively,
+[opt-in target authorization](multi-target-authorization.md) adds an IAM boundary
 without changing legacy deployments on upgrade.
 
 ### Choose the SAP identity model
@@ -141,7 +141,7 @@ This flag permits Basic destinations; it does not convert PP destinations or pro
 For a multi-target-only deployment, leave `SAP_BTP_DESTINATION` and `SAP_BTP_PP_DESTINATION` unset.
 Configure them only for the deliberate side-by-side single-target route described in
 [Optional single-target `/mcp`](multi-target-administration.md#optional-single-target-mcp).
-The opt-in target-authorization candidate rejects that mixed topology; keep it multi-only.
+Opt-in target authorization rejects that mixed topology; keep it multi-only.
 
 Before opening a shared beta to multiple users, choose a positive per-user limit using
 [Shared capacity and rate limits](multi-target-administration.md#shared-capacity-and-rate-limits).
@@ -389,7 +389,7 @@ them with `SAP_DENY_ACTIONS` and SAP authorization when the Viewer audience shou
   secret-projected diagnostics; and
 - pinned routes never expose it.
 
-The [opt-in candidate](#optional-target-authorization) lists aggregate `SAPTargets` for readers only
+[Opt-in target authorization](#optional-target-authorization) lists aggregate `SAPTargets` for readers only
 with more than one granted active target. At zero grants, readers receive `tools: []`; at one, SAP
 tools name that target explicitly but `SAPTargets` is absent. Admins retain `SAPTargets` at
 zero/one/many grants, unless deny-actions removes it. The complete unpaged catalog is described in

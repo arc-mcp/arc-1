@@ -15,18 +15,31 @@ const admin = read('docs_page/multi-target-administration.md');
 const auth = read('docs_page/authorization.md');
 
 describe('target authorization operator documentation', () => {
-  it('keeps one static-first setup with explicit candidate/readiness and evidence links', () => {
+  it('keeps one static-first setup with version availability and landscape acceptance checks', () => {
     expect(setup).toContain('### Optional target authorization');
     expect(setup).toContain('[Restrict access to systems and clients](multi-target-authorization.md)');
     expect(targetAccess).toContain('one static cohort role, one collection, one test user');
-    expect(targetAccess).toContain('not customer-ready yet');
-    expect(targetAccess).toContain('published in `@arc-mcp/xsuaa-auth` 1.1.0');
-    expect(targetAccess).toContain('Live acceptance remains incomplete');
-    expect(targetAccess).not.toContain('published `1.0.2` dependency is insufficient');
+    expect(targetAccess).toContain('!!! info "Version availability"');
+    expect(targetAccess).toContain('Confirm that your selected release includes this feature');
+    expect(targetAccess).toContain('provided by `@arc-mcp/xsuaa-auth` 1.1.0');
+    expect(targetAccess).toContain('Complete the acceptance checks below in your own landscape');
+    for (const page of [
+      setup,
+      targetAccess,
+      admin,
+      auth,
+      read('docs_page/xsuaa-setup.md'),
+      read('docs_page/configuration-reference.md'),
+      read('docs_page/btp-cloud-foundry-deployment.md'),
+      read('.env.example'),
+    ]) {
+      expect(page).not.toMatch(
+        /implementation candidate|opt-in candidate|PR #677|not customer-ready yet|unreleased pilot/i,
+      );
+    }
     for (const path of [
       'docs/plans/xsuaa-target-authorization.md',
       'docs/adr/0008-opt-in-xsuaa-target-authorization.md',
-      'docs/research/2026-09-15-pr677-target-authorization-implementation.md',
     ]) {
       expect(targetAccess).toContain(path);
     }

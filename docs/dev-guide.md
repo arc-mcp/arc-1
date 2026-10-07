@@ -75,7 +75,7 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    the [normative implementation plan](plans/destination-discovered-multi-target-v1.md). The
    [setup](../docs_page/multi-target-setup.md) and
    [administration](../docs_page/multi-target-administration.md) guides are the user/operator contract.
-   For the opt-in target-authorization candidate, also read
+   For opt-in target authorization, also read
    [ADR-0008](adr/0008-opt-in-xsuaa-target-authorization.md), the
    [accepted spec](plans/xsuaa-target-authorization.md) and its linked implementation/live-validation
    record. These qualify only enforced mode; legacy behavior must remain unchanged.

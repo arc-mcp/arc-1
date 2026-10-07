@@ -13,8 +13,8 @@ Common BTP configuration ownership, XSUAA collection lifecycle, DCR secrets, upg
 rollback, logging, and
 customer handover live in [BTP Administration](btp-administration.md).
 
-This page distinguishes existing **legacy** behavior from the **PR #677 target-authorization
-candidate**. Check its authoritative [availability and readiness](multi-target-authorization.md#availability-and-readiness)
+This page distinguishes **legacy** behavior from **opt-in target authorization**.
+Check [availability and readiness](multi-target-authorization.md#availability-and-readiness)
 before planning activation.
 
 <a id="administration-model"></a>
@@ -31,7 +31,7 @@ Responsibility is intentionally split across administrators:
 |---|---|---|
 | ARC-1 deployment owner | ARC-1 application environment, usually deployed through MTA | Enables the mode and sets the application-wide maximum for data and SQL. |
 | BTP destination administrator | One subaccount destination per SAP connection | Defines the real SID/client, optional public route alias, connection, label, and narrower data/SQL opt-ins. |
-| Identity administrator | XSUAA roles and collections | Grants global capabilities; in the opt-in candidate, also assigns exact target cohorts or explicit all-target access. |
+| Identity administrator | XSUAA roles and collections | Grants global capabilities; with opt-in target authorization, also assigns exact target cohorts or explicit all-target access. |
 | Cloud Connector administrator | Virtual mappings, principal mode, trust, and exposed paths | Carries the selected destination securely to the intended SAP backend. |
 | SAP/Basis administrator | PP mapping or shared technical user, plus SAP authorizations | Determines whether the selected per-user or shared SAP identity can access a client and operation. |
 
@@ -76,7 +76,7 @@ is unacceptable.
 Use one ARC-1 instance and a separate MCP connection per target when you need:
 
 - writes, activation, transport mutation, or Git mutation;
-- target-specific visibility on released builds without the opt-in candidate, or different
+- target-specific visibility without enabling target authorization, or different
   capabilities per target for the same user;
 - different XSUAA tenants, subaccounts, or identity providers;
 - hard performance, maintenance, or failure isolation;
@@ -103,7 +103,7 @@ limitation predates target grants. The feature does not introduce a SQL parser/r
 
 #### Activation and rollback
 
-For the PR candidate, follow the [static-cohort setup](multi-target-authorization.md):
+To enable target authorization, follow the [static-cohort setup](multi-target-authorization.md):
 prepare roles unassigned, activate and verify `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`,
 then assign restricted users. Target roles include global `read`, so assigning them to a reachable
 legacy instance would expose all its targets. Existing deployments stay
@@ -501,7 +501,7 @@ support tickets.
 
 ### Enforced catalog differences
 
-Only the opt-in candidate changes this contract; legacy paging and tool visibility stay unchanged.
+Only opt-in target authorization changes this contract; legacy paging and tool visibility stay unchanged.
 
 **Display compatibility note (both modes):** destination labels remove Unicode control/format
 characters before display. Ordinary labels are unchanged. A previously accepted label containing
@@ -674,7 +674,7 @@ caller.
 
 - multi-target writes, activation, transport mutation, and Git mutation;
 - a full-write destination template;
-- per-target capability pairing; opt-in XSUAA target grants are a separate PR candidate, not released v1 behavior;
+- per-target capability pairing (target grants restrict routing, but functional scopes remain global);
 - persisted per-user target availability;
 - API-key or direct Entra/IAS OIDC access to multi-target routes;
 - SaaS subscriber/provider and cross-subaccount discovery;

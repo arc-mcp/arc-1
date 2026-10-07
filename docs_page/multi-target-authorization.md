@@ -7,19 +7,18 @@ changes are optional. This guide owns the target-access setup. The
 
 ## Availability and readiness
 
-!!! warning "PR #677 implementation candidate — not customer-ready yet"
+!!! info "Version availability"
 
-    This is an unreleased feature in PR #677, not a setting to copy into an older installation.
-    The required companion API is published in `@arc-mcp/xsuaa-auth` 1.1.0 and integrated in the
-    PR's manifest/lockfile. Live acceptance remains incomplete. Use an isolated maintainer test
-    deployment until the remaining gates are closed; a documentation update is not release approval.
+    Target authorization is planned for ARC-1 **1.6**. Confirm that your selected release includes
+    this feature before using the setting; older installations do not enforce it. The required
+    companion API is provided by `@arc-mcp/xsuaa-auth` 1.1.0 and included in ARC-1's dependencies.
+    Upgrading does not enable enforcement: existing deployments remain in `legacy` mode until you opt in.
 
 Use this guide, the deployment runbook and examples from the **same source revision** as the artifact.
-The design and remaining acceptance gates are in `docs/plans/xsuaa-target-authorization.md` and
-`docs/adr/0008-opt-in-xsuaa-target-authorization.md` in that checkout. The
-[historical validation snapshot](https://github.com/arc-mcp/arc-1/blob/5c100257a6fa28d45e0908d6b03631f2a0b76d7f/docs/research/2026-09-15-pr677-target-authorization-implementation.md)
-records tested builds, not a pass for a later build. Check [PR #677](https://github.com/arc-mcp/arc-1/pull/677)
-and the checkout's `docs/research/2026-09-15-pr677-target-authorization-implementation.md` for follow-ups.
+Complete the acceptance checks below in your own landscape before a wider rollout. Optional IAS
+provisioning has additional validation requirements described later in this guide. Maintainers can
+find the design and release-validation requirements in `docs/plans/xsuaa-target-authorization.md`
+and `docs/adr/0008-opt-in-xsuaa-target-authorization.md` in that checkout.
 
 ## What changes when you opt in
 
@@ -81,12 +80,12 @@ replace them with reviewed public IDs from your own deployment.
 **New isolated app:** have the deployment owner include the setting from step 3 in its first
 deployment through the Cloud Foundry runbook, leaving end-user/group assignments empty. Then return
 here to check the templates and create the cohort. This avoids deploying legacy mode just to switch
-it immediately. **Existing pilot app:** prepare the descriptor and unassigned roles below, then
+it immediately. **Existing app:** prepare the descriptor and unassigned roles below, then
 apply the mode change in step 3. Both paths require step 3's checks before step 4's assignment.
 
 The service owner uses the [XSUAA lifecycle procedure](xsuaa-setup.md#step-1-identify-the-xsuaa-lifecycle-owner)
 to install the additive descriptor while preserving the application identity, existing functional
-roles and assignments. For this unreleased pilot, use an isolated app/XSUAA identity. Do not create
+roles and assignments. For a first pilot, use an isolated app/XSUAA identity. Do not create
 a second service for an existing app merely because a different guide contains a create command.
 
 **Check:** the intended application's `MCPTargetReadAccess` template exists with required

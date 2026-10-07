@@ -103,7 +103,7 @@ The included `xs-security.json` defines 7 scopes:
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
 The MTA defines the seven existing functional role collections below (assignable in BTP Cockpit).
-The PR #677 target-authorization candidate defines **eight collections in total**, adding a
+With target authorization support, the MTA defines **eight collections in total**, adding a
 separate, unassigned All Targets collection. It grants `read` and literal `*`, including future
 targets; leave it unassigned unless explicitly approved. It does not change the seven functional
 assignments or enable enforcement automatically. The manual
@@ -139,7 +139,7 @@ roles before assigning users.
 > templates only. It does **not** create role collections declared in
 > `mta.yaml`. Agree on lifecycle ownership before adopting the MTA, then
 > verify in **Security → Role Collections** that all seven functional collections exist and
-> contain the expected roles. With this candidate, also verify the eighth All Targets collection
+> contain the expected roles. Also verify the eighth All Targets collection
 > and leave it unassigned by default. This matters especially for older deployments:
 > seeing `MCPViewer`, `MCPDataViewer`, or `MCPSqlUser` under **Roles** does not
 > mean the corresponding assignable role collections already exist.
@@ -150,7 +150,7 @@ Role collections are only the user-permission gate. Server flags still have to a
 
 For optional per-target visibility, follow the
 [static-cohort setup](multi-target-authorization.md), not a second XSUAA
-service-creation sequence. That guide owns the candidate's readiness status and describes the
+service-creation sequence. That guide covers version availability, setup checks and the
 `MCPTargetReadAccess` template (required `arc1_targets`, no default role) and
 `MCPAllTargetReadAccess` (explicit `*` default). A manually managed service still needs an owner to
 create the corresponding collection; MTA owns its additional `ARC-1 All Targets (<space>)` collection.

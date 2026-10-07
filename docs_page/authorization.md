@@ -363,7 +363,7 @@ See [XSUAA Setup](xsuaa-setup.md) for BTP Cockpit assignment steps.
 
 ### Opt-in multi-target grants
 
-The **PR #677 implementation candidate** adds a separate target boundary
+**Opt-in target authorization** adds a separate target boundary
 only when the deployment owner selects `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`.
 Unset/`legacy` preserves existing access. The
 [canonical setup and readiness](multi-target-authorization.md)
