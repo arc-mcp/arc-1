@@ -26,6 +26,22 @@ export async function handleSAPNavigate(
   const column = Number(args.column ?? 1);
   const source = String(args.source ?? '');
 
+  // Validate before FUNC/TABL symbolic resolution can contact SAP.
+  if (
+    action === 'references' &&
+    (args.line !== undefined || args.column !== undefined) &&
+    (args.line === undefined ||
+      args.column === undefined ||
+      !Number.isInteger(line) ||
+      line < 1 ||
+      !Number.isInteger(column) ||
+      column < 0)
+  ) {
+    return errorResult(
+      'References at a position need both line and column as integer ADT cursor coordinates (line >= 1, column >= 0) in the source behind uri. Omit both to search the whole object.',
+    );
+  }
+
   // Allow symbolic type+name as alternative to uri for references
   if (action !== 'definition' && !uri && args.type && args.name) {
     const symName = String(args.name);
@@ -68,19 +84,7 @@ export async function handleSAPNavigate(
       }
       // A cursor narrows where-used to the symbol at that position (a method, an attribute, …). ADT
       // reads it from the URI fragment, as for definition; without one SAP searches the whole object.
-      if (args.line !== undefined || args.column !== undefined) {
-        if (
-          args.line === undefined ||
-          args.column === undefined ||
-          !Number.isInteger(line) ||
-          line < 1 ||
-          !Number.isInteger(column) ||
-          column < 0
-        ) {
-          return errorResult(
-            'References at a position need both line and column as integer ADT cursor coordinates (line >= 1, column >= 0) in the source behind uri. Omit both to search the whole object.',
-          );
-        }
+      if (args.line !== undefined) {
         uri = `${uri.split('#')[0]}#start=${line},${column}`;
       }
       // objectType keeps its slash format (CLAS/OC, PROG/P) — do NOT normalize; the suffix is
@@ -100,7 +104,7 @@ export async function handleSAPNavigate(
           truncated,
           // SAP falls back to the whole object when the cursor is not on an identifier, so a
           // position search reports what was actually searched.
-          ...(lookup.searchedFor && uri.includes('#start=') ? { searchedFor: lookup.searchedFor } : {}),
+          ...(lookup.searchedFor && uri.split('#')[1] ? { searchedFor: lookup.searchedFor } : {}),
           ...(lookup.warning ? { warning: lookup.warning } : {}),
           ...(truncated
             ? {

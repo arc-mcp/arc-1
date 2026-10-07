@@ -81,6 +81,7 @@ export async function lookupLiveUsages(
   // `"CLAS/OC"` for augmentInterfaceImplementers too — its /^CLAS/i check would otherwise skip
   // augmentation for a padded value and silently drop implementers the later filter cannot recover.
   const filter = objectType?.trim() ? objectType.trim() : undefined;
+  const scoped = Boolean(uri.split('#')[1]);
 
   let results: LiveUsageResult[];
   let searchedFor: string | undefined;
@@ -95,8 +96,13 @@ export async function lookupLiveUsages(
 
   // Kept outside the try: an augment failure must not be mistaken for a missing where-used endpoint.
   let warning: string | undefined;
-  if (!fallbackUsed) {
+  // Whole-interface implementers are not evidence of references to a selected member.
+  if (!fallbackUsed && !scoped) {
     warning = await augmentInterfaceImplementers(client, uri, filter, results as WhereUsedResult[]);
+  }
+  if (scoped && !searchedFor) {
+    warning =
+      'SAP did not report the searched symbol. Results may refer to the whole object; confirm the scope before using them.';
   }
 
   const filtered = filter ? results.filter((result) => matchesObjectType(result.type, filter)) : results;
@@ -117,7 +123,7 @@ async function augmentInterfaceImplementers(
   objectType: string | undefined,
   results: WhereUsedResult[],
 ): Promise<string | undefined> {
-  const intfMatch = uri.match(/\/sap\/bc\/adt\/oo\/interfaces\/([^/?]+)/i);
+  const intfMatch = uri.match(/\/sap\/bc\/adt\/oo\/interfaces\/([^/?#]+)/i);
   if (!intfMatch || (objectType && !/^CLAS/i.test(objectType))) return undefined;
 
   const interfaceName = decodeURIComponent(intfMatch[1]!).toUpperCase();

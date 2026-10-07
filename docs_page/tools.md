@@ -1171,7 +1171,12 @@ ARC-1 sends the cursor as the URI fragment `#start=<line>,<column>`, replacing a
 `uri`. When the cursor is not on an identifier, SAP silently searches the whole object instead. A
 position search therefore returns `searchedFor`: SAP's result description, verbatim, which names
 what was searched, for example `References for: /SCWM/CL_TM - CLEANUP (Method) [SID]` or, after a
-fallback, `References for: /SCWM/CL_TM (Class) [SID]`. The wording differs by release.
+fallback, `References for: /SCWM/CL_TM (Class) [SID]`. The wording differs by release. If SAP omits
+the description (including on the older fallback endpoint), a `warning` says the searched symbol
+could not be confirmed. URI fragments supplied directly are preserved when no coordinates are
+given. Fragment-scoped searches return native references without adding whole-interface
+implementers from SEOMETAREL, because an implementation relationship does not establish a
+reference to the selected member.
 
 **Hierarchy action:** Returns the class inheritance chain via `SEOMETAREL`: superclass (or null), implemented interfaces, and direct subclasses. Requires `name` parameter (class name). It needs either table preview (`SAP_ALLOW_DATA_PREVIEW=true` + `data` scope) or freestyle SQL (`SAP_ALLOW_FREE_SQL=true` + `sql` scope). ARC-1 uses SQL when available and falls back to named table preview.
 
