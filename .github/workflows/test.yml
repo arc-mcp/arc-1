@@ -81,13 +81,15 @@ jobs:
       # slower steps run. Audits production AND dev deps — a compromised
       # dev dep (test runner, linter) can poison the published artifact.
       # Threshold = high (moderate is too noisy for transitive deps).
+      # audit-ci.json contains an expiring exception for one unpatched advisory.
+      # Other high/critical advisories and audit failures still block the job.
       - name: Security audit (npm audit)
-        run: npm audit --audit-level=high --omit=optional
+        run: npm run audit:ci
 
       # The optional BTP UI AppRouter has an independent lockfile and is not
       # included in the root npm audit above.
       - name: Security audit (BTP AppRouter)
-        run: npm audit --prefix btp/approuter --audit-level=high --omit=optional
+        run: npm run audit:ci -- --directory btp/approuter
 
       # The AppRouter's decode-uri-component fix is a CommonJS bridge around an
       # ESM-only package, so it needs a real install to verify. Also fails if the
