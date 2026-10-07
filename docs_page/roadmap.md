@@ -348,10 +348,14 @@ hard-coded table list without proving its completeness.
 
 **Why it remains.** `SAPWrite type="ENHO"` creates, updates and deletes BAdI implementations
 (`ENHO/XHB`) on-prem, including filter values. Hook, class and spot authoring have no proven
-create/update contract, and BTP availability is untested (the trial advertises `enhoxhb`).
+create/update contract. BTP is not enabled yet: a trial run created, updated, filtered, activated and
+deleted BAdI implementations for released BAdIs (`useInSAPCloudPlatform`), but offering ENHO on BTP
+exceeds the BTP tool-schema budget by a few tokens.
 
-**Resume with.** Capture live ADT traffic for one source-code plug-in, then follow the XHB pattern
-(discovery gate, package gate, read-back).
+**Resume with.** For BTP: set `ENHO` to `btp: true` in the SAPWrite/SAPRead tables, compress BTP
+description text to stay within the budget, and add a BTP integration test (evidence:
+`docs/research/2026-10-07-enho-xhb-write-contract.md`). For hooks: capture live ADT traffic for one
+source-code plug-in, then follow the XHB pattern (discovery gate, package gate, read-back).
 
 <a id="feat-05"></a>
 ### FEAT-05 — Safe rename and extract refactorings
