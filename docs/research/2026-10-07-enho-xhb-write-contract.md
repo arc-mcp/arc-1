@@ -162,7 +162,16 @@ With SAPWrite ENHO enabled locally for BTP (not committed), in a cloud package w
 - A delete right after that failed activation returned HTTP 409 (TK/754, "Error when creating object directory
   entry"); a retry a little later succeeded.
 
-SAPWrite stays `btp: false` until the second activation failure is understood.
+Follow-up the same day, to isolate the failure:
+
+- `ADDRESS_PRINT_FORMAT` (filter) and `BADI_IAM_BUSINESS_USER` (no filter): create → activate → ARC-1 update
+  without changes → activate: all succeeded. SAP's stored content before and after the ARC-1 update was
+  identical (only navigation links differ between the active and inactive version).
+- The failing sequence repeated exactly (create with `RECEIVER_COUNTRY = 'DE'` → activate → update to
+  `… OR RECEIVER_COUNTRY = 'AT'` → activate): succeeded. The earlier "use of Class … is not permitted" did not
+  reproduce. In both runs the freshly created class first activated with the warning "Implementation missing
+  for method …" although the method was in the source; activating the class again cleared it. That points at
+  the class create on this shared trial, not at the ENHO write.
 
 ## Open points
 
