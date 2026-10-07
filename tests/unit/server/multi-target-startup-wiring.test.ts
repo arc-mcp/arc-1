@@ -10,6 +10,7 @@ const boundary = vi.hoisted(() => ({
   list: vi.fn(),
   resolveSingle: vi.fn(),
   http: vi.fn(),
+  xsuaa: vi.fn(),
 }));
 vi.mock('@arc-mcp/xsuaa-auth/btp', async (original) => ({
   ...(await original<typeof import('@arc-mcp/xsuaa-auth/btp')>()),
@@ -24,15 +25,7 @@ vi.mock('@arc-mcp/xsuaa-auth/btp', async (original) => ({
   resolveBTPDestination: boundary.resolveSingle,
 }));
 vi.mock('@sap/xsenv', () => ({
-  getServices: () => ({
-    uaa: {
-      url: 'https://auth.invalid',
-      clientid: 'fixture',
-      clientsecret: 'fixture',
-      xsappname: 'test',
-      uaadomain: 'auth.invalid',
-    },
-  }),
+  getServices: boundary.xsuaa,
 }));
 vi.mock('../../../src/server/http.js', () => ({ startHttpServer: boundary.http }));
 vi.mock('../../../src/server/shutdown.js', () => ({ registerShutdownHandlers: vi.fn(), closeHttpServer: vi.fn() }));
@@ -65,6 +58,16 @@ describe('target-authorization startup wiring', () => {
     boundary.resolveSingle.mockReset();
     boundary.http.mockReset();
     boundary.http.mockResolvedValue({});
+    boundary.xsuaa.mockReset();
+    boundary.xsuaa.mockReturnValue({
+      uaa: {
+        url: 'https://auth.invalid',
+        clientid: 'fixture',
+        clientsecret: 'fixture',
+        xsappname: 'test',
+        uaadomain: 'auth.invalid',
+      },
+    });
   });
   afterEach(() => {
     expect(fetch).not.toHaveBeenCalled();
@@ -142,5 +145,23 @@ describe('target-authorization startup wiring', () => {
     expect(boundary.resolveSingle).not.toHaveBeenCalled();
     expect(boundary.list).not.toHaveBeenCalled();
     expect(boundary.http).not.toHaveBeenCalled();
+    expect(boundary.xsuaa).not.toHaveBeenCalled();
   });
+
+  it.each(['legacy', 'xsuaa-attribute'] as const)(
+    'refuses %s startup when the XSUAA binding fails, before discovery or listeners',
+    async (multiTargetAuthorization) => {
+      boundary.xsuaa.mockImplementation(() => {
+        throw new Error('No XSUAA service binding');
+      });
+      await expect(createAndStartServer({ ...config, multiTargetAuthorization })).rejects.toThrow(
+        'ARC1_MULTI_TARGET_ENDPOINTS=true requires a valid bound XSUAA service.',
+      );
+      expect(boundary.xsuaa).toHaveBeenCalledOnce();
+      expect(discoverDestinations).not.toHaveBeenCalled();
+      expect(boundary.resolveSingle).not.toHaveBeenCalled();
+      expect(boundary.list).not.toHaveBeenCalled();
+      expect(boundary.http).not.toHaveBeenCalled();
+    },
+  );
 });

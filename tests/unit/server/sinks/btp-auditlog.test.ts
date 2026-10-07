@@ -316,7 +316,7 @@ describe('BTP Audit Log Sink', () => {
 
     it('retains target grant diagnostics through the real logger redactor', async () => {
       const sink = new BTPAuditLogSink(config);
-      const logger = new Logger('json', true);
+      const logger = new Logger('json', 'debug');
       logger.addSink(sink);
       logger.emitAudit({
         timestamp: '',

@@ -14,7 +14,7 @@ describe('target grant diagnostics after central audit redaction', () => {
     { mode: 'exact', status: 'valid', targets: ['OTHER/001'], exactGrantCount: 1 },
   ])('preserves bounded operator fields for $status without exposing claims', (grant) => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const actualLogger = new Logger('json', true);
+    const actualLogger = new Logger('json', 'debug');
     const events: AuditEvent[] = [];
     actualLogger.addSink({ write: (event) => events.push(event) });
     vi.spyOn(logger, 'emitAudit').mockImplementation((event) => actualLogger.emitAudit(event));
