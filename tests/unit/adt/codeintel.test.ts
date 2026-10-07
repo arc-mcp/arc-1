@@ -10,7 +10,7 @@ import {
   getWhereUsedScope,
 } from '../../../src/adt/codeintel.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
-import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 
@@ -388,7 +388,7 @@ describe('Code Intelligence', () => {
       const http = mockHttp(answer(record('DATA', 52), record('DATA BEGIN OF', 52), record('DATA END OF', 52)));
       const results = await getCompletion(
         http,
-        unrestrictedSafetyConfig(),
+        defaultSafetyConfig(),
         '/sap/bc/adt/programs/programs/ztest/source/main',
         2,
         3,
@@ -396,15 +396,15 @@ describe('Code Intelligence', () => {
       );
       expect(results).toEqual({
         proposals: [{ text: 'DATA' }, { text: 'DATA BEGIN OF' }, { text: 'DATA END OF' }],
-        truncated: false,
+        complete: true,
       });
     });
 
-    it('reads the @end record as SAP cutting the list off, not as a proposal', async () => {
+    it('treats @end as unconfirmed completeness, not as a proposal', async () => {
       const matches = Array.from({ length: 50 }, (_, i) => record(`CL_MATCH_${i}`));
       const http = mockHttp(answer(...matches, record('@end', 0)));
       const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 2, 3, 'REPORT x.\ncl_');
-      expect(results.truncated).toBe(true);
+      expect(results.complete).toBe(false);
       expect(results.proposals).toHaveLength(50);
       expect(results.proposals.some((p) => p.text === '@end')).toBe(false);
     });
@@ -412,7 +412,7 @@ describe('Code Intelligence', () => {
     it('returns a single proposal (one record is not an array)', async () => {
       const http = mockHttp(answer(record('CL_IDENTITY_FACTORY')));
       const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
-      expect(results).toEqual({ proposals: [{ text: 'CL_IDENTITY_FACTORY' }], truncated: false });
+      expect(results).toEqual({ proposals: [{ text: 'CL_IDENTITY_FACTORY' }], complete: true });
     });
 
     it('keeps identifiers that look like numbers as text', async () => {
@@ -421,10 +421,45 @@ describe('Code Intelligence', () => {
       expect(results.proposals).toEqual([{ text: '001' }]);
     });
 
+    it('does not infer more matches from the legacy marker-only empty response', async () => {
+      const http = mockHttp(answer(record('@end', 0)));
+      const result = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 2, 10, 'REPORT x.\nzzqqxxvvww');
+      expect(result).toEqual({ proposals: [], complete: false });
+    });
+
+    it('decodes identifier XML entities exactly once', async () => {
+      const http = mockHttp(answer(record('&lt;field&gt;'), record('&amp;lt;literal&amp;gt;')));
+      const result = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(result.proposals).toEqual([{ text: '<field>' }, { text: '&lt;literal&gt;' }]);
+    });
+
+    it('propagates backend errors instead of reporting an empty complete list', async () => {
+      const http = mockHttp();
+      const error = new Error('Unsupported completion endpoint');
+      vi.mocked(http.post).mockRejectedValue(error);
+      await expect(getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x')).rejects.toBe(error);
+    });
+
+    it.each(['<error/>', '<proposals/>', '<abap><values/></abap>'])(
+      'rejects an unexpected response envelope instead of claiming completeness: %s',
+      async (body) => {
+        const http = mockHttp(body);
+        await expect(getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x')).rejects.toThrow(
+          'Unexpected completion response',
+        );
+      },
+    );
+
+    it('accepts the real 758 empty HTTP 200 response without a content type', async () => {
+      const http = mockHttp('');
+      const result = await getCompletion(http, defaultSafetyConfig(), '/source', 2, 10, 'REPORT x.\nzzqqxxvvww');
+      expect(result).toEqual({ proposals: [], complete: true });
+    });
+
     it('returns empty when SAP has no proposals', async () => {
       const http = mockHttp(answer());
       const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
-      expect(results).toEqual({ proposals: [], truncated: false });
+      expect(results).toEqual({ proposals: [], complete: true });
     });
 
     it('sends the cursor as a #start fragment of the uri, with the source as body', async () => {

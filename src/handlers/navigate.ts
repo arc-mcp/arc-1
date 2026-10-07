@@ -40,7 +40,7 @@ export async function handleSAPNavigate(
   const source = String(args.source ?? '');
 
   // Allow symbolic type+name as alternative to uri for references
-  if (action !== 'definition' && !uri && args.type && args.name) {
+  if (action === 'references' && !uri && args.type && args.name) {
     const symName = String(args.name);
     uri = (await resolveWhereUsedUri(client, String(args.type), symName)) ?? '';
     if (!uri) {
@@ -113,9 +113,9 @@ export async function handleSAPNavigate(
       return textResult(
         toolJson({
           ...result,
-          ...(result.truncated
+          ...(!result.complete
             ? {
-                hint: `SAP returned its first ${result.proposals.length} matches; type a longer prefix to narrow them.`,
+                hint: 'SAP did not confirm a complete result. Check the cursor/source or narrow the prefix.',
               }
             : {}),
         }),

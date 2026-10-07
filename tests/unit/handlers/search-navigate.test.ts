@@ -1302,19 +1302,46 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(url?.searchParams.get('uri')).toBe('/sap/bc/adt/programs/programs/ztest/source/main#start=2,3');
       expect(JSON.parse(result.content[0]?.text as string)).toEqual({
         proposals: [{ text: 'DATA' }],
-        truncated: false,
+        complete: true,
       });
     });
 
-    it('flags a list SAP cut off and suggests a longer prefix', async () => {
+    it('reports unconfirmed completeness without claiming more matches exist', async () => {
       const { result } = await complete(valid, answer('CL_A', 'CL_B', '@end'));
       const parsed = JSON.parse(result.content[0]?.text as string);
       expect(parsed.proposals).toEqual([{ text: 'CL_A' }, { text: 'CL_B' }]);
-      expect(parsed.truncated).toBe(true);
-      expect(parsed.hint).toContain('first 2 matches');
+      expect(parsed.complete).toBe(false);
+      expect(parsed.hint).toContain('did not confirm a complete result');
+    });
+
+    it('respects an explicit completion denial before contacting SAP', async () => {
+      mockFetch.mockReset();
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, denyActions: ['SAPNavigate.completion'] },
+        'SAPNavigate',
+        { action: 'completion', ...valid },
+      );
+      expect(result.isError).toBe(true);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it.each([0, '0'])('accepts zero-based cursor column %s', async (column) => {
+      const { result, url } = await complete({ ...valid, column });
+      expect(result.isError).toBeUndefined();
+      expect(url?.searchParams.get('uri')).toContain('#start=2,0');
+    });
+
+    it.each(['PROG', 'FUNC', 'TABL'])('requires a source URI instead of resolving symbolic %s', async (type) => {
+      const { result } = await complete({ ...valid, uri: undefined, type, name: 'ZTEST' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Provide uri');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it.each([
+      ['with a fractional line', { ...valid, line: 1.5 }, 'Completion needs line, column and source'],
+      ['with a fractional column', { ...valid, column: 2.5 }, 'Completion needs line, column and source'],
       ['without uri', { ...valid, uri: undefined }, 'Provide uri'],
       ['without line', { ...valid, line: undefined }, 'Completion needs line, column and source'],
       ['without column', { ...valid, column: undefined }, 'Completion needs line, column and source'],
@@ -1326,6 +1353,7 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0]?.text).toContain(message);
       expect(url).toBeUndefined();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 

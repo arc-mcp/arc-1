@@ -1191,10 +1191,12 @@ target URI may include a cursor fragment; an explicit new line/column replaces t
 with 400), the current source text and an ADT cursor (line from 1, column from 0) placed right after
 the typed prefix, for example column 3 after `DAT`. ARC-1 sends the cursor as the URI fragment
 `#start=<line>,<column>`, replacing any fragment already in `uri`. It returns
-`{proposals: [{text}], truncated, hint?}`: keywords and identifiers alike, in SAP's order. The source
-can contain unsaved changes, such as a variable declared only in the posted text. An empty list means
-SAP has no proposal at that position. `truncated: true` means SAP stopped before the last match
-(observed after 50 repository matches, for example for the prefix `cl_`); type a longer prefix.
+`{proposals: [{text}], complete, hint?}`: keywords and identifiers alike, in SAP's order. The source
+can contain unsaved changes, such as a variable declared only in the posted text. `complete: false`
+means SAP did not confirm completeness: a broad prefix may have more matches, but older backends
+also signal this for empty results or invalid positions. Check the cursor/source or narrow the
+prefix. The signal is not a count of undisplayed proposals; an empty list contains no returned
+proposals, without proving that no matching identifier exists.
 
 ---
 

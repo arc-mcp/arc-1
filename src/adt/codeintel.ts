@@ -36,8 +36,8 @@ export interface CompletionProposal {
 /** Completion proposals at a cursor. */
 export interface CompletionResult {
   proposals: CompletionProposal[];
-  /** SAP cut the list off: more matches exist than it returned (its `@end` marker). */
-  truncated: boolean;
+  /** SAP confirmed completeness (no `@end` marker). False does not prove more matches exist. */
+  complete: boolean;
 }
 
 /** Available object type from Where-Used scope discovery */
@@ -312,8 +312,8 @@ function parseOptionalBoolean(value: unknown): boolean | undefined {
  * ADT reads the cursor from the URI fragment (`#start=<line>,<column>`), as for definition, and
  * answers with `asx:abap` / `SCC_COMPLETION` records in `application/vnd.sap.as+xml` (the only type
  * it accepts; `application/xml` is refused with 406). With `signalCompleteness=true` SAP appends an
- * `@end` record when it stopped before the last match (observed after 50 repository matches) and
- * none when the list is complete; `@end` is that marker, not a proposal.
+ * `@end` record for incomplete results. Older backends also emit it for empty lists or invalid
+ * positions, so it means completeness is unconfirmed, not necessarily that matches were cut off.
  */
 export async function getCompletion(
   http: AdtHttpClient,
@@ -333,11 +333,18 @@ export async function getCompletion(
     { Accept: 'application/vnd.sap.as+xml' },
   );
 
-  const identifiers = findDeepNodes(parseXml(resp.body), 'SCC_COMPLETION')
+  // SAP_BASIS 758 returns HTTP 200 with no body (or content type) when no proposals match.
+  if (resp.statusCode === 200 && resp.body.length === 0) return { proposals: [], complete: true };
+
+  const abap = parseXml(resp.body).abap as { values?: { DATA?: unknown } } | undefined;
+  if (!Array.isArray(abap?.values?.DATA)) {
+    throw new Error('Unexpected completion response: expected ABAP XML values/DATA.');
+  }
+  const identifiers = findDeepNodes(abap.values.DATA, 'SCC_COMPLETION')
     .map((node) => String(node.IDENTIFIER ?? ''))
     .filter((identifier) => identifier.length > 0);
   return {
     proposals: identifiers.filter((identifier) => identifier !== '@end').map((text) => ({ text })),
-    truncated: identifiers.includes('@end'),
+    complete: !identifiers.includes('@end'),
   };
 }

@@ -1026,7 +1026,7 @@ export function getToolDefinitions(
         },
         uri: {
           type: 'string',
-          description: 'Definition needs source URI, line, column and source; references also accepts type+name.',
+          description: 'Definition/completion: source URI with line, column, source. References: uri or type+name.',
         },
         type: {
           type: 'string',
