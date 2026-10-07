@@ -143,11 +143,26 @@ activation.
 read back → update → activation → the request lists `R3TR ENHO … (ENHO/XHB)` → delete (TADIR keeps the
 deletion record `DELFLAG = X` on the request, as for any transportable deletion).
 
-### BTP ABAP environment (trial, 2026-10-07, read-only)
+### BTP ABAP environment (shared trial, 2026-10-07)
 
-Discovery advertises `/sap/bc/adt/enhancements/enhoxhb` and `/enhsxsb`, and the system contains enhancement
-spots, BAdI definitions and XHB implementations (SAP `/AIF/…` objects). Whether any BAdI is released for
-customer implementations was not checked. SAPWrite stays `btp: false`.
+Discovery advertises `/sap/bc/adt/enhancements/enhoxhb` and `/enhsxsb`. The release state belongs to the BAdI
+definition, not the spot: `GET /sap/bc/adt/apireleases/{encoded spot URI}` answers "No entry found for object
+type ENHS", while the BAdI form `…/enhsxsb/{spot}#type=enhs%2fxb;name={badi}` returns the C0/C1 contracts.
+Of 1,102 BAdI definitions in 779 spots, 19 are C1-released. For a customer implementation the C1 flag
+`useInSAPCloudPlatform` must be true: `CFD_RUNTIME_SOAP_AMOUNT_CONV` is released for key-user apps only, and
+both its interface and its BAdI definition were refused ("The use of … is not permitted").
+
+With SAPWrite ENHO enabled locally for BTP (not committed), in a cloud package without transport:
+
+- Create, read back and update worked for both tested BAdIs; the create body is accepted with ARC-1's
+  cloud adjustments (`abapLanguageVersion="cloudDevelopment"`, no `responsible`).
+- `ADDRESS_PRINT_FORMAT` (filter `RECEIVER_COUNTRY`): create with `RECEIVER_COUNTRY = 'DE'` activated
+  successfully; after an update to `RECEIVER_COUNTRY = 'DE' OR RECEIVER_COUNTRY = 'AT'` (read back
+  correctly) activation failed with "The use of Class {implementing class} is not permitted" — not explained yet.
+- A delete right after that failed activation returned HTTP 409 (TK/754, "Error when creating object directory
+  entry"); a retry a little later succeeded.
+
+SAPWrite stays `btp: false` until the second activation failure is understood.
 
 ## Open points
 
