@@ -265,7 +265,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
 /** Write one subobject of an object's textpool via the ADT textelements service (CLAS, PROG, FUGR).
  *  `textPart` selects it: symbols (`@MaxLength:NN` then `NNN=text`), selections (a report's
  *  selection texts, `P_PARAM=Label` per line), headings (`listHeader=`, `columnHeader_N=`).
- *  ARC-1 supports only symbols for classes. The client writes and activates the text pool.
+ *  ARC-1 supports only symbols for classes. The client writes and requests text-pool activation.
  *  The client locks, PUTs, unlocks, then activates; the package gate here checks
  *  the owning object's real package (ctx.objectUrl). Not an ABAP-source write → no lint. */
 export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<ToolResult> {
@@ -302,6 +302,12 @@ export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<
   } finally {
     // A successful PUT can leave a draft even if the subsequent activation fails.
     invalidateWrittenObject();
+  }
+  if (type === 'PROG') {
+    return textResult(
+      `Updated ${part} of PROG ${name}; text-pool activation requested.\n` +
+        `If ${name} has never been activated, use SAPActivate(type="PROG", name="${name}") to activate these texts.`,
+    );
   }
   return textResult(`Updated and activated ${part} of ${type} ${name}.`);
 }

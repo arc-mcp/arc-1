@@ -6,7 +6,8 @@ PR: https://github.com/arc-mcp/arc-1/pull/768.
 **2026-10-08 correction (#940):** the original read-back checks below did not prove
 activation. Live REPOTEXT/inactive-object checks show that PROG, FUGR, and CLAS saves
 leave inactive pools on 758. The [follow-up plan and evidence](../plans/2026-10-08-text-pool-activation.md)
-supersede the immediate-activation claim; the writer now explicitly activates the pool.
+supersede the immediate-activation claim; the writer now explicitly requests pool activation.
+A never-activated PROG still needs its first owner activation for the texts to become active.
 
 ## Decision and root cause
 

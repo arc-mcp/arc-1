@@ -32,6 +32,49 @@ describe('text elements via SAPRead/SAPWrite', () => {
     return result.content.map((c) => c.text ?? '').join('\n');
   }
 
+  it('explains the first activation needed after writing a new program text pool', async (ctx) => {
+    requireOrSkip(
+      ctx,
+      client.http.discoveryAcceptFor('/sap/bc/adt/textelements/programs'),
+      `${SkipReason.BACKEND_UNSUPPORTED}: ADT textelements/programs collection absent`,
+    );
+    const name = generateUniqueName('ZARC1_IT');
+    const objectUrl = `/sap/bc/adt/programs/programs/${name.toLowerCase()}`;
+    const poolUrl = `/sap/bc/adt/textelements/programs/${name.toLowerCase()}`;
+    await call('SAPWrite', {
+      action: 'create',
+      type: 'PROG',
+      name,
+      package: '$TMP',
+      source: `REPORT ${name.toLowerCase()}.\nPARAMETERS p_test TYPE c LENGTH 10.\nWRITE p_test.`,
+    });
+    registry.register(objectUrl, 'PROG', name);
+    try {
+      const message = await call('SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'PROG',
+        name,
+        textPart: 'selections',
+        source: 'P_TEST=New program label',
+      });
+      expect(message).toContain(`SAPActivate(type="PROG", name="${name}")`);
+      expect(message).toContain('never been activated');
+      expect(message).not.toContain('Updated and activated');
+      await call('SAPActivate', { type: 'PROG', name });
+      const inactive = await client.getInactiveObjects();
+      expect(inactive.filter((entry) => [objectUrl, poolUrl].includes(entry.uri.toLowerCase()))).toEqual([]);
+      expect(await call('SAPRead', { type: 'TEXT_ELEMENTS', objectType: 'PROG', name, include: 'selections' })).toMatch(
+        /P_TEST\s*=New program label/,
+      );
+    } finally {
+      // Even if an assertion fails, activate before deletion so no inactive text pool is orphaned.
+      await call('SAPActivate', { type: 'PROG', name });
+      await call('SAPWrite', { action: 'delete', type: 'PROG', name });
+      registry.remove(name);
+      await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+    }
+  }, 60_000);
+
   for (const type of ['PROG', 'FUGR'] as const) {
     it(`${type} selection screen and text-pool lifecycle`, async (ctx) => {
       const collection = type === 'PROG' ? 'programs' : 'functiongroups';

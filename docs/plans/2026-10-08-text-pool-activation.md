@@ -66,3 +66,54 @@ the error and invalidation paths are part of the fix, not optional cleanup.
   No installed-client, transportable-package, BTP/PP, or 816 replay (816 license
   unavailable). 750's missing service remains discovery-gated. Roadmap recheck:
   no impact; translation beyond text symbols remains deferred in FEAT-34.
+
+## Review corrections (2026-10-08)
+
+Claude's review identified two incomplete outcomes in the first implementation.
+Independently reproduced both against `7477fbc7`:
+
+- A program created without its first activation retains an inactive REPOTEXT row
+  after a successful pool activation request. Activating PROG then removes it. The
+  unconditional "Updated and activated" message overstates the result.
+- The real dispatcher with `minimalErrors:true` replaces the error message and
+  loses the saved-state notice. Normal mode preserves it. Two regression assertions
+  fail on the reviewed head: the PROG success text and the minimal-error notice.
+
+Reviewed correction plan:
+
+1. For PROG, report the save and activation request, with the explicit SAPActivate
+   call needed if the program has never been activated. No additional SAP probe,
+   automatic owner activation, or release heuristic: preserve source drafts.
+2. Reuse AdtError.extraHint for the static saved-state notice so minimal mode retains
+   it without revealing SAP diagnostics. Keep the original error and normal-mode
+   message, using the formatter's existing duplicate suppression.
+3. Use SAP's nested shortText/txt error shape in tests and assert native diagnostics
+   in normal mode, redaction in minimal mode, and one saved-state notice in both.
+   Add a real create-PROG → write selections → first activation lifecycle test.
+4. Correct user/tool/agent guidance and the July research claim. Document that
+   activation applies to the whole text pool, including pending edits to other parts.
+
+The separate, pre-existing SAPActivate REPT routing behavior remains outside this
+writer fix and is already described in #940. Reference that issue without auto-closing
+it. Moving lint before a read-only transport lookup (#945) is cosmetic and unnecessary.
+The #947 handler test's cached-release setup will be corrected in its own PR.
+
+Correction verification:
+
+- Both failing assertions now pass. All 7,952 unit tests and the six local gates
+  pass; lint retains the same two informational notices. Four on-prem snapshots
+  change only the text-write description. No budget increases or runtime probes.
+- Four live integration cases pass on 758 SP02: the new-program lifecycle plus
+  existing PROG/FUGR/CLAS text lifecycles. Seven unrelated tests were excluded by
+  the name filter. Objects were deleted and absence verified.
+- Final compiled replay shows the new PROG message, an inactive pool before first
+  program activation, active-only REPOTEXT rows afterward, and correct read-back.
+  An already-active program with pending symbols also confirms a subsequent
+  selections write activates the whole pool and preserves the symbols. Cleanup
+  leaves zero REPOTEXT rows and the program GET returns 404.
+- The first baseline replay matched `P_KEY=Key` too literally: SAP returned padded
+  `P_KEY   =Key`. Corrected the harness to accept whitespace and reran successfully;
+  its cleanup had already passed. No product change was needed for that assertion.
+- Final review checked both error modes, native diagnostic preservation/redaction,
+  duplicate-hint suppression, existing failure invalidation and write ordering.
+  No further finding in the correction. Roadmap rechecked: no impact.

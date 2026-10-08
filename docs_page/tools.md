@@ -1047,8 +1047,10 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   retain any entries you want to keep. Other parts remain unchanged. An explicit `source=""`
   clears the selected part; omitted/null source is rejected. Do not send the `=== part ===`
   markers from a whole-pool read as source — read the individual part with `include=` instead.
-- **Writes and activates the text pool** — no separate `SAPActivate` needed. Unrelated source drafts
-  stay inactive. If activation fails, the write returns an error; the saved pool may remain inactive.
+- **Writes and requests activation of the whole text pool.** This also activates pending edits to
+  other text parts; their content is preserved. Unrelated source drafts stay inactive. If a PROG
+  has never been activated, finish with `SAPActivate(type="PROG", name="...")` to activate its texts.
+  If pool activation fails, the write returns an error; the saved pool may remain inactive.
   Retry the same text write after resolving the error. Defining the referenced symbols clears
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw

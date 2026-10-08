@@ -12,7 +12,7 @@
 
 import { lockObject, unlockObject } from './crud.js';
 import { activate } from './devtools.js';
-import { AdtApiError } from './errors.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 
@@ -130,7 +130,8 @@ export async function readTextElements(
 
 /** Write one part, unlock, then activate only the text pool in the same stateful session.
  *  PUT uses the part's media type as BOTH Content-Type and Accept. SAP refuses activation
- *  while the pool is locked; a source read alone cannot distinguish its inactive version. */
+ *  while the pool is locked; a source read alone cannot distinguish its inactive version.
+ *  A never-activated PROG still needs its first owner activation to activate the texts. */
 export async function writeTextElementPart(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -168,8 +169,11 @@ export async function writeTextElementPart(
         throw new AdtApiError(result.messages.join('\n') || 'Text-pool activation failed.', 400, obj);
       }
     } catch (err) {
+      const note = 'Text elements were saved, but activation was not confirmed. Retry the same text write.';
+      // The dispatcher retains this static hint when minimal errors hide SAP diagnostics.
+      if (err instanceof AdtError && !err.extraHint) err.extraHint = note;
       if (err instanceof Error) {
-        err.message = `Text elements were saved, but activation was not confirmed. Retry the same text write.\n${err.message}`;
+        err.message = `${note}\n${err.message}`;
       }
       throw err;
     }

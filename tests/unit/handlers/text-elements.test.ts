@@ -153,6 +153,13 @@ describe('text elements routing and safety', () => {
       source: '',
     });
     expect(result.isError).toBeUndefined();
+    if (type === 'PROG') {
+      expect(result.content[0]?.text).not.toContain('Updated and activated');
+      expect(result.content[0]?.text).toContain('never been activated');
+      expect(result.content[0]?.text).toContain('SAPActivate(type="PROG", name="ZTEST")');
+    } else {
+      expect(result.content[0]?.text).toContain('Updated and activated');
+    }
     const put = calls().find(([, init]) => init?.method === 'PUT');
     expect(put?.[1]?.body).toBe('');
     expect(String(put?.[0])).toContain('corrNr=DEVK900001');
@@ -188,7 +195,7 @@ describe('text elements routing and safety', () => {
                 failure === 'http' ? 403 : 200,
                 failure === 'pending'
                   ? '<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/activation"><entry><object><ref uri="/sap/bc/adt/other" name="OTHER"/></object></entry></ioc:inactiveObjects>'
-                  : '<messages><msg type="E"><shortText>Activation refused</shortText></msg></messages>',
+                  : '<messages><msg type="E"><shortText><txt>Activation refused</txt></shortText></msg></messages>',
               )
             : mockResponse(200, String(url).includes('_action=LOCK') ? LOCK : '', { 'x-csrf-token': 'T' }),
         ),
@@ -209,6 +216,41 @@ describe('text elements routing and safety', () => {
       // HTTP 403 has the transport's existing one-time CSRF refresh/retry.
       expect(calls().filter(([url]) => String(url).includes('/activation'))).toHaveLength(failure === 'http' ? 2 : 1);
       expect(calls().some(([url]) => String(url).includes('_action=UNLOCK'))).toBe(true);
+    },
+  );
+
+  it.each([false, true])(
+    'retains the saved-state hint through dispatch with minimalErrors=%s',
+    async (minimalErrors) => {
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          mockResponse(
+            200,
+            String(url).includes('/activation')
+              ? '<messages><msg type="E"><shortText><txt>Activation refused</txt></shortText></msg></messages>'
+              : String(url).includes('_action=LOCK')
+                ? LOCK
+                : '',
+            { 'x-csrf-token': 'T' },
+          ),
+        ),
+      );
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'PROG',
+        name: 'ZTEST',
+        source: '@MaxLength:20\n001=Hello',
+      });
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message.match(/Text elements were saved, but activation was not confirmed\./g)).toHaveLength(1);
+      expect(message).toContain('Retry the same text write.');
+      if (minimalErrors) {
+        expect(message).not.toContain('Activation refused');
+        expect(message).toContain('ARC1_MINIMAL_ERRORS=true');
+      } else {
+        expect(message).toContain('Activation refused');
+      }
     },
   );
 
