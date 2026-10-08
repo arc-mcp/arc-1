@@ -409,9 +409,15 @@ export const SAPQuerySchema = z
 // symmetry guard from a single source of truth (audit Plan B / PR #224).
 
 const ddicFixedValueSchema = z.object({
-  low: z.string(),
-  high: z.string().optional(),
-  description: z.string().optional(),
+  low: z.string().max(10, 'Domain fixed-value low is limited to 10 characters (DD07L-DOMVALUE_L). Use a shorter code.'),
+  high: z
+    .string()
+    .max(10, 'Domain fixed-value high is limited to 10 characters (DD07L-DOMVALUE_H). Use a shorter code.')
+    .optional(),
+  description: z
+    .string()
+    .max(60, 'Domain fixed-value description is limited to 60 characters (DD07T-DDTEXT).')
+    .optional(),
 });
 
 const messageClassMessageSchema = z.object({
