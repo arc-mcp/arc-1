@@ -2339,6 +2339,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
         action: 'create',
         type: 'DDLS',
         name: 'ZI_BAD',
+        lintBeforeWrite: false, // Exercise the SAP create failure, past the local lint gate.
         source: 'define view entity ZI_BAD as select from sflight {}',
       });
 
