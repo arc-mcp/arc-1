@@ -1,8 +1,9 @@
 # ENHO/XHB (BAdI implementation) write contract
 
 Status: **implemented; live-verified on SAP_BASIS 816 on-prem (2026-10-07) in `$TMP` and in a transportable
-package with a transport request, and on a second 816 system across several modules (2026-10-08).** The
-create sequence follows a captured Eclipse ADT create; the payload is derived from SAP's own GET serialization.
+package with a transport request, and on a second 816 system across several modules (2026-10-08). Enabled on
+BTP on 2026-10-08 after the trial run below; the BTP re-test of the final code is pending.** The create
+sequence follows a captured Eclipse ADT create; the payload is derived from SAP's own GET serialization.
 
 ## Why
 
@@ -153,7 +154,8 @@ Of 1,102 BAdI definitions in 779 spots, 19 are C1-released. For a customer imple
 `useInSAPCloudPlatform` must be true: `CFD_RUNTIME_SOAP_AMOUNT_CONV` is released for key-user apps only, and
 both its interface and its BAdI definition were refused ("The use of … is not permitted").
 
-With SAPWrite ENHO enabled locally for BTP (not committed), in a cloud package without transport:
+With SAPWrite ENHO enabled locally for BTP (enabled in the code on 2026-10-08), in a cloud package without
+transport:
 
 - Create, read back and update worked for both tested BAdIs; the create body is accepted with ARC-1's
   cloud adjustments (`abapLanguageVersion="cloudDevelopment"`, no `responsible`).
@@ -211,7 +213,9 @@ Fixed after this run:
 
 ## Open points
 
-1. BTP: find a released BAdI and test a create in a BTP package.
+1. Re-test the final code live (planned): on-prem, an update must keep a stored
+   `adtcore:abapLanguageVersion` (ARC-1 now re-sends it, 2026-10-08; untested on an ABAP-for-Cloud object);
+   on BTP, the lifecycle in `tests/integration/btp-tool-dispatch.integration.test.ts` with a C1 BAdI.
 2. Optional: Eclipse's `…/enhoxhb/validation` and `transportchecks` calls before the create; ARC-1 resolves the
    transport itself and relies on activation for consistency checks.
 

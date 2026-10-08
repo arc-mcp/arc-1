@@ -894,7 +894,6 @@ describe('Tool Definitions', () => {
       expect(typeEnum).not.toContain('AUTH');
       expect(typeEnum).not.toContain('FTG2');
       expect(typeEnum).not.toContain('FEATURE_TOGGLE');
-      expect(typeEnum).not.toContain('ENHO');
     });
 
     it('keeps CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, KTD on BTP', () => {
@@ -907,6 +906,8 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('INTF');
       expect(typeEnum).toContain('DDLS');
       expect(typeEnum).toContain('DCLS');
+      // BAdI implementations: read and written on BTP for C1-released BAdIs.
+      expect(typeEnum).toContain('ENHO');
       expect(typeEnum).toContain('DDLX');
       expect(typeEnum).toContain('BDEF');
       expect(typeEnum).toContain('SRVD');

@@ -1,6 +1,6 @@
 # ENHO — Enhancement Implementation
 
-Use `SAPRead(type="ENHO", name="...")` on on-prem systems. The R3TR type covers
+Use `SAPRead(type="ENHO", name="...")` on on-prem and BTP systems. The R3TR type covers
 BAdIs, source-code plug-ins and other enhancement technologies; it does not identify
 one ADT resource. There is no public slash alias. Only BAdI implementations (`ENHO/XHB`)
 are writable: `SAPWrite type="ENHO"` takes SAPRead's JSON (see

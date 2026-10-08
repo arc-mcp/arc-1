@@ -1,9 +1,9 @@
 # Plan: create BAdI enhancement implementations (`ENHO/XHB`) via SAPWrite
 
-> **Status (2026-10-08): implemented on-prem, including filter values.** The sections below are the
-> original plan; where they differ, the code, [docs_page/tools.md](../../docs_page/tools.md) and the
-> [write contract](../research/2026-10-07-enho-xhb-write-contract.md) are current. BTP is a follow-up
-> (roadmap FEAT-03).
+> **Status (2026-10-08): implemented on-prem, including filter values, and enabled on BTP for C1-released
+> BAdIs (BTP live re-test pending).** The sections below are the original plan; where they differ, the code,
+> [docs_page/tools.md](../../docs_page/tools.md) and the
+> [write contract](../research/2026-10-07-enho-xhb-write-contract.md) are current.
 
 ## Finding (2026-10-07)
 
@@ -119,8 +119,9 @@ it but leaves an undeletable TADIR entry); see the write contract, 2026-10-08. L
 4. `src/handlers/object-types.ts`: `objectBasePath('ENHO')` → `/sap/bc/adt/enhancements/enhoxhb/` and add ENHO
    to `KNOWN_BASE_TYPES`. Activation is URI-based (no `adtcore:type`), so this fixes activation, transport,
    delete and the package gate together.
-5. `src/handlers/tool-registry.ts`: `{ type: 'ENHO', btp: false }` for SAPWrite; one compressed line in
-   `tool-descriptions.ts`; regenerate the tool-definition snapshots.
+5. `src/handlers/tool-registry.ts`: `{ type: 'ENHO' }` for SAPWrite (first on-prem only; BTP enabled
+   2026-10-08 together with the SAPRead row); one compressed line per `tool-descriptions.ts` variant;
+   regenerate the tool-definition snapshots.
 6. Docs: `docs_page/tools.md`, `docs/research/abap-types/types/enho.md`, `01-inventory.md`, roadmap FEAT-03,
    dev guide + AGENTS.md rows. Release notes are annotated while the release-please PR is open.
 
