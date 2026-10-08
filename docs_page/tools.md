@@ -1192,19 +1192,28 @@ SAPNavigate(action="definition", uri="/sap/bc/adt/programs/programs/ztest/source
 SAPNavigate(action="references", uri="/sap/bc/adt/oo/classes/zcl_order")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", objectType="PROG/P")
-SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest", line=10, column=15, source="...")
+SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=15, source="...")
 SAPNavigate(action="hierarchy", name="ZCL_ORDER")
 ```
 
 For `definition`, pass the source URI and current source text, with integer ADT cursor coordinates:
-line starts at 1, column at 0. Place the cursor on the identifier. Returned target coordinates use
+line starts at 1, column at 0. The line must exist in the posted source, and column may
+reach its end but not extend beyond it. Place the cursor on the identifier. Returned target coordinates use
 the same convention. Object metadata URIs and `type`+`name` are insufficient.
 The source can contain unsaved changes; ARC-1 does not replace it with a backend read. A returned
 target URI may include a cursor fragment; an explicit new line/column replaces that fragment.
 
-`completion` currently fails on SAP_BASIS 750 and 758 because its request and response handling do
-not match ADT. See [FEAT-80](roadmap.md#feat-80) for the separate repair; this definition fix does not
-restore completion.
+`completion` takes the same inputs: the source URI (SAP rejects object metadata URIs),
+the current source text and an ADT cursor (line from 1, column from 0) placed right after
+the typed prefix, for example column 3 after `DAT`. ARC-1 sends the cursor as the URI fragment
+`#start=<line>,<column>`, replacing any fragment already in `uri`. It returns
+`{proposals: [{text}], complete, hint?}`: keywords and identifiers alike, in SAP's order. The source
+can contain unsaved changes to an existing SAP object, such as a variable declared only in the
+posted text; the object must already exist. The cursor must fit the posted source. `complete: false`
+means SAP did not confirm completeness: a broad prefix may have more matches, but older backends
+also signal this for empty results or invalid positions. Check the cursor/source or narrow the
+prefix. The signal is not a count of undisplayed proposals; an empty list contains no returned
+proposals, without proving that no matching identifier exists.
 
 ---
 
