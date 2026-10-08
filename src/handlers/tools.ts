@@ -747,9 +747,9 @@ export function getToolDefinitions(
             items: {
               type: 'object',
               properties: {
-                low: { type: 'string', description: 'Low value (required)' },
-                high: { type: 'string', description: 'High value for ranges (optional)' },
-                description: { type: 'string', description: 'Value description (optional)' },
+                low: { type: 'string', maxLength: 10, description: 'Low value (required)' },
+                high: { type: 'string', maxLength: 10, description: 'High value for ranges (optional)' },
+                description: { type: 'string', maxLength: 60, description: 'Value description (optional)' },
               },
               required: ['low'],
             },
@@ -912,7 +912,11 @@ export function getToolDefinitions(
                   type: 'array',
                   items: {
                     type: 'object',
-                    properties: { low: { type: 'string' }, high: { type: 'string' }, description: { type: 'string' } },
+                    properties: {
+                      low: { type: 'string', maxLength: 10 },
+                      high: { type: 'string', maxLength: 10 },
+                      description: { type: 'string', maxLength: 60 },
+                    },
                     required: ['low'],
                   },
                 },

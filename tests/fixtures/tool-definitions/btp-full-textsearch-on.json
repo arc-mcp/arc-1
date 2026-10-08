@@ -437,14 +437,17 @@
             "properties": {
               "low": {
                 "type": "string",
+                "maxLength": 10,
                 "description": "Low value (required)"
               },
               "high": {
                 "type": "string",
+                "maxLength": 10,
                 "description": "High value for ranges (optional)"
               },
               "description": {
                 "type": "string",
+                "maxLength": 60,
                 "description": "Value description (optional)"
               }
             },
@@ -769,13 +772,16 @@
                   "type": "object",
                   "properties": {
                     "low": {
-                      "type": "string"
+                      "type": "string",
+                      "maxLength": 10
                     },
                     "high": {
-                      "type": "string"
+                      "type": "string",
+                      "maxLength": 10
                     },
                     "description": {
-                      "type": "string"
+                      "type": "string",
+                      "maxLength": 60
                     }
                   },
                   "required": [
