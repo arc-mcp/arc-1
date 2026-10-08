@@ -489,8 +489,11 @@ function cloudifyCreateBody(xml: string, type: string): string {
     .replace(/\s*adtcore:masterSystem="H00"/, '')
     // Cloud assigns the owner from the JWT; an explicit responsible breaks the create ST.
     .replace(/\s*adtcore:responsible="[^"]*"/, '')
-    // Every cloud object is ABAP for Cloud Development.
-    .replace(/(adtcore:masterLanguage="[^"]*")/, '$1 adtcore:abapLanguageVersion="cloudDevelopment"');
+    // Every cloud object is ABAP for Cloud Development; an ENHO update already carries its stored version.
+    .replace(
+      /(adtcore:masterLanguage="[^"]*")(?![^>]*adtcore:abapLanguageVersion=)/,
+      '$1 adtcore:abapLanguageVersion="cloudDevelopment"',
+    );
   if (type === 'CLAS') {
     // Cloud CLAS create schema requires explicit class attributes (live: GET cl_abap_random).
     out = out.replace(

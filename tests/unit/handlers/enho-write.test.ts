@@ -177,6 +177,39 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     expect(put?.body).toContain('adtcore:description="TCD Lookup, Assignment..."');
   });
 
+  it('SAPWrite update re-sends the stored ABAP language version, once also on cloud', async () => {
+    const cloudXhb = XHB.replace(
+      'adtcore:abapLanguageVersion="standard"',
+      'adtcore:abapLanguageVersion="cloudDevelopment"',
+    );
+    const calls = mockSap(cloudXhb);
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'update',
+      type: 'ENHO',
+      name: 'SFW_BCF_TCD',
+      source: '{}',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(calls.find((c) => c.method === 'PUT')?.body).toContain('adtcore:abapLanguageVersion="cloudDevelopment"');
+
+    const { buildCreateXml } = await import('../../../src/handlers/write-helpers.js');
+    const properties = {
+      enhancementDefinition: {
+        enhancementSpot: 'ES_X',
+        abapLanguageVersion: 'cloudDevelopment',
+        badiImplementations: [],
+      },
+    };
+    const cloudBody = buildCreateXml('ENHO', 'ZI', 'ZPKG', 'd', properties, 'EN', 'U', true);
+    expect(cloudBody.match(/adtcore:abapLanguageVersion=/g)).toHaveLength(1);
+    // A create has no stored version: on-prem leaves it to SAP, cloud adds cloudDevelopment.
+    const create = { enhancementDefinition: { enhancementSpot: 'ES_X', badiImplementations: [] } };
+    expect(buildCreateXml('ENHO', 'ZI', 'ZPKG', 'd', create, 'EN', 'U', false)).not.toContain('abapLanguageVersion');
+    expect(buildCreateXml('ENHO', 'ZI', 'ZPKG', 'd', create, 'EN', 'U', true)).toContain(
+      'adtcore:abapLanguageVersion="cloudDevelopment"',
+    );
+  });
+
   it.each(['create', 'batch_create'] as const)(
     '%s POSTs only the container and saves the implementations with the transport, like Eclipse',
     async (action) => {

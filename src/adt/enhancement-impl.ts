@@ -70,11 +70,15 @@ export interface PreservedImplementation {
 export interface BadiImplementationDefinition {
   enhancementSpot?: string;
   badiImplementations?: BadiImplementationEntry[];
+  /** Set by the update merge from the stored document; not a JSON key. */
+  abapLanguageVersion?: string;
 }
 
 /** Stored implementation plus the spot named in its usages (also present when it has no BAdI implementations). */
 export type StoredBadiImplementation = EnhancementImplementationInfo & {
   enhancementSpot?: string;
+  /** `adtcore:abapLanguageVersion` of the stored document, e.g. "standard" or "cloudDevelopment". */
+  abapLanguageVersion?: string;
   /** Keyed by upper-case implementation name. */
   preserved?: Map<string, PreservedImplementation>;
 };
@@ -140,6 +144,8 @@ export async function getBadiEnhancementImplementation(
   const info: StoredBadiImplementation = withFilterConditions(doc, parseEnhancementImplementation(resp.body));
   const spot = usageSpot(doc);
   if (spot) info.enhancementSpot = spot;
+  const version = text(asRecord(doc.objectData)?.['@_abapLanguageVersion']);
+  if (version) info.abapLanguageVersion = version;
   info.preserved = preservedImplementations(resp.body, doc);
   return info;
 }
@@ -288,6 +294,8 @@ export function mergeBadiImplementationDefinition(
   const entries = def.badiImplementations ?? existing.badiImplementations;
   return {
     enhancementSpot: def.enhancementSpot ?? (existingSpot.toUpperCase() || undefined),
+    // SAP stores only what the PUT sends; without it an ABAP-for-Cloud object could fall back to standard.
+    ...(existing.abapLanguageVersion ? { abapLanguageVersion: existing.abapLanguageVersion } : {}),
     badiImplementations: entries.map((entry) => {
       const previous = stored.get(entry.name.toUpperCase());
       const preserved = existing.preserved?.get(entry.name.toUpperCase());
@@ -479,6 +487,9 @@ export function buildBadiImplementationXml(params: BadiImplementationXmlParams):
     );
   }
   const spotRef = `adtcore:uri="/sap/bc/adt/enhancements/enhsxsb/${lowerUriName(spot)}" adtcore:type="ENHS/XSB" adtcore:name="${escapeXmlAttr(spot)}"`;
+  const version = definition.abapLanguageVersion
+    ? ` adtcore:abapLanguageVersion="${escapeXmlAttr(definition.abapLanguageVersion)}"`
+    : '';
   const implementations = (definition.badiImplementations ?? [])
     .map((impl) => {
       const kept = impl.preserved;
@@ -500,7 +511,7 @@ export function buildBadiImplementationXml(params: BadiImplementationXmlParams):
     })
     .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
-<enho:objectData xmlns:enho="http://www.sap.com/adt/enhancements/enho" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:enhcore="http://www.sap.com/abapsource/enhancementscore" adtcore:type="ENHO/XHB" adtcore:name="${escapeXmlAttr(params.name)}" adtcore:description="${escapeXmlAttr(params.description)}" adtcore:masterLanguage="${escapeXmlAttr(params.masterLanguage)}"${params.responsibleAttr}>
+<enho:objectData xmlns:enho="http://www.sap.com/adt/enhancements/enho" xmlns:adtcore="http://www.sap.com/adt/core" xmlns:enhcore="http://www.sap.com/abapsource/enhancementscore" adtcore:type="ENHO/XHB" adtcore:name="${escapeXmlAttr(params.name)}" adtcore:description="${escapeXmlAttr(params.description)}" adtcore:masterLanguage="${escapeXmlAttr(params.masterLanguage)}"${version}${params.responsibleAttr}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(params.package)}"/>
   <enho:contentCommon enho:toolType="BADI_IMPL"><enho:usages><enhcore:referencedObject enhcore:program_id="R3TR" enhcore:element_usage="EXTO"><enhcore:objectReference ${spotRef}/><enhcore:mainObjectReference ${spotRef}/></enhcore:referencedObject></enho:usages></enho:contentCommon>
   <enho:contentSpecific><enho:badiTechnology><enho:badiImplementations>${implementations}</enho:badiImplementations></enho:badiTechnology></enho:contentSpecific>
