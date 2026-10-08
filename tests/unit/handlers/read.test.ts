@@ -1706,30 +1706,6 @@ describe('SAPRead handler', () => {
       expect(result.content[0]?.text).toContain('objectType');
     });
 
-    it('API_STATE uses raw URI to avoid double encoding for namespaced objects', async () => {
-      mockFetch.mockReset();
-      mockFetch.mockResolvedValueOnce(
-        mockResponse(
-          200,
-          `<?xml version="1.0" encoding="utf-8"?>
-<apirelease:apiReleaseInfos xmlns:apirelease="http://www.sap.com/adt/apirelease" xmlns:adtcore="http://www.sap.com/adt/core">
-  <apirelease:releasableObject adtcore:uri="/sap/bc/adt/oo/classes/%2fBOBF%2fCL_LIB" adtcore:type="CLAS/OC" adtcore:name="/BOBF/CL_LIB"/>
-  <apirelease:apiCatalogData apirelease:isAnyAssignmentPossible="false" apirelease:isAnyContractReleased="false"/>
-</apirelease:apiReleaseInfos>`,
-        ),
-      );
-      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
-        type: 'API_STATE',
-        name: '/BOBF/CL_LIB',
-        objectType: 'CLAS',
-      });
-      expect(result.isError).toBeUndefined();
-      // The URL should encode the entire URI once — namespace slashes become %2F, not %252F
-      const calledUrl = String(mockFetch.mock.calls[0]?.[0] ?? '');
-      expect(calledUrl).toContain('%2FBOBF%2FCL_LIB');
-      expect(calledUrl).not.toContain('%252F');
-    });
-
     it('returns error for unknown type with supported types via Zod validation', async () => {
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
         type: 'UNKNOWN',

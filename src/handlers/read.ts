@@ -33,9 +33,10 @@ import { readEditableSource } from './editable-source.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
 import {
   detectLocalHandlerInclude,
+  functionModuleObjectUrl,
   inferObjectType,
   normalizeObjectType,
-  objectUrlForTypeRaw,
+  objectUrlForType,
 } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
@@ -765,11 +766,24 @@ export async function handleSAPRead(
       const inferredType = explicitType || inferObjectType(name);
       if (!inferredType) {
         return errorResult(
-          `Cannot infer object type from name "${name}". Please specify objectType explicitly (e.g., objectType="CLAS", "INTF", "PROG", "TABL", "DDLS", "DCLS", "FUGR", "DOMA", "DTEL", "SRVD", "SRVB", "BDEF").`,
+          `Cannot infer object type from name "${name}". Please specify objectType explicitly (e.g., objectType="CLAS", "INTF", "PROG", "TABL", "DDLS", "DCLS", "FUGR", "FUNC", "DOMA", "DTEL", "SRVD", "SRVB", "BDEF").`,
         );
       }
-      // Use raw URI (no name encoding) — getApiReleaseState encodes the full URI as a single path segment
-      const objectUri = objectUrlForTypeRaw(inferredType, name);
+      // Object-name segments stay encoded when the whole URI becomes an API-release path segment.
+      let objectUri: string;
+      if (inferredType === 'FUNC') {
+        const group =
+          String(args.group ?? '').trim() ||
+          (cachingLayer ? await cachingLayer.resolveFuncGroup(client, name) : await client.resolveFunctionGroup(name));
+        if (!group) {
+          return errorResult(
+            `Cannot resolve function group for "${name}". Provide the group parameter explicitly, or use SAPSearch("${name}") to find the function group.`,
+          );
+        }
+        objectUri = functionModuleObjectUrl(group, name);
+      } else {
+        objectUri = objectUrlForType(inferredType, name);
+      }
       const releaseState = await client.getApiReleaseState(objectUri);
       return textResult(toolJson(releaseState));
     }

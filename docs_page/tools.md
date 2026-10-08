@@ -57,7 +57,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `method` | string | No | For CLAS: method name to read (e.g., `get_name`), a qualified local-class method (e.g., `lhc_travel~accept`), or `*` to list methods. With no `include=`, `lhc_*`/`lcl_*` automatically read `implementations`, `ltc_*` reads `testclasses`, and other names read MAIN. |
 | `grep` | string | No | Case-insensitive regex; returns only matching source lines (+3 lines of context, with line numbers) instead of the full object — token-efficient search over source-bearing types (`PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL, VIEW`). For CLAS, matches are annotated with the owning class/method; combine with `include=` to scope a section, but not with `method=`. For FUGR, `grep` implies `expand_includes` and searches each include on its own: matches are grouped under `=== <include> ===` with line numbers counted within that include. Falls back to a literal search when the pattern is not valid regex. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). |
-| `group` | string | No | For FUNC: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
+| `group` | string | No | For FUNC, and for VERSIONS or API_STATE with `objectType="FUNC"`: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
 | `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Known TABLE_CONTENTS limitation on 758: SAP can return `N+1`; prefer TABLE_QUERY when an exact cap matters. |
 | `maxResults` | number | No | For DEVC: maximum package objects to list (default 200, clamped to 1–1000). SAP may truncate larger packages at the requested limit. |
@@ -65,7 +65,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
 | `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`. IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
-| `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
+| `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
@@ -224,6 +224,7 @@ SAPRead(type="BSP", name="/UI2/USHELL/chips")   — browse a namespaced app with
 SAPRead(type="API_STATE", name="CL_SALV_TABLE")              — check if class is released for ABAP Cloud
 SAPRead(type="API_STATE", name="IF_HTTP_CLIENT")              — check interface release state
 SAPRead(type="API_STATE", name="MARA", objectType="TABL")     — check table with explicit type
+SAPRead(type="API_STATE", name="Z_MY_FM", objectType="FUNC") — function module; group resolved via search, or pass group="ZFG"
 SAPRead(type="TABLE_CONTENTS", name="MARA", maxRows=10) — legacy unfiltered preview; 758 may return 11 rows
 SAPRead(type="TABLE_QUERY", name="MARA", columns=["MANDT","MATNR"], where=[{field:"MANDT",op:"=",value:"001"}], maxRows=10)
 SAPRead(type="SYSTEM")
@@ -1982,7 +1983,8 @@ classic FLP lifecycle operations, and set an object's API release contract.
 - `change_package` — Move an existing object into a different package (DEVC reassignment).
 - `set_api_state` — Set one supported API release contract to `RELEASED` or `NOT_RELEASED`. ARC-1
   reads the contract, transforms only its writable subset, writes it, then reads it back. Supported
-  contracts and visibility defaults come from SAP and are not broadened by ARC-1.
+  contracts and visibility defaults come from SAP and are not broadened by ARC-1. For `objectType="FUNC"`
+  with `name`, ARC-1 resolves the function group through search; pass `objectUri` when it cannot.
 - `flp_list_catalogs` — List FLP designer catalogs. The `flp_*` actions target the classic tile/target-mapping model, deprecated as of S/4HANA 2023 and not federated by Work Zone content exposure v2 — the successor is the Launchpad App Descriptor Item (`SAPRead type=UIAD`). Business catalogs are a separate model (`/UI2/FLPCM_CUST`) and are not managed here.
 - `flp_list_groups` — List FLP groups (`Pages`) from `/UI2/FLPD_CATALOG`.
 - `flp_list_tiles` — List tiles/target mappings in a catalog.
