@@ -1140,7 +1140,7 @@ The existing actions below are unchanged.
 | `name` | string | No | Object name — alternative to `uri` for `references`. |
 | `objectType` | string | No | For `references`: keep only results of this ADT type, slash format (`CLAS/OC`, `PROG/P`, `FUGR/FF`). A bare prefix (`CLAS`) matches every subtype. Applied client-side. |
 | `maxResults` | number | No | For `references`: max entries (default 100, max 1000). `total` counts every match of the filter. |
-| `line` | number | No | Line number (1-based) |
+| `line` | number | No | Line number (1-based). For `references`, together with `column`: search the symbol at that position. |
 | `column` | number | No | ADT cursor column (0-based integer) |
 | `source` | string | No | Current source code |
 
@@ -1166,7 +1166,7 @@ navigation parameters (`uri`, `objectType`, `line`, `column`, `source`) are reje
 
 **References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
 
-Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, warning?, references}` — because where-used is
+Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, searchedFor?, warning?, references}` — because where-used is
 unbounded: `CL_ABAP_TYPEDESCR` has 6,644 references (~968K tokens, several times a context window).
 **`total` counts matching reference entries before paging, not distinct consumer objects or runtime
 calls.** The `countMeaning` field states this explicitly. Tree/container rows and multiple references
@@ -1178,6 +1178,22 @@ Paging and `objectType` filtering are both client-side, and deliberately so: SAP
 `usageReferences` endpoint declares only `{?uri}` and ignores every limit or filter we can send
 (verified live across nine request variants, all byte-identical). The full set therefore still
 crosses the wire — this bounds what reaches the model, not what SAP computes.
+
+Without a position, `references` searches the whole object. With `line` and `column` (both, as ADT
+cursor coordinates: line from 1, column from 0) it searches the symbol at that position in the source
+behind `uri`, for example one method of a class; `type`+`name` positions refer to the main source.
+ARC-1 sends the cursor as the URI fragment `#start=<line>,<column>`, replacing any fragment already in
+`uri`. When the cursor is not on an identifier, SAP silently searches the whole object instead. A
+position search therefore returns `searchedFor`: SAP's result description, verbatim, which names
+what was searched, for example `References for: /SCWM/CL_TM - CLEANUP (Method) [SID]` or, after a
+fallback, `References for: /SCWM/CL_TM (Class) [SID]`. The wording differs by release. If SAP omits
+the description (including on the older fallback endpoint), a `warning` says the searched symbol
+could not be confirmed. URI fragments supplied directly are preserved when no coordinates are
+given. Fragment-scoped searches return native references without adding whole-interface
+implementers from SEOMETAREL, unless SAP explicitly reports fallback to the URI's original object
+with an empty `referencedObjectIdentifier`. An absent or nonempty identifier keeps results
+native-only: an implementation relationship does not establish a reference to a selected member
+or another type mentioned in the source.
 
 **Hierarchy action:** Returns the class inheritance chain via `SEOMETAREL`: superclass (or null), implemented interfaces, and direct subclasses. Requires `name` parameter (class name). It needs either table preview (`SAP_ALLOW_DATA_PREVIEW=true` + `data` scope) or freestyle SQL (`SAP_ALLOW_FREE_SQL=true` + `sql` scope). ARC-1 uses SQL when available and falls back to named table preview.
 
@@ -1191,6 +1207,7 @@ not enumerate subclasses or prove a complete inheritance/implementation list.
 SAPNavigate(action="definition", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=5, source="...")
 SAPNavigate(action="references", uri="/sap/bc/adt/oo/classes/zcl_order")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER")
+SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", line=12, column=12)
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", objectType="PROG/P")
 SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=15, source="...")
 SAPNavigate(action="hierarchy", name="ZCL_ORDER")

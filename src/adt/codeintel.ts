@@ -194,6 +194,31 @@ export async function findWhereUsed(
   objectUrl: string,
   objectType?: string,
 ): Promise<WhereUsedResult[]> {
+  return (await findWhereUsedWithScope(http, safety, objectUrl, objectType)).results;
+}
+
+/** Where-used results plus the symbol SAP actually searched for. */
+export interface WhereUsedLookup {
+  results: WhereUsedResult[];
+  /** SAP's `resultDescription`, verbatim; absent when SAP omits it. It names the searched symbol, e.g.
+   *  "References for: /SCWM/CL_TM - CLEANUP (Method) [SID]" (7.57) or
+   *  "[A4H] Where-Used List: /DMO/BOOKING_DATA (Structure)" (8.16). */
+  searchedFor?: string;
+  /** Exact empty means SAP searched the URI's original object; absent leaves the scope unknown. */
+  referencedObjectIdentifier?: string;
+}
+
+/**
+ * {@link findWhereUsed} that also reports SAP's search scope. With a cursor in the URI fragment
+ * (`#start=<line>,<column>`) SAP searches the symbol at that position, and falls back to the whole
+ * object when the cursor is not on an identifier; the result description is what tells the two apart.
+ */
+export async function findWhereUsedWithScope(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  objectUrl: string,
+  objectType?: string,
+): Promise<WhereUsedLookup> {
   checkOperation(safety, OperationType.Intelligence, 'FindWhereUsed');
 
   const typeFilter = objectType ? `\n  <usageReferences:objectTypeFilter value="${escapeXmlAttr(objectType)}"/>` : '';
@@ -246,7 +271,14 @@ export async function findWhereUsed(
     });
   }
 
-  return results;
+  const scope = findDeepNodes(parsed, 'usageReferenceResult')[0];
+  const searchedFor = asOptionalString(scope?.['@_resultDescription']);
+  const referencedObjectIdentifier = scope?.['@_referencedObjectIdentifier'];
+  return {
+    results,
+    ...(searchedFor ? { searchedFor } : {}),
+    ...(typeof referencedObjectIdentifier === 'string' ? { referencedObjectIdentifier } : {}),
+  };
 }
 
 /**
