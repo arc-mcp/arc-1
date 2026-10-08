@@ -1,5 +1,10 @@
 # Plan: create BAdI enhancement implementations (`ENHO/XHB`) via SAPWrite
 
+> **Status (2026-10-08): implemented on-prem, including filter values.** The sections below are the
+> original plan; where they differ, the code, [docs_page/tools.md](../../docs_page/tools.md) and the
+> [write contract](../research/2026-10-07-enho-xhb-write-contract.md) are current. BTP is a follow-up
+> (roadmap FEAT-03).
+
 ## Finding (2026-10-07)
 
 In a project on S/4HANA (SAP_BASIS 816, on-prem), ARC-1 could not
@@ -79,18 +84,18 @@ Read-only keys are ignored and unknown keys are rejected. This keeps the schema 
   keep their stored values.
 - `type: "ENHO"`, `action: "delete"`.
 - Then `SAPActivate type=ENHO`.
-- Filter values are out of scope until the spike captures their XML.
+- Filter values: each entry takes an optional `filter` text as SAPRead shows it (added after the spike
+  captured the filter XML; see the write contract).
 
 ### Validation before write
 
-Implemented locally: JSON shape, names, one spot per implementation, no spot change on update, discovery gate,
-package allowlist. ARC-1 has no ENHS (spot) reader yet. These checks are left to SAP until the spike shows
-whether its errors are clear enough:
+Implemented: JSON shape, names, one spot per implementation, no spot change on update, discovery gate,
+package allowlist. ARC-1 reads the spot (`GET /sap/bc/adt/enhancements/enhsxsb/{spot}`) and checks that each
+BAdI definition exists in it and that each filter name is declared by the BAdI. Left to SAP at activation:
 
-- The BAdI definition exists in the spot.
 - The implementing class implements the BAdI interface.
 - On BTP / ABAP Cloud packages, the BAdI interface is released (C1).
-- A filter-dependent BAdI has a filter.
+- Filter values pass their DDIC check.
 
 ## Implementation steps
 
@@ -132,4 +137,5 @@ whether its errors are clear enough:
 - Which BAdI on A4H to use for the integration test? It must be released, have no filter, and live in a
   spot that ships on A4H.
 - Is enhancement implementation creation allowed on BTP ABAP Environment, or only on-prem / private cloud?
-  Read is "on-prem only" today; check whether that's a real limit or only untested.
+  Answered: a BTP trial run worked for BAdIs released for cloud development (`useInSAPCloudPlatform`);
+  enabling it is the FEAT-03 follow-up.
