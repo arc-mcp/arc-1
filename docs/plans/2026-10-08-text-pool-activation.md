@@ -28,8 +28,9 @@ Experiments with a program whose source also has an unrelated draft:
 2. Treat failed activation as an error, state that the text was saved but activation
    was not confirmed, and retain native errors. Always invalidate the caller's caches
    after an attempted write, including activation failure after a successful PUT.
-3. Correct code comments, agent routing and user guidance. Success explicitly says
-   the text pool was activated. No new SAPActivate aliases or release heuristics.
+3. Correct code comments, agent routing and user guidance. PROG reports the save and
+   activation request with first-activation guidance; CLAS/FUGR report activation.
+   No new SAPActivate aliases or release heuristics.
 4. Add ordering/session, error, no-activation-after-PUT-failure, and cache regression
    tests. Extend live integration assertions to verify no text-pool inactive entry,
    not merely that the source can be read. Run the full gates and live final replay.
