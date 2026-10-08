@@ -38,6 +38,8 @@ import {
 
 export const ENHO_XHB_CONTENT_TYPE = 'application/vnd.sap.adt.enh.enhoxhb.v4+xml';
 export const ENHO_XHB_COLLECTION = '/sap/bc/adt/enhancements/enhoxhb';
+/** Media type of the spot read, live-verified from discovery and the response Content-Type. */
+export const ENHS_XSB_CONTENT_TYPE = 'application/vnd.sap.adt.enh.enhs.v2+xml';
 
 export interface BadiImplementationEntry {
   name: string;
@@ -355,8 +357,9 @@ export async function getEnhancementSpotBadis(
   spot: string,
 ): Promise<Map<string, Map<string, FilterDeclaration>>> {
   checkOperation(safety, OperationType.Read, 'GetEnhancementSpot');
-  // No explicit Accept: the spot's media type is not live-verified, so the client's negotiation picks it.
-  const resp = await http.get(`/sap/bc/adt/enhancements/enhsxsb/${encodeURIComponent(spot.toLowerCase())}`);
+  const resp = await http.get(`/sap/bc/adt/enhancements/enhsxsb/${encodeURIComponent(spot.toLowerCase())}`, {
+    Accept: ENHS_XSB_CONTENT_TYPE,
+  });
   const result = new Map<string, Map<string, FilterDeclaration>>();
   // A regex, not the parser: each filter's `<enhs:filterCheck>` is copied into the implementation as SAP wrote it.
   for (const badi of resp.body.matchAll(/<enhs:badiDefinition\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enhs:badiDefinition>)/g)) {

@@ -16,6 +16,7 @@ because ARC-1 could only read ENHO. The full plan is in `docs/plans/enho-badi-im
 | Step | Request | Notes |
 |---|---|---|
 | Gate | ADT discovery advertises `/sap/bc/adt/enhancements/enhoxhb` | Advertised on 758/816 (S/4HANA 2023 and ABAP Platform 2025 trial probes); 750 only advertises `enhoxh`. An unprobed session is not blocked. |
+| Spot read | `GET /sap/bc/adt/enhancements/enhsxsb/{spot}` with `Accept: application/vnd.sap.adt.enh.enhs.v2+xml` | Before create and update: BAdIs of the spot and their filter declarations. The media type is the one discovery advertises and the response carries (2026-10-08); the `enhsxsb.v1`–`v4` names return 406. |
 | Create | `POST /sap/bc/adt/enhancements/enhoxhb?corrNr=…` with `application/vnd.sap.adt.enh.enhoxhb.v4+xml` | `enho:objectData` with the spot usage and **no** BAdI implementations (`badiContainerXml`), as Eclipse sends it. |
 | Save implementations | lock → `PUT …/{name}?lockHandle=…&corrNr=…` → unlock | Full document. Eclipse does the same when the form editor is saved. |
 | Update | lock → GET (developer view) → merge → PUT → unlock | `src/handlers/write/metadata-update.ts`. |

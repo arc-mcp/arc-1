@@ -272,8 +272,15 @@ describe('filter conditions', () => {
   });
 
   it('builds the same filter tree SAP stores (816 shape)', async () => {
-    const http = { get: async () => ({ body: SPOT }) } as unknown as AdtHttpClient;
+    const headers: unknown[] = [];
+    const http = {
+      get: async (_path: string, h?: unknown) => {
+        headers.push(h);
+        return { body: SPOT };
+      },
+    } as unknown as AdtHttpClient;
     const badis = await getEnhancementSpotBadis(http, unrestrictedSafetyConfig(), 'ES_MY_SPOT');
+    expect(headers).toEqual([{ Accept: 'application/vnd.sap.adt.enh.enhs.v2+xml' }]);
     expect([...badis.keys()]).toEqual(['BADI_MY_FILTERED', 'BADI_MY_PLAIN']);
     expect([...(badis.get('BADI_MY_PLAIN')?.keys() ?? [])]).toEqual([]);
     const filters = badis.get('BADI_MY_FILTERED') ?? new Map();
