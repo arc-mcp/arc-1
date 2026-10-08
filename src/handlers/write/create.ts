@@ -640,6 +640,16 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     );
   }
 
+  // Prepare and lint before creating metadata: rejection must not leave an empty object
+  // or transport entry. FUNC parameters can synthesize source even when source is omitted.
+  const funcPreparation =
+    type === 'FUNC'
+      ? prepareFunctionModuleCreateSource(name, source, args.parameters as FmParameter[] | undefined)
+      : { shouldWrite: !!source, source: source ?? '', warnings: [] };
+  const shouldWriteSource = funcPreparation.shouldWrite;
+  const lintWarnings = runPreWriteLint(funcPreparation.source, type, name, config, lintOverride);
+  if (lintWarnings.blocked) return lintWarnings.result!;
+
   // Build type-specific creation XML body.
   // SAP ADT requires the root element to match the object type —
   // a generic objectReferences body returns 400 "System expected the element ...".
@@ -765,28 +775,11 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     return textResult(`Created ${type} ${name} in package ${pkg}.\n${result}${followUpHint}`);
   }
 
-  // Step 2: Write source code if provided.
-  // Issue #252: FUNC create accepts a structured `parameters` array; if
-  // provided we must follow up with a source PUT even when `source` is
-  // omitted (the array alone synthesizes a minimal FUNCTION/ENDFUNCTION
-  // body containing the signature clause).
-  const funcPreparation =
-    type === 'FUNC'
-      ? prepareFunctionModuleCreateSource(name, source, args.parameters as FmParameter[] | undefined)
-      : { shouldWrite: !!source, source: source ?? '', warnings: [] };
-  const shouldWriteSource = funcPreparation.shouldWrite;
+  // Step 2: Write the already-validated source if provided.
   if (shouldWriteSource) {
     // FUNC processing metadata is paired with a source signature prepared above;
     // other object types use their supplied source unchanged.
     const createSource = funcPreparation.source;
-
-    // Pre-write lint validation
-    const lintWarnings = runPreWriteLint(createSource, type, name, config, lintOverride);
-    if (lintWarnings.blocked) {
-      return textResult(
-        `Created ${type} ${name} in package ${pkg}, but source was rejected by lint:\n${lintWarnings.result!.content[0].text}`,
-      );
-    }
 
     await safeUpdateSource(
       client.http,

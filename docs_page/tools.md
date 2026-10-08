@@ -415,7 +415,7 @@ keep their separate behavior.
 | `conversionExit` | string | No | DOMA: conversion exit (e.g., `ALPHA`) |
 | `signExists` | boolean | No | DOMA: whether signed values are allowed |
 | `lowercase` | boolean | No | DOMA: whether lowercase characters are allowed |
-| `fixedValues` | array | No | DOMA: fixed value entries (`[{low, high?, description?}]`) |
+| `fixedValues` | array | No | DOMA: fixed value ranges. Each entry has required `low` and optional `high` (max 10 characters each), and optional `description` (max 60). Oversized entries are rejected before any write, including in `batch_create`. |
 | `valueTable` | string | No | DOMA: value table reference (e.g., `T001`) |
 | `typeKind` | string | No | DTEL: `domain` or `predefinedAbapType` |
 | `typeName` | string | No | DTEL: referenced domain/type name (for `typeKind="domain"`) |
