@@ -446,7 +446,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'For FUNC/VERSIONS type. The function group containing the function module. Optional for FUNC — auto-resolved via SAPSearch if omitted. Required for VERSIONS when querying a function module revision feed.',
+              'Function group of the function module for FUNC, VERSIONS, or API_STATE with objectType=FUNC. Auto-resolved via SAPSearch if omitted.',
           },
           method: {
             type: 'string',
@@ -514,7 +514,7 @@ export function getToolDefinitions(
           objectType: {
             type: 'string',
             description:
-              'SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint (FUNC needs group); inferred from CL_/IF_/CX_, else PROG.' +
+              'SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint; inferred from CL_/IF_/CX_, else PROG.' +
               (btp ? '' : ' TEXT_ELEMENTS: PROG (default), CLAS or FUGR.'),
           },
           source: {
@@ -852,7 +852,7 @@ export function getToolDefinitions(
           refObjectType: {
             type: 'string',
             description:
-              'SKTD/KTD create (required): ADT type+subtype of the documented parent (e.g. "DDLS/DF", "BDEF/BDO", "SRVD/SRV", "DEVC/K"). Not CLAS/INTF/PROG (use ABAP Doc for code).',
+              'SKTD/KTD create (required): parent ADT type+subtype, e.g. DDLS/DF, BDEF/BDO, SRVD/SRV, DEVC/K, SMBC/TYP (BCMO). CLAS/INTF/PROG use ABAP Doc.',
           },
           refObjectName: {
             type: 'string',
@@ -860,7 +860,7 @@ export function getToolDefinitions(
           },
           refObjectDescription: {
             type: 'string',
-            description: 'SKTD/KTD create: description of the parent object (shown in Eclipse tooltips).',
+            description: 'SKTD/KTD create: parent description; required and nonempty for SMBC/TYP (BCMO).',
           },
           shortTexts: {
             type: 'array',

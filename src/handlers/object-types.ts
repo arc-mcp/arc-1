@@ -433,7 +433,7 @@ export function objectBasePath(type: string): string {
           `single base path — it requires the parent function group via ` +
           `client.getFunction(group, name) or an explicit /sap/bc/adt/functions/` +
           `groups/{group}/fmodules/{name} URI. Caller must take the FUNC-aware ` +
-          `path or pass 'uri' directly. See PR #223 codex follow-up.`,
+          `path and resolve the function group first. See PR #223 codex follow-up.`,
       );
     case 'INCL':
       return '/sap/bc/adt/programs/includes/';
@@ -536,15 +536,6 @@ export function inferObjectType(name: string): string {
   if (upper.startsWith('CL_') || upper.startsWith('ZCL_') || upper.startsWith('YCL_')) return 'CLAS';
   if (upper.startsWith('CX_') || upper.startsWith('ZCX_') || upper.startsWith('YCX_')) return 'CLAS';
   return '';
-}
-
-/**
- * Map object type + name to the ADT object URL WITHOUT encoding the name.
- * Used for API release state where the full URI is encoded as a single path segment by the caller.
- */
-export function objectUrlForTypeRaw(type: string, name: string): string {
-  const effectiveName = type === 'SKTD' ? name.toLowerCase() : name;
-  return `${objectBasePath(type)}${effectiveName}`;
 }
 
 /** Get the source URL for an object (appends /source/main) */
