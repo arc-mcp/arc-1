@@ -74,3 +74,22 @@ Live coverage does not include 750, BTP/PP, an installed MCP client, or transpor
 packages. The 816 target remains unavailable due to its previously verified license
 error; no 816 live success is claimed. Unit tests cover known and unknown release
 classification without asserting backend support on untested systems.
+
+## Review correction (2026-10-08)
+
+Confirmed Claude's test-setup finding: RAP preflight reads `features.abapRelease`,
+while the handler regression set only `config.abapRelease` and cleared the feature
+cache. The original test exercised unknown-release handling, despite intending 758.
+It still detected the original bug; it did not prove the probed-release path.
+
+Use the existing `featuresOff()` fixture and `setCachedFeatures()` to seed on-prem
+758, reset it after each test, and remove the misleading lint-only override. This
+corrects the three handler tests without changing production release selection.
+Direct preflight tests retain their known/unknown-release coverage. No new helper,
+runtime behavior, or roadmap impact is needed.
+
+Verified all three corrected handler cases fail with the original preflight rule
+and pass with this PR. All 7,964 unit tests and all six local gates pass. Production
+source is unchanged from the live-tested `c91d110e` build, so no new live write was
+needed for this test-only correction. Final review found no further issue; roadmap
+rechecked with no impact.

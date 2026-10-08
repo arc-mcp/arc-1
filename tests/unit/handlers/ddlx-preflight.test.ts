@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
+import { featuresOff } from './handler-test-config.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-const { resetCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
+const { resetCachedFeatures, setCachedFeatures } = await import('../../../src/handlers/feature-cache.js');
 const source = `@Metadata.layer: #CUSTOMER
 @UI.headerInfo: { typeName: 'Item', typeNamePlural: 'Items' }
 @Search.searchable: true
@@ -18,6 +19,8 @@ describe('DDLX supported annotations through SAPWrite (#941)', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     resetCachedFeatures();
+    // RAP preflight uses the probed release, not config.abapRelease (the lint override).
+    setCachedFeatures({ ...featuresOff(), systemType: 'onprem', abapRelease: '758' });
     mockFetch.mockImplementation((url) =>
       Promise.resolve(
         mockResponse(
@@ -31,14 +34,16 @@ describe('DDLX supported annotations through SAPWrite (#941)', () => {
     );
   });
 
+  afterEach(() => resetCachedFeatures());
+
   it.each(['create', 'update', 'batch_create'])(
-    '%s writes supported annotations with default preflight',
+    '%s writes supported annotations with default preflight on probed 758',
     async (action) => {
       const object = { type: 'DDLX', name: 'ZX_ITEM', package: '$TMP', source };
       const args = action === 'batch_create' ? { action, objects: [object] } : { action, ...object };
       const result = await handleToolCall(
         createClient(),
-        { ...DEFAULT_CONFIG, systemType: 'onprem', abapRelease: '758' },
+        { ...DEFAULT_CONFIG, systemType: 'onprem' },
         'SAPWrite',
         args,
       );
