@@ -11,7 +11,8 @@
  */
 
 import { lockObject, unlockObject } from './crud.js';
-import { AdtApiError } from './errors.js';
+import { activate } from './devtools.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 
@@ -127,9 +128,10 @@ export async function readTextElements(
   return chunks.length > 0 ? chunks.join('\n\n') : `No text elements maintained for ${objectType} ${name}.`;
 }
 
-/** Write one subobject. Locks the textelements object (not the class/program), PUTs the body with
- *  that subobject's media type as BOTH Content-Type and Accept, then unlocks. Immediately active —
- *  no SAPActivate needed. */
+/** Write one part, unlock, then activate only the text pool in the same stateful session.
+ *  PUT uses the part's media type as BOTH Content-Type and Accept. SAP refuses activation
+ *  while the pool is locked; a source read alone cannot distinguish its inactive version.
+ *  A never-activated PROG still needs its first owner activation to activate the texts. */
 export async function writeTextElementPart(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -159,6 +161,21 @@ export async function writeTextElementPart(
       await session.put(url, source, TEXT_ELEMENT_CT[part], { Accept: TEXT_ELEMENT_CT[part] });
     } finally {
       await unlockObject(session, obj, lock.lockHandle);
+    }
+    try {
+      // Do not add other inactive objects suggested by a preaudit response.
+      const result = await activate(session, safety, obj, { preaudit: false, name });
+      if (!result.success) {
+        throw new AdtApiError(result.messages.join('\n') || 'Text-pool activation failed.', 400, obj);
+      }
+    } catch (err) {
+      const note = 'Text elements were saved, but activation was not confirmed. Retry the same text write.';
+      // The dispatcher retains this static hint when minimal errors hide SAP diagnostics.
+      if (err instanceof AdtError && !err.extraHint) err.extraHint = note;
+      if (err instanceof Error) {
+        err.message = `${note}\n${err.message}`;
+      }
+      throw err;
     }
   });
 }
