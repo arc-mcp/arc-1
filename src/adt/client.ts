@@ -1573,8 +1573,8 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
     return readTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols');
   }
 
-  /** Write one subobject of a textpool. Locks the textelements object, PUTs, unlocks. Immediately
-   *  active — no SAPActivate needed. */
+  /** Write one subobject of a textpool. Locks, PUTs, unlocks, then activates the text pool
+   *  in the same stateful session — no separate SAPActivate needed. */
   async writeTextElementPart(
     objectType: TextElementObjectType,
     name: string,

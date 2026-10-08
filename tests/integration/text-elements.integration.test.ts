@@ -72,8 +72,12 @@ describe('text elements via SAPRead/SAPWrite', () => {
 
       const read = (part?: string) =>
         call('SAPRead', { type: 'TEXT_ELEMENTS', objectType: type, name, ...(part ? { include: part } : {}) });
-      const write = (textPart: string, source: string) =>
-        call('SAPWrite', { action: 'edit_text_symbols', type, name, textPart, source });
+      const write = async (textPart: string, source: string) => {
+        await call('SAPWrite', { action: 'edit_text_symbols', type, name, textPart, source });
+        const poolUri = `/sap/bc/adt/textelements/${collection}/${name.toLowerCase()}`;
+        const inactive = await client.getInactiveObjects();
+        expect(inactive.filter((entry) => entry.uri.toLowerCase() === poolUri)).toEqual([]);
+      };
 
       await write('symbols', '@MaxLength:20\n001=Hello\n\n@MaxLength:20\n002=Second\n');
       const symbols = await read('symbols');

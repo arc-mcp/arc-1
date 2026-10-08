@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import type { TextElementPart } from '../../../src/adt/text-elements.js';
+import type { SapWriteContext } from '../../../src/handlers/write/context.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { writeActionEditTextSymbols } = await import('../../../src/handlers/write/update-delete.js');
 const LOCK =
   '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H/9</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR></DATA></asx:values></asx:abap>';
 const calls = () => mockFetch.mock.calls as [string, RequestInit][];
@@ -157,6 +159,59 @@ describe('text elements routing and safety', () => {
     expect(String(put?.[0])).toContain('lockHandle=H%2F9');
   });
 
+  it.each([
+    ['PROG', 'programs'],
+    ['FUGR', 'functiongroups'],
+    ['CLAS', 'classes'],
+  ] as const)('activates only the %s text pool after unlock in the same stateful session', async (type, collection) => {
+    await createClient().writeTextElementPart(type, '/ARC/TEST', 'symbols', '@MaxLength:20\n001=Hello');
+    const writes = mutations();
+    expect(writes).toHaveLength(4);
+    expect(writes[0]?.[0]).toContain('_action=LOCK');
+    expect(writes[1]?.[1].method).toBe('PUT');
+    expect(writes[2]?.[0]).toContain('_action=UNLOCK');
+    expect(writes[3]?.[0]).toContain('/activation?method=activate&preauditRequested=false');
+    expect(writes[3]?.[1].body).toContain(`/sap/bc/adt/textelements/${collection}/%2FARC%2FTEST`);
+    expect(String(writes[3]?.[1].body).match(/<adtcore:objectReference /g)).toHaveLength(1);
+    for (const [, request] of writes) {
+      expect(request.headers).toMatchObject({ 'X-sap-adt-sessiontype': 'stateful' });
+    }
+  });
+
+  it.each(['rejected', 'http', 'pending'])(
+    'reports saved but unconfirmed text activation on %s and invalidates caches',
+    async (failure) => {
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes('/activation')
+            ? mockResponse(
+                failure === 'http' ? 403 : 200,
+                failure === 'pending'
+                  ? '<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/activation"><entry><object><ref uri="/sap/bc/adt/other" name="OTHER"/></object></entry></ioc:inactiveObjects>'
+                  : '<messages><msg type="E"><shortText>Activation refused</shortText></msg></messages>',
+              )
+            : mockResponse(200, String(url).includes('_action=LOCK') ? LOCK : '', { 'x-csrf-token': 'T' }),
+        ),
+      );
+      const invalidateWrittenObject = vi.fn();
+      const ctx = {
+        client: createClient(),
+        args: {},
+        type: 'PROG',
+        name: 'ZTEST',
+        source: '001=Hello',
+        hasSource: true,
+        enforcePackageForExistingObject: vi.fn().mockResolvedValue('$TMP'),
+        invalidateWrittenObject,
+      } as unknown as SapWriteContext;
+      await expect(writeActionEditTextSymbols(ctx)).rejects.toThrow(/saved.*activation.*not confirmed/i);
+      expect(invalidateWrittenObject).toHaveBeenCalledOnce();
+      // HTTP 403 has the transport's existing one-time CSRF refresh/retry.
+      expect(calls().filter(([url]) => String(url).includes('/activation'))).toHaveLength(failure === 'http' ? 2 : 1);
+      expect(calls().some(([url]) => String(url).includes('_action=UNLOCK'))).toBe(true);
+    },
+  );
+
   it.each([undefined, null])('refuses an absent source (%s) without mutation', async (source) => {
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'edit_text_symbols',
@@ -253,6 +308,7 @@ describe('text elements routing and safety', () => {
       expect(String(lock?.[0])).toContain('/textelements/functiongroups/%2FARC%2FFG?');
       expect(String(unlock?.[0])).toContain('/textelements/functiongroups/%2FARC%2FFG?');
       expect(calls().indexOf(unlock!)).toBeGreaterThan(calls().indexOf(put!));
+      expect(calls().some(([url]) => String(url).includes('/activation'))).toBe(false);
     },
   );
 });
