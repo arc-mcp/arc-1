@@ -333,6 +333,19 @@ describe('Code Intelligence', () => {
   </usagereferences:referencedObjects>
 </usagereferences:usageReferenceResult>`;
 
+    it.each(['', 'ABAPFullName;\\TY:ZIF_TEST\\ME:RUN', undefined])(
+      'preserves explicit scope identifiers, including empty, and distinguishes absence: %j',
+      async (identifier) => {
+        const xml = result('description').replace(
+          ' referencedObjectIdentifier=""',
+          identifier === undefined ? '' : ` referencedObjectIdentifier="${identifier}"`,
+        );
+        const lookup = await findWhereUsedWithScope(mockHttp(xml), unrestrictedSafetyConfig(), '/source#start=3,0');
+        if (identifier === undefined) expect(lookup).not.toHaveProperty('referencedObjectIdentifier');
+        else expect(lookup).toHaveProperty('referencedObjectIdentifier', identifier);
+      },
+    );
+
     it('reports SAP_BASIS 816 result descriptions verbatim', async () => {
       // 816 also sends a scope element; the description is read from the result root on every release.
       const http = mockHttp(

@@ -1175,8 +1175,10 @@ fallback, `References for: /SCWM/CL_TM (Class) [SID]`. The wording differs by re
 the description (including on the older fallback endpoint), a `warning` says the searched symbol
 could not be confirmed. URI fragments supplied directly are preserved when no coordinates are
 given. Fragment-scoped searches return native references without adding whole-interface
-implementers from SEOMETAREL, because an implementation relationship does not establish a
-reference to the selected member.
+implementers from SEOMETAREL, unless SAP explicitly reports fallback to the URI's original object
+with an empty `referencedObjectIdentifier`. An absent or nonempty identifier keeps results
+native-only: an implementation relationship does not establish a reference to a selected member
+or another type mentioned in the source.
 
 **Hierarchy action:** Returns the class inheritance chain via `SEOMETAREL`: superclass (or null), implemented interfaces, and direct subclasses. Requires `name` parameter (class name). It needs either table preview (`SAP_ALLOW_DATA_PREVIEW=true` + `data` scope) or freestyle SQL (`SAP_ALLOW_FREE_SQL=true` + `sql` scope). ARC-1 uses SQL when available and falls back to named table preview.
 

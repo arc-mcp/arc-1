@@ -85,9 +85,15 @@ export async function lookupLiveUsages(
 
   let results: LiveUsageResult[];
   let searchedFor: string | undefined;
+  let referencedObjectIdentifier: string | undefined;
   let fallbackUsed = false;
   try {
-    ({ results, searchedFor } = await findWhereUsedWithScope(client.http, client.safety, uri, filter));
+    ({ results, searchedFor, referencedObjectIdentifier } = await findWhereUsedWithScope(
+      client.http,
+      client.safety,
+      uri,
+      filter,
+    ));
   } catch (err) {
     if (!(err instanceof AdtApiError) || ![404, 405, 415, 501].includes(err.statusCode)) throw err;
     results = await findReferences(client.http, client.safety, uri);
@@ -96,13 +102,14 @@ export async function lookupLiveUsages(
 
   // Kept outside the try: an augment failure must not be mistaken for a missing where-used endpoint.
   let warning: string | undefined;
-  // Whole-interface implementers are not evidence of references to a selected member.
-  if (!fallbackUsed && !scoped) {
+  // Empty is SAP's explicit fallback to the original object; absent/nonempty cannot justify enrichment.
+  if (!fallbackUsed && (!scoped || referencedObjectIdentifier === '')) {
     warning = await augmentInterfaceImplementers(client, uri, filter, results as WhereUsedResult[]);
   }
   if (scoped && !searchedFor) {
-    warning =
+    const scopeWarning =
       'SAP did not report the searched symbol. Results may refer to the whole object; confirm the scope before using them.';
+    warning = warning ? `${warning} ${scopeWarning}` : scopeWarning;
   }
 
   const filtered = filter ? results.filter((result) => matchesObjectType(result.type, filter)) : results;

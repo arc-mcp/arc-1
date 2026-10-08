@@ -199,6 +199,8 @@ export interface WhereUsedLookup {
    *  "References for: /SCWM/CL_TM - CLEANUP (Method) [SID]" (7.57) or
    *  "[A4H] Where-Used List: /DMO/BOOKING_DATA (Structure)" (8.16). */
   searchedFor?: string;
+  /** Exact empty means SAP searched the URI's original object; absent leaves the scope unknown. */
+  referencedObjectIdentifier?: string;
 }
 
 /**
@@ -264,8 +266,14 @@ export async function findWhereUsedWithScope(
     });
   }
 
-  const searchedFor = asOptionalString(findDeepNodes(parsed, 'usageReferenceResult')[0]?.['@_resultDescription']);
-  return { results, ...(searchedFor ? { searchedFor } : {}) };
+  const scope = findDeepNodes(parsed, 'usageReferenceResult')[0];
+  const searchedFor = asOptionalString(scope?.['@_resultDescription']);
+  const referencedObjectIdentifier = scope?.['@_referencedObjectIdentifier'];
+  return {
+    results,
+    ...(searchedFor ? { searchedFor } : {}),
+    ...(typeof referencedObjectIdentifier === 'string' ? { referencedObjectIdentifier } : {}),
+  };
 }
 
 /**
