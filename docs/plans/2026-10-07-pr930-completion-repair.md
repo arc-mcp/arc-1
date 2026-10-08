@@ -122,3 +122,54 @@ The independent reviewer approved the exact-empty-200 correction; the rebuilt
 758 matrix then passed, including empty body, complete keyword/method/local lists,
 broad-prefix uncertainty and unmodified backend source. Parent final review found
 no remaining actionable findings.
+
+## Follow-up review F1: bound cursors to the posted source
+
+An external review of published head `7e18fc3c` identified that the shared
+`hasCursorAndSource` predicate validates coordinate types and lower bounds but
+never checks the posted source. A line beyond the source or a column beyond its
+line reaches SAP, whose 758 empty HTTP 200 response becomes `complete: true`.
+750 uses `@end` for the same invalid position, so the same invalid tool input has
+different apparent completeness. The valid empty-200 response must remain
+supported; the correction belongs in input validation.
+
+Parent reviewed and approved this follow-up plan before runtime edits:
+
+1. Add failing handler regressions for completion and definition with lines and
+   columns outside the posted source. Every rejected case must perform zero HTTP
+   calls. Add boundary cases for a cursor at line end, zero on an existing trailing
+   empty line, and CRLF without counting the carriage return as a source column.
+2. Keep the shared predicate and existing explicit finite-integer/lower-bound and
+   nonblank-source checks. Split source on LF/CRLF, require the selected line to
+   exist, and allow `0 <= column <= selectedLine.length`. Do not introduce a
+   cursor abstraction or alter references, URI resolution, or SAP response parsing.
+3. Explain in both validation messages that coordinates must fit the source.
+   Update docs to say SAP rejects non-source URIs without claiming one status on
+   all releases, and clarify that unsaved source means edits to an existing SAP
+   object, not a not-yet-created object.
+4. Reproduce the old behavior on 750/758, then verify local refusals and unchanged
+   valid local-variable/empty responses on the final build. Run focused tests,
+   full unit suite and standard gates; request independent review before adding
+   a visible follow-up commit and pushing normally to the existing PR.
+
+Roadmap rechecked: FEAT-80 remains removed; this tightens its already implemented
+cursor contract and does not introduce or close another roadmap item. Current
+main and published PR head were fetched and compared before this work.
+
+Independent reproduction at head `7e18fc3c`: both out-of-source cases made a SAP
+request and returned `complete: true` on 758 but `complete: false` on 750. The new
+shared-action regression matrix failed all eight invalid-position cases before
+the fix; all ten line-end/CRLF/trailing-line positive controls already passed.
+
+Follow-up verification: all 18 new cursor tests passed after the fix; full suite
+7,886 tests in 259 files passed with typecheck, lint, policy, build and size/schema
+gates. On rebuilt 750/758 clients, definition and completion rejected both invalid
+positions with zero HTTP calls. The existing valid completion matrix passed again,
+including unsaved local variables, line-end cursors, current backend source and
+758's valid empty HTTP 200. Independent final review precedes the follow-up push.
+
+On 2026-10-08, the independent reviewer rechecked the shared predicate, boundary
+tests and documentation and reran 173 handler/cursor tests successfully. Parent
+final review also found no actionable findings and approved publication. Latest
+main remained `907b02c0`, already an ancestor; published head remained `7e18fc3c`.
+The follow-up is a new commit with a normal push, preserving contributor history.

@@ -93,3 +93,29 @@ example, not a new 750/758 namespaced live case. No source is persisted by compl
 FEAT-80 is removed from both roadmap overview and detail: its required 750/758
 current/unsaved source, useful/empty results, cursor, parser, and MIME checks are
 now verified. Rich insertion templates and descriptions remain outside this repair.
+
+## Follow-up F1: reject positions outside the posted source
+
+Independent reproduction of the external review finding at published `7e18fc3c`
+confirmed that line 99 or column 40 on the five-character `lv_co` line reached SAP.
+758 returned an empty HTTP 200 and `complete: true`; 750 returned only `@end` and
+`complete: false`. Neither is a useful answer to invalid tool input.
+
+The shared definition/completion predicate now requires the line to exist in the
+posted source and column to lie between zero and that line's length, inclusive.
+LF and CRLF split into the same logical lines; a trailing newline creates an empty
+line where column zero is valid. Positions at the end of a typed prefix remain
+valid. Rejected positions perform no HTTP calls. Valid empty completion responses
+retain the established release-specific response contract.
+
+Documentation now says that SAP rejects object metadata URIs without promising one
+HTTP status across releases. Unsaved text means edits to an existing SAP object;
+completion does not create a not-yet-existing object. The new input-bound tests
+cover both completion and definition because they share the predicate.
+
+The rebuilt follow-up was verified on both 750 and 758 through the handler with
+HTTP calls counted: each invalid line/column was rejected locally for both
+completion and definition, while a valid line-end cursor reached SAP. The full
+valid completion matrix above was rerun unchanged, including both empty-response
+forms. No source or SAP objects were written. Automated checks passed 7,886 tests
+across 259 files plus typecheck, lint, policy, build and size/schema budgets.

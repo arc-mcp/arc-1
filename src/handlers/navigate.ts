@@ -17,6 +17,7 @@ import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 /** SAP resolves definition and completion against the posted text: without it the answer is empty. */
 function hasCursorAndSource(args: Record<string, unknown>, line: number, column: number, source: string): boolean {
+  const sourceLine = source.split(/\r?\n/)[line - 1];
   return (
     args.line !== undefined &&
     args.column !== undefined &&
@@ -24,7 +25,9 @@ function hasCursorAndSource(args: Record<string, unknown>, line: number, column:
     line >= 1 &&
     Number.isInteger(column) &&
     column >= 0 &&
-    source.trim().length > 0
+    source.trim().length > 0 &&
+    sourceLine !== undefined &&
+    column <= sourceLine.length
   );
 }
 
@@ -57,7 +60,7 @@ export async function handleSAPNavigate(
       }
       if (!hasCursorAndSource(args, line, column, source)) {
         return errorResult(
-          'Definition lookup needs line, column and source: pass current source text and integer ADT cursor coordinates (line >= 1, column >= 0).',
+          'Definition lookup needs line, column and source: pass current source text and integer ADT cursor coordinates within that source (line >= 1, 0 <= column <= line length).',
         );
       }
       const result = await findDefinition(client.http, client.safety, uri, line, column, source);
@@ -106,7 +109,7 @@ export async function handleSAPNavigate(
       }
       if (!hasCursorAndSource(args, line, column, source)) {
         return errorResult(
-          'Completion needs line, column and source: pass current source text and integer ADT cursor coordinates (line >= 1, column >= 0), with the cursor right after the typed prefix.',
+          'Completion needs line, column and source: pass current source text and integer ADT cursor coordinates within that source (line >= 1, 0 <= column <= line length), with the cursor right after the typed prefix.',
         );
       }
       const result = await getCompletion(client.http, client.safety, uri, line, column, source);

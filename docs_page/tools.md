@@ -1182,17 +1182,19 @@ SAPNavigate(action="hierarchy", name="ZCL_ORDER")
 ```
 
 For `definition`, pass the source URI and current source text, with integer ADT cursor coordinates:
-line starts at 1, column at 0. Place the cursor on the identifier. Returned target coordinates use
+line starts at 1, column at 0. The line must exist in the posted source, and column may
+reach its end but not extend beyond it. Place the cursor on the identifier. Returned target coordinates use
 the same convention. Object metadata URIs and `type`+`name` are insufficient.
 The source can contain unsaved changes; ARC-1 does not replace it with a backend read. A returned
 target URI may include a cursor fragment; an explicit new line/column replaces that fragment.
 
-`completion` takes the same inputs: the source URI (SAP refuses object URIs without `/source/main`
-with 400), the current source text and an ADT cursor (line from 1, column from 0) placed right after
+`completion` takes the same inputs: the source URI (SAP rejects object metadata URIs),
+the current source text and an ADT cursor (line from 1, column from 0) placed right after
 the typed prefix, for example column 3 after `DAT`. ARC-1 sends the cursor as the URI fragment
 `#start=<line>,<column>`, replacing any fragment already in `uri`. It returns
 `{proposals: [{text}], complete, hint?}`: keywords and identifiers alike, in SAP's order. The source
-can contain unsaved changes, such as a variable declared only in the posted text. `complete: false`
+can contain unsaved changes to an existing SAP object, such as a variable declared only in the
+posted text; the object must already exist. The cursor must fit the posted source. `complete: false`
 means SAP did not confirm completeness: a broad prefix may have more matches, but older backends
 also signal this for empty results or invalid positions. Check the cursor/source or narrow the
 prefix. The signal is not a count of undisplayed proposals; an empty list contains no returned
