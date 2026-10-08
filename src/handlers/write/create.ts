@@ -676,7 +676,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   const systemType = resolveWriteSystemType(config, client);
   const cloud = systemType === 'btp';
   const responsible = config.username || (await client.getEffectiveUser());
-  if (type === 'ENHO') await prepareEnhoCreateProperties(client, metadataProperties);
+  if (type === 'ENHO') await prepareEnhoCreateProperties(client, metadataProperties, name);
   const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, responsible, cloud);
 
   // Step 1: Create the object (metadata only)
@@ -1033,7 +1033,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
     }
     try {
       applyBdefBehaviorExtensionMetadata(plan.type, plan.source, plan.metadata);
-      if (plan.type === 'ENHO') await prepareEnhoCreateProperties(client, plan.metadata);
+      if (plan.type === 'ENHO') await prepareEnhoCreateProperties(client, plan.metadata, plan.name);
       plan.body = buildCreateXml(
         plan.type,
         plan.name,

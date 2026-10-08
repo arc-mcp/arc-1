@@ -310,6 +310,42 @@ describe('filter conditions', () => {
       'declares no filter REGION (declared: COUNTRY, LGNUM, GENERIC_FILTER)',
     );
   });
+
+  const spotFilters = async () =>
+    (
+      await getEnhancementSpotBadis(
+        { get: async () => ({ body: SPOT }) } as unknown as AdtHttpClient,
+        unrestrictedSafetyConfig(),
+        'ES_MY_SPOT',
+      )
+    ).get('BADI_MY_FILTERED');
+
+  // Live: SAP rejects these with HTTP 400 "I::000 BADI_IMPL"; the others it stores.
+  it.each([
+    ["(COUNTRY = 'DE' OR LGNUM = '1') AND GENERIC_FILTER = 'X'", "(COUNTRY = 'DE' OR LGNUM = '1')"],
+    ["((COUNTRY = 'DE' OR LGNUM = '1') AND GENERIC_FILTER = 'X') OR LGNUM = '2'", "(COUNTRY = 'DE' OR LGNUM = '1')"],
+    [
+      "(COUNTRY = 'DE' OR (COUNTRY = 'AT' AND LGNUM = '1')) AND GENERIC_FILTER = 'X'",
+      "(COUNTRY = 'DE' OR (COUNTRY = 'AT' AND LGNUM = '1'))",
+    ],
+  ])('refuses an OR of different filters inside an AND: %s', async (condition, group) => {
+    const filters = await spotFilters();
+    expect(() => buildFilterTreeXml(parseFilterCondition(condition), 'ZI', filters!, 'BADI_MY_FILTERED')).toThrow(
+      `SAP does not accept an OR of different filters inside an AND: ${group}.`,
+    );
+  });
+
+  it.each([
+    "COUNTRY = 'DE' OR LGNUM = '1'",
+    "(COUNTRY = 'DE' AND LGNUM = '1') OR GENERIC_FILTER = 'X'",
+    "(COUNTRY = 'DE' OR COUNTRY = 'AT') AND (LGNUM = '1' OR LGNUM = '2')",
+    "((COUNTRY = 'DE' OR COUNTRY = 'AT') AND LGNUM = '1') OR GENERIC_FILTER = 'X'",
+  ])('builds the shapes SAP accepts: %s', async (condition) => {
+    const filters = await spotFilters();
+    expect(buildFilterTreeXml(parseFilterCondition(condition), 'ZI', filters!, 'BADI_MY_FILTERED')).toContain(
+      '<enho:filterTree>',
+    );
+  });
 });
 
 describe('resolveBadiFilters', () => {
@@ -346,6 +382,22 @@ describe('resolveBadiFilters', () => {
     await expect(resolveBadiFilters(unparsable, safety, definition("COUNTRY = 'DE'"))).rejects.toThrow(
       'could not read the BAdI filter declarations',
     );
+  });
+
+  it('refuses a customer implementation of an SAP-internal spot before the create', async () => {
+    const internalSpot = SPOT.replace(
+      '<enhs:badiDefinition ',
+      '<enhs:contentCommon enhs:toolType="BADI_DEF" enhs:internal="true" enhs:internalFlagEditable="false"/><enhs:badiDefinition ',
+    );
+    const http = { get: async () => ({ body: internalSpot }) } as unknown as AdtHttpClient;
+    await expect(resolveBadiFilters(http, safety, definition(), 'ZMY_IMPL')).rejects.toThrow(
+      'enhancement spot ES_MY_SPOT is SAP-internal',
+    );
+    // Updates of existing objects and non-customer names are left to SAP.
+    await expect(resolveBadiFilters(http, safety, definition())).resolves.toBeDefined();
+    await expect(resolveBadiFilters(http, safety, definition(), '/ACME/IMPL')).resolves.toBeDefined();
+    const released = { get: async () => ({ body: SPOT }) } as unknown as AdtHttpClient;
+    await expect(resolveBadiFilters(released, safety, definition(), 'ZMY_IMPL')).resolves.toBeDefined();
   });
 
   it('builds the tree for a new filter and leaves kept filters alone', async () => {

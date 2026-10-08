@@ -1358,9 +1358,10 @@ export const ENQU_WRITE_UNAVAILABLE_HINT =
 export async function prepareEnhoCreateProperties(
   client: AdtClient,
   properties: Record<string, unknown>,
+  name: string,
 ): Promise<void> {
   const definition = parseBadiImplementationDefinition(String(properties.enhancementSource ?? '{}'));
-  properties.enhancementDefinition = await resolveBadiFilters(client.http, client.safety, definition);
+  properties.enhancementDefinition = await resolveBadiFilters(client.http, client.safety, definition, name);
 }
 
 export const ENHO_WRITE_UNAVAILABLE_HINT =

@@ -1,8 +1,8 @@
 # ENHO/XHB (BAdI implementation) write contract
 
 Status: **implemented; live-verified on SAP_BASIS 816 on-prem (2026-10-07) in `$TMP` and in a transportable
-package with a transport request.** The create sequence follows a captured Eclipse ADT create; the payload is
-derived from SAP's own GET serialization.
+package with a transport request, and on a second 816 system across several modules (2026-10-08).** The
+create sequence follows a captured Eclipse ADT create; the payload is derived from SAP's own GET serialization.
 
 ## Why
 
@@ -16,7 +16,7 @@ because ARC-1 could only read ENHO. The full plan is in `docs/plans/enho-badi-im
 | Step | Request | Notes |
 |---|---|---|
 | Gate | ADT discovery advertises `/sap/bc/adt/enhancements/enhoxhb` | Advertised on 758/816 (S/4HANA 2023 and ABAP Platform 2025 trial probes); 750 only advertises `enhoxh`. An unprobed session is not blocked. |
-| Spot read | `GET /sap/bc/adt/enhancements/enhsxsb/{spot}` with `Accept: application/vnd.sap.adt.enh.enhs.v2+xml` | Before create and update: BAdIs of the spot and their filter declarations. The media type is the one discovery advertises and the response carries (2026-10-08); the `enhsxsb.v1`–`v4` names return 406. |
+| Spot read | `GET /sap/bc/adt/enhancements/enhsxsb/{spot}` with `Accept: application/vnd.sap.adt.enh.enhs.v2+xml` | Before create and update: BAdIs of the spot, their filter declarations and the spot's `enhs:internal` flag. The media type is the one discovery advertises and the response carries (2026-10-08); the `enhsxsb.v1`–`v4` names return 406. |
 | Create | `POST /sap/bc/adt/enhancements/enhoxhb?corrNr=…` with `application/vnd.sap.adt.enh.enhoxhb.v4+xml` | `enho:objectData` with the spot usage and **no** BAdI implementations (`badiContainerXml`), as Eclipse sends it. |
 | Save implementations | lock → `PUT …/{name}?lockHandle=…&corrNr=…` → unlock | Full document. Eclipse does the same when the form editor is saved. |
 | Update | lock → GET (developer view) → merge → PUT → unlock | `src/handlers/write/metadata-update.ts`. |
@@ -173,6 +173,40 @@ Follow-up the same day, to isolate the failure:
   reproduce. In both runs the freshly created class first activated with the warning "Implementation missing
   for method …" although the method was in the source; activating the class again cleared it. That points at
   the class create on this shared trial, not at the ENHO write.
+
+### Second system, several modules (816, 2026-10-08)
+
+A second on-prem S/4HANA system (SAP_BASIS 816), in a new transportable package with a local transport
+request, through the real tool dispatcher. Eight BAdIs from SD, PP, eDocument, HR, FI/CO and QM; three of them
+released (C1: `SD_SLS_CHECK_BEFORE_SAVE`, `SD_SLS_MODIFY_ITEM_REQDATE`, `BD_MFGORDER_CHECK_BEFORE_SAVE`), the
+others not. Each got a class implementing its interface. Nine enhancement implementations were created; all
+objects were deleted afterwards.
+
+Worked and activated:
+
+- Two implementations of different BAdIs in one ENHO (one created inactive); a later update that left
+  `shortText`/`active` out kept the stored values; a short text with `< & " äöü` round-tripped.
+- Filters of type `N` (NUMC), `C` and `S`, with and without DDIC check (data element, domain, value table),
+  on single-use BAdIs, a BAdI with fallback class and BAdIs with context mode `S`; every comparator
+  (`= <> < <= > >= CP NP`) on its own.
+- An omitted `filter` kept the stored tree, `""` removed it, a new one was rebuilt; writing SAPRead's JSON back
+  changed nothing in SAP's stored XML except its own active/inactive version link (header attributes included).
+- `batch_create` with a class and the ENHO that uses it, in dependency order.
+- Validation before any write: BAdI not in the spot, spot change, undeclared filter, filter syntax, unknown
+  key, duplicate implementation name, missing spot.
+
+SAP refused, with readable activation errors: a second active implementation of a single-use BAdI with an
+overlapping filter (`Conflict between adjustment …`), and a filter that overlaps SAP's own implementation.
+
+Fixed after this run:
+
+- **An OR of different filters inside an AND** (`(A = '1' OR B = '2') AND C = '3'`, also deeper) is refused by
+  SAP with HTTP 400 `I::000 BADI_IMPL`. An OR of one filter's values inside an AND, and any OR of AND groups,
+  are stored. ARC-1 now refuses the rejected shape before the PUT and names the equivalent OR-of-ANDs form.
+- **SAP-internal spots** (`<enhs:contentCommon enhs:internal="true">`, e.g. `ES_FILL_COUNTRY_TAX_DATA`): the
+  create POST fails with HTTP 400 `Internal SAP enhancement; no implementation allowed in customer namespace`
+  but still writes a TADIR entry `R3TR ENHO` that ADT can neither read nor delete (404). ARC-1 now refuses a
+  Z/Y create for such a spot before the POST; the live retry left no TADIR entry.
 
 ## Open points
 

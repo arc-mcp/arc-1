@@ -356,6 +356,14 @@ export async function getEnhancementSpotBadis(
   safety: SafetyConfig,
   spot: string,
 ): Promise<Map<string, Map<string, FilterDeclaration>>> {
+  return (await readEnhancementSpot(http, safety, spot)).badis;
+}
+
+async function readEnhancementSpot(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  spot: string,
+): Promise<{ internal: boolean; badis: Map<string, Map<string, FilterDeclaration>> }> {
   checkOperation(safety, OperationType.Read, 'GetEnhancementSpot');
   const resp = await http.get(`/sap/bc/adt/enhancements/enhsxsb/${encodeURIComponent(spot.toLowerCase())}`, {
     Accept: ENHS_XSB_CONTENT_TYPE,
@@ -381,29 +389,42 @@ export async function getEnhancementSpotBadis(
     }
     result.set(name, filters);
   }
-  return result;
+  // `<enhs:contentCommon enhs:internal="true">`: SAP refuses implementations in the customer namespace.
+  const common = resp.body.match(/<enhs:contentCommon\s([^>]*)>/)?.[1] ?? '';
+  return { internal: rawAttr(common, 'enhs:internal') === 'true', badis: result };
 }
 
 /**
  * Check every BAdI implementation against the spot and build the filter trees that are new or changed.
  * The spot read is best-effort for the check alone (SAP repeats it at activation), but required when a
  * filter has to be built, because its type and DDIC check come from the BAdI definition.
+ *
+ * `createName` (create only): a Z/Y implementation of an SAP-internal spot is refused here, because SAP
+ * refuses the create POST with HTTP 400 but still leaves a TADIR entry that ADT can neither read nor
+ * delete (live 2026-10-08).
  */
 export async function resolveBadiFilters(
   http: AdtHttpClient,
   safety: SafetyConfig,
   definition: BadiImplementationDefinition,
+  createName?: string,
 ): Promise<BadiImplementationDefinition> {
   const spot = definition.enhancementSpot;
   const entries = definition.badiImplementations ?? [];
   const needTree = entries.filter((entry) => entry.filter && !entry.keepStoredFilter);
   if (!spot || !entries.length) return definition;
   let badis = new Map<string, Map<string, FilterDeclaration>>();
+  let internal = false;
   try {
-    badis = await getEnhancementSpotBadis(http, safety, spot);
+    ({ badis, internal } = await readEnhancementSpot(http, safety, spot));
   } catch (err) {
     if (err instanceof AdtApiError && err.statusCode === 404) throw invalid(`enhancement spot ${spot} does not exist.`);
     if (needTree.length) throw err;
+  }
+  if (internal && /^[ZY]/i.test(createName ?? '')) {
+    throw invalid(
+      `enhancement spot ${spot} is SAP-internal; SAP allows no implementation of it in the customer namespace.`,
+    );
   }
   if (!badis.size && needTree.length) {
     throw invalid(`could not read the BAdI filter declarations of enhancement spot ${spot}.`);

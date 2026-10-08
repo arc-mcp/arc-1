@@ -146,6 +146,20 @@ function filterNames(node: FilterNode, into: string[] = []): string[] {
 }
 
 /**
+ * SAP rejects an OR of different filters anywhere below an AND with HTTP 400 "I::000 BADI_IMPL"; an OR
+ * of one filter's values there is fine, and so is any OR of AND groups (live 2026-10-08).
+ */
+function mixedOrBelowAnd(node: FilterNode, belowAnd = false): FilterNode | undefined {
+  if (node.kind === 'Filter') return undefined;
+  if (node.kind === 'Or' && belowAnd && filterNames(node).length > 1) return node;
+  for (const child of node.children) {
+    const found = mixedOrBelowAnd(child, belowAnd || node.kind === 'And');
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/**
  * Build `<enho:filterTree>` in the shape SAP returns: one root token, then one filterProperty per
  * filter used, copied from the BAdI definition's declaration.
  */
@@ -160,6 +174,13 @@ export function buildFilterTreeXml(
   if (unknown.length) {
     const declared = [...declarations.keys()].join(', ') || 'none';
     throw invalid(`BAdI ${badiName} declares no filter ${unknown.join(', ')} (declared: ${declared}).`);
+  }
+  const mixed = mixedOrBelowAnd(node);
+  if (mixed) {
+    throw invalid(
+      `SAP does not accept an OR of different filters inside an AND: ${renderFilter(mixed, true)}. ` +
+        "Write it as an OR of AND groups instead, e.g. (A = '1' AND C = '3') OR (B = '2' AND C = '3').",
+    );
   }
   const xsi = ' xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"';
   const token = (current: FilterNode, root: boolean): string => {
