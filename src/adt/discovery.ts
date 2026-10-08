@@ -12,7 +12,7 @@ export interface DiscoveryFetchResult {
 
 /**
  * Return true when the raw ADT discovery XML contains at least one NHI collection href.
- * NHI (/sap/bc/adt/nhi/*) workspaces are only registered on HANA-based systems.
+ * NHI (/sap/bc/adt/nhi/*) workspaces also exist on non-HANA systems; this is not database evidence.
  *
  * The match is anchored to an `href="..."` attribute so that mentions of the path in
  * `<atom:title>` text, descriptions, or non-href attributes do not false-positive.

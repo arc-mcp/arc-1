@@ -355,13 +355,20 @@ Connector resource mappings.
 | `--feature-ui5repo` | `SAP_FEATURE_UI5REPO` | `auto` | UI5 ABAP Repository OData service used by `SAPRead` type `BSP_DEPLOY` to read deployed app metadata. |
 | `--feature-flp` | `SAP_FEATURE_FLP` | `auto` | FLP `PAGE_BUILDER_CUST` OData service used by `SAPManage` FLP catalog/group/tile reads and mutations. |
 | `--feature-transport` | `SAP_FEATURE_TRANSPORT` | `auto` | CTS transport endpoints. Required for `SAPTransport` (even reads). |
-| `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | HANA-specific developer tools. |
+| `--feature-hana` | `SAP_FEATURE_HANA` | `auto` | Report HANA availability in system features. |
 
 `auto` probes one specific endpoint per feature and classifies the response: 2xx/400/405/5xx →
 available; 401/403/404 → unavailable. On single-target `/mcp`, inspect the cached result using
 `SAPManage` with `action: "features"`. Discovered targets apply additional
 [authentication controls](multi-target-administration.md#basic-shared-identity-controls);
 `SAPManage` is not part of their tool surface.
+
+HANA detection also checks installed HANA/S/4HANA/BW/4HANA components. NHI (Native HANA
+Integration) collections in ADT discovery are **not** proof of HANA: non-HANA systems also
+advertise them. When neither the HANA probe nor components confirms it, `hana.available` is
+`false` and the message says "not confirmed"; this does not identify the actual database.
+For a known HANA system whose metadata cannot confirm it, set `SAP_FEATURE_HANA=on` explicitly.
+Use `off` to disable the report on a known non-HANA system. This flag does not enable SQL or data access.
 
 For restrictive BTP Cloud Connector mappings, `gcts`, `flp`, and `ui5repo` probe paths outside
 `/sap/bc/adt`. The three tracked profiles under `examples/btp/` set those features to `off`; see the

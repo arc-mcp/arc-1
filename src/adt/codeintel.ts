@@ -28,11 +28,16 @@ export interface ReferenceResult {
   column: number;
 }
 
-/** Completion proposal */
+/** Completion proposal: an identifier or keyword SAP offers at the cursor. */
 export interface CompletionProposal {
   text: string;
-  description: string;
-  type: string;
+}
+
+/** Completion proposals at a cursor. */
+export interface CompletionResult {
+  proposals: CompletionProposal[];
+  /** SAP confirmed completeness (no `@end` marker). False does not prove more matches exist. */
+  complete: boolean;
 }
 
 /** Available object type from Where-Used scope discovery */
@@ -333,7 +338,15 @@ function parseOptionalBoolean(value: unknown): boolean | undefined {
   return undefined;
 }
 
-/** Get code completion proposals */
+/**
+ * Get code completion proposals at an ADT cursor (1-based line, 0-based column) in `source`.
+ *
+ * ADT reads the cursor from the URI fragment (`#start=<line>,<column>`), as for definition, and
+ * answers with `asx:abap` / `SCC_COMPLETION` records in `application/vnd.sap.as+xml` (the only type
+ * it accepts; `application/xml` is refused with 406). With `signalCompleteness=true` SAP appends an
+ * `@end` record for incomplete results. Older backends also emit it for empty lists or invalid
+ * positions, so it means completeness is unconfirmed, not necessarily that matches were cut off.
+ */
 export async function getCompletion(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -341,21 +354,29 @@ export async function getCompletion(
   line: number,
   column: number,
   source: string,
-): Promise<CompletionProposal[]> {
+): Promise<CompletionResult> {
   checkOperation(safety, OperationType.Intelligence, 'GetCompletion');
 
+  const target = `${sourceUrl.split('#')[0]}#start=${line},${column}`;
   const resp = await http.post(
-    `/sap/bc/adt/abapsource/codecompletion/proposals?uri=${encodeURIComponent(sourceUrl)}&line=${line}&column=${column}`,
+    `/sap/bc/adt/abapsource/codecompletion/proposal?uri=${encodeURIComponent(target)}&signalCompleteness=true`,
     source,
     'text/plain',
-    { Accept: 'application/xml' },
+    { Accept: 'application/vnd.sap.as+xml' },
   );
 
-  const parsed = parseXml(resp.body);
-  const nodes = findDeepNodes(parsed, 'proposal');
-  return nodes.map((node) => ({
-    text: String(node['@_text'] ?? ''),
-    description: String(node['@_description'] ?? ''),
-    type: String(node['@_type'] ?? ''),
-  }));
+  // SAP_BASIS 758 returns HTTP 200 with no body (or content type) when no proposals match.
+  if (resp.statusCode === 200 && resp.body.length === 0) return { proposals: [], complete: true };
+
+  const abap = parseXml(resp.body).abap as { values?: { DATA?: unknown } } | undefined;
+  if (!Array.isArray(abap?.values?.DATA)) {
+    throw new Error('Unexpected completion response: expected ABAP XML values/DATA.');
+  }
+  const identifiers = findDeepNodes(abap.values.DATA, 'SCC_COMPLETION')
+    .map((node) => String(node.IDENTIFIER ?? ''))
+    .filter((identifier) => identifier.length > 0);
+  return {
+    proposals: identifiers.filter((identifier) => identifier !== '@end').map((text) => ({ text })),
+    complete: !identifiers.includes('@end'),
+  };
 }
