@@ -446,7 +446,7 @@ export function getToolDefinitions(
           group: {
             type: 'string',
             description:
-              'Function group of the function module for FUNC, VERSIONS, or API_STATE with objectType=FUNC. Auto-resolved via SAPSearch if omitted; required for VERSIONS of a function module.',
+              'Function group of the function module for FUNC, VERSIONS, or API_STATE with objectType=FUNC. Auto-resolved via SAPSearch if omitted.',
           },
           method: {
             type: 'string',
@@ -514,7 +514,7 @@ export function getToolDefinitions(
           objectType: {
             type: 'string',
             description:
-              'SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint (FUNC needs group); inferred from CL_/IF_/CX_, else PROG.' +
+              'SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint; inferred from CL_/IF_/CX_, else PROG.' +
               (btp ? '' : ' TEXT_ELEMENTS: PROG (default), CLAS or FUGR.'),
           },
           source: {

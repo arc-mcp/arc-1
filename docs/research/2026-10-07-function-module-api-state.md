@@ -34,10 +34,11 @@ The second request therefore contains `groups%2F%252Fbobf%252F...`. This is the
 working SAP contract, not accidental double encoding. The existing
 `functionModuleObjectUrl` already constructs the correct object URI and also works
 for metadata/package resolution. Reusing it removes the need for a new helper.
-Do not copy the generic CLAS raw-URI handling to this nested FUNC path, or change
-the generic CLAS behavior as part of this fix.
+The initial investigation left generic CLAS raw-URI handling unchanged. That
+assumption was incorrect: the later review and independent reproduction below
+show that a namespaced non-FUNC object also requires both encoding layers.
 
-## Final implementation verification
+## Initial function-module implementation verification
 
 - `BAPI_CONVERSION_EXT2INT`: explicit `group="BACV"` and search-resolved group both
   return C1 `RELEASED`, visible in ABAP Cloud.
@@ -70,3 +71,63 @@ The contributor's earlier 816/PP read success remains separate evidence; our tes
 used local direct Basic authentication, not a BTP/PP deployment.
 
 Roadmap checked before and after implementation: no roadmap impact.
+
+## Follow-up review: generic namespaced API state and VERSIONS group
+
+The external review's F2 and F4 were independently checked on PR head `53df9955`,
+containing main `907b02c0`. On SAP_BASIS 758 SP02, the current handler's raw URI
+failed with HTTP 400 for each existing released object below. Calling the same
+client with the existing encoded `objectUrlForType` returned real contracts:
+
+| Object | Type | Encoded result |
+| --- | --- | --- |
+| `/IWBEP/CL_CP_FACTORY_REMOTE` | CLAS | C1 `RELEASED`, C4 `NOT_RELEASED` |
+| `/IWBEP/IF_CP_CLIENT_PROXY` | INTF | C1 `RELEASED`, C4 `NOT_RELEASED` |
+| `/AIF/IFNAME` | DTEL | C1 `RELEASED` |
+
+For the class, `set_api_state` by name reached a raw metadata URI and failed with
+HTTP 404. Its encoded metadata URI resolved the real package `/IWBEP/CP_RUNTIME`.
+This bug predated #931. It is now fixed at the same two API-state call sites using
+`objectUrlForType`; the redundant `objectUrlForTypeRaw` helper is removed. The
+complete encoded URI is still escaped once for `/apireleases`, preserving `%252F`
+for namespace slashes in its nested object-name segment. This applies equally to
+CLAS/INTF/DTEL and FUNC; empty contracts for a nonexistent sample are not evidence
+that a URI works for a real released object.
+
+`SAPRead(VERSIONS)` without a group for `BAPI_CONVERSION_EXT2INT` resolved `BACV`
+and returned its revision. The incorrect required-group tool clause is removed,
+and the public documentation explicitly includes VERSIONS auto-resolution.
+
+The follow-up plan was independently reviewed before implementation. Four focused
+namespace regressions (three reads and the real-package denial path) failed on the
+published head because its URLs were raw. The tests replace the old test that
+incorrectly forbade nested encoding; a permitted-package write test also covers
+the encoded metadata lookup followed by GET/PUT/GET and confirmed release state.
+The existing FUNC/cache/safety tests remain unchanged.
+
+Final follow-up validation used `npm run build` output from the correction on
+`53df9955`, again through `handleToolCall`, HTTPS/Basic and verified TLS:
+
+- All three namespaced objects return the expected C1 release contracts; an
+  ordinary class control also succeeds.
+- Explicit/resolved `BAPI_CONVERSION_EXT2INT`, resolved `/BOBF/CL_DAC_UPDATE`, and
+  explicit-group `/BOBF/CONF_CTS_AFTER_IMPORT` reads retain their expected states.
+- With `$TMP` allowed, class `/IWBEP/CL_CP_FACTORY_REMOTE` and FUNC
+  `/BOBF/CL_DAC_UPDATE` are rejected at their real `/IWBEP/CP_RUNTIME` and
+  `/BOBF/DATA_ACCESS` packages. Neither reaches any `/apireleases` request.
+- VERSIONS resolves omitted groups and returns revisions on both 758 and 750.
+  750 still lacks API-release discovery and returns HTTP 404 for the explicit and
+  resolved FUNC requests and the ordinary CLAS control. 816 was not retried.
+- A harness rejected all POST/PUT/DELETE calls; zero mutation attempts occurred.
+  The earlier disposable FUNC lifecycle remains the write evidence for the
+  unchanged function-module mutation path; no SAP-owned object was modified.
+- Focused regressions and snapshots: 6 files / 257 tests passed. Complete suite:
+  261 files / 7,857 tests passed. Typecheck, lint, policy, file/schema budgets,
+  build and diff whitespace checks passed; the same two existing Biome infos
+  remain. Roadmap rechecked: no impact.
+
+Two independent final reviews on 2026-10-08 found no runtime issues. The second
+review caught another misleading `FUNC needs group` phrase in the `objectType`
+description; that phrase was removed and all seven snapshots regenerated. The
+focused handler/snapshot tests and size/schema budgets passed after this final
+prose-only correction. No additional SAP mutation testing was needed.

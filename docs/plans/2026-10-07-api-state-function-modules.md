@@ -38,7 +38,8 @@ Reviewed before implementation and approved. Implemented and verified; see the
 2. Retain explicit `group` and existing bounded resolver behavior for reads;
    retain name/type resolution and explicit `objectUri` for writes. Use the
    existing `functionModuleObjectUrl` in both branches and remove the new raw
-   helper. Leave generic object URI behavior unchanged.
+   helper. Generic object URI behavior was initially unchanged; the review
+   follow-up below supersedes that boundary with new evidence.
 3. Correct the namespace regression expectation. Cover a namespaced group resolved
    from an encoded search URI, the metadata package gate with a restricted
    allowlist, rejected/missing packages, read-only rejection, and cached read
@@ -64,3 +65,52 @@ Roadmap checked on 2026-10-07: no item covers this narrow bug; no roadmap impact
 Independent final review covered the complete PR diff, namespace routing, fresh
 API-state reads with cached group resolution, package refusals, documentation,
 and the live evidence. No actionable findings remained after the namespace fix.
+
+## Review follow-up: namespaced non-FUNC objects and group prose (F2/F4)
+
+The later external review identified a pre-existing generic-URI bug missed by the
+initial review. Independently reproduced on PR head `53df9955` (which contains
+current main `907b02c0`) using SAP_BASIS 758 SP02, HTTPS/Basic and TLS verification:
+
+- CLAS `/IWBEP/CL_CP_FACTORY_REMOTE`, INTF `/IWBEP/IF_CP_CLIENT_PROXY`, and DTEL
+  `/AIF/IFNAME` each fail with HTTP 400 through `SAPRead(API_STATE)`. The existing
+  encoded `objectUrlForType` returns actual C1 `RELEASED` contracts for all three.
+- For that class, `set_api_state` by name fails at the raw metadata URI with HTTP
+  404; the encoded URI resolves `/IWBEP/CP_RUNTIME`. A harness refused every PUT,
+  and no SAP-owned object was changed.
+- `SAPRead(VERSIONS)` for `BAPI_CONVERSION_EXT2INT` without `group` resolves `BACV`
+  and returns its revision. The tool text incorrectly says `group` is required.
+
+Follow-up independently reviewed and approved before code changes:
+
+1. At both generic API-state call sites, use the existing `objectUrlForType`.
+   Remove `objectUrlForTypeRaw`, which has no other callers. Preserve FUNC group
+   resolution, explicit write `objectUri`, and all safety/package gates.
+2. Replace the misleading raw-encoding test with real-object CLAS/INTF/DTEL
+   namespace regressions that check a released contract and the encoded wire
+   path. Add focused generic namespace write coverage for the permitted package
+   path and real-package denial before any API-release call. Run these red on the
+   current implementation, then green after the fix; retain all FUNC coverage.
+3. Drop the incorrect required-group clause and regenerate the seven tool
+   snapshots. Correct the earlier research instruction to leave generic CLAS raw
+   URIs unchanged: nested encoding also applies to non-FUNC namespace names.
+4. Verify the final handlers read the three live contracts and deny the SAP-owned
+   class at its real package without reaching any API release mutation. Recheck
+   FUNC and VERSIONS compatibility on 758 and the unsupported API release endpoint
+   on 750. Do not retry license-blocked 816 or mutate SAP-owned objects.
+5. Run focused and full unit tests, typecheck, lint, policy, file/schema budgets,
+   and build; check roadmap again. Obtain an independent final review before a
+   normal commit/push to the existing PR. No PR merge.
+
+No roadmap impact: no roadmap idea covers this URI bug or the prose correction.
+
+Follow-up implemented. Final built handlers passed the read-only 758/750 matrix,
+including all three released namespace examples, ordinary/namespaced FUNC reads,
+real-package denials before any release call, and VERSIONS group auto-resolution.
+No SAP mutation was attempted. All gates passed (261 files / 7,857 unit tests).
+Two independent final reviews found no runtime issues. The second review caught a
+remaining `FUNC needs group` parenthetical in `objectType` prose; it was removed
+alongside the earlier `group` correction, and all seven snapshots regenerated.
+Focused snapshot/handler tests and size/schema budgets passed after that final
+prose correction. Publication was approved as a normal follow-up commit; no PR
+merge was requested or performed.

@@ -36,7 +36,7 @@ import {
   functionModuleObjectUrl,
   inferObjectType,
   normalizeObjectType,
-  objectUrlForTypeRaw,
+  objectUrlForType,
 } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
@@ -769,7 +769,7 @@ export async function handleSAPRead(
           `Cannot infer object type from name "${name}". Please specify objectType explicitly (e.g., objectType="CLAS", "INTF", "PROG", "TABL", "DDLS", "DCLS", "FUGR", "FUNC", "DOMA", "DTEL", "SRVD", "SRVB", "BDEF").`,
         );
       }
-      // Simple object URIs stay raw; nested FUNC segments must remain encoded inside the API-release URI.
+      // Object-name segments stay encoded when the whole URI becomes an API-release path segment.
       let objectUri: string;
       if (inferredType === 'FUNC') {
         const group =
@@ -782,7 +782,7 @@ export async function handleSAPRead(
         }
         objectUri = functionModuleObjectUrl(group, name);
       } else {
-        objectUri = objectUrlForTypeRaw(inferredType, name);
+        objectUri = objectUrlForType(inferredType, name);
       }
       const releaseState = await client.getApiReleaseState(objectUri);
       return textResult(toolJson(releaseState));

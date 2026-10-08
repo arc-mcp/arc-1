@@ -538,15 +538,6 @@ export function inferObjectType(name: string): string {
   return '';
 }
 
-/**
- * Map object type + name to the ADT object URL WITHOUT encoding the name.
- * Used for API release state where the full URI is encoded as a single path segment by the caller.
- */
-export function objectUrlForTypeRaw(type: string, name: string): string {
-  const effectiveName = type === 'SKTD' ? name.toLowerCase() : name;
-  return `${objectBasePath(type)}${effectiveName}`;
-}
-
 /** Get the source URL for an object (appends /source/main) */
 export function sourceUrlForType(type: string, name: string): string {
   return `${objectUrlForType(type, name)}/source/main`;

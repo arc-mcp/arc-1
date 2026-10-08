@@ -31,7 +31,7 @@ import {
   setCachedDiscovery,
   setCachedFeatures,
 } from './feature-cache.js';
-import { functionModuleObjectUrl, inferObjectType, normalizeObjectType, objectUrlForTypeRaw } from './object-types.js';
+import { functionModuleObjectUrl, inferObjectType, normalizeObjectType, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import {
   DEVC_WRITE_UNAVAILABLE_HINT,
@@ -98,7 +98,7 @@ export async function handleSAPManage(
           }
           objectUri = functionModuleObjectUrl(group, name);
         } else {
-          objectUri = objectUrlForTypeRaw(inferred, name);
+          objectUri = objectUrlForType(inferred, name);
         }
       }
       // Fail-closed package gate against the object's REAL package (resolves via the object URI).
