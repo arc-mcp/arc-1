@@ -8,11 +8,14 @@
  * Evidence (SAP_BASIS 816): docs/research/2026-10-07-enho-xhb-write-contract.md.
  */
 import type { EnhancementImplementationInfo } from './types.js';
-import { escapeXmlAttr, getNestedArray, parseXml, toRecordArray } from './xml-parser.js';
+import { escapeXmlAttr, getNestedArray, toRecordArray } from './xml-parser.js';
 
 export type FilterNode =
   | { kind: 'Filter'; name: string; comparator: string; value: string }
   | { kind: 'And' | 'Or'; children: FilterNode[] };
+
+/** An ABAP repository name, optionally namespaced (`/NS/NAME`); upper case. */
+export const ABAP_NAME_RE = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/;
 
 /** Comparators SAP offers for BAdI filter values. */
 export const FILTER_COMPARATORS = ['=', '<>', '<=', '>=', '<', '>', 'CP', 'NP'] as const;
@@ -32,9 +35,13 @@ function group(kind: 'And' | 'Or', children: FilterNode[]): FilterNode {
   return flat.length === 1 ? flat[0] : { kind, children: flat };
 }
 
+/** Thrown for a token kind ARC-1 does not model; the whole tree is then left unrendered. */
+class UnknownTokenKind extends Error {}
+
 function fromTokens(token: unknown): FilterNode | undefined {
   const parts = toRecordArray(token).flatMap((node): FilterNode[] => {
     const kind = String(node['@_type'] ?? '').replace(/^.*:/, '');
+    if (kind !== 'Filter' && kind !== 'And' && kind !== 'Or') throw new UnknownTokenKind(kind);
     if (kind === 'Filter') {
       return [
         {
@@ -49,7 +56,7 @@ function fromTokens(token: unknown): FilterNode | undefined {
       .map(fromTokens)
       .filter((child): child is FilterNode => !!child);
     if (!children.length) return [];
-    return [group(kind === 'And' ? 'And' : 'Or', children)];
+    return [group(kind, children)];
   });
   if (!parts.length) return undefined;
   // Sibling tokens at the top level combine with AND.
@@ -93,7 +100,7 @@ export function parseFilterCondition(text: string): FilterNode {
       return inner;
     }
     const name = token.toUpperCase();
-    if (!/^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/.test(name)) throw invalid(`"${token}" is not a filter name.`);
+    if (!ABAP_NAME_RE.test(name)) throw invalid(`"${token}" is not a filter name.`);
     const comparator = (tokens[pos++] ?? '').toUpperCase();
     if (!(FILTER_COMPARATORS as readonly string[]).includes(comparator)) {
       throw invalid(`after ${name} expected one of ${FILTER_COMPARATORS.join(' ')}, got "${comparator}".`);
@@ -174,9 +181,28 @@ export function buildFilterTreeXml(
   return `<enho:filterTree>${token(node, true)}${properties}</enho:filterTree>`;
 }
 
-/** Add `filter` to each BAdI implementation of `info` that has a filter tree in `xml`. */
-export function withFilterConditions(xml: string, info: EnhancementImplementationInfo): EnhancementImplementationInfo {
-  const root = parseXml(xml).objectData as XmlNode | undefined;
+/** Text form of a stored `<enho:filterTree>`, or undefined when it is empty or uses a token kind ARC-1 does not model. */
+function renderStoredTree(tree: XmlNode | undefined): string | undefined {
+  if (!tree) return undefined;
+  try {
+    const parsed = fromTokens(tree.filterToken);
+    return parsed ? renderFilter(parsed) : undefined;
+  } catch (err) {
+    // Showing such a tree as AND/OR text would misstate it; an update without `filter` re-sends it verbatim.
+    if (err instanceof UnknownTokenKind) return undefined;
+    throw err;
+  }
+}
+
+/**
+ * Add `filter` to each BAdI implementation of `info` that has a filter tree in `doc` (the parsed
+ * ENHO document, so callers that already parsed it do not parse it again).
+ */
+export function withFilterConditions(
+  doc: Record<string, unknown>,
+  info: EnhancementImplementationInfo,
+): EnhancementImplementationInfo {
+  const root = doc.objectData as XmlNode | undefined;
   const specific = (root?.contentSpecific ?? {}) as XmlNode;
   const tech = (typeof specific.badiTechnology === 'object' ? specific.badiTechnology : {}) as XmlNode;
   const implementations = [
@@ -185,9 +211,8 @@ export function withFilterConditions(xml: string, info: EnhancementImplementatio
   ];
   const filters = new Map<string, string>();
   for (const node of implementations) {
-    const tree = toRecordArray(node.filterTree)[0];
-    const parsed = tree ? fromTokens(tree.filterToken) : undefined;
-    if (parsed) filters.set(String(node['@_name'] ?? '').toUpperCase(), renderFilter(parsed));
+    const filter = renderStoredTree(toRecordArray(node.filterTree)[0]);
+    if (filter) filters.set(String(node['@_name'] ?? '').toUpperCase(), filter);
   }
   if (filters.size === 0) return info;
   return {

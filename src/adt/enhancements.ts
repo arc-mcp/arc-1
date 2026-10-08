@@ -17,7 +17,7 @@ type Subtype = keyof typeof ROUTES;
 export function parseEnhancementMetadata(xml: string): EnhancementImplementationInfo {
   const parsed = parseXml(xml);
   if (parsed.objectData && typeof parsed.objectData === 'object') {
-    return withFilterConditions(xml, parseEnhancementImplementation(xml));
+    return withFilterConditions(parsed, parseEnhancementImplementation(xml));
   }
   const root = parsed.enhancement as Record<string, unknown> | undefined;
   if (!root || typeof root !== 'object' || Array.isArray(root)) {

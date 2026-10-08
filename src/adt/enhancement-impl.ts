@@ -17,6 +17,7 @@
  * read → edit → write cycle needs no reshaping. Read-only keys (name, package, technology, …) are ignored.
  */
 import {
+  ABAP_NAME_RE,
   buildFilterTreeXml,
   type FilterDeclaration,
   normalizeFilterCondition,
@@ -76,29 +77,46 @@ export type StoredBadiImplementation = EnhancementImplementationInfo & {
   preserved?: Map<string, PreservedImplementation>;
 };
 
-/** Cut each `<enho:badiImplementation>` out of SAP's XML and keep what the JSON model does not carry. */
-function preservedImplementations(xml: string): Map<string, PreservedImplementation> {
-  const result = new Map<string, PreservedImplementation>();
+/**
+ * A raw attribute value from a regex-captured attribute list, or ''. Only for ABAP names and type codes,
+ * which never contain entity references; free text comes from the (decoding) parser.
+ */
+function rawAttr(attrs: string, qualifiedName: string): string {
+  return attrs.match(new RegExp(`(?:^|\\s)${qualifiedName}="([^"]*)"`))?.[1] ?? '';
+}
+
+/** Keep per implementation what the JSON model does not carry. */
+function preservedImplementations(xml: string, doc: Record<string, unknown>): Map<string, PreservedImplementation> {
+  // The filter tree is cut out of the raw XML: it must be re-sent as SAP serialized it.
+  const trees = new Map<string, string>();
   for (const match of xml.matchAll(
     /<enho:badiImplementation\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enho:badiImplementation>)/g,
   )) {
-    const attrs = match[1] ?? '';
-    const attr = (key: string) => attrs.match(new RegExp(`enho:${key}="([^"]*)"`))?.[1] ?? '';
-    const name = attr('name').toUpperCase();
+    const tree = (match[2] ?? '').match(/<enho:filterTree[\s>][\s\S]*<\/enho:filterTree>|<enho:filterTree\/>/)?.[0];
+    if (tree) trees.set(rawAttr(match[1] ?? '', 'enho:name').toUpperCase(), tree);
+  }
+  // Attribute values come from the parser, already decoded, so escapeXmlAttr does not encode them twice.
+  const specific = asRecord(asRecord(doc.objectData)?.contentSpecific) ?? {};
+  const result = new Map<string, PreservedImplementation>();
+  for (const node of getNestedArray(
+    asRecord(specific.badiTechnology) ?? {},
+    'badiImplementations',
+    'badiImplementation',
+  )) {
+    const name = text(node['@_name']).toUpperCase();
     if (!name) continue;
     result.set(name, {
-      example: attr('example'),
-      customizingLock: attr('customizingLock'),
-      filterTreeXml:
-        (match[2] ?? '').match(/<enho:filterTree[\s>][\s\S]*<\/enho:filterTree>|<enho:filterTree\/>/)?.[0] ?? '',
+      example: text(node['@_example']),
+      customizingLock: String(node['@_customizingLock'] ?? ''),
+      filterTreeXml: trees.get(name) ?? '',
     });
   }
   return result;
 }
 
 /** The ENHS/XSB spot from `<enho:contentCommon><enho:usages>`, or '' when the document names none. */
-function usageSpot(xml: string): string {
-  const common = asRecord(asRecord(parseXml(xml).objectData)?.contentCommon) ?? {};
+function usageSpot(doc: Record<string, unknown>): string {
+  const common = asRecord(asRecord(doc.objectData)?.contentCommon) ?? {};
   for (const ref of getNestedArray(common, 'usages', 'referencedObject')) {
     // The parser yields objectReference as an array; mainObjectReference as a single node.
     for (const target of [...toRecordArray(ref.objectReference), ...toRecordArray(ref.mainObjectReference)]) {
@@ -116,14 +134,14 @@ export async function getBadiEnhancementImplementation(
 ): Promise<StoredBadiImplementation> {
   checkOperation(safety, OperationType.Read, 'GetEnhancementImplementation');
   const resp = await http.get(`${ENHO_XHB_COLLECTION}/${encodeURIComponent(name)}`, { Accept: ENHO_XHB_CONTENT_TYPE });
-  const info: StoredBadiImplementation = withFilterConditions(resp.body, parseEnhancementImplementation(resp.body));
-  const spot = usageSpot(resp.body);
+  const doc = parseXml(resp.body);
+  const info: StoredBadiImplementation = withFilterConditions(doc, parseEnhancementImplementation(resp.body));
+  const spot = usageSpot(doc);
   if (spot) info.enhancementSpot = spot;
-  info.preserved = preservedImplementations(resp.body);
+  info.preserved = preservedImplementations(resp.body, doc);
   return info;
 }
 
-const NAME_RE = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/;
 /** Keys SAPRead emits that are not writable — accepted (and ignored) so read output round-trips. */
 const READ_ONLY_KEYS = ['name', 'description', 'package', 'technology', 'switchSupported'];
 const WRITABLE_KEYS = ['enhancementSpot', 'badiImplementations'];
@@ -160,7 +178,8 @@ function rejectUnknownKeys(rec: Record<string, unknown>, allowed: string[], wher
 function validateName(value: unknown, where: string): string {
   const name = text(value).toUpperCase();
   if (!name) throw invalid(`${where} is required.`);
-  if (!NAME_RE.test(name) || name.length > 30) throw invalid(`${where} "${text(value)}" is not a valid ABAP name.`);
+  if (!ABAP_NAME_RE.test(name) || name.length > 30)
+    throw invalid(`${where} "${text(value)}" is not a valid ABAP name.`);
   return name;
 }
 
@@ -212,7 +231,10 @@ export function parseBadiImplementationDefinition(source: string): BadiImplement
         badiDefinition: validateName(erec.badiDefinition, `${where}.badiDefinition`),
         implementingClass: validateName(erec.implementingClass, `${where}.implementingClass`),
       };
-      if (erec.shortText !== undefined) parsed.shortText = String(erec.shortText);
+      if (erec.shortText !== undefined && erec.shortText !== null) {
+        if (typeof erec.shortText !== 'string') throw invalid(`${where}.shortText must be a text.`);
+        parsed.shortText = erec.shortText;
+      }
       const active = optionalBoolean(erec.active, `${where}.active`);
       if (active !== undefined) parsed.active = active;
       const isDefault = optionalBoolean(erec.default, `${where}.default`);
@@ -267,13 +289,16 @@ export function mergeBadiImplementationDefinition(
     badiImplementations: entries.map((entry) => {
       const previous = stored.get(entry.name.toUpperCase());
       const preserved = existing.preserved?.get(entry.name.toUpperCase());
-      const storedFilter = preserved?.filterTreeXml ? (previous?.filter ?? '') : '';
+      // Decide on the stored tree itself, not on its text form: a tree ARC-1 cannot render (no `filter`
+      // in SAPRead) must still survive an update that leaves `filter` out.
+      const hasStoredTree = /<enho:filterToken[\s/>]/.test(preserved?.filterTreeXml ?? '');
+      const storedFilter = hasStoredTree ? (previous?.filter ?? '') : '';
       const sameBadi = previous?.badiDefinition.toUpperCase() === entry.badiDefinition.toUpperCase();
       const keepStoredFilter =
-        !!storedFilter && sameBadi && (entry.filter === undefined || entry.filter === storedFilter);
-      if (storedFilter && !sameBadi && entry.filter === undefined) {
+        hasStoredTree && sameBadi && (entry.filter === undefined || (!!storedFilter && entry.filter === storedFilter));
+      if (hasStoredTree && !sameBadi && entry.filter === undefined) {
         throw invalid(
-          `${entry.name}: its filter (${storedFilter}) belongs to BAdI ${previous?.badiDefinition}. ` +
+          `${entry.name}: its filter (${storedFilter || 'stored filter'}) belongs to BAdI ${previous?.badiDefinition}. ` +
             'Give the filter for the new BAdI definition explicitly, or "filter": "" to remove it.',
         );
       }
@@ -330,22 +355,24 @@ export async function getEnhancementSpotBadis(
   spot: string,
 ): Promise<Map<string, Map<string, FilterDeclaration>>> {
   checkOperation(safety, OperationType.Read, 'GetEnhancementSpot');
+  // No explicit Accept: the spot's media type is not live-verified, so the client's negotiation picks it.
   const resp = await http.get(`/sap/bc/adt/enhancements/enhsxsb/${encodeURIComponent(spot.toLowerCase())}`);
   const result = new Map<string, Map<string, FilterDeclaration>>();
-  for (const badi of resp.body.matchAll(/<enhs:badiDefinition\s([^>]*?)>([\s\S]*?)<\/enhs:badiDefinition>/g)) {
-    const name = badi[1].match(/enhs:name="([^"]*)"/)?.[1]?.toUpperCase();
+  // A regex, not the parser: each filter's `<enhs:filterCheck>` is copied into the implementation as SAP wrote it.
+  for (const badi of resp.body.matchAll(/<enhs:badiDefinition\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enhs:badiDefinition>)/g)) {
+    const name = rawAttr(badi[1], 'enhs:name').toUpperCase();
     if (!name) continue;
-    const body = badi[2];
+    const body = badi[2] ?? '';
     const filters = new Map<string, FilterDeclaration>();
     // `<enhs:filter\s` does not match the `<enhs:filters>` wrapper or `<enhs:filterCheck>`.
     for (const filter of body.matchAll(/<enhs:filter\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enhs:filter>)/g)) {
-      const filterName = filter[1].match(/enhs:filterName="([^"]*)"/)?.[1]?.toUpperCase();
+      const filterName = rawAttr(filter[1], 'enhs:filterName').toUpperCase();
       if (!filterName) continue;
       const check = (filter[2] ?? '').match(
         /<enhs:filterCheck[\s>][\s\S]*?<\/enhs:filterCheck>|<enhs:filterCheck[^>]*\/>/,
       )?.[0];
       filters.set(filterName, {
-        type: filter[1].match(/enhs:filterType="([^"]*)"/)?.[1] ?? '',
+        type: rawAttr(filter[1], 'enhs:filterType'),
         checkXml: check ? check.replace(/<(\/?)enhs:filterCheck/g, '<$1enho:filterCheck') : '',
       });
     }

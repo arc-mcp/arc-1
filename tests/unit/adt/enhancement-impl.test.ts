@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   buildBadiImplementationXml,
+  getBadiEnhancementImplementation,
   getEnhancementSpotBadis,
   mergeBadiImplementationDefinition,
   parseBadiImplementationDefinition,
@@ -359,5 +360,54 @@ describe('ENHO object URL', () => {
     expect(objectUrlForType('ENHO', 'ZMY_ENH_APPROVAL_REASON')).toBe(
       '/sap/bc/adt/enhancements/enhoxhb/ZMY_ENH_APPROVAL_REASON',
     );
+  });
+});
+
+describe('stored content outside the JSON model', () => {
+  const httpReturning = (body: string) => ({ get: async () => ({ body }) }) as unknown as AdtHttpClient;
+  const keepAll = (stored: Awaited<ReturnType<typeof getBadiEnhancementImplementation>>) =>
+    mergeBadiImplementationDefinition(stored, {
+      badiImplementations: stored.badiImplementations.map(({ name, badiDefinition, implementingClass }) => ({
+        name,
+        badiDefinition,
+        implementingClass,
+      })),
+    });
+
+  it('decodes preserved attributes once, so the PUT does not escape them twice', async () => {
+    const xml = FILTERED.replace('enho:customizingLock="X"', 'enho:customizingLock="A&amp;B"');
+    const stored = await getBadiEnhancementImplementation(httpReturning(xml), unrestrictedSafetyConfig(), 'ZI');
+    expect(stored.preserved?.get('ZMY_IMPL_WAREHOUSE')?.customizingLock).toBe('A&B');
+    const body = buildBadiImplementationXml(xmlParams(keepAll(stored)));
+    expect(body).toContain('enho:customizingLock="A&amp;B"');
+    expect(body).not.toContain('&amp;amp;');
+  });
+
+  it('keeps a filter tree with an unknown token kind verbatim and does not misstate it as text', async () => {
+    const xml = FILTERED.replace('xsi:type="enho:Or"', 'xsi:type="enho:Not"');
+    const stored = await getBadiEnhancementImplementation(httpReturning(xml), unrestrictedSafetyConfig(), 'ZI');
+    const warehouse = stored.badiImplementations.find((impl) => impl.name === 'ZMY_IMPL_WAREHOUSE');
+    expect(warehouse).not.toHaveProperty('filter');
+    const body = buildBadiImplementationXml(xmlParams(keepAll(stored)));
+    expect(body).toContain('<enho:filterToken xsi:type="enho:Not"');
+    expect(body.match(/<enho:filterTree>/g)).toHaveLength(2);
+  });
+
+  it('reads a self-closing BAdI definition without swallowing the next one', async () => {
+    const spot = SPOT.replace(
+      '<enhs:badiDefinitions>',
+      '<enhs:badiDefinitions><enhs:badiDefinition enhs:name="BADI_EMPTY"/>',
+    );
+    const badis = await getEnhancementSpotBadis(httpReturning(spot), unrestrictedSafetyConfig(), 'ES_MY_SPOT');
+    expect([...badis.keys()]).toEqual(['BADI_EMPTY', 'BADI_MY_FILTERED', 'BADI_MY_PLAIN']);
+    expect([...(badis.get('BADI_MY_FILTERED')?.keys() ?? [])]).toEqual(['COUNTRY', 'LGNUM', 'GENERIC_FILTER']);
+  });
+
+  it('rejects a shortText that is not a text', () => {
+    const source = JSON.stringify({
+      enhancementSpot: 'ES_X',
+      badiImplementations: [{ name: 'ZI', badiDefinition: 'B', implementingClass: 'ZC', shortText: { de: 'x' } }],
+    });
+    expect(() => parseBadiImplementationDefinition(source)).toThrow('badiImplementations[0].shortText must be a text');
   });
 });
