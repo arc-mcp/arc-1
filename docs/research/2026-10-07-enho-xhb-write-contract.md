@@ -206,7 +206,8 @@ Fixed after this run:
 - **SAP-internal spots** (`<enhs:contentCommon enhs:internal="true">`, e.g. `ES_FILL_COUNTRY_TAX_DATA`): the
   create POST fails with HTTP 400 `Internal SAP enhancement; no implementation allowed in customer namespace`
   but still writes a TADIR entry `R3TR ENHO` that ADT can neither read nor delete (404). ARC-1 now refuses a
-  Z/Y create for such a spot before the POST; the live retry left no TADIR entry.
+  Z/Y create for such a spot before the POST; the live retry left no TADIR entry. For a Z/Y create the spot
+  read is therefore required, also without implementations; a failed read stops the create.
 
 ## Open points
 

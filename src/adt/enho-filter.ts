@@ -106,7 +106,8 @@ export function parseFilterCondition(text: string): FilterNode {
       throw invalid(`after ${name} expected one of ${FILTER_COMPARATORS.join(' ')}, got "${comparator}".`);
     }
     const raw = tokens[pos++];
-    if (raw === undefined || raw === '(' || raw === ')') throw invalid(`${name} ${comparator} needs a value.`);
+    // A symbol token here is a second comparator (`A = <>`), not a value; quote it to compare with the symbol.
+    if (raw === undefined || /^[()<>=]/.test(raw)) throw invalid(`${name} ${comparator} needs a value.`);
     const value = raw.startsWith("'") ? raw.slice(1, -1).replace(/''/g, "'") : raw;
     return { kind: 'Filter', name, comparator, value };
   };

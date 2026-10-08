@@ -91,7 +91,9 @@ Read-only keys are ignored and unknown keys are rejected. This keeps the schema 
 
 Implemented: JSON shape, names, one spot per implementation, no spot change on update, discovery gate,
 package allowlist. ARC-1 reads the spot (`GET /sap/bc/adt/enhancements/enhsxsb/{spot}`) and checks that each
-BAdI definition exists in it and that each filter name is declared by the BAdI. Left to SAP at activation:
+BAdI definition exists in it and that each filter name is declared by the BAdI. It also refuses an OR of
+different filters inside an AND (SAP answers HTTP 400) and a Z/Y create for an SAP-internal spot (SAP refuses
+it but leaves an undeletable TADIR entry); see the write contract, 2026-10-08. Left to SAP at activation:
 
 - The implementing class implements the BAdI interface.
 - On BTP / ABAP Cloud packages, the BAdI interface is released (C1).

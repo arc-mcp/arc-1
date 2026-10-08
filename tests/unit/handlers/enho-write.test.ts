@@ -370,6 +370,37 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     expect(calls.find((c) => c.method === 'PUT')?.body).toContain('enho:value="BE"');
   });
 
+  it('batch_create hides a failed spot read under minimalErrors but keeps input diagnostics', async () => {
+    const config = { ...DEFAULT_CONFIG, minimalErrors: true };
+    const batch = (filter: string) =>
+      handleToolCall(createClient(), config, 'SAPWrite', {
+        action: 'batch_create',
+        package: '$TMP',
+        objects: [
+          {
+            type: 'ENHO',
+            name: 'ZMY_ENH_NEW',
+            source: JSON.stringify({ enhancementSpot: 'ES_MY_SPOT', badiImplementations: [{ ...country, filter }] }),
+          },
+        ],
+      });
+    mockSap();
+    const served = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) =>
+      (opts?.method ?? 'GET') === 'GET' && String(url).includes('/enhancements/enhsxsb/')
+        ? Promise.resolve(mockResponse(403, 'SAP_INTERNAL_DETAIL', { 'x-csrf-token': 'T' }))
+        : served(url, opts),
+    );
+    const hidden = await batch("COUNTRY = 'BE'");
+    expect(hidden.isError).toBe(true);
+    expect(hidden.content[0].text).toContain('Details hidden');
+    expect(hidden.content[0].text).not.toContain('SAP_INTERNAL_DETAIL');
+
+    mockSap();
+    const local = await batch("REGION = 'EU'");
+    expect(local.content[0].text).toContain('declares no filter REGION');
+  });
+
   it('batch_create refuses an undeclared filter in preflight, before any create', async () => {
     const calls = mockSap();
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

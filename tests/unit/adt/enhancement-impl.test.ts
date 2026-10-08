@@ -264,6 +264,7 @@ describe('filter conditions', () => {
     ['', 'empty'],
     ["COUNTRY 'BE'", 'expected one of'],
     ['COUNTRY =', 'needs a value'],
+    ['COUNTRY = <>', 'needs a value'],
     ["(A = '1'", 'closing parenthesis'],
     ["A = '1' B = '2'", 'combine conditions with AND or OR'],
     ["A = 'open", 'unterminated quote'],
@@ -398,6 +399,17 @@ describe('resolveBadiFilters', () => {
     await expect(resolveBadiFilters(http, safety, definition(), '/ACME/IMPL')).resolves.toBeDefined();
     const released = { get: async () => ({ body: SPOT }) } as unknown as AdtHttpClient;
     await expect(resolveBadiFilters(released, safety, definition(), 'ZMY_IMPL')).resolves.toBeDefined();
+    // A create without implementations still posts the spot usage, so it is checked too.
+    await expect(resolveBadiFilters(http, safety, { enhancementSpot: 'ES_MY_SPOT' }, 'ZMY_IMPL')).rejects.toThrow(
+      'is SAP-internal',
+    );
+  });
+
+  it('fails a customer create when the spot cannot be read, instead of skipping the check', async () => {
+    await expect(resolveBadiFilters(failingHttp(403), safety, definition(), 'ZMY_IMPL')).rejects.toThrow(
+      'spot read failed',
+    );
+    await expect(resolveBadiFilters(failingHttp(403), safety, definition())).resolves.toBeDefined();
   });
 
   it('builds the tree for a new filter and leaves kept filters alone', async () => {
@@ -459,6 +471,18 @@ describe('stored content outside the JSON model', () => {
     );
     const badis = await getEnhancementSpotBadis(httpReturning(spot), unrestrictedSafetyConfig(), 'ES_MY_SPOT');
     expect([...badis.keys()]).toEqual(['BADI_EMPTY', 'BADI_MY_FILTERED', 'BADI_MY_PLAIN']);
+    expect([...(badis.get('BADI_MY_FILTERED')?.keys() ?? [])]).toEqual(['COUNTRY', 'LGNUM', 'GENERIC_FILTER']);
+  });
+
+  it('reads past a ">" or "/>" inside a quoted attribute value', async () => {
+    const xml = FILTERED.replace('enho:shortText="Per warehouse"', 'enho:shortText="a/>b"');
+    const stored = await getBadiEnhancementImplementation(httpReturning(xml), unrestrictedSafetyConfig(), 'ZI');
+    const body = buildBadiImplementationXml(xmlParams(keepAll(stored)));
+    expect(body.match(/<enho:filterTree>/g)).toHaveLength(2);
+    expect(body).toContain('enho:value="1000"');
+    const spot = SPOT.replace(/(<enhs:badiDefinition\s[^>]*?enhs:name="BADI_MY_FILTERED")/, '$1 enhs:shorttext="x/>y"');
+    expect(spot).not.toBe(SPOT);
+    const badis = await getEnhancementSpotBadis(httpReturning(spot), unrestrictedSafetyConfig(), 'ES_MY_SPOT');
     expect([...(badis.get('BADI_MY_FILTERED')?.keys() ?? [])]).toEqual(['COUNTRY', 'LGNUM', 'GENERIC_FILTER']);
   });
 

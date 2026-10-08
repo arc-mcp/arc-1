@@ -605,8 +605,11 @@ rejected. One enhancement implementation belongs to one enhancement spot.
 `>=`, `CP` and `NP`; AND binds tighter than OR; values are quoted (`''` escapes a quote). Omitting `filter`
 or passing it unchanged keeps SAP's stored filter as it is; `"filter": ""` removes it. ARC-1 reads the
 enhancement spot first: it refuses a BAdI that is not defined in the spot and a filter name the BAdI does not
-declare, and copies each filter's type and DDIC check from the BAdI definition. An update also keeps the
-stored `customizingLock` and `example` attributes.
+declare, and copies each filter's type and DDIC check from the BAdI definition. SAP does not store an OR of
+different filters inside an AND, such as `(A = '1' OR B = '2') AND C = '3'`; ARC-1 refuses it and asks for
+the equivalent OR of AND groups. An OR of one filter's values inside an AND is fine. A Z/Y create for an
+SAP-internal spot is refused before the create, because SAP rejects it but still leaves an object directory
+entry. An update also keeps the stored `customizingLock` and `example` attributes.
 
 SAP checks that the class implements the BAdI interface and the filter values against their DDIC check
 only at activation: such a write is saved inactive and `SAPActivate` reports the error. Create, update,

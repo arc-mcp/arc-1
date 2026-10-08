@@ -1046,8 +1046,12 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       );
       plan.contentType = createContentTypeForType(plan.type, cloud);
     } catch (err) {
-      // Construction errors are local input diagnostics, not SAP response details.
-      failBatchEntry(plan.result, 'preflight', batchFailureMessage(err, false));
+      // Construction errors are local input diagnostics, except the ENHO spot read, which is a SAP response.
+      failBatchEntry(
+        plan.result,
+        'preflight',
+        batchFailureMessage(err, err instanceof AdtApiError && config.minimalErrors),
+      );
     }
   }
   if (results.some((entry) => entry.status === 'failed')) return report(true);

@@ -92,7 +92,7 @@ function preservedImplementations(xml: string, doc: Record<string, unknown>): Ma
   // The filter tree is cut out of the raw XML: it must be re-sent as SAP serialized it.
   const trees = new Map<string, string>();
   for (const match of xml.matchAll(
-    /<enho:badiImplementation\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enho:badiImplementation>)/g,
+    /<enho:badiImplementation\s((?:[^>"]|"[^"]*")*?)(?:\/>|>([\s\S]*?)<\/enho:badiImplementation>)/g,
   )) {
     const tree = (match[2] ?? '').match(/<enho:filterTree[\s>][\s\S]*<\/enho:filterTree>|<enho:filterTree\/>/)?.[0];
     if (tree) trees.set(rawAttr(match[1] ?? '', 'enho:name').toUpperCase(), tree);
@@ -370,13 +370,15 @@ async function readEnhancementSpot(
   });
   const result = new Map<string, Map<string, FilterDeclaration>>();
   // A regex, not the parser: each filter's `<enhs:filterCheck>` is copied into the implementation as SAP wrote it.
-  for (const badi of resp.body.matchAll(/<enhs:badiDefinition\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enhs:badiDefinition>)/g)) {
+  for (const badi of resp.body.matchAll(
+    /<enhs:badiDefinition\s((?:[^>"]|"[^"]*")*?)(?:\/>|>([\s\S]*?)<\/enhs:badiDefinition>)/g,
+  )) {
     const name = rawAttr(badi[1], 'enhs:name').toUpperCase();
     if (!name) continue;
     const body = badi[2] ?? '';
     const filters = new Map<string, FilterDeclaration>();
     // `<enhs:filter\s` does not match the `<enhs:filters>` wrapper or `<enhs:filterCheck>`.
-    for (const filter of body.matchAll(/<enhs:filter\s([^>]*?)(?:\/>|>([\s\S]*?)<\/enhs:filter>)/g)) {
+    for (const filter of body.matchAll(/<enhs:filter\s((?:[^>"]|"[^"]*")*?)(?:\/>|>([\s\S]*?)<\/enhs:filter>)/g)) {
       const filterName = rawAttr(filter[1], 'enhs:filterName').toUpperCase();
       if (!filterName) continue;
       const check = (filter[2] ?? '').match(
@@ -390,7 +392,7 @@ async function readEnhancementSpot(
     result.set(name, filters);
   }
   // `<enhs:contentCommon enhs:internal="true">`: SAP refuses implementations in the customer namespace.
-  const common = resp.body.match(/<enhs:contentCommon\s([^>]*)>/)?.[1] ?? '';
+  const common = resp.body.match(/<enhs:contentCommon\s((?:[^>"]|"[^"]*")*)>/)?.[1] ?? '';
   return { internal: rawAttr(common, 'enhs:internal') === 'true', badis: result };
 }
 
@@ -401,7 +403,8 @@ async function readEnhancementSpot(
  *
  * `createName` (create only): a Z/Y implementation of an SAP-internal spot is refused here, because SAP
  * refuses the create POST with HTTP 400 but still leaves a TADIR entry that ADT can neither read nor
- * delete (live 2026-10-08).
+ * delete (live 2026-10-08). Such a create therefore always reads the spot, even without implementations,
+ * and fails when the read fails.
  */
 export async function resolveBadiFilters(
   http: AdtHttpClient,
@@ -412,16 +415,17 @@ export async function resolveBadiFilters(
   const spot = definition.enhancementSpot;
   const entries = definition.badiImplementations ?? [];
   const needTree = entries.filter((entry) => entry.filter && !entry.keepStoredFilter);
-  if (!spot || !entries.length) return definition;
+  const customerCreate = /^[ZY]/i.test(createName ?? '');
+  if (!spot || (!entries.length && !customerCreate)) return definition;
   let badis = new Map<string, Map<string, FilterDeclaration>>();
   let internal = false;
   try {
     ({ badis, internal } = await readEnhancementSpot(http, safety, spot));
   } catch (err) {
     if (err instanceof AdtApiError && err.statusCode === 404) throw invalid(`enhancement spot ${spot} does not exist.`);
-    if (needTree.length) throw err;
+    if (needTree.length || customerCreate) throw err;
   }
-  if (internal && /^[ZY]/i.test(createName ?? '')) {
+  if (internal && customerCreate) {
     throw invalid(
       `enhancement spot ${spot} is SAP-internal; SAP allows no implementation of it in the customer namespace.`,
     );
