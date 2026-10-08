@@ -67,7 +67,9 @@ function resolveFeature(mode: FeatureMode, probeOutcome: ProbeOutcome, id: strin
     return { id, available: false, mode: 'off', message: 'Disabled by configuration' };
   }
   // auto
-  const baseMessage = probeOutcome.available ? `${description} is available` : `${description} is not available`;
+  const baseMessage = probeOutcome.available
+    ? `${description} is available`
+    : `${description} is ${id === 'hana' ? 'not confirmed' : 'not available'}`;
   const message = probeOutcome.reason ? `${baseMessage} — ${probeOutcome.reason}` : baseMessage;
   return {
     id,
@@ -144,13 +146,13 @@ export async function probeFeatures(
     });
   }
 
-  // Discovery-based HANA detection: NHI (Native HANA Integration) workspaces are only
-  // registered on HANA-based systems. Fires when both the hanainfo probe and the components
-  // feed failed to confirm HANA (e.g. empty components feed + hanainfo 404).
+  // NHI collections also exist on non-HANA systems (#932). Preserve them as context,
+  // never as proof of the database when the endpoint and components do not confirm it.
   if (!resultMap.get('hana')?.available && discoveryNhiPresent && modeMap.hana === 'auto') {
+    const reason = resultMap.get('hana')?.reason;
     resultMap.set('hana', {
-      available: true,
-      reason: 'inferred from ADT discovery document (NHI workspace present — Native HANA Integration)',
+      available: false,
+      reason: `${reason ? `${reason}; ` : ''}NHI workspace presence does not identify the database`,
     });
   }
 
@@ -301,17 +303,6 @@ async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Pro
   } catch {
     return undefined;
   }
-}
-
-/**
- * Detect HANA presence from ADT discovery document NHI signal (exported for testing).
- *
- * NHI (Native HANA Integration) workspaces at /sap/bc/adt/nhi/* are only registered
- * on HANA-based SAP systems. This is the last fallback when both the hanainfo endpoint
- * probe and the software components feed fail to produce a signal.
- */
-export function detectHanaFromDiscovery(nhiPresent: boolean): boolean {
-  return nhiPresent;
 }
 
 /**
