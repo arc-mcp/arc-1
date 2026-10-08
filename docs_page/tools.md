@@ -267,6 +267,31 @@ ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
 for these resources. Metadata and source are separate reads, not an atomic snapshot.
 
+#### Type conflict in `ST_ENH_ADT_ENHO_BADI`
+
+HTTP 400 at `enhoxhb` with this transformation name can mean a source-code plug-in
+was requested through the BAdI endpoint. ARC-1 **1.5.0** introduced automatic subtype
+recovery in [#901](https://github.com/arc-mcp/arc-1/pull/901).
+
+1. Check the **running server's** version, using the MCP initialization response's
+   `serverInfo.version` or the deployed artifact. A locally installed CLI version
+   does not identify a remote server.
+2. If it predates 1.5.0, deploy a release containing the fix and reconnect the MCP
+   client. For BTP, follow [BTP Administration](btp-administration.md#change-and-restart-matrix):
+   a restart alone reuses the old code. Retry the same ENHO read with `version`
+   omitted or `auto`, retaining the same target when using multi-target mode.
+3. If a current build still fails, run `SAPSearch(query="<exact enhancement name>",
+   objectType="ENHO")` with the same target and identity. Capture its exact object
+   name, subtype and URI, plus the read's HTTP status and attempted collections.
+   An absent, ambiguous or unrecognized subtype prevents automatic recovery;
+   a denied lookup or source read remains an error. Share sanitized evidence with
+   the operator instead of trying guessed endpoints or changing permissions blindly.
+
+The original XHB request can still appear as HTTP 400 in server logs before a
+successful fallback. Check the final `SAPRead` result before treating that log as
+a failed read. The error text alone does not prove an outdated deployment or a
+missing SAP correction.
+
 ### Active vs Inactive Source
 
 Except for [ENHO](#enhancement-reads), source-bearing types accept a `version` parameter to choose between the activated source and the calling user's unactivated draft:

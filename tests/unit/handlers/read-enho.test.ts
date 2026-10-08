@@ -9,6 +9,7 @@ const { parseEnhancementImplementation } = await import('../../../src/adt/xml-pa
 const { parseEnhancementMetadata } = await import('../../../src/adt/enhancements.js');
 const hook = readFileSync(new URL('../../fixtures/xml/enhancement-hook.xml', import.meta.url), 'utf8');
 const badi = readFileSync(new URL('../../fixtures/xml/enhancement-implementation.xml', import.meta.url), 'utf8');
+const typeConflict = readFileSync(new URL('../../fixtures/xml/enhancement-type-conflict.xml', import.meta.url), 'utf8');
 const name = '/MFND/CORE_UPD_BDS_CONNECTION';
 const source = "ENHANCEMENT 1.\nWRITE 'sentinel &amp;'.\nENDENHANCEMENT.";
 const base = '/sap/bc/adt/enhancements/';
@@ -40,7 +41,7 @@ describe('SAPRead ENHO subtype routing', () => {
           opts.lookupStatus ?? 200,
           `<adtcore:objectReferences xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:objectReference adtcore:name="${opts.matchedName ?? name}" adtcore:type="${opts.type ?? 'ENHO/XHH'}" adtcore:uri="${opts.uri ?? 'https://other.invalid/never-follow'}"/>${opts.duplicateType ? `<adtcore:objectReference adtcore:name="${name}" adtcore:type="${opts.duplicateType}"/>` : ''}</adtcore:objectReferences>`,
         );
-      if (path.includes('/enhoxhb/')) return mockResponse(opts.firstStatus ?? 400, 'wrong transformation');
+      if (path.includes('/enhoxhb/')) return mockResponse(opts.firstStatus ?? 400, typeConflict);
       if (path.endsWith('/source/main')) {
         expect(init.headers?.Accept).toBe('text/plain');
         return mockResponse(opts.sourceStatus ?? 200, opts.sourceStatus ? 'source denied' : source);
@@ -116,6 +117,19 @@ describe('SAPRead ENHO subtype routing', () => {
     expect(calls[2]).toContain('/enhoxh/');
   });
 
+  it('preserves the captured SAP type conflict when lookup cannot resolve the enhancement', async () => {
+    const calls = setup({ matchedName: 'OTHER' });
+    const result = await read();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('status 400');
+    expect(result.content[0]?.text).toContain(
+      'A type conflict occurred in parameter passing to the root ROOT of ST_ENH_ADT_ENHO_BADI.',
+    );
+    expect(result.content[0]?.text).toContain('DDIC diagnostics:');
+    expect(result.content[0]?.text).toContain('ENHO read attempted enhoxhb.');
+    expect(calls).toHaveLength(2);
+  });
+
   it.each([false, true])('preserves SAP failures and actionable guidance (minimal=%s)', async (minimal) => {
     setup({ type: 'ENHO/XH', fallbackStatus: 500, metadata: 'private diagnostic' });
     const result = await read(minimal);
@@ -127,12 +141,13 @@ describe('SAPRead ENHO subtype routing', () => {
     if (minimal) expect(result.content[0]?.text).not.toContain('private diagnostic');
   });
 
-  it('does not turn a failed source read into successful metadata-only output', async () => {
-    const calls = setup({ sourceStatus: 403 });
+  it.each([400, 403, 404, 500])('propagates source HTTP %s without another subtype lookup', async (sourceStatus) => {
+    const calls = setup({ sourceStatus });
     const result = await read();
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain('403');
-    expect(result.content[0]?.text).not.toContain('SE80');
+    expect(result.content[0]?.text).toContain(String(sourceStatus));
+    if (sourceStatus === 403) expect(result.content[0]?.text).not.toContain('SE80');
+    expect(calls).toHaveLength(4);
     expect(calls.at(-1)).toContain('/source/main');
   });
 
