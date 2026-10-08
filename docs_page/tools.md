@@ -1092,7 +1092,15 @@ Activate (publish) ABAP objects. Supports single object or batch activation.
 | `preaudit` | boolean | No | Request pre-activation audit from SAP (default: `true`). Set `false` to skip pre-audit for faster activation. |
 | `objects` | array | No | For batch: array of `{type, name, group?}` objects to activate together |
 
-Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `warning`, `error`, `unknown`). After an overall failure, objects without their own error stay `unknown`; SAP may have cancelled their activation too. Messages match the object URI or its source/include path, and global messages appear separately. Read active/inactive source before selecting objects to retry.
+Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `requested`, `warning`, `error`, `unknown`). After an overall failure, objects without their own error stay `unknown`; SAP may have cancelled their activation too. Messages match the object URI or its source/include path, and global messages appear separately. Read active/inactive source before selecting objects to retry.
+
+Use `type="REPT"` (or the native alias `PROG/PX`) to activate an existing program text-pool
+draft, including one listed by `SAPRead(type="INACTIVE_OBJECTS")`. It targets the text pool
+separately from program source and supports single or batch activation. The result says
+`requested`: if the program has never been activated, first use `SAPActivate(type="PROG", name="...")`
+to activate its texts. The pool's actual package is checked, and systems without the ADT
+text-element service are refused. Ordinary `edit_text_symbols` writes already request
+text-pool activation automatically.
 
 For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a concrete batch re-activation template derived from where-used results.
 
@@ -1116,6 +1124,7 @@ operations keep their existing retry policies.
 **Examples:**
 ```
 SAPActivate(type="CLAS", name="ZCL_ORDER")
+SAPActivate(type="REPT", name="ZREPORT")
 SAPActivate(type="INCL", name="LZFGTOP", group="ZFG")
 SAPActivate(objects=[{type:"DDLS",name:"ZI_TRAVEL"},{type:"BDEF",name:"ZI_TRAVEL"},{type:"SRVD",name:"ZSD_TRAVEL"}])
 SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_type="odatav4")

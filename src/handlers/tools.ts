@@ -965,7 +965,7 @@ export function getToolDefinitions(
     tools.push({
       name: 'SAPActivate',
       description:
-        'Activate (publish) ABAP objects, single or batch. Type codes auto-normalized (e.g. "CLAS/OC" → CLAS). ' +
+        'Activate ABAP objects, single or batch. Type codes auto-normalized. REPT (PROG/PX) targets program text pools. ' +
         'ALWAYS prefer batch activation for 2+ objects — pass an "objects" array of {type, name}: one round-trip, works for any mix (required for interdependent RAP stacks, useful for unrelated objects too). ' +
         'publish_srvb/unpublish_srvb: publish or unpublish an OData service binding (SRVB).',
       inputSchema: {

@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
+import { lockObject, unlockObject } from '../../src/adt/crud.js';
+import { activate } from '../../src/adt/devtools.js';
 import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
@@ -60,6 +62,9 @@ describe('text elements via SAPRead/SAPWrite', () => {
       expect(message).toContain(`SAPActivate(type="PROG", name="${name}")`);
       expect(message).toContain('never been activated');
       expect(message).not.toContain('Updated and activated');
+      const activation = await call('SAPActivate', { type: 'REPT', name });
+      expect(activation).toContain('Text-pool activation requested');
+      expect(activation).toContain(`SAPActivate(type="PROG", name="${name}")`);
       await call('SAPActivate', { type: 'PROG', name });
       const inactive = await client.getInactiveObjects();
       expect(inactive.filter((entry) => [objectUrl, poolUrl].includes(entry.uri.toLowerCase()))).toEqual([]);
@@ -69,6 +74,57 @@ describe('text elements via SAPRead/SAPWrite', () => {
     } finally {
       // Even if an assertion fails, activate before deletion so no inactive text pool is orphaned.
       await call('SAPActivate', { type: 'PROG', name });
+      await call('SAPWrite', { action: 'delete', type: 'PROG', name });
+      registry.remove(name);
+      await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+    }
+  }, 60_000);
+
+  it('activates an existing program text draft by either type and in a batch without activating source', async (ctx) => {
+    requireOrSkip(
+      ctx,
+      client.http.discoveryAcceptFor('/sap/bc/adt/textelements/programs'),
+      `${SkipReason.BACKEND_UNSUPPORTED}: ADT textelements/programs collection absent`,
+    );
+    const name = generateUniqueName('ZARC1_IT');
+    const objectUrl = `/sap/bc/adt/programs/programs/${name.toLowerCase()}`;
+    const poolUrl = `/sap/bc/adt/textelements/programs/${name.toLowerCase()}`;
+    const source = `REPORT ${name.toLowerCase()}.\nPARAMETERS p_test TYPE c LENGTH 10.\nWRITE 'active'.`;
+    await call('SAPWrite', { action: 'create', type: 'PROG', name, package: '$TMP', source });
+    registry.register(objectUrl, 'PROG', name);
+    try {
+      await call('SAPActivate', { type: 'PROG', name });
+      const active = (await client.http.get(`${objectUrl}/source/main?version=active`)).body;
+      await call('SAPWrite', { action: 'update', type: 'PROG', name, source: source.replace("'active'", "'draft'") });
+      for (const args of [
+        { type: 'REPT', name },
+        { type: 'PROG/PX', name },
+        { objects: [{ type: 'PROG/PX', name }] },
+      ]) {
+        // Stage an inactive pool directly: SAPWrite now activates it automatically (#946).
+        await client.http.withStatefulSession(async (session) => {
+          const lock = await lockObject(session, client.safety, poolUrl, 'MODIFY');
+          try {
+            await session.put(
+              `${poolUrl}/source/selections?lockHandle=${encodeURIComponent(lock.lockHandle)}`,
+              'P_TEST=Pending label',
+              'application/vnd.sap.adt.textelements.selections.v1',
+              { Accept: 'application/vnd.sap.adt.textelements.selections.v1' },
+            );
+          } finally {
+            await unlockObject(session, poolUrl, lock.lockHandle);
+          }
+        });
+        expect((await client.getInactiveObjects()).some((entry) => entry.uri.toLowerCase() === poolUrl)).toBe(true);
+        expect(await call('SAPActivate', args)).toMatch(/requested/);
+        expect((await client.getInactiveObjects()).some((entry) => entry.uri.toLowerCase() === poolUrl)).toBe(false);
+        expect((await client.http.get(`${objectUrl}/source/main?version=active`)).body).toBe(active);
+        expect((await client.http.get(`${objectUrl}/source/main?version=inactive`)).body).toContain("'draft'");
+        expect(await client.getTextElementPart('PROG', name, 'selections')).toMatch(/P_TEST\s*=Pending label/);
+      }
+    } finally {
+      // Clean the pool even if testing a broken activation route, so deletion cannot orphan it.
+      expect((await activate(client.http, client.safety, poolUrl, { preaudit: false, name })).success).toBe(true);
       await call('SAPWrite', { action: 'delete', type: 'PROG', name });
       registry.remove(name);
       await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
