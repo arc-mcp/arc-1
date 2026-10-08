@@ -6,11 +6,12 @@ import {
   findInterfaceImplementersViaSeoMetaRel,
   findReferences,
   findWhereUsed,
+  findWhereUsedWithScope,
   getCompletion,
   getWhereUsedScope,
 } from '../../../src/adt/codeintel.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
-import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
+import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
 
 const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
 
@@ -322,6 +323,88 @@ describe('Code Intelligence', () => {
     });
   });
 
+  describe('findWhereUsedWithScope', () => {
+    const result = (resultDescription: string, scope = '') => `<?xml version="1.0" encoding="utf-8"?>
+<usagereferences:usageReferenceResult numberOfResults="1" resultDescription="${resultDescription}" referencedObjectIdentifier="" xmlns:usagereferences="http://www.sap.com/adt/ris/usageReferences">${scope}
+  <usagereferences:referencedObjects>
+    <usagereferences:referencedObject uri="/u1" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
+      <usagereferences:adtObject adtcore:name="A" adtcore:type="PROG/P" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usagereferences:referencedObject>
+  </usagereferences:referencedObjects>
+</usagereferences:usageReferenceResult>`;
+
+    it.each(['', 'ABAPFullName;\\TY:ZIF_TEST\\ME:RUN', undefined])(
+      'preserves explicit scope identifiers, including empty, and distinguishes absence: %j',
+      async (identifier) => {
+        const xml = result('description').replace(
+          ' referencedObjectIdentifier=""',
+          identifier === undefined ? '' : ` referencedObjectIdentifier="${identifier}"`,
+        );
+        const lookup = await findWhereUsedWithScope(mockHttp(xml), unrestrictedSafetyConfig(), '/source#start=3,0');
+        if (identifier === undefined) expect(lookup).not.toHaveProperty('referencedObjectIdentifier');
+        else expect(lookup).toHaveProperty('referencedObjectIdentifier', identifier);
+      },
+    );
+
+    it('reports SAP_BASIS 816 result descriptions verbatim', async () => {
+      // 816 also sends a scope element; the description is read from the result root on every release.
+      const http = mockHttp(
+        result(
+          '[A4H] Where-Used List: /DMO/BOOKING_DATA (Structure)',
+          '<usagereferences:scope><usagereferences:objectIdentifier displayName="/DMO/BOOKING_DATA (Structure)" globalType="TABL/DS"/></usagereferences:scope>',
+        ),
+      );
+      const lookup = await findWhereUsedWithScope(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/ddic/structures/%2fdmo%2fbooking_data',
+      );
+      expect(lookup.searchedFor).toBe('[A4H] Where-Used List: /DMO/BOOKING_DATA (Structure)');
+      expect(lookup.results).toHaveLength(1);
+      expect(lookup.results[0]?.name).toBe('A');
+    });
+
+    it('reports SAP_BASIS 757 result descriptions verbatim (no scope element)', async () => {
+      const http = mockHttp(result('References for: /SCWM/CL_TM - CLEANUP (Method) [SID]'));
+      const lookup = await findWhereUsedWithScope(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/%2fscwm%2fcl_tm#start=30,16',
+      );
+      expect(lookup.searchedFor).toBe('References for: /SCWM/CL_TM - CLEANUP (Method) [SID]');
+    });
+
+    it('omits searchedFor when SAP sends no description', async () => {
+      const xml = result('').replace(' resultDescription=""', '');
+      const lookup = await findWhereUsedWithScope(
+        mockHttp(xml),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/X',
+      );
+      expect(lookup).not.toHaveProperty('searchedFor');
+      expect(lookup.results).toHaveLength(1);
+    });
+
+    it('reads the description of the recorded fixture', async () => {
+      const xml = readFileSync(join(fixturesDir, 'where-used-results.xml'), 'utf-8');
+      const lookup = await findWhereUsedWithScope(
+        mockHttp(xml),
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/X',
+      );
+      expect(lookup.searchedFor).toBe('[A4H] Where-Used List: ZCL_TEST (Class)');
+    });
+
+    it('sends a cursor fragment unchanged in the query and the body', async () => {
+      const http = mockHttp(result('References for: ZCL_TEST - RUN (Method) [SID]'));
+      const uri = '/sap/bc/adt/oo/classes/zcl_test#start=12,10';
+      await findWhereUsedWithScope(http, unrestrictedSafetyConfig(), uri);
+      const [url, body] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string, string];
+      expect(new URL(url, 'http://sap').searchParams.get('uri')).toBe(uri);
+      expect(body).toContain(`uri="${uri}"`);
+    });
+  });
+
   // ─── findInterfaceImplementersViaSeoMetaRel ───────────────────────
 
   describe('findInterfaceImplementersViaSeoMetaRel', () => {
@@ -378,40 +461,132 @@ describe('Code Intelligence', () => {
   // ─── getCompletion ─────────────────────────────────────────────────
 
   describe('getCompletion', () => {
-    it('returns completion proposals', async () => {
-      const xml = `<proposals>
-        <proposal text="WRITE" description="WRITE statement" type="keyword"/>
-        <proposal text="WHILE" description="WHILE loop" type="keyword"/>
-      </proposals>`;
-      const http = mockHttp(xml);
+    // Record shape as returned by SAP_BASIS 816 (ABAP Cloud Developer Trial 2025).
+    const record = (identifier: string, kind = 2) =>
+      `<SCC_COMPLETION><KIND>${kind}</KIND><IDENTIFIER>${identifier}</IDENTIFIER><ICON>5</ICON><SUBICON>0</SUBICON><BOLD>0</BOLD><COLOR>0</COLOR><QUICKINFO_EVENT>1</QUICKINFO_EVENT><INSERT_EVENT>1</INSERT_EVENT><IS_META>0</IS_META><PREFIXLENGTH>3</PREFIXLENGTH><ROLE>57</ROLE><LOCATION>3</LOCATION><GRADE>1</GRADE><VISIBILITY>0</VISIBILITY><IS_INHERITED>0</IS_INHERITED><PROP1>0</PROP1><PROP2>0</PROP2><PROP3>0</PROP3><SYNTCNTXT>0</SYNTCNTXT></SCC_COMPLETION>`;
+    const answer = (...records: string[]) =>
+      `<?xml version="1.0" encoding="utf-8"?><asx:abap version="1.0" xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA>${records.join('')}</DATA></asx:values></asx:abap>`;
+
+    it('returns the SCC_COMPLETION identifiers of a complete list', async () => {
+      const http = mockHttp(answer(record('DATA', 52), record('DATA BEGIN OF', 52), record('DATA END OF', 52)));
       const results = await getCompletion(
         http,
-        unrestrictedSafetyConfig(),
-        '/sap/bc/adt/programs/programs/ZTEST/source/main',
-        5,
+        defaultSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ztest/source/main',
+        2,
         3,
-        'WR',
+        'REPORT ztest.\nDAT',
       );
-      expect(results).toHaveLength(2);
-      expect(results[0]?.text).toBe('WRITE');
-      expect(results[0]?.type).toBe('keyword');
+      expect(results).toEqual({
+        proposals: [{ text: 'DATA' }, { text: 'DATA BEGIN OF' }, { text: 'DATA END OF' }],
+        complete: true,
+      });
     });
 
-    it('returns empty for no completions', async () => {
-      const http = mockHttp('<proposals/>');
-      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, '');
-      expect(results).toEqual([]);
+    it('treats @end as unconfirmed completeness, not as a proposal', async () => {
+      const matches = Array.from({ length: 50 }, (_, i) => record(`CL_MATCH_${i}`));
+      const http = mockHttp(answer(...matches, record('@end', 0)));
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 2, 3, 'REPORT x.\ncl_');
+      expect(results.complete).toBe(false);
+      expect(results.proposals).toHaveLength(50);
+      expect(results.proposals.some((p) => p.text === '@end')).toBe(false);
     });
 
-    it('sends source as POST body to codecompletion endpoint', async () => {
-      const http = mockHttp('<proposals/>');
-      const source = 'REPORT ztest.';
-      await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 14, source);
-      expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('/sap/bc/adt/abapsource/codecompletion/proposals'),
+    it('returns a single proposal (one record is not an array)', async () => {
+      const http = mockHttp(answer(record('CL_IDENTITY_FACTORY')));
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(results).toEqual({ proposals: [{ text: 'CL_IDENTITY_FACTORY' }], complete: true });
+    });
+
+    it('keeps identifiers that look like numbers as text', async () => {
+      const http = mockHttp(answer(record('001')));
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(results.proposals).toEqual([{ text: '001' }]);
+    });
+
+    it('does not infer more matches from the legacy marker-only empty response', async () => {
+      const http = mockHttp(answer(record('@end', 0)));
+      const result = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 2, 10, 'REPORT x.\nzzqqxxvvww');
+      expect(result).toEqual({ proposals: [], complete: false });
+    });
+
+    it('decodes identifier XML entities exactly once', async () => {
+      const http = mockHttp(answer(record('&lt;field&gt;'), record('&amp;lt;literal&amp;gt;')));
+      const result = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(result.proposals).toEqual([{ text: '<field>' }, { text: '&lt;literal&gt;' }]);
+    });
+
+    it('propagates backend errors instead of reporting an empty complete list', async () => {
+      const http = mockHttp();
+      const error = new Error('Unsupported completion endpoint');
+      vi.mocked(http.post).mockRejectedValue(error);
+      await expect(getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x')).rejects.toBe(error);
+    });
+
+    it.each(['<error/>', '<proposals/>', '<abap><values/></abap>'])(
+      'rejects an unexpected response envelope instead of claiming completeness: %s',
+      async (body) => {
+        const http = mockHttp(body);
+        await expect(getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x')).rejects.toThrow(
+          'Unexpected completion response',
+        );
+      },
+    );
+
+    it('accepts the real 758 empty HTTP 200 response without a content type', async () => {
+      const http = mockHttp('');
+      const result = await getCompletion(http, defaultSafetyConfig(), '/source', 2, 10, 'REPORT x.\nzzqqxxvvww');
+      expect(result).toEqual({ proposals: [], complete: true });
+    });
+
+    it('returns empty when SAP has no proposals', async () => {
+      const http = mockHttp(answer());
+      const results = await getCompletion(http, unrestrictedSafetyConfig(), '/source', 1, 1, 'x');
+      expect(results).toEqual({ proposals: [], complete: true });
+    });
+
+    it('sends the cursor as a #start fragment of the uri, with the source as body', async () => {
+      const http = mockHttp(answer());
+      const source = 'REPORT ztest.\nDAT';
+      await getCompletion(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/programs/programs/ztest/source/main',
+        2,
+        3,
         source,
-        'text/plain',
-        expect.objectContaining({ Accept: 'application/xml' }),
+      );
+      const [url, body, contentType, headers] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [
+        string,
+        string,
+        string,
+        Record<string, string>,
+      ];
+      const parsed = new URL(url, 'http://sap');
+      expect(parsed.pathname).toBe('/sap/bc/adt/abapsource/codecompletion/proposal');
+      expect(parsed.searchParams.get('uri')).toBe('/sap/bc/adt/programs/programs/ztest/source/main#start=2,3');
+      expect(parsed.searchParams.get('signalCompleteness')).toBe('true');
+      expect(parsed.searchParams.has('line')).toBe(false);
+      expect(parsed.searchParams.has('column')).toBe(false);
+      expect(body).toBe(source);
+      expect(contentType).toBe('text/plain');
+      // The only type SAP accepts here; application/xml is refused with 406.
+      expect(headers).toEqual({ Accept: 'application/vnd.sap.as+xml' });
+    });
+
+    it('replaces a fragment already in the uri and keeps an escaped namespace', async () => {
+      const http = mockHttp(answer());
+      await getCompletion(
+        http,
+        unrestrictedSafetyConfig(),
+        '/sap/bc/adt/oo/classes/%2fdmo%2fcl_x/source/main#start=9,9',
+        4,
+        7,
+        'x',
+      );
+      const [url] = (http.post as ReturnType<typeof vi.fn>).mock.calls[0] as [string];
+      expect(new URL(url, 'http://sap').searchParams.get('uri')).toBe(
+        '/sap/bc/adt/oo/classes/%2fdmo%2fcl_x/source/main#start=4,7',
       );
     });
   });

@@ -2,7 +2,7 @@ import { type AdtClient, clampSearchResults } from '../adt/client.js';
 import {
   findInterfaceImplementersViaSeoMetaRel,
   findReferences,
-  findWhereUsed,
+  findWhereUsedWithScope,
   type ReferenceResult,
   type WhereUsedResult,
 } from '../adt/codeintel.js';
@@ -27,6 +27,8 @@ export interface LiveUsageLookup {
   fallbackUsed: boolean;
   /** Present when an optional internal lookup was denied and the result may be incomplete. */
   warning?: string;
+  /** The symbol SAP searched for, from its result scope (absent on the fallback endpoint). */
+  searchedFor?: string;
 }
 
 /** Match a result's ADT type against a filter: "CLAS" matches "CLAS/OC", "CLAS/OC" matches exactly.
@@ -79,11 +81,19 @@ export async function lookupLiveUsages(
   // `"CLAS/OC"` for augmentInterfaceImplementers too — its /^CLAS/i check would otherwise skip
   // augmentation for a padded value and silently drop implementers the later filter cannot recover.
   const filter = objectType?.trim() ? objectType.trim() : undefined;
+  const scoped = Boolean(uri.split('#')[1]);
 
   let results: LiveUsageResult[];
+  let searchedFor: string | undefined;
+  let referencedObjectIdentifier: string | undefined;
   let fallbackUsed = false;
   try {
-    results = await findWhereUsed(client.http, client.safety, uri, filter);
+    ({ results, searchedFor, referencedObjectIdentifier } = await findWhereUsedWithScope(
+      client.http,
+      client.safety,
+      uri,
+      filter,
+    ));
   } catch (err) {
     if (!(err instanceof AdtApiError) || ![404, 405, 415, 501].includes(err.statusCode)) throw err;
     results = await findReferences(client.http, client.safety, uri);
@@ -92,8 +102,14 @@ export async function lookupLiveUsages(
 
   // Kept outside the try: an augment failure must not be mistaken for a missing where-used endpoint.
   let warning: string | undefined;
-  if (!fallbackUsed) {
+  // Empty is SAP's explicit fallback to the original object; absent/nonempty cannot justify enrichment.
+  if (!fallbackUsed && (!scoped || referencedObjectIdentifier === '')) {
     warning = await augmentInterfaceImplementers(client, uri, filter, results as WhereUsedResult[]);
+  }
+  if (scoped && !searchedFor) {
+    const scopeWarning =
+      'SAP did not report the searched symbol. Results may refer to the whole object; confirm the scope before using them.';
+    warning = warning ? `${warning} ${scopeWarning}` : scopeWarning;
   }
 
   const filtered = filter ? results.filter((result) => matchesObjectType(result.type, filter)) : results;
@@ -104,6 +120,7 @@ export async function lookupLiveUsages(
     truncated: filtered.length > limit,
     fallbackUsed,
     ...(warning ? { warning } : {}),
+    ...(searchedFor ? { searchedFor } : {}),
   };
 }
 
@@ -113,7 +130,7 @@ async function augmentInterfaceImplementers(
   objectType: string | undefined,
   results: WhereUsedResult[],
 ): Promise<string | undefined> {
-  const intfMatch = uri.match(/\/sap\/bc\/adt\/oo\/interfaces\/([^/?]+)/i);
+  const intfMatch = uri.match(/\/sap\/bc\/adt\/oo\/interfaces\/([^/?#]+)/i);
   if (!intfMatch || (objectType && !/^CLAS/i.test(objectType))) return undefined;
 
   const interfaceName = decodeURIComponent(intfMatch[1]!).toUpperCase();

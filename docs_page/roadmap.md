@@ -99,7 +99,6 @@ sequence.
 | [FEAT-74](#feat-74) | Dump feed attribute filters | P3 | S | Ready | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
-| [FEAT-80](#feat-80) | Repair ADT code completion | P2 | S | Ready | Code intelligence |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
@@ -726,22 +725,6 @@ ordering key.
 **Resume with.** Design keyset pagination for named-table preview where a unique ordering can be
 proven. Refuse ambiguous tables, preserve all data-preview gates, and include a schema-only mode if
 it can reuse the same safe contract.
-
-<a id="feat-80"></a>
-### FEAT-80 — Repair ADT code completion
-
-- **Priority / effort / status:** P2 / S / Ready
-- **Category:** Code intelligence
-
-**Remaining gap.** `SAPNavigate(completion)` posts to `/abapsource/codecompletion/proposals` with
-separate cursor parameters and expects `<proposal>` elements. It returns 404 on 750 and 758.
-The singular `/proposal` endpoint with `uri=...#start=line,column` returns `asx:abap` /
-`SCC_COMPLETION` records. This is independent of the definition repair in
-[PR #910](https://github.com/arc-mcp/arc-1/pull/910).
-
-**Resume with.** Correct the request and parser together, verify media negotiation and cursor
-coordinates, and test useful and empty proposals on both releases with current and unsaved source.
-Preserve read-only authorization and keep unsupported-backend errors explicit.
 
 <a id="feat-36"></a>
 ### FEAT-36 — Type information

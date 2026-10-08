@@ -15,6 +15,22 @@ import { lookupLiveUsages, resolveWhereUsedUri } from './where-used.js';
 
 // ─── SAPNavigate Handler ─────────────────────────────────────────────
 
+/** SAP resolves definition and completion against the posted text: without it the answer is empty. */
+function hasCursorAndSource(args: Record<string, unknown>, line: number, column: number, source: string): boolean {
+  const sourceLine = source.split(/\r?\n/)[line - 1];
+  return (
+    args.line !== undefined &&
+    args.column !== undefined &&
+    Number.isInteger(line) &&
+    line >= 1 &&
+    Number.isInteger(column) &&
+    column >= 0 &&
+    source.trim().length > 0 &&
+    sourceLine !== undefined &&
+    column <= sourceLine.length
+  );
+}
+
 export async function handleSAPNavigate(
   client: AdtClient,
   args: Record<string, unknown>,
@@ -26,8 +42,24 @@ export async function handleSAPNavigate(
   const column = Number(args.column ?? 1);
   const source = String(args.source ?? '');
 
+  // Validate before FUNC/TABL symbolic resolution can contact SAP.
+  if (
+    action === 'references' &&
+    (args.line !== undefined || args.column !== undefined) &&
+    (args.line === undefined ||
+      args.column === undefined ||
+      !Number.isInteger(line) ||
+      line < 1 ||
+      !Number.isInteger(column) ||
+      column < 0)
+  ) {
+    return errorResult(
+      'References at a position need both line and column as integer ADT cursor coordinates (line >= 1, column >= 0) in the source behind uri. Omit both to search the whole object.',
+    );
+  }
+
   // Allow symbolic type+name as alternative to uri for references
-  if (action !== 'definition' && !uri && args.type && args.name) {
+  if (action === 'references' && !uri && args.type && args.name) {
     const symName = String(args.name);
     uri = (await resolveWhereUsedUri(client, String(args.type), symName)) ?? '';
     if (!uri) {
@@ -42,18 +74,9 @@ export async function handleSAPNavigate(
       if (!uri) {
         return errorResult('Provide uri pointing to the source (e.g. /source/main) for definition lookup.');
       }
-      // SAP resolves the position against the posted text: without it the answer is empty.
-      if (
-        args.line === undefined ||
-        args.column === undefined ||
-        !Number.isInteger(line) ||
-        line < 1 ||
-        !Number.isInteger(column) ||
-        column < 0 ||
-        !source.trim()
-      ) {
+      if (!hasCursorAndSource(args, line, column, source)) {
         return errorResult(
-          'Definition lookup needs line, column and source: pass current source text and integer ADT cursor coordinates (line >= 1, column >= 0).',
+          'Definition lookup needs line, column and source: pass current source text and integer ADT cursor coordinates within that source (line >= 1, 0 <= column <= line length).',
         );
       }
       const result = await findDefinition(client.http, client.safety, uri, line, column, source);
@@ -65,6 +88,11 @@ export async function handleSAPNavigate(
     case 'references': {
       if (!uri) {
         return errorResult('Provide uri or type+name to find references.');
+      }
+      // A cursor narrows where-used to the symbol at that position (a method, an attribute, …). ADT
+      // reads it from the URI fragment, as for definition; without one SAP searches the whole object.
+      if (args.line !== undefined) {
+        uri = `${uri.split('#')[0]}#start=${line},${column}`;
       }
       // objectType keeps its slash format (CLAS/OC, PROG/P) — do NOT normalize; the suffix is
       // semantically meaningful. Filtering happens client-side (SAP ignores objectTypeFilter).
@@ -81,6 +109,9 @@ export async function handleSAPNavigate(
           countMeaning: 'Reference entries, not distinct objects or runtime calls; not a complete inventory.',
           shown: results.length,
           truncated,
+          // SAP falls back to the whole object when the cursor is not on an identifier, so a
+          // position search reports what was actually searched.
+          ...(lookup.searchedFor && uri.split('#')[1] ? { searchedFor: lookup.searchedFor } : {}),
           ...(lookup.warning ? { warning: lookup.warning } : {}),
           ...(truncated
             ? {
@@ -97,8 +128,25 @@ export async function handleSAPNavigate(
       );
     }
     case 'completion': {
-      const proposals = await getCompletion(client.http, client.safety, uri, line, column, source);
-      return textResult(toolJson(proposals));
+      if (!uri) {
+        return errorResult('Provide uri pointing to the source (e.g. /source/main) for completion.');
+      }
+      if (!hasCursorAndSource(args, line, column, source)) {
+        return errorResult(
+          'Completion needs line, column and source: pass current source text and integer ADT cursor coordinates within that source (line >= 1, 0 <= column <= line length), with the cursor right after the typed prefix.',
+        );
+      }
+      const result = await getCompletion(client.http, client.safety, uri, line, column, source);
+      return textResult(
+        toolJson({
+          ...result,
+          ...(!result.complete
+            ? {
+                hint: 'SAP did not confirm a complete result. Check the cursor/source or narrow the prefix.',
+              }
+            : {}),
+        }),
+      );
     }
     case 'hierarchy': {
       const className = String(args.name ?? '').toUpperCase();
