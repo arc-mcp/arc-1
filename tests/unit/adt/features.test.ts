@@ -7,7 +7,6 @@ import {
   classifyAuthProbeError,
   classifyFeatureProbeStatus,
   detectHanaFromComponents,
-  detectHanaFromDiscovery,
   detectSystemType,
   isBeyondAbaplintCeiling,
   mapSapReleaseToAbaplintVersion,
@@ -378,7 +377,7 @@ describe('Feature Detection', () => {
       ).toBe(true); // S4FND triggers the rule
     });
 
-    it('returns false on real-world NetWeaver 7.50 SP02 trial (AnyDB / SAP MaxDB, no HANA)', () => {
+    it('returns false on real-world NetWeaver 7.50 SP02 trial (ASE, no HANA)', () => {
       // Captured from the NPL 7.50 SP02 dev-edition trial system
       // (tests/fixtures/probe/npl-750-sp02-dev-edition/meta.json).
       // Regression guard: the heuristic must not false-positive on plain NetWeaver +
@@ -395,18 +394,6 @@ describe('Feature Detection', () => {
           { name: 'ST-PI' },
         ]),
       ).toBe(false);
-    });
-  });
-
-  // ─── detectHanaFromDiscovery ───────────────────────────────────────
-
-  describe('detectHanaFromDiscovery', () => {
-    it('returns true when NHI is present', () => {
-      expect(detectHanaFromDiscovery(true)).toBe(true);
-    });
-
-    it('returns false when NHI is absent', () => {
-      expect(detectHanaFromDiscovery(false)).toBe(false);
     });
   });
 
@@ -796,6 +783,7 @@ describe('Feature Detection', () => {
     <atom:title>HANA-Integration</atom:title>
     <app:collection href="/sap/bc/adt/nhi/repositories">
       <atom:title>NHI Repositories</atom:title>
+      <app:accept>application/vnd.sap.adt.nhi.repositories+xml</app:accept>
     </app:collection>
     <app:collection href="/sap/bc/adt/nhi/configurations">
       <atom:title>NHI Configurations</atom:title>
@@ -830,17 +818,34 @@ describe('Feature Detection', () => {
       } as unknown as AdtHttpClient;
     }
 
-    it('detects HANA via NHI workspace when components feed is empty and hanainfo 404', async () => {
-      // Regression case: systems where /sap/bc/adt/system/components returns an empty feed
-      // AND hanainfo is not activated. Discovery NHI workspace is the last resort.
+    it('does not infer HANA from NHI when components are empty and hanainfo is missing', async () => {
       const client = mockProbeClientDiscoveryScenario({
         componentsXml: emptyComponentsXml,
         discoveryXml: nhiDiscoveryXml,
         hanaEndpoint404: true,
       });
       const result = await probeFeatures(client, defaultConfig);
-      expect(result.hana.available).toBe(true);
-      expect(result.hana.message).toMatch(/NHI|Native HANA Integration/);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toMatch(/not confirmed/);
+      expect(result.hana.message).toMatch(/404/);
+      expect(result.hana.message).toMatch(/NHI.*does not identify the database/);
+    });
+
+    it.each(['auto', 'on', 'off'] as const)('keeps %s mode honest on a non-HANA 750 system with NHI', async (hana) => {
+      const client = mockProbeClientDiscoveryScenario({
+        componentsXml: makeComponentsXml([
+          { id: 'SAP_BASIS', title: '750;SAPK-75002INSAPBASIS;0002;SAP Basis Component' },
+          { id: 'SAP_BW', title: '750;SAPK-75002INSAPBW;0002;SAP Business Warehouse' },
+        ]),
+        discoveryXml: nhiDiscoveryXml,
+        hanaEndpoint404: true,
+      });
+      const result = await probeFeatures(client, { ...defaultConfig, hana });
+      expect(result.hana.available).toBe(hana === 'on');
+      expect(result.hana.mode).toBe(hana);
+      if (hana === 'auto') expect(result.hana.message).toContain('not confirmed');
+      expect(result.abapRelease).toBe('750');
+      expect(result.discoveryMap?.has('/sap/bc/adt/nhi/repositories')).toBe(true);
     });
 
     it('reports HANA unavailable when all three signals are absent', async () => {
@@ -853,10 +858,7 @@ describe('Feature Detection', () => {
       expect(result.hana.available).toBe(false);
     });
 
-    it('promotes hana to available via NHI even when hanainfo returns 401', async () => {
-      // 401 on hanainfo means auth failure on THAT endpoint, not that HANA is absent.
-      // The discovery NHI signal is from a separate, independently-trusted 200 OK response
-      // and should still override the hanainfo auth failure.
+    it.each([401, 403])('does not override a hanainfo %s with NHI discovery', async (status) => {
       const client = {
         get: vi.fn().mockImplementation((url: string) => {
           if (url === '/sap/bc/adt/discovery') return Promise.resolve({ statusCode: 200, body: nhiDiscoveryXml });
@@ -864,14 +866,16 @@ describe('Feature Detection', () => {
             return Promise.resolve({ statusCode: 200, body: emptyComponentsXml });
           }
           if (url === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
-            return Promise.reject(new AdtApiError('Unauthorized', 401, url));
+            return Promise.reject(new AdtApiError('Unauthorized', status, url));
           }
           return Promise.resolve({ statusCode: 200, body: '' });
         }),
       } as unknown as AdtHttpClient;
       const result = await probeFeatures(client, defaultConfig);
-      expect(result.hana.available).toBe(true);
-      expect(result.hana.message).toMatch(/NHI|Native HANA Integration/);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toContain(String(status));
+      expect(result.hana.message).toMatch(/not confirmed/);
+      expect(result.hana.message).toMatch(/NHI.*does not identify the database/);
     });
   });
 
