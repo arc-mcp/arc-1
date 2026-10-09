@@ -1,9 +1,10 @@
 # Preserve listed discovery collections (#950)
 
-Base: `d6cb05382`. No existing PR addresses #950. The parser drops collections
-without media types; the five endpoint gates then mistake missing MIME data for
-endpoint absence. The issue's three XML fragments reproduce this independently
-of SAP credentials. Eleven new parser/gate/negotiation assertions fail on main.
+Base: `d6cb05382`; implementation is PR #953. The parser drops listed collections
+without media types, so presence gates mistake missing MIME data for endpoint
+absence. The issue's three XML fragments confirm this for domains, table types
+and lock objects. Eleven parser/gate/negotiation assertions fail on main; tests
+for tables and packages use synthetic listed collections, not reporter captures.
 
 A controlled replay of live SAP_BASIS 758 SP02 discovery, replacing only the five
 collections' accept values with empty elements, reproduces the false 7.50/7.51
@@ -33,6 +34,23 @@ types); 3,864 collection/object/source Accept and Content-Type comparisons retai
 the old negotiation. The controlled empty-accept replay passes all five gates and
 the domain create/read/delete check. Unmodified live 750 discovery still makes
 all five gates return false. No display-only credentials or PP route were available.
+
+## Review follow-up
+
+The fix applies only to listed collections. The reporter's 664-versus-669 total
+collections and missing table entry in the old MIME map do not establish whether
+`/ddic/tables` was omitted or listed without media types. `/packages` was not
+checked. Neither the controlled replay nor developer-user discovery resolves
+that uncertainty. The operator guidance and PR claim are narrowed accordingly;
+no release heuristic or guessed endpoint is added. Resolving that remaining
+question needs the reporter's original startup discovery, not broader roles.
+
+A document whose collections all lack media types now yields a nonempty map.
+`hasDiscoveryData()` therefore reports loaded discovery, and MIME-based capability
+gates can return false instead of unknown. This is a representation consequence,
+not a change to MIME selection or authority. The reporter had 142 usable entries,
+so this is not its failure shape. No all-empty live capture is available; it is
+not claimed to be impossible. Existing MIME-based gates are left unchanged.
 
 Roadmap checked: no impact. ARCH-01 is broader endpoint routing; FEAT-50 still
 needs complete captures from additional releases and authorization setups.
