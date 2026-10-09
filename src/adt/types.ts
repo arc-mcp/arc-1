@@ -50,7 +50,7 @@ export interface FeatureStatus {
 /** SAP system type: BTP ABAP Environment or on-premise */
 export type SystemType = 'btp' | 'onprem';
 
-/** ADT discovery map: endpoint path -> accepted MIME types */
+/** ADT discovery map: listed endpoint path -> advertised MIME types ([] means presence only, not permission). */
 export type DiscoveryMap = Map<string, string[]>;
 
 /** Resolved features after probing */
