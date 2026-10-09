@@ -20,8 +20,8 @@ that every finding from the rule is stylistic.
 
 1. Make only this pre-write rule advisory by default. Keep whole-source validation,
    parser errors, cloud restrictions, and explicit administrator overrides.
-2. Test the original class, a spliced unrelated method, invalid ABAP, and an
-   explicit Error override. Keep standalone lint configuration unchanged.
+2. Test valid and SAP-rejected spacing plus an explicit Error override. Existing
+   lint tests cover parser errors; keep standalone lint configuration unchanged.
 3. Reproduce against SAP 758 with a disposable class, then verify default create,
    edit, activation and read-back with the candidate. Delete the fixture.
 
@@ -32,28 +32,9 @@ validator; activation remains authoritative.
 
 Roadmap checked: no roadmap impact.
 
-## Verification
+## Live verification
 
-On the parent main revision `3ac9caa`, a disposable `$TMP` class on SAP_BASIS
-758 SP02 (HTTPS/Basic, client 001) activates, but editing its second method is
-blocked by the first method's unchanged spacing. With this branch's built
-dispatcher, default create and edit both return the warning, activation succeeds,
-and read-back preserves `DEFAULT '')` alongside the changed method body. Both
-fixtures were deleted and subsequent source GETs returned 404.
-
-The new regression fails on main and passes after the change. Full unit suite:
-8,070 tests / 270 files. Typecheck, Biome, policy validation, build and size/schema
-budgets pass. Final diff review found no further change needed. Live BTP/PP and
-other SAP releases were not exercised; existing cloud/version tests pass.
-
-## Claude review follow-up
-
-Corrected the claim that this is always a style finding. Added a regression for
-`IF ('bar' = 'bar' ). ENDIF.`: pre-write lint passes with a spacing warning and
-no parser error. Independently verified on 758 SP02/client 001 via HTTPS/Basic:
-SAP's inline syntax check rejects the same unsaved source because `(` requires a
-following blank. The disposable program was deleted and a source read returned
-404. The production severity is unchanged from the original PR.
-
-All 8,071 unit tests and typecheck, lint, policy, build and size/schema checks
-pass; the final focused file passes all four cases. Roadmap rechecked: no impact.
+On SAP_BASIS 758 SP02/client 001/HTTPS Basic, create and an unrelated method edit
+warned but succeeded; activation and read-back preserved `DEFAULT '')`. SAP's
+inline syntax check rejected the missing-blank IF form. All fixtures were deleted
+and absence verified. Other releases and BTP/PP were not tested live.
