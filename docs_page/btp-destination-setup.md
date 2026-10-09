@@ -155,6 +155,13 @@ startup cache and restrict the tool surface for propagated users until the next
 probe/restart. After correcting the role, restart ARC-1 and verify the surface.
 Endpoint availability is not proof that every operation is authorized.
 
+On 758, a display-only startup user can receive listed DDIC collections with
+empty `<app:accept/>` elements. ARC-1 keeps these paths for endpoint-presence
+checks without inventing media types. MIME negotiation still uses usable
+advertisements or its existing fallback; SAP checks each propagated user's
+authorization when that user makes the request. Do not grant startup write
+permissions merely to populate discovery media types.
+
 The trace also contained denied checks for `S_USER_GRP`, `S_TRANSPRT`, `S_SYS_RWBO`,
 `S_ADMI_FCD`, `S_DYNLGPTS` and change/execute activities. Do not grant these merely to
 make a startup trace clean: some checks are optional or occur inside an endpoint
