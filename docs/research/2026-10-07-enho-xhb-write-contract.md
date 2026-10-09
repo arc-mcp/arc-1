@@ -236,6 +236,29 @@ BTP trial: the ENHO test in `tests/integration/btp-tool-dispatch.integration.tes
 
 All test objects were deleted.
 
+### BAdIs used in the live tests
+
+| BAdI | Enhancement spot | Released (C1) | Tested and result |
+|---|---|---|---|
+| `SD_APM_SET_APPROVAL_REASON` | `ES_SD_SLS_EXTEND` | Yes | Create, read back, update, activate, delete in `$TMP` and in a transportable package with a request: passed |
+| `SD_SLS_CHECK_BEFORE_SAVE` | `ES_SD_SLS_EXTEND` | Yes | Two implementations in one ENHO, `batch_create` with its class, update and activation in an ABAP Classic and an ABAP Cloud package (version kept): passed |
+| `SD_SLS_MODIFY_ITEM_REQDATE` | `ES_SD_SLS_EXTEND` | Yes | Created inactive in a shared ENHO, then activated; short text with `< & " äöü`; `batch_create` with its class: passed |
+| `BD_MFGORDER_CHECK_BEFORE_SAVE` | `ES_COBADICFL_MFGORDER` | Yes | NUMC/CHAR filters, every comparator, keep / remove / re-add a filter, filter change in an ABAP Cloud package (version kept): passed. An OR of different filters inside an AND was rejected by SAP (HTTP 400); ARC-1 now refuses it first |
+| `EDOC_ADAPTOR` | `ES_EDOCUMENT` | No | OR, AND with nested OR, `CP`, `NP`, `<>`; write-back unchanged; undeclared filter refused; filter removed: passed |
+| `EDOC_INTERFACE_CONNECTOR` | `ES_EDOCUMENT` | No | Three filters with DDIC checks in nested AND/OR groups; unchanged round trip: passed |
+| `HRPIQ00AD_STATUS` | `ES_HRPIQ00AD_DEC` | No | Single-use BAdI, three DDIC-checked filters; unchanged round trip: passed |
+| `HRPAYDE_A1_EMAIL` | `ES_HRPAYDE_A1` | No | Single-use BAdI with fallback class: passed. A second implementation with the same filter was refused by SAP at activation (conflict), as expected |
+| `FICO_AMT_LIMT_VARIABLE` | `ES_FICO_LIM_VAR` | No | STRING filters with DDIC check; stored filter kept on an update without `filter`; all validation refusals (spot change, BAdI not in spot, undeclared filter, syntax, unknown key, duplicate name, comparator as value): passed. In an ABAP Cloud package SAP refused activation ("not permitted"), as expected |
+| `BADI_QMIP_IP_MAINTAIN` | `ES_QMIP_IP_MAINTAIN` | No | CLIENT filter via `batch_create`: SAP refused activation because the filter overlapped SAP's own implementation; with a non-overlapping value it activated: passed |
+| `BADI_FILL_COUNTRY_TAX_DATA` | `ES_FILL_COUNTRY_TAX_DATA` | No (SAP-internal spot) | SAP refused the create but left an undeletable TADIR entry. ARC-1 now refuses before the create, also without implementations; no TADIR entry: passed |
+| `ADDRESS_PRINT_FORMAT` (BTP) | `ADDRESS_PRINT_FORMAT` | Yes | Create with `RECEIVER_COUNTRY = 'DE'`, read back, activate, update (filter and flag), activate, delete; `cloudDevelopment` kept: passed |
+| `BADI_IAM_BUSINESS_USER` (BTP) | `IAM_BUSINESS_USER` | Yes | Create, read back, activate, update, activate, delete; `cloudDevelopment` kept: passed |
+| `CFD_RUNTIME_SOAP_AMOUNT_CONV` (BTP) | `CFD_CUSTOM_FIELD` | No (key-user apps only) | Refused by SAP ("The use of … is not permitted"), as expected |
+
+Released means the C1 contract is released for cloud development (`useInSAPCloudPlatform`), on-prem read
+from the BAdI interface, on BTP from the BAdI definition. "As expected" marks a refusal by SAP that ARC-1
+passed on readably.
+
 ## Open points
 
 1. Setting an object's or package's ABAP language version is not possible through ARC-1 (roadmap); the cloud
