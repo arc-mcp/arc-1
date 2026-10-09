@@ -198,6 +198,8 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     typeName: input.typeName,
     rowType: input.rowType,
     rowTypeKind: input.rowTypeKind,
+    rowTypeLength: input.rowTypeLength,
+    rowTypeDecimals: input.rowTypeDecimals,
     domainName: input.domainName,
     shortLabel: input.shortLabel,
     shortLength: input.shortLength,
@@ -377,13 +379,15 @@ export async function mergeMetadataWriteProperties(
     }
     // The stored kind and built-in length describe the stored row type: keep them only while it is unchanged.
     const unchanged = !!storedKind && (!requested || requested.toUpperCase() === existing.rowType.toUpperCase());
+    const rowTypeKind = provided.rowTypeKind ?? (unchanged ? storedKind : undefined);
+    const keepDimensions = unchanged && rowTypeKind === 'builtin' && storedKind === 'builtin';
     return {
       _description: existing.description,
       _package: existing.package,
       rowType: requested || existing.rowType,
-      rowTypeKind: provided.rowTypeKind ?? (unchanged ? storedKind : undefined),
-      rowTypeLength: unchanged ? existing.rowTypeLength : undefined,
-      rowTypeDecimals: unchanged ? existing.rowTypeDecimals : undefined,
+      rowTypeKind,
+      rowTypeLength: provided.rowTypeLength ?? (keepDimensions ? existing.rowTypeLength : undefined),
+      rowTypeDecimals: provided.rowTypeDecimals ?? (keepDimensions ? existing.rowTypeDecimals : undefined),
     };
   }
   return provided;
@@ -694,8 +698,8 @@ function buildCreateXmlBody(
         package: pkg,
         rowType,
         rowTypeKind,
-        rowTypeLength: properties?.rowTypeLength as string | undefined,
-        rowTypeDecimals: properties?.rowTypeDecimals as string | undefined,
+        rowTypeLength: properties?.rowTypeLength as string | number | undefined,
+        rowTypeDecimals: properties?.rowTypeDecimals as string | number | undefined,
         language: masterLanguage,
         responsible: responsibleUser,
       });

@@ -394,16 +394,14 @@
           "description": "DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)"
         },
         "rowType": {
-          "type": "string",
-          "description": "TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create."
+          "type": "string"
         },
         "rowTypeKind": {
           "type": "string",
           "enum": [
             "builtin",
             "structure"
-          ],
-          "description": "TTYP create: row-type mode (auto-detected from rowType if omitted)."
+          ]
         },
         "length": {
           "type": "number",

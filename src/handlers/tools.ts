@@ -17,6 +17,11 @@ import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { addLiveRelationsDefinition } from './relation-tool.js';
+import {
+  TABLE_TYPE_BATCH_TOOL_PROPERTIES,
+  TABLE_TYPE_DIMENSION_TOOL_PROPERTIES,
+  TABLE_TYPE_TOOL_PROPERTIES,
+} from './table-type-fields.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
   ATC_BATCH_TYPES_BTP,
@@ -725,16 +730,8 @@ export function getToolDefinitions(
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
-          rowType: {
-            type: 'string',
-            description:
-              'TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create.',
-          },
-          rowTypeKind: {
-            type: 'string',
-            enum: ['builtin', 'structure'],
-            description: 'TTYP create: row-type mode (auto-detected from rowType if omitted).',
-          },
+          ...(btp ? TABLE_TYPE_BATCH_TOOL_PROPERTIES : TABLE_TYPE_TOOL_PROPERTIES),
+          ...(btp ? {} : TABLE_TYPE_DIMENSION_TOOL_PROPERTIES),
           length: { type: 'number', description: 'DOMA/DTEL: data type length' },
           decimals: { type: 'number', description: 'DOMA/DTEL: decimal places' },
           outputLength: { type: 'number', description: 'DOMA: output length' },
@@ -900,8 +897,8 @@ export function getToolDefinitions(
                 // DDIC metadata fields (DOMA/DTEL/TTYP/MSAG/SRVB) mirror the top-level SAPWrite
                 // params 1:1 — descriptions omitted here to keep the tools/list payload small (#520).
                 dataType: { type: 'string' },
-                rowType: { type: 'string' },
-                rowTypeKind: { type: 'string', enum: ['builtin', 'structure'] },
+                ...TABLE_TYPE_BATCH_TOOL_PROPERTIES,
+                ...(btp ? {} : TABLE_TYPE_DIMENSION_TOOL_PROPERTIES),
                 length: { type: 'number' },
                 decimals: { type: 'number' },
                 outputLength: { type: 'number' },
