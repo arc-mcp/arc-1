@@ -75,7 +75,7 @@ sequence.
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
-| [COMPAT-12](#compat-12) | Deletion with another user's text draft | P3 | S | Needs research | Compatibility |
+| [COMPAT-12](#compat-12) | Text-pool deletion under shared transports and PP | P3 | S | Needs live qualification | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
@@ -303,28 +303,23 @@ define structural-node identity and traversal without mistaking branch labels fo
 Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
 
 <a id="compat-12"></a>
-### COMPAT-12 — Deletion with another user's text draft
+### COMPAT-12 — Text-pool deletion under shared transports and PP
 
-- **Priority / effort / status:** P3 / S / Needs research
+- **Priority / effort / status:** P3 / S / Needs live qualification
 - **Category:** Compatibility
 
-**Remaining gap.** Program and function-group deletion activate a matching PROG/PX
-text-pool entry from the caller's inactive feed before deleting the owner
-([#952](https://github.com/arc-mcp/arc-1/pull/952),
-[#959](https://github.com/arc-mcp/arc-1/pull/959)). The feed can include another
-user's drafts in the caller's transport requests, and omit drafts outside those
-requests. It does not prove exclusive ownership. Whether SAP permits cross-user
-pool activation or deletion that leaves an orphan has not been verified. The
-same-user case is fixed; [#949](https://github.com/arc-mcp/arc-1/pull/949) adds
-explicit pool activation. Feed and cleanup evidence is recorded in
-[the deletion plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-10-09-function-group-delete-text-pool.md).
+**Remaining qualification.** Native two-user 758 tests prove that the default inactive
+feed omits another user's draft and owner DELETE leaves REPOTEXT state I. The new
+[deletion guard plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-cross-user-text-delete.md)
+replaces automatic activation from [#952](https://github.com/arc-mcp/arc-1/pull/952)
+and [#959](https://github.com/arc-mcp/arc-1/pull/959): lock owner and pool, read explicit
+inactive metadata, refuse drafts, and hold both locks through DELETE. Native 758/816
+lock exclusion is proven. No identity heuristic or draft activation is used.
 
-**Resume with.** Two authorized SAP test identities: save a draft as one user and
-attempt PROG/FUGR deletion as the other, both inside and outside a shared transport
-request, including lock races and principal propagation. Establish feed visibility,
-SAP's activation/delete authorization and draft ownership before adding a guard;
-preserve per-user identity, package checks and native authorizations. Avoid silently
-activating or discarding another user's draft.
+**Resume with.** A designated recording package/request and two PP identities to
+qualify shared-transport and principal-propagation lock/metadata behavior. Preserve
+per-user identity and package gates. Basic-auth local-package results do not qualify
+those deployments; discovery absence on 7.50 retains legacy behavior.
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
