@@ -80,3 +80,13 @@ Remaining native qualification is COMPAT-12's shared recording transport and PP
 route; neither is inferred from this Basic-auth local-package evidence. No further
 ARC-1 defect was found in the final reviewed guard. COMPAT-15 tracks the native empty-activation
 limitation; it remains explicit rather than being hidden by a successful HTTP result.
+
+Final missed-case follow-up: FUGR `edit_text_symbols` now says activation was
+requested, matching the existing PROG response rather than claiming a proven
+postcondition from SAP's empty success response. This is the smallest truthful
+fix; it adds no heuristic retries or writes. COMPAT-15 retains supported native
+draft resolution/postcondition research, not an uncorrected success wording bug.
+Public compiled empty-FUGR writes on 758/816 at 22:08 UTC reproduce this exact
+case: success text says activation requested; native pool remains inactive;
+delete refuses; controlled test recovery ends owner404 + zero REPOTEXT. All
+8,077 tests, typecheck, lint and build pass after the wording correction.

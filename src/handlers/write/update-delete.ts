@@ -319,6 +319,9 @@ export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<
         `If ${name} has never been activated, use SAPActivate(type="PROG", name="${name}") to activate these texts.`,
     );
   }
+  if (type === 'FUGR') {
+    return textResult(`Updated ${part} of FUGR ${name}; text-pool activation requested.`);
+  }
   return textResult(`Updated and activated ${part} of ${type} ${name}.`);
 }
 

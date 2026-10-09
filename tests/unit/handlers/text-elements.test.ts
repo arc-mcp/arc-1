@@ -157,6 +157,9 @@ describe('text elements routing and safety', () => {
       expect(result.content[0]?.text).not.toContain('Updated and activated');
       expect(result.content[0]?.text).toContain('never been activated');
       expect(result.content[0]?.text).toContain('SAPActivate(type="PROG", name="ZTEST")');
+    } else if (type === 'FUGR') {
+      expect(result.content[0]?.text).toContain('text-pool activation requested');
+      expect(result.content[0]?.text).not.toContain('Updated and activated');
     } else {
       expect(result.content[0]?.text).toContain('Updated and activated');
     }
