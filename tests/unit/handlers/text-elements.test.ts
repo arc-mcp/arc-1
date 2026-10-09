@@ -354,3 +354,86 @@ describe('text elements routing and safety', () => {
     },
   );
 });
+
+describe('PROG delete with an inactive text pool (#940)', () => {
+  const ref = (type: string, uri: string, name = 'ZTEST') =>
+    `<ioc:entry><ioc:object ioc:user="DEV" ioc:deleted="false"><ioc:ref xmlns:adtcore="http://www.sap.com/adt/core" adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}"/></ioc:object></ioc:entry>`;
+  const feed = (...entries: string[]) =>
+    `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects">${entries.join('')}</ioc:inactiveObjects>`;
+  const SOURCE_DRAFT = ref('PROG/P', '/sap/bc/adt/programs/programs/ztest');
+  const POOL_DRAFT = ref('PROG/PX', '/sap/bc/adt/textelements/programs/ztest');
+  const mockSap = (inactive: string, activation = '') =>
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        String(url).includes('/inactiveobjects')
+          ? mockResponse(200, inactive)
+          : String(url).includes('/activation?')
+            ? mockResponse(200, activation)
+            : mockResponse(200, String(url).includes('_action=LOCK') ? LOCK : '', { 'x-csrf-token': 'T' }),
+      ),
+    );
+  const del = (config = DEFAULT_CONFIG, type = 'PROG') =>
+    handleToolCall(createClient(), config, 'SAPWrite', { action: 'delete', type, name: 'ZTEST' });
+  const steps = () =>
+    mutations().map(([url, init]) =>
+      String(url).includes('/activation?')
+        ? 'activate'
+        : String(url).includes('_action=')
+          ? /_action=(\w+)/.exec(String(url))?.[1]
+          : init.method,
+    );
+
+  beforeEach(() => vi.resetAllMocks());
+
+  it('activates only the listed pool before deleting the program', async () => {
+    mockSap(feed(SOURCE_DRAFT, POOL_DRAFT));
+    const result = await del();
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toBe('Deleted PROG ZTEST and its inactive text pool.');
+    expect(steps()).toEqual(['activate', 'LOCK', 'DELETE', 'UNLOCK']);
+    const [url, init] = mutations()[0]!;
+    expect(String(url)).toContain('preauditRequested=false');
+    expect(String(init.body).match(/<adtcore:objectReference /g)).toHaveLength(1);
+    expect(init.body).toContain('adtcore:uri="/sap/bc/adt/textelements/programs/ztest" adtcore:name="ZTEST"');
+  });
+
+  it.each([
+    ['no inactive objects', feed()],
+    ['only a source draft', feed(SOURCE_DRAFT)],
+    ['another program pool', feed(ref('PROG/PX', '/sap/bc/adt/textelements/programs/ztest2', 'ZTEST2'))],
+  ])('deletes without activation when the list has %s', async (_case, inactive) => {
+    mockSap(inactive);
+    const result = await del();
+    expect(result.content[0]?.text).toBe('Deleted PROG ZTEST.');
+    expect(steps()).toEqual(['LOCK', 'DELETE', 'UNLOCK']);
+  });
+
+  it.each([false, true])('deletes nothing when pool activation fails (minimalErrors=%s)', async (minimalErrors) => {
+    mockSap(
+      feed(POOL_DRAFT),
+      '<messages><msg type="E"><shortText><txt>Text pool inconsistent</txt></shortText></msg></messages>',
+    );
+    const result = await del({ ...DEFAULT_CONFIG, minimalErrors });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text?.match(/PROG ZTEST was not deleted/g)).toHaveLength(1);
+    expect(steps()).toEqual(['activate']);
+  });
+
+  it('deletes nothing when the inactive list cannot be read', async () => {
+    mockSap(feed(POOL_DRAFT));
+    const sap = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+      String(url).includes('/inactiveobjects')
+        ? Promise.resolve(mockResponse(500, '<exc:exception><message>down</message></exc:exception>'))
+        : sap(url, init),
+    );
+    expect((await del()).isError).toBe(true);
+    expect(mutations()).toHaveLength(0);
+  });
+
+  it.each(['CLAS', 'FUGR'])('does not read the inactive list for a %s delete', async (type) => {
+    mockSap(feed(POOL_DRAFT));
+    expect((await del(DEFAULT_CONFIG, type)).isError).toBeUndefined();
+    expect(calls().some(([url]) => String(url).includes('/inactiveobjects'))).toBe(false);
+  });
+});

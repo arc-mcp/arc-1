@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
+import { lockObject, unlockObject } from '../../src/adt/crud.js';
+import { activate } from '../../src/adt/devtools.js';
 import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
@@ -176,6 +178,58 @@ describe('text elements via SAPRead/SAPWrite', () => {
       await call('SAPWrite', { action: 'delete', type, name });
       registry.remove(name);
       await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+    }, 60_000);
+  }
+
+  // #940: a pool saved without activation (ARC-1 <= 1.5.1, SE38) must not outlive its deleted program.
+  for (const activated of [true, false]) {
+    it(`deletes ${activated ? 'an active' : 'a never-activated'} program and its pool draft without a REPOTEXT orphan`, async (ctx) => {
+      requireOrSkip(
+        ctx,
+        client.http.discoveryAcceptFor('/sap/bc/adt/textelements/programs'),
+        `${SkipReason.BACKEND_UNSUPPORTED}: ADT textelements/programs collection absent`,
+      );
+      const name = generateUniqueName('ZARC1_IT');
+      const objectUrl = `/sap/bc/adt/programs/programs/${name.toLowerCase()}`;
+      const poolUrl = `/sap/bc/adt/textelements/programs/${name.toLowerCase()}`;
+      const repotext = async () =>
+        (await client.runQuery(`SELECT progname, r3state FROM repotext WHERE progname = '${name}'`)).rows;
+      await call('SAPWrite', {
+        action: 'create',
+        type: 'PROG',
+        name,
+        package: '$TMP',
+        source: `REPORT ${name.toLowerCase()}.\nPARAMETERS p_test TYPE c LENGTH 10.\nWRITE p_test.`,
+      });
+      registry.register(objectUrl, 'PROG', name);
+      try {
+        if (activated) await call('SAPActivate', { type: 'PROG', name });
+        await client.http.withStatefulSession(async (session) => {
+          const lock = await lockObject(session, client.safety, poolUrl, 'MODIFY');
+          try {
+            const ct = 'application/vnd.sap.adt.textelements.selections.v1';
+            const url = `${poolUrl}/source/selections?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
+            await session.put(url, 'P_TEST=Draft label', ct, { Accept: ct });
+          } finally {
+            await unlockObject(session, poolUrl, lock.lockHandle);
+          }
+        });
+        expect(await repotext()).toContainEqual(expect.objectContaining({ R3STATE: 'I' }));
+
+        expect(await call('SAPWrite', { action: 'delete', type: 'PROG', name })).toBe(
+          `Deleted PROG ${name} and its inactive text pool.`,
+        );
+        registry.remove(name);
+        await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+        expect(await repotext()).toEqual([]);
+      } finally {
+        if (registry.getAll().some((entry) => entry.name === name)) {
+          // best-effort-cleanup: activate the pool first so the harness delete cannot orphan it.
+          await activate(client.http, client.safety, poolUrl, { preaudit: false, name }).catch((error) =>
+            console.warn(`Could not activate the text pool of ${name}`, error),
+          );
+        }
+      }
     }, 60_000);
   }
 });

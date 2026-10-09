@@ -162,20 +162,36 @@ export async function writeTextElementPart(
     } finally {
       await unlockObject(session, obj, lock.lockHandle);
     }
-    try {
-      // Do not add other inactive objects suggested by a preaudit response.
-      const result = await activate(session, safety, obj, { preaudit: false, name });
-      if (!result.success) {
-        throw new AdtApiError(result.messages.join('\n') || 'Text-pool activation failed.', 400, obj);
-      }
-    } catch (err) {
-      const note = 'Text elements were saved, but activation was not confirmed. Retry the same text write.';
-      // The dispatcher retains this static hint when minimal errors hide SAP diagnostics.
-      if (err instanceof AdtError && !err.extraHint) err.extraHint = note;
-      if (err instanceof Error) {
-        err.message = `${note}\n${err.message}`;
-      }
-      throw err;
-    }
+    await activateTextPool(
+      session,
+      safety,
+      obj,
+      name,
+      'Text elements were saved, but activation was not confirmed. Retry the same text write.',
+    );
   });
+}
+
+/** Activate one text-pool URI only; on failure, prefix `note` to the error and keep it as the hint. */
+export async function activateTextPool(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  uri: string,
+  name: string,
+  note: string,
+): Promise<void> {
+  try {
+    // Do not add other inactive objects suggested by a preaudit response.
+    const result = await activate(http, safety, uri, { preaudit: false, name });
+    if (!result.success) {
+      throw new AdtApiError(result.messages.join('\n') || 'Text-pool activation failed.', 400, uri);
+    }
+  } catch (err) {
+    // The dispatcher retains this static hint when minimal errors hide SAP diagnostics.
+    if (err instanceof AdtError && !err.extraHint) err.extraHint = note;
+    if (err instanceof Error) {
+      err.message = `${note}\n${err.message}`;
+    }
+    throw err;
+  }
 }

@@ -84,6 +84,7 @@ sequence.
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
 | [FEAT-66](#feat-66) | Interactive confirmation for destructive actions | P3 | L | Blocked | Safety / UX |
 | [FEAT-75](#feat-75) | Delete mutually-referencing objects as one set | P2 | S | Ready | Developer workflow |
+| [FEAT-81](#feat-81) | Delete function groups without orphaning text-pool drafts | P2 | S | Needs research | Developer workflow |
 | [FEAT-76](#feat-76) | Parameterized extension service calls | P2 | M | Needs research | Integration |
 | [FEAT-77](#feat-77) | Verified read-only POST operations for extensions | P2 | M | Needs research | Integration |
 | [FEAT-22](#feat-22) | Safe gCTS mutation workflows | P3 | L | Needs research | Integration |
@@ -449,6 +450,26 @@ live pair in one call on both releases; the integration suite uses it for cleanu
 **Resume with.** Reuse the verified request shape in `deleteObjectSet`
 (`tests/integration/crud-harness.ts`). Enforce the package gate for every object before sending,
 report SAP's per-object `isDeleted` result, gate on discovery, and stop suggesting circular orders.
+
+<a id="feat-81"></a>
+### FEAT-81 — Delete function groups without orphaning text-pool drafts
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Developer workflow
+
+**Idea.** Extend the program delete guard from [#940](https://github.com/arc-mcp/arc-1/issues/940)
+to `FUGR`, so deleting an active function group cannot leave its inactive text pool behind.
+
+**Why it remains.** On 758, deleting an active group with a separately saved pool draft leaves the
+REPOTEXT `SAPL<group>` row with state `I`. Recreating, activating and deleting the group does not
+clear it. The inactive list shows only `FUGR/F` with the group URI, not a pool entry, so the
+program check for `PROG/PX` cannot detect it. Classes are not affected: deleting the class removed
+its pool draft. Workaround: recreate the group, activate it, write any text part with
+`edit_text_symbols` (which activates the pool), then delete it.
+
+**Resume with.** Find a reliable pool-draft signal, for example `adtcore:version` on
+GET `/sap/bc/adt/textelements/functiongroups/<name>`. Verify that pool activation is harmless when
+the group has other inactive parts or no texts, then reuse `activateTextPool` in `writeActionDelete`.
 
 ## Integration and localization
 
