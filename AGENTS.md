@@ -237,6 +237,7 @@ Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guid
 | Inactive syntax check / post-save check | `src/adt/devtools.ts`, `src/handlers/write-helpers.ts` (`tryPostSaveSyntaxCheck`) |
 | Procedural unit surgery (`edit_unit` / `add_unit`) | `src/context/unit-surgery.ts`, `src/handlers/write/unit-surgery.ts` — PROG/INCL only; lock before read; `add_unit` appends at physical EOF without moving INCLUDEs; incomplete MODULEs are refused. |
 | Method-level surgery | `src/context/method-surgery.ts` — `<localclass>~<method>` specifiers; ambiguous bare names error |
+| Program text-pool activation (`REPT` / `PROG/PX`, #940) | `src/handlers/{object-types,activate}.ts`, `src/adt/text-elements.ts` — use the pool URI and its packageRef. Evidence and limitations: `docs/research/abap-types/types/rept.md`. |
 | SAPRead method for class-local includes | `src/handlers/read.ts`, `src/handlers/object-types.ts`, `tests/unit/handlers/read.test.ts` — explicit `include=` wins (including `main`); otherwise `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses, global/bare→MAIN; raw include reads bypass the MAIN-only cache key |
 | SAPRead `grep` (#313) | `src/context/grep.ts`, `src/handlers/read.ts` — rejects `grep`+`method` together |
 | edit_method for CCDEF/CCIMP includes | `src/handlers/write/class-surgery.ts`, `src/handlers/schemas.ts` — auto-detect `lhc_*`/`lcl_*`→implementations, `ltc_*`→testclasses |

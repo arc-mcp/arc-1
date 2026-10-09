@@ -9,9 +9,10 @@ import {
   type TextElementPart,
 } from '../../adt/client.js';
 import { deleteObject, lockObject, safeUpdateClassInclude, safeUpdateSource, unlockObject } from '../../adt/crud.js';
-import { AdtApiError } from '../../adt/errors.js';
+import { AdtApiError, AdtError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
+import { activateTextPool } from '../../adt/text-elements.js';
 import {
   buildCdsDeleteDependencyHint,
   buildCdsUpdateCrudHint,
@@ -204,6 +205,25 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   await enforcePackageForExistingObject();
+  // Deleting an active PROG orphans its standalone inactive text pool (REPOTEXT 'I'), so activate it first (#940).
+  // For a never-activated PROG, SAP accepts this as a no-op and the delete removes the pool anyway.
+  const pool =
+    type === 'PROG'
+      ? (await client.getInactiveObjects()).find((o) => o.type === 'PROG/PX' && o.name.toUpperCase() === name)
+      : undefined;
+  if (pool) {
+    try {
+      await activateTextPool(
+        client.http,
+        client.safety,
+        pool.uri,
+        pool.name,
+        `PROG ${name} was not deleted: activating its inactive text pool failed, and deleting the program now would orphan the pool in SAP.`,
+      );
+    } finally {
+      invalidateWrittenObject();
+    }
+  }
   let lockSucceeded = false;
 
   // Lock, delete, unlock pattern (works for all types including SKTD) — auto-propagate lock corrNr if no explicit transport
@@ -223,6 +243,13 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
       }
     });
   } catch (err) {
+    if (pool && err instanceof AdtError) {
+      // The delete failed after an activation request; retain this state even with minimal errors.
+      const note =
+        'Text-pool activation was requested before deletion failed. The texts may already be active. ' +
+        'Read the program and its text pool before retrying deletion.';
+      err.extraHint = err.extraHint ? `${note}\n${err.extraHint}` : note;
+    }
     // NW 7.50 can issue a lock handle for an absent DDLS, so LOCK alone is not
     // proof of existence. Confirm with a metadata read after the failed DELETE
     // before overriding generic 404 semantics. This also closes the race between
@@ -259,7 +286,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
     throw err;
   }
   invalidateWrittenObject();
-  return textResult(`Deleted ${type} ${name}.`);
+  return textResult(pool ? `Deleted PROG ${name} and its inactive text pool.` : `Deleted ${type} ${name}.`);
 }
 
 /** Write one subobject of an object's textpool via the ADT textelements service (CLAS, PROG, FUGR).
