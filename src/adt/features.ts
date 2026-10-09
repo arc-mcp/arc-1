@@ -137,12 +137,12 @@ export async function probeFeatures(
     resultMap.set(result.id, { available: result.available, reason: result.reason });
   }
 
-  // Component-based HANA detection overrides the endpoint probe when the hanainfo
-  // endpoint is absent (e.g. some S/4HANA releases). Only applies in auto mode.
+  // Components can prove the database independently of an unavailable hanainfo endpoint.
+  // Preserve its diagnostic: authorization/network failures must not be called absence.
   if (!resultMap.get('hana')?.available && systemDetection.hasHana && modeMap.hana === 'auto') {
     resultMap.set('hana', {
       available: true,
-      reason: 'inferred from installed components (hanainfo endpoint absent)',
+      reason: `inferred from installed components (hanainfo probe: ${resultMap.get('hana')?.reason ?? 'unconfirmed'})`,
     });
   }
 
@@ -315,11 +315,15 @@ async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Pro
  *    HANA-only, and `S4` is SAP's reserved prefix for S/4HANA software components.
  *    On S/4HANA 2021+ the core component is `S4FND`, not `S4CORE`.
  * 3. Component name `BW4CORE` — BW/4HANA is also HANA-only.
+ * 4. ABAP Environment identity: SAP_BASIS + SAP_CLOUD, without SAP_ABA. Its database
+ *    is ABAP-managed HANA Cloud; a configured BTP mode alone is not evidence.
  *
  * DB release info is intentionally not surfaced: only HDB-named components carry a
  * meaningful release; S4/BW4CORE releases describe the ABAP stack, not the DB.
  */
 export function detectHanaFromComponents(components: Array<{ name: string }>): boolean {
+  const names = new Set(components.map((component) => component.name.toUpperCase()));
+  if (names.has('SAP_BASIS') && names.has('SAP_CLOUD') && !names.has('SAP_ABA')) return true;
   for (const c of components) {
     const name = c.name.toUpperCase();
     if (/HDB|HANA/.test(name)) return true;
