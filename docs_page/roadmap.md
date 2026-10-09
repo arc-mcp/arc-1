@@ -71,7 +71,7 @@ sequence.
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
-| [COMPAT-13](#compat-13) | NW 7.40 freestyle SQL length boundary | P2 | S | Needs research | Compatibility |
+| [COMPAT-13](#compat-13) | NW 7.40 freestyle SQL length boundary | P1 | S | Needs research | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
@@ -244,21 +244,29 @@ test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and B
 <a id="compat-13"></a>
 ### COMPAT-13 — NW 7.40 freestyle SQL length boundary
 
-- **Priority / effort / status:** P2 / S / Needs research
+- **Priority / effort / status:** P1 / S / Needs research
 - **Category:** Compatibility
 
 **Remaining gap.** [#955](https://github.com/arc-mcp/arc-1/issues/955) reports
 253-character SQL succeeding and 256-character SQL failing on two 7.40 systems,
 even with line breaks. No exact wire trace or authorized 7.40 target is available.
-The 7.58 control accepts 3,200-character statements; the available 7.50 target's
-freestyle endpoint returns 404. Neither establishes the failing release boundary.
-The separate short COUNT(*)/GROUP BY failure is independently reproduced on 7.58;
-do not use it as evidence for a length limit.
+Raw long lines can silently lose a trailing predicate during conversion to
+CHAR255 source lines; compact-query truncation is verified on 758 and 816. ARC-1 already wraps at 255, but
+uses LF. If 7.40 does not split LF, those wraps may not prevent truncation.
+The potential for incorrect rows makes this P1 research; ARC-1's behavior on
+7.40 remains unverified. [SAP Note 2807133](https://me.sap.com/notes/2807133)
+fixes CRLF/LF handling for 750–754, **not** 740. LF/CRLF controls pass on 758 and
+816; 816 additionally condenses spaces before conversion, so padded-query lengths
+are misleading. The available 750 freestyle endpoint returns 404. The separate
+short COUNT(*)/GROUP BY failure on 758/816 is not evidence of a length limit.
 
 **Resume with.** Exact support-package/component versions and sanitized posted
-statements or authorized 7.40 access. Measure each actual chunk, line endings and
-row caps before choosing a narrow refusal or workaround. Avoid a guessed
-250-character cap or automatic projection changes. See the
+statements or authorized 7.40 access. Compare compact 254/255/256/300-character
+queries, LF versus CRLF, restrictive tails and different row caps; inspect returned
+rows and executed SQL for every posted chunk. Adopt CRLF only after verifying it
+addresses the failing target; otherwise establish the actual truncation/join stage
+before a narrow refusal. Avoid a guessed 250-character cap or automatic projection
+changes. See the
 [research and probe plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-count-only-grouped-sql.md).
 
 <a id="compat-09"></a>

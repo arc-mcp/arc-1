@@ -6,18 +6,23 @@ import { classifySapQueryParserError } from '../../../src/handlers/query-errors.
 
 const sql = 'SELECT COUNT(*) AS n FROM t000 GROUP BY cccategory';
 const message = 'Incorrect nesting: For the statement "CATCH", there is no open structure introduced by "TRY".';
+const endSelectMessage =
+  'Incorrect nesting: Before the statement "ENDMETHOD", the control structure introduced by "SELECT" must be closed by "ENDSELECT".';
 const error = (text = message, status = 400) => new AdtApiError(text, status, '/sap/bc/adt/datapreview/freestyle');
 
 describe('count-only grouped SQL generation failure', () => {
-  it.each([message, 'Zum CATCH fehlt ein TRY.', 'La structure TRY est absente pour CATCH.'])(
-    'recognizes invariant ABAP tokens in %s',
-    (text) => {
-      const result = classifySapQueryParserError(error(text), sql, false, false);
-      expect(result).toContain('scalar');
-      expect(result).toContain('grouping columns');
-      expect(result).toContain('additional result columns');
-    },
-  );
+  it.each([
+    message,
+    'Zum CATCH fehlt ein TRY.',
+    'La structure TRY est absente pour CATCH.',
+    endSelectMessage,
+    'Vor ENDMETHOD muss die SELECT-Struktur durch ENDSELECT geschlossen werden.',
+  ])('recognizes invariant ABAP tokens in %s', (text) => {
+    const result = classifySapQueryParserError(error(text), sql, false, false);
+    expect(result).toContain('scalar');
+    expect(result).toContain('grouping columns');
+    expect(result).toContain('additional result columns');
+  });
 
   it('accepts whitespace and an omitted COUNT alias', () => {
     expect(
@@ -27,6 +32,8 @@ describe('count-only grouped SQL generation failure', () => {
 
   it.each([
     'SELECT COUNT(*) AS n FROM t000',
+    'SELECT DISTINCT COUNT(*) AS n FROM t000 GROUP BY cccategory',
+    'SELECT COUNT( DISTINCT cccategory ) AS n FROM t000 GROUP BY mandt',
     'SELECT cccategory, COUNT(*) AS n FROM t000 GROUP BY cccategory',
     'SELECT MIN( mandt ) AS m, COUNT(*) AS n FROM t000 GROUP BY cccategory',
     "SELECT COUNT(*) FROM t000 WHERE mtext = 'GROUP BY cccategory'",
@@ -35,17 +42,20 @@ describe('count-only grouped SQL generation failure', () => {
     expect(classifySapQueryParserError(error(), query, false, false) ?? '').not.toContain('scalar');
   });
 
-  it.each([error('Unknown column CCCATEGORY'), error(message, 403), error(message, 500)])(
-    'does not override unrelated SAP errors',
-    (err) => {
-      expect(classifySapQueryParserError(err, sql, false, false) ?? '').not.toContain('scalar');
-    },
-  );
+  it.each([
+    error('Unknown column CCCATEGORY'),
+    error('Unknown column ENDSELECT'),
+    error(message, 403),
+    error(message, 500),
+  ])('does not override unrelated SAP errors', (err) => {
+    expect(classifySapQueryParserError(err, sql, false, false) ?? '').not.toContain('scalar');
+  });
 
-  it('keeps the hint but redacts SAP details in minimal mode', () => {
-    const result = classifySapQueryParserError(error(), sql, false, true)!;
+  it.each([message, endSelectMessage])('keeps the hint but redacts SAP details in minimal mode: %s', (text) => {
+    const result = classifySapQueryParserError(error(text), sql, false, true)!;
     expect(result).toContain('grouping columns');
     expect(result).not.toContain('Incorrect nesting');
+    expect(result).not.toContain('ENDMETHOD');
     expect(result).not.toContain('/sap/bc/adt');
   });
 
