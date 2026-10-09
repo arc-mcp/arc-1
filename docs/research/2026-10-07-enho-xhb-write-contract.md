@@ -3,8 +3,8 @@
 Status: **implemented; live-verified on SAP_BASIS 816 on-prem (2026-10-07) in `$TMP` and in a transportable
 package with a transport request, and on a second 816 system across several modules (2026-10-08). Enabled on
 BTP on 2026-10-08; the final code was re-tested on-prem (ABAP Classic and ABAP Cloud) and on BTP
-(2026-10-09).** The create sequence follows a captured Eclipse ADT create; the payload is derived from SAP's
-own GET serialization.
+(2026-10-09), and independently on SAP_BASIS 758 SP02 (S/4HANA 2023, on-prem, 2026-10-09).** The create
+sequence follows a captured Eclipse ADT create; the payload is derived from SAP's own GET serialization.
 
 ## Why
 
@@ -236,19 +236,62 @@ BTP trial: the ENHO test in `tests/integration/btp-tool-dispatch.integration.tes
 
 All test objects were deleted.
 
+### SAP_BASIS 758 SP02, on-prem, `$TMP` (community test, 2026-10-09)
+
+Reported by LVincig on [PR #939](https://github.com/arc-mcp/arc-1/pull/939#issuecomment-6083509991): an
+on-prem S/4HANA 2023 system (SAP_BASIS 758 SP02, S4CORE 108 SP02), head `0d7e25cf`, through the CLI
+(`arc-1 call SAPWrite|SAPRead|SAPActivate --json …`, so the real tool dispatcher) with `ARC1_LOG_HTTP_DEBUG=true`.
+Each BAdI got a throwaway class implementing its interface with an empty method. Everything was deleted
+afterwards: no `TADIR`, `ENHHEADER`, `BADIIMPL_ENH` or `BADI_IMPL` rows were left.
+
+**The content types hold on 758: no 406, no 415.** No `/sap/bc/adt/enhancements/*` call returned 4xx or 5xx
+during the run; the only 404 was the expected read after delete.
+
+| Request | Sent | Status | Response `content-type` |
+|---|---|---|---|
+| `GET …/enhancements/enhsxsb/{spot}` (before create and update) | `Accept: application/vnd.sap.adt.enh.enhs.v2+xml` | 200 | `application/vnd.sap.adt.enh.enhs.v2+xml; charset=utf-8` |
+| `POST …/enhancements/enhoxhb` (create) | `Accept` and `Content-Type: application/vnd.sap.adt.enh.enhoxhb.v4+xml` | 201 | `application/vnd.sap.adt.enh.enhoxhb.v4+xml; charset=utf-8` |
+| `PUT …/enhoxhb/{name}?lockHandle=…` (create, update) | same | 200 | same |
+| `GET …/enhoxhb/{name}` (read, update merge) | `Accept: …enhoxhb.v4+xml` | 200 | same |
+| `DELETE …/enhoxhb/{name}?lockHandle=…` | same | 200 | — |
+
+The `enhs.v2` response carries an ETag ending in `/application/vnd.sap.adt.enh.enhs.v1+xml`; the body was
+served as v2 regardless.
+
+Scenarios (per BAdI, see the table below for `SD_SLS_CHECK_BEFORE_SAVE`, `BD_MFGORDER_CHECK_BEFORE_SAVE` and
+`FICO_AMT_LIMT_VARIABLE`):
+
+- Create, read back, activate, update with SAPRead's JSON unchanged, then a short-text update, activate, read
+  back, delete, for a released BAdI without filter.
+- NUMC and CHAR filters (`MANUFACTURINGORDERCATEGORY = '99' AND MANUFACTURINGORDERTYPE = '…'`), then an update
+  to an OR of two AND groups; SAPRead returns it with parentheses.
+- STRING filter on an unreleased BAdI; an update without `filter` kept the stored filter.
+- An undeclared filter name was refused before any write, on create (no `TADIR` entry) and on update (lock,
+  GET, spot read, unlock, no PUT; the stored object was unchanged). The refusal text both times:
+
+  ```
+  Invalid ENHO filter: BAdI FICO_AMT_LIMT_VARIABLE declares no filter ZZFOO (declared: O_APPL, O_CONDCATG).
+  ```
+
+After each activation `ENHHEADER` had only version `A`, and `BADIIMPL_ENH` and `BADI_IMPL` listed the
+implementations with their classes.
+
+Not tested on 758: an SAP-internal spot, a transportable package and `batch_create` (shared system, so the
+run stayed with multi-use BAdIs, `$TMP` and filter values that never occur).
+
 ### BAdIs used in the live tests
 
 | BAdI | Enhancement spot | Released (C1) | Tested and result |
 |---|---|---|---|
 | `SD_APM_SET_APPROVAL_REASON` | `ES_SD_SLS_EXTEND` | Yes | Create, read back, update, activate, delete in `$TMP` and in a transportable package with a request: passed |
-| `SD_SLS_CHECK_BEFORE_SAVE` | `ES_SD_SLS_EXTEND` | Yes | Two implementations in one ENHO, `batch_create` with its class, update and activation in an ABAP Classic and an ABAP Cloud package (version kept): passed |
+| `SD_SLS_CHECK_BEFORE_SAVE` | `ES_SD_SLS_EXTEND` | Yes | Two implementations in one ENHO, `batch_create` with its class, update and activation in an ABAP Classic and an ABAP Cloud package (version kept): passed. 758 SP02: create without filter, read back, activate, update (unchanged JSON, then short text), activate, read back, delete: passed |
 | `SD_SLS_MODIFY_ITEM_REQDATE` | `ES_SD_SLS_EXTEND` | Yes | Created inactive in a shared ENHO, then activated; short text with `< & " äöü`; `batch_create` with its class: passed |
-| `BD_MFGORDER_CHECK_BEFORE_SAVE` | `ES_COBADICFL_MFGORDER` | Yes | NUMC/CHAR filters, every comparator, keep / remove / re-add a filter, filter change in an ABAP Cloud package (version kept): passed. An OR of different filters inside an AND was rejected by SAP (HTTP 400); ARC-1 now refuses it first |
+| `BD_MFGORDER_CHECK_BEFORE_SAVE` | `ES_COBADICFL_MFGORDER` | Yes | NUMC/CHAR filters, every comparator, keep / remove / re-add a filter, filter change in an ABAP Cloud package (version kept): passed. An OR of different filters inside an AND was rejected by SAP (HTTP 400); ARC-1 now refuses it first. 758 SP02: NUMC and CHAR filters, update to an OR of two AND groups, activate, read back, delete: passed |
 | `EDOC_ADAPTOR` | `ES_EDOCUMENT` | No | OR, AND with nested OR, `CP`, `NP`, `<>`; write-back unchanged; undeclared filter refused; filter removed: passed |
 | `EDOC_INTERFACE_CONNECTOR` | `ES_EDOCUMENT` | No | Three filters with DDIC checks in nested AND/OR groups; unchanged round trip: passed |
 | `HRPIQ00AD_STATUS` | `ES_HRPIQ00AD_DEC` | No | Single-use BAdI, three DDIC-checked filters; unchanged round trip: passed |
 | `HRPAYDE_A1_EMAIL` | `ES_HRPAYDE_A1` | No | Single-use BAdI with fallback class: passed. A second implementation with the same filter was refused by SAP at activation (conflict), as expected |
-| `FICO_AMT_LIMT_VARIABLE` | `ES_FICO_LIM_VAR` | No | STRING filters with DDIC check; stored filter kept on an update without `filter`; all validation refusals (spot change, BAdI not in spot, undeclared filter, syntax, unknown key, duplicate name, comparator as value): passed. In an ABAP Cloud package SAP refused activation ("not permitted"), as expected |
+| `FICO_AMT_LIMT_VARIABLE` | `ES_FICO_LIM_VAR` | No | STRING filters with DDIC check; stored filter kept on an update without `filter`; all validation refusals (spot change, BAdI not in spot, undeclared filter, syntax, unknown key, duplicate name, comparator as value): passed. In an ABAP Cloud package SAP refused activation ("not permitted"), as expected. 758 SP02: STRING filter, stored filter kept on an update without `filter`, undeclared filter refused on create and update before any write: passed |
 | `BADI_QMIP_IP_MAINTAIN` | `ES_QMIP_IP_MAINTAIN` | No | CLIENT filter via `batch_create`: SAP refused activation because the filter overlapped SAP's own implementation; with a non-overlapping value it activated: passed |
 | `BADI_FILL_COUNTRY_TAX_DATA` | `ES_FILL_COUNTRY_TAX_DATA` | No (SAP-internal spot) | SAP refused the create but left an undeletable TADIR entry. ARC-1 now refuses before the create, also without implementations; no TADIR entry: passed |
 | `ADDRESS_PRINT_FORMAT` (BTP) | `ADDRESS_PRINT_FORMAT` | Yes | Create with `RECEIVER_COUNTRY = 'DE'`, read back, activate, update (filter and flag), activate, delete; `cloudDevelopment` kept: passed |
@@ -257,7 +300,8 @@ All test objects were deleted.
 
 Released means the C1 contract is released for cloud development (`useInSAPCloudPlatform`), on-prem read
 from the BAdI interface, on BTP from the BAdI definition. "As expected" marks a refusal by SAP that ARC-1
-passed on readably.
+passed on readably. Rows without a release note were run on SAP_BASIS 816 (on-prem) or BTP; "758 SP02" marks
+the community run on S/4HANA 2023 (2026-10-09).
 
 ## Open points
 
@@ -277,3 +321,5 @@ passed on readably.
   delete, activation URI, discovery gate, package allowlist refusal for create/batch_create/update).
 - Live: `tests/integration/enho.integration.test.ts` (create → read back → update → activate → delete in `$TMP`),
   driven by `TEST_ENHO_SPOT`, `TEST_ENHO_BADI` and `TEST_ENHO_CLASS`. Passed on SAP_BASIS 816 (see above).
+- Community: the same lifecycle plus filters and refusals on SAP_BASIS 758 SP02 through the CLI (see above);
+  the content types `enhs.v2` and `enhoxhb.v4` were served without 406/415.
