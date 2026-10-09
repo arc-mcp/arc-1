@@ -33,7 +33,7 @@ active state. Discovery gates systems without the text-element service.
 No class/function-group slash codes or cross-release support are inferred
 from this program evidence. Fixture deletion and zero REPOTEXT rows verified.
 
-## Remaining deletion gap — SAP_BASIS 758 SP02, 2026-10-09
+## Deletion reproduction before #952 — SAP_BASIS 758 SP02, 2026-10-09
 
 Reproduced independently at `9e6c99af` using HTTPS/Basic, client 001 and the
 `$TMP` allowlist: create and activate a disposable PROG, then lock/PUT/unlock
@@ -48,8 +48,13 @@ was not established. Each fixture was recovered by recreating only its own name,
 activating program and pool, then deleting it. Zero rows remained in REPOTEXT,
 REPOSRC, DWINACTIV, TADIR and TRDIR; the program GET returned 404.
 
-This is a separate deletion gap in [#940](https://github.com/arc-mcp/arc-1/issues/940),
-tracked as [COMPAT-12](../../../../docs_page/roadmap.md#compat-12).
-Do not close #940 solely because explicit activation now works. A delete safeguard
-needs research into SAP's supported draft handling, including concurrency and
-other users' drafts; automatic activation of an owner's source is not a solution.
+[PR #952](https://github.com/arc-mcp/arc-1/pull/952), merged as `3fc533ab2`, now
+requests activation of a program's pool when the caller's inactive list includes
+its PROG/PX entry, before deleting the program. Activation failure refuses deletion;
+if deletion then fails, the error explains that the texts may already be active.
+It preserves separate source drafts until deletion and also permits deletion of a
+never-activated program. These earlier observations describe the unguarded delete path.
+
+The guard cannot detect another user's draft; cross-user deletion behavior remains
+unverified ([COMPAT-12](../../../../docs_page/roadmap.md#compat-12)). Function-group
+deletion remains separate ([FEAT-81](../../../../docs_page/roadmap.md#feat-81)).

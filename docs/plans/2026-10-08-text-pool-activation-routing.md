@@ -19,6 +19,8 @@ Pool metadata supplies its package, so reuse the existing activation helper with
 an owner resolver or new probes. Preserve source activation, legacy unknown-type
 fallbacks and class/function-group aliases. Never automatically activate owner source.
 
-Review follow-up: #940 stays open for the separately reproduced deletion gap.
-Roadmap impact: add COMPAT-12; FEAT-34 remains translation beyond text elements.
+Merge preparation: include main `3fc533ab2`, which contains #952's program-delete guard.
+Together with #946, this completes the reported program workflow in #940.
+Roadmap impact: narrow COMPAT-12 to unverified cross-user deletion; keep FEAT-81's
+function-group gap and FEAT-34's translation scope.
 Move fixture cleanup into test-finished hooks so cleanup errors preserve the test failure.

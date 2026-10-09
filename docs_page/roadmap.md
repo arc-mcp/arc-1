@@ -74,7 +74,7 @@ sequence.
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
-| [COMPAT-12](#compat-12) | Prevent orphaned program text drafts on deletion | P2 | S | Needs research | Compatibility |
+| [COMPAT-12](#compat-12) | Program deletion with another user's text draft | P3 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
@@ -286,23 +286,22 @@ define structural-node identity and traversal without mistaking branch labels fo
 Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
 
 <a id="compat-12"></a>
-### COMPAT-12 — Prevent orphaned program text drafts on deletion
+### COMPAT-12 — Program deletion with another user's text draft
 
-- **Priority / effort / status:** P2 / S / Needs research
+- **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** On SAP_BASIS 758, deleting an active program with a separately
-saved inactive text pool leaves a REPOTEXT state I row after the program and its
-inactive tracking disappear. [#946](https://github.com/arc-mcp/arc-1/pull/946) requests
-activation on text writes; [#949](https://github.com/arc-mcp/arc-1/pull/949) enables
-explicit pool activation. Neither guards deletion of an existing text draft.
-[#940](https://github.com/arc-mcp/arc-1/issues/940) remains open for this gap;
-see the [reproduction and recovery evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/abap-types/types/rept.md#remaining-deletion-gap--sap_basis-758-sp02-2026-10-09).
+**Remaining gap.** [#952](https://github.com/arc-mcp/arc-1/pull/952) guards program
+deletion when the caller's inactive list includes a PROG/PX draft. That per-user
+list cannot detect another user's draft. Whether SAP permits deletion in that
+state and leaves an orphan has not been verified. The original same-user deletion
+case is fixed; [#949](https://github.com/arc-mcp/arc-1/pull/949) adds explicit pool
+activation. Function-group deletion is tracked separately in [FEAT-81](#feat-81).
 
-**Resume with.** Verify SAP's supported handling of pending text drafts before
-program deletion. Choose a bounded refusal or supported cleanup without silently
-activating source or discarding another user's draft. Test active-only, new and
-draft-bearing programs, lock races, package gates and cleanup across releases.
+**Resume with.** Two authorized SAP test identities: save a draft as one user and
+attempt deletion as the other, including lock races. Establish SAP's behavior
+before adding a guard; preserve per-user identity, package checks and native
+authorizations, and do not silently activate or discard another user's draft.
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
