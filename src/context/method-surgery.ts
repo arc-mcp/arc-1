@@ -10,7 +10,7 @@
  * Uses @abaplint/core AST for accurate parsing with regex fallback for unparseable source.
  */
 
-import { MemoryFile, Registry, Statements, Structures, Version } from '@abaplint/core';
+import { Comment, MemoryFile, Objects, Registry, Statements, Structures, Version } from '@abaplint/core';
 import { getDefaultAbaplintConfig } from '../lint/abaplint-config-cache.js';
 
 const DEFAULT_VERSION = Version.Cloud;
@@ -602,6 +602,43 @@ export function extractMethod(
 
 // ─── Splice Method ──────────────────────────────────────────────────
 
+/** Preserve boundary statements, including multiline AMDP headers and trailing comments. */
+function methodBoundaries(source: string, version: Version): { opening: string; closing: string } | undefined {
+  const registry = new Registry(getDefaultAbaplintConfig(version));
+  registry.addFile(new MemoryFile('zmethod.prog.abap', source));
+  registry.parse();
+  const object = registry.getFirstObject();
+  if (!(object instanceof Objects.Program)) return undefined;
+  const statements =
+    object
+      .getMainABAPFile()
+      ?.getStatements()
+      .filter((s) => !(s.get() instanceof Comment)) ?? [];
+  const first = statements[0];
+  const last = statements.at(-1);
+  // extractMethod selects whole lines. Refuse when a neighboring statement shares those lines.
+  const boundaries = statements.filter((s) => /^(METHOD|ENDMETHOD)$/i.test(s.getFirstToken().getStr()));
+  if (
+    first?.getFirstToken().getStr().toUpperCase() !== 'METHOD' ||
+    last?.getFirstToken().getStr().toUpperCase() !== 'ENDMETHOD' ||
+    boundaries.length !== 2
+  )
+    return undefined;
+  const lines = source.split('\n');
+  const headerRow = first.getEnd().getRow() - 1;
+  const headerColumn = first.getEnd().getCol() - 1;
+  const headerLine = lines[headerRow]!;
+  // Keep an inline header comment, but discard an old body on the same line.
+  const headerEnd = /^[ \t]*(?:".*)?$/.test(headerLine.slice(headerColumn)) ? headerLine.length : headerColumn;
+  const opening = [...lines.slice(0, headerRow), headerLine.slice(0, headerEnd)].join('\n');
+  const footerRow = last.getStart().getRow() - 1;
+  const footerColumn = last.getStart().getCol() - 1;
+  const footerLine = lines[footerRow]!;
+  const prefix = footerLine.slice(0, footerColumn);
+  const indent = /^[ \t]*$/.test(prefix) ? prefix : source.match(/^[ \t]*/)![0];
+  return { opening, closing: [indent + footerLine.slice(footerColumn), ...lines.slice(footerRow + 1)].join('\n') };
+}
+
 /**
  * Surgically replace a single method's implementation in a class source.
  *
@@ -644,8 +681,18 @@ export function spliceMethod(
     // Normalize to \n for consistent splicing, then re-apply line endings at the end
     newMethodBlock = newBody.replace(/\r\n/g, '\n');
   } else {
-    // Wrap with METHOD/ENDMETHOD using the original method name from the source
-    newMethodBlock = `  METHOD ${extracted.methodName}.\n${newBody.replace(/\r\n/g, '\n')}\n  ENDMETHOD.`;
+    const boundaries = methodBoundaries(extracted.methodSource, abaplintVersion ?? DEFAULT_VERSION);
+    if (!boundaries) {
+      return {
+        newSource: '',
+        oldMethodSource: extracted.methodSource,
+        newMethodSource: '',
+        success: false,
+        error:
+          'Cannot isolate the method boundaries for a body-only edit. Put METHOD and ENDMETHOD on separate lines, then retry with a complete METHOD...ENDMETHOD block.',
+      };
+    }
+    newMethodBlock = `${boundaries.opening}\n${newBody.replace(/\r\n/g, '\n')}\n${boundaries.closing}`;
   }
 
   // Replace in source
