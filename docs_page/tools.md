@@ -1058,23 +1058,16 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw
   parameter names.
-- **Deleting a program with an inactive text pool:** SAP deletes an active program but keeps a
-  separately saved text-pool draft, which then drops off the inactive-object list and is inherited
-  by any later program with the same name. `SAPWrite(action="delete", type="PROG")` therefore first
-  activates the program's pool draft when your inactive objects list it. If that activation fails,
-  nothing is deleted; if the delete then fails, its error warns that the texts may already be active
-  and asks you to read the program and its text pool before retrying. The caller's inactive feed
-  is checked; it can include another user's drafts in the caller's transport requests and can omit
-  drafts outside those requests. Cross-user activation and deletion behavior remains unverified. To clear an orphan left
-  by an earlier delete, create a program with the same name, activate it with
-  `SAPActivate(type="PROG")`, then delete it.
-- **Deleting a function group with an inactive text pool:** ARC-1 matches the inactive feed's
-  `PROG/PX` entry by the group's textelements URI (its pool name is `SAPL<group>`) and activates
-  that pool before deletion. Failed activation stops deletion; a later delete failure warns that
-  the texts may already be active. Source drafts are not activated. The same feed visibility and
-  cross-user limits as program deletion apply; concurrent edits are not made atomic by this check.
-  Recover an older orphan by recreating and activating the group, writing a text part with
-  `edit_text_symbols`, then deleting the group.
+- **Deleting a PROG or FUGR with an inactive text pool:** SAP can leave a separately saved
+  text-pool draft behind after deleting its owner; recreating the same name inherits that orphan.
+  `SAPWrite(action="delete")` first activates the matching `PROG/PX` pool from the caller's
+  inactive feed. FUGR matching uses its textelements URI. Source drafts are not activated.
+  Failed activation stops deletion; a later delete failure warns that texts may already be active
+  and asks you to read the owner and pool before retrying. The feed can include other users' drafts
+  in the caller's transport requests and omit drafts outside them. Cross-user behavior remains
+  unverified, and this check does not make concurrent edits atomic.
+  To recover an older PROG orphan, recreate and activate the program, then delete it. For a FUGR
+  orphan, recreate and activate the group, write a text part with `edit_text_symbols`, then delete it.
 - **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent
   on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.

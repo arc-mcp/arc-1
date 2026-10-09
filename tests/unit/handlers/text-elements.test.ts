@@ -355,13 +355,14 @@ describe('text elements routing and safety', () => {
   );
 });
 
-describe('PROG delete with an inactive text pool (#940)', () => {
+describe('PROG/FUGR delete with an inactive text pool (#940)', () => {
   const ref = (type: string, uri: string, name = 'ZTEST') =>
     `<ioc:entry><ioc:object ioc:user="DEV" ioc:deleted="false"><ioc:ref xmlns:adtcore="http://www.sap.com/adt/core" adtcore:uri="${uri}" adtcore:type="${type}" adtcore:name="${name}"/></ioc:object></ioc:entry>`;
   const feed = (...entries: string[]) =>
     `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects">${entries.join('')}</ioc:inactiveObjects>`;
   const SOURCE_DRAFT = ref('PROG/P', '/sap/bc/adt/programs/programs/ztest');
   const POOL_DRAFT = ref('PROG/PX', '/sap/bc/adt/textelements/programs/ztest');
+  const GROUP_POOL_DRAFT = ref('PROG/PX', '/sap/bc/adt/textelements/functiongroups/ztest', 'SAPLZTEST');
   const mockSap = (inactive: string, activation = '') =>
     mockFetch.mockImplementation((url: string) =>
       Promise.resolve(
@@ -432,26 +433,29 @@ describe('PROG delete with an inactive text pool (#940)', () => {
   });
 
   it.each([
-    ['LOCK', false],
-    ['LOCK', true],
-    ['DELETE', false],
-    ['DELETE', true],
+    ['PROG', 'LOCK', false],
+    ['PROG', 'LOCK', true],
+    ['PROG', 'DELETE', false],
+    ['PROG', 'DELETE', true],
+    ['FUGR', 'DELETE', true],
   ] as const)(
-    'reports the preceding pool activation when %s fails (minimalErrors=%s)',
-    async (failure, minimalErrors) => {
-      mockSap(feed(POOL_DRAFT));
+    '%s reports the preceding pool activation when %s fails (minimalErrors=%s)',
+    async (type, failure, minimalErrors) => {
+      mockSap(feed(type === 'FUGR' ? GROUP_POOL_DRAFT : POOL_DRAFT));
       const sap = mockFetch.getMockImplementation()!;
       mockFetch.mockImplementation((url: string, init?: RequestInit) =>
         (failure === 'LOCK' ? String(url).includes('_action=LOCK') : init?.method === 'DELETE')
           ? Promise.resolve(mockResponse(423, '<exc:exception><message>Object locked</message></exc:exception>'))
           : sap(url, init),
       );
-      const result = await del({ ...DEFAULT_CONFIG, minimalErrors });
+      const result = await del({ ...DEFAULT_CONFIG, minimalErrors }, type);
       expect(result.isError).toBe(true);
       const message = result.content[0]?.text ?? '';
       expect(message.match(/Text-pool activation was requested before deletion failed/g)).toHaveLength(1);
       expect(message).toContain('The texts may already be active.');
-      expect(message).toContain('Read the program and its text pool before retrying deletion.');
+      expect(message).toContain(
+        `Read the ${type === 'PROG' ? 'program' : 'function group'} and its text pool before retrying deletion.`,
+      );
       expect(steps()).toEqual(failure === 'LOCK' ? ['activate', 'LOCK'] : ['activate', 'LOCK', 'DELETE', 'UNLOCK']);
       if (minimalErrors) expect(message).not.toContain('Object locked');
       else expect(message).toContain('Object locked');
@@ -522,9 +526,37 @@ describe('PROG delete with an inactive text pool (#940)', () => {
     },
   );
 
-  it.each(['CLAS'])('does not read the inactive list for a %s delete', async (type) => {
+  const GROUP = ref('FUGR/F', '/sap/bc/adt/functions/groups/ztest');
+  it.each([
+    ['its pool', feed(GROUP, GROUP_POOL_DRAFT), true],
+    ['only a source draft', feed(GROUP, ref('FUGR/I', '/sap/bc/adt/functions/groups/ztest/includes/lztesttop')), false],
+    ['another group pool', feed(ref('PROG/PX', '/sap/bc/adt/textelements/functiongroups/ztest2', 'SAPLZTEST2')), false],
+  ])('FUGR delete with %s in the feed', async (_case, inactive, activates) => {
+    mockSap(inactive);
+    const result = await del(DEFAULT_CONFIG, 'FUGR');
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toBe(`Deleted FUGR ZTEST${activates ? ' and its inactive text pool' : ''}.`);
+    expect(steps()).toEqual(activates ? ['activate', 'LOCK', 'DELETE', 'UNLOCK'] : ['LOCK', 'DELETE', 'UNLOCK']);
+    if (activates) expect(mutations()[0]?.[1].body).toContain('/textelements/functiongroups/ztest');
+  });
+
+  it.each(['%2farc%2ffg', '/arc/fg'])('matches a namespaced FUGR pool URI: %s', async (path) => {
+    const uri = `/sap/bc/adt/textelements/functiongroups/${path}`;
+    mockSap(feed(ref('PROG/PX', uri, '/ARC/SAPLFG')));
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'delete',
+      type: 'FUGR',
+      name: '/ARC/FG',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toBe('Deleted FUGR /ARC/FG and its inactive text pool.');
+    expect(steps()).toEqual(['activate', 'LOCK', 'DELETE', 'UNLOCK']);
+    expect(mutations()[0]?.[1].body).toContain(uri);
+  });
+
+  it('does not read the inactive list for a CLAS delete', async () => {
     mockSap(feed(POOL_DRAFT));
-    expect((await del(DEFAULT_CONFIG, type)).isError).toBeUndefined();
+    expect((await del(DEFAULT_CONFIG, 'CLAS')).isError).toBeUndefined();
     expect(calls().some(([url]) => String(url).includes('/inactiveobjects'))).toBe(false);
   });
 });

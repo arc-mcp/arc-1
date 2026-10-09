@@ -305,7 +305,7 @@ requests. It does not prove exclusive ownership. Whether SAP permits cross-user
 pool activation or deletion that leaves an orphan has not been verified. The
 same-user case is fixed; [#949](https://github.com/arc-mcp/arc-1/pull/949) adds
 explicit pool activation. Feed and cleanup evidence is recorded in
-[the deletion plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-function-group-delete-text-pool.md).
+[the deletion plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-10-09-function-group-delete-text-pool.md).
 
 **Resume with.** Two authorized SAP test identities: save a draft as one user and
 attempt PROG/FUGR deletion as the other, both inside and outside a shared transport
