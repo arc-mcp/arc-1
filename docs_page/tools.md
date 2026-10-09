@@ -2071,6 +2071,7 @@ group membership; inspect a group's tiles in SAP Fiori Launchpad Designer.
 | `oldPackage` | string | No | Required for `change_package` — current package of the object |
 | `newPackage` | string | No | Required for `change_package` — target package to move the object to |
 | `apiState` | string | No | For `set_api_state`: `RELEASED` (default) or `NOT_RELEASED`; visibility follows SAP's contract defaults. |
+| `apiVisibility` | string[] | No | `set_api_state` with `RELEASED`: complete explicit selection of `cloudDevelopment` and/or `keyUserApps`. `[]` selects neither; SAP decides whether the contract permits it. Omit for the contract defaults. Native read-only flags are respected; exact visibility is verified even on a no-op. |
 | `contract` | string | No | For `set_api_state`: `C0`–`C4` (default `C1`). Support varies by type/release; inspect `SAPRead(type="API_STATE")` and SAP's supported-contract response. |
 | `catalogId` | string | No | Required for `flp_list_tiles`, `flp_create_tile`, `flp_add_tile_to_group` |
 | `groupId` | string | No | Required for `flp_create_group`, `flp_add_tile_to_group` |

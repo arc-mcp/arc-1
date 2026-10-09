@@ -11,6 +11,7 @@ import { TEXT_ELEMENT_PARTS } from '../adt/text-elements.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
+import { API_RELEASE_FIELDS } from './api-release-fields.js';
 import * as DtelFields from './data-element-fields.js';
 import { SAPDIAGNOSE_ADDITIONAL_INPUTS } from './diagnose-fields.js';
 import * as FuncProcessing from './function-processing.js';
@@ -1502,18 +1503,7 @@ export function getToolDefinitions(
           description:
             'ADT object type (e.g., CLAS/OC, DDLS/DF, PROG/P). Required for change_package. For set_api_state: object type of "name" when objectUri is omitted (e.g. CLAS, INTF, DDLS, TABL).',
         },
-        apiState: {
-          type: 'string',
-          enum: ['RELEASED', 'NOT_RELEASED'],
-          description:
-            'For set_api_state: target state of the object\'s API release contract — RELEASED (mark released for ABAP Cloud / Clean Core) or NOT_RELEASED (revoke). Default RELEASED. Visibility (ABAP Cloud / Key User Apps) follows the contract\'s defaults. Read the current state first with SAPRead(type="API_STATE").',
-        },
-        contract: {
-          type: 'string',
-          enum: ['C0', 'C1', 'C2', 'C3', 'C4'],
-          description:
-            'For set_api_state: which release contract to set. Default C1 (Key-User/Cloud — the common clean-core contract). Object types support different contracts: e.g. service definitions (SRVD) only support C0, classic DDIC views only C3, behavior definitions and tables support C0+C1. If the object does not support the chosen contract, the error lists the ones it does.',
-        },
+        ...API_RELEASE_FIELDS,
         objectName: {
           type: 'string',
           description: 'Object name to move (e.g., ZCL_MY_CLASS). Required for change_package.',

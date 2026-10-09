@@ -14,6 +14,7 @@
  */
 
 import { z } from 'zod';
+import { API_RELEASE_VISIBILITIES } from '../adt/api-release.js';
 import {
   ATC_BATCH_MAX_OBJECTS,
   ATC_BATCH_NAME_MAX_LENGTH,
@@ -1326,6 +1327,11 @@ export const SAPManageSchema = z
       'set_api_state',
     ]),
     apiState: z.enum(['RELEASED', 'NOT_RELEASED']).optional(),
+    apiVisibility: z
+      .array(z.enum(API_RELEASE_VISIBILITIES))
+      .max(2)
+      .refine((values) => new Set(values).size === values.length, 'Visibility selections must be unique.')
+      .optional(),
     contract: z.enum(['C0', 'C1', 'C2', 'C3', 'C4']).optional(),
     catalogId: z.string().optional(),
     groupId: z.string().optional(),
@@ -1348,7 +1354,16 @@ export const SAPManageSchema = z
     oldPackage: z.string().optional(),
     newPackage: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.apiVisibility !== undefined && (input.action !== 'set_api_state' || input.apiState === 'NOT_RELEASED')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['apiVisibility'],
+        message: 'apiVisibility requires set_api_state with apiState=RELEASED (the default).',
+      });
+    }
+  });
 
 // ─── Hyperfocused SAP ───────────────────────────────────────────────
 
