@@ -1063,18 +1063,18 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   by any later program with the same name. `SAPWrite(action="delete", type="PROG")` therefore first
   activates the program's pool draft when your inactive objects list it. If that activation fails,
   nothing is deleted; if the delete then fails, its error warns that the texts may already be active
-  and asks you to read the program and its text pool before retrying. Only your own inactive objects
-  are checked; drafts saved by another user are not detected. To clear an orphan left
+  and asks you to read the program and its text pool before retrying. The caller's inactive feed
+  is checked; it can include another user's drafts in the caller's transport requests and can omit
+  drafts outside those requests. Cross-user activation and deletion behavior remains unverified. To clear an orphan left
   by an earlier delete, create a program with the same name, activate it with
   `SAPActivate(type="PROG")`, then delete it.
-- **Deleting a function group with an inactive text pool:** when your inactive list contains the
-  group, ARC-1 checks its text-pool metadata and activates only a confirmed inactive pool before
-  deletion. Unknown versions, unreadable metadata, a different last editor, or failed activation
-  stop deletion. Source drafts are not activated. This guard requires the ADT function-group
-  textelements collection; when discovery says it is absent, the existing delete behavior remains.
-  A pool saved only by another user may not appear in your inactive list; concurrent edits are not
-  made atomic by this check. Recover an older orphan by recreating and activating the group,
-  writing a text part with `edit_text_symbols`, then deleting the group.
+- **Deleting a function group with an inactive text pool:** ARC-1 matches the inactive feed's
+  `PROG/PX` entry by the group's textelements URI (its pool name is `SAPL<group>`) and activates
+  that pool before deletion. Failed activation stops deletion; a later delete failure warns that
+  the texts may already be active. Source drafts are not activated. The same feed visibility and
+  cross-user limits as program deletion apply; concurrent edits are not made atomic by this check.
+  Recover an older orphan by recreating and activating the group, writing a text part with
+  `edit_text_symbols`, then deleting the group.
 - **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent
   on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.

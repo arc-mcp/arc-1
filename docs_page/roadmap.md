@@ -296,20 +296,23 @@ Prove every branch is checked before allowing these shapes. Keep unknown nodes f
 - **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** [#952](https://github.com/arc-mcp/arc-1/pull/952) guards program
-deletion when the caller's inactive list includes a PROG/PX draft. That per-user
-list cannot detect another user's draft. The function-group guard likewise begins
-with the caller's list, then verifies an inactive pool and matching last editor.
-Whether SAP permits deletion with only another user's draft and leaves an orphan
-has not been verified. The original same-user deletion
-case is fixed; [#949](https://github.com/arc-mcp/arc-1/pull/949) adds explicit pool
-activation. Function-group metadata and cleanup evidence is recorded in
+**Remaining gap.** Program and function-group deletion activate a matching PROG/PX
+text-pool entry from the caller's inactive feed before deleting the owner
+([#952](https://github.com/arc-mcp/arc-1/pull/952),
+[#959](https://github.com/arc-mcp/arc-1/pull/959)). The feed can include another
+user's drafts in the caller's transport requests, and omit drafts outside those
+requests. It does not prove exclusive ownership. Whether SAP permits cross-user
+pool activation or deletion that leaves an orphan has not been verified. The
+same-user case is fixed; [#949](https://github.com/arc-mcp/arc-1/pull/949) adds
+explicit pool activation. Feed and cleanup evidence is recorded in
 [the deletion plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-function-group-delete-text-pool.md).
 
 **Resume with.** Two authorized SAP test identities: save a draft as one user and
-attempt PROG/FUGR deletion as the other, including lock races. Establish SAP's behavior
-before adding a guard; preserve per-user identity, package checks and native
-authorizations, and do not silently activate or discard another user's draft.
+attempt PROG/FUGR deletion as the other, both inside and outside a shared transport
+request, including lock races and principal propagation. Establish feed visibility,
+SAP's activation/delete authorization and draft ownership before adding a guard;
+preserve per-user identity, package checks and native authorizations. Avoid silently
+activating or discarding another user's draft.
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening

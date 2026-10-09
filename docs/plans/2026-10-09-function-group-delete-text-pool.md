@@ -1,59 +1,60 @@
 # Function-group deletion and inactive text pools
 
-## Reproduction and contract
+## Reproduction and corrected root cause
 
-On SAP_BASIS 758 SP02, client 001, HTTPS/Basic, a disposable active `$TMP`
-function group with a separately saved text draft leaves `REPOTEXT R3STATE=I`
-after successful deletion. The inactive list contains only `FUGR/F`, not a pool.
-Recreating the group, writing/activating a text part and deleting it removes the
-orphan; this recovery cleaned the reproduction fixture.
+On SAP_BASIS 758 SP02, client 001, HTTPS/Basic, deleting a disposable active
+`$TMP` function group with a separately saved text draft leaves `REPOTEXT
+R3STATE=I`. Recreating the group, writing/activating a text part and deleting it
+removed the reproduction orphan.
 
-Version-less GET of `/sap/bc/adt/textelements/functiongroups/<name>` returns
-`rept:textElement` with `adtcore:type="FUGR/PX"` and `adtcore:version="active"`
-for an empty active pool, then `inactive` after the separate draft save. This
-metadata provides the missing signal; source-body equality does not.
+The original probe incorrectly filtered the inactive feed by the group name.
+Claude's review and an independent 758 reproduction showed both `FUGR/F` (the
+group) and `PROG/PX` (the pool). The pool is named `SAPL<group>` and has URI
+`/sap/bc/adt/textelements/functiongroups/<group>`. A source-only draft does not
+need pool activation. There is no need for the first implementation's metadata
+GET, version parsing, changedBy comparison or discovery branch.
 
-## Plan and review
+## Revised plan and review
 
-1. Preserve the existing package gate and per-user inactive-list boundary. For a
-   listed function group, inspect the pool metadata only when its ADT collection
-   is not known absent. Refuse unreadable or inconclusive metadata.
-2. Activate only a confirmed inactive pool, reusing `activateTextPool`, before
-   the existing owner lock/delete flow. Preserve cache invalidation and honest
-   errors when activation or later deletion fails. Leave source drafts untouched.
-3. Test inactive/active/empty and invalid metadata, namespaced names, unavailable
-   discovery, failures, and mutation gates. Recheck program behavior.
-4. Verify live deletion removes REPOTEXT rows and that isolated pool activation
-   does not activate a pending TOP include. Exercise a no-text group too.
+1. Keep the existing package gate. Match a `PROG/PX` entry by the function group's
+   text-pool URI, accepting raw and percent-encoded namespace separators. Avoid
+   decoding unrelated feed URIs, which may be malformed.
+2. Activate only that pool via the existing `activateTextPool`, before owner
+   lock/delete. Preserve failure reporting and cache invalidation. Do not activate
+   the FUGR or its source includes.
+3. Cover absent, unrelated and namespaced pool entries, source-only drafts with
+   and without discovery, activation/delete failures (including minimal errors),
+   and the write ceiling. Retain the program regressions.
+4. Verify live empty, source-only, text-only and source-plus-text deletion and
+   pool-only activation isolation. Check metadata absence and zero REPOTEXT rows.
 
-Review: use SAP's explicit version attribute, not a broad activation of FUGR or a
-new discovery framework. The per-user list does not prove absence of another
-user's draft, and separate calls do not eliminate concurrent-edit races. Those
-limitations remain explicit; no cross-user activation is added intentionally.
+Review: this is the same direct feed signal as the program guard. The feed is
+not an ownership guarantee: Claude observed another user's draft inside the
+caller's transport request. It can also omit other users' drafts. The former
+metadata changedBy comparison only matched the feed entry's user, not the caller.
+No guessed caller identity or broader activation is added. Cross-user activation,
+shared requests, principal propagation and concurrent edits remain COMPAT-12
+research, with evidence needed before choosing a guard.
 
-Roadmap: remove the verified same-user FEAT-81 case; expand COMPAT-12 to retain
-cross-user deletion and race research. Known-absent legacy services keep their
-existing behavior; this change does not claim to repair that unverified case.
+Roadmap: remove the verified same-user FEAT-81 case; retain and correct COMPAT-12.
 
-## Candidate verification
+## Verification
 
-The built dispatcher deletes empty groups and groups with independently saved
-text drafts, with zero remaining REPOTEXT rows and metadata GET returning 404.
-A local injection that fails the DELETE call after real SAP pool activation
-confirmed the warning reports the preceding activation, the active TOP source
-stays byte-identical, and its pending source draft remains inactive. A subsequent
-real deletion removes the group and all pool rows. This verifies activation
-isolation; the injected failure is not evidence of a native SAP lock conflict.
+The revised regression suite fails against the first PR head in 12 of 14 cases.
+The candidate uses the feed directly and requires no text-pool metadata request.
 
-All disposable 758 fixtures were cleaned. The first failure-injection attempt
-patched an instance method which the session clone did not retain; deletion
-succeeded instead. The corrected probe patches the process-local prototype and
-passes. No product change was needed for that harness error. Live two-user,
-750/816, BTP and PP testing remain unverified.
+Live verification passed with the built revised dispatcher against authorized 758 and 816
+systems over HTTPS/Basic using disposable `$TMP` groups. It covered empty,
+source-only, text-only and source-plus-text deletion. A process-local injected
+DELETE failure after real SAP pool activation tests that the active TOP source
+stays byte-identical, its pending source draft stays inactive, and the failure
+reports the preceding text activation. Subsequent real deletion left
+metadata GET returning 404 and no REPOTEXT rows. All eight fixtures were cleaned. The injected failure is not
+evidence of a native SAP lock conflict.
 
-Automated validation: the new regression suite fails on main (11 failures) and
-passes with the candidate. Full suite: 8,080 tests / 270 files. Typecheck, lint,
-policy validation, build, file/schema budgets and strict docs build pass. Final
-review retained the per-user scope and explicit failure behavior, with no further
-findings. Pool activation occurs before the existing owner lock; concurrent-edit
-behavior remains research under COMPAT-12.
+Two-user, 750, BTP and principal-propagation deletion remain unverified. Separate
+activation and deletion calls do not eliminate concurrent-edit races.
+
+All 8,080 unit tests / 270 files, typecheck, lint, policy validation, build,
+file/schema budgets and strict docs build pass. Final diff review retained the
+existing package gate, failure reporting and cache invalidation.

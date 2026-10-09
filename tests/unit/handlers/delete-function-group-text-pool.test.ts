@@ -4,21 +4,21 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-
 const lock =
   '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H</LOCK_HANDLE></DATA></asx:values></asx:abap>';
-const metadata = (version: string, user = 'DEV') =>
-  `<rept:textElement xmlns:rept="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="FUGR/PX" adtcore:version="${version}" adtcore:changedBy="${user}"/>`;
 const mutations = () =>
   mockFetch.mock.calls.filter(([, init]) => ['POST', 'PUT', 'DELETE'].includes(init?.method ?? 'GET'));
-function setup(pool: string, name = 'ZTEST', listed = true) {
-  mockFetch.mockImplementation(async (url: string) => {
+const poolPath = (name: string) => `/sap/bc/adt/textelements/functiongroups/${encodeURIComponent(name.toLowerCase())}`;
+function setup(name = 'ZTEST', poolUri: string | undefined = poolPath(name)) {
+  mockFetch.mockImplementation(async (url: string, init?: RequestInit) => {
     if (String(url).includes('/inactiveobjects'))
       return mockResponse(
         200,
-        `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects">${listed ? `<ioc:entry><ioc:object ioc:user="DEV"><ioc:ref xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/ztest"/></ioc:object></ioc:entry>` : ''}</ioc:inactiveObjects>`,
+        `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects"><ioc:entry><ioc:object ioc:user="DEV"><ioc:ref xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="FUGR/F" adtcore:uri="/sap/bc/adt/functions/groups/ztest"/></ioc:object></ioc:entry>${poolUri ? `<ioc:entry><ioc:object ioc:user="DEV"><ioc:ref xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="SAPL${name}" adtcore:type="PROG/PX" adtcore:uri="${poolUri}"/></ioc:object></ioc:entry>` : ''}</ioc:inactiveObjects>`,
       );
-    if (String(url).includes('/textelements/functiongroups/')) return mockResponse(200, pool);
+    // No pool metadata is needed; an unavailable metadata service must not break a source-only delete.
+    if (String(url).includes('/textelements/functiongroups/')) return mockResponse(404, 'no metadata');
+    expect(init?.method ?? 'GET').not.toBe('PUT');
     return mockResponse(200, String(url).includes('_action=LOCK') ? lock : '', { 'x-csrf-token': 'T' });
   });
 }
@@ -28,60 +28,49 @@ const del = (client = createClient(), name = 'ZTEST', minimalErrors = false) =>
 describe('function-group deletion with text drafts', () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it.each(['ZTEST', '/ARC/FG'])('activates only the inactive pool before deleting %s', async (name) => {
-    setup(metadata('inactive'), name);
+  it.each(['ZTEST', '/ARC/FG'])('activates the feed pool entry before deleting %s', async (name) => {
+    setup(name);
     const result = await del(createClient(), name);
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain(`Deleted FUGR ${name} and its inactive text pool`);
     const calls = mutations();
     expect(String(calls[0]?.[0])).toContain('/activation?');
     expect(String(calls[0]?.[0])).toContain('preauditRequested=false');
-    expect(calls[0]?.[1]?.body).toContain(`/textelements/functiongroups/${encodeURIComponent(name)}`);
+    expect(calls[0]?.[1]?.body).toContain(poolPath(name));
+    expect(calls[0]?.[1]?.body).toContain(`SAPL${name}`);
     expect(String(calls[0]?.[1]?.body).match(/<adtcore:objectReference /g)).toHaveLength(1);
     expect(calls.some(([, init]) => init?.method === 'DELETE')).toBe(true);
-  });
-
-  it('does not activate an active pool when only source is inactive', async () => {
-    setup(metadata('active'));
-    expect((await del()).isError).toBeUndefined();
-    expect(mutations().some(([url]) => String(url).includes('/activation'))).toBe(false);
-  });
-
-  it('does not inspect the pool of an unlisted group', async () => {
-    setup(metadata('inactive'), 'ZTEST', false);
-    expect((await del()).isError).toBeUndefined();
     expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/textelements/'))).toBe(false);
   });
 
-  it('preserves deletion on systems without the text-elements collection', async () => {
-    setup(metadata('inactive'));
+  it('also matches a raw namespaced URI without decoding unrelated entries', async () => {
+    setup('/ARC/FG', '/sap/bc/adt/textelements/functiongroups//arc/fg');
+    expect((await del(createClient(), '/ARC/FG')).isError).toBeUndefined();
+    expect(mutations()[0]?.[1]?.body).toContain('/functiongroups//arc/fg');
+  });
+
+  it.each([
+    '',
+    '/sap/bc/adt/textelements/programs/ztest',
+    '/sap/bc/adt/textelements/functiongroups/other',
+    '/malformed/%ZZ',
+  ])('does not activate an absent or unrelated pool: %s', async (uri) => {
+    setup('ZTEST', uri);
+    expect((await del()).isError).toBeUndefined();
+    expect(mutations().some(([url]) => String(url).includes('/activation'))).toBe(false);
+    expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/textelements/'))).toBe(false);
+  });
+
+  it.each([true, false])('deletes a source-only draft with discovery loaded=%s', async (loaded) => {
+    setup('ZTEST', '');
     const client = createClient();
-    client.http.setDiscoveryMap(new Map([['/sap/bc/adt/functions/groups', []]]));
+    if (loaded) client.http.setDiscoveryMap(new Map([['/sap/bc/adt/functions/groups', []]]));
     expect((await del(client)).isError).toBeUndefined();
     expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/textelements/'))).toBe(false);
   });
 
-  it.each([metadata(''), '<html>not metadata</html>', metadata('inactive', 'OTHER')])(
-    'refuses inconclusive or another user’s metadata',
-    async (pool) => {
-      setup(pool);
-      expect((await del()).isError).toBe(true);
-      expect(mutations()).toHaveLength(0);
-    },
-  );
-
-  it.each([403, 404, 500])('refuses deletion if the pool probe fails with %s', async (status) => {
-    setup(metadata('inactive'));
-    const sap = mockFetch.getMockImplementation()!;
-    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
-      String(url).includes('/textelements/') ? Promise.resolve(mockResponse(status, 'unavailable')) : sap(url, init),
-    );
-    expect((await del()).isError).toBe(true);
-    expect(mutations()).toHaveLength(0);
-  });
-
   it.each([false, true])('stops on activation failure, including minimal errors=%s', async (minimalErrors) => {
-    setup(metadata('inactive'));
+    setup();
     const sap = mockFetch.getMockImplementation()!;
     mockFetch.mockImplementation((url: string, init?: RequestInit) =>
       String(url).includes('/activation?') ? Promise.resolve(mockResponse(500, 'activation failed')) : sap(url, init),
@@ -92,8 +81,20 @@ describe('function-group deletion with text drafts', () => {
     expect(mutations()).toHaveLength(1);
   });
 
+  it.each([false, true])('reports activation if deletion subsequently fails, minimal=%s', async (minimalErrors) => {
+    setup();
+    const sap = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? Promise.resolve(mockResponse(423, 'delete failed')) : sap(url, init),
+    );
+    const result = await del(createClient(), 'ZTEST', minimalErrors);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('Text-pool activation was requested');
+    expect(result.content[0]?.text).toContain('function group');
+  });
+
   it('enforces the write ceiling before activating or deleting', async () => {
-    setup(metadata('inactive'));
+    setup();
     const client = createClient();
     client.safety.allowWrites = false;
     expect((await del(client)).isError).toBe(true);

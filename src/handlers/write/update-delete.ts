@@ -13,7 +13,6 @@ import { AdtApiError, AdtError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
 import { activateTextPool } from '../../adt/text-elements.js';
-import { parseXml } from '../../adt/xml-parser.js';
 import {
   buildCdsDeleteDependencyHint,
   buildCdsUpdateCrudHint,
@@ -203,35 +202,23 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
 }
 
-/** FUGR drafts are listed under the owner; only pool metadata distinguishes a text draft. */
-async function inactiveTextPoolForDelete({ client, type, name }: SapWriteContext) {
-  if (type !== 'PROG' && type !== 'FUGR') return undefined;
-  const draft = (await client.getInactiveObjects()).find(
-    (o) => o.type === (type === 'PROG' ? 'PROG/PX' : 'FUGR/F') && o.name.toUpperCase() === name,
-  );
-  if (!draft || type === 'PROG') return draft;
-  const collection = '/sap/bc/adt/textelements/functiongroups';
-  if (client.http.hasDiscoveryData() && client.http.discoveryAcceptFor(collection) === undefined) return undefined;
-  const uri = `${collection}/${encodeURIComponent(name)}`;
-  const root = parseXml((await client.getObjectMetadata(uri)).body).textElement as Record<string, unknown> | undefined;
-  if (root?.['@_type'] !== 'FUGR/PX' || !['active', 'inactive'].includes(String(root['@_version']))) {
-    throw new Error(`FUGR ${name} was not deleted: SAP did not identify its text-pool version.`);
-  }
-  if (root['@_version'] === 'active') return undefined;
-  if (!draft.user || String(root['@_changedBy'] ?? '').toUpperCase() !== draft.user.toUpperCase()) {
-    throw new Error(
-      `FUGR ${name} was not deleted: its inactive text pool could not be attributed to your inactive-list entry. Review the texts in ADT before deletion.`,
-    );
-  }
-  return { name, uri };
-}
-
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   await enforcePackageForExistingObject();
   // Deleting an active PROG/FUGR orphans its standalone inactive text pool (REPOTEXT 'I').
   // For a never-activated PROG, SAP accepts this as a no-op and the delete removes the pool anyway.
-  const pool = await inactiveTextPoolForDelete(ctx);
+  // FUGR pools are named SAPL<group>; match their URI instead of the owner name.
+  const fugrPools = [name, encodeURIComponent(name)].map((n) =>
+    `/sap/bc/adt/textelements/functiongroups/${n}`.toUpperCase(),
+  );
+  const pool =
+    type === 'PROG' || type === 'FUGR'
+      ? (await client.getInactiveObjects()).find(
+          (o) =>
+            o.type === 'PROG/PX' &&
+            (type === 'PROG' ? o.name.toUpperCase() === name : fugrPools.includes(o.uri.toUpperCase())),
+        )
+      : undefined;
   if (pool) {
     try {
       await activateTextPool(
