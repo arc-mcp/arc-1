@@ -522,7 +522,7 @@ describe('PROG delete with an inactive text pool (#940)', () => {
     },
   );
 
-  it.each(['CLAS', 'FUGR'])('does not read the inactive list for a %s delete', async (type) => {
+  it.each(['CLAS'])('does not read the inactive list for a %s delete', async (type) => {
     mockSap(feed(POOL_DRAFT));
     expect((await del(DEFAULT_CONFIG, type)).isError).toBeUndefined();
     expect(calls().some(([url]) => String(url).includes('/inactiveobjects'))).toBe(false);

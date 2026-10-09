@@ -13,6 +13,7 @@ import { AdtApiError, AdtError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
 import { activateTextPool } from '../../adt/text-elements.js';
+import { parseXml } from '../../adt/xml-parser.js';
 import {
   buildCdsDeleteDependencyHint,
   buildCdsUpdateCrudHint,
@@ -202,15 +203,35 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   return warnings ? textResult(`${msg}\n\n${warnings}`) : textResult(msg);
 }
 
+/** FUGR drafts are listed under the owner; only pool metadata distinguishes a text draft. */
+async function inactiveTextPoolForDelete({ client, type, name }: SapWriteContext) {
+  if (type !== 'PROG' && type !== 'FUGR') return undefined;
+  const draft = (await client.getInactiveObjects()).find(
+    (o) => o.type === (type === 'PROG' ? 'PROG/PX' : 'FUGR/F') && o.name.toUpperCase() === name,
+  );
+  if (!draft || type === 'PROG') return draft;
+  const collection = '/sap/bc/adt/textelements/functiongroups';
+  if (client.http.hasDiscoveryData() && client.http.discoveryAcceptFor(collection) === undefined) return undefined;
+  const uri = `${collection}/${encodeURIComponent(name)}`;
+  const root = parseXml((await client.getObjectMetadata(uri)).body).textElement as Record<string, unknown> | undefined;
+  if (root?.['@_type'] !== 'FUGR/PX' || !['active', 'inactive'].includes(String(root['@_version']))) {
+    throw new Error(`FUGR ${name} was not deleted: SAP did not identify its text-pool version.`);
+  }
+  if (root['@_version'] === 'active') return undefined;
+  if (!draft.user || String(root['@_changedBy'] ?? '').toUpperCase() !== draft.user.toUpperCase()) {
+    throw new Error(
+      `FUGR ${name} was not deleted: its inactive text pool could not be attributed to your inactive-list entry. Review the texts in ADT before deletion.`,
+    );
+  }
+  return { name, uri };
+}
+
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   await enforcePackageForExistingObject();
-  // Deleting an active PROG orphans its standalone inactive text pool (REPOTEXT 'I'), so activate it first (#940).
+  // Deleting an active PROG/FUGR orphans its standalone inactive text pool (REPOTEXT 'I').
   // For a never-activated PROG, SAP accepts this as a no-op and the delete removes the pool anyway.
-  const pool =
-    type === 'PROG'
-      ? (await client.getInactiveObjects()).find((o) => o.type === 'PROG/PX' && o.name.toUpperCase() === name)
-      : undefined;
+  const pool = await inactiveTextPoolForDelete(ctx);
   if (pool) {
     try {
       await activateTextPool(
@@ -218,7 +239,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
         client.safety,
         pool.uri,
         pool.name,
-        `PROG ${name} was not deleted: activating its inactive text pool failed, and deleting the program now would orphan the pool in SAP.`,
+        `${type} ${name} was not deleted: activating its inactive text pool failed, and deleting the object now would orphan the pool in SAP.`,
       );
     } finally {
       invalidateWrittenObject();
@@ -247,7 +268,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
       // The delete failed after an activation request; retain this state even with minimal errors.
       const note =
         'Text-pool activation was requested before deletion failed. The texts may already be active. ' +
-        'Read the program and its text pool before retrying deletion.';
+        `Read the ${type === 'PROG' ? 'program' : 'function group'} and its text pool before retrying deletion.`;
       err.extraHint = err.extraHint ? `${note}\n${err.extraHint}` : note;
     }
     // NW 7.50 can issue a lock handle for an absent DDLS, so LOCK alone is not
@@ -286,7 +307,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
     throw err;
   }
   invalidateWrittenObject();
-  return textResult(pool ? `Deleted PROG ${name} and its inactive text pool.` : `Deleted ${type} ${name}.`);
+  return textResult(pool ? `Deleted ${type} ${name} and its inactive text pool.` : `Deleted ${type} ${name}.`);
 }
 
 /** Write one subobject of an object's textpool via the ADT textelements service (CLAS, PROG, FUGR).
