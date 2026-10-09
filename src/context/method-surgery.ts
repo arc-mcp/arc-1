@@ -617,10 +617,12 @@ function methodBoundaries(source: string, version: Version): { opening: string; 
   const first = statements[0];
   const last = statements.at(-1);
   // extractMethod selects whole lines. Refuse when a neighboring statement shares those lines.
-  const boundaries = statements.filter((s) => /^(METHOD|ENDMETHOD)$/i.test(s.getFirstToken().getStr()));
+  const boundaries = statements.filter(
+    (s) => s.get() instanceof Statements.MethodImplementation || s.get() instanceof Statements.EndMethod,
+  );
   if (
-    first?.getFirstToken().getStr().toUpperCase() !== 'METHOD' ||
-    last?.getFirstToken().getStr().toUpperCase() !== 'ENDMETHOD' ||
+    !(first?.get() instanceof Statements.MethodImplementation) ||
+    !(last?.get() instanceof Statements.EndMethod) ||
     boundaries.length !== 2
   )
     return undefined;

@@ -168,3 +168,11 @@ it('does not add to existing blank space before the implementation end', () => {
   expect(result).toContain('  endmethod.\n\n\n  METHOD fourth.');
   expect(result).not.toContain('  endmethod.\n\n\n\n  METHOD fourth.');
 });
+
+it.each(['method', 'endmethod'])('accepts a body statement starting with the identifier %s', (identifier) => {
+  const body = `    DATA ${identifier} TYPE i.\n    ${identifier} = 1.`;
+  const original = source.replace('  method first.\n  endmethod.', `  method first.\n${body}\n  endmethod.`);
+  const result = spliceMethod(original, 'ZCL_DEMO', 'first', `    DATA ${identifier} TYPE i.\n    ${identifier} = 2.`);
+  expect(result.success).toBe(true);
+  expect(result.newSource).toBe(original.replace(`${identifier} = 1.`, `${identifier} = 2.`));
+});

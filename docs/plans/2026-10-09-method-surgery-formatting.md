@@ -46,3 +46,18 @@ locally, not claimed as live AMDP verification. Full-block replacement retains
 its existing contract; the extra ambiguity refusal applies to body-only edits.
 
 The final diff review found no further issue. No roadmap impact.
+
+## Claude review follow-up
+
+The boundary counter also matched assignments to legal identifiers named `method`
+and `endmethod`. Both new reproductions fail on the original PR head. Boundary
+recognition now uses abaplint's MethodImplementation/EndMethod statement types,
+not token spelling. The existing AMDP, same-line ambiguity and comment cases
+still pass. This uses the parser already present and adds no abstraction.
+
+The revised build passes all 8,084 unit tests, typecheck, lint, policy, build and
+size/schema checks. On 758 SP02/client 001 over HTTPS/Basic, a disposable class
+containing both identifiers activated successfully, then a body-only edit
+preserved the rest of the source exactly and activated again. Deletion and a
+404 read-back confirmed cleanup. AMDP remains unit-tested only. Roadmap rechecked:
+no roadmap impact.
