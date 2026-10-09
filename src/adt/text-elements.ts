@@ -66,7 +66,7 @@ function serviceAvailable(http: AdtHttpClient, objectType: TextElementObjectType
 }
 
 /** Fail clean when the ADT textelements service is absent. */
-function assertService(http: AdtHttpClient, objectType: TextElementObjectType): void {
+export function assertTextElementsService(http: AdtHttpClient, objectType: TextElementObjectType): void {
   if (!serviceAvailable(http, objectType)) {
     throw new AdtApiError(
       `Text elements for ${objectType} require the ADT textelements service (not available on this system).`,
@@ -87,7 +87,7 @@ export async function readTextElementPart(
 ): Promise<string> {
   checkOperation(safety, OperationType.Read, 'GetTextElements');
   assertPart(objectType, part);
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   const resp = await http.get(`${textElementsObject(objectType, name)}/source/${part}`, {
     Accept: TEXT_ELEMENT_CT[part],
   });
@@ -111,7 +111,7 @@ export async function readTextElements(
       '/sap/bc/adt/textelements',
     );
   }
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   if (options?.part) return readTextElementPart(http, safety, objectType, name, options.part);
 
   const chunks: string[] = [];
@@ -150,7 +150,7 @@ export async function writeTextElementPart(
       '/sap/bc/adt/textelements/classes',
     );
   }
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   const obj = textElementsObject(objectType, name);
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, obj, 'MODIFY');
