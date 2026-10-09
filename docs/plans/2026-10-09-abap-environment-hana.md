@@ -35,10 +35,10 @@ Two new tests failed on the baseline; the implemented result passes all 8,071 un
 tests, typecheck, Biome, policy validation, build and size/schema budgets. Strict
 documentation build also passes. Fresh compiled public probes retain 750 as
 unconfirmed and 758/816 as HANA inferred. The saved 920 SP04 component feed changes
-from false to true in replay. Explicit on/off overrides still win. No fresh BTP
-probe is claimed; named-user OAuth reauthentication remains pending.
+from false to true in replay. Explicit on/off overrides still win. After renewing the named-user OAuth session, a fresh compiled BTP 920 SP04
+public probe on October 9 at 21:22 UTC confirmed HANA inferred from installed
+components and retained the native hanainfo 404 diagnostic.
 
 Final review found no further change needed in this scope. No write/data-query
 behavior or runtime identity selection changed. No roadmap impact on main after
-checking; the local audit recommendation is resolved in code with fresh BTP
-qualification still outstanding.
+checking; the local audit recommendation is resolved in code with the fresh BTP probe completed.
