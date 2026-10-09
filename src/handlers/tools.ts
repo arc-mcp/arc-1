@@ -95,7 +95,7 @@ const SAPREAD_DESC_ONPREM =
 
 const SAPREAD_DESC_BTP =
   'Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
-  'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list). PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
+  'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list). PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
   'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
   'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.';
 
@@ -619,13 +619,13 @@ export function getToolDefinitions(
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
+              ? 'Object type. Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
               : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
           },
           name: {
             type: 'string',
             description: btp
-              ? 'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).'
+              ? 'Object name.'
               : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
           },
           expectedSourceHash: {
@@ -730,8 +730,8 @@ export function getToolDefinitions(
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
-          ...(btp ? TABLE_TYPE_BATCH_TOOL_PROPERTIES : TABLE_TYPE_TOOL_PROPERTIES),
-          ...(btp ? {} : TABLE_TYPE_DIMENSION_TOOL_PROPERTIES),
+          ...TABLE_TYPE_TOOL_PROPERTIES,
+          ...TABLE_TYPE_DIMENSION_TOOL_PROPERTIES,
           length: { type: 'number', description: 'DOMA/DTEL: data type length' },
           decimals: { type: 'number', description: 'DOMA/DTEL: decimal places' },
           outputLength: { type: 'number', description: 'DOMA: output length' },
@@ -898,7 +898,7 @@ export function getToolDefinitions(
                 // params 1:1 — descriptions omitted here to keep the tools/list payload small (#520).
                 dataType: { type: 'string' },
                 ...TABLE_TYPE_BATCH_TOOL_PROPERTIES,
-                ...(btp ? {} : TABLE_TYPE_DIMENSION_TOOL_PROPERTIES),
+                ...TABLE_TYPE_DIMENSION_TOOL_PROPERTIES,
                 length: { type: 'number' },
                 decimals: { type: 'number' },
                 outputLength: { type: 'number' },

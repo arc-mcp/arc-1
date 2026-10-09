@@ -1226,8 +1226,7 @@ describe('Tool Definitions', () => {
         expect(item.properties.rowTypeKind.enum).toEqual(['builtin', 'structure']);
         for (const properties of [schema.properties, item.properties]) {
           for (const field of ['rowTypeLength', 'rowTypeDecimals']) {
-            if (btp) expect(properties[field]).toBeUndefined();
-            else expect(properties[field]).toMatchObject({ type: 'integer', minimum: 0, maximum: 999999 });
+            expect(properties[field]).toMatchObject({ type: 'integer', minimum: 0, maximum: 999999 });
           }
         }
       }

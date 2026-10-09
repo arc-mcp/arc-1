@@ -15,11 +15,11 @@ export const TABLE_TYPE_TOOL_PROPERTIES = {
   rowType: {
     type: 'string',
     description:
-      'TTYP: row type; required for create. Built-in dimensions: rowTypeLength/rowTypeDecimals. Updates preserve omitted dimensions only for an unchanged built-in row.',
+      'TTYP row; required on create. rowTypeLength/rowTypeDecimals: built-ins only. Updates preserve omitted values for unchanged rows.',
   },
   rowTypeKind: {
     type: 'string',
     enum: ['builtin', 'structure'],
-    description: 'TTYP: inferred if omitted; use builtin for CHAR/DEC. SAP validates dimensions.',
+    description: 'TTYP: use builtin for CHAR/DEC; otherwise inferred.',
   },
 } as const;
