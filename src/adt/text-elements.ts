@@ -11,7 +11,8 @@
  */
 
 import { lockObject, unlockObject } from './crud.js';
-import { AdtApiError } from './errors.js';
+import { activate } from './devtools.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
 
@@ -65,7 +66,7 @@ function serviceAvailable(http: AdtHttpClient, objectType: TextElementObjectType
 }
 
 /** Fail clean when the ADT textelements service is absent. */
-function assertService(http: AdtHttpClient, objectType: TextElementObjectType): void {
+export function assertTextElementsService(http: AdtHttpClient, objectType: TextElementObjectType): void {
   if (!serviceAvailable(http, objectType)) {
     throw new AdtApiError(
       `Text elements for ${objectType} require the ADT textelements service (not available on this system).`,
@@ -86,7 +87,7 @@ export async function readTextElementPart(
 ): Promise<string> {
   checkOperation(safety, OperationType.Read, 'GetTextElements');
   assertPart(objectType, part);
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   const resp = await http.get(`${textElementsObject(objectType, name)}/source/${part}`, {
     Accept: TEXT_ELEMENT_CT[part],
   });
@@ -110,7 +111,7 @@ export async function readTextElements(
       '/sap/bc/adt/textelements',
     );
   }
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   if (options?.part) return readTextElementPart(http, safety, objectType, name, options.part);
 
   const chunks: string[] = [];
@@ -127,9 +128,10 @@ export async function readTextElements(
   return chunks.length > 0 ? chunks.join('\n\n') : `No text elements maintained for ${objectType} ${name}.`;
 }
 
-/** Write one subobject. Locks the textelements object (not the class/program), PUTs the body with
- *  that subobject's media type as BOTH Content-Type and Accept, then unlocks. Immediately active —
- *  no SAPActivate needed. */
+/** Write one part, unlock, then activate only the text pool in the same stateful session.
+ *  PUT uses the part's media type as BOTH Content-Type and Accept. SAP refuses activation
+ *  while the pool is locked; a source read alone cannot distinguish its inactive version.
+ *  A never-activated PROG still needs its first owner activation to activate the texts. */
 export async function writeTextElementPart(
   http: AdtHttpClient,
   safety: SafetyConfig,
@@ -148,7 +150,7 @@ export async function writeTextElementPart(
       '/sap/bc/adt/textelements/classes',
     );
   }
-  assertService(http, objectType);
+  assertTextElementsService(http, objectType);
   const obj = textElementsObject(objectType, name);
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, obj, 'MODIFY');
@@ -160,5 +162,36 @@ export async function writeTextElementPart(
     } finally {
       await unlockObject(session, obj, lock.lockHandle);
     }
+    await activateTextPool(
+      session,
+      safety,
+      obj,
+      name,
+      'Text elements were saved, but activation was not confirmed. Retry the same text write.',
+    );
   });
+}
+
+/** Activate one text-pool URI only; on failure, prefix `note` to the error and keep it as the hint. */
+export async function activateTextPool(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  uri: string,
+  name: string,
+  note: string,
+): Promise<void> {
+  try {
+    // Do not add other inactive objects suggested by a preaudit response.
+    const result = await activate(http, safety, uri, { preaudit: false, name });
+    if (!result.success) {
+      throw new AdtApiError(result.messages.join('\n') || 'Text-pool activation failed.', 400, uri);
+    }
+  } catch (err) {
+    // The dispatcher retains this static hint when minimal errors hide SAP diagnostics.
+    if (err instanceof AdtError && !err.extraHint) err.extraHint = note;
+    if (err instanceof Error) {
+      err.message = `${note}\n${err.message}`;
+    }
+    throw err;
+  }
 }

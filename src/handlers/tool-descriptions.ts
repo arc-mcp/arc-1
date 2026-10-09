@@ -31,7 +31,7 @@ const SAPWRITE_BODY_ONPREM =
   'edit_unit/add_unit: replace/add one FORM/MODULE in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +
   'Server-driven objects (discovery-gated): AFF JSON source (DTSC/DSFD/DTDC/DRTY: DDL); create/update/delete. APLO/UIAD save active; others need SAPActivate. SAJC/SAJT create require source.generalInformation.className/catalogName. ' +
-  'edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one "@MaxLength:NN\\nNNN=text" per symbol, blank-line separated), selections ("PARAM=Label") or headings. CLAS: symbols only. Immediately active; needs ADT textelements. ' +
+  'edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one "@MaxLength:NN\\nNNN=text" per symbol, blank-line separated), selections ("PARAM=Label") or headings. CLAS: symbols only. Writes and requests whole-pool activation; a never-activated PROG still needs SAPActivate. Needs ADT textelements. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
 const SAPWRITE_BODY_BTP =

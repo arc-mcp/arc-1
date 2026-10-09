@@ -583,11 +583,11 @@ export function parseDiscoveryObject(parsed: Record<string, unknown>): Map<strin
 
         const accepts = acceptsRaw.map((value) => String(value)).filter((value) => value.length > 0);
 
-        // Collections without <app:accept> are not useful for negotiation.
-        if (accepts.length === 0) continue;
-
-        // If href is duplicated, keep the last definition from the document.
-        discoveryMap.set(normalizedPath, accepts);
+        // A listed collection still exists when this user has no advertised POST media types.
+        // Retain its presence; an empty duplicate must not erase an earlier usable definition.
+        if (accepts.length > 0 || !discoveryMap.has(normalizedPath)) {
+          discoveryMap.set(normalizedPath, accepts);
+        }
       }
     }
 

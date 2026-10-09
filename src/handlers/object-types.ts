@@ -20,6 +20,7 @@ import { SDO_REGISTRY } from '../adt/server-driven.js';
 // Production callers should keep using normalizeObjectType().
 export const SLASH_TYPE_MAP: Record<string, string> = {
   'PROG/P': 'PROG', // docs/research/abap-types/types/prog.md
+  'PROG/PX': 'REPT', // program text pool — docs/research/abap-types/types/rept.md
   'PROG/I': 'INCL', // docs/research/abap-types/types/incl.md
   'CLAS/OC': 'CLAS', // docs/research/abap-types/types/clas.md
   // 'CLAS/LI' removed — invented; absent from Eclipse apidoc; no live ADT response
@@ -71,6 +72,7 @@ export const SLASH_TYPE_MAP: Record<string, string> = {
  */
 export const SLASH_TYPE_EVIDENCE: Record<string, string> = {
   'PROG/P': 'docs/research/abap-types/types/prog.md',
+  'PROG/PX': 'docs/research/abap-types/types/rept.md',
   'PROG/I': 'docs/research/abap-types/types/incl.md',
   'CLAS/OC': 'docs/research/abap-types/types/clas.md',
   'INTF/OI': 'docs/research/abap-types/types/intf.md',
@@ -111,6 +113,7 @@ const FRIENDLY_TYPE_ALIAS_MAP: Record<string, string> = {
  */
 export const KNOWN_BASE_TYPES = new Set([
   'PROG',
+  'REPT',
   'CLAS',
   'INTF',
   'INCL',
@@ -412,6 +415,8 @@ export function objectBasePath(type: string): string {
   switch (type) {
     case 'PROG':
       return '/sap/bc/adt/programs/programs/';
+    case 'REPT':
+      return '/sap/bc/adt/textelements/programs/';
     case 'CLAS':
       return '/sap/bc/adt/oo/classes/';
     case 'INTF':

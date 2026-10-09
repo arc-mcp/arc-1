@@ -75,7 +75,10 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 Prefer `SAPRead(type="SYNTAX", objectType="CLAS", name="ZCL_ORDER")` for a SAP syntax check.
 Use `version="inactive"` after saving a draft, or pass `source` to check proposed text without
 saving it. Omission checks the active version. The object must already exist; `checked:false`
-means SAP did not validate it, even if there are no native findings. This does not activate or
+means SAP did not validate it, even if there are no native findings. With `source`, ARC-1 first
+reads the object's metadata and returns `checked:false` when SAP answers `404`: for an absent
+program SAP would otherwise check the text as a standalone include without program attributes
+(fixed-point arithmetic off) and report false errors such as every `@` host variable. This does not activate or
 execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..., name=...)` route.
 
 Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `objectType` are required;
@@ -416,7 +419,7 @@ keep their separate behavior.
 | `conversionExit` | string | No | DOMA: conversion exit (e.g., `ALPHA`) |
 | `signExists` | boolean | No | DOMA: whether signed values are allowed |
 | `lowercase` | boolean | No | DOMA: whether lowercase characters are allowed |
-| `fixedValues` | array | No | DOMA: fixed value entries (`[{low, high?, description?}]`) |
+| `fixedValues` | array | No | DOMA: fixed value ranges. Each entry has required `low` and optional `high` (max 10 characters each), and optional `description` (max 60). Oversized entries are rejected before any write, including in `batch_create`. |
 | `valueTable` | string | No | DOMA: value table reference (e.g., `T001`) |
 | `typeKind` | string | No | DTEL: `domain` or `predefinedAbapType` |
 | `typeName` | string | No | DTEL: referenced domain/type name (for `typeKind="domain"`) |
@@ -1094,10 +1097,23 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   retain any entries you want to keep. Other parts remain unchanged. An explicit `source=""`
   clears the selected part; omitted/null source is rejected. Do not send the `=== part ===`
   markers from a whole-pool read as source — read the individual part with `include=` instead.
-- **Immediately active** — no `SAPActivate` needed. Defining the referenced symbols is what clears
+- **Writes and requests activation of the whole text pool.** This also activates pending edits to
+  other text parts; their content is preserved. Unrelated source drafts stay inactive. If a PROG
+  has never been activated, finish with `SAPActivate(type="PROG", name="...")` to activate its texts.
+  If pool activation fails, the write returns an error; the saved pool may remain inactive.
+  Retry the same text write after resolving the error. Defining the referenced symbols clears
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw
   parameter names.
+- **Deleting a program with an inactive text pool:** SAP deletes an active program but keeps a
+  separately saved text-pool draft, which then drops off the inactive-object list and is inherited
+  by any later program with the same name. `SAPWrite(action="delete", type="PROG")` therefore first
+  activates the program's pool draft when your inactive objects list it. If that activation fails,
+  nothing is deleted; if the delete then fails, its error warns that the texts may already be active
+  and asks you to read the program and its text pool before retrying. Only your own inactive objects
+  are checked; drafts saved by another user are not detected. To clear an orphan left
+  by an earlier delete, create a program with the same name, activate it with
+  `SAPActivate(type="PROG")`, then delete it.
 - **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent
   on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
@@ -1120,7 +1136,7 @@ writes and cleanup.
 
 ## SAPActivate
 
-Activate (publish) ABAP objects. Supports single object or batch activation.
+Activate ABAP objects. Supports single object or batch activation.
 
 **Parameters:**
 
@@ -1135,7 +1151,15 @@ Activate (publish) ABAP objects. Supports single object or batch activation.
 | `preaudit` | boolean | No | Request pre-activation audit from SAP (default: `true`). Set `false` to skip pre-audit for faster activation. |
 | `objects` | array | No | For batch: array of `{type, name, group?}` objects to activate together |
 
-Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `warning`, `error`, `unknown`). After an overall failure, objects without their own error stay `unknown`; SAP may have cancelled their activation too. Messages match the object URI or its source/include path, and global messages appear separately. Read active/inactive source before selecting objects to retry.
+Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `requested`, `warning`, `error`, `unknown`). After an overall failure, objects without their own error stay `unknown`; SAP may have cancelled their activation too. Messages match the object URI or its source/include path, and global messages appear separately. Read active/inactive source before selecting objects to retry.
+
+Use `type="REPT"` (or the native alias `PROG/PX`) to activate an existing program text-pool
+draft, including one listed by `SAPRead(type="INACTIVE_OBJECTS")`. It targets the text pool
+separately from program source and supports single or batch activation. The result says
+`requested`: if the program has never been activated, first use `SAPActivate(type="PROG", name="...")`
+to activate its texts. The pool's actual package is checked, and systems without the ADT
+text-element service are refused. Ordinary `edit_text_symbols` writes already request
+text-pool activation automatically.
 
 For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a concrete batch re-activation template derived from where-used results.
 
@@ -1159,6 +1183,7 @@ operations keep their existing retry policies.
 **Examples:**
 ```
 SAPActivate(type="CLAS", name="ZCL_ORDER")
+SAPActivate(type="REPT", name="ZREPORT")
 SAPActivate(type="INCL", name="LZFGTOP", group="ZFG")
 SAPActivate(objects=[{type:"DDLS",name:"ZI_TRAVEL"},{type:"BDEF",name:"ZI_TRAVEL"},{type:"SRVD",name:"ZSD_TRAVEL"}])
 SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_type="odatav4")

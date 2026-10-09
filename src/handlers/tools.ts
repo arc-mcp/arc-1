@@ -747,9 +747,9 @@ export function getToolDefinitions(
             items: {
               type: 'object',
               properties: {
-                low: { type: 'string', description: 'Low value (required)' },
-                high: { type: 'string', description: 'High value for ranges (optional)' },
-                description: { type: 'string', description: 'Value description (optional)' },
+                low: { type: 'string', maxLength: 10, description: 'Low value (required)' },
+                high: { type: 'string', maxLength: 10, description: 'High value for ranges (optional)' },
+                description: { type: 'string', maxLength: 60, description: 'Value description (optional)' },
               },
               required: ['low'],
             },
@@ -912,7 +912,11 @@ export function getToolDefinitions(
                   type: 'array',
                   items: {
                     type: 'object',
-                    properties: { low: { type: 'string' }, high: { type: 'string' }, description: { type: 'string' } },
+                    properties: {
+                      low: { type: 'string', maxLength: 10 },
+                      high: { type: 'string', maxLength: 10 },
+                      description: { type: 'string', maxLength: 60 },
+                    },
                     required: ['low'],
                   },
                 },
@@ -961,7 +965,7 @@ export function getToolDefinitions(
     tools.push({
       name: 'SAPActivate',
       description:
-        'Activate (publish) ABAP objects, single or batch. Type codes auto-normalized (e.g. "CLAS/OC" → CLAS). ' +
+        'Activate ABAP objects, single or batch. Type codes auto-normalized. REPT (PROG/PX) targets program text pools. ' +
         'ALWAYS prefer batch activation for 2+ objects — pass an "objects" array of {type, name}: one round-trip, works for any mix (required for interdependent RAP stacks, useful for unrelated objects too). ' +
         'publish_srvb/unpublish_srvb: publish or unpublish an OData service binding (SRVB).',
       inputSchema: {

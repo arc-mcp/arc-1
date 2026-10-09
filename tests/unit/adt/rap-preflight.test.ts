@@ -112,15 +112,30 @@ define behavior for ZI_TravelItem alias Item
     expect(result.warnings.some((f) => f.ruleId === 'BDEF_DUPLICATE_ETAG_MASTER_NAME')).toBe(true);
   });
 
-  it('flags unsupported DDLX annotation scope on on-prem 7.5x', () => {
-    const source = `@UI.headerInfo: { typeName: 'Travel' }
-annotate view ZC_Travel with {
-  travel_id;
-}`;
-    const result = validateRapSource('DDLX', source, { systemType: 'onprem', abapRelease: '758' });
-    expect(result.blocked).toBe(true);
-    expect(result.errors.some((f) => f.ruleId === 'DDLX_ANNOTATION_SCOPE_ONPREM_75X')).toBe(true);
-  });
+  for (const abapRelease of [undefined, 'unknown', '750', '752', '754', '758', '759', '816']) {
+    it.each(["@UI.headerInfo: { typeName: 'Travel' }", '@Search.searchable: true'])(
+      `allows supported DDLX annotation %s with release ${abapRelease}`,
+      (annotation) => {
+        const source = `@Metadata.layer: #CUSTOMER\n${annotation}\nannotate view ZC_Travel with {\n@UI.lineItem: [{ position: 10 }]\ntravel_id;\n}`;
+        const result = validateRapSource('DDLX', source, { systemType: 'onprem', abapRelease });
+        expect(result.blocked).toBe(false);
+        expect(result.errors).toEqual([]);
+        expect(result.warnings).toEqual([]);
+      },
+    );
+  }
+
+  it.each(["@ObjectModel.semanticKey: ['travel_id']", "@ObjectModel.text.element: ['description']"])(
+    'retains the on-prem ObjectModel scope guard for %s',
+    (annotation) => {
+      const result = validateRapSource('DDLX', `${annotation}\nannotate view ZC_Travel with {}`, {
+        systemType: 'onprem',
+        abapRelease: '758',
+      });
+      expect(result.blocked).toBe(true);
+      expect(result.errors.some((f) => f.ruleId === 'DDLX_ANNOTATION_SCOPE_ONPREM_75X')).toBe(true);
+    },
+  );
 
   it('detects duplicate DDLX UI annotations for the same field', () => {
     const source = `annotate view ZC_Travel with {
