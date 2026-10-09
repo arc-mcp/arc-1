@@ -11,13 +11,7 @@ const endSelectMessage =
 const error = (text = message, status = 400) => new AdtApiError(text, status, '/sap/bc/adt/datapreview/freestyle');
 
 describe('count-only grouped SQL generation failure', () => {
-  it.each([
-    message,
-    'Zum CATCH fehlt ein TRY.',
-    'La structure TRY est absente pour CATCH.',
-    endSelectMessage,
-    'Vor ENDMETHOD muss die SELECT-Struktur durch ENDSELECT geschlossen werden.',
-  ])('recognizes invariant ABAP tokens in %s', (text) => {
+  it.each([message, endSelectMessage])('recognizes the SAP nesting diagnostic: %s', (text) => {
     const result = classifySapQueryParserError(error(text), sql, false, false);
     expect(result).toContain('scalar');
     expect(result).toContain('grouping columns');

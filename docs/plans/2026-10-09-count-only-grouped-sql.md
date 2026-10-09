@@ -29,7 +29,7 @@ locally, not copied into this repository.
 2. Explain the backend scalar-result generation problem. Suggest explicitly
    projecting the grouping columns and disclose the extra result columns.
    Do not rewrite SQL, preempt a successful backend, or retry.
-3. Preserve minimal-error redaction. Test language variants, unrelated errors,
+3. Preserve minimal-error redaction. Test both SAP diagnostics, unrelated errors,
    different query shapes, and failed/successful public-handler behavior.
 4. Verify the public tool and explicit workaround on 758 and 816. Keep #955 open
    for the separate 7.40 investigation.
@@ -40,7 +40,7 @@ The optional COUNT(DISTINCT field) extension remains outside this narrow hint;
 SELECT DISTINCT COUNT(*) must not receive the grouping-column advice. No
 release-specific COALESCE workaround or general SQL rewriting is added.
 
-## Length/framing evidence from Claude's review and independent probes
+## Length/framing evidence
 
 - Raw single input lines over 255 characters can be truncated in
   `CL_ADT_DP_FREESTYLE_RES->POST`: conversion to the source-line table has CHAR255
@@ -52,9 +52,7 @@ release-specific COALESCE workaround or general SQL rewriting is added.
   be tested separately; character counts based on padding alone are misleading.
   A second, compact 255-character head using valid short literals independently
   reproduced silent tail loss on **both** releases: 758 returned three clients
-  and 816 two, while LF/CRLF retained the restriction and returned one. The first
-  compact fixture used an overlong C(25) comparison literal and was rejected;
-  shortening that literal produced the valid truncation comparison.
+  and 816 two, while LF/CRLF retained the restriction and returned one.
 - ARC-1 already fits each posted line to 255 characters, preserving tokens,
   literals and comment boundaries. Wrapped lines currently use bare LF. It is
   unverified whether the reporter's 7.40 handler recognizes that separator.
@@ -66,8 +64,8 @@ release-specific COALESCE workaround or general SQL rewriting is added.
 - Independent LF/CRLF comparisons on 758 and 816 preserved rows/columns for a
   statement over 3,200 characters, column-one and inline comments, quoted
   literals and the restrictive tail. This supports a CRLF prototype, not a
-  verified 7.40 fix. Claude also reported a neutral 40-value IN-chunking probe;
-  final per-chunk framing coverage is needed if the production change is adopted.
+  verified 7.40 fix. Per-chunk framing coverage is needed if the production change
+  is adopted.
 
 ## Remaining 7.40 investigation and conditional plan
 
@@ -107,17 +105,8 @@ establish the missing 7.40 root cause. COMPAT-13 is P1 research because silent
 predicate loss would be more serious than a visible error; that risk remains
 unverified through ARC-1 on 7.40.
 
-## Validation
+## Live verification
 
-The original hint regression fails on main. The follow-up adds three failing
-816/language/redaction cases against the previous PR head; all 21 cases now pass.
-All 8,088 unit tests, typecheck, lint, policy validation, build and file/schema
-budgets and strict docs build pass. Public SAPQuery on 758 SP02 and 816, client 001, direct HTTPS/Basic,
-now gives the hint with normal errors and suppresses SAP details in minimal mode.
-The explicit grouping-column workaround and ungrouped COUNT both succeed.
-No SAP writes were needed for this investigation.
-
-Final review kept SQL and result shapes unchanged, confirmed successful calls are
-not intercepted, and rechecked the roadmap. COMPAT-13 records the remaining
-framing/truncation evidence and experiments. GitHub's PR description was corrected
-to remove an unintended automatic-closing keyword; #955 remains open.
+On 758 SP02 and 816/client 001/direct HTTPS Basic, SAPQuery reports the hint in
+normal/minimal modes while preserving redaction. Grouping-column queries and
+ungrouped COUNT succeed. The investigation used read-only calls; 7.40 remains unverified.

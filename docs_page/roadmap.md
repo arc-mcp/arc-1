@@ -247,27 +247,16 @@ test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and B
 - **Priority / effort / status:** P1 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** [#955](https://github.com/arc-mcp/arc-1/issues/955) reports
-253-character SQL succeeding and 256-character SQL failing on two 7.40 systems,
-even with line breaks. No exact wire trace or authorized 7.40 target is available.
-Raw long lines can silently lose a trailing predicate during conversion to
-CHAR255 source lines; compact-query truncation is verified on 758 and 816. ARC-1 already wraps at 255, but
-uses LF. If 7.40 does not split LF, those wraps may not prevent truncation.
-The potential for incorrect rows makes this P1 research; ARC-1's behavior on
-7.40 remains unverified. [SAP Note 2807133](https://me.sap.com/notes/2807133)
-fixes CRLF/LF handling for 750–754, **not** 740. LF/CRLF controls pass on 758 and
-816; 816 additionally condenses spaces before conversion, so padded-query lengths
-are misleading. The available 750 freestyle endpoint returns 404. The separate
-short COUNT(*)/GROUP BY failure on 758/816 is not evidence of a length limit.
+**Remaining gap.** [#955](https://github.com/arc-mcp/arc-1/issues/955) reports a
+253/256-character boundary on 7.40 despite line breaks. ARC-1 wraps at 255 with LF;
+7.40's handling is unverified. Silent predicate loss on newer backends makes this
+P1 research; it does not establish the cause on 7.40.
 
-**Resume with.** Exact support-package/component versions and sanitized posted
-statements or authorized 7.40 access. Compare compact 254/255/256/300-character
-queries, LF versus CRLF, restrictive tails and different row caps; inspect returned
-rows and executed SQL for every posted chunk. Adopt CRLF only after verifying it
-addresses the failing target; otherwise establish the actual truncation/join stage
-before a narrow refusal. Avoid a guessed 250-character cap or automatic projection
-changes. See the
-[research and probe plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-count-only-grouped-sql.md).
+**Resume with.** Authorized 7.40 access or sanitized wire traces with exact SP,
+posted chunks, line endings, row caps and returned/executed SQL. Compare LF/CRLF
+and restrictive tails before choosing a workaround; do not guess a length cap.
+The [evidence and probe plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-count-only-grouped-sql.md)
+contains the SAP Note applicability, release differences and conditional fixes.
 
 <a id="compat-09"></a>
 ### COMPAT-09 — Exact lookup with decorated SAP object names
