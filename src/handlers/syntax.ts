@@ -57,7 +57,7 @@ function notChecked(result: SyntaxCheckResult, statusText: string | undefined): 
       messages: [
         {
           severity: 'error',
-          text: `Not checked — ${(statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated; create the object first (SAPWrite action="create"), then re-run the syntax check.`,
+          text: `Not checked — ${(statusText || 'SAP did not process this check').replace(/\.$/, '')}. The source was NOT validated. Verify the object type and name; create the object only if it does not exist (SAPWrite action="create"), then re-run the syntax check.`,
           line: 0,
           column: 0,
         },

@@ -215,6 +215,8 @@ describe('read-only syntax entry point', () => {
         });
         expect(body.messages).toHaveLength(1);
         expect(body.messages[0].text).toContain('Not checked');
+        expect(body.messages[0].text).toContain('Verify the object type and name');
+        expect(body.messages[0].text).toContain('create the object only if it does not exist');
         expect(String(gets()[0]?.[0])).toContain('/sap/bc/adt/programs/programs/ZTEST');
         expect(posts()).toHaveLength(0);
       },

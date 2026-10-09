@@ -30,8 +30,8 @@ checking atomic; the existing SAP result handling remains authoritative after it
 
 ## Verification
 
-The reviewed build passes 8,053 unit tests and all six local gates plus strict
-documentation build. The author implementation remains unchanged; added tests
+At `fba347ff`, the reviewed build passes 8,053 unit tests and all six local gates
+plus strict documentation build. The author implementation is unchanged there; added tests
 assert version-less metadata and exact source/version forwarding for both tools.
 
 Direct HTTPS Basic-auth handler probes on 750 SP02 and 758 SP02 confirm absent
@@ -47,4 +47,25 @@ These establish draft compatibility, not a proven inactive-only repository state
 750's freestyle data-preview endpoint returned 404, so repository-row inspection
 was limited to 758. No new PP/BTP/816 run or live 403/500 probe was available.
 
-Roadmap checked: no impact. FEAT-69 covers batch syntax checks, a separate feature.
+## Review follow-up
+
+Claude's review of `fba347ff` found no blocking implementation defect. Independent
+read-only 758 SP02 probes confirmed its two edge cases:
+
+- `BAPIRET2` metadata and source exist at `/ddic/structures`, while the table root
+  returns 404. Both `TABL` and `TABL/DS` syntax inputs use the table route. The
+  unchanged lower-level check reports `checked:true` with false table-definition
+  errors; the PR refuses validation. Its generic advice now asks callers to verify
+  type and name and create only if absent, instead of always recommending creation.
+- An absent PROG checked without source, including normalized empty source,
+  retains the lower-level result: `checked:true`, `hasErrors:true`, with SAP's
+  missing REPORT/PROGRAM message. This PR only probes checks with supplied source.
+
+No routing fallback, extra probe or new abstraction is added. The existing 404
+regressions cover the conditional advice through both public tools. These review
+probes made no SAP mutations. Claude also reported successful version-less metadata
+for a never-activated DDLS draft; that is additional reviewer evidence, not a new
+independent live run or a reason to generalize version behavior to every type.
+
+Roadmap: ARCH-01 now records the verified structure syntax-routing gap. Its scope,
+priority and resume trigger are unchanged; FEAT-69 remains a separate batch feature.
