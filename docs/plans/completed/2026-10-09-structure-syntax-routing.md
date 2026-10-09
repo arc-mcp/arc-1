@@ -23,18 +23,11 @@ framework for this bug. Fresh reads avoid stale type routes; no write resolver,
 package gate, schema or permission changes are needed. A non-404 failure still
 leaves the verdict to SAP's syntax reporter, matching the existing contract.
 
-## Validation
+## Live verification
 
-The new regression file failed against main (three failures) and passes with the
-shared-handler fix. All 8,074 unit tests, typecheck, lint, policy validation,
-build and file-size checks pass. Final diff review found no additional changes
-needed.
+Read-only checks on 750 SP02 and 758 SP02/client 001/HTTPS Basic passed for both
+public tools, both aliases, and stored/supplied BAPIRET2 source. Missing structures
+remain unvalidated; T000 still uses the table endpoint. No SAP objects changed.
 
-Live read-only checks on 7.50 and 7.58 passed for both public entry points,
-`TABL` and `TABL/DS`, and stored and supplied BAPIRET2 source (16 combinations).
-A nonexistent structure remains unvalidated on both releases. T000 on 7.58
-still checks through the table endpoint without errors. SAP warnings remain
-visible. No SAP objects were changed.
-
-ARCH-01 retains its general discovery-routing proposal; only the reproduced
+Roadmap: ARCH-01 retains the general discovery-routing proposal; only the verified
 structure-syntax gap is removed. Other endpoint families are outside this fix.
