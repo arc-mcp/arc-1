@@ -56,3 +56,20 @@ these class fixtures; existing behavior for omitted visibility is unchanged.
 
 Local raw evidence: 816-validation/implementation/api-visibility-public-*.json.
 Roadmap checked: no committed item changed; covers local audit recommendation R6.
+
+
+## Final cleanup audit limitation
+
+A later released-directory check on BTP found an APIS entry for the class used in
+the C4-after-C1 negative test after the class had returned 404. API_STATE reports
+no contracts and no release; ADT search finds no class. Earlier simple C1 fixtures
+have no matching directory entry. This associates the residue with the expanded
+negative sequence but does not establish its trigger or a supported repair.
+No job, native directory row, or other user's artifact was changed to remove it.
+Owner deletion is verified; complete package/directory cleanup is not claimed.
+Track the named local test residue and obtain a supported SAP repair before
+attempting package deletion. This is separate from the existing SUSH job-catalog
+residue. There is no proven ARC-1 payload correction for it at this point.
+
+Combined review with the other matrix fixes found a three-token BTP schema budget
+overrun; trimmed redundant contract help and retained every input field and limit.

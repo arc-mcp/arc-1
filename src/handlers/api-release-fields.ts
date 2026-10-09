@@ -18,6 +18,6 @@ export const API_RELEASE_FIELDS = {
     type: 'string',
     enum: ['C0', 'C1', 'C2', 'C3', 'C4'],
     description:
-      'set_api_state: contract (default C1); SRVD uses C0, classic VIEW uses C3. Unsupported choices report the supported contracts. SAP validates each contract and its visibility.',
+      'set_api_state: contract (default C1); SRVD uses C0, classic VIEW uses C3. Unsupported choices report supported contracts. SAP validates contract requirements.',
   },
 } as const;
