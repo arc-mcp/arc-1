@@ -228,4 +228,65 @@ describe('text elements via SAPRead/SAPWrite', () => {
       await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
     }, 60_000);
   }
+
+  // #940: a pool saved without activation (ARC-1 <= 1.5.1, SE38) must not outlive its deleted program.
+  for (const activated of [true, false]) {
+    it(`deletes ${activated ? 'an active' : 'a never-activated'} program and its pool draft without a REPOTEXT orphan`, async (ctx) => {
+      requireOrSkip(
+        ctx,
+        client.http.discoveryAcceptFor('/sap/bc/adt/textelements/programs'),
+        `${SkipReason.BACKEND_UNSUPPORTED}: ADT textelements/programs collection absent`,
+      );
+      const name = generateUniqueName('ZARC1_IT');
+      const objectUrl = `/sap/bc/adt/programs/programs/${name.toLowerCase()}`;
+      const poolUrl = `/sap/bc/adt/textelements/programs/${name.toLowerCase()}`;
+      const repotext = async () =>
+        (await client.runQuery(`SELECT progname, r3state FROM repotext WHERE progname = '${name}'`)).rows;
+      const program = {
+        action: 'create',
+        type: 'PROG',
+        name,
+        package: '$TMP',
+        source: `REPORT ${name.toLowerCase()}.\nPARAMETERS p_test TYPE c LENGTH 10.\nWRITE p_test.`,
+      };
+      await call('SAPWrite', program);
+      registry.register(objectUrl, 'PROG', name);
+      try {
+        if (activated) await call('SAPActivate', { type: 'PROG', name });
+        await client.http.withStatefulSession(async (session) => {
+          const lock = await lockObject(session, client.safety, poolUrl, 'MODIFY');
+          try {
+            const ct = 'application/vnd.sap.adt.textelements.selections.v1';
+            const url = `${poolUrl}/source/selections?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
+            await session.put(url, 'P_TEST=Draft label', ct, { Accept: ct });
+          } finally {
+            await unlockObject(session, poolUrl, lock.lockHandle);
+          }
+        });
+        expect(await repotext()).toContainEqual(expect.objectContaining({ R3STATE: 'I' }));
+
+        const result = await call('SAPWrite', { action: 'delete', type: 'PROG', name });
+        await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+        expect(await repotext()).toEqual([]);
+        expect(result).toBe(`Deleted PROG ${name} and its inactive text pool.`);
+      } finally {
+        // A regression can delete the program but leave its pool. Recover that orphan too.
+        if ((await repotext()).length > 0) {
+          try {
+            await client.http.get(objectUrl);
+          } catch (error) {
+            expect(error).toMatchObject({ statusCode: 404 });
+            await call('SAPWrite', program);
+          }
+          await call('SAPActivate', { type: 'PROG', name });
+          const result = await activate(client.http, client.safety, poolUrl, { preaudit: false, name });
+          expect(result.success, JSON.stringify(result)).toBe(true);
+          await call('SAPWrite', { action: 'delete', type: 'PROG', name });
+        }
+        await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+        expect(await repotext()).toEqual([]);
+        registry.remove(name);
+      }
+    }, 60_000);
+  }
 });
