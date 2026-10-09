@@ -7,7 +7,7 @@ import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
-const { writeActionEditTextSymbols } = await import('../../../src/handlers/write/update-delete.js');
+const { writeActionDelete, writeActionEditTextSymbols } = await import('../../../src/handlers/write/update-delete.js');
 const LOCK =
   '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H/9</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR></DATA></asx:values></asx:abap>';
 const calls = () => mockFetch.mock.calls as [string, RequestInit][];
@@ -430,6 +430,97 @@ describe('PROG delete with an inactive text pool (#940)', () => {
     expect((await del()).isError).toBe(true);
     expect(mutations()).toHaveLength(0);
   });
+
+  it.each([
+    ['LOCK', false],
+    ['LOCK', true],
+    ['DELETE', false],
+    ['DELETE', true],
+  ] as const)(
+    'reports the preceding pool activation when %s fails (minimalErrors=%s)',
+    async (failure, minimalErrors) => {
+      mockSap(feed(POOL_DRAFT));
+      const sap = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+        (failure === 'LOCK' ? String(url).includes('_action=LOCK') : init?.method === 'DELETE')
+          ? Promise.resolve(mockResponse(423, '<exc:exception><message>Object locked</message></exc:exception>'))
+          : sap(url, init),
+      );
+      const result = await del({ ...DEFAULT_CONFIG, minimalErrors });
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message.match(/Text-pool activation was requested before deletion failed/g)).toHaveLength(1);
+      expect(message).toContain('The texts may already be active.');
+      expect(message).toContain('Read the program and its text pool before retrying deletion.');
+      expect(steps()).toEqual(failure === 'LOCK' ? ['activate', 'LOCK'] : ['activate', 'LOCK', 'DELETE', 'UNLOCK']);
+      if (minimalErrors) expect(message).not.toContain('Object locked');
+      else expect(message).toContain('Object locked');
+    },
+  );
+
+  it('does not report pool activation when deletion fails without a pool draft', async () => {
+    mockSap(feed());
+    const sap = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+      init?.method === 'DELETE'
+        ? Promise.resolve(mockResponse(423, '<exc:exception><message>Object locked</message></exc:exception>'))
+        : sap(url, init),
+    );
+    const result = await del();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).not.toContain('Text-pool activation');
+    expect(steps()).toEqual(['LOCK', 'DELETE', 'UNLOCK']);
+  });
+
+  it.each(['activation', 'delete'])('invalidates caches even when %s fails', async (failure) => {
+    mockSap(feed(POOL_DRAFT));
+    const sap = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+      (failure === 'activation' ? String(url).includes('/activation?') : init?.method === 'DELETE')
+        ? Promise.resolve(mockResponse(500, '<exc:exception><message>Failed</message></exc:exception>'))
+        : sap(url, init),
+    );
+    const invalidateWrittenObject = vi.fn();
+    const ctx = {
+      client: createClient(),
+      type: 'PROG',
+      name: 'ZTEST',
+      objectUrl: '/sap/bc/adt/programs/programs/ztest',
+      enforcePackageForExistingObject: vi.fn().mockResolvedValue('$TMP'),
+      invalidateWrittenObject,
+    } as unknown as SapWriteContext;
+    await expect(writeActionDelete(ctx)).rejects.toMatchObject({ statusCode: 500 });
+    expect(invalidateWrittenObject).toHaveBeenCalledOnce();
+  });
+
+  it.each(['write ceiling', 'delete deny', 'package'])(
+    'refuses before pool activation for a denied %s',
+    async (gate) => {
+      mockSap(feed(POOL_DRAFT));
+      const client = createClient();
+      if (gate === 'write ceiling') client.safety.allowWrites = false;
+      if (gate === 'package') {
+        client.safety.allowedPackages = ['$TMP'];
+        mockFetch.mockResolvedValue(
+          mockResponse(
+            200,
+            '<adtcore:object xmlns:adtcore="http://www.sap.com/adt/core"><adtcore:packageRef adtcore:name="ZPROTECTED"/></adtcore:object>',
+          ),
+        );
+      }
+      const config = { ...DEFAULT_CONFIG, denyActions: gate === 'delete deny' ? ['SAPWrite.delete'] : [] };
+      const result = await handleToolCall(client, config, 'SAPWrite', {
+        action: 'delete',
+        type: 'PROG',
+        name: 'ZTEST',
+        package: '$TMP',
+      });
+      expect(result.isError).toBe(true);
+      expect(mutations()).toHaveLength(0);
+      if (gate === 'delete deny') expect(mockFetch).not.toHaveBeenCalled();
+      if (gate === 'package') expect(result.content[0]?.text).toContain('ZPROTECTED');
+    },
+  );
 
   it.each(['CLAS', 'FUGR'])('does not read the inactive list for a %s delete', async (type) => {
     mockSap(feed(POOL_DRAFT));

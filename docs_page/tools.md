@@ -1059,7 +1059,9 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   separately saved text-pool draft, which then drops off the inactive-object list and is inherited
   by any later program with the same name. `SAPWrite(action="delete", type="PROG")` therefore first
   activates the program's pool draft when your inactive objects list it. If that activation fails,
-  nothing is deleted; if the delete then fails, the texts stay activated. To clear an orphan left
+  nothing is deleted; if the delete then fails, its error warns that the texts may already be active
+  and asks you to read the program and its text pool before retrying. Only your own inactive objects
+  are checked; drafts saved by another user are not detected. To clear an orphan left
   by an earlier delete, create a program with the same name, activate it with
   `SAPActivate(type="PROG")`, then delete it.
 - **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent

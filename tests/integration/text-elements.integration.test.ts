@@ -194,13 +194,14 @@ describe('text elements via SAPRead/SAPWrite', () => {
       const poolUrl = `/sap/bc/adt/textelements/programs/${name.toLowerCase()}`;
       const repotext = async () =>
         (await client.runQuery(`SELECT progname, r3state FROM repotext WHERE progname = '${name}'`)).rows;
-      await call('SAPWrite', {
+      const program = {
         action: 'create',
         type: 'PROG',
         name,
         package: '$TMP',
         source: `REPORT ${name.toLowerCase()}.\nPARAMETERS p_test TYPE c LENGTH 10.\nWRITE p_test.`,
-      });
+      };
+      await call('SAPWrite', program);
       registry.register(objectUrl, 'PROG', name);
       try {
         if (activated) await call('SAPActivate', { type: 'PROG', name });
@@ -216,19 +217,27 @@ describe('text elements via SAPRead/SAPWrite', () => {
         });
         expect(await repotext()).toContainEqual(expect.objectContaining({ R3STATE: 'I' }));
 
-        expect(await call('SAPWrite', { action: 'delete', type: 'PROG', name })).toBe(
-          `Deleted PROG ${name} and its inactive text pool.`,
-        );
-        registry.remove(name);
+        const result = await call('SAPWrite', { action: 'delete', type: 'PROG', name });
         await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
         expect(await repotext()).toEqual([]);
+        expect(result).toBe(`Deleted PROG ${name} and its inactive text pool.`);
       } finally {
-        if (registry.getAll().some((entry) => entry.name === name)) {
-          // best-effort-cleanup: activate the pool first so the harness delete cannot orphan it.
-          await activate(client.http, client.safety, poolUrl, { preaudit: false, name }).catch((error) =>
-            console.warn(`Could not activate the text pool of ${name}`, error),
-          );
+        // A regression can delete the program but leave its pool. Recover that orphan too.
+        if ((await repotext()).length > 0) {
+          try {
+            await client.http.get(objectUrl);
+          } catch (error) {
+            expect(error).toMatchObject({ statusCode: 404 });
+            await call('SAPWrite', program);
+          }
+          await call('SAPActivate', { type: 'PROG', name });
+          const result = await activate(client.http, client.safety, poolUrl, { preaudit: false, name });
+          expect(result.success, JSON.stringify(result)).toBe(true);
+          await call('SAPWrite', { action: 'delete', type: 'PROG', name });
         }
+        await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+        expect(await repotext()).toEqual([]);
+        registry.remove(name);
       }
     }, 60_000);
   }
