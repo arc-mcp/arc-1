@@ -1,7 +1,7 @@
 # Plan: create BAdI enhancement implementations (`ENHO/XHB`) via SAPWrite
 
 > **Status (2026-10-08): implemented on-prem, including filter values, and enabled on BTP for C1-released
-> BAdIs (BTP live re-test pending).** The sections below are the original plan; where they differ, the code,
+> BAdIs (re-tested live on-prem and on BTP, 2026-10-09).** The sections below are the original plan; where they differ, the code,
 > [docs_page/tools.md](../../docs_page/tools.md) and the
 > [write contract](../research/2026-10-07-enho-xhb-write-contract.md) are current.
 

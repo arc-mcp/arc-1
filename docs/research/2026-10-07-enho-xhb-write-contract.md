@@ -2,8 +2,9 @@
 
 Status: **implemented; live-verified on SAP_BASIS 816 on-prem (2026-10-07) in `$TMP` and in a transportable
 package with a transport request, and on a second 816 system across several modules (2026-10-08). Enabled on
-BTP on 2026-10-08 after the trial run below; the BTP re-test of the final code is pending.** The create
-sequence follows a captured Eclipse ADT create; the payload is derived from SAP's own GET serialization.
+BTP on 2026-10-08; the final code was re-tested on-prem (ABAP Classic and ABAP Cloud) and on BTP
+(2026-10-09).** The create sequence follows a captured Eclipse ADT create; the payload is derived from SAP's
+own GET serialization.
 
 ## Why
 
@@ -211,11 +212,34 @@ Fixed after this run:
   Z/Y create for such a spot before the POST; the live retry left no TADIR entry. For a Z/Y create the spot
   read is therefore required, also without implementations; a failed read stops the create.
 
+### Re-test of the final code: ABAP Classic, ABAP Cloud and BTP (2026-10-09)
+
+Head `1892b7d8`, through the real tool dispatcher.
+
+On-prem (the second 816 system), one classic package and one package whose ABAP language version was set to
+"ABAP for Cloud Development" in Eclipse (`pak:languageVersion="5"`; ARC-1 cannot set it yet):
+
+- Classic: a released and an unreleased BAdI (with filter), update, activation, `batch_create` with its class.
+  The stored `abapLanguageVersion` stayed `standard`; a stored filter survived an update without `filter`
+  while the short text contained `/>` (SAP stores `>` as `&gt;`, so the attribute-regex fix is a safeguard);
+  `O_APPL = <>` and an internal-spot create without implementations were refused before any write, the latter
+  without a TADIR entry.
+- ABAP Cloud: classes and ENHOs created there got `cloudDevelopment` from the package. Released BAdIs (one with
+  a filter that changed) created, updated and activated; the version stayed `cloudDevelopment` after every
+  update. An unreleased BAdI was saved but refused at activation: "The use of BAdI Definition … is not
+  permitted". `switchSupported` reads `false` in that package.
+- Writing SAPRead's JSON back changed nothing in SAP's stored XML in either package.
+
+BTP trial: the ENHO test in `tests/integration/btp-tool-dispatch.integration.test.ts` passed for
+`ADDRESS_PRINT_FORMAT` with `RECEIVER_COUNTRY = 'DE'` and for `BADI_IAM_BUSINESS_USER` without filter
+(create → read back → activate → update → `cloudDevelopment` kept → activate → delete).
+
+All test objects were deleted.
+
 ## Open points
 
-1. Re-test the final code live (planned): on-prem, an update must keep a stored
-   `adtcore:abapLanguageVersion` (ARC-1 now re-sends it, 2026-10-08; untested on an ABAP-for-Cloud object);
-   on BTP, the lifecycle in `tests/integration/btp-tool-dispatch.integration.test.ts` with a C1 BAdI.
+1. Setting an object's or package's ABAP language version is not possible through ARC-1 (roadmap); the cloud
+   package above was switched in Eclipse.
 2. Optional: Eclipse's `…/enhoxhb/validation` and `transportchecks` calls before the create; ARC-1 resolves the
    transport itself and relies on activation for consistency checks.
 
