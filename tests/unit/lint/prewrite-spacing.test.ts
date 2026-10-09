@@ -39,6 +39,19 @@ describe('pre-write spacing findings (#954)', () => {
     expect(result.errors).toContainEqual(expect.objectContaining({ rule: 'parser_error' }));
   });
 
+  it('also warns for spacing SAP rejects; pre-write lint does not replace activation', () => {
+    const result = validateBeforeWrite(
+      source.replace('rv_count = 1.', "IF ('bar' = 'bar' ). ENDIF."),
+      filename,
+      options,
+    );
+    expect(result.pass).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ rule: 'parser_missing_space', severity: 'warning' }),
+    );
+  });
+
   it('honors an explicit administrator severity override', () => {
     const result = validateBeforeWrite(source, filename, {
       ...options,
