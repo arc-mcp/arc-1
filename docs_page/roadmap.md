@@ -71,11 +71,11 @@ sequence.
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
+| [COMPAT-13](#compat-13) | NW 7.40 freestyle SQL length boundary | P2 | S | Needs research | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [COMPAT-12](#compat-12) | Program deletion with another user's text draft | P3 | S | Needs research | Compatibility |
-| [COMPAT-13](#compat-13) | NW 7.40 freestyle SQL length boundary | P2 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
@@ -241,6 +241,26 @@ misleading.
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/http-forward-proxy-env-support.md);
 test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and BTP isolation.
 
+<a id="compat-13"></a>
+### COMPAT-13 — NW 7.40 freestyle SQL length boundary
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** [#955](https://github.com/arc-mcp/arc-1/issues/955) reports
+253-character SQL succeeding and 256-character SQL failing on two 7.40 systems,
+even with line breaks. No exact wire trace or authorized 7.40 target is available.
+The 7.58 control accepts 3,200-character statements; the available 7.50 target's
+freestyle endpoint returns 404. Neither establishes the failing release boundary.
+The separate short COUNT(*)/GROUP BY failure is independently reproduced on 7.58;
+do not use it as evidence for a length limit.
+
+**Resume with.** Exact support-package/component versions and sanitized posted
+statements or authorized 7.40 access. Measure each actual chunk, line endings and
+row caps before choosing a narrow refusal or workaround. Avoid a guessed
+250-character cap or automatic projection changes. See the
+[research and probe plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-count-only-grouped-sql.md).
+
 <a id="compat-09"></a>
 ### COMPAT-09 — Exact lookup with decorated SAP object names
 
@@ -291,26 +311,6 @@ CDS set operations contain structural nodes outside the current kind allowlist. 
 **Resume with.** Captured graphs for classic/view-entity UNION, EXCEPT and INTERSECT where supported;
 define structural-node identity and traversal without mistaking branch labels for data-source names.
 Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
-
-<a id="compat-13"></a>
-### COMPAT-13 — NW 7.40 freestyle SQL length boundary
-
-- **Priority / effort / status:** P2 / S / Needs research
-- **Category:** Compatibility
-
-**Remaining gap.** [#955](https://github.com/arc-mcp/arc-1/issues/955) reports
-253-character SQL succeeding and 256-character SQL failing on two 7.40 systems,
-even with line breaks. No exact wire trace or authorized 7.40 target is available.
-The 7.58 control accepts 3,200-character statements; the available 7.50 target's
-freestyle endpoint returns 404. Neither establishes the failing release boundary.
-The separate short COUNT(*)/GROUP BY failure is independently reproduced on 7.58;
-do not use it as evidence for a length limit.
-
-**Resume with.** Exact support-package/component versions and sanitized posted
-statements or authorized 7.40 access. Measure each actual chunk, line endings and
-row caps before choosing a narrow refusal or workaround. Avoid a guessed
-250-character cap or automatic projection changes. See the
-[research and probe plan](../docs/plans/2026-10-09-count-only-grouped-sql.md).
 
 <a id="compat-12"></a>
 ### COMPAT-12 — Program deletion with another user's text draft
