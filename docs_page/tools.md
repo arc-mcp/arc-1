@@ -75,7 +75,10 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 Prefer `SAPRead(type="SYNTAX", objectType="CLAS", name="ZCL_ORDER")` for a SAP syntax check.
 Use `version="inactive"` after saving a draft, or pass `source` to check proposed text without
 saving it. Omission checks the active version. The object must already exist; `checked:false`
-means SAP did not validate it, even if there are no native findings. This does not activate or
+means SAP did not validate it, even if there are no native findings. With `source`, ARC-1 first
+reads the object's metadata and returns `checked:false` when SAP answers `404`: for an absent
+program SAP would otherwise check the text as a standalone include without program attributes
+(fixed-point arithmetic off) and report false errors such as every `@` host variable. This does not activate or
 execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..., name=...)` route.
 
 Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `objectType` are required;
