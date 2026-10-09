@@ -126,6 +126,12 @@ ARC-1 still constructs a known URL directly.
 to `resolveSourceUrl()` with deterministic fallbacks and release-aware tests. This is the remaining
 useful part of the former "remove static release gates" proposal; it should not be tracked twice.
 
+One reproduced gap is syntax checking DDIC structures: `TABL` and `TABL/DS` both
+route to `/ddic/tables`, although `BAPIRET2` exists under `/ddic/structures` on 758.
+The [#951 review](https://github.com/arc-mcp/arc-1/pull/951)
+records the incorrect compiler result before its existence guard and the refusal afterward.
+Resolving the correct structure endpoint remains separate from that guard.
+
 **Resume with.** Start with the six object families identified in
 [the implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-05-08-discovery-driven-endpoint-routing.md).
 Preserve known-good fallbacks, cache discovery per target, and prove behavior on at least two SAP

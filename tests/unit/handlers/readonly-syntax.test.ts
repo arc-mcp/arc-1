@@ -21,8 +21,10 @@ beforeEach(() => {
   resetCachedFeatures();
   mockFetch.mockReset();
   mockFetch.mockImplementation(async (_url, options) => {
-    expect(['HEAD', 'POST']).toContain(options?.method);
+    expect(['GET', 'HEAD', 'POST']).toContain(options?.method);
     if (options?.method === 'POST') expect(String(_url)).toContain('/sap/bc/adt/checkruns');
+    // Unsaved-source checks first confirm the object exists via its metadata root.
+    if (options?.method === 'GET') expect(String(_url)).not.toContain('/checkruns');
     return mockResponse(200, options?.method === 'POST' ? fixture : '', { 'x-csrf-token': 't' });
   });
 });
@@ -183,6 +185,72 @@ describe('read-only syntax entry point', () => {
     const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPRead', args, reader);
     expect(JSON.parse(result.content[0].text)).toMatchObject({ checked: false, hasErrors: true });
     expect(result.content[0].text).toContain('Not checked');
+  });
+
+  describe('unsaved source for an object that may not exist', () => {
+    // SAP checks unsaved text for an absent PROG as a standalone include with fixed-point arithmetic
+    // off and reports it as processed (live on SAP_BASIS 750 and 758) — so ARC-1 must ask first.
+    const unsaved = { ...args, source: 'REPORT ztest.\nSELECT SINGLE land1 FROM t005 INTO @DATA(lv_land).' };
+    const answerMetadata = (status: number) =>
+      mockFetch.mockImplementation(async (_url, options) =>
+        options?.method === 'GET'
+          ? mockResponse(status, '', {})
+          : mockResponse(200, options?.method === 'POST' ? fixture : '', { 'x-csrf-token': 't' }),
+      );
+    const posts = () => mockFetch.mock.calls.filter(([, options]) => options?.method === 'POST');
+    const gets = () => mockFetch.mock.calls.filter(([, options]) => options?.method === 'GET');
+
+    it.each(['SAPRead', 'SAPDiagnose'])(
+      'reports not checked without sending the text when %s finds no object',
+      async (tool) => {
+        answerMetadata(404);
+        const toolArgs =
+          tool === 'SAPRead' ? unsaved : { action: 'syntax', type: 'PROG', name: 'ZTEST', source: unsaved.source };
+        const result = await handleToolCall(client(), DEFAULT_CONFIG, tool, toolArgs, reader);
+        const body = JSON.parse(result.content[0].text);
+        expect(body).toMatchObject({
+          checked: false,
+          hasErrors: true,
+          statusText: 'PROG ZTEST was not found at /sap/bc/adt/programs/programs/ZTEST',
+        });
+        expect(body.messages).toHaveLength(1);
+        expect(body.messages[0].text).toContain('Not checked');
+        expect(body.messages[0].text).toContain('Verify the object type and name');
+        expect(body.messages[0].text).toContain('create the object only if it does not exist');
+        expect(String(gets()[0]?.[0])).toContain('/sap/bc/adt/programs/programs/ZTEST');
+        expect(posts()).toHaveLength(0);
+      },
+    );
+
+    it.each([403, 500])('leaves the verdict to SAP when the existence probe fails with %i', async (status) => {
+      answerMetadata(status);
+      const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPRead', unsaved, reader);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ checked: true, hasErrors: true });
+      expect(posts()).toHaveLength(1);
+    });
+
+    it.each(['SAPRead', 'SAPDiagnose'])('uses version-less metadata before %s checks supplied text', async (tool) => {
+      for (const version of ['active', 'inactive'] as const) {
+        mockFetch.mockClear();
+        const toolArgs =
+          tool === 'SAPRead' ? unsaved : { action: 'syntax', type: 'PROG', name: 'ZTEST', source: unsaved.source };
+        const result = await handleToolCall(client(), DEFAULT_CONFIG, tool, { ...toolArgs, version }, reader);
+        expect(JSON.parse(result.content[0].text)).toMatchObject({ checked: true });
+        expect(gets()).toHaveLength(1);
+        const probe = new URL(String(gets()[0][0]));
+        expect(probe.pathname).toBe('/sap/bc/adt/programs/programs/ZTEST');
+        expect(probe.searchParams.has('version')).toBe(false);
+        expect(posts()).toHaveLength(1);
+        expect(posts()[0][1]?.body).toContain(`chkrun:version="${version}"`);
+        expect(posts()[0][1]?.body).toContain(Buffer.from(unsaved.source).toString('base64'));
+      }
+    });
+
+    it.each([{}, { version: 'inactive' }])('does not probe stored-version checks %j', async (options) => {
+      await handleToolCall(client(), DEFAULT_CONFIG, 'SAPRead', { ...args, ...options }, reader);
+      expect(gets()).toHaveLength(0);
+      expect(posts()).toHaveLength(1);
+    });
   });
 
   it.each(['onprem', 'btp'] as const)(
