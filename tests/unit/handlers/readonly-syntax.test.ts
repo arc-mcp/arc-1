@@ -227,11 +227,21 @@ describe('read-only syntax entry point', () => {
       expect(posts()).toHaveLength(1);
     });
 
-    it('sends the text once the object root answers', async () => {
-      const result = await handleToolCall(client(), DEFAULT_CONFIG, 'SAPRead', unsaved, reader);
-      expect(JSON.parse(result.content[0].text)).toMatchObject({ checked: true });
-      expect(gets()).toHaveLength(1);
-      expect(posts()).toHaveLength(1);
+    it.each(['SAPRead', 'SAPDiagnose'])('uses version-less metadata before %s checks supplied text', async (tool) => {
+      for (const version of ['active', 'inactive'] as const) {
+        mockFetch.mockClear();
+        const toolArgs =
+          tool === 'SAPRead' ? unsaved : { action: 'syntax', type: 'PROG', name: 'ZTEST', source: unsaved.source };
+        const result = await handleToolCall(client(), DEFAULT_CONFIG, tool, { ...toolArgs, version }, reader);
+        expect(JSON.parse(result.content[0].text)).toMatchObject({ checked: true });
+        expect(gets()).toHaveLength(1);
+        const probe = new URL(String(gets()[0][0]));
+        expect(probe.pathname).toBe('/sap/bc/adt/programs/programs/ZTEST');
+        expect(probe.searchParams.has('version')).toBe(false);
+        expect(posts()).toHaveLength(1);
+        expect(posts()[0][1]?.body).toContain(`chkrun:version="${version}"`);
+        expect(posts()[0][1]?.body).toContain(Buffer.from(unsaved.source).toString('base64'));
+      }
     });
 
     it.each([{}, { version: 'inactive' }])('does not probe stored-version checks %j', async (options) => {
