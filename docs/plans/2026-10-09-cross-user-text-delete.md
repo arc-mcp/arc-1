@@ -72,11 +72,11 @@ Full checks, combined-tree review, then a PR stacked on #959.
   only after DELETE was actually attempted. Write ceiling is checked before locks.
 - 8,077 unit tests / 269 files pass, including 65 text-element cases. Typecheck,
   lint, policy validation, build, file/schema budgets, documentation build pass.
-  Tests cover malformed metadata, unknown version, foreign identity/name/type,
+  Tests cover malformed metadata, unknown version, foreign pool name/type,
   403/404/406/500, lock/delete/unlock failure, minimal errors, namespace encoding,
   package/write/deny gates, transport propagation and unchanged class deletion.
 
 Remaining native qualification is COMPAT-12's shared recording transport and PP
 route; neither is inferred from this Basic-auth local-package evidence. No further
-ARC-1 defect was found in the final reviewed guard. The native empty-activation
-limitation remains explicit rather than being hidden by a successful HTTP result.
+ARC-1 defect was found in the final reviewed guard. COMPAT-15 tracks the native empty-activation
+limitation; it remains explicit rather than being hidden by a successful HTTP result.
