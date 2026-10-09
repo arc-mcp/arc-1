@@ -1077,7 +1077,7 @@ writes and cleanup.
 
 ## SAPActivate
 
-Activate (publish) ABAP objects. Supports single object or batch activation.
+Activate ABAP objects. Supports single object or batch activation.
 
 **Parameters:**
 

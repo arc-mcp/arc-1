@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-05
+**Last reviewed:** 2026-10-09
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -74,6 +74,7 @@ sequence.
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
+| [COMPAT-12](#compat-12) | Prevent orphaned program text drafts on deletion | P2 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
@@ -282,6 +283,25 @@ CDS set operations contain structural nodes outside the current kind allowlist. 
 **Resume with.** Captured graphs for classic/view-entity UNION, EXCEPT and INTERSECT where supported;
 define structural-node identity and traversal without mistaking branch labels for data-source names.
 Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
+
+<a id="compat-12"></a>
+### COMPAT-12 — Prevent orphaned program text drafts on deletion
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** On SAP_BASIS 758, deleting an active program with a separately
+saved inactive text pool leaves a REPOTEXT state I row after the program and its
+inactive tracking disappear. [#946](https://github.com/arc-mcp/arc-1/pull/946) requests
+activation on text writes; [#949](https://github.com/arc-mcp/arc-1/pull/949) enables
+explicit pool activation. Neither guards deletion of an existing text draft.
+[#940](https://github.com/arc-mcp/arc-1/issues/940) remains open for this gap;
+see the [reproduction and recovery evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/abap-types/types/rept.md#remaining-deletion-gap--sap_basis-758-sp02-2026-10-09).
+
+**Resume with.** Verify SAP's supported handling of pending text drafts before
+program deletion. Choose a bounded refusal or supported cleanup without silently
+activating source or discarding another user's draft. Test active-only, new and
+draft-bearing programs, lock races, package gates and cleanup across releases.
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening

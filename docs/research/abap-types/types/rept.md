@@ -32,3 +32,24 @@ Accordingly, an accepted REPT request is reported as requested, not proof of
 active state. Discovery gates systems without the text-element service.
 No class/function-group slash codes or cross-release support are inferred
 from this program evidence. Fixture deletion and zero REPOTEXT rows verified.
+
+## Remaining deletion gap — SAP_BASIS 758 SP02, 2026-10-09
+
+Reproduced independently at `9e6c99af` using HTTPS/Basic, client 001 and the
+`$TMP` allowlist: create and activate a disposable PROG, then lock/PUT/unlock
+its pool directly without activation. `SAPWrite(action="delete", type="PROG")`
+reports deletion and the program GET returns 404, but REPOTEXT retains state I.
+The inactive-object list no longer includes it, and `SAPActivate(REPT)` fails
+at the pool metadata GET with 404. Activation routing cannot recover that orphan.
+
+Recreating the same name retains an inactive REPOTEXT row. Default and explicit
+inactive selection-text reads returned empty; stale text becoming visible or active
+was not established. Each fixture was recovered by recreating only its own name,
+activating program and pool, then deleting it. Zero rows remained in REPOTEXT,
+REPOSRC, DWINACTIV, TADIR and TRDIR; the program GET returned 404.
+
+This is a separate deletion gap in [#940](https://github.com/arc-mcp/arc-1/issues/940),
+tracked as [COMPAT-12](../../../../docs_page/roadmap.md#compat-12).
+Do not close #940 solely because explicit activation now works. A delete safeguard
+needs research into SAP's supported draft handling, including concurrency and
+other users' drafts; automatic activation of an owner's source is not a solution.
