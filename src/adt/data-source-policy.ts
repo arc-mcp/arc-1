@@ -130,7 +130,14 @@ export class DataSourcePolicyError extends AdtSafetyError {
  */
 const CDS_VIEW_KINDS = ['CDS_VIEW', 'CDS_VIEW_ENTITY', 'CDS_PROJECTION_VIEW'] as const;
 export const SQL_NODE_KINDS = [...CDS_VIEW_KINDS, 'TABLE', 'CDS_TABLE_FUNCTION'] as const;
-export type SqlNodeKind = (typeof SQL_NODE_KINDS)[number];
+export type SqlNodeKind = (typeof SQL_NODE_KINDS)[number] | 'TABLE_ENTITY';
+
+/** Internal proof request; an empty TYPE is never an authorization. */
+class TableEntityCandidate extends DataSourceLineageError {
+  constructor(readonly entity: string) {
+    super(`CDS dependency graph node ${entity} is missing TYPE; active table-entity proof is required`);
+  }
+}
 
 /**
  * The EXACT auxiliary chain SAP emits for access-control metadata, verified live on 758/816 for the
@@ -181,6 +188,7 @@ export interface DataSourcePolicyBackend {
   readTableReplacement(name: string): Promise<TableReplacement | PhysicalTableContainer | undefined>;
   dependencyGraphAccept(): string | undefined;
   readDependencyGraph(path: string, accept: string): Promise<string>;
+  readActiveDdlMetadata?(name: string): Promise<string>;
 }
 
 /** Request-scoped adapter from ADT metadata reads to the pure lineage evaluator. */
@@ -399,6 +407,65 @@ export class DataSourceBlocklistGuard {
     return { kind: 'unknown', name };
   }
 
+  private async proveTableEntity(name: string): Promise<CdsDependencyNode> {
+    if (!this.backend.readActiveDdlMetadata) throw new DataSourceLineageError('active DDLS metadata is unavailable');
+    const resolved = await this.resolveDirectSource(name);
+    if (resolved.kind !== 'cds' || resolved.ddlSource !== name) {
+      throw new DataSourceLineageError('table entity requires an unambiguous matching entity and DDLS identity');
+    }
+    this.metadataRequests += 1;
+    const xml = await this.backend.readActiveDdlMetadata(name);
+    if (xml.length > MAX_GRAPH_XML_CHARS) throw new DataSourceLineageError('DDLS metadata exceeds input limit');
+    const raw = asRecord((graphParser.parse(xml) as Record<string, unknown>).ddlSource);
+    if (
+      !raw ||
+      attribute(raw, 'name')?.toUpperCase() !== name ||
+      attribute(raw, 'type') !== 'DDLS/DF' ||
+      attribute(raw, 'version') !== 'active' ||
+      attribute(raw, 'source_type') !== 'table entity'
+    ) {
+      throw new DataSourceLineageError(`active DDLS metadata did not prove table entity ${name}`);
+    }
+    return { name, aliases: [name], kind: 'TABLE_ENTITY', databaseExists: true, accessControlled: false, children: [] };
+  }
+
+  private async parseProvenGraph(xml: string): Promise<CdsDependencyNode> {
+    const candidates = new Set<string>();
+    let graph: CdsDependencyNode;
+    for (;;) {
+      try {
+        // Classify the complete shape before doing proof reads. This tree is local only:
+        // no caller can authorize it until every candidate has been proven below.
+        graph = parseCdsDependencyGraph(xml, candidates);
+        break;
+      } catch (error) {
+        if (!(error instanceof TableEntityCandidate)) throw error;
+        if (candidates.size >= MAX_DIRECT_SOURCES)
+          throw new DataSourceLineageError('table-entity proof limit exceeded');
+        candidates.add(error.entity);
+      }
+    }
+    const blocked = new Set(this.blockedSources.map((name) => canonicalDataSourceName(name)));
+    const checkBlocked = (node: CdsDependencyNode, path: string[]): void => {
+      const matched = node.aliases.find((alias) => blocked.has(canonicalDataSourceName(alias)));
+      if (matched) {
+        throw new DataSourcePolicyError(
+          'DATA_SOURCE_BLOCKED',
+          graph.name,
+          path,
+          `exact source ${matched} matches the configured blocklist`,
+          { matchedSource: matched },
+        );
+      }
+      for (const child of node.children) checkBlocked(child, [...path, child.name]);
+    };
+    // A known blocked sibling needs no metadata proof and remains the useful denial reason
+    // even when SAP would refuse the first table entity's metadata request.
+    checkBlocked(graph, [graph.name]);
+    for (const name of candidates) await this.proveTableEntity(name);
+    return graph;
+  }
+
   private async readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode> {
     const collection = CDS_DEPENDENCY_GRAPH_PATH;
     const requestGraph = async (accept: string): Promise<CdsDependencyNode> => {
@@ -408,9 +475,20 @@ export class DataSourceBlocklistGuard {
       // drives the element-info fallback below.
       if (/SQLDependencyModel/i.test(accept)) params.set('addMetrics', 'false');
       this.metadataRequests += 1;
-      const graph = parseCdsDependencyGraph(
-        await this.backend.readDependencyGraph(`${collection}?${params.toString()}`, accept),
-      );
+      let graph: CdsDependencyNode;
+      try {
+        graph = await this.parseProvenGraph(
+          await this.backend.readDependencyGraph(`${collection}?${params.toString()}`, accept),
+        );
+      } catch (error) {
+        if (
+          !(error instanceof AdtApiError) ||
+          error.statusCode !== 400 ||
+          !/<type\s+id="NoDependencyGraphDataCalculationPossible"\s*\/>/.test(error.responseBody ?? '')
+        )
+          throw error;
+        graph = await this.proveTableEntity(ddlSource);
+      }
       const count = (node: CdsDependencyNode): number => 1 + node.children.reduce((n, c) => n + count(c), 0);
       this.graphNodes += count(graph);
       return graph;
@@ -469,7 +547,7 @@ function parseProperties(node: Record<string, unknown>): Map<string, string> {
  * classification is the primary boundary here — a later failed table-source read is defence in depth,
  * not the protection.
  */
-export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
+export function parseCdsDependencyGraph(xml: string, provenTableEntities?: ReadonlySet<string>): CdsDependencyNode {
   if (xml.length > MAX_GRAPH_XML_CHARS) {
     throw new DataSourceLineageError(`CDS dependency graph exceeds input limit ${MAX_GRAPH_XML_CHARS} characters`);
   }
@@ -534,16 +612,34 @@ export function parseCdsDependencyGraph(xml: string): CdsDependencyNode {
     countNode(depth);
 
     const properties = parseProperties(raw);
-    const declared = properties.get('TYPE')?.trim().toUpperCase();
+    let declared = properties.get('TYPE')?.trim().toUpperCase();
+    let provenName: string | undefined;
+    if (
+      declared === '' &&
+      !attribute(raw, 'name') &&
+      !attribute(raw, 'type') &&
+      rawChildren(raw).length === 0 &&
+      ['FROM', 'INNER_JOIN'].includes(properties.get('RELATION') ?? '') &&
+      properties.get('AC_STATE') === 'NA' &&
+      !properties.has('DB_EXISTS')
+    ) {
+      const entity = canonicalDataSourceName(properties.get('ENTITY_NAME') ?? '');
+      if (entity !== canonicalDataSourceName(properties.get('NODE_NAME') ?? '')) {
+        throw new DataSourceLineageError('untyped graph leaf has conflicting identities');
+      }
+      if (!provenTableEntities?.has(entity)) throw new TableEntityCandidate(entity);
+      declared = 'TABLE_ENTITY';
+      provenName = entity;
+    }
     if (!declared) {
       throw new DataSourceLineageError('CDS dependency graph node is missing TYPE');
     }
-    if (!(SQL_NODE_KINDS as readonly string[]).includes(declared)) {
+    if (!provenName && !(SQL_NODE_KINDS as readonly string[]).includes(declared)) {
       throw new DataSourceLineageError(`CDS dependency graph node declares unsupported kind ${declared}`);
     }
     const kind = declared as SqlNodeKind;
 
-    const rawName = attribute(raw, 'name');
+    const rawName = provenName ?? attribute(raw, 'name');
     if (!rawName) throw new DataSourceLineageError('CDS dependency graph node is missing its name');
     let name: string;
     try {
@@ -788,7 +884,16 @@ export async function enforceBlockedDataSources(
     }
 
     checkBlocked(directSource, path, [canonicalDataSourceName(resolved.ddlSource)]);
-    const graph = await resolver.readCdsDependencyGraph(canonicalDataSourceName(resolved.ddlSource));
+    const graph = await resolver.readCdsDependencyGraph(canonicalDataSourceName(resolved.ddlSource)).catch((error) => {
+      if (error instanceof DataSourcePolicyError && error.code === 'DATA_SOURCE_BLOCKED') {
+        // Early graph denial is relative to its graph root; retain the caller/replacement prefix.
+        const prefix = error.sourcePath[0] === path.at(-1) ? path.slice(0, -1) : path;
+        throw new DataSourcePolicyError(error.code, directSource, [...prefix, ...error.sourcePath], error.reason, {
+          matchedSource: error.matchedSource,
+        });
+      }
+      throw error;
+    });
     const normalizedGraphAliases = graph.aliases.map((alias) => canonicalDataSourceName(alias));
     if (!normalizedGraphAliases.includes(canonicalDataSourceName(resolved.name))) {
       throw unresolved(
@@ -807,7 +912,7 @@ export async function enforceBlockedDataSources(
       if (node.databaseExists === false) {
         throw unresolved(directSource, nodePath, `dependency ${node.name} is not active in the database`);
       }
-      if (node.kind === 'TABLE') {
+      if (node.kind === 'TABLE' || node.kind === 'TABLE_ENTITY') {
         if (node.children.length > 0)
           throw unresolved(directSource, nodePath, `table node ${node.name} has unexpected children`);
         return;

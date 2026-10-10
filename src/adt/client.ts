@@ -1296,10 +1296,7 @@ export class AdtClient {
     });
     const names = parseSubpackageNodestructure(resp.body);
     const upperSelf = packageName.toUpperCase();
-    // parseSubpackageNodestructure already filters to DEVC/K, drops empty names,
-    // uppercases, and dedupes. Here we additionally exclude the queried package
-    // itself (defensive — `nodestructure` does not normally include it under
-    // its own subtree) and apply the maxResults cap.
+    // Parsed package names are already canonical and unique; exclude self and cap the result.
     const out: string[] = [];
     for (const name of names) {
       if (name === upperSelf) continue;
@@ -1315,16 +1312,18 @@ export class AdtClient {
   private dataSourceBlocklistGuard(budget: DataResponseBudget, signal?: AbortSignal): DataSourceBlocklistGuard {
     return new DataSourceBlocklistGuard(this.safety.blockedDataSources, {
       searchObject: (name, maxResults) => this.searchObject(name, maxResults),
-      // Fixed authorization metadata: public runQuery would recursively invoke this guard.
       readTableReplacement: async (name) => {
         const table = canonicalDataSourceName(name);
         const sql = `SELECT d~TABNAME, d~TABCLASS, d~VIEWREF, d~VIEWREF_ERR, d~SQLTAB, l~DDLNAME
 FROM DD02L AS d LEFT OUTER JOIN DDLDEPENDENCY AS l
 ON l~OBJECTNAME = d~VIEWREF AND l~OBJECTTYPE = 'VIEW' AND l~STATE = 'A'
 WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
-        // Two rows suffice to reject ambiguity; all bytes share the caller's result budget.
         const { rows } = parseTableContents(await this.postFreestyleQuery(sql, 2, budget, signal));
         return parseTableReplacement(table, rows);
+      },
+      readActiveDdlMetadata: async (name) => {
+        checkOperation(this.safety, OperationType.Read, 'GetDdlSourceMetadata');
+        return (await this.http.get(`/sap/bc/adt/ddic/ddl/sources/${encodeURIComponent(name)}?version=active`)).body;
       },
       dependencyGraphAccept: () => this.http.discoveryAcceptFor(CDS_DEPENDENCY_GRAPH_PATH),
       readDependencyGraph: async (path, accept) => {
