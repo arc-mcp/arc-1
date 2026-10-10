@@ -114,3 +114,9 @@ The full 816 E2E run additionally found batch activation-failure cleanup silentl
 ignoring the guarded refusal. Its shared PROG cleanup now uses the same recovery
 and accepts only an owner-path 404 as absence. RAP lifecycle cleanup uses that
 checked path too; a pool endpoint 404 cannot be mistaken for a deleted owner.
+
+## Second independent review (2026-10-10)
+
+The edit_unit live suites still discarded every cleanup result: `handleToolCall` reports
+failure as a result, so their `try/catch` could not see the guarded refusal. They and
+add_unit now use the same disposable-program recovery and fail when any fixture remains.
