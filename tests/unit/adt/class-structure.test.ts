@@ -317,14 +317,14 @@ describe('removeMethodPair', () => {
     expect(out).not.toContain('METHODS to_impl');
   });
 
-  it('removes exactly the spliced lines with no extra blank-line per range (blank-line regression)', () => {
+  it('removes the spliced lines and collapses the resulting blank seam', () => {
     // Regression: spliceLines('') used to insert one empty line per deleted range,
     // so a 6-line removal (3 def + 3 impl) dropped the line count by only 4.
-    // The precise signal is the line-count delta — it must equal the lines removed.
+    // The two blank lines meeting at the implementation cut now become one.
     const out = removeMethodPair(PROBE_SOURCE, PROBE_STRUCTURE.methods[0]!);
     const before = PROBE_SOURCE.split(/\r?\n/).length;
     const after = out.split(/\r?\n/).length;
-    expect(before - after).toBe(6); // HELLO: def 3-5 (3 lines) + impl 14-16 (3 lines)
+    expect(before - after).toBe(7); // 3 definition + 3 implementation + 1 blank line
   });
 });
 

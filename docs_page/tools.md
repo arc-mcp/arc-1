@@ -1058,15 +1058,16 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw
   parameter names.
-- **Deleting a program with an inactive text pool:** SAP deletes an active program but keeps a
-  separately saved text-pool draft, which then drops off the inactive-object list and is inherited
-  by any later program with the same name. `SAPWrite(action="delete", type="PROG")` therefore first
-  activates the program's pool draft when your inactive objects list it. If that activation fails,
-  nothing is deleted; if the delete then fails, its error warns that the texts may already be active
-  and asks you to read the program and its text pool before retrying. Only your own inactive objects
-  are checked; drafts saved by another user are not detected. To clear an orphan left
-  by an earlier delete, create a program with the same name, activate it with
-  `SAPActivate(type="PROG")`, then delete it.
+- **Deleting a PROG or FUGR with an inactive text pool:** SAP can leave a separately saved
+  text-pool draft behind after deleting its owner; recreating the same name inherits that orphan.
+  `SAPWrite(action="delete")` first activates the matching `PROG/PX` pool from the caller's
+  inactive feed. FUGR matching uses its textelements URI. Source drafts are not activated.
+  Failed activation stops deletion; a later delete failure warns that texts may already be active
+  and asks you to read the owner and pool before retrying. The feed can include other users' drafts
+  in the caller's transport requests and omit drafts outside them. Cross-user behavior remains
+  unverified, and this check does not make concurrent edits atomic.
+  To recover an older PROG orphan, recreate and activate the program, then delete it. For a FUGR
+  orphan, recreate and activate the group, write a text part with `edit_text_symbols`, then delete it.
 - **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent
   on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
@@ -1297,7 +1298,7 @@ selected columns, or a restrictive, non-overlapping key-range `WHERE` clause.
 - Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)
 - Use `ASCENDING`/`DESCENDING` (not `ASC`/`DESC`)
 - Use `maxRows` parameter (not `LIMIT`)
-- `GROUP BY`, `COUNT(*)`, `WHERE` all work
+- `GROUP BY`, `COUNT(*)`, `WHERE` are supported. Some ADT backends (verified on 7.58 and 8.16) fail with a generated TRY/CATCH or missing-ENDSELECT nesting error when COUNT(*) is the only selected expression alongside GROUP BY. Select the grouping columns too, for example `SELECT carrid, COUNT(*) AS cnt FROM sflight GROUP BY carrid`; this adds result columns without changing the groups. ARC-1 explains this failure without rewriting or retrying the query.
 - ABAP SQL aggregate rule applies: non-aggregated selected fields must be listed in `GROUP BY`
 
 JOINs, aggregates, and subqueries are supported. For a plain projection `SELECT`, ARC-1 automatically chunks the longest literal `IN (...)` list—even when the query has several `IN` clauses—and merges the rows. Queries with `ORDER BY`, `GROUP BY`, `HAVING`, `DISTINCT`, `UNION`, or aggregates are sent whole because concatenating per-chunk results would change their semantics. If a backend rejects a long list in one of those queries, split the list manually, union the results, and re-sort client-side when needed.
