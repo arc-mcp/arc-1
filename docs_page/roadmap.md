@@ -74,6 +74,7 @@ sequence.
 | [COMPAT-13](#compat-13) | NW 7.40 freestyle SQL length boundary | P1 | S | Needs research | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
+| [COMPAT-16](#compat-16) | API-release directory cleanup | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [COMPAT-12](#compat-12) | Deletion with another user's text draft | P3 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
@@ -301,6 +302,25 @@ CDS set operations contain structural nodes outside the current kind allowlist. 
 **Resume with.** Captured graphs for classic/view-entity UNION, EXCEPT and INTERSECT where supported;
 define structural-node identity and traversal without mistaking branch labels for data-source names.
 Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
+
+<a id="compat-16"></a>
+### COMPAT-16 — API-release directory cleanup
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** On 816 and BTP, the original C4-after-C1 test deleted its class
+while C4 was still RELEASED: the visibility-mismatch error hid an applied release.
+The owner is absent but an APIS directory entry remains. [#967](https://github.com/arc-mcp/arc-1/pull/967)
+now discloses the actual state and revocation instruction. Fresh 816 and BTP validation
+that revokes every released contract before deletion leaves no directory entry; a supported
+recovery for the old residue is still unproven. A post-deletion empty API_STATE is
+not evidence that revocation preceded deletion. See the [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-api-release-visibility.md).
+
+**Resume with.** Isolate the native released-contract deletion behavior on disposable
+classes and establish a supported ADT repair for existing APIS residue. Verify both
+owner and directory state, preserve user intent, and never edit catalog rows or add
+automatic revocation to deletion. Pre-existing BTP SUSH entries are separate evidence.
 
 <a id="compat-12"></a>
 ### COMPAT-12 — Deletion with another user's text draft

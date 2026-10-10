@@ -855,13 +855,26 @@
           "type": "string",
           "description": "ADT object type (e.g., CLAS/OC, DDLS/DF, PROG/P). Required for change_package. For set_api_state: object type of \"name\" when objectUri is omitted (e.g. CLAS, INTF, DDLS, TABL)."
         },
+        "apiVisibility": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "cloudDevelopment",
+              "keyUserApps"
+            ]
+          },
+          "maxItems": 2,
+          "uniqueItems": true,
+          "description": "set_api_state RELEASED: complete visibility selection; [] means none. Omit for SAP defaults. Read API_STATE first."
+        },
         "apiState": {
           "type": "string",
           "enum": [
             "RELEASED",
             "NOT_RELEASED"
           ],
-          "description": "For set_api_state: target state of the object's API release contract — RELEASED (mark released for ABAP Cloud / Clean Core) or NOT_RELEASED (revoke). Default RELEASED. Visibility (ABAP Cloud / Key User Apps) follows the contract's defaults. Read the current state first with SAPRead(type=\"API_STATE\")."
+          "default": "RELEASED"
         },
         "contract": {
           "type": "string",
@@ -872,7 +885,7 @@
             "C3",
             "C4"
           ],
-          "description": "For set_api_state: which release contract to set. Default C1 (Key-User/Cloud — the common clean-core contract). Object types support different contracts: e.g. service definitions (SRVD) only support C0, classic DDIC views only C3, behavior definitions and tables support C0+C1. If the object does not support the chosen contract, the error lists the ones it does."
+          "description": "set_api_state: contract (default C1); SRVD uses C0, classic VIEW uses C3. Unsupported choices report supported contracts. SAP validates contract requirements."
         },
         "objectName": {
           "type": "string",
