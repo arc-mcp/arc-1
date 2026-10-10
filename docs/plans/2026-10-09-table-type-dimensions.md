@@ -75,3 +75,12 @@ Native SAP remains authoritative for type-specific bounds. No remaining finding
 in this scope. FEAT-78 (advanced table definitions) remains deferred. FEAT-84 was
 only a local audit recommendation, not present on main's roadmap; this implements
 it without adding a completed entry. Cloud exposure remains separate.
+
+## Independent review clarification (2026-10-10)
+
+816 accepts wire-valid dimensions into an inactive object before semantic validation.
+Activation rejects DEC 40/2 and CHAR 0, and normalizes DEC 5/7 to 5/5, DEC 31/15 to
+31/14, and INT4 length 5 to 10. Document activation warnings and active readback as
+part of the contract. Keep native semantic validation: duplicating a partial 816 type
+limit table would misrepresent other releases and add maintenance without preserving
+SAP's authoritative behavior. No runtime change is needed for this finding.
