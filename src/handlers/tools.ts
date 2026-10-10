@@ -589,9 +589,7 @@ export function getToolDefinitions(
               'batch_create',
               'scaffold_rap_handlers',
               'generate_behavior_implementation',
-              // Class text-symbol writes are on-prem only (BTP has no classic text elements) — keep out
-              // of the BTP action enum so the zod↔json-schema parity check stays green.
-              ...(btp ? [] : ['edit_text_symbols']),
+              'edit_text_symbols',
             ],
             // This is where an LLM decides WHICH action to use, so every action gets a line —
             // especially the destructive and refusing ones, whose behaviour is not guessable.
@@ -607,20 +605,20 @@ export function getToolDefinitions(
               'delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. ' +
               'scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse\'s "Generate Behavior Implementation").' +
               (btp
-                ? ''
+                ? ' edit_text_symbols: replace CLAS symbols (@MaxLength:NN\\nNNN=text; blank-line separated). Read first with SAPRead CLAS include=text_symbols; source="" clears the pool. Activates texts only.'
                 : ' edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source="" clears it.'),
           },
           type: {
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
+              ? 'Object type. Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
               : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
           },
           name: {
             type: 'string',
             description: btp
-              ? 'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).'
+              ? 'Object name.'
               : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
           },
           expectedSourceHash: {
@@ -641,7 +639,7 @@ export function getToolDefinitions(
               'CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version="inactive" before activation).',
           },
           ...(btp
-            ? {}
+            ? { textPart: { type: 'string', enum: ['symbols'] } }
             : {
                 textPart: {
                   type: 'string',
