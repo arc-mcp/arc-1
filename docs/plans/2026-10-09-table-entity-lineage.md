@@ -83,3 +83,15 @@ replacement-catalog shortcut, or change to the strict SQL grammar. Same-name
 active identity remains required; unverified graph relations remain refused.
 Roadmap checked: COMPAT-07, COMPAT-10 and SEC-18 are unchanged. This covers the
 local outage audit's COMPAT-13 contract only for these verified shapes.
+
+## Independent review follow-up (2026-10-10)
+
+A confirmed diagnostic-precedence issue returned unresolved lineage before noticing a
+blocked sibling when active table-entity proof was denied. First classify the full
+strict graph shape into a local tree, collect its bounded candidate set, and check
+blocked aliases. Prove every candidate before returning that tree to the evaluator.
+No unproven tree reaches an allow decision; the exported parser still refuses
+unproven candidates by default and wire TABLE_ENTITY stays invalid. Keep request-local
+proofs without adding a cache. Add the missing Read operation guard to metadata GET.
+The regression checks that a blocked sibling denies without any proof GET; existing
+negative proof/shape/identity tests must remain green.

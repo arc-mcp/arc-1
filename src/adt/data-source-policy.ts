@@ -430,17 +430,40 @@ export class DataSourceBlocklistGuard {
   }
 
   private async parseProvenGraph(xml: string): Promise<CdsDependencyNode> {
-    const proven = new Set<string>();
+    const candidates = new Set<string>();
+    let graph: CdsDependencyNode;
     for (;;) {
       try {
-        return parseCdsDependencyGraph(xml, proven);
+        // Classify the complete shape before doing proof reads. This tree is local only:
+        // no caller can authorize it until every candidate has been proven below.
+        graph = parseCdsDependencyGraph(xml, candidates);
+        break;
       } catch (error) {
         if (!(error instanceof TableEntityCandidate)) throw error;
-        if (proven.size >= MAX_DIRECT_SOURCES) throw new DataSourceLineageError('table-entity proof limit exceeded');
-        await this.proveTableEntity(error.entity);
-        proven.add(error.entity);
+        if (candidates.size >= MAX_DIRECT_SOURCES)
+          throw new DataSourceLineageError('table-entity proof limit exceeded');
+        candidates.add(error.entity);
       }
     }
+    const blocked = new Set(this.blockedSources.map((name) => canonicalDataSourceName(name)));
+    const checkBlocked = (node: CdsDependencyNode, path: string[]): void => {
+      const matched = node.aliases.find((alias) => blocked.has(canonicalDataSourceName(alias)));
+      if (matched) {
+        throw new DataSourcePolicyError(
+          'DATA_SOURCE_BLOCKED',
+          graph.name,
+          path,
+          `exact source ${matched} matches the configured blocklist`,
+          { matchedSource: matched },
+        );
+      }
+      for (const child of node.children) checkBlocked(child, [...path, child.name]);
+    };
+    // A known blocked sibling needs no metadata proof and remains the useful denial reason
+    // even when SAP would refuse the first table entity's metadata request.
+    checkBlocked(graph, [graph.name]);
+    for (const name of candidates) await this.proveTableEntity(name);
+    return graph;
   }
 
   private async readCdsDependencyGraph(ddlSource: string): Promise<CdsDependencyNode> {
@@ -861,7 +884,16 @@ export async function enforceBlockedDataSources(
     }
 
     checkBlocked(directSource, path, [canonicalDataSourceName(resolved.ddlSource)]);
-    const graph = await resolver.readCdsDependencyGraph(canonicalDataSourceName(resolved.ddlSource));
+    const graph = await resolver.readCdsDependencyGraph(canonicalDataSourceName(resolved.ddlSource)).catch((error) => {
+      if (error instanceof DataSourcePolicyError && error.code === 'DATA_SOURCE_BLOCKED') {
+        // Early graph denial is relative to its graph root; retain the caller/replacement prefix.
+        const prefix = error.sourcePath[0] === path.at(-1) ? path.slice(0, -1) : path;
+        throw new DataSourcePolicyError(error.code, directSource, [...prefix, ...error.sourcePath], error.reason, {
+          matchedSource: error.matchedSource,
+        });
+      }
+      throw error;
+    });
     const normalizedGraphAliases = graph.aliases.map((alias) => canonicalDataSourceName(alias));
     if (!normalizedGraphAliases.includes(canonicalDataSourceName(resolved.name))) {
       throw unresolved(

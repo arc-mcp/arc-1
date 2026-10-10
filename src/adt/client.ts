@@ -1296,10 +1296,7 @@ export class AdtClient {
     });
     const names = parseSubpackageNodestructure(resp.body);
     const upperSelf = packageName.toUpperCase();
-    // parseSubpackageNodestructure already filters to DEVC/K, drops empty names,
-    // uppercases, and dedupes. Here we additionally exclude the queried package
-    // itself (defensive — `nodestructure` does not normally include it under
-    // its own subtree) and apply the maxResults cap.
+    // Parsed package names are already canonical and unique; exclude self and cap the result.
     const out: string[] = [];
     for (const name of names) {
       if (name === upperSelf) continue;
@@ -1324,8 +1321,10 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
         const { rows } = parseTableContents(await this.postFreestyleQuery(sql, 2, budget, signal));
         return parseTableReplacement(table, rows);
       },
-      readActiveDdlMetadata: async (name) =>
-        (await this.http.get(`/sap/bc/adt/ddic/ddl/sources/${encodeURIComponent(name)}?version=active`)).body,
+      readActiveDdlMetadata: async (name) => {
+        checkOperation(this.safety, OperationType.Read, 'GetDdlSourceMetadata');
+        return (await this.http.get(`/sap/bc/adt/ddic/ddl/sources/${encodeURIComponent(name)}?version=active`)).body;
+      },
       dependencyGraphAccept: () => this.http.discoveryAcceptFor(CDS_DEPENDENCY_GRAPH_PATH),
       readDependencyGraph: async (path, accept) => {
         checkOperation(this.safety, OperationType.Read, 'GetCdsDependencyGraph');

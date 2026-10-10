@@ -69,7 +69,7 @@ describe('active table-entity proof', () => {
       code: 'DATA_LINEAGE_UNRESOLVED',
       reason: 'table-entity proof limit exceeded',
     });
-    expect(b.readActiveDdlMetadata).toHaveBeenCalledTimes(64);
+    expect(b.readActiveDdlMetadata).not.toHaveBeenCalled();
   });
   it('requires fresh active proof on a following decision', async () => {
     const b = backend();
