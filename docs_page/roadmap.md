@@ -336,8 +336,8 @@ activating or discarding another user's draft.
 **Remaining gap.** On 816 and BTP, the original C4-after-C1 test deleted its class
 while C4 was still RELEASED: the visibility-mismatch error hid an applied release.
 The owner is absent but an APIS directory entry remains. [#967](https://github.com/arc-mcp/arc-1/pull/967)
-now discloses the actual state and revocation instruction. Fresh 816 validation that
-revokes every released contract before deletion leaves no directory entry; a supported
+now discloses the actual state and revocation instruction. Fresh 816 and BTP validation
+that revokes every released contract before deletion leaves no directory entry; a supported
 recovery for the old residue is still unproven. A post-deletion empty API_STATE is
 not evidence that revocation preceded deletion. See the [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-api-release-visibility.md).
 

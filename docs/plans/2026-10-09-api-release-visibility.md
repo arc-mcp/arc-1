@@ -84,3 +84,12 @@ The original harness revoked only C1 before deleting, leaving C4 released at del
 APIS directory residue exists on both systems; an empty API_STATE after deletion does
 not establish prior revocation. The mechanism remains a hypothesis. New validation
 revokes every observed released contract and verifies that state before deletion.
+
+## Second independent review (2026-10-10)
+
+The disclosure covered only a mismatching read-back. A failed or unusable read-back
+after an accepted PUT still surfaced as a plain read error (status only with minimal
+errors), hiding that SAP had accepted the change. It now states the PUT outcome and
+that the resulting state is unconfirmed, without claiming a confirmed state, and keeps
+that guidance under `ARC1_MINIMAL_ERRORS`. The revoke instruction appears only when the
+confirmed contract is RELEASED. Merged current main to resolve the roadmap conflict.

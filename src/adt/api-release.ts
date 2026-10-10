@@ -1,4 +1,4 @@
-import { AdtApiError } from './errors.js';
+import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import type { ApiReleaseContract, ApiReleaseStateInfo } from './types.js';
 import { parseXml } from './xml-parser.js';
@@ -223,8 +223,22 @@ export async function setApiReleaseState(
       throw err;
     }
   }
-  const confirmedResp = await http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept });
-  const confirmed = parseApiReleaseState(confirmedResp.body);
+  // The PUT outcome stands: a read-back that cannot confirm it must not look like a refused request.
+  const unconfirmed =
+    `SAP ${changed ? 'accepted' : 'reported no change for'} the ${contract} ${state} request for ${objectUri}, ` +
+    'but the read-back did not confirm it, so the resulting state is unconfirmed. ' +
+    'Read SAPRead(type="API_STATE") for this object before retrying or deleting it.';
+  let confirmed: ApiReleaseStateInfo;
+  try {
+    confirmed = parseApiReleaseState((await http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept })).body);
+  } catch (error) {
+    if (error instanceof AdtError)
+      error.extraHint = error.extraHint ? `${unconfirmed}\n${error.extraHint}` : unconfirmed;
+    else if (error instanceof Error) error.message = `${unconfirmed} ${error.message}`;
+    throw error;
+  }
+  const result = confirmed.contracts.find((release) => release.contract.toUpperCase() === contract);
+  if (!result) throw new Error(`API release contract ${contract} is missing from the read-back. ${unconfirmed}`);
   // On a real write, assert the full target (state + requested visibility). On an idempotent no-op,
   // explicit selections still require exact visibility; omission keeps the existing state-only no-op check.
   try {
@@ -239,9 +253,11 @@ export async function setApiReleaseState(
     // can reconcile an applied release instead of treating this as a rejected mutation.
     throw new Error(
       `${error instanceof Error ? error.message : String(error)} ` +
-        `Confirmed SAP result: ${JSON.stringify({ ...confirmed, changed })}. ` +
-        `If the release is unintended, call SAPManage set_api_state with objectUri="${objectUri}", ` +
-        `contract="${contract}" and apiState="NOT_RELEASED"; verify API_STATE before deleting the object.`,
+        `Confirmed SAP result: ${JSON.stringify({ ...confirmed, changed })}.` +
+        (result.state === 'RELEASED'
+          ? ` If the release is unintended, call SAPManage set_api_state with objectUri="${objectUri}", ` +
+            `contract="${contract}" and apiState="NOT_RELEASED"; verify API_STATE before deleting the object.`
+          : ''),
     );
   }
   return { ...confirmed, changed };

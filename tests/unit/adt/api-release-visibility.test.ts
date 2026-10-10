@@ -101,6 +101,48 @@ describe('explicit API-release visibility', () => {
       expect(text).toContain('apiState="NOT_RELEASED"');
     },
   );
+  it('offers no revoke when the mismatched contract is not released', async () => {
+    mockFetch.mockImplementation(async (_url: string, opts?: RequestInit) =>
+      mockResponse(200, opts?.method === 'PUT' ? '' : cloud, { 'x-csrf-token': 'T' }),
+    );
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('"state":"NOT_RELEASED"');
+    expect(result.content[0]?.text).not.toContain('apiState="NOT_RELEASED"');
+  });
+  it.each([
+    [true, false, 500, 'accepted'],
+    [true, true, 500, 'accepted'],
+    [false, false, 500, 'reported no change for'],
+    [true, false, 200, 'accepted'],
+  ])(
+    'discloses an unconfirmed state when read-back fails, PUT applied=%s, minimal=%s, read HTTP %s',
+    async (applied, minimal, readStatus, verb) => {
+      mockFetch
+        .mockResolvedValueOnce(mockResponse(200, cloud, { 'x-csrf-token': 'T' }))
+        .mockResolvedValueOnce(
+          applied
+            ? mockResponse(200, '', { 'x-csrf-token': 'T' })
+            : mockResponse(400, '<exception><message>No changes were made.</message></exception>'),
+        )
+        .mockResolvedValueOnce(
+          readStatus === 200
+            ? mockResponse(200, '<html>Logon</html>')
+            : mockResponse(500, '<exception><message>Read failed</message></exception>'),
+        );
+      const result = await handleToolCall(
+        createClient(),
+        { ...DEFAULT_CONFIG, minimalErrors: minimal },
+        'SAPManage',
+        args,
+      );
+      const text = result.content[0]?.text ?? '';
+      expect(result.isError).toBe(true);
+      expect(text).toContain(`SAP ${verb} the C1 RELEASED request`);
+      expect(text).toContain('resulting state is unconfirmed');
+      expect(text).not.toContain('Confirmed SAP result');
+    },
+  );
   it('drops an inapplicable strict-client selection on unrelated actions', async () => {
     mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
