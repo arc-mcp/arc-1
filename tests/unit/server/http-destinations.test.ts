@@ -69,6 +69,20 @@ function mockRes() {
 }
 
 describe('multi-target HTTP helpers', () => {
+  it.each([undefined, '', 'unknown', null])('both factories reject invalid mode %s before use', (mode) => {
+    const routing = {
+      registry: registry(),
+      authorizationMode: mode,
+      aggregateFactory: vi.fn(),
+      createPinnedServer: vi.fn(),
+    };
+    for (const factory of [createPinnedTargetMcpHandler, createAggregateMcpHandler]) {
+      expect(() => factory(routing as never)).toThrow('requires an explicit authorization mode');
+    }
+    expect(routing.aggregateFactory).not.toHaveBeenCalled();
+    expect(routing.createPinnedServer).not.toHaveBeenCalled();
+  });
+
   it('advertises only the scopes usable on read-only multi-target routes', () => {
     expect(MULTI_TARGET_SCOPES_SUPPORTED).toEqual(['read', 'data', 'sql', 'admin']);
     expect(MULTI_TARGET_SCOPES_SUPPORTED).not.toContain('write');
@@ -111,6 +125,7 @@ describe('multi-target HTTP helpers', () => {
     const createPinnedServer = vi.fn();
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
+      authorizationMode: 'legacy',
       aggregateFactory: vi.fn() as never,
       createPinnedServer,
     });
@@ -130,6 +145,7 @@ describe('multi-target HTTP helpers', () => {
     const createPinnedServer = vi.fn(() => serverFactory() as never);
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
+      authorizationMode: 'legacy',
       aggregateFactory: vi.fn() as never,
       createPinnedServer,
     });
@@ -150,6 +166,7 @@ describe('multi-target HTTP helpers', () => {
     );
     const handler = createPinnedTargetMcpHandler({
       registry: registry(),
+      authorizationMode: 'legacy',
       aggregateFactory: vi.fn() as never,
       createPinnedServer,
     });
@@ -173,6 +190,7 @@ describe('multi-target HTTP helpers', () => {
     }));
     const multi = {
       registry: unavailable,
+      authorizationMode: 'legacy' as const,
       aggregateFactory: aggregateFactory as never,
       createPinnedServer: vi.fn() as never,
     };

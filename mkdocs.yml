@@ -70,6 +70,7 @@ nav:
   - Auth & Permissions:
       - Overview: enterprise-auth.md
       - Authorization & Roles: authorization.md
+      - Restrict System and Client Access: multi-target-authorization.md
       - XSUAA Setup: xsuaa-setup.md
       - Principal Propagation: principal-propagation-setup.md
       - BTP Destination Setup: btp-destination-setup.md

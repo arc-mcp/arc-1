@@ -6,6 +6,8 @@
 [implementation plan](../plans/destination-discovered-multi-target-v1.md)
 **Qualifies:** ADR-0006's strict Principal Propagation requirement for explicitly enabled Basic
 destinations only
+**Qualified by:** [ADR-0008](0008-opt-in-xsuaa-target-authorization.md) for opted-in target grants
+and the complete bounded catalog instead of the eight-row summary; Basic safeguards remain intact
 
 ## Context
 

@@ -9,6 +9,7 @@
  */
 
 import { DEFAULT_USER_AGENT } from '../adt/user-agent.js';
+import type { MultiTargetAuthorizationMode } from './multi-target-authorization.js';
 
 /** MCP transport type */
 export type TransportType = 'stdio' | 'http-streamable';
@@ -135,6 +136,8 @@ export interface ServerConfig {
   // --- Experimental destination-discovered multi-target mode ---
   /** Enable startup discovery plus pinned and aggregate multi-target endpoints. Default false. */
   multiTargetEndpoints: boolean;
+  /** Explicit target-grant enforcement; legacy preserves existing deployments by default. */
+  multiTargetAuthorization: MultiTargetAuthorizationMode;
   /** Allow explicitly marked OnPremise BasicAuthentication targets in multi-target mode. Default false. */
   multiTargetAllowBasicAuth: boolean;
   /** Runtime-only: internal Destination Service name for a discovered target. */
@@ -297,6 +300,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,
+  multiTargetAuthorization: 'legacy',
   multiTargetAllowBasicAuth: false,
   ppEnabled: false,
   ppStrict: false,

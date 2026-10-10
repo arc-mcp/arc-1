@@ -34,7 +34,9 @@ MCP-native clients use RFC 8414 OAuth discovery to find authorization endpoints 
 `SAP_XSUAA_AUTH`. Do not create a second service or bind it again. Check `cf target`, then
 `cf services` and `cf app <app-name>` in the intended space. Record the bound XSUAA instance and
 its application identifier; inspect credentials locally only when needed and never paste them
-into chat or a ticket. Continue to [Step 3](#step-3-assign-role-collections).
+into chat or a ticket. For ordinary functional roles, continue to [Step 3](#step-3-assign-role-collections).
+For per-target restrictions, return to the [target-access procedure](multi-target-authorization.md)
+after this check; it requires verified enforcement before restricted-user assignment.
 
 The MTA registers ARC-1's `/oauth/callback` and `/oauth/logged-out` on its deployed route
 automatically. The optional UI extension also registers the AppRouter's `/login/callback`.
@@ -100,7 +102,11 @@ The included `xs-security.json` defines 7 scopes:
 | `git`          | Authorize gated abapGit mutation/egress actions; gCTS mutations remain quarantined | `SAPGit.external_info`/`clone`/`pull`/`push`/branch/unlink actions after server gates          |
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |
 
-The MTA additionally defines 7 role collections (assignable in BTP Cockpit). The manual
+The MTA defines the seven existing functional role collections below (assignable in BTP Cockpit).
+With target authorization support, the MTA defines **eight collections in total**, adding a
+separate, unassigned All Targets collection. It grants `read` and literal `*`, including future
+targets; leave it unassigned unless explicitly approved. It does not change the seven functional
+assignments or enable enforcement automatically. The manual
 `create-service` command above reads only `xs-security.landscape.json`; it does not apply the collections in
 `mta.yaml`. A manual owner must create the required collections and add the current application
 roles before assigning users.
@@ -132,14 +138,25 @@ roles before assigning users.
 > `cf update-service arc1-xsuaa -c xs-security.landscape.json` updates the scopes and role
 > templates only. It does **not** create role collections declared in
 > `mta.yaml`. Agree on lifecycle ownership before adopting the MTA, then
-> verify in **Security → Role Collections** that all seven collections exist and
-> contain the expected roles. This matters especially for older deployments:
+> verify in **Security → Role Collections** that all seven functional collections exist and
+> contain the expected roles. Also verify the eighth All Targets collection
+> and leave it unassigned by default. This matters especially for older deployments:
 > seeing `MCPViewer`, `MCPDataViewer`, or `MCPSqlUser` under **Roles** does not
 > mean the corresponding assignable role collections already exist.
 
 **Want a restricted developer** (can write code but cannot transport or push to Git)? Define your own role template in `xs-security.json` with just `[read, write]` scopes, redeploy, and assign it — or use `SAP_DENY_ACTIONS` on the server.
 
 Role collections are only the user-permission gate. Server flags still have to allow the capability: for example, a user in `ARC-1 Developer` still cannot create transports unless the ARC-1 instance also has `SAP_ALLOW_WRITES=true` and `SAP_ALLOW_TRANSPORT_WRITES=true`.
+
+For optional per-target visibility, follow the
+[static-cohort setup](multi-target-authorization.md), not a second XSUAA
+service-creation sequence. That guide covers version availability, setup checks and the
+`MCPTargetReadAccess` template (required `arc1_targets`, no default role) and
+`MCPAllTargetReadAccess` (explicit `*` default). A manually managed service still needs an owner to
+create the corresponding collection; MTA owns its additional `ARC-1 All Targets (<space>)` collection.
+Do not put the all-target role into an already assigned functional collection during an update.
+Neither `arc1_targets` nor `user_attributes` is an OAuth scope; keep the existing scope request set.
+IAS-fed target values remain optional and require their own live token/union/refresh validation.
 
 !!! note "Assign the least-privilege collection"
     `ARC-1 Developer` bundles `transports` + `git` — assigning it authorizes CTS mutations and the

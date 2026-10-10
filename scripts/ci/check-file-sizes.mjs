@@ -82,8 +82,9 @@ const BUDGETS = {
   'src/adt/http.ts': 1561, // +12: #907 bounded legacy negotiation; selector lives in its own module.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1507, // Keep the safe CTS explanation in minimal-error mode.
-  // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.
-  'src/server/server.ts': 1493, // Shared HTTP transport + monotonic renewal for new requests (R21).
+  // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
+  // XSUAA startup from main, with 3 lines of headroom.
+  'src/server/server.ts': 1487,
 };
 
 const DEFAULT_SRC = 1500;
@@ -105,7 +106,7 @@ function countLines(path) {
 // core.quotePath would wrap "tests/.../zäh.ts" in quotes, and a naive .endsWith('.ts') would
 // then silently skip it — voiding the ratchet for that file).
 // Include the maintained relation-validation entry points, not unrelated research scripts.
-const files = execSync('git ls-files -z src tests bin scripts/smoke-live-relations.ts scripts/bench-context-parsing.ts', {
+const files = execSync('git ls-files -z src tests bin scripts/smoke-live-relations.ts scripts/bench-context-parsing.ts scripts/spikes/pr677-target-authorization scripts/ci/check-target-authorization-mta.mjs', {
   encoding: 'utf8',
 })
   .split('\0')

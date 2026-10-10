@@ -36,6 +36,42 @@ const btpConfig = {
 describe('discoverDestinations', () => {
   beforeEach(() => listDestinationsAtLevel.mockReset());
 
+  it('enforced discovery bounds all ARC-related candidates and retains no partial inventory', async () => {
+    const entries = Array.from({ length: 257 }, (_, index) => ({
+      Name: `DEST_${index}`,
+      originalProperties: { 'ARC1.Disabled': 'false' },
+    }));
+    const unreachable = Object.defineProperty({ Name: 'UNREACHABLE' }, 'originalProperties', {
+      get: () => {
+        throw new Error('Discovery must stop before this candidate');
+      },
+    });
+    listDestinationsAtLevel.mockImplementation(async (_config, level: string) =>
+      level === 'subaccount' ? [...entries, unreachable] : [],
+    );
+    const result = await discoverDestinations(btpConfig, { authorizationMode: 'xsuaa-attribute' });
+    expect(result).toMatchObject({ subaccount: [], instanceNames: [], arcRelatedAtLeast: 257 });
+    expect(JSON.stringify(result)).not.toContain('DEST_');
+  });
+
+  it('enforced discovery preserves unknown/write facts without retaining raw keys or values', async () => {
+    listDestinationsAtLevel.mockImplementation(async (_config, level: string) =>
+      level === 'subaccount'
+        ? [
+            {
+              Name: 'DEST_A',
+              originalProperties: { 'ARC1.SECRET_KEY': 'SECRET_VALUE', 'arc1.allow_writes': 'false' },
+            },
+          ]
+        : [],
+    );
+    const result = await discoverDestinations(btpConfig, { authorizationMode: 'xsuaa-attribute' });
+    expect(result.subaccount).toHaveLength(1);
+    expect(result.subaccount[0].arcProperties).toEqual({});
+    expect(result.subaccount[0].arcValidation).toEqual({ unknownPropertyCount: 2, hasWriteProperty: true });
+    expect(JSON.stringify(result)).not.toMatch(/SECRET_KEY|SECRET_VALUE|allow_writes/);
+  });
+
   it('projects ARC-related subaccount entries and instance names only', async () => {
     listDestinationsAtLevel.mockImplementation(async (_config, level: string) =>
       level === 'subaccount'

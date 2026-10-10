@@ -344,9 +344,12 @@ export class BTPAuditLogSink implements LogSink {
         const e = event as MultiTargetStageFailedEvent;
         const target = e.target ? ` Target: ${e.target}.` : '';
         const identity = e.identity ? ` identity=${e.identity}.` : '';
+        const authorization = e.targetAccessMode
+          ? ` targetAccessMode=${e.targetAccessMode} grantMode=${e.grantMode}${e.exactGrantCount === undefined ? '' : ` exactGrantCount=${e.exactGrantCount}`}.`
+          : '';
         return {
           ...base,
-          data: `Multi-target stage "${e.event}" failed for tool "${e.tool}" with code "${e.errorCode}". User: ${user}.${target}${identity}${agent}`,
+          data: `Multi-target stage "${e.event}" failed for tool "${e.tool}" with code "${e.errorCode}". User: ${user}.${target}${identity}${authorization}${agent}`,
         };
       }
 

@@ -122,6 +122,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
 | `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
 | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
+| `ARC1_MULTI_TARGET_AUTHORIZATION` | Default/unset `legacy`; opt-in `xsuaa-attribute` requires verified user grants, multi-only, never fallback. Admin diagnostics do not grant execution. Contract/readiness: ADR-0008 + `docs/plans/xsuaa-target-authorization.md`. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
 | `SAP_DISABLE_SAML` | Disable SAML redirect — never on BTP ABAP / S/4 Public Cloud |
 | `ARC1_MINIMAL_ERRORS` | Hide SAP diagnostic details from client-facing tool errors; keep request correlation for operators |
@@ -193,9 +194,12 @@ tests/                          # helpers/ unit/ integration/ e2e/ fixtures/ (to
 
 Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guide.md).
 
+For opt-in target authorization, also read [ADR-0008](docs/adr/0008-opt-in-xsuaa-target-authorization.md)
+and [its contract](docs/plans/xsuaa-target-authorization.md); they qualify the multi-target v1 row below.
+
 | Task | Files (+ key gotcha) |
 |------|------|
-| BTP deployment/docs guidance | `docs_page/btp-overview.md` → one canonical runbook or task reference. Use the deployed artifact's source revision; research/specs are not shipped settings. Maintenance and optional walkthrough checks: `docs/dev-guide.md#btp-documentation`. |
+| BTP deployment/docs guidance | `docs_page/btp-overview.md` → one canonical runbook or task reference; per-user targets: `docs_page/multi-target-authorization.md`. Use the deployed artifact's source revision; research/specs are not shipped settings. Maintenance and optional walkthrough checks: `docs/dev-guide.md#btp-documentation`. |
 | Multi-target ADR-0006/0007 work | Read `docs/adr/0006-experimental-read-only-multi-target.md` and `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. Keep the mutation-free boundary and explicit lint/transport action allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
@@ -374,8 +378,9 @@ never present mocks or skipped tests as live coverage. Documentation-only change
   stays out of scope under ADR-0005. ADR-0006 is the sanctioned experimental, default-off, BTP/XSUAA,
   mutation-free exception for pinned and aggregate endpoints. Principal Propagation remains recommended;
   ADR-0007 permits only an explicit, default-off shared Basic identity under its mutation-free, one-instance
-  controls and never as a PP fallback. Follow both normative plans exactly; do not add writes,
-  target-specific roles, another discovery/auth model, or a hidden compatibility mode. Route requirements
+  controls and never as a PP fallback. ADR-0008 adds only opt-in verified XSUAA target roles under
+  `docs/plans/xsuaa-target-authorization.md`; legacy stays unchanged. Follow these normative plans;
+  do not add writes, another discovery/auth model, or a hidden compatibility mode. Route requirements
   outside those boundaries to separate ARC-1 instances. Changing the boundary requires a new
   ADR/security review.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
