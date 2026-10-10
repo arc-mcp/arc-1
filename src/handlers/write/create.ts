@@ -18,6 +18,7 @@ import {
   rewriteKtdDocument,
 } from '../../adt/ddic-xml.js';
 import { activate, activateBatch } from '../../adt/devtools.js';
+import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
@@ -30,6 +31,7 @@ import { guardCdsSyntax } from '../cds-hints.js';
 import {
   getCachedFeatures,
   isDomainsEndpointAvailable,
+  isEnhoXhbEndpointAvailable,
   isLockObjectsEndpointAvailable,
   isTablesEndpointAvailable,
   isTableTypesEndpointAvailable,
@@ -49,10 +51,12 @@ import {
   buildCreateXml,
   createContentTypeForType,
   DOMA_WRITE_UNAVAILABLE_HINT,
+  ENHO_WRITE_UNAVAILABLE_HINT,
   ENQU_WRITE_UNAVAILABLE_HINT,
   getMetadataWriteProperties,
   isMetadataWriteType,
   mergePreWriteWarnings,
+  prepareEnhoCreateProperties,
   resolveWriteSystemType,
   runPreWriteLint,
   runRapPreflightValidation,
@@ -275,6 +279,41 @@ async function putTtypMetadataAfterCreate(
   }
 }
 
+/**
+ * ENHO create, step 2 (as Eclipse does it): the POST created the empty container; save the BAdI
+ * implementations with lock → PUT (with the transport) → unlock. Posting them with the create fails in a
+ * transportable package (live 816, 2026-10-07; see badiContainerXml).
+ */
+async function saveBadiImplementationsAfterCreate(
+  client: SapWriteContext['client'],
+  objectUrl: string,
+  name: string,
+  body: string,
+  contentType: string,
+  transport: string | undefined,
+): Promise<void> {
+  if (!hasBadiImplementations(body)) return;
+  try {
+    await safeUpdateObject(
+      client.http,
+      client.safety,
+      objectUrl,
+      body,
+      contentType,
+      transport,
+      getCachedFeatures()?.abapRelease,
+    );
+  } catch (err) {
+    // The POST already succeeded: the object exists. A blind retry of create would 409.
+    throw new Error(
+      `Created ENHO ${name}, but its BAdI implementations were not saved: ` +
+        `${err instanceof Error ? err.message : String(err)}\n` +
+        `The object exists — check it with SAPRead(type="ENHO", name="${name}"), fix the input, then use ` +
+        `SAPWrite(action="update", type="ENHO", name="${name}", source=…); do not retry create.`,
+    );
+  }
+}
+
 const KTD_REF_OBJECT_TYPES_ROUTABLE_BY_ARC = new Set([
   'BDEF/BAC',
   'BDEF/BAE',
@@ -475,6 +514,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   } = ctx;
   // Discovery gate before any SAP call (the TTYP/DOMA gates live in write.ts, which is at its size budget).
   if (type === 'ENQU' && isLockObjectsEndpointAvailable() === false) return errorResult(ENQU_WRITE_UNAVAILABLE_HINT);
+  if (type === 'ENHO' && isEnhoXhbEndpointAvailable() === false) return errorResult(ENHO_WRITE_UNAVAILABLE_HINT);
   // FUNC and FUGR structural includes both INHERIT the parent group's package — SAP ignores
   // _package for them — so the allowlist must be checked against the group's real package.
   // Gating on args.package here would let a caller write into a disallowed package by claiming $TMP.
@@ -659,6 +699,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   const systemType = resolveWriteSystemType(config, client);
   const cloud = systemType === 'btp';
   const responsible = config.username || (await client.getEffectiveUser());
+  if (type === 'ENHO') await prepareEnhoCreateProperties(client, metadataProperties, name);
   const body = buildCreateXml(type, name, pkg, description, metadataProperties, config.language, responsible, cloud);
 
   // Step 1: Create the object (metadata only)
@@ -674,7 +715,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       client.http,
       client.safety,
       createUrl,
-      body,
+      type === 'ENHO' ? badiContainerXml(body) : body,
       contentType,
       effectiveTransport,
       needsPackageParam ? pkg : undefined,
@@ -760,6 +801,15 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         }
       });
     }
+    if (type === 'ENHO') {
+      try {
+        const ct = vendorContentTypeForType(type);
+        await saveBadiImplementationsAfterCreate(client, objectUrl, name, body, ct, effectiveTransport);
+      } catch (err) {
+        invalidateWrittenObject(type, name);
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    }
     // TTYP: the POST creates a default-typed (CHAR) shell — a follow-up PUT writes the real row type.
     if (type === 'TTYP') {
       const ct = vendorContentTypeForType(type);
@@ -771,7 +821,9 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
         ? `\n\nNext steps:\n1. SAPActivate(type="SRVB", name="${name}")\n2. SAPActivate(action="publish_srvb", name="${name}")`
         : type === 'ENQU'
           ? `\n\nNext step: SAPActivate(type="ENQU", name="${name}") — activation generates ENQUEUE_${name}/DEQUEUE_${name}.`
-          : '';
+          : type === 'ENHO'
+            ? `\n\nNext step: activate the implementing class(es), then SAPActivate(type="ENHO", name="${name}").`
+            : '';
     return textResult(`Created ${type} ${name} in package ${pkg}.\n${result}${followUpHint}`);
   }
 
@@ -880,6 +932,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       if (plan.type === 'DOMA' && isDomainsEndpointAvailable() === false) errors.push(DOMA_WRITE_UNAVAILABLE_HINT);
       if (plan.type === 'TTYP' && isTableTypesEndpointAvailable() === false) errors.push(TTYP_WRITE_UNAVAILABLE_HINT);
       if (plan.type === 'ENQU' && isLockObjectsEndpointAvailable() === false) errors.push(ENQU_WRITE_UNAVAILABLE_HINT);
+      if (plan.type === 'ENHO' && isEnhoXhbEndpointAvailable() === false) errors.push(ENHO_WRITE_UNAVAILABLE_HINT);
       if (plan.type === 'INCL' && plan.name.startsWith('L')) {
         errors.push(
           'Function-group structural includes require a single SAPWrite create with group; batch_create does not support them.',
@@ -920,6 +973,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       if (
         plan.type === 'DTEL' ||
         plan.type === 'TTYP' ||
+        plan.type === 'ENHO' ||
         (plan.type === 'FUNC' && plan.metadata.processingType !== undefined) ||
         (!plan.metadataObject && plan.source)
       ) {
@@ -985,6 +1039,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
     }
     try {
       applyBdefBehaviorExtensionMetadata(plan.type, plan.source, plan.metadata);
+      if (plan.type === 'ENHO') await prepareEnhoCreateProperties(client, plan.metadata, plan.name);
       plan.body = buildCreateXml(
         plan.type,
         plan.name,
@@ -997,8 +1052,12 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       );
       plan.contentType = createContentTypeForType(plan.type, cloud);
     } catch (err) {
-      // Construction errors are local input diagnostics, not SAP response details.
-      failBatchEntry(plan.result, 'preflight', batchFailureMessage(err, false));
+      // Construction errors are local input diagnostics, except the ENHO spot read, which is a SAP response.
+      failBatchEntry(
+        plan.result,
+        'preflight',
+        batchFailureMessage(err, err instanceof AdtApiError && config.minimalErrors),
+      );
     }
   }
   if (results.some((entry) => entry.status === 'failed')) return report(true);
@@ -1015,7 +1074,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           client.http,
           client.safety,
           plan.objectUrl.replace(/\/[^/]+$/, ''),
-          plan.body,
+          plan.type === 'ENHO' ? badiContainerXml(plan.body) : plan.body,
           plan.contentType,
           plan.transport,
           needsPackage ? plan.packageName : undefined,
@@ -1045,6 +1104,15 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.transport,
         );
       }
+      if (plan.type === 'ENHO')
+        await saveBadiImplementationsAfterCreate(
+          client,
+          plan.objectUrl,
+          plan.name,
+          plan.body,
+          plan.contentType,
+          plan.transport,
+        );
       if (plan.type === 'DTEL') {
         await client.http.withStatefulSession(async (session) => {
           const lock = await lockObject(
@@ -1095,7 +1163,9 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
       } else {
         phase = 'activate';
         entry.activation = 'unknown';
-        const outcome = await activate(client.http, client.safety, plan.objectUrl);
+        // Send the name like SAPActivate does: ENHO activation fails with 403 "Resource   could not be
+        // locked" when the reference carries only the URI (live 816, 2026-10-07).
+        const outcome = await activate(client.http, client.safety, plan.objectUrl, { name: plan.name });
         if (!outcome.success) {
           entry.activation = 'failed';
           failBatchEntry(

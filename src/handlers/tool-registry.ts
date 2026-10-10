@@ -105,7 +105,7 @@ const SAPREAD_TYPE_TABLE = [
   // FEATURE_TOGGLE is the new canonical name; FTG2 stays as deprecated alias for one minor.
   { type: 'FEATURE_TOGGLE', btp: false },
   { type: 'FTG2', btp: false },
-  { type: 'ENHO', btp: false },
+  { type: 'ENHO', btp: true },
   { type: 'VERSIONS', btp: false },
   { type: 'VERSION_SOURCE', btp: false },
   // Server-driven objects (ABAP Platform 2025 / SAP_BASIS 8.16+) — generic AFF read path,
@@ -153,6 +153,8 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'MSAG', btp: true },
   { type: 'TTYP', btp: false },
   { type: 'ENQU', btp: true },
+  // BAdI implementations (ENHO/XHB) only; on BTP only for BAdIs released for cloud development (C1).
+  { type: 'ENHO', btp: true },
   // Server-driven objects (8.16+) — write via the generic blue:blueSource + AFF JSON engine.
   // Rows derive from SDO_TYPES exactly like the SAPRead table above.
   ...SDO_TYPES.map((t) => ({ type: t, btp: true }) as const),

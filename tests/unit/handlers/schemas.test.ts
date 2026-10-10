@@ -447,7 +447,8 @@ describe('SAPReadSchemaBtp', () => {
     expect(SAPReadSchemaBtp.safeParse({ type: 'VARIANTS' }).success).toBe(false);
     expect(SAPReadSchemaBtp.safeParse({ type: 'AUTH' }).success).toBe(false);
     expect(SAPReadSchemaBtp.safeParse({ type: 'FTG2' }).success).toBe(false);
-    expect(SAPReadSchemaBtp.safeParse({ type: 'ENHO' }).success).toBe(false);
+    // ENHO (BAdI implementations) is a BTP type too.
+    expect(SAPReadSchemaBtp.safeParse({ type: 'ENHO', name: 'ZMY_ENH' }).success).toBe(true);
   });
 
   it('rejects expand_includes — the field is on-prem only', () => {

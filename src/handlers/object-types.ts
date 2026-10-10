@@ -135,6 +135,7 @@ export const KNOWN_BASE_TYPES = new Set([
   'SKTD',
   'TTYP',
   'ENQU',
+  'ENHO',
 ]);
 
 /** Normalize ADT type codes and aliases to ARC-1 canonical short types. */
@@ -475,6 +476,10 @@ export function objectBasePath(type: string): string {
     case 'ENQU':
       // DDIC lock objects: XML metadata, no source/main. Live 8.16: docs/research/abap-types/types/enqu.md.
       return '/sap/bc/adt/ddic/lockobjects/sources/';
+    case 'ENHO':
+      // BAdI enhancement implementations (XHB), the only writable ENHO subtype. SAPRead routes
+      // XHH/XH itself (src/adt/enhancements.ts). docs/research/abap-types/types/enho.md.
+      return '/sap/bc/adt/enhancements/enhoxhb/';
     case 'MSAG':
       return '/sap/bc/adt/messageclass/';
     case 'DEVC':

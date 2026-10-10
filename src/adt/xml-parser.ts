@@ -1376,7 +1376,7 @@ function getDeepArray(obj: Record<string, unknown>, path: string[]): Array<Recor
   return [];
 }
 
-function toRecordArray(value: unknown): Array<Record<string, unknown>> {
+export function toRecordArray(value: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(value)) {
     return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object');
   }

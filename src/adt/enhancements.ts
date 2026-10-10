@@ -1,5 +1,6 @@
 /** ENHO read routing: XHB BAdIs, XHH source plug-ins, and the legacy/generic XH route. */
 import type { AdtClient } from './client.js';
+import { withFilterConditions } from './enho-filter.js';
 import { AdtApiError, AdtError } from './errors.js';
 import { checkOperation, OperationType } from './safety.js';
 import type { EnhancementImplementationInfo } from './types.js';
@@ -15,7 +16,9 @@ type Subtype = keyof typeof ROUTES;
 /** Preserve the existing BAdI payload; source plug-ins additionally expose their hook locations. */
 export function parseEnhancementMetadata(xml: string): EnhancementImplementationInfo {
   const parsed = parseXml(xml);
-  if (parsed.objectData && typeof parsed.objectData === 'object') return parseEnhancementImplementation(xml);
+  if (parsed.objectData && typeof parsed.objectData === 'object') {
+    return withFilterConditions(parsed, parseEnhancementImplementation(xml));
+  }
   const root = parsed.enhancement as Record<string, unknown> | undefined;
   if (!root || typeof root !== 'object' || Array.isArray(root)) {
     throw new AdtError('Invalid ENHO metadata: expected objectData or enhancement.');

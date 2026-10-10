@@ -45,7 +45,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` where the system advertises them — release-dependent) |
+| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, `ENHO` on both, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` where the system advertises them — release-dependent) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
 | `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL` (CDS views are `DDLS`; classic DDIC `VIEW` is unsupported — it has no plain-text source). Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
 | `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or its canonical source/revision URI. URI inputs use the same endpoint, authority, traversal, query, fragment, and control-character checks as `versionUri`. |
@@ -263,8 +263,9 @@ navigation links). A failed source read returns an error, not successful partial
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
-integration when the error identifies an unavailable ADT route. No enhancement writes
-or ENHO source filtering (`grep`, method or line selection) are supported.
+integration when the error identifies an unavailable ADT route. Only BAdI implementations
+are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
+(`grep`, method or line selection) is not supported.
 
 ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
@@ -384,7 +385,7 @@ keep their separate behavior.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `ENQU`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `ENQU`, `ENHO` (BAdI implementations), `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, and `add_unit`. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
 | `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. An update keeps the stored kind while the row type is unchanged. |
@@ -597,6 +598,51 @@ ABAP Cloud code uses `CL_ABAP_LOCK_OBJECT_FACTORY` to acquire runtime locks.
 
 Create, partial update, table/parameter changes, activation, batch create, concurrent edits and deletion were verified on SAP_BASIS 758/816 and a BTP 920 trial. The collection was absent on the tested 7.50 system. SAP can normalize parameters joined through foreign keys; read back the activated definition before editing it. See the [wire contract and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-enqu-lock-object-adt-contract.md).
 
+#### BAdI implementation writes (ENHO)
+
+`SAPWrite` supports `create`, `update` and `delete` for BAdI enhancement implementations (`ENHO/XHB`) on
+systems that expose `/sap/bc/adt/enhancements/enhoxhb`. On BTP only BAdIs released for cloud development
+(C1 with `useInSAPCloudPlatform`) can be implemented, in an ABAP Cloud package. Source-code plug-ins (`XHH`) and
+other enhancement technologies stay read-only. `source` is **JSON in the shape `SAPRead type="ENHO"`
+returns**. Writable keys are `enhancementSpot` and `badiImplementations`; each entry has `name`,
+`badiDefinition`, `implementingClass` and optional `shortText`, `active` (default `true`) and `default`
+(default `false`). Read-only keys (`name`, `description`, `package`, `technology`, `switchSupported`)
+are ignored; change the short text with the separate `SAPWrite.description` argument. Unknown keys are
+rejected. One enhancement implementation belongs to one enhancement spot.
+
+- **`create`** needs `enhancementSpot` and the BAdI implementations. Like Eclipse, ARC-1 POSTs the empty
+  container and then saves the implementations with a locked PUT; both carry the transport. If the PUT
+  fails the object already exists: fix the input and use `update`, do not repeat `create`. Create and activate the implementing class first, then `SAPActivate(type="ENHO", name=…)`.
+- **`update`** reads the developer view under the SAP lock. A supplied `badiImplementations` list
+  replaces the stored one; within an entry that already exists, omitted `shortText`/`active`/`default`
+  keep their stored values. The spot cannot change.
+- **`delete`** uses the standard lock → DELETE → unlock path.
+
+**Filters.** For filter-dependent BAdIs, each entry takes an optional `filter` condition in the form
+`SAPRead` shows it, e.g. `"COUNTRY = 'BE' OR COUNTRY = 'NL'"` or
+`"(COUNTRY = 'DE' OR COUNTRY = 'AT') AND GENERIC_FILTER CP 'X*'"`. Comparators are `=`, `<>`, `<`, `<=`, `>`,
+`>=`, `CP` and `NP`; AND binds tighter than OR; values are quoted (`''` escapes a quote). Omitting `filter`
+or passing it unchanged keeps SAP's stored filter as it is; `"filter": ""` removes it. ARC-1 reads the
+enhancement spot first: it refuses a BAdI that is not defined in the spot and a filter name the BAdI does not
+declare, and copies each filter's type and DDIC check from the BAdI definition. SAP does not store an OR of
+different filters inside an AND, such as `(A = '1' OR B = '2') AND C = '3'`; ARC-1 refuses it and asks for
+the equivalent OR of AND groups. An OR of one filter's values inside an AND is fine. A Z/Y create for an
+SAP-internal spot is refused before the create, because SAP rejects it but still leaves an object directory
+entry. An update also keeps the stored `customizingLock` and `example` attributes.
+
+SAP checks that the class implements the BAdI interface and the filter values against their DDIC check
+only at activation: such a write is saved inactive and `SAPActivate` reports the error. Create, update,
+filters, activation and delete were verified on SAP_BASIS 816 in `$TMP` and in a transportable package
+with a request.
+
+```json
+{"action":"create","type":"ENHO","name":"ZMY_ENH_APPROVAL_REASON","package":"$TMP","description":"Approval Reason BAdI",
+ "source":"{\"enhancementSpot\":\"ES_SD_SLS_EXTEND\",\"badiImplementations\":[{\"name\":\"ZMY_BADI_APPROVAL_REASON\",\"badiDefinition\":\"SD_APM_SET_APPROVAL_REASON\",\"implementingClass\":\"ZCL_MY_APPROVAL_REASON\"}]}"}
+```
+
+The payload follows SAP's GET serialization and was verified on SAP_BASIS 816 on-prem. See the
+[wire contract](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-07-enho-xhb-write-contract.md).
+
 #### SAPWrite for FUNC: create / update with structured parameters
 
 Issue [#252](https://github.com/arc-mcp/arc-1/issues/252) added structured FM parameter management. Pass a `parameters` array to declare the function module's signature; ARC-1 builds the ABAP-source-based `IMPORTING / EXPORTING / CHANGING / TABLES / EXCEPTIONS / RAISING` clause and splices it into the source body before PUT. SAP ADT exposes parameters ONLY through `/source/main` (verified live on a4h S/4HANA 2023 + NPL 7.50 SP02) — there is no separate metadata endpoint.
@@ -695,6 +741,7 @@ Ordinary-group create/delete verified on NW 7.50 SP02 and S/4HANA 2023 (758). Na
 | `SAPWrite create type="DOMA"` | `/sap/bc/adt/ddic/domains` | SE11. Data elements that reference a domain are blocked with it |
 | `SAPWrite create type="TTYP"` | `/sap/bc/adt/ddic/tabletypes` | SE11 |
 | `SAPWrite create type="ENQU"` | `/sap/bc/adt/ddic/lockobjects/sources` | SE11 (present on tested 758/816 systems; absent on tested 7.50) |
+| `SAPWrite create type="ENHO"` | `/sap/bc/adt/enhancements/enhoxhb` | SE19 or Eclipse ADT (advertised on 758/816; only `enhoxh` on 750) |
 | `SAPManage action="create_package"` | `/sap/bc/adt/packages` | SE80 / SE21 |
 
 Endpoint absence verified on two independent NW 7.50 systems (a dev edition and an ECC EhP8 7.50 SP31 production system); all four are present on S/4HANA 2023 (758) and ABAP Platform 2025 (816). Structures (`TABL/DS`), data elements, function groups, function modules and includes **do** work on 7.50 — note that DDIC structure source there uses `define type <name> { … }`, not `define structure`.
