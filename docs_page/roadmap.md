@@ -75,7 +75,7 @@ sequence.
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
-| [COMPAT-12](#compat-12) | Program deletion with another user's text draft | P3 | S | Needs research | Compatibility |
+| [COMPAT-12](#compat-12) | Deletion with another user's text draft | P3 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
@@ -86,7 +86,6 @@ sequence.
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
 | [FEAT-66](#feat-66) | Interactive confirmation for destructive actions | P3 | L | Blocked | Safety / UX |
 | [FEAT-75](#feat-75) | Delete mutually-referencing objects as one set | P2 | S | Ready | Developer workflow |
-| [FEAT-81](#feat-81) | Delete function groups without orphaning text-pool drafts | P2 | S | Needs research | Developer workflow |
 | [FEAT-76](#feat-76) | Parameterized extension service calls | P2 | M | Needs research | Integration |
 | [FEAT-77](#feat-77) | Verified read-only POST operations for extensions | P2 | M | Needs research | Integration |
 | [FEAT-22](#feat-22) | Safe gCTS mutation workflows | P3 | L | Needs research | Integration |
@@ -304,22 +303,28 @@ define structural-node identity and traversal without mistaking branch labels fo
 Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
 
 <a id="compat-12"></a>
-### COMPAT-12 — Program deletion with another user's text draft
+### COMPAT-12 — Deletion with another user's text draft
 
 - **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** [#952](https://github.com/arc-mcp/arc-1/pull/952) guards program
-deletion when the caller's inactive list includes a PROG/PX draft. That per-user
-list cannot detect another user's draft. Whether SAP permits deletion in that
-state and leaves an orphan has not been verified. The original same-user deletion
-case is fixed; [#949](https://github.com/arc-mcp/arc-1/pull/949) adds explicit pool
-activation. Function-group deletion is tracked separately in [FEAT-81](#feat-81).
+**Remaining gap.** Program and function-group deletion activate a matching PROG/PX
+text-pool entry from the caller's inactive feed before deleting the owner
+([#952](https://github.com/arc-mcp/arc-1/pull/952),
+[#959](https://github.com/arc-mcp/arc-1/pull/959)). The feed can include another
+user's drafts in the caller's transport requests, and omit drafts outside those
+requests. It does not prove exclusive ownership. Whether SAP permits cross-user
+pool activation or deletion that leaves an orphan has not been verified. The
+same-user case is fixed; [#949](https://github.com/arc-mcp/arc-1/pull/949) adds
+explicit pool activation. Feed and cleanup evidence is recorded in
+[the deletion plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/completed/2026-10-09-function-group-delete-text-pool.md).
 
 **Resume with.** Two authorized SAP test identities: save a draft as one user and
-attempt deletion as the other, including lock races. Establish SAP's behavior
-before adding a guard; preserve per-user identity, package checks and native
-authorizations, and do not silently activate or discard another user's draft.
+attempt PROG/FUGR deletion as the other, both inside and outside a shared transport
+request, including lock races and principal propagation. Establish feed visibility,
+SAP's activation/delete authorization and draft ownership before adding a guard;
+preserve per-user identity, package checks and native authorizations. Avoid silently
+activating or discarding another user's draft.
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
@@ -487,26 +492,6 @@ live pair in one call on both releases; the integration suite uses it for cleanu
 **Resume with.** Reuse the verified request shape in `deleteObjectSet`
 (`tests/integration/crud-harness.ts`). Enforce the package gate for every object before sending,
 report SAP's per-object `isDeleted` result, gate on discovery, and stop suggesting circular orders.
-
-<a id="feat-81"></a>
-### FEAT-81 — Delete function groups without orphaning text-pool drafts
-
-- **Priority / effort / status:** P2 / S / Needs research
-- **Category:** Developer workflow
-
-**Idea.** Extend the program delete guard from [#940](https://github.com/arc-mcp/arc-1/issues/940)
-to `FUGR`, so deleting an active function group cannot leave its inactive text pool behind.
-
-**Why it remains.** On 758, deleting an active group with a separately saved pool draft leaves the
-REPOTEXT `SAPL<group>` row with state `I`. Recreating, activating and deleting the group does not
-clear it. The inactive list shows only `FUGR/F` with the group URI, not a pool entry, so the
-program check for `PROG/PX` cannot detect it. Classes are not affected: deleting the class removed
-its pool draft. Workaround: recreate the group, activate it, write any text part with
-`edit_text_symbols` (which activates the pool), then delete it.
-
-**Resume with.** Find a reliable pool-draft signal, for example `adtcore:version` on
-GET `/sap/bc/adt/textelements/functiongroups/<name>`. Verify that pool activation is harmless when
-the group has other inactive parts or no texts, then reuse `activateTextPool` in `writeActionDelete`.
 
 ## Integration and localization
 

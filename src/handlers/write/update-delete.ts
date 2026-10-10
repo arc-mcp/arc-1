@@ -205,11 +205,19 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   await enforcePackageForExistingObject();
-  // Deleting an active PROG orphans its standalone inactive text pool (REPOTEXT 'I'), so activate it first (#940).
+  // Deleting an active PROG/FUGR orphans its standalone inactive text pool (REPOTEXT 'I').
   // For a never-activated PROG, SAP accepts this as a no-op and the delete removes the pool anyway.
+  // FUGR pools are named SAPL<group>; match their URI instead of the owner name.
+  const fugrPools = [name, encodeURIComponent(name)].map((n) =>
+    `/sap/bc/adt/textelements/functiongroups/${n}`.toUpperCase(),
+  );
   const pool =
-    type === 'PROG'
-      ? (await client.getInactiveObjects()).find((o) => o.type === 'PROG/PX' && o.name.toUpperCase() === name)
+    type === 'PROG' || type === 'FUGR'
+      ? (await client.getInactiveObjects()).find(
+          (o) =>
+            o.type === 'PROG/PX' &&
+            (type === 'PROG' ? o.name.toUpperCase() === name : fugrPools.includes(o.uri.toUpperCase())),
+        )
       : undefined;
   if (pool) {
     try {
@@ -218,7 +226,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
         client.safety,
         pool.uri,
         pool.name,
-        `PROG ${name} was not deleted: activating its inactive text pool failed, and deleting the program now would orphan the pool in SAP.`,
+        `${type} ${name} was not deleted: activating its inactive text pool failed, and deleting the object now would orphan the pool in SAP.`,
       );
     } finally {
       invalidateWrittenObject();
@@ -247,7 +255,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
       // The delete failed after an activation request; retain this state even with minimal errors.
       const note =
         'Text-pool activation was requested before deletion failed. The texts may already be active. ' +
-        'Read the program and its text pool before retrying deletion.';
+        `Read the ${type === 'PROG' ? 'program' : 'function group'} and its text pool before retrying deletion.`;
       err.extraHint = err.extraHint ? `${note}\n${err.extraHint}` : note;
     }
     // NW 7.50 can issue a lock handle for an absent DDLS, so LOCK alone is not
@@ -286,7 +294,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
     throw err;
   }
   invalidateWrittenObject();
-  return textResult(pool ? `Deleted PROG ${name} and its inactive text pool.` : `Deleted ${type} ${name}.`);
+  return textResult(pool ? `Deleted ${type} ${name} and its inactive text pool.` : `Deleted ${type} ${name}.`);
 }
 
 /** Write one subobject of an object's textpool via the ADT textelements service (CLAS, PROG, FUGR).
