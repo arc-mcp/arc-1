@@ -228,9 +228,9 @@ export async function withActiveTextPoolForDelete<T>(
         `${objectType} ${name} was not deleted because its text pool is inactive. ` +
         'Review the draft with its author, then explicitly activate the pool and retry deletion. ' +
         (objectType === 'PROG'
-          ? 'A newly created program needs its first owner activation.'
+          ? `A newly created program needs its first owner activation. If its source cannot compile and you intend to discard it, replace the source with REPORT ${name}., activate the program, then retry deletion.`
           : 'If SAP leaves an empty pool inactive after activation, resolve the draft in ADT before retrying.');
-      const error = new AdtApiError('Deletion would orphan an inactive text pool.', 409, uri);
+      const error = new AdtApiError('Deletion refused because the text pool is inactive.', 409, uri);
       error.extraHint = hint;
       throw error;
     }

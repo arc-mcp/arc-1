@@ -1064,7 +1064,8 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   inactive pool metadata. An inactive pool stops deletion: review it with its author and
   explicitly activate it before retrying. Deletion never activates drafts automatically;
   the caller's inactive-object list cannot establish the absence of another user's draft.
-  A new program needs its first owner activation before deletion. If SAP leaves an empty FUGR
+  A new program needs its first owner activation before deletion. If its source cannot compile
+  and you intend to discard it, replace it with `REPORT <name>.`, activate, then delete. If SAP leaves an empty FUGR
   pool inactive after activation, resolve the draft in ADT; deletion continues to refuse it. Clean pools and source-only
   drafts can be deleted while both locks remain held. An unavailable discovery collection
   retains the legacy delete path (7.50); an advertised service error stops deletion.

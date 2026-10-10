@@ -9,6 +9,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { skipTest } from '../helpers/skip-policy.js';
 import {
   callTool,
@@ -306,15 +307,7 @@ describe('E2E Smoke Tests', () => {
     const createText = expectToolSuccess(result);
     expect(createText).toContain(`Created PROG ${objectName}`);
 
-    // best-effort-cleanup
-    const deleteResult = await callTool(client, 'SAPWrite', {
-      action: 'delete',
-      type: 'PROG',
-      name: objectName,
-    });
-    if (deleteResult.isError) {
-      console.warn(`    [cleanup] Failed to delete ${objectName}: ${deleteResult.content[0]?.text ?? 'unknown error'}`);
-    }
+    expectToolSuccess(await deleteProgramFixture((tool, args) => callTool(client, tool, args), objectName));
   });
 
   it('SAPRead — 404 for non-existent program returns error with hint', async () => {

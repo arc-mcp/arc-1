@@ -90,3 +90,27 @@ Public compiled empty-FUGR writes on 758/816 at 22:08 UTC reproduce this exact
 case: success text says activation requested; native pool remains inactive;
 delete refuses; controlled test recovery ends owner404 + zero REPOTEXT. All
 8,077 tests, typecheck, lint and build pass after the wording correction.
+
+## Independent review follow-up (2026-10-10)
+
+Keep the conservative refusal for never-activated programs. Native owner metadata and
+active-source GET do not reliably distinguish them from previously activated owners,
+and no proven exemption exists. This changes create→failed activation→delete workflows:
+for a program the caller intends to discard, write `REPORT <name>.`, activate, delete.
+The production delete never rewrites or activates source itself. The message describes
+inactive state rather than claiming every refused case necessarily creates an orphan.
+
+Rewrite the two old live tests to prove refusal preserves owner and draft, then explicitly
+activate and verify deletion plus zero REPOTEXT rows. Add uncompilable-source recovery.
+The affected disposable-fixture cleanups share a small test-only recovery helper and
+assert delete success; fixture synchronization and transportable-program cleanup use it
+too. This belongs in this PR because the changed deletion contract requires those callers
+to adapt. No separate test-hygiene PR is necessary for the same files.
+
+Rebase onto current main after #959's squash merge; set COMPAT-12 status to Blocked
+for its missing recording-package/PP prerequisites. Keep COMPAT-15 separate.
+
+The full 816 E2E run additionally found batch activation-failure cleanup silently
+ignoring the guarded refusal. Its shared PROG cleanup now uses the same recovery
+and accepts only an owner-path 404 as absence. RAP lifecycle cleanup uses that
+checked path too; a pool endpoint 404 cannot be mistaken for a deleted owner.

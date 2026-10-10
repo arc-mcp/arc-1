@@ -75,7 +75,7 @@ sequence.
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
-| [COMPAT-12](#compat-12) | Text-pool deletion under shared transports and PP | P3 | S | Needs live qualification | Compatibility |
+| [COMPAT-12](#compat-12) | Text-pool deletion under shared transports and PP | P3 | S | Blocked | Compatibility |
 | [COMPAT-15](#compat-15) | Empty function-group text-pool activation postcondition | P3 | S | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
@@ -306,7 +306,7 @@ Prove every branch is checked before allowing these shapes. Keep unknown nodes f
 <a id="compat-12"></a>
 ### COMPAT-12 — Text-pool deletion under shared transports and PP
 
-- **Priority / effort / status:** P3 / S / Needs live qualification
+- **Priority / effort / status:** P3 / S / Blocked
 - **Category:** Compatibility
 
 **Remaining qualification.** Native two-user 758 tests prove that the default inactive
