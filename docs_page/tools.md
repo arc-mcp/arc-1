@@ -1060,12 +1060,15 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
   parameter names.
 - **Deleting a PROG or FUGR with an inactive text pool:** SAP can leave a separately saved
   text-pool draft behind after deleting its owner; recreating the same name inherits that orphan.
-  `SAPWrite(action="delete")` first activates the matching `PROG/PX` pool from the caller's
-  inactive feed. FUGR matching uses its textelements URI. Source drafts are not activated.
-  Failed activation stops deletion; a later delete failure warns that texts may already be active
-  and asks you to read the owner and pool before retrying. The feed can include other users' drafts
-  in the caller's transport requests and omit drafts outside them. Cross-user behavior remains
-  unverified, and this check does not make concurrent edits atomic.
+  `SAPWrite(action="delete")` locks the owner and its text pool, then checks the explicit
+  inactive pool metadata. An inactive pool stops deletion: review it with its author and
+  explicitly activate it before retrying. Deletion never activates drafts automatically;
+  the caller's inactive-object list cannot establish the absence of another user's draft.
+  A new program needs its first owner activation before deletion. If its source cannot compile
+  and you intend to discard it, replace it with `REPORT <name>.`, activate, then delete. If SAP leaves an empty FUGR
+  pool inactive after activation, resolve the draft in ADT; deletion continues to refuse it. Clean pools and source-only
+  drafts can be deleted while both locks remain held. An unavailable discovery collection
+  retains the legacy delete path (7.50); an advertised service error stops deletion.
   To recover an older PROG orphan, recreate and activate the program, then delete it. For a FUGR
   orphan, recreate and activate the group, write a text part with `edit_text_symbols`, then delete it.
 - **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent

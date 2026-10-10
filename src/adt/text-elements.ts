@@ -15,6 +15,7 @@ import { activate } from './devtools.js';
 import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { parseXml } from './xml-parser.js';
 
 /** Media type per subobject. Each is used as BOTH Content-Type and Accept on the write PUT (SAP
  *  returns 400 "Accept header missing" otherwise). */
@@ -193,5 +194,52 @@ export async function activateTextPool(
       err.message = `${note}\n${err.message}`;
     }
     throw err;
+  }
+}
+
+/** Caller already holds the owner lock in this session. The pool has an independent lock:
+ * hold both from the explicit inactive-version read through owner DELETE. The caller's
+ * inactive feed omits other users' drafts and cannot authorize automatic activation. */
+export async function withActiveTextPoolForDelete<T>(
+  session: AdtHttpClient,
+  safety: SafetyConfig,
+  objectType: 'PROG' | 'FUGR',
+  name: string,
+  deleteOwner: () => Promise<T>,
+): Promise<T> {
+  if (!serviceAvailable(session, objectType)) return deleteOwner();
+  const uri = textElementsObject(objectType, name);
+  const lock = await lockObject(session, safety, uri, 'MODIFY');
+  try {
+    const response = await session.get(`${uri}?version=inactive`);
+    const pool = parseXml(response.body).textElement as Record<string, unknown> | undefined;
+    const version = pool?.['@_version'];
+    if (
+      !pool ||
+      Array.isArray(pool) ||
+      pool['@_name'] !== name ||
+      pool['@_type'] !== `${objectType}/PX` ||
+      (version !== 'active' && version !== 'inactive')
+    ) {
+      throw new AdtApiError('Cannot verify the text-pool state; the owner was not deleted.', 409, uri);
+    }
+    if (version === 'inactive') {
+      const hint =
+        `${objectType} ${name} was not deleted because its text pool is inactive. ` +
+        'Review the draft with its author, then explicitly activate the pool and retry deletion. ' +
+        (objectType === 'PROG'
+          ? `A newly created program needs its first owner activation. If its source cannot compile and you intend to discard it, replace the source with REPORT ${name}., activate the program, then retry deletion.`
+          : 'If SAP leaves an empty pool inactive after activation, resolve the draft in ADT before retrying.');
+      const error = new AdtApiError('Deletion refused because the text pool is inactive.', 409, uri);
+      error.extraHint = hint;
+      throw error;
+    }
+    return await deleteOwner();
+  } finally {
+    try {
+      await unlockObject(session, uri, lock.lockHandle);
+    } catch {
+      // Owner DELETE also removes the pool; the stateful session closes on every path.
+    }
   }
 }

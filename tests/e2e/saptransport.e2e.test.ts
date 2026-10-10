@@ -16,6 +16,7 @@
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { requireOrSkip, SkipReason, skipTest } from '../helpers/skip-policy.js';
 import { callTool, connectClient, expectToolError, expectToolSuccess, expectToolSuccessOrSkip } from './helpers.js';
 
@@ -59,11 +60,7 @@ describe('E2E SAPTransport Tests', () => {
   }
 
   async function deleteTrackedTransportableProgram(name: string): Promise<void> {
-    const result = await callTool(client, 'SAPWrite', {
-      action: 'delete',
-      type: 'PROG',
-      name,
-    });
+    const result = await deleteProgramFixture((tool, args) => callTool(client, tool, args), name);
     const text = result.content?.[0]?.text ?? '';
     if (result.isError && !/not found|does not exist|unknown/i.test(text)) {
       throw new Error(text || `Failed to delete ${name}`);

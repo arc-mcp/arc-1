@@ -20,6 +20,7 @@ import {
   expectToolSuccessOrSkip,
   uniqueName,
 } from './helpers.js';
+import { bestEffortDelete } from './rap-write-helpers.js';
 
 function parsePossiblyCachedJson(text: string): any {
   return JSON.parse(text.replace(/^\[cached(?::revalidated)?\]\n/, ''));
@@ -189,11 +190,7 @@ describe('E2E RAP Completeness Tests', () => {
 
     afterAll(async () => {
       for (const name of actNames) {
-        try {
-          await callTool(client, 'SAPWrite', { action: 'delete', type: 'PROG', name });
-        } catch {
-          // best-effort-cleanup
-        }
+        await bestEffortDelete(client, 'PROG', name);
       }
     });
 
@@ -229,16 +226,7 @@ describe('E2E RAP Completeness Tests', () => {
 
     it('creates a program, updates source, activates, reads back, deletes', async (ctx) => {
       // Pre-cleanup: delete stale object from a previous run that failed mid-lifecycle
-      try {
-        await callTool(client, 'SAPWrite', {
-          action: 'delete',
-          type: 'PROG',
-          name: WRITE_NAME,
-        });
-        console.log(`    [cleanup] Deleted stale ${WRITE_NAME} from previous run`);
-      } catch {
-        // best-effort-cleanup: object may not exist — that's the happy path
-      }
+      await bestEffortDelete(client, 'PROG', WRITE_NAME);
 
       // Step 1: Create the transient program
       const createResult = await callTool(client, 'SAPWrite', {
@@ -285,15 +273,7 @@ describe('E2E RAP Completeness Tests', () => {
         expect(readText).toContain('updated by E2E test');
       } finally {
         // Always clean up — delete the transient object even if test fails
-        try {
-          await callTool(client, 'SAPWrite', {
-            action: 'delete',
-            type: 'PROG',
-            name: WRITE_NAME,
-          });
-        } catch {
-          // Best-effort cleanup
-        }
+        await bestEffortDelete(client, 'PROG', WRITE_NAME);
       }
     });
   });

@@ -1869,6 +1869,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     it('auto-propagates lock corrNr to delete when no transport supplied', async () => {
       const calls: Array<{ url: string; method: string }> = [];
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         calls.push({ url: url.toString(), method: opts?.method ?? 'GET' });
         // CSRF HEAD
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
@@ -1898,6 +1900,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     it('uses explicit transport over lock corrNr in delete', async () => {
       const calls: Array<{ url: string; method: string }> = [];
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         calls.push({ url: url.toString(), method: opts?.method ?? 'GET' });
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
         if (url.toString().includes('_action=LOCK'))
@@ -1925,6 +1929,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
     it('does not add corrNr to delete when lock returns empty corrNr', async () => {
       const calls: Array<{ url: string; method: string }> = [];
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         calls.push({ url: url.toString(), method: opts?.method ?? 'GET' });
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
         if (url.toString().includes('_action=LOCK'))
@@ -1949,6 +1955,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
     it('delete succeeds for $TMP objects without transport', async () => {
       mockFetch.mockImplementation((url: string, opts: any) => {
+        if (String(url).includes('/textelements/programs/ZTEST?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZTEST" type="PROG/PX" version="active"/>'));
         if (opts?.method === 'HEAD') return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
         if (url.toString().includes('_action=LOCK'))
           return Promise.resolve(mockResponse(200, lockBodyNoCorrNr, { 'x-csrf-token': 'T' }));
@@ -2250,6 +2258,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        if (String(url).includes('/textelements/programs/ZPROGRAM?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZPROGRAM" type="PROG/PX" version="active"/>'));
         const method = (opts?.method ?? 'GET').toUpperCase();
         if (method === 'POST' && String(url).includes('_action=LOCK')) {
           return Promise.resolve(mockResponse(200, lockBody, { 'x-csrf-token': 'T' }));
@@ -2281,6 +2291,8 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
 
       mockFetch.mockReset();
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string }) => {
+        if (String(url).includes('/textelements/programs/ZPROGRAM?version=inactive'))
+          return Promise.resolve(mockResponse(200, '<textElement name="ZPROGRAM" type="PROG/PX" version="active"/>'));
         const method = (opts?.method ?? 'GET').toUpperCase();
         const parsed = new URL(String(url));
         if (method === 'POST' && parsed.searchParams.get('_action') === 'LOCK') {

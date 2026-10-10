@@ -1,4 +1,5 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { callTool } from './helpers.js';
 
 /**
@@ -10,8 +11,16 @@ import { callTool } from './helpers.js';
  */
 export { uniqueLettersName as uniqueName } from './helpers.js';
 
-/** Best-effort delete helper. Swallows all errors. */
+/** Program fixture cleanup is checked; other RAP types retain their existing best-effort cleanup. */
 export async function bestEffortDelete(client: Client, type: string, name: string): Promise<void> {
+  if (type === 'PROG') {
+    const result = await deleteProgramFixture((tool, args) => callTool(client, tool, args), name);
+    const text = result.content.map((c) => c.text).join('\n');
+    // Only an owner-lock 404 establishes absence; a text-pool 404 does not.
+    const ownerMissing = /status 404 at \/sap\/bc\/adt\/programs\/programs\//i.test(text);
+    if (result.isError && !ownerMissing) throw new Error(`Cleanup of ${name}: ${text}`);
+    return;
+  }
   try {
     await callTool(client, 'SAPWrite', { action: 'delete', type, name });
   } catch {
