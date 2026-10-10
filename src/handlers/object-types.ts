@@ -274,6 +274,11 @@ export function normalizeTypeArgsForValidation(
         objectType:
           cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
       };
+    case 'SAPManage':
+      // Strict-schema clients populate optional fields on unrelated actions and revoke.
+      // Only a release consumes this selection; keep [] meaningful there.
+      if (cleaned.action !== 'set_api_state' || cleaned.apiState === 'NOT_RELEASED') delete cleaned.apiVisibility;
+      return cleaned;
     case 'SAPWrite': {
       const action = String(cleaned.action ?? '');
       // A text-pool PUT replaces the selected part; an explicit empty string clears it.

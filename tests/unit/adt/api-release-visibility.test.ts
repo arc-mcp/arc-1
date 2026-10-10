@@ -77,7 +77,62 @@ describe('explicit API-release visibility', () => {
       .mockResolvedValueOnce(mockResponse(200, released(matching), { 'x-csrf-token': 'T' }));
     const promise = createClient().setApiReleaseState(uri, { visibility: ['cloudDevelopment'] });
     if (matching) expect((await promise).changed).toBe(false);
-    else await expect(promise).rejects.toThrow(/read-back visibility/);
+    else await expect(promise).rejects.toThrow(/read-back visibility.*"changed":false/);
+  });
+  it.each([false, true])(
+    'reports applied state and both actual visibility flags on mismatch, broader=%s',
+    async (broader) => {
+      const actual = released(!broader);
+      mockFetch.mockImplementation(async (_url: string, opts?: RequestInit) => {
+        if (opts?.method === 'PUT') return mockResponse(200, '', { 'x-csrf-token': 'T' });
+        const afterPut = mockFetch.mock.calls.some(([, o]) => o?.method === 'PUT');
+        return mockResponse(200, afterPut ? actual : cloud, { 'x-csrf-token': 'T' });
+      });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+        ...args,
+        apiVisibility: broader ? ['cloudDevelopment'] : [],
+      });
+      expect(result.isError).toBe(true);
+      const text = result.content[0]?.text ?? '';
+      expect(text).toContain('"state":"RELEASED"');
+      expect(text).toContain('"changed":true');
+      expect(text).toContain(`"useInSAPCloudPlatform":${!broader}`);
+      expect(text).toContain('"useInKeyUserApps":false');
+      expect(text).toContain('apiState="NOT_RELEASED"');
+    },
+  );
+  it('drops an inapplicable strict-client selection on unrelated actions', async () => {
+    mockFetch.mockResolvedValue(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      action: 'features',
+      apiState: 'RELEASED',
+      contract: 'C1',
+      apiVisibility: [],
+    });
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    expect(mockFetch.mock.calls.some(([, opts]) => opts?.method === 'PUT')).toBe(false);
+  });
+  it('drops visibility on revoke without resetting the existing visibility flags', async () => {
+    mockFetch.mockImplementation(async (_url: string, opts?: RequestInit) => {
+      if (opts?.method === 'PUT') return mockResponse(200, '', { 'x-csrf-token': 'T' });
+      const afterPut = mockFetch.mock.calls.some(([, o]) => o?.method === 'PUT');
+      return mockResponse(
+        200,
+        afterPut
+          ? cloud.replace('ars:useInSAPCloudPlatform="false"', 'ars:useInSAPCloudPlatform="true"')
+          : released(true),
+        { 'x-csrf-token': 'T' },
+      );
+    });
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPManage', {
+      ...args,
+      apiState: 'NOT_RELEASED',
+      apiVisibility: [],
+    });
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    const body = String(mockFetch.mock.calls.find(([, o]) => o?.method === 'PUT')?.[1]?.body);
+    expect(body).toContain('ars:useInSAPCloudPlatform="true"');
+    expect(body).toContain('ars:state="NOT_RELEASED"');
   });
   it('refuses a nonmatching contract before PUT', () => {
     expect(() => buildApiReleasePutBody(cloud, 'C0', 'RELEASED', ['cloudDevelopment'])).toThrow(/not available/);

@@ -227,11 +227,22 @@ export async function setApiReleaseState(
   const confirmed = parseApiReleaseState(confirmedResp.body);
   // On a real write, assert the full target (state + requested visibility). On an idempotent no-op,
   // explicit selections still require exact visibility; omission keeps the existing state-only no-op check.
-  assertApiReleaseStateConfirmed(
-    confirmed,
-    contract,
-    state,
-    changed || opts.visibility !== undefined ? expectedVisibility : undefined,
-  );
+  try {
+    assertApiReleaseStateConfirmed(
+      confirmed,
+      contract,
+      state,
+      changed || opts.visibility !== undefined ? expectedVisibility : undefined,
+    );
+  } catch (error) {
+    // A failed postcondition does not undo SAP's PUT. Expose the actual state so callers
+    // can reconcile an applied release instead of treating this as a rejected mutation.
+    throw new Error(
+      `${error instanceof Error ? error.message : String(error)} ` +
+        `Confirmed SAP result: ${JSON.stringify({ ...confirmed, changed })}. ` +
+        `If the release is unintended, call SAPManage set_api_state with objectUri="${objectUri}", ` +
+        `contract="${contract}" and apiState="NOT_RELEASED"; verify API_STATE before deleting the object.`,
+    );
+  }
   return { ...confirmed, changed };
 }

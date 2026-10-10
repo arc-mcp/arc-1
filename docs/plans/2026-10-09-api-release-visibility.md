@@ -14,8 +14,9 @@ ReadOnly flags; it does not expose a universal list of supported visibility pair
 Add optional `apiVisibility: ["cloudDevelopment", "keyUserApps"]` selections to
 SAPManage.set_api_state. It is a complete explicit selection: [] requests both
 false and leaves SAP to return the contract-specific error. Omission retains the
-current contract-default behavior. Reject unrelated actions, duplicates, unknown
-values and NOT_RELEASED+visibility before HTTP.
+current contract-default behavior. Drop inapplicable visibility on unrelated actions and NOT_RELEASED during argument
+normalization, matching strict-schema client handling elsewhere. Reject duplicate and
+unknown selections on releases before HTTP.
 
 Pass the selection to the existing narrow GET/PUT/GET builder. Respect that
 contract's native ReadOnly flags: explicit changes need editable metadata; fixed
@@ -60,16 +61,26 @@ Roadmap checked: no committed item changed; covers local audit recommendation R6
 
 ## Final cleanup audit limitation
 
-A later released-directory check on BTP found an APIS entry for the class used in
-the C4-after-C1 negative test after the class had returned 404. API_STATE reports
-no contracts and no release; ADT search finds no class. Earlier simple C1 fixtures
-have no matching directory entry. This associates the residue with the expanded
-negative sequence but does not establish its trigger or a supported repair.
-No job, native directory row, or other user's artifact was changed to remove it.
-Owner deletion is verified; complete package/directory cleanup is not claimed.
-Track the named local test residue and obtain a supported SAP repair before
-attempting package deletion. This is separate from the existing SUSH job-catalog
-residue. There is no proven ARC-1 payload correction for it at this point.
+The original C4-after-C1 test left an APIS row on 816 and BTP after deleting its
+class while C4 remained RELEASED. Owner 404 and empty post-deletion API_STATE do not
+prove complete catalog cleanup. The old harness's partial revocation is corrected in
+the follow-up validation; no catalog rows were edited. A supported recovery for the
+existing residue remains unproven, separately from existing BTP SUSH entries.
 
 Combined review with the other matrix fixes found a three-token BTP schema budget
 overrun; trimmed redundant contract help and retained every input field and limit.
+
+## Independent review follow-up (2026-10-10)
+
+Two dispatcher-level reproductions confirmed that unrelated strict-client fields were
+rejected and an accepted PUT with different visibility hid the applied release. The
+small correction keeps the mismatch error but includes the confirmed state/visibility,
+changed flag and explicit revoke/readback instruction. No automatic rollback is added:
+it could overwrite another change and the caller must decide which release is intended.
+A native no-op mismatch likewise reports changed=false and its actual state.
+
+C4-after-C1 on 816 and BTP was **applied with different visibility**, not refused.
+The original harness revoked only C1 before deleting, leaving C4 released at deletion.
+APIS directory residue exists on both systems; an empty API_STATE after deletion does
+not establish prior revocation. The mechanism remains a hypothesis. New validation
+revokes every observed released contract and verifies that state before deletion.
