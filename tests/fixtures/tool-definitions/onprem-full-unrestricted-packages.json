@@ -452,7 +452,7 @@
         },
         "rowType": {
           "type": "string",
-          "description": "TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create."
+          "description": "TTYP: row type; required for create. Built-in dimensions: rowTypeLength/rowTypeDecimals. Updates preserve omitted dimensions only for an unchanged built-in row."
         },
         "rowTypeKind": {
           "type": "string",
@@ -460,7 +460,17 @@
             "builtin",
             "structure"
           ],
-          "description": "TTYP create: row-type mode (auto-detected from rowType if omitted)."
+          "description": "TTYP: inferred if omitted; use builtin for CHAR/DEC. SAP validates dimensions."
+        },
+        "rowTypeLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
+        },
+        "rowTypeDecimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
         },
         "length": {
           "type": "number",
@@ -866,6 +876,16 @@
                   "builtin",
                   "structure"
                 ]
+              },
+              "rowTypeLength": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 999999
+              },
+              "rowTypeDecimals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 999999
               },
               "length": {
                 "type": "number"

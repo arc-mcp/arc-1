@@ -309,6 +309,9 @@ const TTYP_BUILTIN_ROW_TYPES = new Set([
 
 const TTYP_ROW_TYPE_NAME_RE = /^(?:\/[A-Z0-9_]+\/)?[A-Z0-9_]+$/;
 
+/** Length and scale are encoded as six decimal digits in the ADT envelope. */
+export const TABLE_TYPE_DIMENSION_MAX = 999999;
+
 export interface TableTypeCreateParams {
   name: string;
   description: string;
@@ -317,9 +320,9 @@ export interface TableTypeCreateParams {
   rowType: string;
   /** Defaults to "builtin" for a known ABAP type, else "structure". */
   rowTypeKind?: 'builtin' | 'structure';
-  /** Built-in rows: the stored length/decimals an update carries (CHAR 30, INT4 10). No public input. */
-  rowTypeLength?: string;
-  rowTypeDecimals?: string;
+  /** Built-in dimensions; omitted update fields retain the stored values. */
+  rowTypeLength?: string | number;
+  rowTypeDecimals?: string | number;
   language?: string;
   responsible?: string;
 }
@@ -351,6 +354,20 @@ export function buildTableTypeXml(params: TableTypeCreateParams): string {
   // (rowTypeKind="builtin" for an unlisted name) is NOT checked — see the heuristic note above.
   if (kind === 'structure' && TTYP_BUILTIN_ROW_TYPES.has(rowType)) {
     throw new Error(`TTYP rowType "${rowType}" is a built-in ABAP row type; omit rowTypeKind or use "builtin".`);
+  }
+
+  for (const [field, value] of [
+    ['rowTypeLength', params.rowTypeLength],
+    ['rowTypeDecimals', params.rowTypeDecimals],
+  ] as const) {
+    if (value === undefined) continue;
+    if (kind !== 'builtin')
+      throw new Error(
+        `${field} requires a built-in TTYP row type; set rowTypeKind="builtin" for a built-in DDIC name.`,
+      );
+    if (!/^\d+$/.test(String(value)) || !Number.isInteger(Number(value)) || Number(value) > TABLE_TYPE_DIMENSION_MAX) {
+      throw new Error(`${field} must be a non-negative integer no greater than ${TABLE_TYPE_DIMENSION_MAX}.`);
+    }
   }
 
   const rowTypeXml =

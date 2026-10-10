@@ -59,4 +59,47 @@ describe('TTYP update — live', () => {
       expect(await read()).toEqual({ ...stored, description: 'Changed' });
     },
   );
+
+  it('round trips explicit built-in dimensions through single/batch create and partial updates', {
+    timeout: 120_000,
+  }, async (ctx) => {
+    requireOrSkip(ctx, tabletypesAvailable || undefined, SkipReason.BACKEND_UNSUPPORTED);
+    for (const batch of [false, true]) {
+      const name = generateUniqueName('ZARC1_TTD');
+      const object = {
+        type: 'TTYP',
+        name,
+        package: '$TMP',
+        rowType: 'DEC',
+        rowTypeKind: 'builtin',
+        rowTypeLength: 5,
+        rowTypeDecimals: 2,
+      };
+      // Track before create so a failed follow-up PUT still gets cleanup.
+      created.push(name);
+      await call('SAPWrite', batch ? { action: 'batch_create', objects: [object] } : { action: 'create', ...object });
+      const read = async () => JSON.parse((await call('SAPRead', { type: 'TTYP', name })).content[0]!.text);
+      await call('SAPActivate', { type: 'TTYP', name });
+      expect(await read()).toMatchObject({ rowType: 'DEC', rowTypeLength: '000005', rowTypeDecimals: '000002' });
+      await call('SAPWrite', { action: 'update', type: 'TTYP', name, rowTypeLength: 7 });
+      await call('SAPWrite', { action: 'update', type: 'TTYP', name, rowTypeDecimals: 0 });
+      await call('SAPWrite', { action: 'update', type: 'TTYP', name, description: 'Preserved dimensions' });
+      await call('SAPActivate', { type: 'TTYP', name });
+      expect(await read()).toMatchObject({
+        description: 'Preserved dimensions',
+        rowTypeLength: '000007',
+        rowTypeDecimals: '000000',
+      });
+      await call('SAPWrite', {
+        action: 'update',
+        type: 'TTYP',
+        name,
+        rowType: 'CHAR',
+        rowTypeKind: 'builtin',
+        rowTypeLength: 32,
+      });
+      await call('SAPActivate', { type: 'TTYP', name });
+      expect(await read()).toMatchObject({ rowType: 'CHAR', rowTypeLength: '000032', rowTypeDecimals: '000000' });
+    }
+  });
 });

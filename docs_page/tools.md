@@ -388,6 +388,8 @@ keep their separate behavior.
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, and `add_unit`. Ignored for other types. |
 | `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
 | `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. An update keeps the stored kind while the row type is unchanged. |
+| `rowTypeLength` | integer | No | `TTYP` create/update: built-in row length and decimal places, including batch items. Use `rowTypeKind="builtin"` for DDIC built-ins such as `CHAR`/`DEC`. Each accepts 0–999999; SAP may accept a value at save, then reject or normalize it at activation; inspect activation warnings and read back the active definition. Omitted update fields keep their stored values only while both row name and kind stay unchanged. Dictionary row dimensions are resolved by SAP and cannot be set here. `length`/`decimals` remain DOMA/DTEL fields. |
+| `rowTypeDecimals` | integer | No | `TTYP` built-in decimal places; same validation and update semantics as `rowTypeLength`. Explicit zero clears the scale. |
 | `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
 | `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
 | `parameters` | array | No | FUNC structured signature: `{kind,name,type?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
@@ -493,7 +495,10 @@ invalid node edit can briefly take a lock but never writes.
 #### Table type updates
 
 A `TTYP` update keeps the stored description and row type when you omit them. While the row type
-is unchanged it also keeps the stored kind and built-in length, such as `CHAR` 30 or `INT4`.
+is unchanged it also keeps the stored kind and omitted built-in dimensions. For example,
+`rowType="DEC", rowTypeKind="builtin", rowTypeLength=5, rowTypeDecimals=2` creates
+a packed row; updating only `rowTypeDecimals=0` keeps length 5 and clears its scale.
+Changing the row name or kind drops omitted dimensions instead of carrying them to another type.
 
 The update still **replaces the rest of the definition**: ARC-1 writes only a standard table with a
 non-unique standard key. It therefore refuses an update without `rowType` when it cannot write the

@@ -301,6 +301,27 @@ describe('metadata updates preserve edits committed before the lock', () => {
       expect(putBody(calls)).toContain(builtIn + decRow);
     });
 
+    it('merges explicit dimensions after locking and keeps a concurrent description', async () => {
+      const calls = sap(int4Table);
+      expect((await update({ rowTypeDecimals: 0 })).isError).toBeUndefined();
+      const put = calls.find((c) => c.method === 'PUT');
+      expect(put).toMatchObject({ locked: true, stateful: true });
+      expect(put?.body).toContain('adtcore:description="Colleague description"');
+      expect(put?.body).toContain(`${int4Row}<ttyp:decimals>000000</ttyp:decimals>`);
+    });
+
+    it('refuses a dictionary-row dimension update before PUT and releases the lock', async () => {
+      const calls = sap({
+        ...ttyp,
+        xml: buildCreateXml('TTYP', ttyp.name, '$TMP', 'Dictionary', { rowType: 'BAPIRET2' }),
+      });
+      const result = await update({ rowTypeLength: 5 });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]!.text).toContain('requires a built-in TTYP row type');
+      expect(putBody(calls)).toBeUndefined();
+      expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
+    });
+
     it('an explicit rowTypeKind wins over the stored kind', async () => {
       const calls = sap(int4Table);
       expect((await update({ rowType: 'INT4', rowTypeKind: 'structure' })).isError).toBeUndefined();

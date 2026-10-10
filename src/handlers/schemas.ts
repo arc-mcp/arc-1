@@ -20,7 +20,7 @@ import {
   ATC_BATCH_NAME_PATTERN,
   ATC_BATCH_TYPES,
 } from '../adt/atc-batch.js';
-import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
+import { DTEL_MAX_LABEL_LENGTHS, TABLE_TYPE_DIMENSION_MAX } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
@@ -454,6 +454,9 @@ function validateSapWriteInput(
     updateTaskKind?: string;
     shortTexts?: unknown[];
     expectedSourceHash?: string;
+    rowTypeKind?: string;
+    rowTypeLength?: number;
+    rowTypeDecimals?: number;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -498,6 +501,28 @@ function validateSapWriteInput(
   }
 
   validateFunctionProcessingInput(input, ctx);
+  validateTableTypeDimensions(input, ctx);
+}
+
+function validateTableTypeDimensions(
+  input: { type?: string; action?: string; rowTypeKind?: string; rowTypeLength?: number; rowTypeDecimals?: number },
+  ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
+): void {
+  if (input.rowTypeLength === undefined && input.rowTypeDecimals === undefined) return;
+  if (input.type !== 'TTYP' || (input.action !== undefined && !['create', 'update'].includes(input.action))) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['rowTypeLength'],
+      message: 'rowTypeLength/rowTypeDecimals are only supported for TTYP create/update.',
+    });
+  }
+  if (input.rowTypeKind === 'structure') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['rowTypeKind'],
+      message: 'rowTypeLength/rowTypeDecimals require a built-in row type.',
+    });
+  }
 }
 
 function validateFunctionProcessingInput(
@@ -562,6 +587,11 @@ const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL
 const dtelLongLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.long).optional();
 const dtelHeadingLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.heading).optional();
 
+const tableTypeDimensionSchema = z
+  .union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
+  .pipe(z.number().int().min(0).max(TABLE_TYPE_DIMENSION_MAX))
+  .optional();
+
 const batchObjectSchemaOnprem = z
   .object({
     type: z.enum(SAPWRITE_TYPES_ONPREM),
@@ -574,6 +604,8 @@ const batchObjectSchemaOnprem = z
     dataType: z.string().optional(),
     rowType: z.string().optional(),
     rowTypeKind: z.enum(['builtin', 'structure']).optional(),
+    rowTypeLength: tableTypeDimensionSchema,
+    rowTypeDecimals: tableTypeDimensionSchema,
     length: z.coerce.number().optional(),
     decimals: z.coerce.number().optional(),
     outputLength: z.coerce.number().optional(),
@@ -612,7 +644,10 @@ const batchObjectSchemaOnprem = z
     /** FUNC structured signature parameters (issue #252). */
     parameters: z.array(fmParameterSchema).optional(),
   })
-  .superRefine((input, ctx) => validateFunctionProcessingInput(input, ctx));
+  .superRefine((input, ctx) => {
+    validateFunctionProcessingInput(input, ctx);
+    validateTableTypeDimensions(input, ctx);
+  });
 
 const batchObjectSchemaBtp = z.object({
   type: z.enum(SAPWRITE_TYPES_BTP),
@@ -713,6 +748,8 @@ export const SAPWriteSchema = z
     dataType: z.string().optional(),
     rowType: z.string().optional(),
     rowTypeKind: z.enum(['builtin', 'structure']).optional(),
+    rowTypeLength: tableTypeDimensionSchema,
+    rowTypeDecimals: tableTypeDimensionSchema,
     length: z.coerce.number().optional(),
     decimals: z.coerce.number().optional(),
     outputLength: z.coerce.number().optional(),
