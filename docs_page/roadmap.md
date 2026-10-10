@@ -71,6 +71,7 @@ sequence.
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
+| [COMPAT-13](#compat-13) | NW 7.40 freestyle SQL length boundary | P1 | S | Needs research | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
@@ -233,6 +234,23 @@ misleading.
 **Resume with.** Use the existing
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/http-forward-proxy-env-support.md);
 test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and BTP isolation.
+
+<a id="compat-13"></a>
+### COMPAT-13 — NW 7.40 freestyle SQL length boundary
+
+- **Priority / effort / status:** P1 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** [#955](https://github.com/arc-mcp/arc-1/issues/955) reports a
+253/256-character boundary on 7.40 despite line breaks. ARC-1 wraps at 255 with LF;
+7.40's handling is unverified. Silent predicate loss on newer backends makes this
+P1 research; it does not establish the cause on 7.40.
+
+**Resume with.** Authorized 7.40 access or sanitized wire traces with exact SP,
+posted chunks, line endings, row caps and returned/executed SQL. Compare LF/CRLF
+and restrictive tails before choosing a workaround; do not guess a length cap.
+The [evidence and probe plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-count-only-grouped-sql.md)
+contains the SAP Note applicability, release differences and conditional fixes.
 
 <a id="compat-09"></a>
 ### COMPAT-09 — Exact lookup with decorated SAP object names
