@@ -1471,6 +1471,45 @@ describe('AdtHttpClient', () => {
       expect(fetchHeaders(1).Accept).toBe('application/vnd.sap.adt.transportorganizertree.v1+xml');
     });
 
+    // Bodies as A4H (ABAP Platform 2025 trial) returns them on the textelements service.
+    const sapException = (message: string, id: string, no: string, vars = '') =>
+      '<?xml version="1.0" encoding="utf-8"?><exc:exception xmlns:exc="http://www.sap.com/abapxml/types/communicationframework">' +
+      `<namespace id="com.sap.adt"/><type id="ExceptionResourceNotAcceptable"/><message lang="EN">${message}</message>` +
+      `<localizedMessage lang="EN">${message}</localizedMessage><properties><entry key="T100KEY-ID">${id}</entry>` +
+      `<entry key="T100KEY-NO">${no}</entry>${vars}</properties></exc:exception>`;
+
+    it('does not repeat a 406 that carries an SAP application message', async () => {
+      const refused = sapException(
+        'Length of text symbol R_SUBMIT exceeds 30 characters',
+        'SEDX_ADT',
+        '110',
+        '<entry key="T100KEY-V1">R_SUBMIT</entry><entry key="T100KEY-V2">30</entry>',
+      );
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+      mockFetch.mockResolvedValueOnce(mockResponse(406, refused));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      const media = 'application/vnd.sap.adt.textelements.selections.v1';
+      await expect(
+        client.put('/sap/bc/adt/textelements/programs/ZTEST/source/selections', 'R_SUBMIT=x', media, { Accept: media }),
+      ).rejects.toThrow(/R_SUBMIT exceeds 30 characters/);
+
+      // CSRF fetch + the one PUT: no second PUT with Accept: application/xml
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('still retries a 406 from the ADT resource framework (SADT_RESOURCE)', async () => {
+      const notAcceptable = sapException('The message content is not acceptable.', 'SADT_RESOURCE', '044');
+      mockFetch.mockResolvedValueOnce(mockResponse(406, notAcceptable));
+      mockFetch.mockResolvedValueOnce(mockResponse(200, 'ok'));
+
+      const client = new AdtHttpClient(getDefaultConfig());
+      const resp = await client.get('/path', { Accept: 'application/vnd.sap.adt.custom+xml' });
+
+      expect(resp.statusCode).toBe(200);
+      expect(fetchHeaders(1).Accept).toBe('application/xml');
+    });
+
     it('retries POST with fallback Content-Type on 415', async () => {
       // CSRF fetch
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'T' }));
