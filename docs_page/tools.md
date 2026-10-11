@@ -1100,10 +1100,17 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
 
 - **Body formats:** `symbols` — one `@MaxLength:NN` line per symbol, then `NNN=text`, blank-line
   separated (a shared or missing `@MaxLength` is rejected with `406 "Text elements contain errors"`).
-  `selections` — one `PARAM=text` line per selection-screen field. `headings` — `listHeader=` plus
-  `columnHeader_N=` lines.
+  `selections` — one `PARAM=text` line per selection-screen field, at most 30 characters. A
+  `@DDICReference` line before an entry makes its label come from the dictionary field; a read
+  returns it, and a write keeps the reference only if the line is sent again. `PARAM=?...` marks a
+  field without a text. `headings` — `listHeader=` plus `columnHeader_N=` lines.
+- **Lengths are checked before writing:** selection texts over 30 characters, and symbols without
+  their own `@MaxLength` line or longer than it, are refused before the part is locked, all of them
+  in one answer (SAP itself names only the first one). Dictionary-referenced and unmaintained
+  selections are left to SAP.
 - **Replacement, not merge:** each write replaces the complete selected part. Read it first and
-  retain any entries you want to keep. Other parts remain unchanged. An explicit `source=""`
+  retain any entries you want to keep. Other parts remain unchanged. The answer names the entries
+  the write removed and the dictionary references it dropped. An explicit `source=""`
   clears the selected part; omitted/null source is rejected. Do not send the `=== part ===`
   markers from a whole-pool read as source — read the individual part with `include=` instead.
 - **Writes and requests activation of the whole text pool.** This also activates pending edits to
