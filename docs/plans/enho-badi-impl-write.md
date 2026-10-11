@@ -145,7 +145,7 @@ it but leaves an undeletable TADIR entry); see the write contract, 2026-10-08. L
 
 ## Independent review, 2026-10-11
 
-Rebased by merging release 1.5.2 (`2bf00bf1`). Two regression tests reproduced remaining defects:
+Merged release 1.5.2 (`2bf00bf1`). Two regression tests reproduced remaining defects:
 
 - A failed post-create PUT or unlock bypassed minimal-error redaction and claimed the implementations
   were not saved. Reuse the existing batch error formatter, report the save state as unconfirmed, and
@@ -164,3 +164,10 @@ undeclared-filter refusal, delete and confirmed owner 404 passed. The standard e
 no business execution occurred. SAP_BASIS 750 SP02 refused before create because discovery lacks the
 collection. This run did not repeat the earlier transportable-package, filter-tree or BTP lifecycles;
 the dated evidence in the write contract remains the qualification for those scenarios.
+
+Combined review with #963/#965/#966/#967 found SAPWrite 56 bytes over its existing
+23,000-byte per-tool wall. Removed duplicate delete guidance from the on-prem and
+BTP bodies; the shared minimal-payload guide already gives the same required fields.
+Compressed the BTP introduction without dropping its language, naming, alias or lock guidance.
+Restored the existing BTP token limit of 17,350 instead of increasing it for ENHO.
+No tool input, safety guidance or runtime behavior changes.

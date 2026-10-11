@@ -223,9 +223,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
-      // Raised 17_350 -> 17_400 for ENHO (BAdI implementation) read/write on BTP: one SAPWrite line
-      // (~41 tokens) plus the type enums. Wire ceilings remain unchanged.
-      schemaTokenEstimate: 17_400,
+      schemaTokenEstimate: 17_350,
       descriptionTokenEstimate: 12_200,
       descriptionCount: 273,
       maxTotalWireBytes: WRITE_WIRE_WALL,
@@ -279,7 +277,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: { ...LIVE_RELATIONS_FEATURES, systemType: 'btp' },
     budget: {
-      schemaTokenEstimate: 17_400,
+      schemaTokenEstimate: 17_350,
       descriptionTokenEstimate: 12_200,
       descriptionCount: 273,
       maxTotalWireBytes: WRITE_WIRE_WALL,
