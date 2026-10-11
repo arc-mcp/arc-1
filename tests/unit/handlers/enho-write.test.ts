@@ -526,6 +526,42 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     expect(result.isError).toBeUndefined();
     const del = calls.find((c) => c.method === 'DELETE');
     expect(del?.url).toContain(`${ENHO_URL}/SFW_BCF_TCD`);
+    const read = calls.findIndex((c) => c.method === 'GET' && c.url.includes(`${ENHO_URL}/SFW_BCF_TCD`));
+    expect(read).toBeGreaterThanOrEqual(0);
+    expect(read).toBeLessThan(calls.findIndex((c) => c.url.includes('_action=LOCK')));
+  });
+
+  it.each([
+    ['HOOK_IMPL', XHB.replace('enho:toolType="BADI_IMPL"', 'enho:toolType="HOOK_IMPL"')],
+    ['unknown', XHB.replace('enho:toolType="BADI_IMPL"', '')],
+    ['unknown', '<object/>'],
+  ])('refuses ENHO deletion with %s technology before locking', async (technology, metadata) => {
+    const calls = mockSap(metadata);
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'delete',
+      type: 'ENHO',
+      name: 'ZTEST_ENHO',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(`got ${technology}`);
+    expect(calls.some((c) => c.method === 'POST' || c.method === 'DELETE')).toBe(false);
+  });
+
+  it.each([403, 404])('does not lock or delete ENHO when metadata returns %s', async (status) => {
+    const calls = mockSap();
+    const served = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url, opts) =>
+      (!opts?.method || opts.method === 'GET') && String(url).includes(ENHO_URL)
+        ? Promise.resolve(mockResponse(status, '<error><message>Metadata unavailable</message></error>'))
+        : served(url, opts),
+    );
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action: 'delete',
+      type: 'ENHO',
+      name: 'ZTEST_ENHO',
+    });
+    expect(result.isError).toBe(true);
+    expect(calls.some((c) => c.method === 'POST' || c.method === 'DELETE')).toBe(false);
   });
 
   it('SAPActivate routes ENHO to the XHB object URL, not the program endpoint', async () => {
@@ -578,6 +614,7 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     ],
     // Update is checked against the stored package (SFWTOOLS in the fixture), not an argument.
     ['update', { action: 'update', type: 'ENHO', name: 'SFW_BCF_TCD', source: '{}' }, 'SFWTOOLS'],
+    ['delete', { action: 'delete', type: 'ENHO', name: 'SFW_BCF_TCD' }, 'SFWTOOLS'],
   ])('refuses ENHO %s outside the package allowlist before any write', async (_action, args, pkg) => {
     const calls = mockSap();
     const client = createClient();

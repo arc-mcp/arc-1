@@ -9,6 +9,7 @@ import {
   type TextElementPart,
 } from '../../adt/client.js';
 import { deleteObject, lockObject, safeUpdateClassInclude, safeUpdateSource, unlockObject } from '../../adt/crud.js';
+import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
@@ -207,6 +208,15 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
   checkOperation(client.safety, OperationType.Delete, 'DeleteObject');
   await enforcePackageForExistingObject();
+  if (type === 'ENHO') {
+    const stored = await getBadiEnhancementImplementation(client.http, client.safety, name);
+    if (stored.technology !== 'BADI_IMPL') {
+      return errorResult(
+        `ENHO ${name} was not deleted: expected BADI_IMPL technology, got ${stored.technology || 'unknown'}. ` +
+          'SAPWrite deletes only BAdI implementations.',
+      );
+    }
+  }
   let deleteAttempted = false;
 
   // Lock, delete, unlock pattern (works for all types including SKTD) — auto-propagate lock corrNr if no explicit transport

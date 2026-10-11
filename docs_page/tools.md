@@ -583,7 +583,8 @@ SAP's collection POST creates a normal function-module shell even when it accept
 
 - **`create`** needs `primaryTable`. `lockParameters` are optional: when omitted, SAP derives one parameter per key field of the lock tables (all passed to `ENQUEUE_`; these may already appear after create). The object is created **inactive** — follow with `SAPActivate(type="ENQU", name=…)`, which also generates `ENQUEUE_<name>`/`DEQUEUE_<name>`.
 - **`update`** reads the developer view under the SAP lock, then merges the supplied top-level keys. Omitted keys preserve existing inactive edits. Supplied table entries and arrays replace their corresponding values. Changing the table set **requires** an explicit `lockParameters` list for the new tables. An explicit empty list is refused on update because SAP can re-derive every parameter with `parameterWanted=false`, broadening the runtime lock. Preserve the list from `SAPRead` unless you intend to change it. Activate after saving.
-- **`delete`** uses the standard lock → DELETE → unlock path.
+- **`delete`** first requires metadata confirming `BADI_IMPL` technology, then uses the standard
+  lock → DELETE → unlock path. Other or unknown technologies and failed metadata reads stop deletion.
 
 These operations maintain the repository definition and generate function modules on activation;
 they do not call those modules or acquire locks on business data. The referenced tables must already exist.
