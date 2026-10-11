@@ -209,7 +209,7 @@ describe('text elements routing and safety', () => {
         args: {},
         type: 'PROG',
         name: 'ZTEST',
-        source: '001=Hello',
+        source: '@MaxLength:10\n001=Hello',
         hasSource: true,
         enforcePackageForExistingObject: vi.fn().mockResolvedValue('$TMP'),
         invalidateWrittenObject,
@@ -534,5 +534,99 @@ describe('PROG/FUGR deletion preserves inactive text pools', () => {
     mockSap();
     expect((await del('CLAS')).isError).toBeUndefined();
     expect(steps()).toEqual(['LOCK', 'DELETE', 'UNLOCK']);
+  });
+});
+
+describe('text element writes: lengths and what a complete-part write removes', () => {
+  // The selections part as A4H (ABAP Platform 2025 trial) returns it: padded keys, CRLF, a
+  // dictionary-referenced entry marked by the @DDICReference line before it.
+  const SELECTIONS =
+    '@DDICReference\r\nP_MATNR =Material\r\n\r\nP_SOURCE=Source system\r\n\r\n@DDICReference\r\nP_WERKS =Plant\r\n\r\n' +
+    'R_LIST  =List mode\r\n\r\nR_POST  =Post mode\r\n\r\nR_SUBMIT=Submit mode\r\n\r\nS_DATE  =Date range';
+
+  const write = (textPart: string, source: string) =>
+    handleToolCall(createClient(), { ...DEFAULT_CONFIG, allowWrites: true }, 'SAPWrite', {
+      action: 'edit_text_symbols',
+      type: 'PROG',
+      name: 'ZTEST',
+      textPart,
+      source,
+    });
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK, { 'x-csrf-token': 'T' }));
+      if ((init?.method ?? 'GET') === 'GET' && u.includes('/source/selections')) {
+        return Promise.resolve(mockResponse(200, SELECTIONS, { 'x-csrf-token': 'T' }));
+      }
+      return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+    });
+  });
+
+  it('refuses over-long selection texts before locking and names every one', async () => {
+    const result = await write(
+      'selections',
+      SELECTIONS.replace('Submit mode', 'Submit the invoice workflow via SUBMIT').replace(
+        'List mode',
+        'List the open invoice workflows per company',
+      ),
+    );
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? '';
+    expect(text).toContain('R_SUBMIT: 38 characters, selection texts allow 30');
+    expect(text).toContain('R_LIST: 43 characters, selection texts allow 30');
+    expect(mutations()).toEqual([]);
+  });
+
+  it('leaves dictionary-referenced and unmaintained selections to SAP', async () => {
+    const result = await write(
+      'selections',
+      `@DDICReference\nP_MATNR =A dictionary label longer than thirty characters\n\nP_SOURCE=?...`,
+    );
+    expect(result.isError).toBeUndefined();
+  });
+
+  it('refuses symbols without their own @MaxLength or longer than it', async () => {
+    const result = await write('symbols', '@MaxLength:5\n001=Too long\n\n002=No length');
+    expect(result.isError).toBe(true);
+    const text = result.content[0]?.text ?? '';
+    expect(text).toContain('001: 8 characters, its @MaxLength is 5');
+    expect(text).toContain('002: no @MaxLength line before it');
+    expect(mutations()).toEqual([]);
+  });
+
+  it('names the entries and dictionary references a one-line write removed', async () => {
+    const result = await write('selections', 'P_MATNR =Material number');
+    expect(result.isError).toBeUndefined();
+    const text = result.content[0]?.text ?? '';
+    expect(text).toContain(
+      'Removed (not in source, or without text): P_SOURCE, P_WERKS, R_LIST, R_POST, R_SUBMIT, S_DATE.',
+    );
+    expect(text).toContain('Dictionary reference dropped (label is now fixed text): P_MATNR, P_WERKS.');
+    // The replaced version is read under the write's own lock, before the PUT.
+    const steps = calls().map(([url, init]) =>
+      String(url).includes('_action=LOCK')
+        ? 'LOCK'
+        : String(url).includes('_action=UNLOCK')
+          ? 'UNLOCK'
+          : `${init?.method ?? 'GET'} ${String(url).includes('/source/selections') ? 'selections' : 'other'}`,
+    );
+    expect(steps.slice(steps.indexOf('LOCK'), steps.indexOf('UNLOCK') + 1)).toEqual([
+      'LOCK',
+      'GET selections',
+      'PUT selections',
+      'UNLOCK',
+    ]);
+  });
+
+  it('adds nothing when the write keeps every entry, placeholders included', async () => {
+    const result = await write(
+      'selections',
+      `${SELECTIONS.replace('Date range', 'Posting date')}\r\n\r\nP_NEW   =?...`,
+    );
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).not.toMatch(/Removed|Dictionary reference/);
   });
 });

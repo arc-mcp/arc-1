@@ -208,7 +208,7 @@ describe('text elements via SAPRead/SAPWrite', () => {
         source: '@MaxLength:20\n001=Broken\n002=Missing max length\n',
       });
       expect(malformed.isError).toBe(true);
-      expect(malformed.content[0]?.text).toMatch(/406|inconsisten|text elements contain errors/i);
+      expect(malformed.content[0]?.text).toMatch(/406|inconsisten|text elements contain errors|no @MaxLength/i);
       expect(await read('symbols')).toBe(symbols);
       await write('symbols', '@MaxLength:20\n001=Replacement\n');
       expect(await read('symbols')).toContain('001=Replacement');

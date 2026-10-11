@@ -14,7 +14,7 @@ import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
-import { withActiveTextPoolForDelete } from '../../adt/text-elements.js';
+import { type TextPartWriteReport, withActiveTextPoolForDelete } from '../../adt/text-elements.js';
 import {
   buildCdsDeleteDependencyHint,
   buildCdsUpdateCrudHint,
@@ -317,28 +317,48 @@ export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<
     return errorResult(`source is required for edit_text_symbols — the ${part} body, e.g. ${TEXT_PART_EXAMPLE[part]}.`);
   }
   await enforcePackageForExistingObject();
+  let report: TextPartWriteReport;
   try {
-    await client.writeTextElementPart(type, name, part, source, transport);
+    report = await client.writeTextElementPart(type, name, part, source, transport);
   } finally {
     // A successful PUT can leave a draft even if the subsequent activation fails.
     invalidateWrittenObject();
   }
+  const changes = textPartChanges(report);
   if (type === 'PROG') {
     return textResult(
-      `Updated ${part} of PROG ${name}; text-pool activation requested.\n` +
+      `Updated ${part} of PROG ${name}; text-pool activation requested.${changes}\n` +
         `If ${name} has never been activated, use SAPActivate(type="PROG", name="${name}") to activate these texts.`,
     );
   }
   if (type === 'FUGR') {
-    return textResult(`Updated ${part} of FUGR ${name}; text-pool activation requested.`);
+    return textResult(`Updated ${part} of FUGR ${name}; text-pool activation requested.${changes}`);
   }
-  return textResult(`Updated and activated ${part} of ${type} ${name}.`);
+  return textResult(`Updated and activated ${part} of ${type} ${name}.${changes}`);
+}
+
+/** The write replaces the whole part, and neither SAP nor a read-back says what it removed:
+ *  name it, so a caller who meant to change one entry sees the others are gone. */
+function textPartChanges(report: TextPartWriteReport): string {
+  const lines: string[] = [];
+  if (report.removed.length > 0) {
+    lines.push(`Removed (not in source, or without text): ${report.removed.join(', ')}.`);
+  }
+  if (report.ddicReferenceDropped.length > 0) {
+    lines.push(
+      `Dictionary reference dropped (label is now fixed text): ${report.ddicReferenceDropped.join(', ')}. Keep the @DDICReference line before an entry to keep it.`,
+    );
+  }
+  if (lines.length === 0) return '';
+  lines.push('The part is replaced as a whole. To restore entries, read the part and send all of them.');
+  return `\n${lines.join('\n')}`;
 }
 
 /** One-line body example per subobject, used in the missing-source error so the caller can retry
  *  without opening the docs. */
 const TEXT_PART_EXAMPLE: Record<TextElementPart, string> = {
   symbols: '"@MaxLength:20\\n001=Label\\n" (one @MaxLength per symbol, blank-line separated)',
-  selections: '"P_LGNUM=Warehouse\\nP_WRKST=Work center" (one PARAMETER/SELECT-OPTION per line)',
+  selections:
+    '"P_LGNUM=Warehouse\\nP_WRKST=Work center" (one PARAMETER/SELECT-OPTION per line, at most 30 characters; an "@DDICReference" line before an entry keeps its dictionary label)',
   headings: '"listHeader=My report\\ncolumnHeader_1=First column"',
 };

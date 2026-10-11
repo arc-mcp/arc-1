@@ -129,7 +129,92 @@ export async function readTextElements(
   return chunks.length > 0 ? chunks.join('\n\n') : `No text elements maintained for ${objectType} ${name}.`;
 }
 
+/** One entry of a part body: its `@…` annotation lines, then `KEY=value`. Keys come back
+ *  padded (`P_MATNR =Material`), so they are compared trimmed. */
+export interface TextPartEntry {
+  key: string;
+  value: string;
+  annotations: string[];
+}
+
+/** A selection text marked `@DDICReference` takes its label from the dictionary field. */
+const DDIC_REFERENCE = '@DDICReference';
+/** What SAP returns for a selection without a text; SAP does not store it on write. */
+const UNMAINTAINED_SELECTION = '?...';
+/** SAP refuses longer selection texts with SEDX_ADT/110 "Length of text symbol … exceeds 30 characters". */
+const SELECTION_TEXT_MAX = 30;
+
+/** Parse a properties-style part body (CRLF or LF; entries may be blank-line separated). */
+export function parseTextElementPart(body: string): TextPartEntry[] {
+  const entries: TextPartEntry[] = [];
+  let annotations: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    if (line.startsWith('@')) {
+      annotations.push(line.trim());
+      continue;
+    }
+    const eq = line.indexOf('=');
+    if (eq < 0) continue; // not an entry: SAP judges it
+    entries.push({ key: line.slice(0, eq).trim(), value: line.slice(eq + 1), annotations });
+    annotations = [];
+  }
+  return entries;
+}
+
+/** Whether an entry carries a text: selections answer `?...` and headings an empty value for none. */
+function isMaintained(part: TextElementPart, entry: TextPartEntry): boolean {
+  const text = entry.value.trim();
+  return part === 'selections' ? text !== '' && text !== UNMAINTAINED_SELECTION : part === 'symbols' || text !== '';
+}
+
+/** Every entry SAP would refuse for its length. SAP itself names only the first one (selections:
+ *  SEDX_ADT/110; symbols: an unspecific 406), so the caller would fix them one write at a time. */
+export function textElementLengthProblems(part: TextElementPart, source: string): string[] {
+  const problems: string[] = [];
+  for (const entry of parseTextElementPart(source)) {
+    const text = entry.value.trimEnd();
+    if (part === 'selections') {
+      if (entry.annotations.includes(DDIC_REFERENCE) || !isMaintained(part, entry)) continue;
+      if (text.length > SELECTION_TEXT_MAX) {
+        problems.push(`${entry.key}: ${text.length} characters, selection texts allow ${SELECTION_TEXT_MAX}`);
+      }
+    } else if (part === 'symbols') {
+      const max = entry.annotations.map((a) => /^@MaxLength:\s*(\d+)$/i.exec(a)?.[1]).find(Boolean);
+      if (max === undefined) problems.push(`${entry.key}: no @MaxLength line before it`);
+      else if (text.length > Number(max)) {
+        problems.push(`${entry.key}: ${text.length} characters, its @MaxLength is ${max}`);
+      }
+    }
+  }
+  return problems;
+}
+
+/** What a complete-part write removed from the version it replaced. */
+export interface TextPartWriteReport {
+  /** Keys that had a text and have none after the write. */
+  removed: string[];
+  /** Selection keys whose dictionary reference the write dropped (the label is now fixed text). */
+  ddicReferenceDropped: string[];
+}
+
+export function diffTextElementPart(part: TextElementPart, before: string, after: string): TextPartWriteReport {
+  const next = new Map(parseTextElementPart(after).map((e) => [e.key, e]));
+  const removed: string[] = [];
+  const ddicReferenceDropped: string[] = [];
+  for (const old of parseTextElementPart(before)) {
+    const now = next.get(old.key);
+    if (isMaintained(part, old) && (!now || !isMaintained(part, now))) removed.push(old.key);
+    if (old.annotations.includes(DDIC_REFERENCE) && !now?.annotations.includes(DDIC_REFERENCE)) {
+      ddicReferenceDropped.push(old.key);
+    }
+  }
+  return { removed, ddicReferenceDropped };
+}
+
 /** Write one part, unlock, then activate only the text pool in the same stateful session.
+ *  The part is replaced completely: entries missing from `source` are removed. The version it
+ *  replaces is read under the same lock, and the returned report names what the write removed.
  *  PUT uses the part's media type as BOTH Content-Type and Accept. SAP refuses activation
  *  while the pool is locked; a source read alone cannot distinguish its inactive version.
  *  A never-activated PROG still needs its first owner activation to activate the texts. */
@@ -141,7 +226,7 @@ export async function writeTextElementPart(
   part: TextElementPart,
   source: string,
   transport?: string,
-): Promise<void> {
+): Promise<TextPartWriteReport> {
   checkOperation(safety, OperationType.Update, 'WriteTextElements');
   assertPart(objectType, part);
   if (objectType === 'CLAS' && part !== 'symbols') {
@@ -153,13 +238,25 @@ export async function writeTextElementPart(
   }
   assertTextElementsService(http, objectType);
   const obj = textElementsObject(objectType, name);
+  const lengthProblems = textElementLengthProblems(part, source);
+  if (lengthProblems.length > 0) {
+    throw new AdtApiError(
+      `${part} of ${objectType} ${name} not written; SAP would refuse ${lengthProblems.length === 1 ? 'this entry' : 'these entries'}:\n` +
+        lengthProblems.map((p) => `- ${p}`).join('\n'),
+      400,
+      `${obj}/source/${part}`,
+    );
+  }
+  let report: TextPartWriteReport = { removed: [], ddicReferenceDropped: [] };
   await http.withStatefulSession(async (session) => {
     const lock = await lockObject(session, safety, obj, 'MODIFY');
     const corr = transport ?? (lock.corrNr || undefined);
     try {
+      const before = await session.get(`${obj}/source/${part}`, { Accept: TEXT_ELEMENT_CT[part] });
       let url = `${obj}/source/${part}?lockHandle=${encodeURIComponent(lock.lockHandle)}`;
       if (corr) url += `&corrNr=${encodeURIComponent(corr)}`;
       await session.put(url, source, TEXT_ELEMENT_CT[part], { Accept: TEXT_ELEMENT_CT[part] });
+      report = diffTextElementPart(part, before.body, source);
     } finally {
       await unlockObject(session, obj, lock.lockHandle);
     }
@@ -171,6 +268,7 @@ export async function writeTextElementPart(
       'Text elements were saved, but activation was not confirmed. Retry the same text write.',
     );
   });
+  return report;
 }
 
 /** Activate one text-pool URI only; on failure, prefix `note` to the error and keep it as the hint. */
