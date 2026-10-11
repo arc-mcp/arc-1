@@ -32,6 +32,13 @@ const xmlParams = (definition: Parameters<typeof buildBadiImplementationXml>[0][
   responsibleAttr: ' adtcore:responsible="DEVELOPER"',
 });
 
+it('refuses excessively nested or long filters with an actionable validation error', () => {
+  const condition = "COUNTRY = 'DE'";
+  expect(() => parseFilterCondition('('.repeat(5000) + condition + ')'.repeat(5000))).toThrow(/nesting/i);
+  expect(() => parseFilterCondition(`COUNTRY = '${'D'.repeat(40000)}'`)).toThrow(/characters/i);
+  expect(normalizeFilterCondition('('.repeat(32) + condition + ')'.repeat(32))).toBe(condition);
+});
+
 describe('parseBadiImplementationDefinition', () => {
   it('accepts SAPRead output unchanged and takes the spot from the entries', () => {
     const read = parseEnhancementImplementation(XHB);

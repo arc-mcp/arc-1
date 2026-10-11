@@ -83,6 +83,32 @@ describe('ENHO (BAdI implementation) write handlers', () => {
     resetCachedFeatures();
   });
 
+  it.each(['PUT', 'UNLOCK'])(
+    'reports an uncertain post-create %s outcome without exposing hidden SAP details',
+    async (failure) => {
+      mockSap();
+      const served = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation((url, opts) =>
+        (failure === 'PUT' ? opts?.method === 'PUT' : String(url).includes('_action=UNLOCK'))
+          ? Promise.resolve(mockResponse(500, '<error><message>SAP_INTERNAL_DETAIL</message></error>'))
+          : served(url, opts),
+      );
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors: true }, 'SAPWrite', {
+        action: 'create',
+        type: 'ENHO',
+        name: 'ZMY_ENH_NEW',
+        package: '$TMP',
+        source: createSource,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Created ENHO ZMY_ENH_NEW');
+      expect(result.content[0].text).toContain('unconfirmed');
+      expect(result.content[0].text).toContain('do not retry create');
+      expect(result.content[0].text).not.toContain('SAP_INTERNAL_DETAIL');
+      expect(result.content[0].text).not.toContain('were not saved');
+    },
+  );
+
   it('SAPWrite create POSTs the container, saves the BAdI implementations with a PUT and hints activation', async () => {
     const calls = mockSap();
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {

@@ -291,6 +291,7 @@ async function saveBadiImplementationsAfterCreate(
   body: string,
   contentType: string,
   transport: string | undefined,
+  minimalErrors: boolean,
 ): Promise<void> {
   if (!hasBadiImplementations(body)) return;
   try {
@@ -306,10 +307,10 @@ async function saveBadiImplementationsAfterCreate(
   } catch (err) {
     // The POST already succeeded: the object exists. A blind retry of create would 409.
     throw new Error(
-      `Created ENHO ${name}, but its BAdI implementations were not saved: ` +
-        `${err instanceof Error ? err.message : String(err)}\n` +
-        `The object exists — check it with SAPRead(type="ENHO", name="${name}"), fix the input, then use ` +
-        `SAPWrite(action="update", type="ENHO", name="${name}", source=…); do not retry create.`,
+      `Created ENHO ${name}, but saving or unlocking failed; the resulting state is unconfirmed. ` +
+        `The object exists — check it with SAPRead(type="ENHO", name="${name}"), then use ` +
+        `SAPWrite(action="update", type="ENHO", name="${name}", source=…) if needed; do not retry create.\n` +
+        batchFailureMessage(err, minimalErrors),
     );
   }
 }
@@ -804,7 +805,15 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     if (type === 'ENHO') {
       try {
         const ct = vendorContentTypeForType(type);
-        await saveBadiImplementationsAfterCreate(client, objectUrl, name, body, ct, effectiveTransport);
+        await saveBadiImplementationsAfterCreate(
+          client,
+          objectUrl,
+          name,
+          body,
+          ct,
+          effectiveTransport,
+          config.minimalErrors,
+        );
       } catch (err) {
         invalidateWrittenObject(type, name);
         return errorResult(err instanceof Error ? err.message : String(err));
@@ -1112,6 +1121,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.body,
           plan.contentType,
           plan.transport,
+          config.minimalErrors,
         );
       if (plan.type === 'DTEL') {
         await client.http.withStatefulSession(async (session) => {

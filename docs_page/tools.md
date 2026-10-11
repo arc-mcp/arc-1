@@ -611,8 +611,9 @@ are ignored; change the short text with the separate `SAPWrite.description` argu
 rejected. One enhancement implementation belongs to one enhancement spot.
 
 - **`create`** needs `enhancementSpot` and the BAdI implementations. Like Eclipse, ARC-1 POSTs the empty
-  container and then saves the implementations with a locked PUT; both carry the transport. If the PUT
-  fails the object already exists: fix the input and use `update`, do not repeat `create`. Create and activate the implementing class first, then `SAPActivate(type="ENHO", name=…)`.
+  container and then saves the implementations with a locked PUT; both carry the transport. If saving or
+  unlocking fails, the object already exists and its resulting state is unconfirmed: read it back,
+  then use `update` if needed; do not repeat `create`. Create and activate the implementing class first, then `SAPActivate(type="ENHO", name=…)`.
 - **`update`** reads the developer view under the SAP lock. A supplied `badiImplementations` list
   replaces the stored one; within an entry that already exists, omitted `shortText`/`active`/`default`
   keep their stored values. The spot cannot change.
@@ -629,6 +630,8 @@ different filters inside an AND, such as `(A = '1' OR B = '2') AND C = '3'`; ARC
 the equivalent OR of AND groups. An OR of one filter's values inside an AND is fine. A Z/Y create for an
 SAP-internal spot is refused before the create, because SAP rejects it but still leaves an object directory
 entry. An update also keeps the stored `customizingLock` and `example` attributes.
+ARC-1 limits new filter input to 32,768 characters and 32 nested parentheses; these are parser limits,
+not SAP filter semantics.
 
 SAP checks that the class implements the BAdI interface and the filter values against their DDIC check
 only at activation: such a write is saved inactive and `SAPActivate` reports the error. Create, update,

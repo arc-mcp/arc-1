@@ -79,6 +79,7 @@ function invalid(message: string): Error {
  * Values are quoted (`''` escapes a quote) or bare words; names are upper-cased, values kept as given.
  */
 export function parseFilterCondition(text: string): FilterNode {
+  if (text.length > 32_768) throw invalid('the condition exceeds 32768 characters.');
   const tokens: string[] = [];
   const re = /^(\(|\)|'(?:[^']|'')*'|<>|<=|>=|=|<|>|[^\s()'<>=]+)/;
   let rest = text.trim();
@@ -89,14 +90,17 @@ export function parseFilterCondition(text: string): FilterNode {
     rest = rest.slice(match[0].length).trimStart();
   }
   let pos = 0;
+  let depth = 0;
   const isKeyword = (word: string | undefined, keyword: string) => word?.toUpperCase() === keyword;
 
   const parseFactor = (): FilterNode => {
     const token = tokens[pos++];
     if (token === undefined) throw invalid('the condition ends early.');
     if (token === '(') {
+      if (++depth > 32) throw invalid('parenthesis nesting exceeds 32 levels.');
       const inner = parseExpr();
       if (tokens[pos++] !== ')') throw invalid('a closing parenthesis is missing.');
+      depth--;
       return inner;
     }
     const name = token.toUpperCase();

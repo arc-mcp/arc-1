@@ -142,3 +142,25 @@ it but leaves an undeletable TADIR entry); see the write contract, 2026-10-08. L
 - Is enhancement implementation creation allowed on BTP ABAP Environment, or only on-prem / private cloud?
   Answered: a BTP trial run worked for BAdIs released for cloud development (`useInSAPCloudPlatform`);
   enabling it is the FEAT-03 follow-up.
+
+## Independent review, 2026-10-11
+
+Rebased by merging release 1.5.2 (`2bf00bf1`). Two regression tests reproduced remaining defects:
+
+- A failed post-create PUT or unlock bypassed minimal-error redaction and claimed the implementations
+  were not saved. Reuse the existing batch error formatter, report the save state as unconfirmed, and
+  preserve readback/update recovery guidance. No automatic rollback or retry is added.
+- Excessive filter nesting caused a stack overflow. Bound new filter text at 32,768 characters and
+  parenthesis nesting at 32; retain the existing parser and stored-filter preservation.
+
+Both changes are local to the confirmed failures. Roadmap scope remains FEAT-03 (remaining enhancement
+variants) and FEAT-81 (explicit language-version creation); this review adds no feature scope.
+
+Validation after these fixes: all 8,259 unit tests, typecheck, lint, policy validation, build,
+file/schema budgets and strict MkDocs passed. Fresh compiled-dispatcher testing on SAP_BASIS 758 SP02
+and 816 SP01 created a disposable `$TMP` ENHO for `/AIF/CHANGE_IDOC_STATUS`, referencing the existing
+SAP example class with the implementation disabled. Create/read/update/activate, unchanged flags,
+undeclared-filter refusal, delete and confirmed owner 404 passed. The standard example was only read;
+no business execution occurred. SAP_BASIS 750 SP02 refused before create because discovery lacks the
+collection. This run did not repeat the earlier transportable-package, filter-tree or BTP lifecycles;
+the dated evidence in the write contract remains the qualification for those scenarios.
