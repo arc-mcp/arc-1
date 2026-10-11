@@ -80,7 +80,7 @@ sequence.
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
-| [FEAT-81](#feat-81) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
+| [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
 | [FEAT-23](#feat-23) | Recursive program include reading | P2 | M | Needs research | Developer workflow |
@@ -397,8 +397,8 @@ values. Hook, class and spot authoring have no proven create/update contract.
 pattern (discovery gate, package gate, read-back; evidence:
 `docs/research/2026-10-07-enho-xhb-write-contract.md`).
 
-<a id="feat-81"></a>
-### FEAT-81 — Set the ABAP language version of packages and objects
+<a id="feat-85"></a>
+### FEAT-85 — Set the ABAP language version of packages and objects
 
 - **Priority / effort / status:** P1 / M / Needs research
 - **Category:** ABAP authoring

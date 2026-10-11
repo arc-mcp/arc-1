@@ -154,7 +154,7 @@ Merged release 1.5.2 (`2bf00bf1`). Two regression tests reproduced remaining def
   parenthesis nesting at 32; retain the existing parser and stored-filter preservation.
 
 Both changes are local to the confirmed failures. Roadmap scope remains FEAT-03 (remaining enhancement
-variants) and FEAT-81 (explicit language-version creation); this review adds no feature scope.
+variants) and FEAT-85 (explicit language-version creation); this review adds no feature scope.
 
 Validation after these fixes: all 8,259 unit tests, typecheck, lint, policy validation, build,
 file/schema budgets and strict MkDocs passed. Fresh compiled-dispatcher testing on SAP_BASIS 758 SP02
@@ -171,3 +171,7 @@ BTP bodies; the shared minimal-payload guide already gives the same required fie
 Compressed the BTP introduction without dropping its language, naming, alias or lock guidance.
 Restored the existing BTP token limit of 17,350 instead of increasing it for ENHO.
 No tool input, safety guidance or runtime behavior changes.
+
+Roadmap review also found that FEAT-81 had already identified the function-group
+text-pool fix completed by #959. The deferred language-version idea now uses the
+unused FEAT-85 ID, so old issue/PR links keep their original meaning.
