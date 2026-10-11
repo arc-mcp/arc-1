@@ -186,3 +186,22 @@ five PRs passed 202 tests. No runtime fix was needed; the stale on-premises-only
 sentence was corrected. This supersedes the same-day BTP testing gap above. Detailed cases and the
 native mandatory-filter constraint are in the [write contract](../research/2026-10-07-enho-xhb-write-contract.md#current-combined-candidate-on-btp-2026-10-11).
 Roadmap checked: no additional impact on the remaining FEAT-03/FEAT-85 scope.
+
+## Claude review follow-up, 2026-10-11
+
+Deletion now reads XHB metadata after the write/package gates and requires `BADI_IMPL` before
+locking. Other technologies, missing technology and failed metadata reads cannot reach DELETE.
+The reader and existing lock/delete/unlock path are reused; no fallback or schema change is added.
+Six regression failures reproduced the previous missing check, then passed with the guard.
+
+Runtime commit `2ed637f9` passed all 8,265 unit tests, typecheck, lint, policy validation, build,
+file/schema budgets and strict MkDocs. Compiled public-dispatcher lifecycle tests passed on
+758 SP02 and 816 SP01 (direct HTTPS Basic auth, owned `$TMP` enhancements) and BTP 920 SP05
+(named-user OAuth, `ZARC1_PRSP_260916`). The BTP run covered filtered single creation and
+unfiltered batch creation, updates, activation, scope/package refusals and deletion. Both on-prem
+enhancements and all four BTP ENHO/class fixtures were deleted and confirmed absent; BTP directory
+queries returned zero rows. NW 750 SP02 still refused the unsupported create before writing.
+
+Deletion of a real non-XHB object through the XHB endpoint was not attempted: the risk remains
+unproven without an owned fixture. Refusal of other/unknown metadata and read failures is mock-tested.
+This follow-up does not change the remaining FEAT-03/FEAT-85 roadmap scope.
