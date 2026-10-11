@@ -22,6 +22,27 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## 1.5.2 — safer text pools and SAP compatibility fixes (2026-10-10)
+
+Fixes for text pools, source edits, navigation and system detection. No new mandatory settings;
+refresh your MCP client's tool list after upgrading.
+
+| Change | Impact | Action |
+|---|---|---|
+| Text-pool deletion safeguards ([#952](https://github.com/arc-mcp/arc-1/pull/952), [#959](https://github.com/arc-mcp/arc-1/pull/959), [#969](https://github.com/arc-mcp/arc-1/pull/969)) | PROG/FUGR deletion refuses inactive text pools where the service is available. This supersedes automatic draft activation during deletion. | Review with the author and explicitly activate before retrying; see [text-pool guidance](tools.md#text-elements). |
+| Text writes and activation ([#946](https://github.com/arc-mcp/arc-1/pull/946), [#949](https://github.com/arc-mcp/arc-1/pull/949)) | Writes request whole-pool activation after unlocking, including pending edits to other text parts. `SAPActivate` accepts `REPT`/`PROG/PX` and reports `requested`. | Newly created programs need their first owner activation. |
+| Completion and references ([#929](https://github.com/arc-mcp/arc-1/pull/929), [#930](https://github.com/arc-mcp/arc-1/pull/930)) | Completion returns `{proposals: [{text}], complete, hint?}`. Positioned references report SAP's actual search scope. | Adapt completion consumers; inspect `complete`, `searchedFor` and warnings. |
+| HANA detection ([#937](https://github.com/arc-mcp/arc-1/pull/937), [#964](https://github.com/arc-mcp/arc-1/pull/964)) | NHI discovery alone no longer implies HANA; verified ABAP Environment components do. | `none` — unconfirmed does not mean non-HANA. |
+| ADT discovery ([#953](https://github.com/arc-mcp/arc-1/pull/953)) | Collections without advertised media types remain discoverable. | `none` |
+| Pre-write validation ([#945](https://github.com/arc-mcp/arc-1/pull/945), [#947](https://github.com/arc-mcp/arc-1/pull/947), [#958](https://github.com/arc-mcp/arc-1/pull/958)) | Lint rejection precedes object creation. Literal-spacing findings are advisory; valid DDLX header/search annotations pass preflight. | `none` |
+| Domain fixed values ([#944](https://github.com/arc-mcp/arc-1/pull/944)) | Oversized values are refused before SAP can truncate them. | Limit low/high to 10 characters and descriptions to 60. |
+| Method edits ([#961](https://github.com/arc-mcp/arc-1/pull/961)) | Body edits preserve method headers/comments; removal includes attached ABAP Doc and cleans boundary spacing. | `none` |
+| Syntax checks ([#951](https://github.com/arc-mcp/arc-1/pull/951), [#960](https://github.com/arc-mcp/arc-1/pull/960)) | Structures resolve correctly; proposed-source checks against absent objects report `checked:false`. | Verify object identity before interpreting findings. |
+| API release state ([#931](https://github.com/arc-mcp/arc-1/pull/931)) | Function modules resolve their parent group; namespaced object URIs are encoded correctly. | `none` |
+| Business-configuration documentation ([#934](https://github.com/arc-mcp/arc-1/pull/934)) | KTD creation resolves `SMBC/TYP` parents. | Supply a nonempty `refObjectDescription`. |
+| Grouped SQL diagnostics ([#962](https://github.com/arc-mcp/arc-1/pull/962)) | Explains native count-only GROUP BY generation failures. | Include grouping columns alongside `COUNT(*)`. |
+| Guarded table-entity reads ([#968](https://github.com/arc-mcp/arc-1/pull/968)) | Active DDLS proof permits recognized table-entity lineage; unknown shapes remain refused. | `none` — existing [blocklist limits](authorization.md) apply. |
+
 ## 1.5.1 — authentication safeguards and SAP compatibility (2026-10-04)
 
 Stricter authentication and cache isolation, safer deployment archives, and compatibility fixes.

@@ -307,6 +307,19 @@ describe('Feature Detection', () => {
   // ─── detectHanaFromComponents ──────────────────────────────────────
 
   describe('detectHanaFromComponents', () => {
+    it('recognizes the captured ABAP Environment 920 identity without guessing from Cloud-looking names', () => {
+      const captured = ['%2fDMO%2fSAP', 'DW4CORE', 'HOME', 'LOCAL', 'SAP_BASIS', 'SAP_CLOUD', 'ZLOCAL'];
+      expect(detectHanaFromComponents(captured.map((name) => ({ name })))).toBe(true);
+      expect(detectHanaFromComponents(captured.map((name) => ({ name: name.toLowerCase() })))).toBe(true);
+      for (const names of [
+        ['SAP_CLOUD'],
+        ['SAP_BASIS', 'Z_SAP_CLOUD'],
+        ['SAP_BASIS', 'SAP_CLOUD', 'SAP_ABA'],
+        ['DW4CORE'],
+      ]) {
+        expect(detectHanaFromComponents(names.map((name) => ({ name })))).toBe(false);
+      }
+    });
     it('detects HANA when HDB component is present', () => {
       expect(detectHanaFromComponents([{ name: 'HDB' }])).toBe(true);
     });
@@ -664,6 +677,40 @@ describe('Feature Detection', () => {
       const result = await probeFeatures(client, defaultConfig);
       expect(result.hana.available).toBe(true);
     });
+
+    it('infers HANA from ABAP Environment identity with a missing endpoint, preserving explicit overrides', async () => {
+      const componentsXml = makeComponentsXml([
+        { id: 'SAP_BASIS', title: '920;SAPK-92004INSAPBASIS;0004;SAP Basis Component' },
+        { id: 'SAP_CLOUD', title: '920;SAPK-92004INSAPCLOUD;0004;SAP Cloud Component' },
+      ]);
+      const client = mockProbeClientHanaScenario({ componentsXml, hanaEndpoint404: true });
+      const inferred = await probeFeatures(client, defaultConfig);
+      expect(inferred.hana.available).toBe(true);
+      expect(inferred.hana.message).toContain('inferred from installed components');
+      expect((await probeFeatures(client, { ...defaultConfig, hana: 'off' })).hana.available).toBe(false);
+      expect((await probeFeatures(client, { ...defaultConfig, hana: 'on' })).hana.available).toBe(true);
+    });
+
+    it.each([401, 403])(
+      'preserves hanainfo %s diagnostics when components independently prove HANA',
+      async (status) => {
+        const client = mockProbeClientHanaScenario({
+          componentsXml: makeComponentsXml([
+            { id: 'SAP_BASIS', title: '920;SAPK-92004INSAPBASIS;0004;SAP Basis Component' },
+            { id: 'SAP_CLOUD', title: '920;SAPK-92004INSAPCLOUD;0004;SAP Cloud Component' },
+          ]),
+          hanaEndpoint404: true,
+        });
+        const get = client.get.bind(client);
+        client.get = vi.fn((...args: Parameters<AdtHttpClient['get']>) =>
+          args[0].endsWith('/hanainfo') ? Promise.reject(new AdtApiError('Denied', status, args[0])) : get(...args),
+        );
+        const result = await probeFeatures(client, defaultConfig);
+        expect(result.hana.available).toBe(true);
+        expect(result.hana.message).toContain(String(status));
+        expect(result.hana.message).not.toContain('endpoint absent');
+      },
+    );
 
     it('detects HANA via S4FND on S/4HANA 2021+ when hanainfo endpoint returns 404', async () => {
       // S/4HANA 2021+ ships S4FND instead of S4CORE — this was the scenario that originally

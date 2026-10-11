@@ -132,6 +132,13 @@ Classic CDS views, CDS view entities (including root entities), and transactiona
 share the same lineage checks. Their graph must identify the requested source and expand to proven
 terminal tables. A childless view, or one SAP reports without a database object (such as a transient
 analytical query), is denied. SAP's SQL restrictions still apply after the policy permits a query.
+On 816 and ABAP Environment, direct CDS table entities and view dependencies with
+unnamed `FROM`/`INNER_JOIN` leaves additionally require fresh active DDLS metadata
+proving the exact table-entity name and kind. Entity/DDLS aliases, unavailable
+metadata and other untyped graph shapes remain refused. This proof is bounded to
+64 additional identities per graph and is never cached. It does not bypass native
+SAP authorization or permit CDS association paths.
+
 CDS view-entity **replacement objects** remain a separate, unsupported catalog-mapping case.
 
 ### Failure codes

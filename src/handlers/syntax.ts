@@ -9,15 +9,22 @@ import { type ToolResult, textResult, toolJson } from './shared.js';
 export async function handleSyntaxCheck(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
-  const objectUrl = objectUrlForType(type, name);
+  let objectUrl = objectUrlForType(type, name);
   const version = args.version === 'inactive' ? 'inactive' : args.version === 'active' ? 'active' : undefined;
   const content = typeof args.source === 'string' ? (args.source as string) : undefined;
+  let absent = (type === 'TABL' || content !== undefined) && (await isConfirmedAbsent(client, objectUrl));
+  // TABL aliases include structures. Resolve their actual root for stored and unsaved checks;
+  // only a 404 permits the fallback, and fresh metadata avoids retaining an obsolete type route.
+  if (type === 'TABL' && absent) {
+    objectUrl = objectUrlForType('TABL/DS', name);
+    absent = await isConfirmedAbsent(client, objectUrl);
+  }
   // SAP does not refuse unsaved text for every absent object: for a PROG it checks the text as a
   // standalone include (`/programs/includes/<name>?context=/programs/programs/<name>`) with default
   // program attributes — fixed-point arithmetic off — and reports `processed`. Every `@` host
   // variable then fails, and the result reads like a real verdict. Confirm the object exists first
   // (version-less metadata = SAP's developer view, so an inactive-only object still counts).
-  if (content !== undefined && (await isConfirmedAbsent(client, objectUrl))) {
+  if (content !== undefined && absent) {
     return notChecked(
       { hasErrors: false, messages: [], checked: false },
       `${type} ${name} was not found at ${objectUrl}`,

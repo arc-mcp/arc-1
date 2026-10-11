@@ -1223,6 +1223,13 @@ describe('SAPWrite handler — create / batch_create', () => {
 
     it('FUGR delete: DELETEs to FUGR URL with lockHandle', async () => {
       const calls = captureFetch();
+      const sap = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation((url: string, opts: any) =>
+        String(url).includes('/textelements/functiongroups/ZFG?version=inactive')
+          ? Promise.resolve(mockResponse(200, '<textElement name="ZFG" type="FUGR/PX" version="active"/>'))
+          : sap(url, opts),
+      );
+
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'delete',
         type: 'FUGR',

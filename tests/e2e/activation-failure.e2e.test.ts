@@ -13,7 +13,7 @@
  *   3. The error names the object (so the LLM knows which object).
  *
  * The transient PROG uses a unique timestamped name so concurrent runs do not collide.
- * Cleanup is best-effort in finally blocks (per tests/e2e/diagnostics.e2e.test.ts pattern).
+ * Cleanup explicitly repairs the disposable broken source and fails visibly if deletion fails.
  */
 
 import { readFileSync } from 'node:fs';
@@ -21,6 +21,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { skipTest } from '../helpers/skip-policy.js';
 import {
   callTool,
@@ -139,17 +140,7 @@ describe('E2E SAPActivate failure path (PR #179 regression)', () => {
       expect(batchErrorText).toMatch(new RegExp(`${progName}.*\\(PROG\\).*\\[line 10\\]`, 'i'));
     } finally {
       if (created) {
-        try {
-          // best-effort-cleanup: delete the transient broken object
-          await callTool(client, 'SAPWrite', {
-            action: 'delete',
-            type: 'PROG',
-            name: progName,
-          });
-        } catch {
-          // best-effort-cleanup: delete may fail if the object was activated or
-          // is locked by a previous run — leaving stale objects is acceptable in CI
-        }
+        expectToolSuccess(await deleteProgramFixture((tool, args) => callTool(client, tool, args), progName));
       }
     }
   });

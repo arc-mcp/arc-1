@@ -5,6 +5,33 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.5.2](https://github.com/arc-mcp/arc-1/compare/v1.5.1...v1.5.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* activate a program's inactive text pool before deleting it ([#952](https://github.com/arc-mcp/arc-1/issues/952)) ([3fc533a](https://github.com/arc-mcp/arc-1/commit/3fc533ab2cb7afe39648b32c4fbe76051d5b75f4))
+* activate saved text pools after releasing their lock ([#946](https://github.com/arc-mcp/arc-1/issues/946)) ([d9a6d48](https://github.com/arc-mcp/arc-1/commit/d9a6d4837a7ad361af875180d72867956d4f4b1c))
+* allow valid DDLX annotations through preflight ([#947](https://github.com/arc-mcp/arc-1/issues/947)) ([096a3e1](https://github.com/arc-mcp/arc-1/commit/096a3e112124d59da18cf7bb2abfb88144bebd20))
+* clear inactive function-group text pools before deletion ([#959](https://github.com/arc-mcp/arc-1/issues/959)) ([813abea](https://github.com/arc-mcp/arc-1/commit/813abea96b096ced4aae76bbae414e9fe7246ffb))
+* explain count-only grouped SQL generation failures ([#962](https://github.com/arc-mcp/arc-1/issues/962)) ([ab19f30](https://github.com/arc-mcp/arc-1/commit/ab19f3025eb619e638723b1d47e81993c3f8bdc3))
+* honor cursor position and SAP reference scope ([#929](https://github.com/arc-mcp/arc-1/issues/929)) ([c7bbfb5](https://github.com/arc-mcp/arc-1/commit/c7bbfb5376c90a172538fb440c30b7b41405732f))
+* infer HANA for verified ABAP Environment components ([#964](https://github.com/arc-mcp/arc-1/issues/964)) ([a3646f1](https://github.com/arc-mcp/arc-1/commit/a3646f1a677bd9dee86bd8acefe4c8b9ed4250db))
+* keep pre-write literal spacing findings advisory ([#958](https://github.com/arc-mcp/arc-1/issues/958)) ([03a9735](https://github.com/arc-mcp/arc-1/commit/03a97350eac4a896128924ab2674d2125bd9da35))
+* lint source before creating SAP objects ([#945](https://github.com/arc-mcp/arc-1/issues/945)) ([3e669fc](https://github.com/arc-mcp/arc-1/commit/3e669fce3fb13b6776512fdce77fee8659a3b684))
+* preserve inactive text pools across owner deletion ([#969](https://github.com/arc-mcp/arc-1/issues/969)) ([3abcf2b](https://github.com/arc-mcp/arc-1/commit/3abcf2b6ba4237e15de72ec510c1a90558f5e145))
+* preserve method documentation and boundary formatting ([#961](https://github.com/arc-mcp/arc-1/issues/961)) ([81da556](https://github.com/arc-mcp/arc-1/commit/81da556a51930cc5aca0f64506fe8c7c46e0f6ca))
+* prove active table entity lineage for guarded reads ([#968](https://github.com/arc-mcp/arc-1/issues/968)) ([f2d4e02](https://github.com/arc-mcp/arc-1/commit/f2d4e02944b36d3a338f6b8112fb41a9824f6553))
+* reject domain fixed values that SAP would truncate ([#944](https://github.com/arc-mcp/arc-1/issues/944)) ([759ce11](https://github.com/arc-mcp/arc-1/commit/759ce116db65c9e46dcc1da3088e21323701d8d7))
+* report "not checked" when an unsaved-source syntax check targets an absent object ([#951](https://github.com/arc-mcp/arc-1/issues/951)) ([3a2d372](https://github.com/arc-mcp/arc-1/commit/3a2d372ab38802d56dfc82f3297496b69eb349f0))
+* resolve structure endpoints for syntax checks ([#960](https://github.com/arc-mcp/arc-1/issues/960)) ([59996cb](https://github.com/arc-mcp/arc-1/commit/59996cbb7742e9f02d22fcce5a71f6eb642efdb1))
+* restore ADT code completion and report result completeness ([#930](https://github.com/arc-mcp/arc-1/issues/930)) ([81c5b61](https://github.com/arc-mcp/arc-1/commit/81c5b61fbf4573e6e0bbda9a6ef7e3fa212b8678))
+* retain discovery collections without advertised media types ([#953](https://github.com/arc-mcp/arc-1/issues/953)) ([3ac9caa](https://github.com/arc-mcp/arc-1/commit/3ac9caa5754abe2c146036e0ad07eda190cf2643))
+* route explicit program text-pool activation ([#949](https://github.com/arc-mcp/arc-1/issues/949)) ([d6cb053](https://github.com/arc-mcp/arc-1/commit/d6cb05382a6d0e0a65842a212726f3b3a7f4fdf2))
+* stop inferring HANA from NHI discovery ([#937](https://github.com/arc-mcp/arc-1/issues/937)) ([3970c11](https://github.com/arc-mcp/arc-1/commit/3970c1171e07fc5f8a33bb1543fa7fbbee7dca87))
+* support API release state for function modules and namespaced objects ([#931](https://github.com/arc-mcp/arc-1/issues/931)) ([fa330ca](https://github.com/arc-mcp/arc-1/commit/fa330cabf2dfae66f993d4c5ca6f3e8ff85ea9d7))
+* support KTD documentation for business configuration objects ([#934](https://github.com/arc-mcp/arc-1/issues/934)) ([afe29f9](https://github.com/arc-mcp/arc-1/commit/afe29f93e5b78206a12b7220d3b83b019bf09ce8))
+
 ## [1.5.1](https://github.com/arc-mcp/arc-1/compare/v1.5.0...v1.5.1) (2026-10-04)
 
 

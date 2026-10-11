@@ -231,7 +231,7 @@ describe('text elements via SAPRead/SAPWrite', () => {
 
   // #940: a pool saved without activation (ARC-1 <= 1.5.1, SE38) must not outlive its deleted program.
   for (const activated of [true, false]) {
-    it(`deletes ${activated ? 'an active' : 'a never-activated'} program and its pool draft without a REPOTEXT orphan`, async (ctx) => {
+    it(`preserves ${activated ? 'an active' : 'a never-activated'} program and its pool draft until explicit activation`, async (ctx) => {
       requireOrSkip(
         ctx,
         client.http.discoveryAcceptFor('/sap/bc/adt/textelements/programs'),
@@ -265,10 +265,23 @@ describe('text elements via SAPRead/SAPWrite', () => {
         });
         expect(await repotext()).toContainEqual(expect.objectContaining({ R3STATE: 'I' }));
 
-        const result = await call('SAPWrite', { action: 'delete', type: 'PROG', name });
+        const refused = await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'PROG', name });
+        expect(refused.isError).toBe(true);
+        expect(refused.content[0]?.text).toContain('text pool is inactive');
+        await expect(client.http.get(objectUrl)).resolves.toBeDefined();
+        expect(await repotext()).toContainEqual(expect.objectContaining({ R3STATE: 'I' }));
+        expect(
+          (
+            await client.http.get(`${poolUrl}/source/selections?version=inactive`, {
+              Accept: 'application/vnd.sap.adt.textelements.selections.v1',
+            })
+          ).body,
+        ).toContain('Draft label');
+        if (!activated) await call('SAPActivate', { type: 'PROG', name });
+        await call('SAPActivate', { type: 'REPT', name });
+        await call('SAPWrite', { action: 'delete', type: 'PROG', name });
         await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
         expect(await repotext()).toEqual([]);
-        expect(result).toBe(`Deleted PROG ${name} and its inactive text pool.`);
       } finally {
         // A regression can delete the program but leave its pool. Recover that orphan too.
         if ((await repotext()).length > 0) {
@@ -289,4 +302,34 @@ describe('text elements via SAPRead/SAPWrite', () => {
       }
     }, 60_000);
   }
+  it('explains and performs explicit recovery before deleting an uncompilable new program', async (ctx) => {
+    requireOrSkip(
+      ctx,
+      client.http.discoveryAcceptFor('/sap/bc/adt/textelements/programs'),
+      `${SkipReason.BACKEND_UNSUPPORTED}: ADT textelements/programs collection absent`,
+    );
+    const name = generateUniqueName('ZARC1_IT');
+    const objectUrl = `/sap/bc/adt/programs/programs/${name.toLowerCase()}`;
+    await call('SAPWrite', {
+      action: 'create',
+      type: 'PROG',
+      name,
+      package: '$TMP',
+      source: `REPORT ${name}.\nthis is invalid abap.`,
+    });
+    try {
+      const refused = await handleToolCall(client, config, 'SAPWrite', { action: 'delete', type: 'PROG', name });
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0]?.text).toContain(`replace the source with REPORT ${name}.`);
+      await expect(client.http.get(objectUrl)).resolves.toBeDefined();
+    } finally {
+      await call('SAPWrite', { action: 'update', type: 'PROG', name, source: `REPORT ${name}.` });
+      await call('SAPActivate', { type: 'PROG', name });
+      await call('SAPWrite', { action: 'delete', type: 'PROG', name });
+      await expect(client.http.get(objectUrl)).rejects.toMatchObject({ statusCode: 404 });
+      expect((await client.runQuery(`SELECT progname, r3state FROM repotext WHERE progname = '${name}'`)).rows).toEqual(
+        [],
+      );
+    }
+  }, 60_000);
 });

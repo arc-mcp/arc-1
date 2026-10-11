@@ -206,6 +206,18 @@ function classifyParserHint(err: AdtApiError, sql: string, chunkingAttempted: bo
     return `ABAP SQL requires AS for table aliases. Write ${missingSourceAliasAs.table} AS ${missingSourceAliasAs.alias}; qualify its fields as ${missingSourceAliasAs.alias}~field.`;
   }
 
+  // Verified on 7.58/8.16 (#955): ADT treats a lone COUNT(*) as scalar even with GROUP BY.
+  // Its SELECT loop then lacks ENDSELECT, breaking nesting. Do not rewrite the projection.
+  if (
+    /^\s*SELECT\s+COUNT\s*\(\s*\*\s*\)\s*(?:AS\s+[A-Za-z_][A-Za-z0-9_]*\s+)?FROM\b/i.test(maskedSql) &&
+    /\bGROUP\s+BY\b/i.test(maskedSql) &&
+    [...maskedSql.matchAll(/\bSELECT\b/gi)].length === 1 &&
+    ((/\bTRY\b/i.test(err.message) && /\bCATCH\b/i.test(err.message)) ||
+      (/\bENDSELECT\b/i.test(err.message) && /\bENDMETHOD\b/i.test(err.message)))
+  ) {
+    return 'This ADT backend treats a lone COUNT(*) projection as a scalar result even with GROUP BY, producing a generated-program nesting error. Include the grouping columns in the SELECT list alongside COUNT(*); this adds result columns without changing the groups. Ignore those additional result columns if you only need the counts. ARC-1 has not rewritten or retried the SQL.';
+  }
+
   if (/\bambiguous\b|\bzweideutig\b/i.test(combined)) {
     return 'The column exists in more than one joined source. Qualify it with the declared table alias and a tilde in SELECT, ON, WHERE, GROUP BY, and ORDER BY, for example alias~field.';
   }

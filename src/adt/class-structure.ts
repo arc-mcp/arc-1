@@ -214,7 +214,8 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
     const newImplEndLine = structure.classImplementationBlock.er + insertedCount;
     const indent = opts.implIndent ?? '  ';
     const stub = `${indent}METHOD ${opts.methodName.toLowerCase()}.\n${indent}ENDMETHOD.`;
-    next = insertBeforeLine(next, newImplEndLine, stub);
+    const needsSeparator = splitLines(next)[newImplEndLine - 2]?.trim() !== '';
+    next = insertBeforeLine(next, newImplEndLine, `${needsSeparator ? '\n' : ''}${stub}`);
   }
 
   return next;
@@ -231,10 +232,27 @@ export function insertMethodPair(source: string, structure: ClassStructure, opts
 export function removeMethodPair(source: string, method: MethodStructure): string {
   let next = source;
   if (method.implementation) {
-    next = spliceLines(next, method.implementation.sr, method.implementation.er, '');
+    next = removeLinesAndJoinSpacing(next, method.implementation.sr, method.implementation.er);
   }
-  next = spliceLines(next, method.definition.sr, method.definition.er, '');
+  const lines = splitLines(next);
+  let start = method.definition.sr;
+  // SAP's METHODS range excludes its attached ABAP Doc. Do not consume ordinary comments
+  // or cross a blank line, which could attach documentation to a different declaration.
+  while (start > 1 && /^[ \t]*"!/.test(lines[start - 2]!)) start--;
+  next = removeLinesAndJoinSpacing(next, start, method.definition.er);
   return next;
+}
+
+/** Only collapse the blank run touching this deletion; leave unrelated spacing intact. */
+function removeLinesAndJoinSpacing(source: string, sr: number, er: number): string {
+  const next = spliceLines(source, sr, er, '');
+  const lines = splitLines(next);
+  let start = sr - 1;
+  let end = start;
+  while (start > 0 && lines[start - 1]!.trim() === '') start--;
+  while (end < lines.length && lines[end]!.trim() === '') end++;
+  if (end - start > 1) lines.splice(start + 1, end - start - 1);
+  return joinLines(lines, detectEol(source));
 }
 
 // ─── moveMethodDefinition: DEFINITION-only section move ────────────────
