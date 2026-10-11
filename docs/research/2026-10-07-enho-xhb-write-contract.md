@@ -323,3 +323,29 @@ the community run on S/4HANA 2023 (2026-10-09).
   driven by `TEST_ENHO_SPOT`, `TEST_ENHO_BADI` and `TEST_ENHO_CLASS`. Passed on SAP_BASIS 816 (see above).
 - Community: the same lifecycle plus filters and refusals on SAP_BASIS 758 SP02 through the CLI (see above);
   the content types `enhs.v2` and `enhoxhb.v4` were served without 406/415.
+
+
+### Current combined candidate on BTP, 2026-10-11
+
+Fresh public-dispatcher qualification after system startup: SAP_BASIS 920 SP05, client 100,
+named-user OAuth, non-recording Cloud package `ZARC1_PRSP_260916`. Compiled combined runtime
+`fadfeae574f29d877bf390b0881f9b6cf66b2b30` includes #939 head
+`bc3eff5323cf5cbb143c36b21671153914c04deb` and #963/#965/#966/#967.
+
+- `ADDRESS_PRINT_FORMAT`: own implementing class, single ENHO create, activation, full JSON round
+  trip, sparse short-text update including XML characters, unchanged stored filter XML, OR-filter
+  update, explicit filter clear and restoration. `cloudDevelopment` survived every update.
+- `BADI_IAM_BUSINESS_USER`: batch class plus ENHO creation, activation, JSON round trip, sparse
+  update and active-flag change passed without filters.
+- Undeclared filters and 5,000 nested parentheses were refused; subsequent legitimate updates
+  worked. Read-only scope and a different-package allowlist refused deletion of the real objects.
+- An explicit empty filter on the filter-limited address BAdI saves, but cannot activate, even if
+  its implementation is disabled: SAP returns "Filter combination required (limited filter use)".
+  The first harness assumed that activation would succeed; after correcting that expectation,
+  restoring the declared filter activated successfully and the full lifecycle passed.
+- All six objects created across these runs were removed, including those from the first harness
+  run. Each owner returned 404 and its directory-name prefix had zero rows in
+  `I_CustABAPObjDirectoryEntry`. No business BAdI invocation was used for qualification.
+
+The earlier transport-recording evidence remains separately dated; this BTP run does not repeat
+it. Forced post-create PUT/unlock failures remain covered by unit tests, not native fault injection.

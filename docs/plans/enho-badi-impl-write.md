@@ -175,3 +175,14 @@ No tool input, safety guidance or runtime behavior changes.
 Roadmap review also found that FEAT-81 had already identified the function-group
 text-pool fix completed by #959. The deferred language-version idea now uses the
 unused FEAT-85 ID, so old issue/PR links keep their original meaning.
+
+
+## Fresh BTP follow-up, 2026-10-11
+
+The combined candidate `fadfeae5` passed native BTP 920 SP05 qualification with #939 at `bc3eff53`:
+released BAdIs with and without filters, single/batch creation, updates, activation, refusals and
+verified cleanup. All six ENHO/class fixtures were removed. The focused seven-file suite for all
+five PRs passed 202 tests. No runtime fix was needed; the stale on-premises-only developer-guide
+sentence was corrected. This supersedes the same-day BTP testing gap above. Detailed cases and the
+native mandatory-filter constraint are in the [write contract](../research/2026-10-07-enho-xhb-write-contract.md#current-combined-candidate-on-btp-2026-10-11).
+Roadmap checked: no additional impact on the remaining FEAT-03/FEAT-85 scope.
