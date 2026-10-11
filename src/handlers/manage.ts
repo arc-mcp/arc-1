@@ -3,6 +3,7 @@
  * management.
  */
 
+import type { ApiReleaseVisibility } from '../adt/api-release.js';
 import type { AdtClient } from '../adt/client.js';
 import { createObject, deleteObject, lockObject, unlockObject } from '../adt/crud.js';
 import { buildPackageXml, normalizeAdtResponsible, type PackageCreateParams } from '../adt/ddic-xml.js';
@@ -105,6 +106,7 @@ export async function handleSAPManage(
       await enforceAllowedPackageForObjectUrl(client, objectUri, `set_api_state on ${objectUri}`);
       const result = await client.setApiReleaseState(objectUri, {
         state: stateArg,
+        visibility: args.apiVisibility as ApiReleaseVisibility | undefined,
         contract,
         transport: args.transport as string | undefined,
       });

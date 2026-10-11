@@ -11,12 +11,18 @@ import { TEXT_ELEMENT_PARTS } from '../adt/text-elements.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import type { ServerConfig } from '../server/types.js';
+import { API_RELEASE_FIELDS } from './api-release-fields.js';
 import * as DtelFields from './data-element-fields.js';
 import { SAPDIAGNOSE_ADDITIONAL_INPUTS } from './diagnose-fields.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
 import { addLiveRelationsDefinition } from './relation-tool.js';
+import {
+  TABLE_TYPE_BATCH_TOOL_PROPERTIES,
+  TABLE_TYPE_DIMENSION_TOOL_PROPERTIES,
+  TABLE_TYPE_TOOL_PROPERTIES,
+} from './table-type-fields.js';
 import { SAPWRITE_DESC_BTP, SAPWRITE_DESC_ONPREM } from './tool-descriptions.js';
 import {
   ATC_BATCH_TYPES_BTP,
@@ -90,7 +96,7 @@ const SAPREAD_DESC_ONPREM =
 
 const SAPREAD_DESC_BTP =
   'Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. ' +
-  'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
+  'Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). ' +
   'SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method="*" for signatures, method="NAME" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. ' +
   'grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.';
 
@@ -589,9 +595,7 @@ export function getToolDefinitions(
               'batch_create',
               'scaffold_rap_handlers',
               'generate_behavior_implementation',
-              // Class text-symbol writes are on-prem only (BTP has no classic text elements) — keep out
-              // of the BTP action enum so the zod↔json-schema parity check stays green.
-              ...(btp ? [] : ['edit_text_symbols']),
+              'edit_text_symbols',
             ],
             // This is where an LLM decides WHICH action to use, so every action gets a line —
             // especially the destructive and refusing ones, whose behaviour is not guessable.
@@ -607,20 +611,20 @@ export function getToolDefinitions(
               'delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. ' +
               'scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse\'s "Generate Behavior Implementation").' +
               (btp
-                ? ''
+                ? ' edit_text_symbols: replace CLAS symbols (@MaxLength:NN\\nNNN=text; blank-line separated). Read first with SAPRead CLAS include=text_symbols; source="" clears the pool. Activates texts only.'
                 : ' edit_text_symbols: replace a CLAS/PROG/FUGR textpool part; read first, retain other entries. source="" clears it.'),
           },
           type: {
             type: 'string',
             enum: btp ? SAPWRITE_TYPES_BTP : SAPWRITE_TYPES_ONPREM,
             description: btp
-              ? 'Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
+              ? 'Object type. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only.'
               : 'Object type (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on-prem: PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require CLAS. UIAD: validates AFF JSON and saves active; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items can be read-only.',
           },
           name: {
             type: 'string',
             description: btp
-              ? 'Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).'
+              ? 'Object name.'
               : 'Object name (for create/update/delete/edit_method/edit_unit/add_unit/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility).',
           },
           expectedSourceHash: {
@@ -641,7 +645,7 @@ export function getToolDefinitions(
               'CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version="inactive" before activation).',
           },
           ...(btp
-            ? {}
+            ? { textPart: { type: 'string', enum: ['symbols'] } }
             : {
                 textPart: {
                   type: 'string',
@@ -725,16 +729,8 @@ export function getToolDefinitions(
           },
           ...(btp ? {} : FuncProcessing.FUNCTION_PROCESSING_TOOL_PROPERTIES),
           dataType: { type: 'string', description: 'DOMA/DTEL: ABAP data type (e.g., CHAR, NUMC, DEC)' },
-          rowType: {
-            type: 'string',
-            description:
-              'TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create.',
-          },
-          rowTypeKind: {
-            type: 'string',
-            enum: ['builtin', 'structure'],
-            description: 'TTYP create: row-type mode (auto-detected from rowType if omitted).',
-          },
+          ...TABLE_TYPE_TOOL_PROPERTIES,
+          ...TABLE_TYPE_DIMENSION_TOOL_PROPERTIES,
           length: { type: 'number', description: 'DOMA/DTEL: data type length' },
           decimals: { type: 'number', description: 'DOMA/DTEL: decimal places' },
           outputLength: { type: 'number', description: 'DOMA: output length' },
@@ -900,8 +896,8 @@ export function getToolDefinitions(
                 // DDIC metadata fields (DOMA/DTEL/TTYP/MSAG/SRVB) mirror the top-level SAPWrite
                 // params 1:1 — descriptions omitted here to keep the tools/list payload small (#520).
                 dataType: { type: 'string' },
-                rowType: { type: 'string' },
-                rowTypeKind: { type: 'string', enum: ['builtin', 'structure'] },
+                ...TABLE_TYPE_BATCH_TOOL_PROPERTIES,
+                ...TABLE_TYPE_DIMENSION_TOOL_PROPERTIES,
                 length: { type: 'number' },
                 decimals: { type: 'number' },
                 outputLength: { type: 'number' },
@@ -1502,18 +1498,7 @@ export function getToolDefinitions(
           description:
             'ADT object type (e.g., CLAS/OC, DDLS/DF, PROG/P). Required for change_package. For set_api_state: object type of "name" when objectUri is omitted (e.g. CLAS, INTF, DDLS, TABL).',
         },
-        apiState: {
-          type: 'string',
-          enum: ['RELEASED', 'NOT_RELEASED'],
-          description:
-            'For set_api_state: target state of the object\'s API release contract — RELEASED (mark released for ABAP Cloud / Clean Core) or NOT_RELEASED (revoke). Default RELEASED. Visibility (ABAP Cloud / Key User Apps) follows the contract\'s defaults. Read the current state first with SAPRead(type="API_STATE").',
-        },
-        contract: {
-          type: 'string',
-          enum: ['C0', 'C1', 'C2', 'C3', 'C4'],
-          description:
-            'For set_api_state: which release contract to set. Default C1 (Key-User/Cloud — the common clean-core contract). Object types support different contracts: e.g. service definitions (SRVD) only support C0, classic DDIC views only C3, behavior definitions and tables support C0+C1. If the object does not support the chosen contract, the error lists the ones it does.',
-        },
+        ...API_RELEASE_FIELDS,
         objectName: {
           type: 'string',
           description: 'Object name to move (e.g., ZCL_MY_CLASS). Required for change_package.',

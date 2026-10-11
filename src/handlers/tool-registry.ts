@@ -79,7 +79,7 @@ const SAPREAD_TYPE_TABLE = [
   { type: 'DOMA', btp: true },
   { type: 'DTEL', btp: true },
   { type: 'TRAN', btp: false },
-  { type: 'TTYP', btp: false },
+  { type: 'TTYP', btp: true },
   // DDIC lock objects: one XML metadata document, returned as JSON. Live-verified on-prem 8.16 + BTP trial.
   { type: 'ENQU', btp: true },
   { type: 'TABLE_CONTENTS', btp: true },
@@ -151,7 +151,7 @@ const SAPWRITE_TYPE_TABLE = [
   { type: 'DOMA', btp: true },
   { type: 'DTEL', btp: true },
   { type: 'MSAG', btp: true },
-  { type: 'TTYP', btp: false },
+  { type: 'TTYP', btp: true },
   { type: 'ENQU', btp: true },
   // BAdI implementations (ENHO/XHB) only; on BTP only for BAdIs released for cloud development (C1).
   { type: 'ENHO', btp: true },

@@ -14,13 +14,14 @@
  */
 
 import { z } from 'zod';
+import { API_RELEASE_VISIBILITIES } from '../adt/api-release.js';
 import {
   ATC_BATCH_MAX_OBJECTS,
   ATC_BATCH_NAME_MAX_LENGTH,
   ATC_BATCH_NAME_PATTERN,
   ATC_BATCH_TYPES,
 } from '../adt/atc-batch.js';
-import { DTEL_MAX_LABEL_LENGTHS } from '../adt/ddic-xml.js';
+import { DTEL_MAX_LABEL_LENGTHS, TABLE_TYPE_DIMENSION_MAX } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
@@ -454,6 +455,9 @@ function validateSapWriteInput(
     updateTaskKind?: string;
     shortTexts?: unknown[];
     expectedSourceHash?: string;
+    rowTypeKind?: string;
+    rowTypeLength?: number;
+    rowTypeDecimals?: number;
   },
   ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
 ): void {
@@ -498,6 +502,28 @@ function validateSapWriteInput(
   }
 
   validateFunctionProcessingInput(input, ctx);
+  validateTableTypeDimensions(input, ctx);
+}
+
+function validateTableTypeDimensions(
+  input: { type?: string; action?: string; rowTypeKind?: string; rowTypeLength?: number; rowTypeDecimals?: number },
+  ctx: { addIssue: (issue: { code: 'custom'; path: string[]; message: string }) => void },
+): void {
+  if (input.rowTypeLength === undefined && input.rowTypeDecimals === undefined) return;
+  if (input.type !== 'TTYP' || (input.action !== undefined && !['create', 'update'].includes(input.action))) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['rowTypeLength'],
+      message: 'rowTypeLength/rowTypeDecimals are only supported for TTYP create/update.',
+    });
+  }
+  if (input.rowTypeKind === 'structure') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['rowTypeKind'],
+      message: 'rowTypeLength/rowTypeDecimals require a built-in row type.',
+    });
+  }
 }
 
 function validateFunctionProcessingInput(
@@ -562,6 +588,11 @@ const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL
 const dtelLongLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.long).optional();
 const dtelHeadingLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.heading).optional();
 
+const tableTypeDimensionSchema = z
+  .union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
+  .pipe(z.number().int().min(0).max(TABLE_TYPE_DIMENSION_MAX))
+  .optional();
+
 const batchObjectSchemaOnprem = z
   .object({
     type: z.enum(SAPWRITE_TYPES_ONPREM),
@@ -574,6 +605,8 @@ const batchObjectSchemaOnprem = z
     dataType: z.string().optional(),
     rowType: z.string().optional(),
     rowTypeKind: z.enum(['builtin', 'structure']).optional(),
+    rowTypeLength: tableTypeDimensionSchema,
+    rowTypeDecimals: tableTypeDimensionSchema,
     length: z.coerce.number().optional(),
     decimals: z.coerce.number().optional(),
     outputLength: z.coerce.number().optional(),
@@ -612,52 +645,59 @@ const batchObjectSchemaOnprem = z
     /** FUNC structured signature parameters (issue #252). */
     parameters: z.array(fmParameterSchema).optional(),
   })
-  .superRefine((input, ctx) => validateFunctionProcessingInput(input, ctx));
+  .superRefine((input, ctx) => {
+    validateFunctionProcessingInput(input, ctx);
+    validateTableTypeDimensions(input, ctx);
+  });
 
-const batchObjectSchemaBtp = z.object({
-  type: z.enum(SAPWRITE_TYPES_BTP),
-  name: z.string(),
-  source: z.string().optional(),
-  description: z.string().optional(),
-  package: z.string().optional(),
-  transport: z.string().optional(),
-  dataType: z.string().optional(),
-  rowType: z.string().optional(),
-  rowTypeKind: z.enum(['builtin', 'structure']).optional(),
-  length: z.coerce.number().optional(),
-  decimals: z.coerce.number().optional(),
-  outputLength: z.coerce.number().optional(),
-  conversionExit: z.string().optional(),
-  signExists: looseOptionalBoolean,
-  lowercase: looseOptionalBoolean,
-  fixedValues: z.array(ddicFixedValueSchema).optional(),
-  valueTable: z.string().optional(),
-  typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
-  typeName: z.string().optional(),
-  domainName: z.string().optional(),
-  shortLabel: z.string().optional(),
-  shortLength: dtelShortLengthSchema,
-  mediumLabel: z.string().optional(),
-  mediumLength: dtelMediumLengthSchema,
-  longLabel: z.string().optional(),
-  longLength: dtelLongLengthSchema,
-  headingLabel: z.string().optional(),
-  headingLength: dtelHeadingLengthSchema,
-  searchHelp: z.string().optional(),
-  searchHelpParameter: z.string().optional(),
-  setGetParameter: z.string().optional(),
-  defaultComponentName: z.string().optional(),
-  deactivateInputHistory: looseOptionalBoolean,
-  changeDocument: looseOptionalBoolean,
-  messages: z.array(messageClassMessageSchema).optional(),
-  serviceDefinition: z.string().optional(),
-  bindingType: z.string().optional(),
-  odataVersion: z.enum(['V2', 'V4']).optional(),
-  category: z.enum(['0', '1']).optional(),
-  version: z.string().optional(),
-  /** FUNC structured signature parameters (issue #252). */
-  parameters: z.array(fmParameterSchema).optional(),
-});
+const batchObjectSchemaBtp = z
+  .object({
+    type: z.enum(SAPWRITE_TYPES_BTP),
+    name: z.string(),
+    source: z.string().optional(),
+    description: z.string().optional(),
+    package: z.string().optional(),
+    transport: z.string().optional(),
+    dataType: z.string().optional(),
+    rowType: z.string().optional(),
+    rowTypeKind: z.enum(['builtin', 'structure']).optional(),
+    rowTypeLength: tableTypeDimensionSchema,
+    rowTypeDecimals: tableTypeDimensionSchema,
+    length: z.coerce.number().optional(),
+    decimals: z.coerce.number().optional(),
+    outputLength: z.coerce.number().optional(),
+    conversionExit: z.string().optional(),
+    signExists: looseOptionalBoolean,
+    lowercase: looseOptionalBoolean,
+    fixedValues: z.array(ddicFixedValueSchema).optional(),
+    valueTable: z.string().optional(),
+    typeKind: z.enum(['domain', 'predefinedAbapType']).optional(),
+    typeName: z.string().optional(),
+    domainName: z.string().optional(),
+    shortLabel: z.string().optional(),
+    shortLength: dtelShortLengthSchema,
+    mediumLabel: z.string().optional(),
+    mediumLength: dtelMediumLengthSchema,
+    longLabel: z.string().optional(),
+    longLength: dtelLongLengthSchema,
+    headingLabel: z.string().optional(),
+    headingLength: dtelHeadingLengthSchema,
+    searchHelp: z.string().optional(),
+    searchHelpParameter: z.string().optional(),
+    setGetParameter: z.string().optional(),
+    defaultComponentName: z.string().optional(),
+    deactivateInputHistory: looseOptionalBoolean,
+    changeDocument: looseOptionalBoolean,
+    messages: z.array(messageClassMessageSchema).optional(),
+    serviceDefinition: z.string().optional(),
+    bindingType: z.string().optional(),
+    odataVersion: z.enum(['V2', 'V4']).optional(),
+    category: z.enum(['0', '1']).optional(),
+    version: z.string().optional(),
+    /** FUNC structured signature parameters (issue #252). */
+    parameters: z.array(fmParameterSchema).optional(),
+  })
+  .superRefine(validateTableTypeDimensions);
 
 export const SAPWriteSchema = z
   .object({
@@ -713,6 +753,8 @@ export const SAPWriteSchema = z
     dataType: z.string().optional(),
     rowType: z.string().optional(),
     rowTypeKind: z.enum(['builtin', 'structure']).optional(),
+    rowTypeLength: tableTypeDimensionSchema,
+    rowTypeDecimals: tableTypeDimensionSchema,
     length: z.coerce.number().optional(),
     decimals: z.coerce.number().optional(),
     outputLength: z.coerce.number().optional(),
@@ -790,6 +832,7 @@ export const SAPWriteSchemaBtp = z
       'batch_create',
       'scaffold_rap_handlers',
       'generate_behavior_implementation',
+      'edit_text_symbols',
     ]),
     type: z.enum(SAPWRITE_TYPES_BTP).optional(),
     name: z.string().optional(),
@@ -799,6 +842,7 @@ export const SAPWriteSchemaBtp = z
       (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
       z.enum(CLASS_WRITE_INCLUDES).optional(),
     ),
+    textPart: z.enum(['symbols']).optional(),
     method: z.string().optional(),
     /**
      * Visibility section. For action="add_method": the section to insert into (default 'public').
@@ -816,6 +860,8 @@ export const SAPWriteSchemaBtp = z
     dataType: z.string().optional(),
     rowType: z.string().optional(),
     rowTypeKind: z.enum(['builtin', 'structure']).optional(),
+    rowTypeLength: tableTypeDimensionSchema,
+    rowTypeDecimals: tableTypeDimensionSchema,
     length: z.coerce.number().optional(),
     decimals: z.coerce.number().optional(),
     outputLength: z.coerce.number().optional(),
@@ -869,7 +915,12 @@ export const SAPWriteSchemaBtp = z
     objects: z.array(batchObjectSchemaBtp).max(BATCH_CREATE_MAX_OBJECTS).optional(),
   })
   .strict()
-  .superRefine((input, ctx) => validateSapWriteInput(input, ctx));
+  .superRefine((input, ctx) => {
+    validateSapWriteInput(input, ctx);
+    if (input.action === 'edit_text_symbols' && input.type !== 'CLAS') {
+      ctx.addIssue({ code: 'custom', path: ['type'], message: 'BTP edit_text_symbols requires type=CLAS.' });
+    }
+  });
 
 // ─── SAPActivate ────────────────────────────────────────────────────
 
@@ -1326,6 +1377,11 @@ export const SAPManageSchema = z
       'set_api_state',
     ]),
     apiState: z.enum(['RELEASED', 'NOT_RELEASED']).optional(),
+    apiVisibility: z
+      .array(z.enum(API_RELEASE_VISIBILITIES))
+      .max(2)
+      .refine((values) => new Set(values).size === values.length, 'Visibility selections must be unique.')
+      .optional(),
     contract: z.enum(['C0', 'C1', 'C2', 'C3', 'C4']).optional(),
     catalogId: z.string().optional(),
     groupId: z.string().optional(),
@@ -1348,7 +1404,16 @@ export const SAPManageSchema = z
     oldPackage: z.string().optional(),
     newPackage: z.string().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (input.apiVisibility !== undefined && (input.action !== 'set_api_state' || input.apiState === 'NOT_RELEASED')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['apiVisibility'],
+        message: 'apiVisibility requires set_api_state with apiState=RELEASED (the default).',
+      });
+    }
+  });
 
 // ─── Hyperfocused SAP ───────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 [
   {
     "name": "SAPRead",
-    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
+    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -23,6 +23,7 @@
             "TABL",
             "DOMA",
             "DTEL",
+            "TTYP",
             "ENQU",
             "TABLE_CONTENTS",
             "TABLE_QUERY",
@@ -271,9 +272,10 @@
             "change_method_visibility",
             "batch_create",
             "scaffold_rap_handlers",
-            "generate_behavior_implementation"
+            "generate_behavior_implementation",
+            "edit_text_symbols"
           ],
-          "description": "Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). edit_method: replace a single method body — the token-cheap path for class edits. batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); edit_method_signature rewrites one METHODS clause and leaves the body alone; change_method_visibility moves a method to another section and preserves its body; delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse's \"Generate Behavior Implementation\")."
+          "description": "Write action. create/update/delete: whole-object writes (update replaces /source/main, or one class-local include when include= is set). edit_method: replace a single method body — the token-cheap path for class edits. batch_create: create and activate many objects in one call; order is preserved, so list dependencies first. Class surgery (CLAS, all on /source/main unless noted): edit_class_definition replaces the global DEFINITION block — or a class-local include when include= is set — and refuses a diff that would leave the class non-activatable; add_method inserts a METHODS clause plus an empty IMPL stub (abstract=true skips the stub); edit_method_signature rewrites one METHODS clause and leaves the body alone; change_method_visibility moves a method to another section and preserves its body; delete_method is destructive — it discards the body, so to re-section a method use change_method_visibility, never delete+add. scaffold_rap_handlers / generate_behavior_implementation: derive behavior-pool handlers from a BDEF (the latter is the equivalent of Eclipse's \"Generate Behavior Implementation\"). edit_text_symbols: replace CLAS symbols (@MaxLength:NN\\nNNN=text; blank-line separated). Read first with SAPRead CLAS include=text_symbols; source=\"\" clears the pool. Activates texts only."
         },
         "type": {
           "type": "string",
@@ -294,6 +296,7 @@
             "DOMA",
             "DTEL",
             "MSAG",
+            "TTYP",
             "ENQU",
             "ENHO",
             "DESD",
@@ -310,11 +313,11 @@
             "SAJC",
             "SAJT"
           ],
-          "description": "Object type (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility). Supported on BTP: CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD or KTD (Knowledge Transfer Documents), TABL, TABL/DT, TABL/DS, DOMA, DTEL, MSAG. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only."
+          "description": "Object type. Class-section surgery actions require type=CLAS. UIAD: checks AFF JSON; create honors header.abapLanguageVersion. Manual cloudDevelopment items are editable; generated items may be read-only."
         },
         "name": {
           "type": "string",
-          "description": "Object name (for create/update/delete/edit_method/edit_class_definition/add_method/edit_method_signature/delete_method/change_method_visibility)."
+          "description": "Object name."
         },
         "expectedSourceHash": {
           "type": "string",
@@ -333,6 +336,12 @@
             "testclasses"
           ],
           "description": "CLAS-ONLY. Do NOT send unless type=CLAS AND action is update / edit_method / edit_class_definition. OMIT it entirely for every other type and for delete / batch_create / add_method / edit_method_signature / delete_method / change_method_visibility (those use /source/main). Targets a class-local include: definitions (CCDEF), implementations (CCIMP), macros, testclasses. edit_method auto-detects it from the method specifier (lhc_*/lcl_* → implementations, ltc_* → testclasses), so you rarely pass it; use include=testclasses to create a new local test class. Whole-include writes auto-create a missing include and produce an inactive draft (read with SAPRead version=\"inactive\" before activation)."
+        },
+        "textPart": {
+          "type": "string",
+          "enum": [
+            "symbols"
+          ]
         },
         "method": {
           "type": "string",
@@ -397,7 +406,7 @@
         },
         "rowType": {
           "type": "string",
-          "description": "TTYP create: the row type — a built-in ABAP type (STRING, I, …) or a DDIC structure/type name. Required for TTYP create."
+          "description": "TTYP row; required on create. rowTypeLength/rowTypeDecimals: built-ins only. Updates preserve omitted values for unchanged rows."
         },
         "rowTypeKind": {
           "type": "string",
@@ -405,7 +414,17 @@
             "builtin",
             "structure"
           ],
-          "description": "TTYP create: row-type mode (auto-detected from rowType if omitted)."
+          "description": "TTYP: use builtin for CHAR/DEC; otherwise inferred."
+        },
+        "rowTypeLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
+        },
+        "rowTypeDecimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999
         },
         "length": {
           "type": "number",
@@ -700,6 +719,7 @@
                   "DOMA",
                   "DTEL",
                   "MSAG",
+                  "TTYP",
                   "ENQU",
                   "ENHO",
                   "DESD",
@@ -750,6 +770,16 @@
                   "builtin",
                   "structure"
                 ]
+              },
+              "rowTypeLength": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 999999
+              },
+              "rowTypeDecimals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 999999
               },
               "length": {
                 "type": "number"
@@ -1636,13 +1666,26 @@
           "type": "string",
           "description": "ADT object type (e.g., CLAS/OC, DDLS/DF, PROG/P). Required for change_package. For set_api_state: object type of \"name\" when objectUri is omitted (e.g. CLAS, INTF, DDLS, TABL)."
         },
+        "apiVisibility": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "cloudDevelopment",
+              "keyUserApps"
+            ]
+          },
+          "maxItems": 2,
+          "uniqueItems": true,
+          "description": "set_api_state RELEASED: complete visibility selection; [] means none. Omit for SAP defaults. Read API_STATE first."
+        },
         "apiState": {
           "type": "string",
           "enum": [
             "RELEASED",
             "NOT_RELEASED"
           ],
-          "description": "For set_api_state: target state of the object's API release contract — RELEASED (mark released for ABAP Cloud / Clean Core) or NOT_RELEASED (revoke). Default RELEASED. Visibility (ABAP Cloud / Key User Apps) follows the contract's defaults. Read the current state first with SAPRead(type=\"API_STATE\")."
+          "default": "RELEASED"
         },
         "contract": {
           "type": "string",
@@ -1653,7 +1696,7 @@
             "C3",
             "C4"
           ],
-          "description": "For set_api_state: which release contract to set. Default C1 (Key-User/Cloud — the common clean-core contract). Object types support different contracts: e.g. service definitions (SRVD) only support C0, classic DDIC views only C3, behavior definitions and tables support C0+C1. If the object does not support the chosen contract, the error lists the ones it does."
+          "description": "set_api_state: contract (default C1); SRVD uses C0, classic VIEW uses C3. Unsupported choices report supported contracts. SAP validates contract requirements."
         },
         "objectName": {
           "type": "string",
