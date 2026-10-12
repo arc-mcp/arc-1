@@ -328,6 +328,15 @@ heap limit and the `Data-result safety envelope` log shows the intended raw enve
 widest approved row shape at full configured data concurrency, inspect `cf app`/platform memory,
 and keep the larger tier until sustained evidence justifies reducing it.
 
+### Large MCP request bodies
+
+For large source writes, set `ARC1_MAX_HTTP_REQUEST_BYTES` in `.mtaext` `properties:`
+(100 KiB default, 16 MiB maximum) and align proxy limits. Follow the
+[request admission rules](configuration-reference.md#http-request-bodies), including
+proxy body/read timeouts. Before raising the limit in a small CF app, measure peak
+RSS with concurrent large writes; admission is not a live-memory bound.
+Data-preview response admission is separate.
+
 ### Non-rolling update for shared Basic
 
 Use a maintenance window. Do not pass a rolling strategy and do not use blue-green deployment:

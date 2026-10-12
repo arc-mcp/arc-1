@@ -5,7 +5,8 @@ commands use the same schemas, dispatcher, safety policy, feature evidence, and 
 tool calls.
 
 The npm package installs three equivalent executable names: `arc1`, `arc-1`, and `arc1-cli`. This
-guide uses `arc1`.
+guide uses `arc1`. The separate `arc1-source` helper prepares local files for an
+[existing Codex MCP connection](codex-file-source.md); it does not connect to SAP.
 
 ## Install reproducibly
 

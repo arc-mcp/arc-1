@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
 import type { ToolResult } from '../../src/handlers/shared.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { generateUniqueName } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
@@ -18,13 +19,16 @@ describe('edit_unit — live edge cases (issue #558)', () => {
   beforeAll(() => requireSapCredentials());
 
   afterAll(async () => {
+    const call = (tool: string, args: Record<string, unknown>) => handleToolCall(client, DEFAULT_CONFIG, tool, args);
+    const failures: string[] = [];
     for (const object of created.reverse()) {
-      try {
-        await handleToolCall(client, DEFAULT_CONFIG, 'SAPWrite', { action: 'delete', ...object });
-      } catch {
-        // best-effort-cleanup
-      }
+      const result =
+        object.type === 'PROG'
+          ? await deleteProgramFixture(call, object.name)
+          : await call('SAPWrite', { action: 'delete', ...object });
+      if (result.isError) failures.push(`${object.type} ${object.name}: ${result.content[0]?.text ?? ''}`);
     }
+    expect(failures, 'temporary edit_unit fixtures must be deleted').toEqual([]);
   });
 
   function expectSuccess(result: ToolResult, label: string): void {

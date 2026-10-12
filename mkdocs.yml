@@ -103,6 +103,7 @@ nav:
       - Architecture: architecture.md
       - More:
           - CLI Guide: cli-guide.md
+          - Local Files in Codex: codex-file-source.md
           - SAP Trial Setup: sap-trial-setup.md
           - Authentication Test Process: auth-test-process.md
 

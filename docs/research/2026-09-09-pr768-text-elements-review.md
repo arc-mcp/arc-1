@@ -3,6 +3,12 @@
 Date: 2026-09-09. Original head: `416cdfe9aee538b4c4db48e4c447ce51cf4fb557`.
 PR: https://github.com/arc-mcp/arc-1/pull/768.
 
+**2026-10-08 correction (#940):** the original read-back checks below did not prove
+activation. Live REPOTEXT/inactive-object checks show that PROG, FUGR, and CLAS saves
+leave inactive pools on 758. The [follow-up plan and evidence](../plans/2026-10-08-text-pool-activation.md)
+supersede the immediate-activation claim; the writer now explicitly requests pool activation.
+A never-activated PROG still needs its first owner activation for the texts to become active.
+
 ## Decision and root cause
 
 Keep PR #768 and add review commits. Its extracted `adt/text-elements.ts` module, typed collection

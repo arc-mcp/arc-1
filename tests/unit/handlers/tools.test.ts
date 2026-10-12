@@ -442,9 +442,9 @@ describe('Tool Definitions', () => {
     const btpTools = getToolDefinitions({ ...DEFAULT_CONFIG, allowWrites: true, systemType: 'btp' });
     const btpDescription = btpTools.find((t) => t.name === 'SAPWrite')!.description;
     const btpSchema = btpTools.find((t) => t.name === 'SAPWrite')!.inputSchema as Record<string, any>;
-    const btpTypeDescription: string = btpSchema.properties.type.description;
-    for (const type of ['DCLS', 'SRVB', 'SKTD', 'MSAG']) {
-      expect(btpTypeDescription).toContain(type);
+    // The enum is the complete type list; duplicating it in property help drifts as types are added.
+    for (const type of ['DCLS', 'SRVB', 'SKTD', 'MSAG', 'TTYP']) {
+      expect(btpSchema.properties.type.enum).toContain(type);
     }
     expect(btpDescription).toContain('DCLS');
     expect(btpSchema.properties.source.description).toContain('`extend view entity`');
@@ -894,7 +894,6 @@ describe('Tool Definitions', () => {
       expect(typeEnum).not.toContain('AUTH');
       expect(typeEnum).not.toContain('FTG2');
       expect(typeEnum).not.toContain('FEATURE_TOGGLE');
-      expect(typeEnum).not.toContain('ENHO');
     });
 
     it('keeps CLAS, INTF, DDLS, DCLS, DDLX, BDEF, SRVD, SRVB, SKTD, KTD on BTP', () => {
@@ -907,6 +906,8 @@ describe('Tool Definitions', () => {
       expect(typeEnum).toContain('INTF');
       expect(typeEnum).toContain('DDLS');
       expect(typeEnum).toContain('DCLS');
+      // BAdI implementations: read and written on BTP for C1-released BAdIs.
+      expect(typeEnum).toContain('ENHO');
       expect(typeEnum).toContain('DDLX');
       expect(typeEnum).toContain('BDEF');
       expect(typeEnum).toContain('SRVD');
@@ -1224,6 +1225,11 @@ describe('Tool Definitions', () => {
         expect(item.properties.rowTypeKind).toBeDefined();
         expect(item.properties.rowTypeKind.type).toContain('string');
         expect(item.properties.rowTypeKind.enum).toEqual(['builtin', 'structure']);
+        for (const properties of [schema.properties, item.properties]) {
+          for (const field of ['rowTypeLength', 'rowTypeDecimals']) {
+            expect(properties[field]).toMatchObject({ type: 'integer', minimum: 0, maximum: 999999 });
+          }
+        }
       }
     });
 

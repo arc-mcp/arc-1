@@ -446,7 +446,9 @@ describe('buildServerDrivenMetadataXml', () => {
     // (create with "DE" → object read back as the session language). Master language comes from
     // the sap-language request param (session = config.language), as with other source objects.
     for (const code of SDO_TYPES) {
-      expect(buildServerDrivenMetadataXml(code, 'Z', '$TMP', 'd')).not.toContain('masterLanguage');
+      expect(buildServerDrivenMetadataXml(code, code === 'TABL/DTI' ? 'Z~001' : 'Z', '$TMP', 'd')).not.toContain(
+        'masterLanguage',
+      );
     }
   });
   it('throws AdtApiError for an unknown code', () => {
@@ -467,7 +469,7 @@ describe('buildServerDrivenMetadataXml', () => {
     // so a refactor can't reintroduce a cloud-hostile attribute. See btp-abap.integration.test.ts.
     const reg = SDO_REGISTRY as Record<string, { createType: string }>;
     for (const code of Object.keys(reg)) {
-      const xml = buildServerDrivenMetadataXml(code, 'ZARC1_SDO', 'ZPKG', 'd');
+      const xml = buildServerDrivenMetadataXml(code, code === 'TABL/DTI' ? 'ZARC1_SDO~001' : 'ZARC1_SDO', 'ZPKG', 'd');
       expect(xml).not.toContain('adtcore:responsible');
       expect(xml).not.toContain('adtcore:masterSystem');
       expect(xml).not.toContain('abapLanguageVersion');

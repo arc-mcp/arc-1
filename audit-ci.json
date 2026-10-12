@@ -1,0 +1,14 @@
+{
+  "high": true,
+  "package-manager": "npm",
+  "extra-args": ["--omit=optional"],
+  "allowlist": [
+    {
+      "GHSA-86w9-cpqp-85rv": {
+        "active": true,
+        "expiry": "2026-10-21T00:00:00+02:00",
+        "notes": "Temporary acceptance of the unpatched node-forge RSA signature-verification advisory to unblock dependency maintenance. Remove when the affected dependency paths are fixed; review before 21 October 2026. This is not a finding of non-exploitability."
+      }
+    }
+  ]
+}

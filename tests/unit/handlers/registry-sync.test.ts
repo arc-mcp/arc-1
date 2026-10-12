@@ -122,7 +122,13 @@ describe('registry sync — Zod enums accept every registry type and reject bogu
   });
 
   it('SAPWrite onprem + btp', () => {
-    const wargs = (type: string) => ({ action: 'create', type, name: 'ZARC1_X', source: 'x', package: '$TMP' });
+    const wargs = (type: string) => ({
+      action: type === 'TABL/DTT' ? 'update' : 'create',
+      type,
+      name: 'ZARC1_X',
+      source: 'x',
+      package: '$TMP',
+    });
     for (const t of SAPWRITE_TYPES_ONPREM) {
       expect(getToolSchema('SAPWrite', false)!.safeParse(wargs(t)).success, `onprem accepts ${t}`).toBe(true);
     }

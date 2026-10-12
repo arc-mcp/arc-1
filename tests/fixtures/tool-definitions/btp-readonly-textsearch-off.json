@@ -1,7 +1,7 @@
 [
   {
     "name": "SAPRead",
-    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list). PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
+    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -18,11 +18,14 @@
             "BDEF",
             "SRVD",
             "SRVB",
+            "SMBC",
             "SKTD",
             "KTD",
             "TABL",
+            "TABL/DTT",
             "DOMA",
             "DTEL",
+            "TTYP",
             "ENQU",
             "TABLE_CONTENTS",
             "TABLE_QUERY",
@@ -36,6 +39,7 @@
             "API_STATE",
             "INACTIVE_OBJECTS",
             "SYNTAX",
+            "ENHO",
             "DESD",
             "DTSC",
             "CSNM",
@@ -48,9 +52,10 @@
             "DRTY",
             "APLO",
             "SAJC",
-            "SAJT"
+            "SAJT",
+            "TABL/DTI"
           ],
-          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template. Deprecated: MESSAGES→MSAG. ENQU lock object as JSON."
+          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; TABL/DTI secondary index named TABLE~INDEX (read prefers pending JSON). Deprecated: MESSAGES→MSAG. ENQU lock object as JSON."
         },
         "name": {
           "type": "string",
@@ -81,11 +86,11 @@
         },
         "include": {
           "type": "string",
-          "description": "CLAS: omit include or use main for the global declaration + implementation; definitions/implementations select local helper classes, macros/testclasses their own sections. Explicit include wins over method auto-routing. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
+          "description": "TABL: indexes lists native secondary indexes. CLAS: omit include or use main for the global declaration + implementation; definitions/implementations select local helper classes, macros/testclasses their own sections. Explicit include wins over method auto-routing. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
         },
         "group": {
           "type": "string",
-          "description": "For FUNC/VERSIONS type. The function group containing the function module. Optional for FUNC — auto-resolved via SAPSearch if omitted. Required for VERSIONS when querying a function module revision feed."
+          "description": "Function group of the function module for FUNC, VERSIONS, or API_STATE with objectType=FUNC. Auto-resolved via SAPSearch if omitted."
         },
         "method": {
           "type": "string",
@@ -144,7 +149,7 @@
         },
         "objectType": {
           "type": "string",
-          "description": "SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint (FUNC needs group); inferred from CL_/IF_/CX_, else PROG."
+          "description": "SYNTAX: required repository type (e.g. CLAS, PROG, DDLS). API_STATE: inferred if omitted. VERSIONS: type selects the endpoint; inferred from CL_/IF_/CX_, else PROG."
         },
         "source": {
           "type": "string",
@@ -272,7 +277,7 @@
         },
         "uri": {
           "type": "string",
-          "description": "Definition needs source URI, line, column and source; references also accepts type+name."
+          "description": "Definition/completion: source URI with line, column, source. References: uri or type+name."
         },
         "type": {
           "type": "string",
@@ -863,13 +868,26 @@
           "type": "string",
           "description": "ADT object type (e.g., CLAS/OC, DDLS/DF, PROG/P). Required for change_package. For set_api_state: object type of \"name\" when objectUri is omitted (e.g. CLAS, INTF, DDLS, TABL)."
         },
+        "apiVisibility": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "cloudDevelopment",
+              "keyUserApps"
+            ]
+          },
+          "maxItems": 2,
+          "uniqueItems": true,
+          "description": "set_api_state RELEASED: complete visibility selection; [] means none. Omit for SAP defaults. Read API_STATE first."
+        },
         "apiState": {
           "type": "string",
           "enum": [
             "RELEASED",
             "NOT_RELEASED"
           ],
-          "description": "For set_api_state: target state of the object's API release contract — RELEASED (mark released for ABAP Cloud / Clean Core) or NOT_RELEASED (revoke). Default RELEASED. Visibility (ABAP Cloud / Key User Apps) follows the contract's defaults. Read the current state first with SAPRead(type=\"API_STATE\")."
+          "default": "RELEASED"
         },
         "contract": {
           "type": "string",
@@ -880,7 +898,7 @@
             "C3",
             "C4"
           ],
-          "description": "For set_api_state: which release contract to set. Default C1 (Key-User/Cloud — the common clean-core contract). Object types support different contracts: e.g. service definitions (SRVD) only support C0, classic DDIC views only C3, behavior definitions and tables support C0+C1. If the object does not support the chosen contract, the error lists the ones it does."
+          "description": "set_api_state: contract (default C1); SRVD uses C0, classic VIEW uses C3. Unsupported choices report supported contracts. SAP validates contract requirements."
         },
         "objectName": {
           "type": "string",

@@ -11,13 +11,16 @@ import {
   publishServiceBinding,
   unpublishServiceBinding,
 } from '../adt/devtools.js';
-import { AdtSafetyError } from '../adt/errors.js';
+import { AdtError, AdtSafetyError } from '../adt/errors.js';
 import {
   ensureServerDrivenSupport,
+  getServerDrivenObject,
   isServerDrivenObjectType,
   serverDrivenMetadataContentType,
   serverDrivenUnavailableMessage,
 } from '../adt/server-driven.js';
+import { getTableSettings, tableSettingsParentUrl, tableSettingsUrl } from '../adt/table-settings.js';
+import { assertTextElementsService } from '../adt/text-elements.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
 import { activationDetailMatchesObject } from './activation-results.js';
 import { type CacheSecurityContext, invalidateInactiveList } from './cache-security.js';
@@ -95,6 +98,10 @@ function applyActivationToCache(
   }
   if (draft === undefined) cachingLayer.invalidate(type, name, 'all');
   cachingLayer.markActivated(type, name, draft);
+}
+
+function textPoolActivationHint(name: string): string {
+  return `\nIf ${name} has never been activated, use SAPActivate(type="PROG", name="${name}") to activate its texts.`;
 }
 
 export async function handleSAPActivate(
@@ -251,8 +258,11 @@ export async function handleSAPActivate(
       rawObjects.map(async (o) => {
         const objType = normalizeObjectType(String(o.type ?? type));
         const objName = String(o.name ?? '');
+        if (objType === 'REPT') assertTextElementsService(client.http, 'PROG');
         let url: string;
-        if (objType === 'TABL') {
+        if (objType === 'TABL/DTT') {
+          url = await settingsActivationUrl(client, objName);
+        } else if (objType === 'TABL') {
           // Use the write-path resolver: refuses TABL/DT activation on systems
           // that don't expose /sap/bc/adt/ddic/tables/ (NW 7.50/7.51), where
           // activate would hit the wrong endpoint. See issue #285.
@@ -290,7 +300,7 @@ export async function handleSAPActivate(
     for (const o of objects) {
       await enforceAllowedPackageForObjectUrl(
         client,
-        o.url,
+        o.type === 'TABL/DTT' ? tableSettingsParentUrl(o.name) : o.url,
         `Activation of ${o.type} '${o.name}'`,
         // Mirror the single-object call: SDO metadata (and its packageRef) is negotiated with
         // the type's own content type rather than relying on discovery-driven negotiation.
@@ -305,6 +315,8 @@ export async function handleSAPActivate(
         : [];
 
     const result = await activateBatch(client.http, client.safety, objects, activateOpts);
+    await verifySettingsActivation(client, objects, result);
+    await verifyIndexActivation(client, objects, result);
     const names = objects.map((o) => o.name).join(', ');
     const batchStatuses = buildBatchActivationStatuses(objects, result);
     const statusDetails = formatBatchActivationStatuses(batchStatuses);
@@ -322,7 +334,10 @@ export async function handleSAPActivate(
         applyActivationToCache(cachingLayer, object.type, object.name, drafts[i], multiIdentity);
       }
       invalidateInactiveList(cachingLayer, client, cacheSecurity);
-      return textResult(`Successfully activated ${objects.length} objects: ${names}.${statusDetails}${globalMessages}`);
+      const textPools = objects.filter((o) => o.type === 'REPT');
+      const summary = textPools.length > 0 ? 'Activation request completed for' : 'Successfully activated';
+      const hints = textPools.map((o) => textPoolActivationHint(o.name)).join('');
+      return textResult(`${summary} ${objects.length} objects: ${names}.${statusDetails}${globalMessages}${hints}`);
     }
     // On batch failure enrich with per-object inactive-version syntax errors —
     // only for objects whose activation returned no error details, to avoid duplicating messages.
@@ -345,7 +360,10 @@ export async function handleSAPActivate(
   // (issue #250) — `objectBasePath('FUNC')` deliberately throws so generic
   // builders fail loudly. Auto-resolve the group when omitted.
   let objectUrl: string;
-  if (type === 'TABL') {
+  if (type === 'REPT') assertTextElementsService(client.http, 'PROG');
+  if (type === 'TABL/DTT') {
+    objectUrl = await settingsActivationUrl(client, name);
+  } else if (type === 'TABL') {
     try {
       objectUrl = await client.resolveTablObjectUrlForWrite(name, {
         tablesEndpointAvailable: isTablesEndpointAvailable(),
@@ -393,7 +411,7 @@ export async function handleSAPActivate(
   // SDO metadata only renders its packageRef under the blues Accept — thread it for SDO types.
   await enforceAllowedPackageForObjectUrl(
     client,
-    objectUrl,
+    type === 'TABL/DTT' ? tableSettingsParentUrl(name) : objectUrl,
     `Activation of ${type} '${name}'`,
     isServerDrivenObjectType(type) ? serverDrivenMetadataContentType(type) : undefined,
   );
@@ -402,10 +420,17 @@ export async function handleSAPActivate(
   const draft = cachingLayer && !multiIdentity ? await captureDraftForPromotion(client, type, objectUrl) : undefined;
 
   const result = await activate(client.http, client.safety, objectUrl, { ...activateOpts, name });
+  await verifySettingsActivation(client, [{ type, name, url: objectUrl }], result);
+  await verifyIndexActivation(client, [{ type, name, url: objectUrl }], result);
 
   if (result.success) {
     applyActivationToCache(cachingLayer, type, name, draft, multiIdentity);
     invalidateInactiveList(cachingLayer, client, cacheSecurity);
+    if (type === 'REPT') {
+      return textResult(
+        `Text-pool activation requested for ${name}.${formatActivationMessages(result)}${textPoolActivationHint(name)}`,
+      );
+    }
     return textResult(`Successfully activated ${type} ${name}.${formatActivationMessages(result)}`);
   }
   // On failure, try to enrich with the actual compiler errors from the inactive version —
@@ -466,7 +491,7 @@ export interface BatchActivationObject {
 interface BatchActivationObjectStatus {
   type: string;
   name: string;
-  status: 'active' | 'warning' | 'error' | 'unknown';
+  status: 'active' | 'requested' | 'warning' | 'error' | 'unknown';
   messages: string[];
 }
 
@@ -488,7 +513,9 @@ export function buildBatchActivationStatuses(
           ? 'unknown'
           : details.some((detail) => detail.severity === 'warning')
             ? 'warning'
-            : 'active',
+            : obj.type === 'REPT'
+              ? 'requested'
+              : 'active',
       messages,
     };
   });
@@ -503,4 +530,63 @@ export function formatBatchActivationStatuses(statuses: BatchActivationObjectSta
   return `\n${lines.join('\n')}`;
 }
 
-// ─── SAPDiagnose Handler ─────────────────────────────────────────────
+/** New technical settings activate through the table; BTP can otherwise return warnings only. */
+async function settingsActivationUrl(client: AdtClient, name: string): Promise<string> {
+  if ((await getTableSettings(client.http, client.safety, name)).version === 'new') {
+    throw new AdtError(
+      `New technical settings require the table's first activation: use SAPActivate(type="TABL", name="${name}").`,
+    );
+  }
+  return tableSettingsUrl(name);
+}
+
+async function verifySettingsActivation(
+  client: AdtClient,
+  objects: Array<{ type: string; name: string; url: string }>,
+  result: ActivationResult,
+): Promise<void> {
+  for (const object of objects.filter((o) => o.type === 'TABL/DTT')) {
+    if (result.details.some((d) => d.severity === 'error' && activationDetailMatchesObject(d.uri, object.url)))
+      continue;
+    let message: string;
+    try {
+      const settings = await getTableSettings(client.http, client.safety, object.name);
+      if (settings.version === 'active') continue;
+      message = `Technical settings still report ${settings.version} after activation.`;
+    } catch {
+      message = 'The technical settings state could not be verified after activation. Read it before retrying.';
+    }
+    result.success = false;
+    result.details.push({ severity: 'error', text: message, uri: object.url });
+  }
+}
+
+// 758 can return only a warning when unique-index creation fails in the database.
+async function verifyIndexActivation(
+  client: AdtClient,
+  objects: Array<{ type: string; name: string; url: string }>,
+  result: ActivationResult,
+): Promise<void> {
+  for (const object of objects.filter((item) => item.type === 'TABL/DTI')) {
+    const relevant = result.details.filter(
+      (detail) => !detail.uri || activationDetailMatchesObject(detail.uri, object.url),
+    );
+    if (relevant.some((detail) => detail.severity === 'error')) continue;
+    let message: string;
+    if (relevant.some((detail) => detail.severity === 'warning')) {
+      message =
+        'Index activation returned warnings; database state is unverified. The index may already be active. Inspect it in ADT before retrying.';
+    } else {
+      try {
+        const metadata = await getServerDrivenObject(client.http, client.safety, 'TABL/DTI', object.name);
+        if (metadata.version === 'active') continue;
+        message = `Index still reports ${metadata.version || 'unknown state'} after activation.`;
+      } catch {
+        message =
+          'Index state could not be verified after activation. Read it before retrying; the index may already be active.';
+      }
+    }
+    result.success = false;
+    result.details.push({ severity: 'error', text: message, uri: object.url });
+  }
+}

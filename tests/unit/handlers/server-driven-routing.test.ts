@@ -36,8 +36,10 @@ describe('shared server-driven routing', () => {
   it('derives every registered path and encodes namespaced names', () => {
     for (const [type, entry] of Object.entries(SDO_REGISTRY)) {
       expect(objectBasePath(type)).toBe(`${entry.href}/`);
-      expect(objectUrlForType(type, '/TEST/NAME')).toBe(serverDrivenObjectUrl(type, '/TEST/NAME'));
-      expect(sourceUrlForType(type, '/TEST/NAME')).toBe(`${entry.href}/%2FTEST%2FNAME/source/main`);
+      const name = type === 'TABL/DTI' ? '/TEST/NAME~001' : '/TEST/NAME';
+      expect(objectUrlForType(type, name)).toBe(serverDrivenObjectUrl(type, name));
+      const encodedName = encodeURIComponent(type === 'TABL/DTI' ? name.toLowerCase() : name);
+      expect(sourceUrlForType(type, name)).toBe(`${entry.href}/${encodedName}/source/main`);
     }
   });
 

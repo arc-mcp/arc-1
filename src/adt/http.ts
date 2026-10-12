@@ -11,6 +11,7 @@ import { Agent, Client, type Dispatcher } from 'undici';
 import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { traceHeaders } from '../server/trace-context.js';
+import { acceptFallback } from './accept-fallback.js';
 import { connectivityProxyResponse, prepareBoundedResponse } from './bounded-response.js';
 import { resolveCookies } from './cookies.js';
 import { resolveAcceptType, resolveContentType } from './discovery.js';
@@ -785,25 +786,11 @@ export class AdtHttpClient {
           Object.assign(fallbackHeaders, legacyFallback);
           headersChanged = true;
         } else if (response.status === 406) {
-          // Server rejected our Accept header — try fallback
-          const inferred = inferAcceptFromError(responseBody);
-          if (inferred && inferred !== fallbackHeaders.Accept) {
-            fallbackHeaders.Accept = inferred;
-            headersChanged = true;
-          } else if (
-            fallbackHeaders.Accept &&
-            fallbackHeaders.Accept !== '*/*' &&
-            fallbackHeaders.Accept !== 'application/xml'
-          ) {
-            // Fall back to generic XML first
-            fallbackHeaders.Accept = 'application/xml';
-            headersChanged = true;
-          } else if (fallbackHeaders.Accept === 'application/xml') {
-            // application/xml was already rejected — fall back to wildcard
-            fallbackHeaders.Accept = '*/*';
+          const fallback = acceptFallback(responseBody, fallbackHeaders.Accept, method, negotiationKey);
+          if (fallback) {
+            fallbackHeaders.Accept = fallback;
             headersChanged = true;
           }
-          // If Accept is already */* and no inferred type, no useful fallback — skip retry
         } else {
           // 415: Server rejected our Content-Type — try fallbacks:
           // 1. Specific type → application/xml (common for vendor-type mismatches)
@@ -1525,18 +1512,6 @@ export function parseRetryAfter(
     return { delayMs: clamp(epochMs - Date.now()), source: 'header' };
   }
   return { delayMs: clamp(fallbackMs), source: 'fallback' };
-}
-
-/**
- * Try to extract an accepted media type from a SAP 406 error response body.
- *
- * SAP sometimes includes the expected media type in error text, e.g.:
- *   "...expected application/vnd.sap.adt.transportorganizertree.v1+xml..."
- * Returns the extracted media type or undefined if none found.
- */
-function inferAcceptFromError(body: string): string | undefined {
-  const match = body.match(/application\/[\w.+-]+(?:\/[\w.+-]+)?/);
-  return match?.[0];
 }
 
 /**

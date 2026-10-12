@@ -41,8 +41,7 @@ const BUDGETS = {
   // +30 for SAPDiagnose ATC objects[]; keep its small item schema with the tool (no new module).
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
   // +4: parent function group for SAPTransport check/history.
-  'src/handlers/tools.ts': 1780,
-  'tests/unit/handlers/read.test.ts': 3160,
+  'src/handlers/tools.ts': 1795,
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -80,7 +79,7 @@ const BUDGETS = {
   'tests/integration/adt.integration.test.ts': 3100,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1561, // +12: #907 bounded legacy negotiation; selector lives in its own module.
+  'src/adt/http.ts': 1536, // Accept fallback selection lives in accept-fallback.ts.
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1507, // Keep the safe CTS explanation in minimal-error mode.
   // +3 for passing existing exact discovery evidence into the pure opt-in schema projection.

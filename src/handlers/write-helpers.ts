@@ -22,6 +22,15 @@ import {
   type ServiceBindingCreateParams,
 } from '../adt/ddic-xml.js';
 import { syntaxCheck } from '../adt/devtools.js';
+import {
+  type BadiImplementationDefinition,
+  buildBadiImplementationXml,
+  ENHO_XHB_CONTENT_TYPE,
+  getBadiEnhancementImplementation,
+  mergeBadiImplementationDefinition,
+  parseBadiImplementationDefinition,
+  resolveBadiFilters,
+} from '../adt/enhancement-impl.js';
 import { AdtError, AdtSafetyError } from '../adt/errors.js';
 import {
   buildLockObjectXml,
@@ -43,6 +52,7 @@ import {
   serverDrivenUnavailableMessage,
   updateServerDrivenObjectSource,
 } from '../adt/server-driven.js';
+import { tableIndexParentUrl } from '../adt/table-index.js';
 import type { ResolvedFeatures, SystemType } from '../adt/types.js';
 import { escapeXmlAttr } from '../adt/xml-parser.js';
 import type { CachingLayer } from '../cache/caching-layer.js';
@@ -109,7 +119,15 @@ const FUNCTION_MODULE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fmodules
 const FUNCTION_INCLUDE_CONTENT_TYPE = 'application/vnd.sap.adt.functions.fincludes.v2+xml';
 
 export function isMetadataWriteType(type: string): boolean {
-  return type === 'DOMA' || type === 'DTEL' || type === 'MSAG' || type === 'SRVB' || type === 'TTYP' || type === 'ENQU';
+  return (
+    type === 'DOMA' ||
+    type === 'DTEL' ||
+    type === 'MSAG' ||
+    type === 'SRVB' ||
+    type === 'TTYP' ||
+    type === 'ENQU' ||
+    type === 'ENHO'
+  );
 }
 
 /** Types that require a specific vendor content type for creation (not application/*) */
@@ -122,6 +140,7 @@ function needsVendorContentType(type: string): boolean {
     type === 'SKTD' ||
     type === 'TTYP' ||
     type === 'ENQU' ||
+    type === 'ENHO' ||
     type === 'FUGR' ||
     type === 'FUNC'
   );
@@ -160,6 +179,8 @@ export function vendorContentTypeForType(type: string): string {
       return TABLETYPE_CONTENT_TYPE;
     case 'ENQU':
       return LOCKOBJECT_CONTENT_TYPE;
+    case 'ENHO':
+      return ENHO_XHB_CONTENT_TYPE;
     case 'FUGR':
       return FUNCTION_GROUP_CONTENT_TYPE;
     case 'FUNC':
@@ -198,6 +219,8 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     typeName: input.typeName,
     rowType: input.rowType,
     rowTypeKind: input.rowTypeKind,
+    rowTypeLength: input.rowTypeLength,
+    rowTypeDecimals: input.rowTypeDecimals,
     domainName: input.domainName,
     shortLabel: input.shortLabel,
     shortLength: input.shortLength,
@@ -228,6 +251,8 @@ export function getMetadataWriteProperties(input: Record<string, unknown>): Reco
     updateTaskKind: input.updateTaskKind,
     // ENQU carries its definition as JSON in "source" (the same shape SAPRead returns).
     lockObjectSource: input.source,
+    // ENHO (BAdI implementation, XHB) likewise takes SAPRead's JSON in "source".
+    enhancementSource: input.source,
   };
 
   return props;
@@ -335,6 +360,24 @@ export async function mergeMetadataWriteProperties(
       lockObjectDefinition: mergeLockObjectDefinition(existing, definition),
     };
   }
+  if (type === 'ENHO') {
+    // Merge over the developer view so consecutive unactivated edits accumulate.
+    const existing = await getBadiEnhancementImplementation(client.http, client.safety, name);
+    const source = provided.enhancementSource;
+    const definition =
+      source === undefined || source === null || String(source).trim() === ''
+        ? {}
+        : parseBadiImplementationDefinition(String(source));
+    return {
+      _description: existing.description,
+      _package: existing.package,
+      enhancementDefinition: await resolveBadiFilters(
+        client.http,
+        client.safety,
+        mergeBadiImplementationDefinition(existing, definition),
+      ),
+    };
+  }
   if (type === 'SRVB') {
     const { source: existingRaw } = await client.getSrvb(name);
     const existing = JSON.parse(existingRaw) as Record<string, unknown>;
@@ -377,13 +420,15 @@ export async function mergeMetadataWriteProperties(
     }
     // The stored kind and built-in length describe the stored row type: keep them only while it is unchanged.
     const unchanged = !!storedKind && (!requested || requested.toUpperCase() === existing.rowType.toUpperCase());
+    const rowTypeKind = provided.rowTypeKind ?? (unchanged ? storedKind : undefined);
+    const keepDimensions = unchanged && rowTypeKind === 'builtin' && storedKind === 'builtin';
     return {
       _description: existing.description,
       _package: existing.package,
       rowType: requested || existing.rowType,
-      rowTypeKind: provided.rowTypeKind ?? (unchanged ? storedKind : undefined),
-      rowTypeLength: unchanged ? existing.rowTypeLength : undefined,
-      rowTypeDecimals: unchanged ? existing.rowTypeDecimals : undefined,
+      rowTypeKind,
+      rowTypeLength: provided.rowTypeLength ?? (keepDimensions ? existing.rowTypeLength : undefined),
+      rowTypeDecimals: provided.rowTypeDecimals ?? (keepDimensions ? existing.rowTypeDecimals : undefined),
     };
   }
   return provided;
@@ -449,8 +494,11 @@ function cloudifyCreateBody(xml: string, type: string): string {
     .replace(/\s*adtcore:masterSystem="H00"/, '')
     // Cloud assigns the owner from the JWT; an explicit responsible breaks the create ST.
     .replace(/\s*adtcore:responsible="[^"]*"/, '')
-    // Every cloud object is ABAP for Cloud Development.
-    .replace(/(adtcore:masterLanguage="[^"]*")/, '$1 adtcore:abapLanguageVersion="cloudDevelopment"');
+    // Every cloud object is ABAP for Cloud Development; an ENHO update already carries its stored version.
+    .replace(
+      /(adtcore:masterLanguage="[^"]*")(?![^>]*adtcore:abapLanguageVersion=)/,
+      '$1 adtcore:abapLanguageVersion="cloudDevelopment"',
+    );
   if (type === 'CLAS') {
     // Cloud CLAS create schema requires explicit class attributes (live: GET cl_abap_random).
     out = out.replace(
@@ -694,8 +742,8 @@ function buildCreateXmlBody(
         package: pkg,
         rowType,
         rowTypeKind,
-        rowTypeLength: properties?.rowTypeLength as string | undefined,
-        rowTypeDecimals: properties?.rowTypeDecimals as string | undefined,
+        rowTypeLength: properties?.rowTypeLength as string | number | undefined,
+        rowTypeDecimals: properties?.rowTypeDecimals as string | number | undefined,
         language: masterLanguage,
         responsible: responsibleUser,
       });
@@ -706,6 +754,20 @@ function buildCreateXmlBody(
         (properties?.lockObjectDefinition as LockObjectDefinition | undefined) ??
         parseLockObjectDefinition(String(properties?.lockObjectSource ?? '{}'));
       return buildLockObjectXml({ name, description, package: pkg, definition, masterLanguage, responsibleAttr });
+    }
+    case 'ENHO': {
+      // Update passes the merged definition; create parses the caller's JSON source.
+      const definition =
+        (properties?.enhancementDefinition as BadiImplementationDefinition | undefined) ??
+        parseBadiImplementationDefinition(String(properties?.enhancementSource ?? '{}'));
+      return buildBadiImplementationXml({
+        name,
+        description,
+        package: pkg,
+        definition,
+        masterLanguage,
+        responsibleAttr,
+      });
     }
     case 'DTEL': {
       const typeKindRaw = String(properties?.typeKind ?? '');
@@ -948,7 +1010,16 @@ export async function handleServerDrivenObjectWrite(
 
   switch (action) {
     case 'create': {
-      const pkg = String(args.package ?? '$TMP');
+      let pkg = String(args.package ?? '$TMP');
+      if (type === 'TABL/DTI') {
+        const parentPackage = await client.resolveObjectPackage(tableIndexParentUrl(name));
+        if (!parentPackage) return errorResult('Cannot determine the parent table package. No index was created.');
+        if (args.package !== undefined && args.package !== parentPackage)
+          return errorResult(
+            `Index package must match its parent table (${parentPackage}). Omit package to inherit it.`,
+          );
+        pkg = parentPackage;
+      }
       await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
       if (type === 'APLO' && name.length > 20) {
         return errorResult('APLO names must be at most 20 characters. Nothing was created.');
@@ -1006,7 +1077,10 @@ export async function handleServerDrivenObjectWrite(
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
       await updateServerDrivenObjectSource(client.http, client.safety, type, name, v.source, { transport });
       invalidate();
-      return textResult(`Updated source of ${type} ${name}.\n${activationHint}`);
+      return textResult(
+        `Updated source of ${type} ${name}.\n${activationHint}` +
+          (type === 'TABL/DTI' ? ' The complete index definition replaces any pending definition.' : ''),
+      );
     }
     case 'delete': {
       await enforceAllowedPackageForObjectUrl(client, objUrl, `Operations on ${type} '${name}'`, metadataAccept);
@@ -1299,6 +1373,21 @@ export const ENQU_WRITE_UNAVAILABLE_HINT =
   'Lock object (ENQU) writes are not available on this system ' +
   '(/sap/bc/adt/ddic/lockobjects/sources is not exposed by ADT discovery). ' +
   'Use SE11 in SAPGUI, or connect ARC-1 to a system that exposes the lock-object endpoint.';
+
+/** ENHO create: parse the JSON source, check it against the spot and build new filter trees (before any write). */
+export async function prepareEnhoCreateProperties(
+  client: AdtClient,
+  properties: Record<string, unknown>,
+  name: string,
+): Promise<void> {
+  const definition = parseBadiImplementationDefinition(String(properties.enhancementSource ?? '{}'));
+  properties.enhancementDefinition = await resolveBadiFilters(client.http, client.safety, definition, name);
+}
+
+export const ENHO_WRITE_UNAVAILABLE_HINT =
+  'BAdI implementation (ENHO) writes are not available on this system ' +
+  '(/sap/bc/adt/enhancements/enhoxhb is not exposed by ADT discovery). ' +
+  'Use SE19 in SAPGUI or Eclipse ADT, or connect ARC-1 to a system that exposes the endpoint.';
 
 export const TTYP_WRITE_UNAVAILABLE_HINT =
   'Table type (TTYP) writes are not available on this system ' +

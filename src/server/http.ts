@@ -36,6 +36,7 @@ import { expandScopes, hasRequiredScope } from '../authz/policy.js';
 import { API_KEY_PROFILES } from './config.js';
 import { generateRequestId, requestContext } from './context.js';
 import type { DestinationRegistry, TargetDescriptor } from './destination-registry.js';
+import { createHttpJsonParser } from './http-request-body.js';
 import { authLibLogger, logger } from './logger.js';
 import {
   PINNED_MCP_PATH_PATTERN,
@@ -334,7 +335,7 @@ export async function startHttpServer(
     disabled: !authRateLimitEnabled && !mcpRateLimitEnabled,
   });
 
-  app.use(express.json());
+  app.use(createHttpJsonParser(config.maxHttpRequestBytes));
   app.use(express.urlencoded({ extended: false }));
   if (mcpRateLimitEnabled) {
     // One middleware instance means one MemoryStore and therefore one per-IP

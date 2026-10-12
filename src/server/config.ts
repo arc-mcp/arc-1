@@ -29,7 +29,7 @@ import type {
   TransportType,
   UiMode,
 } from './types.js';
-import { DEFAULT_CONFIG } from './types.js';
+import { DEFAULT_CONFIG, MAX_HTTP_REQUEST_BYTES } from './types.js';
 
 /**
  * Parse metadata for configuration flags accepted by the CLI.
@@ -78,6 +78,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'cookie-string', valueName: 'cookies', description: 'SAP Cookie header value' },
   { name: 'transport', valueName: 'transport', description: 'MCP transport: stdio or http-streamable' },
   { name: 'http-addr', valueName: 'host:port', description: 'HTTP transport bind address' },
+  { name: 'max-http-request-bytes', valueName: 'bytes', description: 'MCP HTTP JSON body limit (1–16777216 bytes)' },
   { name: 'port', valueName: 'port', description: 'HTTP transport port override' },
   { name: 'server-name', valueName: 'name', description: 'MCP server name' },
   { name: 'system-label', valueName: 'label', description: 'Connected-system label shown in MCP instructions' },
@@ -602,6 +603,17 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     const addrHost = config.httpAddr.includes(':') ? config.httpAddr.split(':')[0] : '0.0.0.0';
     config.httpAddr = `${addrHost}:${parsedPort}`;
     sources.httpAddr = getFlag('port') !== undefined ? { flag: '--port' } : { env: 'ARC1_PORT' };
+  }
+  config.maxHttpRequestBytes = resolvePositiveSafeInteger(
+    'max-http-request-bytes',
+    'ARC1_MAX_HTTP_REQUEST_BYTES',
+    DEFAULT_CONFIG.maxHttpRequestBytes,
+    'maxHttpRequestBytes',
+  );
+  if (config.maxHttpRequestBytes > MAX_HTTP_REQUEST_BYTES) {
+    throw new Error(
+      `ARC1_MAX_HTTP_REQUEST_BYTES / --max-http-request-bytes must not exceed ${MAX_HTTP_REQUEST_BYTES}.`,
+    );
   }
   config.serverName = resolveStr('server-name', 'ARC1_SERVER_NAME', DEFAULT_CONFIG.serverName, 'serverName');
   config.systemLabel = normalizeSystemLabel(

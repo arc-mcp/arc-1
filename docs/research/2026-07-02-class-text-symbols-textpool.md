@@ -16,7 +16,9 @@ ARC-1 can read **and write** class (and program / function-group) text symbols.
   `/sap/bc/adt/textelements/{programs|classes|functiongroups}/{NAME}/source/{symbols|selections}`.
 - **Read** = GET with `Accept: application/vnd.sap.adt.textelements.symbols.v1`.
 - **Write** = lock the *textelements* object → `PUT …/source/symbols` (Content-Type **and** Accept =
-  `…symbols.v1`) → unlock. Immediately active; no separate activation; `$TMP` needs no transport.
+  `…symbols.v1`) → unlock. **Correction (2026-10-08, #940/#946):** PUT can leave an inactive pool;
+  request activation of the whole pool after unlock. A never-activated PROG also needs its first
+  owner activation. The original read-back did not establish active state. `$TMP` needs no transport.
 - **Release-gated**: present on 758 + 816, **entirely absent on 7.50** (not in discovery).
 - **Bug found**: ARC-1's existing `SAPRead type=TEXT_ELEMENTS` calls
   `/sap/bc/adt/programs/programs/{name}/textelements`, which returns **404 on every tested release**

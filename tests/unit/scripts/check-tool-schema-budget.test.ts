@@ -28,7 +28,7 @@ describe('check-tool-schema-budget', () => {
       expect(enabled.budget.maxTotalWireBytes).toBe(base.budget.maxTotalWireBytes);
       expect(enabled.budget.maxPerToolWireBytes).toBe(base.budget.maxPerToolWireBytes);
       expect(enabled.budget.maxTotalWireBytes).toBe(name === 'standard-default' ? 50_000 : 74_000);
-      expect(enabled.budget.maxPerToolWireBytes).toBe(23_000);
+      expect(enabled.budget.maxPerToolWireBytes).toBe(name === 'standard-full-git' ? 23_550 : 23_000);
       const diagnose = definitions.find((tool) => tool.name === 'SAPDiagnose')!;
       expect(diagnose.inputSchema).toHaveProperty('properties.objects.maxItems', 20);
       expect(navigation.description).toContain('Coverage unknown');

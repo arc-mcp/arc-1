@@ -20,6 +20,8 @@ import {
   isServerDrivenObjectType,
   serverDrivenUnavailableMessage,
 } from '../adt/server-driven.js';
+import { listTableIndexes } from '../adt/table-index.js';
+import { getTableSettings } from '../adt/table-settings.js';
 import type { FunctionModuleProperties, InactiveObject } from '../adt/types.js';
 import { getAppInfo } from '../adt/ui5-repository.js';
 import { getVersionDiff } from '../adt/version-diff.js';
@@ -34,9 +36,10 @@ import { readEditableSource } from './editable-source.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
 import {
   detectLocalHandlerInclude,
+  functionModuleObjectUrl,
   inferObjectType,
   normalizeObjectType,
-  objectUrlForTypeRaw,
+  objectUrlForType,
 } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
 import { handleSyntaxCheck } from './syntax.js';
@@ -235,6 +238,25 @@ export async function handleSAPRead(
       }
       throw err;
     }
+  }
+
+  if (type === 'TABL/DTT') {
+    if (!name) return errorResult('"name" is required for TABL/DTT.');
+    const version = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+    return textResult(toolJson(await getTableSettings(client.http, client.safety, name, version)));
+  }
+
+  if (type === 'TABL' && String(args.include ?? '').toLowerCase() === 'indexes') {
+    if (!name) return errorResult('SAPRead TABL include=indexes requires a table name.');
+    if (!(await ensureServerDrivenSupport(client.http, client.safety, 'TABL/DTI')))
+      return errorResult(serverDrivenUnavailableMessage('SAPRead', 'TABL/DTI'));
+    return textResult(toolJson(await listTableIndexes(client.http, client.safety, name)));
+  }
+
+  if (type === 'SMBC') {
+    if (!name) return errorResult('"name" is required for SAPRead type=SMBC.');
+    const version = args.version === 'active' || args.version === 'inactive' ? args.version : undefined;
+    return textResult((await client.getSmbc(name, version)).source);
   }
 
   // Types in SDO_REGISTRY use the discovery-gated engine for metadata and JSON or DDL-text source.
@@ -830,11 +852,24 @@ export async function handleSAPRead(
       const inferredType = explicitType || inferObjectType(name);
       if (!inferredType) {
         return errorResult(
-          `Cannot infer object type from name "${name}". Please specify objectType explicitly (e.g., objectType="CLAS", "INTF", "PROG", "TABL", "DDLS", "DCLS", "FUGR", "DOMA", "DTEL", "SRVD", "SRVB", "BDEF").`,
+          `Cannot infer object type from name "${name}". Please specify objectType explicitly (e.g., objectType="CLAS", "INTF", "PROG", "TABL", "DDLS", "DCLS", "FUGR", "FUNC", "DOMA", "DTEL", "SRVD", "SRVB", "BDEF").`,
         );
       }
-      // Use raw URI (no name encoding) — getApiReleaseState encodes the full URI as a single path segment
-      const objectUri = objectUrlForTypeRaw(inferredType, name);
+      // Object-name segments stay encoded when the whole URI becomes an API-release path segment.
+      let objectUri: string;
+      if (inferredType === 'FUNC') {
+        const group =
+          String(args.group ?? '').trim() ||
+          (cachingLayer ? await cachingLayer.resolveFuncGroup(client, name) : await client.resolveFunctionGroup(name));
+        if (!group) {
+          return errorResult(
+            `Cannot resolve function group for "${name}". Provide the group parameter explicitly, or use SAPSearch("${name}") to find the function group.`,
+          );
+        }
+        objectUri = functionModuleObjectUrl(group, name);
+      } else {
+        objectUri = objectUrlForType(inferredType, name);
+      }
       const releaseState = await client.getApiReleaseState(objectUri);
       return textResult(toolJson(releaseState));
     }

@@ -67,7 +67,9 @@ function resolveFeature(mode: FeatureMode, probeOutcome: ProbeOutcome, id: strin
     return { id, available: false, mode: 'off', message: 'Disabled by configuration' };
   }
   // auto
-  const baseMessage = probeOutcome.available ? `${description} is available` : `${description} is not available`;
+  const baseMessage = probeOutcome.available
+    ? `${description} is available`
+    : `${description} is ${id === 'hana' ? 'not confirmed' : 'not available'}`;
   const message = probeOutcome.reason ? `${baseMessage} — ${probeOutcome.reason}` : baseMessage;
   return {
     id,
@@ -135,22 +137,22 @@ export async function probeFeatures(
     resultMap.set(result.id, { available: result.available, reason: result.reason });
   }
 
-  // Component-based HANA detection overrides the endpoint probe when the hanainfo
-  // endpoint is absent (e.g. some S/4HANA releases). Only applies in auto mode.
+  // Components can prove the database independently of an unavailable hanainfo endpoint.
+  // Preserve its diagnostic: authorization/network failures must not be called absence.
   if (!resultMap.get('hana')?.available && systemDetection.hasHana && modeMap.hana === 'auto') {
     resultMap.set('hana', {
       available: true,
-      reason: 'inferred from installed components (hanainfo endpoint absent)',
+      reason: `inferred from installed components (hanainfo probe: ${resultMap.get('hana')?.reason ?? 'unconfirmed'})`,
     });
   }
 
-  // Discovery-based HANA detection: NHI (Native HANA Integration) workspaces are only
-  // registered on HANA-based systems. Fires when both the hanainfo probe and the components
-  // feed failed to confirm HANA (e.g. empty components feed + hanainfo 404).
+  // NHI collections also exist on non-HANA systems (#932). Preserve them as context,
+  // never as proof of the database when the endpoint and components do not confirm it.
   if (!resultMap.get('hana')?.available && discoveryNhiPresent && modeMap.hana === 'auto') {
+    const reason = resultMap.get('hana')?.reason;
     resultMap.set('hana', {
-      available: true,
-      reason: 'inferred from ADT discovery document (NHI workspace present — Native HANA Integration)',
+      available: false,
+      reason: `${reason ? `${reason}; ` : ''}NHI workspace presence does not identify the database`,
     });
   }
 
@@ -304,17 +306,6 @@ async function detectReleaseFromSyntaxConfigurations(client: AdtHttpClient): Pro
 }
 
 /**
- * Detect HANA presence from ADT discovery document NHI signal (exported for testing).
- *
- * NHI (Native HANA Integration) workspaces at /sap/bc/adt/nhi/* are only registered
- * on HANA-based SAP systems. This is the last fallback when both the hanainfo endpoint
- * probe and the software components feed fail to produce a signal.
- */
-export function detectHanaFromDiscovery(nhiPresent: boolean): boolean {
-  return nhiPresent;
-}
-
-/**
  * Detect HANA DB presence from installed software components (exported for testing).
  *
  * Rules (any match → HANA):
@@ -324,11 +315,15 @@ export function detectHanaFromDiscovery(nhiPresent: boolean): boolean {
  *    HANA-only, and `S4` is SAP's reserved prefix for S/4HANA software components.
  *    On S/4HANA 2021+ the core component is `S4FND`, not `S4CORE`.
  * 3. Component name `BW4CORE` — BW/4HANA is also HANA-only.
+ * 4. ABAP Environment identity: SAP_BASIS + SAP_CLOUD, without SAP_ABA. Its database
+ *    is ABAP-managed HANA Cloud; a configured BTP mode alone is not evidence.
  *
  * DB release info is intentionally not surfaced: only HDB-named components carry a
  * meaningful release; S4/BW4CORE releases describe the ABAP stack, not the DB.
  */
 export function detectHanaFromComponents(components: Array<{ name: string }>): boolean {
+  const names = new Set(components.map((component) => component.name.toUpperCase()));
+  if (names.has('SAP_BASIS') && names.has('SAP_CLOUD') && !names.has('SAP_ABA')) return true;
   for (const c of components) {
     const name = c.name.toUpperCase();
     if (/HDB|HANA/.test(name)) return true;

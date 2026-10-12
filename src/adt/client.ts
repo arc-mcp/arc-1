@@ -15,6 +15,7 @@
  * are imported from their respective modules by handlers.
  */
 import { getCurrentContext } from '../server/context.js';
+import { type ApiReleaseVisibility, parseApiReleaseState, setApiReleaseState } from './api-release.js';
 import { BSP_OBJECTS_PATH, bspContentPath, resolveBspNameAndPath } from './bsp-path.js';
 import type { AdtClientConfig } from './config.js';
 import { defaultAdtClientConfig } from './config.js';
@@ -23,7 +24,7 @@ import { canonicalDataSourceName } from './data-source-name.js';
 import { CDS_DEPENDENCY_GRAPH_PATH, DataSourceBlocklistGuard, parseTableReplacement } from './data-source-policy.js';
 import { parseTableType, type TableTypeInfo } from './ddic-xml.js';
 import { readEnhancementImplementation } from './enhancements.js';
-import { AdtApiError, AdtSafetyError, isNotFoundError } from './errors.js';
+import { AdtApiError, AdtError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
@@ -42,6 +43,7 @@ import {
   readTextElements,
   type TextElementObjectType,
   type TextElementPart,
+  type TextElementWriteResult,
   writeTextElementPart,
 } from './text-elements.js';
 import { clampSearchResults, searchSource as executeSourceSearch, toTextSearchObjectType } from './text-search.js';
@@ -68,10 +70,7 @@ import type {
   TransactionInfo,
 } from './types.js';
 import {
-  assertApiReleaseStateConfirmed,
-  buildApiReleasePutBody,
   type DataPreviewMeta,
-  parseApiReleaseState,
   parseAuthorizationField,
   parseBspAppList,
   parseBspFolderListing,
@@ -89,6 +88,7 @@ import {
   parseMessageClass,
   parseRevisionFeed,
   parseSearchResults,
+  parseServerDrivenMetadata,
   parseServiceBinding,
   parseSubpackageNodestructure,
   parseSystemInfo,
@@ -688,6 +688,25 @@ export class AdtClient {
     });
   }
 
+  /** Read native business-configuration JSON. Explicit versions must not silently fall back. */
+  async getSmbc(name: string, version?: 'active' | 'inactive'): Promise<SourceReadResult> {
+    checkOperation(this.safety, OperationType.Read, 'GetSMBC');
+    const uri = `/sap/bc/adt/bct/smbctyp/${encodeURIComponent(name.toLowerCase())}`;
+    if (version) {
+      const metadata = await this.http.get(`${uri}?version=${version}`, {
+        Accept: 'application/vnd.sap.adt.blues.v1+xml',
+      });
+      const actual = parseServerDrivenMetadata(metadata.body, 'blueSource').version;
+      if (actual !== version) {
+        throw new AdtError(
+          `Cannot confirm ${version} version of SMBC ${name}: SAP metadata reports ${actual || 'no version'}. ` +
+            'Use version="auto" for the available developer view.',
+        );
+      }
+    }
+    return this.fetchSource(`${uri}/source/main`, { version, accept: 'application/json' });
+  }
+
   /** Get metadata extension source code (DDLX) */
   async getDdlx(name: string, opts?: SourceReadOptions): Promise<SourceReadResult> {
     checkOperation(this.safety, OperationType.Read, 'GetDDLX');
@@ -966,51 +985,15 @@ export class AdtClient {
    */
   async setApiReleaseState(
     objectUri: string,
-    opts: { state?: string; contract?: string; transport?: string } = {},
+    opts: {
+      state?: string;
+      contract?: string;
+      transport?: string;
+      visibility?: ApiReleaseVisibility;
+    } = {},
   ): Promise<ApiReleaseStateInfo & { changed: boolean }> {
     checkOperation(this.safety, OperationType.Update, 'SetApiReleaseState');
-    const state = (opts.state ?? 'RELEASED').toUpperCase();
-    const contract = (opts.contract ?? 'C1').toUpperCase();
-    if (state !== 'RELEASED' && state !== 'NOT_RELEASED') {
-      throw new Error(`apiState must be RELEASED or NOT_RELEASED, got ${opts.state}.`);
-    }
-    const accept = 'application/vnd.sap.adt.apirelease.v10+xml';
-    const encoded = encodeURIComponent(objectUri);
-    const current = await this.http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept });
-    const body = buildApiReleasePutBody(current.body, contract, state);
-    const path = `/sap/bc/adt/apireleases/${encoded}/${contract.toLowerCase()}`;
-    const expectedVisibility = {
-      useInSAPCloudPlatform: /ars:useInSAPCloudPlatform="true"/.test(body),
-      useInKeyUserApps: /ars:useInKeyUserApps="true"/.test(body),
-    };
-    let changed = true;
-    try {
-      await this.http.put(
-        opts.transport ? `${path}?request=${encodeURIComponent(opts.transport)}` : path,
-        body,
-        accept,
-        { Accept: accept },
-      );
-    } catch (err) {
-      // SAP returns 400 "No changes were made" when the contract is already in the requested state.
-      // Treat that as an idempotent no-op (the desired state already holds — confirmed via read-back
-      // below) rather than surfacing a confusing error for "release something already released".
-      if (
-        err instanceof AdtApiError &&
-        err.statusCode === 400 &&
-        /no changes were made/i.test(`${err.message} ${err.responseBody ?? ''}`)
-      ) {
-        changed = false;
-      } else {
-        throw err;
-      }
-    }
-    const confirmedResp = await this.http.get(`/sap/bc/adt/apireleases/${encoded}`, { Accept: accept });
-    const confirmed = parseApiReleaseState(confirmedResp.body);
-    // On a real write, assert the full target (state + requested visibility). On an idempotent no-op,
-    // assert only that the state already matches — the pre-existing visibility is whatever SAP stored.
-    assertApiReleaseStateConfirmed(confirmed, contract, state, changed ? expectedVisibility : undefined);
-    return { ...confirmed, changed };
+    return setApiReleaseState(this.http, objectUri, opts);
   }
 
   /** List objects pending activation (inactive objects).
@@ -1093,7 +1076,17 @@ export class AdtClient {
 
       const seen = new Set<string>();
       const matches = rawMatches
-        .filter((r) => r.objectName.toUpperCase() === name)
+        .flatMap((r) => {
+          if (r.objectName.toUpperCase() === name) return [r];
+          // 7.50 decorates display names across types; require the URI to confirm the identity.
+          if (!r.objectName.toUpperCase().startsWith(`${name} (`)) return [];
+          const segment = /^\/sap\/bc\/adt\/(?:[^/?#]+\/)*([^/?#]+)$/i.exec(r.uri)?.[1];
+          try {
+            return segment && decodeURIComponent(segment).toUpperCase() === name ? [{ ...r, objectName: name }] : [];
+          } catch {
+            return [];
+          }
+        })
         .filter((r) => {
           const key = `${r.objectType}\u0000${r.objectName}\u0000${r.packageName}\u0000${r.uri}`;
           if (seen.has(key)) return false;
@@ -1296,10 +1289,7 @@ export class AdtClient {
     });
     const names = parseSubpackageNodestructure(resp.body);
     const upperSelf = packageName.toUpperCase();
-    // parseSubpackageNodestructure already filters to DEVC/K, drops empty names,
-    // uppercases, and dedupes. Here we additionally exclude the queried package
-    // itself (defensive — `nodestructure` does not normally include it under
-    // its own subtree) and apply the maxResults cap.
+    // Parsed package names are already canonical and unique; exclude self and cap the result.
     const out: string[] = [];
     for (const name of names) {
       if (name === upperSelf) continue;
@@ -1315,16 +1305,18 @@ export class AdtClient {
   private dataSourceBlocklistGuard(budget: DataResponseBudget, signal?: AbortSignal): DataSourceBlocklistGuard {
     return new DataSourceBlocklistGuard(this.safety.blockedDataSources, {
       searchObject: (name, maxResults) => this.searchObject(name, maxResults),
-      // Fixed authorization metadata: public runQuery would recursively invoke this guard.
       readTableReplacement: async (name) => {
         const table = canonicalDataSourceName(name);
         const sql = `SELECT d~TABNAME, d~TABCLASS, d~VIEWREF, d~VIEWREF_ERR, d~SQLTAB, l~DDLNAME
 FROM DD02L AS d LEFT OUTER JOIN DDLDEPENDENCY AS l
 ON l~OBJECTNAME = d~VIEWREF AND l~OBJECTTYPE = 'VIEW' AND l~STATE = 'A'
 WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
-        // Two rows suffice to reject ambiguity; all bytes share the caller's result budget.
         const { rows } = parseTableContents(await this.postFreestyleQuery(sql, 2, budget, signal));
         return parseTableReplacement(table, rows);
+      },
+      readActiveDdlMetadata: async (name) => {
+        checkOperation(this.safety, OperationType.Read, 'GetDdlSourceMetadata');
+        return (await this.http.get(`/sap/bc/adt/ddic/ddl/sources/${encodeURIComponent(name)}?version=active`)).body;
       },
       dependencyGraphAccept: () => this.http.discoveryAcceptFor(CDS_DEPENDENCY_GRAPH_PATH),
       readDependencyGraph: async (path, accept) => {
@@ -1573,21 +1565,21 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
     return readTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols');
   }
 
-  /** Write one subobject of a textpool. Locks the textelements object, PUTs, unlocks. Immediately
-   *  active — no SAPActivate needed. */
+  /** Write one part, unlock, then request text-pool activation in the same stateful session.
+   *  A never-activated PROG still needs its first owner activation to activate the texts. */
   async writeTextElementPart(
     objectType: TextElementObjectType,
     name: string,
     part: TextElementPart,
     source: string,
     transport?: string,
-  ): Promise<void> {
+  ): Promise<TextElementWriteResult> {
     return writeTextElementPart(this.http, this.safety, objectType, name, part, source, transport);
   }
 
   /** Write a global class's text symbols. */
   async writeClassTextSymbols(name: string, source: string, transport?: string): Promise<void> {
-    return writeTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols', source, transport);
+    await writeTextElementPart(this.http, this.safety, 'CLAS', name, 'symbols', source, transport);
   }
 
   /** Get program variants */

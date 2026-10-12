@@ -9,9 +9,12 @@ import {
   type TextElementPart,
 } from '../../adt/client.js';
 import { deleteObject, lockObject, safeUpdateClassInclude, safeUpdateSource, unlockObject } from '../../adt/crud.js';
+import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js';
 import { AdtApiError } from '../../adt/errors.js';
 import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
+import { checkOperation, OperationType } from '../../adt/safety.js';
+import { withActiveTextPoolForDelete } from '../../adt/text-elements.js';
 import {
   buildCdsDeleteDependencyHint,
   buildCdsUpdateCrudHint,
@@ -203,17 +206,34 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
 
 export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResult> {
   const { client, type, name, transport, objectUrl, invalidateWrittenObject, enforcePackageForExistingObject } = ctx;
+  checkOperation(client.safety, OperationType.Delete, 'DeleteObject');
   await enforcePackageForExistingObject();
-  let lockSucceeded = false;
+  if (type === 'ENHO') {
+    const stored = await getBadiEnhancementImplementation(client.http, client.safety, name);
+    if (stored.technology !== 'BADI_IMPL') {
+      return errorResult(
+        `ENHO ${name} was not deleted: expected BADI_IMPL technology, got ${stored.technology || 'unknown'}. ` +
+          'SAPWrite deletes only BAdI implementations.',
+      );
+    }
+  }
+  let deleteAttempted = false;
 
   // Lock, delete, unlock pattern (works for all types including SKTD) — auto-propagate lock corrNr if no explicit transport
   try {
     await client.http.withStatefulSession(async (session) => {
       const lock = await lockObject(session, client.safety, objectUrl, 'MODIFY', getCachedFeatures()?.abapRelease);
-      lockSucceeded = true;
       const effectiveTransport = transport ?? (lock.corrNr || undefined);
       try {
-        await deleteObject(session, client.safety, objectUrl, lock.lockHandle, effectiveTransport);
+        const deleteOwner = () => {
+          deleteAttempted = true;
+          return deleteObject(session, client.safety, objectUrl, lock.lockHandle, effectiveTransport);
+        };
+        if (type === 'PROG' || type === 'FUGR') {
+          await withActiveTextPoolForDelete(session, client.safety, type, name, deleteOwner);
+        } else {
+          await deleteOwner();
+        }
       } finally {
         try {
           await unlockObject(session, objectUrl, lock.lockHandle);
@@ -227,7 +247,7 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
     // proof of existence. Confirm with a metadata read after the failed DELETE
     // before overriding generic 404 semantics. This also closes the race between
     // the package-gate metadata read and the mutation sequence.
-    if (err instanceof AdtApiError && err.isNotFound && lockSucceeded) {
+    if (err instanceof AdtApiError && err.isNotFound && deleteAttempted) {
       try {
         await client.getObjectMetadata(objectUrl);
         err.resourceExistenceAfterDelete = 'exists';
@@ -265,8 +285,8 @@ export async function writeActionDelete(ctx: SapWriteContext): Promise<ToolResul
 /** Write one subobject of an object's textpool via the ADT textelements service (CLAS, PROG, FUGR).
  *  `textPart` selects it: symbols (`@MaxLength:NN` then `NNN=text`), selections (a report's
  *  selection texts, `P_PARAM=Label` per line), headings (`listHeader=`, `columnHeader_N=`).
- *  ARC-1 supports only symbols for classes. Immediately active, no SAPActivate.
- *  The client method locks the textelements object, PUTs, and unlocks; the package gate here checks
+ *  ARC-1 supports only symbols for classes. The client writes and requests text-pool activation.
+ *  The client locks, reads, PUTs, reads back, unlocks, then activates; the package gate here checks
  *  the owning object's real package (ctx.objectUrl). Not an ABAP-source write → no lint. */
 export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<ToolResult> {
   const {
@@ -297,9 +317,32 @@ export async function writeActionEditTextSymbols(ctx: SapWriteContext): Promise<
     return errorResult(`source is required for edit_text_symbols — the ${part} body, e.g. ${TEXT_PART_EXAMPLE[part]}.`);
   }
   await enforcePackageForExistingObject();
-  await client.writeTextElementPart(type, name, part, source, transport);
-  invalidateWrittenObject();
-  return textResult(`Updated ${part} of ${type} ${name}.`);
+  let result: Awaited<ReturnType<typeof client.writeTextElementPart>>;
+  try {
+    result = await client.writeTextElementPart(type, name, part, source, transport);
+  } finally {
+    // A successful PUT can leave a draft even if the subsequent activation fails.
+    invalidateWrittenObject();
+  }
+  if (result.unchanged) {
+    return textResult(`No changes: ${part} of ${type} ${name} are already empty and the text pool is active.`);
+  }
+  const state =
+    result.state === 'active'
+      ? 'SAP reports the text pool active.'
+      : result.state === 'inactive'
+        ? 'SAP still reports the text pool inactive.'
+        : 'The final text-pool state could not be verified.';
+  const ownerHint =
+    type === 'PROG' && result.state === 'inactive'
+      ? `\nIf ${name} has never been activated, use SAPActivate(type="PROG", name="${name}") to activate these texts.`
+      : '';
+  const incomplete = result.state === 'unknown' || (type !== 'PROG' && result.state === 'inactive');
+  const recovery = incomplete
+    ? '\nNo verified automatic repair is available. Check the pool in ADT or involve the user before another write.'
+    : '';
+  const message = `Updated ${part} of ${type} ${name}; text-pool activation requested. ${state}${result.changes}${ownerHint}${recovery}`;
+  return incomplete ? errorResult(message) : textResult(message);
 }
 
 /** One-line body example per subobject, used in the missing-source error so the caller can retry

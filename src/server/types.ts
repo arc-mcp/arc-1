@@ -45,6 +45,8 @@ export interface ServerConfig {
   // --- MCP Transport ---
   transport: TransportType;
   httpAddr: string;
+  /** Maximum decompressed JSON request bytes on MCP HTTP routes. */
+  maxHttpRequestBytes: number;
   serverName: string;
   /** Human-readable single-target label prepended to model-facing MCP instructions. */
   systemLabel: string;
@@ -267,6 +269,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   gzipDataPreviewBody: false,
   transport: 'stdio',
   httpAddr: '0.0.0.0:8080',
+  maxHttpRequestBytes: 100 * 1024,
   serverName: 'arc-1',
   systemLabel: '',
   uiMode: 'off',
@@ -324,3 +327,6 @@ export const DEFAULT_CONFIG: ServerConfig = {
   minimalErrors: false,
   verbose: false,
 };
+
+/** Hard ceiling for an operator-configured MCP request body. */
+export const MAX_HTTP_REQUEST_BYTES = 16 * 1024 * 1024;

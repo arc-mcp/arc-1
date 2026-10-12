@@ -11,6 +11,7 @@
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { deleteProgramFixture } from '../helpers/program-cleanup.js';
 import { bareObjectName } from '../helpers/test-prefixes.js';
 import { PERSISTENT_OBJECTS, readFixture } from './fixtures.js';
 import { callTool, type ToolResult } from './helpers.js';
@@ -313,11 +314,10 @@ async function deleteObjectTypes(client: Client, name: string, types: string[], 
       );
       continue; // best-effort-cleanup
     }
-    const deleteResult = await callTool(client, 'SAPWrite', {
-      action: 'delete',
-      type,
-      name,
-    });
+    const deleteResult =
+      type === 'PROG'
+        ? await deleteProgramFixture((tool, args) => callTool(client, tool, args), name)
+        : await callTool(client, 'SAPWrite', { action: 'delete', type, name });
     if (deleteResult.isError) {
       const text = toolText(deleteResult);
       if (/not found|does not exist|unknown/i.test(text)) continue;

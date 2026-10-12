@@ -349,7 +349,7 @@ non-cloud backends is the **ABAP-Cloud-model** workflows (RAP/CDS/generators nee
 | RISE / Private Cloud · S/4 Cloud Public · BTP ABAP | ✅ | ✅ |
 | **Classic procedural** (PROG, FUGR/FUNC, includes) | ✅ | ✅ creatable (observed live on S/4 2023); not the marketing focus |
 | **DDIC** (TABL, STRU) | ✅ | ✅ (TABL/DT, TABL/DS) |
-| **DOMA / DTEL / MSAG / SHLP / ENHO / XSLT** | DOMA/DTEL/MSAG read/write; ENHO read-only. No SHLP/XSLT tool type | Absent from the June creatable set observed |
+| **DOMA / DTEL / MSAG / SHLP / ENHO / XSLT** | DOMA/DTEL/MSAG read/write; ENHO BAdI implementations read/write, other enhancements read-only. No SHLP/XSLT tool type | Absent from the June creatable set observed |
 | Modern (CLAS, INTF, DDLS, DDLX, DCLS, BDEF, SRVD, SRVB, DRTY…) | Supported where backend endpoints exist; DRAS is not an ARC-1 tool type | Backend-dependent; see the snapshot below |
 | **Dynpro / Web Dynpro / module pools** | ⚠️ limited (ADT itself is thin here) | ❌ not planned (SAP states classic Dynpro/Web Dynpro are not in the current focus) |
 

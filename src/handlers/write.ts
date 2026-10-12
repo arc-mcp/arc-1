@@ -41,6 +41,7 @@ import {
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
+import { writeTableSettings } from './write/table-settings.js';
 import { writeUiad } from './write/uiad.js';
 import { writeActionUnit } from './write/unit-surgery.js';
 import { writeActionDelete, writeActionEditTextSymbols, writeActionUpdate } from './write/update-delete.js';
@@ -80,16 +81,9 @@ export async function handleSAPWrite(
     return errorResult('"type" and "name" are required for this action.');
   }
 
-  // SAP TADIR stores object names uppercase. Mixed-case names cause silent corruption
-  // on create (e.g. DDLS "Zc_MyView" registers as "ZC_MYVIEW" in TADIR but the source body
-  // still contains "Zc_MyView", confusing every downstream tool) and broken URL lookups on
-  // mutate/delete — the lock is held against the canonical uppercase name while the request
-  // URL carries the mixed-case one, which surfaces on ECC as 423 "... is not locked" (issue
-  // #293, original report used name "Z_HELLO_world"). Reject pre-flight for every name-bearing
-  // single-object action — universal SAP convention, not a 7.50 quirk. (batch_create validates
-  // each item separately below.)
-  // Note: source code INSIDE the object can use mixed case (e.g. for DDLS: name="ZC_MYVIEW"
-  // but `define view entity Zc_MyView` is fine inside the source body).
+  // TADIR uppercases names, but mixed-case URLs can miss the canonical lock (#293, ECC 423).
+  // Reject mixed-case object names before mutation; batch_create validates each item separately.
+  // Source identifiers may still use mixed case, e.g. name="ZC_MYVIEW" with `define view entity Zc_MyView`.
   if (NAME_CASE_GUARD_ACTIONS.has(action) && name && name !== name.toUpperCase()) {
     return errorResult(
       `Object name "${name}" contains lowercase characters. SAP object names must be uppercase (e.g. "${name.toUpperCase()}").\n\n` +
@@ -100,6 +94,8 @@ export async function handleSAPWrite(
 
   const preconditionError = sourcePreconditionError(type, action, args.expectedSourceHash);
   if (preconditionError) return errorResult(preconditionError);
+
+  if (type === 'TABL/DTT') return writeTableSettings(client, action, name, args, cachingLayer, cacheSecurity);
 
   // Types in SDO_REGISTRY use the shared engine (POST metadata → PUT source → activate).
   if (isServerDrivenObjectType(type)) {

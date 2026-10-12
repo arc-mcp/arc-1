@@ -1,13 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { buildApiReleasePutBody, parseApiReleaseState } from '../../../src/adt/api-release.js';
 import { parseTableType } from '../../../src/adt/ddic-xml.js';
 import { parseSourceSearchResults } from '../../../src/adt/text-search.js';
 import {
-  buildApiReleasePutBody,
   escapeXmlAttr,
   findDeepNodes,
-  parseApiReleaseState,
   parseAtcSystemCheckVariant,
   parseAuthorizationField,
   parseBspAppList,

@@ -12,7 +12,7 @@ export interface DiscoveryFetchResult {
 
 /**
  * Return true when the raw ADT discovery XML contains at least one NHI collection href.
- * NHI (/sap/bc/adt/nhi/*) workspaces are only registered on HANA-based systems.
+ * NHI (/sap/bc/adt/nhi/*) workspaces also exist on non-HANA systems; this is not database evidence.
  *
  * The match is anchored to an `href="..."` attribute so that mentions of the path in
  * `<atom:title>` text, descriptions, or non-href attributes do not false-positive.
@@ -65,8 +65,9 @@ function resolveTypesForPath(discoveryMap: DiscoveryMap, rawPath: string): strin
   if (!path) return undefined;
 
   let matchedPath: string | undefined;
-  for (const key of discoveryMap.keys()) {
-    if (!isShallowMatch(key, path)) continue;
+  for (const [key, types] of discoveryMap) {
+    // Presence-only collections must not shadow a usable shallow parent MIME type.
+    if (types.length === 0 || !isShallowMatch(key, path)) continue;
     if (!matchedPath || key.length > matchedPath.length) {
       matchedPath = key;
     }

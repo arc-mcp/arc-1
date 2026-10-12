@@ -45,7 +45,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `ENHO`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` where the system advertises them — release-dependent) |
+| `type` | string | Yes | Object type (see below; includes `AUTH`, `FEATURE_TOGGLE`, `VERSIONS`, `VERSION_SOURCE` on on-prem systems, `ENHO` on both, and the server-driven objects `DSFD`/`DESD`/`EVTB`/`EVTO`/`DTSC`/`CSNM`/`COTA`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT`/`TABL/DTI` where the system advertises them — release-dependent) |
 | `name` | string | No | Object name (e.g., `ZTEST_PROGRAM`, `ZCL_ORDER`, `MARA`) |
 | `action` | string | No | `"diff"` — return a unified diff between two source versions on this system (only the hunks, not two full sources), using `from`/`to`. Source types only: `PROG, CLAS, INTF, FUNC, FUGR, INCL, DDLS, DCLS, BDEF, SRVD, DDLX, TABL` (CDS views are `DDLS`; classic DDIC `VIEW` is unsupported — it has no plain-text source). Note: SAP only snapshots a version on transport *release*, so `from`/`to` revision ids are sparse — `active` vs `inactive` (pending unactivated changes) is the most reliable use. |
 | `from` | string | No | For `action="diff"`: OLD side — `"active"` (default), `"inactive"`, a revision id (from a VERSIONS response), or its canonical source/revision URI. URI inputs use the same endpoint, authority, traversal, query, fragment, and control-character checks as `versionUri`. |
@@ -59,7 +59,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `lineStart` | number | No | Start line (1-based) of a raw line window; pairs with `lineEnd` (both required together) — returns only those source lines, numbered, instead of the full object. Same source-bearing types as `grep`; `lineEnd` is clamped to the last line rather than erroring. Mutually exclusive with `grep` and `method` (find a line with `grep` or an ATC finding first, then read around it with `lineStart`/`lineEnd`). |
 | `lineEnd` | number | No | End line (1-based, inclusive) of a raw line window; pairs with `lineStart`. |
 | `expand_includes` | boolean | No | For FUGR: expand include source inline, up to 80 source blocks (including main) and five include levels. `grep` implies this expansion; see [Function-group source search](#function-group-source-search). |
-| `group` | string | No | For FUNC: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
+| `group` | string | No | For FUNC, and for VERSIONS or API_STATE with `objectType="FUNC"`: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
 | `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. Known TABLE_CONTENTS limitation on 758: SAP can return `N+1`; prefer TABLE_QUERY when an exact cap matters. |
 | `maxResults` | number | No | For DEVC: maximum package objects to list (default 200, clamped to 1–1000). SAP may truncate larger packages at the requested limit. |
@@ -67,8 +67,8 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
 | `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`. IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
-| `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, etc.) — auto-detected from name if omitted |
-| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view and explicit `active`/`inactive` must be confirmed by metadata. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
+| `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
+| `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
 | `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
@@ -77,7 +77,10 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 Prefer `SAPRead(type="SYNTAX", objectType="CLAS", name="ZCL_ORDER")` for a SAP syntax check.
 Use `version="inactive"` after saving a draft, or pass `source` to check proposed text without
 saving it. Omission checks the active version. The object must already exist; `checked:false`
-means SAP did not validate it, even if there are no native findings. This does not activate or
+means SAP did not validate it, even if there are no native findings. With `source`, ARC-1 first
+reads the object's metadata and returns `checked:false` when SAP answers `404`: for an absent
+program SAP would otherwise check the text as a standalone include without program attributes
+(fixed-point arithmetic off) and report false errors such as every `@` host variable. This does not activate or
 execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..., name=...)` route.
 
 Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `objectType` are required;
@@ -108,9 +111,11 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `BDEF` | Behavior definition |
 | `SRVD` | Service definition |
 | `SRVB` | Service binding (structured JSON: OData version, binding type, publish status) |
+| `SMBC` | Business Configuration Maintenance Object: native JSON, available on 758/816 and BTP. `SMBC/TYP` is accepted. Omitted/`auto` uses SAP’s developer view; explicit versions are verified. Transport `check`/`history` are supported; SMBC source writes are not. |
 | `SKTD` / `KTD` | Knowledge Transfer Document attached to an ABAP object. Returns Markdown decoded from the ADT XML envelope, one `## <node id>` section per documented node when routing is needed (BDEF entities, savers, actions, functions, …). A heading that names a node — its id, or the node name the index prints — is reserved routing syntax; a colliding heading inside stored body text is reversibly shown with one leading `\`. Behind a reserved HTML-comment marker, the response lists populated per-node short texts and a compact index of EVERY writable node, each by the spelling that resolves back to it (the name, or the full id when only that does), with the empty ones on an `empty (n):` line. Add a `## <name>` section above the marker to document one; use `shortTexts` to update its short text. Start multi-node edits from the complete `SAPRead` result; a standalone `## <object name>` is refused when it could instead be a visible root title (use `# <object name>` for that title). `SAPWrite` ignores the marker and context below it; the writable Markdown still follows the requested active/inactive version semantics. Documented non-writable sections can pass through unchanged while attempted edits remain refused. `KTD` is a friendly alias; `SKTD` remains the canonical SAP object type. |
 | `TABL` | DDIC TABL — covers both transparent tables (T000-style) and DDIC structures (BAPIRET2-style). Returns CDS-like source. ARC-1 auto-resolves the URL: tries `/sap/bc/adt/ddic/tables/{name}` first, falls back to `/sap/bc/adt/ddic/structures/{name}` on 404. There is no separate `STRU` type — `TABL` is the canonical short type for both, mirroring TADIR `R3TR TABL` and abapGit conventions. |
-| `TTYP` | DDIC table type (on-prem only). Returns `{name, description, rowType, rowTypeKind, rowTypeLength, rowTypeDecimals, accessType, keyKind, plainStandardTable, package}`. Key components and secondary keys are not listed; `plainStandardTable` is `false` when the table type has them or is not a standard table with a non-unique standard key. Written via `SAPWrite(type="TTYP")` — the create POSTs a CHAR shell and a follow-up PUT sets the real row type. |
+| `TABL/DTT` | Technical settings of a transparent table; `name` is the table name. Returns working state, editable `source`, and read-only storage/logging fields. See [Technical table settings](#technical-table-settings). |
+| `TTYP` | DDIC table type (on-prem and BTP where discovered). Returns `{name, description, rowType, rowTypeKind, rowTypeLength, rowTypeDecimals, accessType, keyKind, plainStandardTable, package}`. Key components and secondary keys are not listed; `plainStandardTable` is `false` when the table type has them or is not a standard table with a non-unique standard key. Written via `SAPWrite(type="TTYP")` — the create POSTs a CHAR shell and a follow-up PUT sets the real row type. |
 | `ENQU` | DDIC lock object (on-prem and BTP; `ENQU/DL` accepted). Returns `{name, description, package, version, allowRFC, primaryTable, secondaryTables, lockParameters, lockModules}` — tables carry `{tableName, lockMode}`, parameters `{parameterName, tableName, fieldName, parameterWanted}`, and `lockModules` lists the generated `ENQUEUE_`/`DEQUEUE_` function modules. Omitted `version` returns SAP's developer view. Written via `SAPWrite(type="ENQU")` — see [Lock object writes](#lock-object-writes-enqu). |
 | `VIEW` | DDIC view |
 | `DOMA` | Domain metadata (structured JSON: data type, length, fixed values, value table) |
@@ -195,7 +200,7 @@ SAPRead(type="CLAS", name="ZCL_ORDER", method="get_name")    — read a specific
 SAPRead(type="CLAS", name="ZBP_TRAVEL", method="lhc_travel~accept") — auto-route a RAP handler to implementations
 SAPRead(type="CLAS", name="ZCL_ORDER", method="setup", include="testclasses") — extract one method from an explicit include
 SAPRead(type="CLAS", name="ZCL_ORDER", grep="select.*from")  — matching lines only, annotated by method
-SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols") — maintained text pool (on-prem; see Class text symbols)
+SAPRead(type="CLAS", name="ZCL_ORDER", include="text_symbols") — maintained text pool (see Text elements)
 SAPRead(type="PROG", name="ZTEST_REPORT", grep="WRITE")      — search source, returns matches + context
 SAPRead(type="PROG", name="ZTEST_REPORT", lineStart=40, lineEnd=55) — raw line window, e.g. around an ATC finding
 SAPRead(type="DDLS", name="ZI_TRAVEL", include="elements")   — extract CDS view elements
@@ -227,6 +232,7 @@ SAPRead(type="BSP", name="/UI2/USHELL/chips")   — browse a namespaced app with
 SAPRead(type="API_STATE", name="CL_SALV_TABLE")              — check if class is released for ABAP Cloud
 SAPRead(type="API_STATE", name="IF_HTTP_CLIENT")              — check interface release state
 SAPRead(type="API_STATE", name="MARA", objectType="TABL")     — check table with explicit type
+SAPRead(type="API_STATE", name="Z_MY_FM", objectType="FUNC") — function module; group resolved via search, or pass group="ZFG"
 SAPRead(type="TABLE_CONTENTS", name="MARA", maxRows=10) — legacy unfiltered preview; 758 may return 11 rows
 SAPRead(type="TABLE_QUERY", name="MARA", columns=["MANDT","MATNR"], where=[{field:"MANDT",op:"=",value:"001"}], maxRows=10)
 SAPRead(type="SYSTEM")
@@ -262,8 +268,9 @@ navigation links). A failed source read returns an error, not successful partial
 ARC-1 resolves a different enhancement subtype through repository search only after
 an unsupported BAdI read. This needs search permission as well as read permission.
 Some other enhancement implementations still fail inside SAP; use SE80/SE19 or Eclipse's SAP GUI
-integration when the error identifies an unavailable ADT route. No enhancement writes
-or ENHO source filtering (`grep`, method or line selection) are supported.
+integration when the error identifies an unavailable ADT route. Only BAdI implementations
+are writable ([BAdI implementation writes](#badi-implementation-writes-enho)); ENHO source filtering
+(`grep`, method or line selection) is not supported.
 
 ENHO preserves SAP's unversioned developer view: omit `version` or use `auto`.
 Explicit `active`/`inactive` selection is refused because its behavior is not verified
@@ -364,7 +371,10 @@ Every match in the result set is stamped with an `_origin: 'adt' | 'db'` field s
 
 ## SAPWrite
 
-HTTP requests currently have a 100 KiB JSON body limit. Large source payloads or batches can receive HTTP 413 before tool dispatch; split batches or use method/section edits. The data-preview response limit is separate. Stdio does not use this HTTP parser.
+For local files, use the [Codex file workflow](codex-file-source.md) to send source
+through the existing connection without model transcription.
+
+HTTP JSON requests default to 100 KiB. For large source writes, an administrator can set `ARC1_MAX_HTTP_REQUEST_BYTES` (maximum 16 MiB); see [request limits](configuration-reference.md#http-request-bodies). HTTP 413 reports the byte limit; HTTP 503 asks the client to retry when the shared input budget is full. Smaller batches and method/section edits reduce both payload and memory use. Data-preview response limits are separate; stdio does not use this parser.
 
 Create or update ABAP source code. Handles lock/modify/unlock automatically.
 
@@ -383,10 +393,12 @@ keep their separate behavior.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `create`, `update`, `delete`, `edit_method`, `edit_unit`, `add_unit` (on-prem), `edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`, `batch_create`, `scaffold_rap_handlers`, `generate_behavior_implementation`, or `edit_text_symbols`. `edit_unit` replaces one FORM or MODULE in a PROG/INCL; `add_unit` inserts a new one; see [Procedural unit surgery](#procedural-unit-surgery). The class-section surgery actions (`edit_class_definition`, `add_method`, `edit_method_signature`, `delete_method`, `change_method_visibility`) are token-efficient edits to a global class without re-sending `/source/main`. See [Class-section surgery](#class-section-surgery) below. `edit_text_symbols` writes one part of a CLAS/PROG/FUGR text pool — see [Text elements](#text-elements). |
-| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP` (on-prem), `TABL/DT`, `TABL/DS`, `DOMA`, `DTEL`, `ENQU`, `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
+| `type` | string | No | `PROG`, `CLAS`, `INTF`, `FUNC`, `FUGR`, `INCL`, `DDLS`, `DCLS`, `DDLX`, `BDEF`, `SRVD`, `SRVB`, `SKTD`/`KTD`, `TABL`, `TTYP`, `TABL/DT`, `TABL/DS`, `TABL/DTT` (update only), `DOMA`, `DTEL`, `ENQU`, `ENHO` (BAdI implementations), `MSAG` (for single object actions; availability is adapted for BTP vs. on-prem), plus the server-driven objects `DESD`/`EVTB`/`DTSC`/`CSNM`/`EVTO`/`COTA`/`DSFD`/`DTDC`/`UIAD`/`DRTY`/`APLO`/`SAJC`/`SAJT`/`TABL/DTI` (see [Server-driven object writes](#server-driven-object-writes)). Slash/case aliases are auto-normalized (e.g., `CLAS/OC` or `clas` → `CLAS`; `KTD` → `SKTD`). |
 | `group` | string | No | For `FUNC`: parent function-group name. **Required for FUNC create** (the FUGR must already exist — create it first via `SAPWrite type=FUGR`). Auto-resolved via search for FUNC update/delete if omitted. For `INCL`: addresses a structural include inside this function group; supported by `create`, `update`, `delete`, `edit_unit`, and `add_unit`. Ignored for other types. |
-| `rowType` | string | No | `TTYP` create/update (on-prem only): the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
+| `rowType` | string | No | `TTYP` create/update: the row type — a built-in ABAP type (`STRING`, `I`, …) or a DDIC type name such as `BAPIRET2`. Required for create. An update without it keeps the stored row type where ARC-1 can; see [table type updates](#table-type-updates). |
 | `rowTypeKind` | string | No | `TTYP` only: `builtin` or `structure`. Omit it and ARC-1 infers from `rowType`; pass it explicitly when SAP knows a built-in type ARC-1 has not enumerated. An update keeps the stored kind while the row type is unchanged. |
+| `rowTypeLength` | integer | No | `TTYP` create/update: built-in row length and decimal places, including batch items. Use `rowTypeKind="builtin"` for DDIC built-ins such as `CHAR`/`DEC`. Each accepts 0–999999; SAP may accept a value at save, then reject or normalize it at activation; inspect activation warnings and read back the active definition. Omitted update fields keep their stored values only while both row name and kind stay unchanged. Dictionary row dimensions are resolved by SAP and cannot be set here. `length`/`decimals` remain DOMA/DTEL fields. |
+| `rowTypeDecimals` | integer | No | `TTYP` built-in decimal places; same validation and update semantics as `rowTypeLength`. Explicit zero clears the scale. |
 | `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
 | `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
 | `parameters` | array | No | FUNC structured signature: `{kind,name,type?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
@@ -394,7 +406,7 @@ keep their separate behavior.
 | `expectedSourceHash` | string | No | SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. Omitted/null/blank: no protection against stale replacements across calls. See [Source preconditions](#source-preconditions). |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
 | `include` | string | No | For CLAS write actions `update`, `edit_method`, and `edit_class_definition`: write a class-local include (`definitions`, `implementations`, `macros`, or `testclasses`) instead of `/source/main`. Omit this parameter for main class source updates. `add_method`/`edit_method_signature`/`delete_method`/`change_method_visibility` operate on the global class `/source/main` only and reject `include=`. Include writes create an inactive draft; verify with `SAPRead(version="inactive")` until activation. NOTE: `edit_class_definition` with `include=` skips the symmetry refuse-policy (cross-include validation is not performed; rely on `SAPActivate` to catch breaks). **Auto-init:** whole-include writes (`update` and `edit_class_definition` with `include=`) create the target include automatically if it does not exist yet — notably `testclasses` (CCAU) on a freshly-created class. No separate init step or user-supplied lock handle is needed; the success message notes when ARC-1 initialized it. |
-| `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. |
+| `textPart` | string | No | For `edit_text_symbols`: which part of the textpool to write — `symbols` (default; the numbered `TEXT-nnn` literals), `selections` (a report's selection texts — the labels beside `PARAMETERS`/`SELECT-OPTIONS`), or `headings` (list header and column headers). A class has only `symbols`; `PROG` and `FUGR` have all three. On BTP, this action requires `type="CLAS"` and supports only `symbols` (or an omitted part). Read first with `SAPRead(type="CLAS", include="text_symbols")`. |
 | `method` | string | No | For `edit_method`/`edit_method_signature`/`delete_method`/`change_method_visibility`: method NAME (e.g., `"get_name"`, `"zif_order~process"`, `"lhc_project~approve_project"`). For `add_method`: the full METHODS CLAUSE as ABAP source (e.g., `"METHODS greet IMPORTING who TYPE string RETURNING VALUE(r) TYPE string."`). |
 | `unit` | string | No | For on-prem `edit_unit`/`add_unit`: existing/new case-insensitive FORM or MODULE name (for example `"PROCESS_ORDERS"` or `"STATUS_0100"`). |
 | `visibility` | string | No | For `add_method`: target visibility section — `public` (default), `protected`, or `private`. For `change_method_visibility`: target visibility section (required). The section header must already exist in the DEFINITION block; if not, ARC-1 refuses with a hint to use `edit_class_definition` first. |
@@ -417,7 +429,7 @@ keep their separate behavior.
 | `conversionExit` | string | No | DOMA: conversion exit (e.g., `ALPHA`) |
 | `signExists` | boolean | No | DOMA: whether signed values are allowed |
 | `lowercase` | boolean | No | DOMA: whether lowercase characters are allowed |
-| `fixedValues` | array | No | DOMA: fixed value entries (`[{low, high?, description?}]`) |
+| `fixedValues` | array | No | DOMA: fixed value ranges. Each entry has required `low` and optional `high` (max 10 characters each), and optional `description` (max 60). Oversized entries are rejected before any write, including in `batch_create`. |
 | `valueTable` | string | No | DOMA: value table reference (e.g., `T001`) |
 | `typeKind` | string | No | DTEL: `domain` or `predefinedAbapType` |
 | `typeName` | string | No | DTEL: referenced domain/type name (for `typeKind="domain"`) |
@@ -442,9 +454,9 @@ keep their separate behavior.
 | `odataVersion` | string | No | SRVB OData protocol version, `V2` (default) or `V4`; overrides the value inferred from `bindingType`. |
 | `category` | string | No | SRVB: binding category (`0` = UI, `1` = Web API; default `0`) |
 | `version` | string | No | SRVB: service version for binding metadata (default `0001`) |
-| `refObjectType` | string | No | Required for SKTD/KTD create: parent ADT type/subtype such as `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, or `DEVC/K`. |
+| `refObjectType` | string | No | Required for SKTD/KTD create: parent ADT type/subtype such as `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `DEVC/K`, or `SMBC/TYP` (Business Configuration Maintenance Object). |
 | `refObjectName` | string | No | SKTD/KTD create: documented parent name; defaults to `name`. |
-| `refObjectDescription` | string | No | SKTD/KTD create: parent description shown in ADT tooltips. |
+| `refObjectDescription` | string | No | SKTD/KTD create: parent description shown in ADT tooltips; required and nonempty for `SMBC/TYP`. |
 | `shortTexts` | array | No | SKTD/KTD update/create: `[{node, text}]`, where `node` is any name or id the SAPRead node index lists (the same resolver as `## <node>` headings; an ambiguous name is refused with its candidates), `text` is at most 60 characters, and `""` clears it. Works without `source`; nodes marked `obligation="forbidden"` are refused. |
 | `objects` | array | No | For `batch_create`: ordered list of objects (see below) |
 | `activateAtEnd` | boolean | No | For `batch_create` only. Default `false` (per-object inline activation). When `true`, ARC-1 writes inactive drafts for every object then issues one terminal batch-activate — SAP's activator resolves cross-references between siblings in a single pass. Use this for interdependent objects (composition-linked DDLS, RAP behavior stacks where parent references not-yet-active child). Partial-failure semantics are unchanged: a write-phase failure still breaks the loop and only the already-written subset is batch-activated. |
@@ -461,7 +473,21 @@ complete an uncertain creation automatically.
 
 **DDIC metadata writes:** `DOMA`, `DTEL`, `MSAG`, and `SRVB` use structured XML payloads and do **not** use `/source/main`. On DTEL create, an omitted label length is derived from its label text, or defaults to the field's maximum when the label is absent; omitted `deactivateInputHistory` defaults to `false`. On DTEL update, omitted fields keep their stored values, including lengths, the history flag, the SET/GET parameter, the change-document and bidi flags, and the search-help parameter while the search help is unchanged. Changing a label without supplying its length derives a new length from that label. Every DTEL create sends a follow-up metadata PUT because SAP's create POST drops the description, labels, and custom lengths. `MSAG` writes use the `/sap/bc/adt/messageclass/` endpoint and accept a `messages` array of `{number, shortText, longText?}` entries. `SRVB` create uses wildcard content type (`application/*`) and SRVB update uses vendor type (`application/vnd.sap.adt.businessservices.servicebinding.v2+xml`).
 
-**Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` write source via `/source/main`. `SKTD`/`KTD` instead GETs the complete `<sktd:docu>` envelope and PUTs it back with the v2 KTD media type, changing only addressed Base64 long-text bodies and existing short-text attributes. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one KTD-capable ABAP object; `KTD` is accepted as a friendly alias. Create requires `refObjectType` and uses `name` as the documented object name. ARC-1 supports KTD creates for parent types with verified ADT parent URI routing, including `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `SRVB/SVB`, and `DEVC/K`. `CLAS/OC`, `INTF/OI`, and `PROG/P` were not registered for KTD DOCUMENTATION scope on the tested SAP_BASIS 758 and 816 systems; use ABAP Doc for those code objects. Other SAP-registered KTD parent types require ARC-1 parent URI routing before create is enabled.
+**Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` write source via `/source/main`. `SKTD`/`KTD` instead GETs the complete `<sktd:docu>` envelope and PUTs it back with the v2 KTD media type, changing only addressed Base64 long-text bodies and existing short-text attributes. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one KTD-capable ABAP object; `KTD` is accepted as a friendly alias. Create requires `refObjectType` and uses `name` as the documented object name. ARC-1 supports KTD creates for parent types with verified ADT parent URI routing, including `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `SRVB/SVB`, `DEVC/K`, and `SMBC/TYP` (Business Configuration Maintenance Object). `CLAS/OC`, `INTF/OI`, and `PROG/P` were not registered for KTD DOCUMENTATION scope on the tested SAP_BASIS 758 and 816 systems; use ABAP Doc for those code objects. Other SAP-registered KTD parent types require ARC-1 parent URI routing before create is enabled.
+
+To document an existing Business Configuration Maintenance Object, use its name and
+provide its description. Follow create or update with KTD activation:
+
+```text
+SAPWrite(action="create", type="KTD", name="Z_MY_CONFIGURATION", package="$TMP",
+         refObjectType="SMBC/TYP", refObjectDescription="My business configuration",
+         source="Documentation for maintaining this configuration.")
+SAPActivate(type="KTD", name="Z_MY_CONFIGURATION")
+SAPRead(type="KTD", name="Z_MY_CONFIGURATION")
+```
+
+This writes the BCMO’s KTD. Read the parent’s native JSON with
+`SAPRead(type="SMBC", name=...)`; `SAPTransport` supports its `check` and `history`.
 
 **KTD node routing:** Copy a node name from the SAPRead index into a `## <node>` section or `shortTexts[].node`. Exact full IDs take precedence; case-insensitive IDs and names must identify one element. If several elements match, use the exact full ID printed in the error or index. An update merges only the addressed nodes. Create/update responses list changed nodes and headings kept as prose. Use `dryRun=true` to inspect that report before writing. Duplicate-ID documents remain readable through SAPRead, grep, and SAPContext; their read context explains that writes are unavailable because the elements cannot be addressed separately.
 
@@ -478,7 +504,10 @@ invalid node edit can briefly take a lock but never writes.
 #### Table type updates
 
 A `TTYP` update keeps the stored description and row type when you omit them. While the row type
-is unchanged it also keeps the stored kind and built-in length, such as `CHAR` 30 or `INT4`.
+is unchanged it also keeps the stored kind and omitted built-in dimensions. For example,
+`rowType="DEC", rowTypeKind="builtin", rowTypeLength=5, rowTypeDecimals=2` creates
+a packed row; updating only `rowTypeDecimals=0` keeps length 5 and clears its scale.
+Changing the row name or kind drops omitted dimensions instead of carrying them to another type.
 
 The update still **replaces the rest of the definition**: ARC-1 writes only a standard table with a
 non-unique standard key. It therefore refuses an update without `rowType` when it cannot write the
@@ -490,6 +519,36 @@ stored definition back unchanged:
 
 `SAPRead` reports the last two groups as `plainStandardTable: false`. Passing `rowType` accepts the
 rewrite and resets those settings. Use ADT or SE11 to change such a table type without losing them.
+
+#### Classic secondary indexes
+
+Use `SAPRead(type="TABL", name="ZTABLE", include="indexes")` to list native index
+IDs and URIs. Read an index with `SAPRead(type="TABL/DTI", name="ZTABLE~001")`:
+this returns metadata and JSON `source`, preferring the pending definition. Explicit
+`version="active"` or `"inactive"` requires that version to exist.
+
+`SAPWrite` supports `create`, `update` and `delete` with the same `TABLE~INDEX` name
+(index ID: 1–3 letters/digits). Create inherits the table's real package; a supplied
+`package` must match. Pass the complete index JSON as `source`, not the read envelope.
+For example, after creating and activating `ZTABLE` with CLIENT and STATUS fields:
+
+```json
+{"formatVersion":"1","header":{"description":"Status lookup","originalLanguage":"en"},"uniqueIndex":false,"bufferIndexOnly":false,"textIndex":false,"indexFields":[{"fieldName":"CLIENT"},{"fieldName":"STATUS"}]}
+```
+
+Updates replace the entire pending definition. Read it first and coordinate with its
+author; omitted fields are not merged. SAP can label a pending index `new`. Set its
+description on create; the tested source PUT ignores `header.description` changes. Activate separately with
+`SAPActivate(type="TABL/DTI", name="ZTABLE~001")`. SAP validates fields and database
+constraints. Index creation can fail on duplicate data, and changing an existing index
+can require database conversion. ARC-1 does not perform that conversion. Activation
+warnings mean database state is **unverified**, even if metadata says active; inspect
+ADT before retrying. ARC-1 treats a warning without an object URI as applying to every index in the batch. A timeout likewise does not prove that activation failed.
+
+Verified for classic transparent tables on SAP_BASIS 758, 816 and BTP ABAP 920; the
+collection is absent on tested 750. Listing needs read scope, not SQL/data-preview
+permission. Writes retain the normal write/package/transport gates. CDS table-entity
+index variants and XINX extension indexes are not covered.
 
 #### Server-driven object writes
 
@@ -581,6 +640,55 @@ ABAP Cloud code uses `CL_ABAP_LOCK_OBJECT_FACTORY` to acquire runtime locks.
 ```
 
 Create, partial update, table/parameter changes, activation, batch create, concurrent edits and deletion were verified on SAP_BASIS 758/816 and a BTP 920 trial. The collection was absent on the tested 7.50 system. SAP can normalize parameters joined through foreign keys; read back the activated definition before editing it. See the [wire contract and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-28-enqu-lock-object-adt-contract.md).
+
+#### BAdI implementation writes (ENHO)
+
+`SAPWrite` supports `create`, `update` and `delete` for BAdI enhancement implementations (`ENHO/XHB`) on
+systems that expose `/sap/bc/adt/enhancements/enhoxhb`. On BTP only BAdIs released for cloud development
+(C1 with `useInSAPCloudPlatform`) can be implemented, in an ABAP Cloud package. Source-code plug-ins (`XHH`) and
+other enhancement technologies stay read-only. `source` is **JSON in the shape `SAPRead type="ENHO"`
+returns**. Writable keys are `enhancementSpot` and `badiImplementations`; each entry has `name`,
+`badiDefinition`, `implementingClass` and optional `shortText`, `active` (default `true`) and `default`
+(default `false`). Read-only keys (`name`, `description`, `package`, `technology`, `switchSupported`)
+are ignored; change the short text with the separate `SAPWrite.description` argument. Unknown keys are
+rejected. One enhancement implementation belongs to one enhancement spot.
+
+- **`create`** needs `enhancementSpot` and the BAdI implementations. Like Eclipse, ARC-1 POSTs the empty
+  container and then saves the implementations with a locked PUT; both carry the transport. If saving or
+  unlocking fails, the object already exists and its resulting state is unconfirmed: read it back,
+  then use `update` if needed; do not repeat `create`. Create and activate the implementing class first, then `SAPActivate(type="ENHO", name=…)`.
+- **`update`** reads the developer view under the SAP lock. A supplied `badiImplementations` list
+  replaces the stored one; within an entry that already exists, omitted `shortText`/`active`/`default`
+  keep their stored values. The spot cannot change.
+- **`delete`** first requires metadata confirming `BADI_IMPL` technology, then uses the standard
+  lock → DELETE → unlock path. Other or unknown technologies and failed metadata reads stop deletion.
+
+**Filters.** For filter-dependent BAdIs, each entry takes an optional `filter` condition in the form
+`SAPRead` shows it, e.g. `"COUNTRY = 'BE' OR COUNTRY = 'NL'"` or
+`"(COUNTRY = 'DE' OR COUNTRY = 'AT') AND GENERIC_FILTER CP 'X*'"`. Comparators are `=`, `<>`, `<`, `<=`, `>`,
+`>=`, `CP` and `NP`; AND binds tighter than OR; values are quoted (`''` escapes a quote). Omitting `filter`
+or passing it unchanged keeps SAP's stored filter as it is; `"filter": ""` removes it. ARC-1 reads the
+enhancement spot first: it refuses a BAdI that is not defined in the spot and a filter name the BAdI does not
+declare, and copies each filter's type and DDIC check from the BAdI definition. SAP does not store an OR of
+different filters inside an AND, such as `(A = '1' OR B = '2') AND C = '3'`; ARC-1 refuses it and asks for
+the equivalent OR of AND groups. An OR of one filter's values inside an AND is fine. A Z/Y create for an
+SAP-internal spot is refused before the create, because SAP rejects it but still leaves an object directory
+entry. An update also keeps the stored `customizingLock` and `example` attributes.
+ARC-1 limits new filter input to 32,768 characters and 32 nested parentheses; these are parser limits,
+not SAP filter semantics.
+
+SAP checks that the class implements the BAdI interface and the filter values against their DDIC check
+only at activation: such a write is saved inactive and `SAPActivate` reports the error. Create, update,
+filters, activation and delete were verified on SAP_BASIS 816 in `$TMP` and in a transportable package
+with a request.
+
+```json
+{"action":"create","type":"ENHO","name":"ZMY_ENH_APPROVAL_REASON","package":"$TMP","description":"Approval Reason BAdI",
+ "source":"{\"enhancementSpot\":\"ES_SD_SLS_EXTEND\",\"badiImplementations\":[{\"name\":\"ZMY_BADI_APPROVAL_REASON\",\"badiDefinition\":\"SD_APM_SET_APPROVAL_REASON\",\"implementingClass\":\"ZCL_MY_APPROVAL_REASON\"}]}"}
+```
+
+The payload follows SAP's GET serialization and was verified on SAP_BASIS 816 on-prem. See the
+[wire contract](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-07-enho-xhb-write-contract.md).
 
 #### SAPWrite for FUNC: create / update with structured parameters
 
@@ -680,6 +788,7 @@ Ordinary-group create/delete verified on NW 7.50 SP02 and S/4HANA 2023 (758). Na
 | `SAPWrite create type="DOMA"` | `/sap/bc/adt/ddic/domains` | SE11. Data elements that reference a domain are blocked with it |
 | `SAPWrite create type="TTYP"` | `/sap/bc/adt/ddic/tabletypes` | SE11 |
 | `SAPWrite create type="ENQU"` | `/sap/bc/adt/ddic/lockobjects/sources` | SE11 (present on tested 758/816 systems; absent on tested 7.50) |
+| `SAPWrite create type="ENHO"` | `/sap/bc/adt/enhancements/enhoxhb` | SE19 or Eclipse ADT (advertised on 758/816; only `enhoxh` on 750) |
 | `SAPManage action="create_package"` | `/sap/bc/adt/packages` | SE80 / SE21 |
 
 Endpoint absence verified on two independent NW 7.50 systems (a dev edition and an ECC EhP8 7.50 SP31 production system); all four are present on S/4HANA 2023 (758) and ABAP Platform 2025 (816). Structures (`TABL/DS`), data elements, function groups, function modules and includes **do** work on 7.50 — note that DDIC structure source there uses `define type <name> { … }`, not `define structure`.
@@ -1005,6 +1114,42 @@ Moves a method's METHODS clause from its current visibility section to a target 
 
 Verified live on a4h (S/4HANA 2023, kernel 7.58) end-to-end. The underlying `/objectstructure` endpoint also works on NW 7.50 SP02 (reads verified); on that release methods are split across `CLAS/OO` (def) + `CLAS/OM` (impl) elements and merged by name in the parser. Writes on the un-patched NW 7.50 dev edition can trip [SAP Note 2727890](https://launchpad.support.sap.com/#/notes/2727890) "ADT: fix unstable adt lock handle" — a system-level bug affecting every ADT write, not specific to this feature; ARC-1 detects the 423 status and emits a hint.
 
+### Technical table settings
+
+`TABL/DTT` reads and updates the separately locked settings of a transparent table.
+Available on tested SAP_BASIS 758, 816 and BTP ABAP 920; unavailable on tested 750.
+The table's actual package controls update and activation permission.
+
+```javascript
+SAPRead(type="TABL/DTT", name="ZORDERS")
+SAPWrite(action="update", type="TABL/DTT", name="ZORDERS",
+  source='{"dataClass":"APPL1","sizeCategory":2}')
+SAPActivate(type="TABL/DTT", name="ZORDERS")
+```
+
+Update `source` is a nonempty partial JSON object. Copy selected fields from the
+read result's `source`, not the whole result. Supported fields:
+
+| Field | Values |
+|-------|--------|
+| `dataClass` | Native data class, e.g. `APPL0`, `APPL1`, `APPL2`; SAP validates its meaning |
+| `sizeCategory` | Integer 0–9 |
+| `buffering.allowed` | `N` forbidden, `A` permitted but off, `X` on |
+| `buffering.type` | `""` none, `P` single record, `G` generic, `X` full |
+| `buffering.areaKeyFields` | Number of leading key fields for generic buffering; otherwise 0 |
+
+Send coherent buffering settings together, e.g.
+`{"buffering":{"allowed":"X","type":"G","areaKeyFields":1}}`.
+Omitted fields, read-only fields and earlier inactive changes are preserved.
+Saving does not activate or validate every SAP constraint. Activation applies the
+whole pending settings document and verifies its resulting state. A new table
+needs `SAPActivate(type="TABL", ...)` first; settings cannot be created/deleted
+independently. Explicit `version="active"`/`"inactive"` reads refuse a different
+version returned by SAP; omit `version` to prefer any pending draft, including another user's draft,
+with active settings as the native fallback.
+
+Storage type, load unit and logging remain read-only. No SQL or legacy fallback.
+
 <a id="class-text-symbols"></a>
 
 ### Text elements
@@ -1029,17 +1174,44 @@ SAPWrite(action="edit_text_symbols", type="PROG", name="ZHU_CREATE", textPart="s
 
 - **Body formats:** `symbols` — one `@MaxLength:NN` line per symbol, then `NNN=text`, blank-line
   separated (a shared or missing `@MaxLength` is rejected with `406 "Text elements contain errors"`).
-  `selections` — one `PARAM=text` line per selection-screen field. `headings` — `listHeader=` plus
-  `columnHeader_N=` lines.
+  `selections` — one `PARAM=text` line per field, at most 30 characters (including a supplied
+  dictionary label). Keep the preceding `@DDICReference` line to retain a dictionary reference;
+  `PARAM=?...` means no maintained text. `headings` — `listHeader=` plus `columnHeader_N=` lines.
+  SAP validates these formats and lengths.
 - **Replacement, not merge:** each write replaces the complete selected part. Read it first and
-  retain any entries you want to keep. Other parts remain unchanged. An explicit `source=""`
+  retain any entries you want to keep. The result lists texts and dictionary references removed,
+  verified by a read under the write lock. Restore them from the previous complete part; a fresh
+  read cannot recover removed values. Other parts remain unchanged. An explicit `source=""`
   clears the selected part; omitted/null source is rejected. Do not send the `=== part ===`
   markers from a whole-pool read as source — read the individual part with `include=` instead.
-- **Immediately active** — no `SAPActivate` needed. Defining the referenced symbols is what clears
+- **Writes and requests activation of the whole text pool.** This also activates pending edits to
+  other text parts; their content is preserved. Unrelated source drafts stay inactive. If a PROG
+  has never been activated, finish with `SAPActivate(type="PROG", name="...")` to activate its texts.
+  If pool activation fails, the write returns an error; the saved pool may remain inactive.
+  After an activation response, ARC-1 reads the pool metadata and reports active, still inactive,
+  or unverified state. Inactive CLAS/FUGR pools and unverified state return an error while
+  retaining the known save. Check the pool in ADT or involve the user before another write;
+  part-body reads cannot establish the pool state. An exactly empty symbols write to an already-empty,
+  explicitly active CLAS/FUGR pool is skipped under its lock: SAP can otherwise leave an empty
+  inactive pool. Existing inactive drafts are never skipped. Defining the referenced symbols clears
   the ATC finding *"Text symbol NNN not defined"* that a bare `'Text'(001)` literal otherwise leaves
   behind; maintaining `selections` is what stops a report's selection screen from showing raw
   parameter names.
-- **On-prem only, discovery-gated.** The service was verified on 758 and 816 and is absent
+- **Deleting a PROG or FUGR with an inactive text pool:** SAP can leave a separately saved
+  text-pool draft behind after deleting its owner; recreating the same name inherits that orphan.
+  `SAPWrite(action="delete")` locks the owner and its text pool, then checks the explicit
+  inactive pool metadata. An inactive pool stops deletion: review it with its author and
+  explicitly activate it before retrying. Deletion never activates drafts automatically;
+  the caller's inactive-object list cannot establish the absence of another user's draft.
+  A new program needs its first owner activation before deletion. If its source cannot compile
+  and you intend to discard it, replace it with `REPORT <name>.`, activate, then delete. If SAP leaves an empty FUGR
+  pool inactive after activation, stop and involve the user; there is no verified automatic repair. Clean pools and source-only
+  drafts can be deleted while both locks remain held. An unavailable discovery collection
+  retains the legacy delete path (7.50); an advertised service error stops deletion.
+  To recover an older PROG orphan, recreate and activate the program, then delete it. For a FUGR
+  orphan, recovery depends on the pool state; do not assume another activation repaired it.
+- **Discovery-gated.** CLAS symbols were verified on 758, 816 and BTP ABAP; PROG/FUGR are
+  on-prem object types. The service is absent
   on the tested NW 7.50 system. When discovery is loaded, ARC-1 reports an unavailable service
   without calling the broken legacy endpoint. Without discovery, SAP's actual error surfaces.
 - **Reads:** `objectType` defaults to `PROG`; use `CLAS` or `FUGR` explicitly for those objects.
@@ -1061,7 +1233,7 @@ writes and cleanup.
 
 ## SAPActivate
 
-Activate (publish) ABAP objects. Supports single object or batch activation.
+Activate ABAP objects. Supports single object or batch activation.
 
 **Parameters:**
 
@@ -1076,7 +1248,15 @@ Activate (publish) ABAP objects. Supports single object or batch activation.
 | `preaudit` | boolean | No | Request pre-activation audit from SAP (default: `true`). Set `false` to skip pre-audit for faster activation. |
 | `objects` | array | No | For batch: array of `{type, name, group?}` objects to activate together |
 
-Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `warning`, `error`, `unknown`). After an overall failure, objects without their own error stay `unknown`; SAP may have cancelled their activation too. Messages match the object URI or its source/include path, and global messages appear separately. Read active/inactive source before selecting objects to retry.
+Use batch activation for RAP stacks where objects depend on each other (DDLS, BDEF, SRVD, DDLX, SRVB must be activated together). Batch responses include per-object status (`active`, `requested`, `warning`, `error`, `unknown`). After an overall failure, objects without their own error stay `unknown`; SAP may have cancelled their activation too. Messages match the object URI or its source/include path, and global messages appear separately. Read active/inactive source before selecting objects to retry.
+
+Use `type="REPT"` (or the native alias `PROG/PX`) to activate an existing program text-pool
+draft, including one listed by `SAPRead(type="INACTIVE_OBJECTS")`. It targets the text pool
+separately from program source and supports single or batch activation. The result says
+`requested`: if the program has never been activated, first use `SAPActivate(type="PROG", name="...")`
+to activate its texts. The pool's actual package is checked, and systems without the ADT
+text-element service are refused. Ordinary `edit_text_symbols` writes already request
+text-pool activation automatically.
 
 For failed `DDLS` activation, ARC-1 appends CDS dependency impact buckets and a concrete batch re-activation template derived from where-used results.
 
@@ -1100,6 +1280,7 @@ operations keep their existing retry policies.
 **Examples:**
 ```
 SAPActivate(type="CLAS", name="ZCL_ORDER")
+SAPActivate(type="REPT", name="ZREPORT")
 SAPActivate(type="INCL", name="LZFGTOP", group="ZFG")
 SAPActivate(objects=[{type:"DDLS",name:"ZI_TRAVEL"},{type:"BDEF",name:"ZI_TRAVEL"},{type:"SRVD",name:"ZSD_TRAVEL"}])
 SAPActivate(action="publish_srvb", type="SRVB", name="ZUI_TRAVEL_O4", service_type="odatav4")
@@ -1128,7 +1309,7 @@ The existing actions below are unchanged.
 | `name` | string | No | Object name — alternative to `uri` for `references`. |
 | `objectType` | string | No | For `references`: keep only results of this ADT type, slash format (`CLAS/OC`, `PROG/P`, `FUGR/FF`). A bare prefix (`CLAS`) matches every subtype. Applied client-side. |
 | `maxResults` | number | No | For `references`: max entries (default 100, max 1000). `total` counts every match of the filter. |
-| `line` | number | No | Line number (1-based) |
+| `line` | number | No | Line number (1-based). For `references`, together with `column`: search the symbol at that position. |
 | `column` | number | No | ADT cursor column (0-based integer) |
 | `source` | string | No | Current source code |
 
@@ -1154,7 +1335,7 @@ navigation parameters (`uri`, `objectType`, `line`, `column`, `source`) are reje
 
 **References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
 
-Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, warning?, references}` — because where-used is
+Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, searchedFor?, warning?, references}` — because where-used is
 unbounded: `CL_ABAP_TYPEDESCR` has 6,644 references (~968K tokens, several times a context window).
 **`total` counts matching reference entries before paging, not distinct consumer objects or runtime
 calls.** The `countMeaning` field states this explicitly. Tree/container rows and multiple references
@@ -1166,6 +1347,22 @@ Paging and `objectType` filtering are both client-side, and deliberately so: SAP
 `usageReferences` endpoint declares only `{?uri}` and ignores every limit or filter we can send
 (verified live across nine request variants, all byte-identical). The full set therefore still
 crosses the wire — this bounds what reaches the model, not what SAP computes.
+
+Without a position, `references` searches the whole object. With `line` and `column` (both, as ADT
+cursor coordinates: line from 1, column from 0) it searches the symbol at that position in the source
+behind `uri`, for example one method of a class; `type`+`name` positions refer to the main source.
+ARC-1 sends the cursor as the URI fragment `#start=<line>,<column>`, replacing any fragment already in
+`uri`. When the cursor is not on an identifier, SAP silently searches the whole object instead. A
+position search therefore returns `searchedFor`: SAP's result description, verbatim, which names
+what was searched, for example `References for: /SCWM/CL_TM - CLEANUP (Method) [SID]` or, after a
+fallback, `References for: /SCWM/CL_TM (Class) [SID]`. The wording differs by release. If SAP omits
+the description (including on the older fallback endpoint), a `warning` says the searched symbol
+could not be confirmed. URI fragments supplied directly are preserved when no coordinates are
+given. Fragment-scoped searches return native references without adding whole-interface
+implementers from SEOMETAREL, unless SAP explicitly reports fallback to the URI's original object
+with an empty `referencedObjectIdentifier`. An absent or nonempty identifier keeps results
+native-only: an implementation relationship does not establish a reference to a selected member
+or another type mentioned in the source.
 
 **Hierarchy action:** Returns the class inheritance chain via `SEOMETAREL`: superclass (or null), implemented interfaces, and direct subclasses. Requires `name` parameter (class name). It needs either table preview (`SAP_ALLOW_DATA_PREVIEW=true` + `data` scope) or freestyle SQL (`SAP_ALLOW_FREE_SQL=true` + `sql` scope). ARC-1 uses SQL when available and falls back to named table preview.
 
@@ -1179,20 +1376,30 @@ not enumerate subclasses or prove a complete inheritance/implementation list.
 SAPNavigate(action="definition", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=5, source="...")
 SAPNavigate(action="references", uri="/sap/bc/adt/oo/classes/zcl_order")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER")
+SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", line=12, column=12)
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", objectType="PROG/P")
-SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest", line=10, column=15, source="...")
+SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=15, source="...")
 SAPNavigate(action="hierarchy", name="ZCL_ORDER")
 ```
 
 For `definition`, pass the source URI and current source text, with integer ADT cursor coordinates:
-line starts at 1, column at 0. Place the cursor on the identifier. Returned target coordinates use
+line starts at 1, column at 0. The line must exist in the posted source, and column may
+reach its end but not extend beyond it. Place the cursor on the identifier. Returned target coordinates use
 the same convention. Object metadata URIs and `type`+`name` are insufficient.
 The source can contain unsaved changes; ARC-1 does not replace it with a backend read. A returned
 target URI may include a cursor fragment; an explicit new line/column replaces that fragment.
 
-`completion` currently fails on SAP_BASIS 750 and 758 because its request and response handling do
-not match ADT. See [FEAT-80](roadmap.md#feat-80) for the separate repair; this definition fix does not
-restore completion.
+`completion` takes the same inputs: the source URI (SAP rejects object metadata URIs),
+the current source text and an ADT cursor (line from 1, column from 0) placed right after
+the typed prefix, for example column 3 after `DAT`. ARC-1 sends the cursor as the URI fragment
+`#start=<line>,<column>`, replacing any fragment already in `uri`. It returns
+`{proposals: [{text}], complete, hint?}`: keywords and identifiers alike, in SAP's order. The source
+can contain unsaved changes to an existing SAP object, such as a variable declared only in the
+posted text; the object must already exist. The cursor must fit the posted source. `complete: false`
+means SAP did not confirm completeness: a broad prefix may have more matches, but older backends
+also signal this for empty results or invalid positions. Check the cursor/source or narrow the
+prefix. The signal is not a count of undisplayed proposals; an empty list contains no returned
+proposals, without proving that no matching identifier exists.
 
 ---
 
@@ -1234,7 +1441,7 @@ selected columns, or a restrictive, non-overlapping key-range `WHERE` clause.
 - Use `alias~field` for qualified fields (not `alias.field`; a dot ends the ABAP statement)
 - Use `ASCENDING`/`DESCENDING` (not `ASC`/`DESC`)
 - Use `maxRows` parameter (not `LIMIT`)
-- `GROUP BY`, `COUNT(*)`, `WHERE` all work
+- `GROUP BY`, `COUNT(*)`, `WHERE` are supported. Some ADT backends (verified on 7.58 and 8.16) fail with a generated TRY/CATCH or missing-ENDSELECT nesting error when COUNT(*) is the only selected expression alongside GROUP BY. Select the grouping columns too, for example `SELECT carrid, COUNT(*) AS cnt FROM sflight GROUP BY carrid`; this adds result columns without changing the groups. ARC-1 explains this failure without rewriting or retrying the query.
 - ABAP SQL aggregate rule applies: non-aggregated selected fields must be listed in `GROUP BY`
 
 JOINs, aggregates, and subqueries are supported. For a plain projection `SELECT`, ARC-1 automatically chunks the longest literal `IN (...)` list—even when the query has several `IN` clauses—and merges the rows. Queries with `ORDER BY`, `GROUP BY`, `HAVING`, `DISTINCT`, `UNION`, or aggregates are sent whole because concatenating per-chunk results would change their semantics. If a backend rejects a long list in one of those queries, split the list manually, union the results, and re-sort client-side when needed.
@@ -1971,7 +2178,8 @@ classic FLP lifecycle operations, and set an object's API release contract.
 - `change_package` — Move an existing object into a different package (DEVC reassignment).
 - `set_api_state` — Set one supported API release contract to `RELEASED` or `NOT_RELEASED`. ARC-1
   reads the contract, transforms only its writable subset, writes it, then reads it back. Supported
-  contracts and visibility defaults come from SAP and are not broadened by ARC-1.
+  contracts and visibility defaults come from SAP and are not broadened by ARC-1. For `objectType="FUNC"`
+  with `name`, ARC-1 resolves the function group through search; pass `objectUri` when it cannot.
 - `flp_list_catalogs` — List FLP designer catalogs. The `flp_*` actions target the classic tile/target-mapping model, deprecated as of S/4HANA 2023 and not federated by Work Zone content exposure v2 — the successor is the Launchpad App Descriptor Item (`SAPRead type=UIAD`). Business catalogs are a separate model (`/UI2/FLPCM_CUST`) and are not managed here.
 - `flp_list_groups` — List FLP groups (`Pages`) from `/UI2/FLPD_CATALOG`.
 - `flp_list_tiles` — List tiles/target mappings in a catalog.
@@ -2007,6 +2215,7 @@ group membership; inspect a group's tiles in SAP Fiori Launchpad Designer.
 | `oldPackage` | string | No | Required for `change_package` — current package of the object |
 | `newPackage` | string | No | Required for `change_package` — target package to move the object to |
 | `apiState` | string | No | For `set_api_state`: `RELEASED` (default) or `NOT_RELEASED`; visibility follows SAP's contract defaults. |
+| `apiVisibility` | string[] | No | `set_api_state` with `RELEASED`: complete explicit selection of `cloudDevelopment` and/or `keyUserApps`. `[]` selects neither; SAP decides whether the contract permits it. Omit for the contract defaults. Native read-only flags are respected; exact visibility is verified even on a no-op. |
 | `contract` | string | No | For `set_api_state`: `C0`–`C4` (default `C1`). Support varies by type/release; inspect `SAPRead(type="API_STATE")` and SAP's supported-contract response. |
 | `catalogId` | string | No | Required for `flp_list_tiles`, `flp_create_tile`, `flp_add_tile_to_group` |
 | `groupId` | string | No | Required for `flp_create_group`, `flp_add_tile_to_group` |

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #950: projection of the three SAP_BASIS 758 SP04 collection snippets reported
+     by the display-only startup user. Envelope and classes context are synthetic;
+     this is not a complete discovery capture. No MIME types are inferred. -->
+<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom">
+  <app:workspace>
+    <atom:title>Issue 950 reproduction</atom:title>
+    <app:collection href="/sap/bc/adt/oo/classes">
+      <app:accept>application/vnd.sap.adt.oo.classes.v4+xml</app:accept>
+    </app:collection>
+    <app:collection href="/sap/bc/adt/ddic/domains">
+      <atom:title>Domain</atom:title><app:accept/>
+      <atom:category term="domadd" scheme="http://www.sap.com/wbobj/dictionary"/>
+    </app:collection>
+    <app:collection href="/sap/bc/adt/ddic/tabletypes">
+      <atom:title>Table Type</atom:title><app:accept/>
+      <atom:category term="ttypda" scheme="http://www.sap.com/wbobj/dictionary"/>
+    </app:collection>
+    <app:collection href="/sap/bc/adt/ddic/lockobjects/sources">
+      <atom:title>Lock Object</atom:title><app:accept/>
+      <atom:category term="enqudl" scheme="http://www.sap.com/wbobj/dictionary"/>
+    </app:collection>
+  </app:workspace>
+</app:service>

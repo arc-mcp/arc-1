@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-05
+**Last reviewed:** 2026-10-09
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -71,13 +71,17 @@ sequence.
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
+| [COMPAT-13](#compat-13) | NW 7.40 freestyle SQL length boundary | P1 | S | Needs research | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
-| [COMPAT-09](#compat-09) | Exact lookup with decorated SAP object names | P2 | S | Needs research | Compatibility |
+| [COMPAT-16](#compat-16) | API-release directory cleanup | P2 | S | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
+| [COMPAT-12](#compat-12) | Deletion with another user's text draft | P3 | S | Needs research | Compatibility |
+| [COMPAT-15](#compat-15) | Empty inactive text-pool recovery | P2 | M | Needs research | Compatibility |
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
-| [FEAT-03](#feat-03) | BAdI and enhancement authoring | P2 | L | Needs research | ABAP authoring |
+| [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
+| [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
 | [FEAT-23](#feat-23) | Recursive program include reading | P2 | M | Needs research | Developer workflow |
@@ -89,7 +93,7 @@ sequence.
 | [FEAT-22](#feat-22) | Safe gCTS mutation workflows | P3 | L | Needs research | Integration |
 | [FEAT-34](#feat-34) | Translation workflows beyond text symbols | P3 | L | Needs research | Localization |
 | [FEAT-62](#feat-62) | Transaction source and write support | P3 | M | Blocked | Object coverage |
-| [FEAT-70](#feat-70) | Table technical settings | P2 | M | Needs research | Object coverage |
+| [FEAT-70](#feat-70) | Additional table technical settings | P3 | S | Needs research | Object coverage |
 | [FEAT-72](#feat-72) | CDS index objects | P3 | M | Blocked | Object coverage |
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
@@ -99,14 +103,12 @@ sequence.
 | [FEAT-74](#feat-74) | Dump feed attribute filters | P3 | S | Ready | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
-| [FEAT-80](#feat-80) | Repair ADT code completion | P2 | S | Ready | Code intelligence |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
 | [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
-| [OPS-07](#ops-07) | Bounded HTTP request sizes for large source edits | P2 | S | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
 
@@ -233,22 +235,22 @@ misleading.
 [implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/http-forward-proxy-env-support.md);
 test redirects, TLS verification, `NO_PROXY`, OAuth metadata, SAP cookies, and BTP isolation.
 
-<a id="compat-09"></a>
-### COMPAT-09 — Exact lookup with decorated SAP object names
+<a id="compat-13"></a>
+### COMPAT-13 — NW 7.40 freestyle SQL length boundary
 
-- **Priority / effort / status:** P2 / S / Needs research
+- **Priority / effort / status:** P1 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** On SAP_BASIS 750, quickSearch labels functions such as
-`BAPI_USER_GET_DETAIL` with ` (Function Module)`. `lookupObjects` compares that display name
-literally, discards the hit, and `SAPContext(usages)` without a type reports no object. Both standard
-and `/UI2/` function lookups reproduce this on 750 and succeed on 758. The function-specific group
-resolver repaired by [PR #911](https://github.com/arc-mcp/arc-1/pull/911) does not repair this path;
-provide `type="FUNC"` for usages to select that resolver.
+**Remaining gap.** [#955](https://github.com/arc-mcp/arc-1/issues/955) reports a
+253/256-character boundary on 7.40 despite line breaks. ARC-1 wraps at 255 with LF;
+7.40's handling is unverified. Silent predicate loss on newer backends makes this
+P1 research; it does not establish the cause on 7.40.
 
-**Resume with.** Establish canonical identity for generic lookup and type-free usages across ADT
-object families, using verified fields or URIs rather than stripping arbitrary display text. Test
-namespaces, ambiguous names, unrelated hits, and both releases before replacing the exact filters.
+**Resume with.** Authorized 7.40 access or sanitized wire traces with exact SP,
+posted chunks, line endings, row caps and returned/executed SQL. Compare LF/CRLF
+and restrictive tails before choosing a workaround; do not guess a length cap.
+The [evidence and probe plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-count-only-grouped-sql.md)
+contains the SAP Note applicability, release differences and conditional fixes.
 
 <a id="compat-07"></a>
 ### COMPAT-07 — CDS view-entity replacement lineage
@@ -283,6 +285,63 @@ CDS set operations contain structural nodes outside the current kind allowlist. 
 **Resume with.** Captured graphs for classic/view-entity UNION, EXCEPT and INTERSECT where supported;
 define structural-node identity and traversal without mistaking branch labels for data-source names.
 Prove every branch is checked before allowing these shapes. Keep unknown nodes fail-closed.
+
+<a id="compat-16"></a>
+### COMPAT-16 — API-release directory cleanup
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** On 816 and BTP, the original C4-after-C1 test deleted its class
+while C4 was still RELEASED: the visibility-mismatch error hid an applied release.
+The owner is absent but an APIS directory entry remains. [#967](https://github.com/arc-mcp/arc-1/pull/967)
+now discloses the actual state and revocation instruction. Fresh 816 and BTP validation
+that revokes every released contract before deletion leaves no directory entry; a supported
+recovery for the old residue is still unproven. A post-deletion empty API_STATE is
+not evidence that revocation preceded deletion. See the [plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-api-release-visibility.md).
+
+**Resume with.** Isolate the native released-contract deletion behavior on disposable
+classes and establish a supported ADT repair for existing APIS residue. Verify both
+owner and directory state, preserve user intent, and never edit catalog rows or add
+automatic revocation to deletion. Pre-existing BTP SUSH entries are separate evidence.
+
+<a id="compat-12"></a>
+### COMPAT-12 — Deletion with another user's text draft
+
+- **Priority / effort / status:** P3 / S / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** Program and function-group deletion now holds owner and pool
+locks and refuses explicit inactive pool metadata; it never activates a draft
+automatically. The caller's inactive feed is not an ownership or absence check.
+The remaining qualification is two users, recording transports and principal
+propagation, including drafts outside a shared request and competing locks. See the
+[cross-user deletion evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-09-cross-user-text-delete.md).
+
+**Resume with.** Two authorized SAP test identities: save a draft as one user and
+attempt PROG/FUGR deletion as the other, both inside and outside a shared transport
+request, including lock races and principal propagation. Establish feed visibility,
+SAP's activation/delete authorization and the existing guard's behavior;
+preserve per-user identity, package checks and native authorizations. Avoid silently
+activating or discarding another user's draft.
+
+<a id="compat-15"></a>
+### COMPAT-15 — Empty inactive text-pool recovery
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** Empty CLAS/FUGR pools can remain inactive despite successful
+activation responses and an empty inactive-object feed (758/816; CLAS also BTP).
+Writes report explicit pool state and skip a proven active, already-empty symbols
+save. They do not repair existing drafts. Clearing a never-activated nonempty draft
+can still produce this state; symbols alone cannot establish whole-pool emptiness.
+
+**Resume with.** A supported native repair, or a qualified whole-pool precondition
+for refusing the hazardous clear across active/working versions and all parts.
+Preserve drafts and per-user authorization; do not add placeholder texts or write
+catalog rows automatically. See the
+[state plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-12-text-pool-state.md).
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
@@ -338,19 +397,41 @@ hard-coded table list without proving its completeness.
 ## Developer workflows
 
 <a id="feat-03"></a>
-### FEAT-03 — BAdI and enhancement authoring
+### FEAT-03 — Enhancement authoring beyond BAdI implementations
 
 - **Priority / effort / status:** P2 / L / Needs research
 - **Category:** ABAP authoring
 
-**Idea.** Add guarded creation or editing workflows for enhancement implementations and BAdIs.
+**Idea.** Extend guarded enhancement authoring past BAdI implementations: source-code plug-ins
+(`ENHO/XHH`), enhancement spots and BAdI definitions.
 
-**Why it remains.** ARC-1 can read BAdI metadata, source-code plug-ins and qualified BAdI relations,
-but that is not authoring support. The create/update wire contracts and activation behavior are not proven
-across supported releases.
+**Why it remains.** `SAPWrite type="ENHO"` creates, updates and deletes BAdI implementations
+(`ENHO/XHB`) on-prem and on BTP (C1-released BAdIs with `useInSAPCloudPlatform`), including filter
+values. Hook, class and spot authoring have no proven create/update contract.
 
-**Resume with.** Capture live ADT traffic for one narrowly scoped enhancement type, define package
-and transport gates, and add read-back verification before exposing writes.
+**Resume with.** For hooks: capture live ADT traffic for one source-code plug-in, then follow the XHB
+pattern (discovery gate, package gate, read-back; evidence:
+`docs/research/2026-10-07-enho-xhb-write-contract.md`).
+
+<a id="feat-85"></a>
+### FEAT-85 — Set the ABAP language version of packages and objects
+
+- **Priority / effort / status:** P1 / M / Needs research
+- **Category:** ABAP authoring
+
+**Idea.** Let `SAPManage` create/change a package with an ABAP language version and let `SAPWrite` set or
+change an object's version on-prem: in a classic package any object may be switched to ABAP for Cloud
+Development; in an ABAP Cloud package every object must be ABAP Cloud.
+
+**Why it remains.** ARC-1 never sends a language version on-prem: `buildPackageXml` omits
+`pak:languageVersion` (ADT reports it as editable; "ABAP for Cloud Development" is `5`), and object creates
+inherit the package default. Updates keep the stored version (ENHO re-sends it since
+[PR #939](https://github.com/arc-mcp/arc-1/pull/939)). The ENHO re-test had to switch its cloud package in
+Eclipse (`docs/research/2026-10-07-enho-xhb-write-contract.md`).
+
+**Resume with.** Capture Eclipse's package and object property saves for a version change, check which
+object types expose `adtcore:abapLanguageVersion` as writable, and refuse a classic version in an ABAP
+Cloud package before any write.
 
 <a id="feat-05"></a>
 ### FEAT-05 — Safe rename and extract refactorings
@@ -536,23 +617,21 @@ fallback behavior, then validate the read/write APIs on two releases.
 contract can be captured.
 
 <a id="feat-70"></a>
-### FEAT-70 — Table technical settings
+### FEAT-70 — Additional table technical settings
 
-- **Priority / effort / status:** P2 / M / Needs research
+- **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Object coverage
 
-**Idea.** Read and safely edit a database table's technical settings, including data class, size
-category, buffering, and storage type where supported.
+**Idea.** Extend `TABL/DTT` updates to storage type, load unit or logging only where
+SAP advertises an editable, verified contract. Data class, size category and buffering
+already have separate read/update/activation support; table DDL annotations are outside this gap.
 
-**Why it remains.** TABL source writes already accept annotations such as delivery class, but
-technical table settings are a separate development object. Their lifecycle is not implemented by
-passing table DDL through `SAPWrite`; ARC-1 has no dedicated technical-settings read/write contract.
-SAP describes the distinction in its
-[database-table guide](https://learning.sap.com/courses/building-data-models-with-the-abap-dictionary-and-abap-core-data-services/creating-database-tables_ebc1477d-96ed-414b-82d4-4171da43f4a6).
+**Why it remains.** The additional fields vary by release and can be read-only. Current
+reads expose native values but deliberately do not enable their mutation.
 
-**Resume with.** Capture the live ADT contract, identify release-specific fields and defaults,
-preserve unchanged settings during partial edits, and verify package/transport gates, activation,
-and read-back. Keep already-supported DDL annotations outside this gap.
+**Resume with.** A concrete use case and native editable-field evidence on the target
+releases; qualify activation, recording transports and preservation of other pending settings.
+See [the implemented contract](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-12-table-technical-settings.md).
 
 <a id="feat-72"></a>
 ### FEAT-72 — CDS index objects
@@ -562,11 +641,14 @@ and read-back. Keep already-supported DDL annotations outside this gap.
 
 **Idea.** Add read/create/update coverage for CDS index objects advertised by ADT discovery.
 
-**Why it remains.** Discovery markers exist, but ARC-1 has no verified object instances, source
-shape, lifecycle, or cross-release tests.
+**Why it remains.** Classic transparent-table indexes (`TABL/DTI`) now have native listing,
+JSON CRUD and separate activation, verified on 758/816/BTP; they do not establish the
+contract for CDS table-entity index variants or XINX extension indexes. See the
+[classic-index evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-12-table-indexes.md).
 
-**Unblock when.** A test system has a seed object or a reproducible creation path. Record the live
-media types and activation behavior before adding schemas.
+**Unblock when.** A test system has a CDS table-entity index or XINX seed object and a
+reproducible creation path. Record native identity, media types, package/transport ownership
+and database activation/conversion behavior before extending classic-index support.
 
 <a id="feat-73"></a>
 ### FEAT-73 — Additional server-driven object types
@@ -722,22 +804,6 @@ ordering key.
 proven. Refuse ambiguous tables, preserve all data-preview gates, and include a schema-only mode if
 it can reuse the same safe contract.
 
-<a id="feat-80"></a>
-### FEAT-80 — Repair ADT code completion
-
-- **Priority / effort / status:** P2 / S / Ready
-- **Category:** Code intelligence
-
-**Remaining gap.** `SAPNavigate(completion)` posts to `/abapsource/codecompletion/proposals` with
-separate cursor parameters and expects `<proposal>` elements. It returns 404 on 750 and 758.
-The singular `/proposal` endpoint with `uri=...#start=line,column` returns `asx:abap` /
-`SCC_COMPLETION` records. This is independent of the definition repair in
-[PR #910](https://github.com/arc-mcp/arc-1/pull/910).
-
-**Resume with.** Correct the request and parser together, verify media negotiation and cursor
-coordinates, and test useful and empty proposals on both releases with current and unsaved source.
-Preserve read-only authorization and keep unsupported-backend errors explicit.
-
 <a id="feat-36"></a>
 ### FEAT-36 — Type information
 
@@ -839,21 +905,6 @@ token lifetime, keep users isolated, and keep ADR-0007's request-local Basic cre
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
 the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
-
-<a id="ops-07"></a>
-### OPS-07 — Bounded HTTP request sizes for large source edits
-
-- **Priority / effort / status:** P2 / S / Needs research
-- **Category:** Operations
-
-**Remaining gap.** The HTTP server uses Express's default 100 KiB JSON body limit. Large source
-writes or batches can fail with HTTP 413 before tool dispatch, even when a reverse proxy permits
-larger bodies. Smaller edits or local stdio are current workarounds; see [SAPWrite](tools.md#sapwrite).
-The limitation was confirmed during [PR #793](https://github.com/arc-mcp/arc-1/pull/793)'s docs review.
-
-**Resume with.** Define a bounded request-size contract and useful client errors before raising the
-limit. Review parsing before authentication, concurrent memory use, and proxy limits; test both
-oversized rejection and an authenticated large-source write/read-back round trip.
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener

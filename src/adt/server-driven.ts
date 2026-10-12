@@ -31,6 +31,7 @@ import { fetchDiscoveryDocument, resolveAcceptType } from './discovery.js';
 import { AdtApiError, AdtError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
+import { parseTableIndexName, TABLE_INDEX_COLLECTION, tableIndexParentUrl } from './table-index.js';
 import type { ServerDrivenObjectResult } from './types.js';
 import { escapeXmlAttr, parseServerDrivenMetadata, parseXml } from './xml-parser.js';
 
@@ -137,6 +138,7 @@ export const SDO_TYPES = [
   'APLO',
   'SAJC',
   'SAJT',
+  'TABL/DTI',
 ] as const;
 
 /** Curated registry of high-value server-driven object types — keys are exactly SDO_TYPES. */
@@ -259,6 +261,14 @@ export const SDO_REGISTRY = {
     ...BLUE_METADATA,
     sourceFormat: 'json',
   },
+  'TABL/DTI': {
+    href: TABLE_INDEX_COLLECTION,
+    label: 'Table secondary index',
+    createType: 'TABL/DTI',
+    metadataContentType: BLUES_V1,
+    ...BLUE_METADATA,
+    sourceFormat: 'json',
+  },
 } satisfies Record<(typeof SDO_TYPES)[number], SdoRegistryEntry>;
 
 // String-indexed view of the registry for the unknown-code lookups below (the satisfies-typed
@@ -279,7 +289,8 @@ function sdoEntry(code: string): SdoRegistryEntry {
 
 /** ADT object URL for a server-driven object: collection href + url-encoded name. */
 export function serverDrivenObjectUrl(code: string, name: string): string {
-  return `${sdoEntry(code).href}/${encodeURIComponent(name)}`;
+  if (code === 'TABL/DTI') parseTableIndexName(name);
+  return `${sdoEntry(code).href}/${encodeURIComponent(code === 'TABL/DTI' ? name.toLowerCase() : name)}`;
 }
 
 /**
@@ -368,7 +379,8 @@ export async function getServerDrivenObject(
   const entry = sdoEntry(code);
   const objUrl = serverDrivenObjectUrl(code, name);
 
-  const query = version ? `?version=${version}` : '';
+  const selectedVersion = version ?? (code === 'TABL/DTI' ? 'inactive' : undefined);
+  const query = selectedVersion ? `?version=${selectedVersion}` : '';
   const metaResp = await http.get(`${objUrl}${query}`, { Accept: entry.metadataContentType });
   const metadata = parseServerDrivenMetadata(metaResp.body, entry.metadataRootLocalName);
 
@@ -414,10 +426,14 @@ export function buildServerDrivenMetadataXml(
 ): string {
   const entry = sdoEntry(code);
   const [prefix] = entry.metadataRootQName.split(':');
+  const container =
+    code === 'TABL/DTI'
+      ? `  <adtcore:containerRef adtcore:name="${escapeXmlAttr(parseTableIndexName(name).table)}" adtcore:type="TABL/DT" adtcore:uri="${escapeXmlAttr(tableIndexParentUrl(name))}"/>\n`
+      : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <${entry.metadataRootQName} xmlns:${prefix}="${entry.metadataNamespace}" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:type="${escapeXmlAttr(entry.createType)}" adtcore:name="${escapeXmlAttr(name)}" adtcore:description="${escapeXmlAttr(description)}"${code === 'UIAD' && uiadLanguageVersion ? ` adtcore:abapLanguageVersion="${escapeXmlAttr(uiadLanguageVersion)}"` : ''}>
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
-${creationProperties ? `  <blue:additionalCreationProperties><adtcore:content adtcore:type="application/vnd.sap.adt.objecttype.new.content.additional.v1+json">${escapeXmlAttr(JSON.stringify(creationProperties))}</adtcore:content></blue:additionalCreationProperties>\n` : ''}</${entry.metadataRootQName}>`;
+${container}${creationProperties ? `  <blue:additionalCreationProperties><adtcore:content adtcore:type="application/vnd.sap.adt.objecttype.new.content.additional.v1+json">${escapeXmlAttr(JSON.stringify(creationProperties))}</adtcore:content></blue:additionalCreationProperties>\n` : ''}</${entry.metadataRootQName}>`;
 }
 
 /** Options shared by the SDO write operations. */
@@ -486,7 +502,14 @@ export async function updateServerDrivenObjectSource(
       const params = [`lockHandle=${encodeURIComponent(lock.lockHandle)}`];
       if (transport) params.push(`corrNr=${encodeURIComponent(transport)}`);
       opts.onSourceWrite?.('attempted');
-      await session.put(`${objUrl}/source/main?${params.join('&')}`, source, serverDrivenSourceContentType(code));
+      await session.put(
+        `${objUrl}/source/main?${params.join('&')}`,
+        source,
+        serverDrivenSourceContentType(code),
+        undefined,
+        // Keep an uncertain index save as one attempt; report its state instead of replaying it.
+        code === 'TABL/DTI' ? { retryTransientErrors: false } : undefined,
+      );
       opts.onSourceWrite?.('confirmed');
     } finally {
       try {

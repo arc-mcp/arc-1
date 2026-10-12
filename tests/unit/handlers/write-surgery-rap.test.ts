@@ -2524,13 +2524,23 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
         const m = (init?.method ?? 'GET').toUpperCase();
         if (u.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK_BODY, { 'x-csrf-token': 'T' }));
         if (u.includes('_action=UNLOCK')) return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
+        if (u.includes('?version=inactive')) {
+          const name = new URL(u).pathname.split('/').at(-1);
+          const type = u.includes('/classes/') ? 'CLAS/OCX' : 'PROG/PX';
+          return Promise.resolve(
+            mockResponse(
+              200,
+              `<rept:textElement xmlns:rept="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="${type}" adtcore:version="active"/>`,
+            ),
+          );
+        }
         if (m === 'PUT') return Promise.resolve(mockResponse(200, '@MaxLength:10\r\n001=Hi', { 'x-csrf-token': 'T' }));
         return Promise.resolve(mockResponse(200, '', { 'x-csrf-token': 'T' }));
       });
     }
 
     // createClient() has allowedPackages=[] (unrestricted) → the package gate short-circuits without a
-    // metadata fetch, so the flow is just CSRF → lock → PUT → unlock.
+    // package metadata fetch. The pool flow also reads back the part and verifies activation state.
     const putCall = () =>
       mockFetch.mock.calls.find(([, i]) => ((i as { method?: string })?.method ?? 'GET').toUpperCase() === 'PUT');
 

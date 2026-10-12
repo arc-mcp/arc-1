@@ -16,6 +16,7 @@ const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
 const { buildBatchActivationStatuses, formatBatchActivationStatuses } = await import(
   '../../../src/handlers/activate.js'
 );
+const { activationDetailMatchesObject } = await import('../../../src/handlers/activation-results.js');
 const devtools = await import('../../../src/adt/devtools.js');
 const objects = ['ZFIRST', 'ZFIRST2'].map((name) => ({ type: 'INTF', name, url: `/sap/bc/adt/oo/interfaces/${name}` }));
 
@@ -1065,4 +1066,11 @@ describe('post-activation source promotion', () => {
       expect(sourceGets('active')).toHaveLength(1);
     },
   );
+});
+
+it('matches encoded activation identities without matching another index or malformed URI', () => {
+  const object = '/sap/bc/adt/ddic/db/indexes/ztable~001';
+  expect(activationDetailMatchesObject('/sap/bc/adt/ddic/db/indexes/ZTABLE%7E001#start=1,1', object)).toBe(true);
+  expect(activationDetailMatchesObject('/sap/bc/adt/ddic/db/indexes/ztable%7e0010', object)).toBe(false);
+  expect(activationDetailMatchesObject('/sap/bc/adt/ddic/db/indexes/ztable%xx001', object)).toBe(false);
 });

@@ -153,6 +153,8 @@ describe('CRUD lifecycle', () => {
       // WRITE a text symbol, then READ it back via the textelements service.
       await client.writeClassTextSymbols(name, '@MaxLength:20\n001=Hello\n');
       expect(await client.getClassTextSymbols(name)).toContain('001=Hello');
+      const poolUri = `/sap/bc/adt/textelements/classes/${name.toLowerCase()}`;
+      expect((await client.getInactiveObjects()).filter((entry) => entry.uri.toLowerCase() === poolUri)).toEqual([]);
 
       // Explicit class reads expose SAP's empty selections and heading placeholders.
       // Writes remain restricted to symbols, independently of those readable resources.

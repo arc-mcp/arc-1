@@ -18,9 +18,12 @@ const SAPWRITE_BODY_ONPREM =
   // The purpose and supported types already live in SAPWRITE_LEAD and the type property.
   'Handles lock/modify/unlock automatically. TTYP needs rowType + optional rowTypeKind. ' +
   'ENQU: SAPRead JSON in source; create needs primaryTable. Entries need explicit lockMode/parameterWanted; update refuses lockParameters=[]. Then SAPActivate. ' +
-  'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). For delete, only type and name are required (plus optional transport). ' +
+  'ENHO (BAdI impl/XHB): SAPRead JSON in source; create needs enhancementSpot + badiImplementations[{name,badiDefinition,implementingClass,filter?}] (filter as SAPRead shows it, e.g. "COUNTRY = \'DE\'"); update replaces the list. Then SAPActivate. ' +
+  'Type codes are auto-normalized and case-insensitive (e.g., "CLAS/OC" → "CLAS"). ' +
   'Source objects (PROG/CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL/INCL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses to write a local include; omit for source/main. ' +
   'TABL create: "TABL"/"TABL/DT" → transparent table (16-char name); "TABL/DS" → structure (30-char, namespaces OK); update/delete/activate auto-discover the subtype. ' +
+  'TABL/DTT: update technical settings with partial JSON source {dataClass,sizeCategory,buffering:{allowed:N/A/X,type:P/G/X/empty,areaKeyFields}}. Omitted fields and existing drafts are preserved. Activate separately; a new table needs TABL activation first. ' +
+  'TABL/DTI: secondary index name=TABLE~INDEX. Create inherits the parent table package; source is the complete source object from SAPRead. Update replaces the pending definition; activate separately. No automatic database conversion. ' +
   'Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp; deactivateInputHistory=true disables input history); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API; bindingType like "ODataV4-UI" auto-normalized). ' +
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (parent type+subtype, e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   // "group"/FUGR-must-exist and processingType live on their own property descriptions — not repeated here.
@@ -30,18 +33,20 @@ const SAPWRITE_BODY_ONPREM =
   'edit_unit/add_unit: replace/add one FORM/MODULE in PROG/INCL using unit+source; group= supports FUGR includes. ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers the BDEF via rootEntityRef and activates by default). ' +
   'Server-driven objects (discovery-gated): AFF JSON source (DTSC/DSFD/DTDC/DRTY: DDL); create/update/delete. APLO/UIAD save active; others need SAPActivate. SAJC/SAJT create require source.generalInformation.className/catalogName. ' +
-  'edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one "@MaxLength:NN\\nNNN=text" per symbol, blank-line separated), selections ("PARAM=Label") or headings. CLAS: symbols only. Immediately active; needs ADT textelements. ' +
+  'edit_text_symbols: CLAS/PROG/FUGR textPart=symbols (default; one "@MaxLength:NN\\nNNN=text" per symbol, blank-line separated), selections ("PARAM=Label") or headings. CLAS: symbols only. Writes and requests whole-pool activation; a never-activated PROG still needs SAPActivate. Needs ADT textelements. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 
 const SAPWRITE_BODY_BTP =
-  'BTP ABAP Environment: handles lock/modify/unlock automatically. ' +
-  'Must use ABAP Cloud language version (no classic statements); only Z*/Y* namespace. Type codes are auto-normalized (e.g. "CLAS/OC" → "CLAS"). For delete, only type and name are required (plus optional transport). ' +
+  'BTP: handles lock/modify/unlock automatically. ABAP Cloud language only; Z*/Y* names. Type aliases are normalized. ' +
   'Source objects (CLAS/INTF/DDLS/DCLS/DDLX/BDEF/SRVD/TABL) write via /source/main. CLAS update: pass include=definitions|implementations|macros|testclasses for a local include; omit for source/main. ' +
+  'TABL/DTT: update technical settings with partial JSON source {dataClass,sizeCategory,buffering:{allowed:N/A/X,type:P/G/X/empty,areaKeyFields}}. Omitted fields and existing drafts are preserved. Activate separately; a new table needs TABL activation first. ' +
+  'TABL/DTI: secondary index name=TABLE~INDEX. Create inherits the parent table package; source is the complete source object from SAPRead. Update replaces the pending definition; activate separately. No automatic database conversion. ' +
   'Metadata-XML writes (not /source/main): DOMA/DTEL (dataType, length, fixedValues, typeKind, labels, searchHelp; deactivateInputHistory=true disables input history); MSAG (messages array of {number, shortText}); SRVB (serviceDefinition, odataVersion V2/V4, optional category 0=UI/1=Web API). ' +
   'SKTD/KTD (Markdown docs on a KTD-capable object; KTD aliases SKTD): create needs refObjectType (e.g. "DDLS/DF"); "name" MUST equal the parent name; update takes Markdown in source; then SAPActivate(type="SKTD"). ' +
   'edit_method: replace one CLAS method body via source. Local-class methods use the qualified specifier (e.g. "lhc_project~approve_project"); auto-routing lhc_*/lcl_* → implementations, ltc_* → testclasses (override with include=). ' +
   'batch_create: preflight all objects, then create+activate in dependency order; failures report per-object persistence. scaffold_rap_handlers / generate_behavior_implementation: derive RAP behavior-pool handlers from the BDEF (the latter auto-discovers via rootEntityRef and activates by default). ' +
   'ENQU: SAPRead JSON in source; create needs primaryTable. Entries need explicit lockMode/parameterWanted; update refuses lockParameters=[]. Then SAPActivate. ' +
+  'ENHO (BAdI impl): as ENQU; create needs enhancementSpot + badiImplementations[{name,badiDefinition,implementingClass,filter?}]; C1 BAdIs only; update replaces the list. ' +
   'Server-driven objects (discovery-gated): AFF JSON source (DTSC/DSFD/DTDC/DRTY: DDL); create/update/delete. APLO/UIAD save active; others need SAPActivate. SAJC/SAJT create require source.generalInformation.className/catalogName. ' +
   'Full per-type field reference: docs_page SAPWrite. ';
 

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import type { TextElementPart } from '../../../src/adt/text-elements.js';
+import type { SapWriteContext } from '../../../src/handlers/write/context.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 import { mockResponse } from '../../helpers/mock-fetch.js';
 import { createClient, mockFetch } from './setup-undici-mock.js';
 
 const { handleToolCall } = await import('../../../src/handlers/dispatch.js');
+const { writeActionDelete, writeActionEditTextSymbols } = await import('../../../src/handlers/write/update-delete.js');
 const LOCK =
   '<asx:abap xmlns:asx="http://www.sap.com/abapxml"><asx:values><DATA><LOCK_HANDLE>H/9</LOCK_HANDLE><CORRNR>DEVK900001</CORRNR></DATA></asx:values></asx:abap>';
 const calls = () => mockFetch.mock.calls as [string, RequestInit][];
@@ -144,18 +146,130 @@ describe('text elements routing and safety', () => {
   });
 
   it.each(['PROG', 'FUGR', 'CLAS'])('forwards an explicit empty %s symbols replacement', async (type) => {
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        mockResponse(
+          200,
+          String(url).includes('_action=LOCK')
+            ? LOCK
+            : String(url).includes('?version=inactive')
+              ? `<rept:textElement xmlns:rept="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZTEST" adtcore:type="${type === 'CLAS' ? 'CLAS/OCX' : `${type}/PX`}" adtcore:version="inactive"/>`
+              : '',
+          { 'x-csrf-token': 'T' },
+        ),
+      ),
+    );
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
       action: 'edit_text_symbols',
       type,
       name: 'ZTEST',
       source: '',
     });
-    expect(result.isError).toBeUndefined();
+    expect(result.isError).toBe(type === 'PROG' ? undefined : true);
+    if (type === 'PROG') {
+      expect(result.content[0]?.text).not.toContain('Updated and activated');
+      expect(result.content[0]?.text).toContain('never been activated');
+      expect(result.content[0]?.text).toContain('SAPActivate(type="PROG", name="ZTEST")');
+    } else if (type === 'FUGR') {
+      expect(result.content[0]?.text).toContain('text-pool activation requested');
+      expect(result.content[0]?.text).not.toContain('Updated and activated');
+    } else {
+      expect(result.content[0]?.text).toContain('SAP still reports the text pool inactive');
+      expect(result.content[0]?.text).not.toContain('Updated and activated');
+    }
     const put = calls().find(([, init]) => init?.method === 'PUT');
     expect(put?.[1]?.body).toBe('');
     expect(String(put?.[0])).toContain('corrNr=DEVK900001');
     expect(String(put?.[0])).toContain('lockHandle=H%2F9');
   });
+
+  it.each([
+    ['PROG', 'programs'],
+    ['FUGR', 'functiongroups'],
+    ['CLAS', 'classes'],
+  ] as const)('activates only the %s text pool after unlock in the same stateful session', async (type, collection) => {
+    await createClient().writeTextElementPart(type, '/ARC/TEST', 'symbols', '@MaxLength:20\n001=Hello');
+    const writes = mutations();
+    expect(writes).toHaveLength(4);
+    expect(writes[0]?.[0]).toContain('_action=LOCK');
+    expect(writes[1]?.[1].method).toBe('PUT');
+    expect(writes[2]?.[0]).toContain('_action=UNLOCK');
+    expect(writes[3]?.[0]).toContain('/activation?method=activate&preauditRequested=false');
+    expect(writes[3]?.[1].body).toContain(`/sap/bc/adt/textelements/${collection}/%2FARC%2FTEST`);
+    expect(String(writes[3]?.[1].body).match(/<adtcore:objectReference /g)).toHaveLength(1);
+    for (const [, request] of writes) {
+      expect(request.headers).toMatchObject({ 'X-sap-adt-sessiontype': 'stateful' });
+    }
+  });
+
+  it.each(['rejected', 'http', 'pending'])(
+    'reports saved but unconfirmed text activation on %s and invalidates caches',
+    async (failure) => {
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          String(url).includes('/activation')
+            ? mockResponse(
+                failure === 'http' ? 403 : 200,
+                failure === 'pending'
+                  ? '<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/adt/activation"><entry><object><ref uri="/sap/bc/adt/other" name="OTHER"/></object></entry></ioc:inactiveObjects>'
+                  : '<messages><msg type="E"><shortText><txt>Activation refused</txt></shortText></msg></messages>',
+              )
+            : mockResponse(200, String(url).includes('_action=LOCK') ? LOCK : '', { 'x-csrf-token': 'T' }),
+        ),
+      );
+      const invalidateWrittenObject = vi.fn();
+      const ctx = {
+        client: createClient(),
+        args: {},
+        type: 'PROG',
+        name: 'ZTEST',
+        source: '001=Hello',
+        hasSource: true,
+        enforcePackageForExistingObject: vi.fn().mockResolvedValue('$TMP'),
+        invalidateWrittenObject,
+      } as unknown as SapWriteContext;
+      await expect(writeActionEditTextSymbols(ctx)).rejects.toThrow(/saved.*activation.*not confirmed/i);
+      expect(invalidateWrittenObject).toHaveBeenCalledOnce();
+      // HTTP 403 has the transport's existing one-time CSRF refresh/retry.
+      expect(calls().filter(([url]) => String(url).includes('/activation'))).toHaveLength(failure === 'http' ? 2 : 1);
+      expect(calls().some(([url]) => String(url).includes('_action=UNLOCK'))).toBe(true);
+    },
+  );
+
+  it.each([false, true])(
+    'retains the saved-state hint through dispatch with minimalErrors=%s',
+    async (minimalErrors) => {
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          mockResponse(
+            200,
+            String(url).includes('/activation')
+              ? '<messages><msg type="E"><shortText><txt>Activation refused</txt></shortText></msg></messages>'
+              : String(url).includes('_action=LOCK')
+                ? LOCK
+                : '',
+            { 'x-csrf-token': 'T' },
+          ),
+        ),
+      );
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'PROG',
+        name: 'ZTEST',
+        source: '@MaxLength:20\n001=Hello',
+      });
+      expect(result.isError).toBe(true);
+      const message = result.content[0]?.text ?? '';
+      expect(message.match(/Text elements were saved, but activation was not confirmed\./g)).toHaveLength(1);
+      expect(message).toContain('Retry the same text write.');
+      if (minimalErrors) {
+        expect(message).not.toContain('Activation refused');
+        expect(message).toContain('ARC1_MINIMAL_ERRORS=true');
+      } else {
+        expect(message).toContain('Activation refused');
+      }
+    },
+  );
 
   it.each([undefined, null])('refuses an absent source (%s) without mutation', async (source) => {
     const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
@@ -253,6 +367,310 @@ describe('text elements routing and safety', () => {
       expect(String(lock?.[0])).toContain('/textelements/functiongroups/%2FARC%2FFG?');
       expect(String(unlock?.[0])).toContain('/textelements/functiongroups/%2FARC%2FFG?');
       expect(calls().indexOf(unlock!)).toBeGreaterThan(calls().indexOf(put!));
+      expect(calls().some(([url]) => String(url).includes('/activation'))).toBe(false);
+    },
+  );
+});
+
+describe('PROG/FUGR deletion preserves inactive text pools', () => {
+  const metadata = (type = 'PROG', name = 'ZTEST', version = 'active') =>
+    `<rept:textElement xmlns:rept="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="${name}" adtcore:type="${type}/PX" adtcore:version="${version}"/>`;
+  const mockSap = (body = metadata()) =>
+    mockFetch.mockImplementation((url: string) =>
+      Promise.resolve(
+        mockResponse(
+          200,
+          String(url).includes('_action=LOCK') ? LOCK : String(url).includes('?version=inactive') ? body : '',
+          { 'x-csrf-token': 'T' },
+        ),
+      ),
+    );
+  const del = (type = 'PROG', name = 'ZTEST', config = DEFAULT_CONFIG, client = createClient()) =>
+    handleToolCall(client, config, 'SAPWrite', { action: 'delete', type, name });
+  const steps = () =>
+    mutations().map(([url, init]) =>
+      String(url).includes('_action=') ? /_action=(\w+)/.exec(String(url))?.[1] : init.method,
+    );
+  beforeEach(() => vi.resetAllMocks());
+
+  it.each(['PROG', 'FUGR'])('deletes clean %s only after checking under both locks', async (type) => {
+    mockSap(metadata(type));
+    expect((await del(type)).isError).toBeUndefined();
+    expect(steps()).toEqual(['LOCK', 'LOCK', 'DELETE', 'UNLOCK', 'UNLOCK']);
+    const readIndex = calls().findIndex(([url]) => String(url).includes('?version=inactive'));
+    const poolLockIndex = calls().findIndex(
+      ([url]) => String(url).includes('/textelements/') && String(url).includes('_action=LOCK'),
+    );
+    const deleteIndex = calls().findIndex(([, init]) => init.method === 'DELETE');
+    expect(readIndex).toBeGreaterThan(poolLockIndex);
+    expect(deleteIndex).toBeGreaterThan(readIndex);
+    expect(String(calls()[deleteIndex]?.[0])).toContain('corrNr=DEVK900001');
+    expect(calls().some(([url]) => String(url).includes('/activation'))).toBe(false);
+  });
+
+  it.each(['PROG', 'FUGR'])(
+    'refuses %s with an inactive pool even when the caller feed would be empty',
+    async (type) => {
+      mockSap(metadata(type, 'ZTEST', 'inactive'));
+      const result = await del(type);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Review the draft with its author');
+      expect(steps()).toEqual(['LOCK', 'LOCK', 'UNLOCK', 'UNLOCK']);
+      expect(calls().some(([url]) => String(url).includes('/activation'))).toBe(false);
+    },
+  );
+
+  it('retains the actionable refusal with minimal errors', async () => {
+    mockSap(metadata('PROG', 'ZTEST', 'inactive'));
+    const result = await del('PROG', 'ZTEST', { ...DEFAULT_CONFIG, minimalErrors: true });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('explicitly activate the pool');
+    expect(result.content[0]?.text).toContain('first owner activation');
+  });
+
+  it.each([
+    '',
+    '<html>login</html>',
+    metadata('PROG', 'OTHER'),
+    metadata('FUGR'),
+    metadata('PROG', 'ZTEST', 'unknown'),
+    '<textElement/>',
+    '<textElement name="ZTEST" type="PROG/PX" version="active"/>'.repeat(2),
+  ])('fails closed on unverified metadata: %s', async (body) => {
+    mockSap(body);
+    expect((await del()).isError).toBe(true);
+    expect(steps()).toEqual(['LOCK', 'LOCK', 'UNLOCK', 'UNLOCK']);
+  });
+
+  it.each([403, 404, 406, 500])('preserves owner on advertised pool HTTP %i', async (status) => {
+    mockSap();
+    const sap = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+      String(url).includes('?version=inactive')
+        ? Promise.resolve(mockResponse(status, '<exception><message>Failed</message></exception>'))
+        : sap(url, init),
+    );
+    const result = await del();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).not.toContain('rejected DELETE');
+    expect(steps()).toEqual(['LOCK', 'LOCK', 'UNLOCK', 'UNLOCK']);
+  });
+
+  it.each(['owner lock', 'pool lock', 'delete'])('releases acquired locks when %s fails', async (failure) => {
+    mockSap();
+    const sap = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      const pool = String(url).includes('/textelements/');
+      const fail =
+        failure === 'delete'
+          ? init?.method === 'DELETE'
+          : String(url).includes('_action=LOCK') && (failure === 'pool lock' ? pool : !pool);
+      return fail
+        ? Promise.resolve(mockResponse(423, '<exception><message>Locked</message></exception>'))
+        : sap(url, init);
+    });
+    expect((await del()).isError).toBe(true);
+    expect(steps()).toEqual(
+      failure === 'owner lock'
+        ? ['LOCK']
+        : failure === 'pool lock'
+          ? ['LOCK', 'LOCK', 'UNLOCK']
+          : ['LOCK', 'LOCK', 'DELETE', 'UNLOCK', 'UNLOCK'],
+    );
+  });
+
+  it('tolerates pool removal during successful owner deletion', async () => {
+    mockSap();
+    const sap = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) =>
+      String(url).includes('_action=UNLOCK')
+        ? Promise.resolve(mockResponse(404, '<exception><message>Gone</message></exception>'))
+        : sap(url, init),
+    );
+    expect((await del()).isError).toBeUndefined();
+  });
+
+  it.each(['PROG', 'FUGR'])('retains legacy %s deletion when discovery proves the collection absent', async (type) => {
+    mockSap();
+    const client = createClient();
+    client.http.setDiscoveryMap(new Map([['/sap/bc/adt/programs/programs', ['text/plain']]]));
+    expect((await del(type, 'ZTEST', DEFAULT_CONFIG, client)).isError).toBeUndefined();
+    expect(steps()).toEqual(['LOCK', 'DELETE', 'UNLOCK']);
+    expect(calls().some(([url]) => String(url).includes('/textelements/'))).toBe(false);
+  });
+
+  it.each(['PROG', 'FUGR'])('encodes a namespaced %s pool name', async (type) => {
+    mockSap(metadata(type, '/ARC/TEST'));
+    expect((await del(type, '/ARC/TEST')).isError).toBeUndefined();
+    expect(calls().find(([url]) => String(url).includes('?version=inactive'))?.[0]).toContain('/%2FARC%2FTEST?');
+  });
+
+  it.each(['write ceiling', 'delete deny', 'package'])(
+    'refuses a denied %s before locking either object',
+    async (gate) => {
+      mockSap();
+      const client = createClient();
+      if (gate === 'write ceiling') client.safety.allowWrites = false;
+      if (gate === 'package') {
+        client.safety.allowedPackages = ['$TMP'];
+        mockFetch.mockResolvedValue(mockResponse(200, '<object><packageRef name="ZPROTECTED"/></object>'));
+      }
+      expect(
+        (
+          await del(
+            'PROG',
+            'ZTEST',
+            { ...DEFAULT_CONFIG, denyActions: gate === 'delete deny' ? ['SAPWrite.delete'] : [] },
+            client,
+          )
+        ).isError,
+      ).toBe(true);
+      expect(mutations()).toHaveLength(0);
+    },
+  );
+
+  it('does not invalidate unchanged object caches on an inactive-pool refusal', async () => {
+    mockSap(metadata('PROG', 'ZTEST', 'inactive'));
+    const invalidateWrittenObject = vi.fn();
+    const ctx = {
+      client: createClient(),
+      type: 'PROG',
+      name: 'ZTEST',
+      objectUrl: '/sap/bc/adt/programs/programs/ztest',
+      enforcePackageForExistingObject: vi.fn().mockResolvedValue('$TMP'),
+      invalidateWrittenObject,
+    } as unknown as SapWriteContext;
+    await expect(writeActionDelete(ctx)).rejects.toMatchObject({ statusCode: 409 });
+    expect(invalidateWrittenObject).not.toHaveBeenCalled();
+  });
+
+  it('does not add pool requests to CLAS deletion', async () => {
+    mockSap();
+    expect((await del('CLAS')).isError).toBeUndefined();
+    expect(steps()).toEqual(['LOCK', 'DELETE', 'UNLOCK']);
+  });
+});
+
+describe('text-part removal reports', () => {
+  const before = 'P_TEST  =Original label\r\n\r\n@DDICReference\r\nP_USER  =User Name\r\n\r\nP_EMPTY =?...';
+  const after = 'P_USER  =Fixed name\r\n\r\nP_TEST  =?...\r\n\r\nP_EMPTY =?...';
+
+  function mockPart(old: string, next: string, failure?: 'before' | 'put' | 'after' | 'unlock' | 'activation') {
+    let reads = 0;
+    mockFetch.mockImplementation((url: string, init?: RequestInit) => {
+      const path = String(url);
+      const method = init?.method ?? 'GET';
+      if (path.includes('_action=LOCK')) return Promise.resolve(mockResponse(200, LOCK));
+      let fail = false;
+      let body = path.includes('?version=inactive')
+        ? '<rept:textElement xmlns:rept="http://www.sap.com/adt/textelements" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZTEST" adtcore:type="PROG/PX" adtcore:version="active"/>'
+        : '';
+      if (path.includes('/source/') && method === 'GET') {
+        reads++;
+        body = reads === 1 ? old : next;
+        fail = failure === (reads === 1 ? 'before' : 'after');
+      }
+      if (method === 'PUT') fail = failure === 'put';
+      if (path.includes('_action=UNLOCK')) fail = failure === 'unlock';
+      if (path.includes('/activation')) fail = failure === 'activation';
+      return Promise.resolve(
+        mockResponse(fail ? 400 : 200, fail ? '<exception><message>Denied</message></exception>' : body, {
+          'x-csrf-token': 'T',
+        }),
+      );
+    });
+  }
+  const write = (source = 'p_user=Fixed name', minimalErrors = false, part = 'selections') =>
+    handleToolCall(createClient(), { ...DEFAULT_CONFIG, allowWrites: true, minimalErrors }, 'SAPWrite', {
+      action: 'edit_text_symbols',
+      type: 'PROG',
+      name: 'ZTEST',
+      textPart: part,
+      source,
+    });
+  const steps = () =>
+    calls()
+      .filter(([url]) => /textelements|\/activation/.test(String(url)))
+      .map(([url, init]) =>
+        String(url).includes('_action=LOCK')
+          ? 'LOCK'
+          : String(url).includes('_action=UNLOCK')
+            ? 'UNLOCK'
+            : String(url).includes('/activation')
+              ? 'ACTIVATE'
+              : (init?.method ?? 'GET'),
+      );
+
+  beforeEach(() => vi.resetAllMocks());
+
+  it('uses canonical SAP read-back for lowercase input and reports only actual losses', async () => {
+    mockPart(before, after);
+    const result = await write();
+    expect(result.isError).toBeUndefined();
+    const message = result.content[0]?.text;
+    expect(message).toContain('Removed texts: P_TEST.');
+    expect(message).toContain('Removed dictionary references: P_USER.');
+    expect(message).toContain('resend the previous complete part');
+    expect(message).not.toContain('Removed texts: P_USER');
+    expect(message).not.toContain('P_EMPTY');
+    expect(steps()).toEqual(['LOCK', 'GET', 'PUT', 'GET', 'UNLOCK', 'ACTIVATE', 'GET']);
+    for (const [, request] of calls().filter(([url]) => String(url).includes('/textelements/'))) {
+      expect(request.headers).toMatchObject({ 'X-sap-adt-sessiontype': 'stateful' });
+    }
+  });
+
+  it('does not claim a removed dictionary label became fixed text', async () => {
+    mockPart(before, 'P_USER=?...\nP_TEST=Original label\nP_EMPTY=?...');
+    const result = await write('P_TEST=Original label');
+    expect(result.content[0]?.text).toContain('Removed texts: P_USER.');
+    expect(result.content[0]?.text).toContain('Removed dictionary references: P_USER.');
+    expect(result.content[0]?.text).not.toContain('fixed text');
+  });
+
+  it('does not add a report when SAP retains every text and dictionary reference', async () => {
+    mockPart(before, before.replace('Original label', 'Changed label'));
+    const result = await write('p_test=Changed label\n@DDICReference\np_user=');
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).not.toMatch(/Removed|restore/);
+  });
+
+  it.each([
+    ['symbols', '@MaxLength:20\n001=First\n\n@MaxLength:20\n002=', '', '001, 002'],
+    ['symbols', '@MaxLength:20\n001=First', '@MaxLength:20\n001=', '001'], // SAP retains the emptied key.
+    [
+      'headings',
+      'listHeader=Header\ncolumnHeader_1=First\ncolumnHeader_2=',
+      'listHeader=\ncolumnHeader_1=First\ncolumnHeader_2=',
+      'listHeader',
+    ],
+    ['selections', before, 'P_TEST=?...\nP_USER=?...\nP_EMPTY=?...', 'P_TEST, P_USER'],
+    ['selections', before, 'P_USER=Fixed name', 'P_TEST'], // FUGR omits removed keys.
+  ])('reports cleared %s entries and ignores empty placeholders', async (part, old, next, keys) => {
+    mockPart(old, next);
+    const result = await write(next, false, part);
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0]?.text).toContain(`Removed texts: ${keys}.`);
+  });
+
+  it.each(['before', 'put'] as const)('unlocks on %s failure without claiming a saved replacement', async (failure) => {
+    mockPart(before, after, failure);
+    const result = await write();
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).not.toMatch(/were saved|Removed texts/);
+    expect(steps()).toEqual(failure === 'before' ? ['LOCK', 'GET', 'UNLOCK'] : ['LOCK', 'GET', 'PUT', 'UNLOCK']);
+  });
+
+  it.each(['after', 'unlock', 'activation'] as const)(
+    'keeps saved state on %s failure, even with minimal errors',
+    async (failure) => {
+      mockPart(before, after, failure);
+      const result = await write(undefined, true);
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Text elements were saved');
+      if (failure !== 'after') expect(result.content[0]?.text).toContain('Removed texts: P_TEST.');
+      else expect(result.content[0]?.text).not.toContain('Removed texts:');
+      expect(steps().includes('ACTIVATE')).toBe(failure === 'activation');
+      expect(steps()).toContain('UNLOCK');
     },
   );
 });
