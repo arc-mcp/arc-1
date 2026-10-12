@@ -16,7 +16,8 @@ gaps before the follow-up. Its shortened grep guidance is restored.
   banner; `include=main` follows the main source path.
 - Accept only documented single-source types and plain text. Reject competing
   modes before SAP access. FUGR expansion and multi-node KTD need a separate
-  numbering contract, so they are outside this change.
+  numbering contract, so they are outside this change. SRVB and classic VIEW
+  return metadata rather than source and are also excluded.
 - Keep draft/version warnings and cache indicators outside the numbered source.
   Keep schemas, descriptions, examples and snapshot fixtures aligned.
 

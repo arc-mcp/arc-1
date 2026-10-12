@@ -127,7 +127,7 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 // TABL/DTT and TABL/DTI add separate settings/index write guidance.
 // Retain existing model guidance; allow 23,550 for the full on-prem tool set (23,517 measured combined). Other wire ceilings stay unchanged.
 // #585 adds two source-window parameters without shortening existing guidance.
-// Full surface: 74,299 bytes; retain a 74,500-byte ceiling.
+// Full surface: 74,287 bytes; retain a 74,500-byte ceiling.
 const WRITE_WIRE_WALL = 74_500;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 23_000;

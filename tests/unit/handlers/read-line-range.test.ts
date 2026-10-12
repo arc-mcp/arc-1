@@ -17,6 +17,8 @@ describe('line-range mode boundaries', () => {
     { type: 'FUGR' },
     { type: 'SKTD' },
     { type: 'DOMA' },
+    { type: 'SRVB' },
+    { type: 'VIEW' },
     { type: 'TABLE_CONTENTS' },
     { type: 'CLAS', include: 'text_symbols' },
     { type: 'TABL', include: 'indexes' },

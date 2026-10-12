@@ -104,7 +104,7 @@
         "lineStart": {
           "type": "integer",
           "minimum": 1,
-          "description": "First source line (1-based, inclusive); requires lineEnd. Text reads only: CLAS, INTF, DDLS, DCLS, BDEF, SRVD, DDLX, SRVB, TABL. Supports CLAS include; incompatible with grep, method, diff, structured/editable output and signature/element extraction."
+          "description": "First source line (1-based, inclusive); requires lineEnd. Text reads only: CLAS, INTF, DDLS, DCLS, BDEF, SRVD, DDLX, TABL. Supports CLAS include; incompatible with grep, method, diff, structured/editable output and signature/element extraction."
         },
         "lineEnd": {
           "type": "integer",

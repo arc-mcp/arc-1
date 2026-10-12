@@ -475,8 +475,8 @@ export function getToolDefinitions(
             type: 'integer',
             minimum: 1,
             description:
-              'First source line (1-based, inclusive); requires lineEnd. Text reads only: CLAS, INTF, DDLS, DCLS, BDEF, SRVD, DDLX, SRVB, TABL' +
-              (btp ? '' : ', PROG, FUNC, INCL, VIEW') +
+              'First source line (1-based, inclusive); requires lineEnd. Text reads only: CLAS, INTF, DDLS, DCLS, BDEF, SRVD, DDLX, TABL' +
+              (btp ? '' : ', PROG, FUNC, INCL') +
               '. Supports CLAS include; incompatible with grep, method, diff, structured/editable output and signature/element extraction.',
           },
           lineEnd: {

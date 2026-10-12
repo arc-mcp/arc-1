@@ -181,23 +181,7 @@ export async function handleSAPRead(
     const end = Number(args.lineEnd);
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start)
       return errorResult('lineStart and lineEnd must be positive integers with lineStart <= lineEnd.');
-    if (
-      ![
-        'PROG',
-        'CLAS',
-        'INTF',
-        'FUNC',
-        'INCL',
-        'DDLS',
-        'DCLS',
-        'BDEF',
-        'SRVD',
-        'DDLX',
-        'SRVB',
-        'TABL',
-        'VIEW',
-      ].includes(type)
-    )
+    if (!['PROG', 'CLAS', 'INTF', 'FUNC', 'INCL', 'DDLS', 'DCLS', 'BDEF', 'SRVD', 'DDLX', 'TABL'].includes(type))
       return errorResult(`Line ranges are not supported for ${type}; read a single source object instead.`);
     for (const option of ['grep', 'method', 'action'] as const) {
       if (args[option] !== undefined) return errorResult(`Do not combine lineStart/lineEnd with ${option}.`);
