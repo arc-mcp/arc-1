@@ -21,6 +21,7 @@ describe('line-range mode boundaries', () => {
     { type: 'VIEW' },
     { type: 'TABLE_CONTENTS' },
     { type: 'CLAS', include: 'text_symbols' },
+    { type: 'CLAS', include: 'definitions,implementations' },
     { type: 'TABL', include: 'indexes' },
     { type: 'DDLS', include: 'elements' },
     { type: 'CLAS', format: 'structured' },
@@ -279,4 +280,17 @@ describe('line windows with source versions and caching', () => {
       expect(result.content[0]?.text?.startsWith('[cached:revalidated]')).toBe(line === 3);
     }
   });
+});
+
+it('identifies a missing class include without claiming the whole class is absent', async () => {
+  mockFetch.mockResolvedValue(mockResponse(404, '<error>not found</error>'));
+  const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+    type: 'CLAS',
+    name: 'ZTEST',
+    include: 'testclasses',
+    lineStart: 1,
+    lineEnd: 2,
+  });
+  expect(result.isError).toBe(true);
+  expect(result.content[0]?.text).toContain('CLAS ZTEST include testclasses');
 });

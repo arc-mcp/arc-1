@@ -472,10 +472,18 @@ export async function handleSAPRead(
         );
         return cachedTextResult(source, cacheHit, revalidated, versionWarning);
       }
-      const includeResult = hasLineRange
-        ? await client.getClassInclude(name, String(args.include).toLowerCase(), { version: effectiveVersion })
-        : await client.getClass(name, args.include as string | undefined, { version: effectiveVersion });
-      return cachedTextResult(includeResult.source, false, false, versionWarning);
+      try {
+        const includeResult = hasLineRange
+          ? await client.getClassInclude(name, String(args.include).toLowerCase(), { version: effectiveVersion })
+          : await client.getClass(name, args.include as string | undefined, { version: effectiveVersion });
+        return cachedTextResult(includeResult.source, false, false, versionWarning);
+      } catch (err) {
+        if (hasLineRange && isNotFoundError(err))
+          return errorResult(
+            `No source found for CLAS ${name} include ${args.include}. Check the class name and include.`,
+          );
+        throw err;
+      }
     }
     case 'INTF': {
       const { source, cacheHit, revalidated } = await cachedGet('INTF', name, effectiveVersion, (ifNoneMatch) =>
