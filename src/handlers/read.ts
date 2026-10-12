@@ -173,6 +173,45 @@ export async function handleSAPRead(
   const name = String(args.name ?? '');
   const requestedVersion = (args.version ?? 'active') as RequestedSourceVersion;
 
+  const hasLineRange = args.lineStart !== undefined || args.lineEnd !== undefined;
+  if (hasLineRange) {
+    if (args.lineStart === undefined || args.lineEnd === undefined)
+      return errorResult('Both lineStart and lineEnd are required.');
+    const start = Number(args.lineStart);
+    const end = Number(args.lineEnd);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end < start)
+      return errorResult('lineStart and lineEnd must be positive integers with lineStart <= lineEnd.');
+    if (
+      ![
+        'PROG',
+        'CLAS',
+        'INTF',
+        'FUNC',
+        'INCL',
+        'DDLS',
+        'DCLS',
+        'BDEF',
+        'SRVD',
+        'DDLX',
+        'SRVB',
+        'TABL',
+        'VIEW',
+      ].includes(type)
+    )
+      return errorResult(`Line ranges are not supported for ${type}; read a single source object instead.`);
+    for (const option of ['grep', 'method', 'action'] as const) {
+      if (args[option] !== undefined) return errorResult(`Do not combine lineStart/lineEnd with ${option}.`);
+    }
+    if (
+      (args.format !== undefined && args.format !== 'text') ||
+      args.includeSignature === true ||
+      args.expand_includes === true
+    )
+      return errorResult('Line ranges require a plain source read; omit format, includeSignature and expand_includes.');
+    if (args.include !== undefined && (type !== 'CLAS' || String(args.include).toLowerCase() === 'text_symbols'))
+      return errorResult('Line ranges support include only for a CLAS source section.');
+  }
+
   if (type === 'SYNTAX')
     return handleSyntaxCheck(client, { type: args.objectType, name, version: args.version, source: args.source });
 
@@ -311,6 +350,13 @@ export async function handleSAPRead(
 
   /** Prepend draft-awareness notes and cache indicator when the server revalidated a cached source. */
   const cachedTextResult = (source: string, cacheHit: boolean, revalidated: boolean, warning?: string): ToolResult => {
+    if (hasLineRange) {
+      const range = readLineRange(source, Number(args.lineStart), Number(args.lineEnd));
+      if (range.invalidRange) return errorResult(range.output);
+      const section = type === 'CLAS' ? `[${name} section=${String(args.include ?? 'main').toLowerCase()}]\n` : '';
+      source = section + range.output;
+    }
+
     const note = warning ? `${warning}\n\n` : '';
     const indicator = cacheHit && revalidated ? '[cached:revalidated]\n' : '';
     return textResult(`${note}${indicator}${source}`);
@@ -322,30 +368,11 @@ export async function handleSAPRead(
     return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
   };
 
-  /** When args.lineStart is set, return only that 1-based inclusive line window instead of full source. */
-  const lineRangeText = (source: string): ToolResult => {
-    const r = readLineRange(source, Number(args.lineStart), Number(args.lineEnd));
-    return r.invalidRange ? errorResult(r.output) : textResult(r.output);
-  };
-
   // Structured ordinary reads: class metadata or a package listing envelope.
   if (args.format === 'structured' && type !== 'CLAS' && type !== 'DEVC') {
     return errorResult(
       'For ordinary reads, format="structured" supports CLAS and DEVC. Retry this read with format="text" or omit format; DDIC metadata is returned by its normal reader.',
     );
-  }
-
-  // lineStart/lineEnd is a raw-line-window narrowing mode, mutually exclusive with grep
-  // (both are competing narrowing modes; combining them is ambiguous about which wins).
-  if (args.lineStart !== undefined || args.lineEnd !== undefined) {
-    if (args.lineStart === undefined || args.lineEnd === undefined) {
-      return errorResult('Both lineStart and lineEnd are required when using a line-range read.');
-    }
-    if (args.grep) {
-      return errorResult(
-        'Do not combine lineStart/lineEnd with grep. Use grep to find code, then lineStart/lineEnd to read the surrounding raw lines.',
-      );
-    }
   }
 
   switch (type) {
@@ -354,7 +381,6 @@ export async function handleSAPRead(
         client.getProgram(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'CLAS': {
@@ -396,39 +422,6 @@ export async function handleSAPRead(
         return g.invalidPattern
           ? errorResult(g.output)
           : textResult(`[${name} section=${rawSection ?? 'main'}]\n${g.output}`);
-      }
-      // lineStart/lineEnd: return only that raw line window instead of full source.
-      if (args.lineStart !== undefined) {
-        if (args.method) {
-          return errorResult(
-            'Do not combine lineStart/lineEnd with method. Use lineStart/lineEnd for a raw line window, or method="<name>" for a full method read.',
-          );
-        }
-        const rawSection = args.include as string | undefined;
-        const section = rawSection && rawSection.toLowerCase() !== 'main' ? rawSection : undefined;
-        let clasSource: string;
-        if (section) {
-          try {
-            clasSource = (await client.getClassInclude(name, section, { version: effectiveVersion })).source;
-          } catch (err) {
-            if (isNotFoundError(err)) {
-              return textResult(
-                `Include "${section}" is not available for class ${name}. Run lineStart/lineEnd without include= to read from the full class source.`,
-              );
-            }
-            throw err;
-          }
-        } else {
-          clasSource = (
-            await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
-              client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
-            )
-          ).source;
-        }
-        const r = readLineRange(clasSource, Number(args.lineStart), Number(args.lineEnd));
-        return r.invalidRange
-          ? errorResult(r.output)
-          : textResult(`[${name} section=${rawSection ?? 'main'}]\n${r.output}`);
       }
       // Structured format: return JSON with metadata + decomposed source
       if (args.format === 'structured') {
@@ -489,15 +482,15 @@ export async function handleSAPRead(
         return cachedTextResult(extracted.methodSource, false, false, versionWarning);
       }
       // Only cache the full merged source (no include param), not individual includes
-      if (!args.include) {
+      if (!args.include || (hasLineRange && String(args.include).toLowerCase() === 'main')) {
         const { source, cacheHit, revalidated } = await cachedGet('CLAS', name, effectiveVersion, (ifNoneMatch) =>
           client.getClass(name, undefined, { ifNoneMatch, version: effectiveVersion }),
         );
         return cachedTextResult(source, cacheHit, revalidated, versionWarning);
       }
-      const includeResult = await client.getClass(name, args.include as string | undefined, {
-        version: effectiveVersion,
-      });
+      const includeResult = hasLineRange
+        ? await client.getClassInclude(name, String(args.include).toLowerCase(), { version: effectiveVersion })
+        : await client.getClass(name, args.include as string | undefined, { version: effectiveVersion });
       return cachedTextResult(includeResult.source, false, false, versionWarning);
     }
     case 'INTF': {
@@ -505,7 +498,6 @@ export async function handleSAPRead(
         client.getInterface(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUNC': {
@@ -558,7 +550,6 @@ export async function handleSAPRead(
         return textResult(toolJson(payload));
       }
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'FUGR': {
@@ -599,7 +590,6 @@ export async function handleSAPRead(
         client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DDLS': {
@@ -621,7 +611,6 @@ export async function handleSAPRead(
         return cachedTextResult(extractCdsElements(ddlSource, name), false, false, versionWarning);
       }
       if (args.grep) return grepText(ddlSource);
-      if (args.lineStart !== undefined) return lineRangeText(ddlSource);
       return cachedTextResult(ddlSource, cacheHit, revalidated, versionWarning);
     }
     case 'DCLS': {
@@ -629,7 +618,6 @@ export async function handleSAPRead(
         client.getDcl(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'BDEF': {
@@ -637,7 +625,6 @@ export async function handleSAPRead(
         client.getBdef(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'SRVD': {
@@ -645,7 +632,6 @@ export async function handleSAPRead(
         client.getSrvd(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DDLX': {
@@ -654,7 +640,6 @@ export async function handleSAPRead(
           client.getDdlx(name, { ifNoneMatch, version: effectiveVersion }),
         );
         if (args.grep) return grepText(source);
-        if (args.lineStart !== undefined) return lineRangeText(source);
         return cachedTextResult(source, cacheHit, revalidated, versionWarning);
       } catch (err) {
         if (isNotFoundError(err)) {
@@ -683,7 +668,6 @@ export async function handleSAPRead(
         // be pasted into SAPWrite. Grep searches the stored Markdown without escapes.
         const markdown = decodeKtdText(source, { routeSafe: !args.grep });
         if (args.grep) return grepText(markdown);
-        if (args.lineStart !== undefined) return lineRangeText(markdown);
         // List copyable names for every writable node, including empty nodes omitted from Markdown.
         // The labels use the same resolver as SAPWrite.
         const index = formatKtdNodeIndex(source);
@@ -718,7 +702,6 @@ export async function handleSAPRead(
         client.getTabl(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'VIEW': {
@@ -726,7 +709,6 @@ export async function handleSAPRead(
         client.getView(name, { ifNoneMatch, version: effectiveVersion }),
       );
       if (args.grep) return grepText(source);
-      if (args.lineStart !== undefined) return lineRangeText(source);
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DOMA': {

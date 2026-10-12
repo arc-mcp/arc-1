@@ -126,7 +126,9 @@ const FULL_ACCESS_CONFIG: ServerConfig = {
 // batches: 72,561 measured bytes, preserving evaluated guidance with 1,439 bytes of headroom.
 // TABL/DTT and TABL/DTI add separate settings/index write guidance.
 // Retain existing model guidance; allow 23,550 for the full on-prem tool set (23,517 measured combined). Other wire ceilings stay unchanged.
-const WRITE_WIRE_WALL = 74_000;
+// #585 adds two source-window parameters without shortening existing guidance.
+// Full surface: 74,299 bytes; retain a 74,500-byte ceiling.
+const WRITE_WIRE_WALL = 74_500;
 const READ_WIRE_WALL = 50_000;
 const PER_TOOL_WIRE_WALL = 23_000;
 
@@ -180,7 +182,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       // Post-trim: read-only surface measured ~43.3 KB / ~10.8k schema tokens / 164 descriptions.
       // Package CI adds five bounded controls; description trims retain pre-CI token ratchets.
-      // The 50 KB read and 74 KB write wire ceilings are unchanged.
+      // The read wire ceiling is unchanged; source-window growth is recorded above.
       schemaTokenEstimate: 12_000,
       descriptionTokenEstimate: 8_800,
       descriptionCount: 188,
@@ -206,7 +208,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 17_700 -> 17_800 and descriptions 265 -> 270 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined automatic relations + ATC batches; same budgets with explicit discovery below.
-      schemaTokenEstimate: 18_500,
+      schemaTokenEstimate: 18_625,
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
       descriptionCount: 281,
@@ -224,8 +226,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Raised 16_800 -> 16_900 and descriptions 260 -> 265 for structured KTD shortTexts while
       // retaining refObjectDescription guidance. Wire ceilings remain unchanged.
       // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
-      schemaTokenEstimate: 17_500,
-
+      schemaTokenEstimate: 17_650,
       descriptionTokenEstimate: 12_200,
       descriptionCount: 275,
       maxTotalWireBytes: WRITE_WIRE_WALL,
@@ -266,7 +267,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: LIVE_RELATIONS_FEATURES,
     budget: {
-      schemaTokenEstimate: 18_500,
+      schemaTokenEstimate: 18_625,
       descriptionTokenEstimate: 12_800,
       descriptionCount: 281,
       maxTotalWireBytes: WRITE_WIRE_WALL,
@@ -279,8 +280,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     textSearchAvailable: true,
     resolvedFeatures: { ...LIVE_RELATIONS_FEATURES, systemType: 'btp' },
     budget: {
-      schemaTokenEstimate: 17_500,
-
+      schemaTokenEstimate: 17_650,
       descriptionTokenEstimate: 12_200,
       descriptionCount: 275,
       maxTotalWireBytes: WRITE_WIRE_WALL,

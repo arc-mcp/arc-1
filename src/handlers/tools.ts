@@ -466,16 +466,24 @@ export function getToolDefinitions(
             maxLength: MAX_GREP_PATTERN_LENGTH,
             description:
               'Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. ' +
-              'For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section; do NOT combine with method=. ' +
-              'Falls back to a literal search when the pattern is not valid regex.',
+              'For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section, but do NOT combine with method= (use grep to find, then method= to read). ' +
+              'Works for source-bearing types (CLAS, INTF, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL' +
+              (btp ? '' : ', PROG, FUNC, FUGR, INCL, VIEW') +
+              '). Falls back to a literal search when the pattern is not valid regex.',
           },
           lineStart: {
-            type: 'number',
-            description: 'Start line (1-based); pairs with lineEnd, not with grep/method.',
+            type: 'integer',
+            minimum: 1,
+            description:
+              'First source line (1-based, inclusive); requires lineEnd. Text reads only: CLAS, INTF, DDLS, DCLS, BDEF, SRVD, DDLX, SRVB, TABL' +
+              (btp ? '' : ', PROG, FUNC, INCL, VIEW') +
+              '. Supports CLAS include; incompatible with grep, method, diff, structured/editable output and signature/element extraction.',
           },
           lineEnd: {
-            type: 'number',
-            description: 'End line (1-based); pairs with lineStart.',
+            type: 'integer',
+            minimum: 1,
+            description:
+              'Last source line (inclusive); requires lineStart. Clamped to the source end; a start beyond the source is an error.',
           },
           ...(btp
             ? {}

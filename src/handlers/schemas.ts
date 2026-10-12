@@ -260,9 +260,9 @@ export const SAPReadSchema = z
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
-    lineStart: z.coerce.number().int().optional(),
+    lineStart: z.coerce.number().int().positive().optional(),
     /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
-    lineEnd: z.coerce.number().int().optional(),
+    lineEnd: z.coerce.number().int().positive().optional(),
     expand_includes: looseOptionalBoolean,
     format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep omission observable: source handlers still default it to active, while DTEL/ENQU
@@ -305,9 +305,9 @@ export const SAPReadSchemaBtp = z
     method: z.string().optional(),
     grep: z.string().max(MAX_GREP_PATTERN_LENGTH).optional(),
     /** 1-based, inclusive start line for a raw line-range read. Requires lineEnd; mutually exclusive with grep. */
-    lineStart: z.coerce.number().int().optional(),
+    lineStart: z.coerce.number().int().positive().optional(),
     /** 1-based, inclusive end line for a raw line-range read. Clamped to the source's last line. */
-    lineEnd: z.coerce.number().int().optional(),
+    lineEnd: z.coerce.number().int().positive().optional(),
     format: z.enum(['text', 'structured', 'editable']).optional(),
     // Keep this aligned with the on-prem schema; the handler owns the per-type default.
     version: z.enum(['active', 'inactive', 'auto']).optional(),
