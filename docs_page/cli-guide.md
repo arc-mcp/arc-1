@@ -518,3 +518,15 @@ Writes local JSON and HTML evidence through the configured connection and existi
 Add `--syntax` or `--context` for bounded current-source checks. Exit 0 means complete collection;
 check outcomes are separate and this is not a release verdict. See [Transport reviews](review-workflows.md)
 for comparison modes, coverage gaps, limits and examples.
+
+## SQL notebooks
+
+```bash
+arc1-cli notebook import Flight_Capacity_Showcase.abapsql --destination A4H2023-2 --target dev --out flight.notebook.json
+arc1-cli notebook run flight.notebook.json --target dev --output-dir runs/flight-01
+```
+
+Import creates a document without SAP calls. Run maps the logical target to the configured connection,
+preserves existing SAPQuery policy checks, and saves local JSON/HTML evidence. Rows are excluded unless
+`--include-results` is explicit. See [SQL notebooks](sql-notebooks.md) for scalar assertions, outcomes
+and bounds.

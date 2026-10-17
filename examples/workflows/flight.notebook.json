@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "title": "Flight capacity sanity check",
+  "cells": [
+    {
+      "id": "cell-1-2e96c9bf",
+      "kind": "markdown",
+      "value": "# Flight capacity at a glance\n**SAP S/4HANA 2023 \u00b7 ADT for VS Code 1.2 \u00b7 SQL Notebook**\n\nJoin, aggregate and explore SAP flight demo data directly in the editor.",
+      "imported": {}
+    },
+    {
+      "id": "cell-2-baaa37d3",
+      "kind": "sql",
+      "value": "SELECT FROM /dmo/flight AS f\n  INNER JOIN /dmo/carrier AS c ON c~carrier_id = f~carrier_id\n  FIELDS c~name AS Airline, COUNT( * ) AS Flights,\n         SUM( f~seats_max ) AS Capacity,\n         SUM( f~seats_occupied ) AS Booked,\n         DIVISION( SUM( f~seats_occupied ) * 100,\n                   SUM( f~seats_max ), 1 ) AS Occupancy_pct\n  GROUP BY c~name\n  ORDER BY Occupancy_pct DESCENDING",
+      "target": "dev",
+      "maxRows": 20,
+      "imported": {
+        "destination": "A4H2023-2",
+        "rowNumber": 20
+      },
+      "assertion": {
+        "sql": "SELECT COUNT( * ) AS N FROM /DMO/FLIGHT WHERE seats_occupied < 0",
+        "column": "N",
+        "equals": "0 "
+      }
+    }
+  ],
+  "imported": {}
+}

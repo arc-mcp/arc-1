@@ -1,0 +1,29 @@
+{
+  "provenance": "Read-only SAPQuery on SAP_BASIS 758 SP02, HTTPS 443/client 001, 2026-10-17; /DMO demo data only.",
+  "queries": [
+    {
+      "totalRows": 0,
+      "queryExecutionTimeMs": 3.293,
+      "executedQueryString": "SELECT COUNT( * ) AS N FROM /DMO/FLIGHT WHERE SEATS_OCCUPIED < 0   INTO   @LS_RESULT    .",
+      "rowsReturned": 1,
+      "columns": ["N"],
+      "rows": [
+        {
+          "N": "0 "
+        }
+      ]
+    },
+    {
+      "totalRows": 40,
+      "queryExecutionTimeMs": 23.72,
+      "executedQueryString": "SELECT COUNT( * ) AS N FROM /DMO/FLIGHT   INTO   @LS_RESULT    .",
+      "rowsReturned": 1,
+      "columns": ["N"],
+      "rows": [
+        {
+          "N": "40 "
+        }
+      ]
+    }
+  ]
+}

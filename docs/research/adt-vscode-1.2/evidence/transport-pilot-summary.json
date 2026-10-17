@@ -1,0 +1,220 @@
+{
+  "sourceRevision": "56c1d5186f3f3d48f134842ef11f2b19a15e5c6b",
+  "productRevision": "f7598c3338bff11711f70b0336d93682039831e0",
+  "date": "2026-10-17",
+  "release": "SAP_BASIS 758 SP02",
+  "route": "local CLI, HTTPS 443, client 001, Basic, mutations disabled",
+  "requests": [
+    {
+      "request": "A4HK905229",
+      "mode": "active",
+      "status": "partial",
+      "objects": 9,
+      "types": {
+        "CLAS": 2,
+        "DEVC": 1,
+        "DOMA": 1,
+        "DTEL": 1,
+        "INTF": 1,
+        "MSAG": 1,
+        "PROG": 1,
+        "TABL": 1
+      },
+      "pageMetrics": [
+        {
+          "reads": 23,
+          "backendAttempts": 23,
+          "responseBytes": 50413,
+          "elapsedMs": 3804,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 9297,
+      "evidenceSha256": "203b6577a70f1f51f448deac5bcc254b3e7dd019af384accf4dbd43be0224d00"
+    },
+    {
+      "request": "A4HK906287",
+      "mode": "active",
+      "status": "partial",
+      "objects": 1,
+      "types": {
+        "DTEL": 1
+      },
+      "pageMetrics": [
+        {
+          "reads": 1,
+          "backendAttempts": 1,
+          "responseBytes": 12641,
+          "elapsedMs": 114,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 3728,
+      "evidenceSha256": "3efe2e7f040d0e31ff50bcdd4513cfa7be4a07882f9b47a74d77602fbdeb3b9c"
+    },
+    {
+      "request": "A4HK906357",
+      "mode": "active",
+      "status": "partial",
+      "objects": 17,
+      "types": {
+        "DEVC": 2,
+        "DOMA": 5,
+        "DTEL": 5,
+        "FUGR_INCLUDE": 2,
+        "TABL": 2,
+        "TTYP": 1
+      },
+      "pageMetrics": [
+        {
+          "reads": 1,
+          "backendAttempts": 1,
+          "responseBytes": 46307,
+          "elapsedMs": 215,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 4806,
+      "evidenceSha256": "1e9c95d05322eed961464b78017dc6e246fcfb2fa3d36c8d4bb4935dd5e13890"
+    },
+    {
+      "request": "A4HK906369",
+      "mode": "released",
+      "status": "partial",
+      "objects": 5,
+      "types": {
+        "CLAS": 1,
+        "DDLS": 1,
+        "DOMA": 1,
+        "INTF": 1,
+        "PROG": 1
+      },
+      "pageMetrics": [
+        {
+          "reads": 16,
+          "backendAttempts": 16,
+          "responseBytes": 25840,
+          "elapsedMs": 2550,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 7671,
+      "evidenceSha256": "0773031cd6264793449a26b91d4ea9ead8c96700a1efe7179b92b1e05f8d3b5e"
+    },
+    {
+      "request": "A4HK906371",
+      "mode": "released",
+      "status": "partial",
+      "objects": 2,
+      "types": {
+        "CLAS": 1,
+        "PROG": 1
+      },
+      "pageMetrics": [
+        {
+          "reads": 10,
+          "backendAttempts": 10,
+          "responseBytes": 18704,
+          "elapsedMs": 1468,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 7259,
+      "evidenceSha256": "1b93beea3aceba795712bc1694820de19a249f23d20ccb64bf404208e3c4e397"
+    },
+    {
+      "request": "A4HK906375",
+      "mode": "active",
+      "status": "partial",
+      "objects": 6,
+      "types": {
+        "PROG": 6
+      },
+      "pageMetrics": [
+        {
+          "reads": 10,
+          "backendAttempts": 10,
+          "responseBytes": 29422,
+          "elapsedMs": 1256,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 5718,
+      "evidenceSha256": "24a6ceda1741a58da626d92e154e9bee49e01e2d04d315eff5bc3d486fa21653"
+    },
+    {
+      "request": "A4HK906379",
+      "mode": "active",
+      "status": "partial",
+      "objects": 5,
+      "types": {
+        "DEVC": 1,
+        "PROG": 1,
+        "SUSO": 1,
+        "TABL": 1,
+        "TRAN": 1
+      },
+      "pageMetrics": [
+        {
+          "reads": 3,
+          "backendAttempts": 3,
+          "responseBytes": 344572,
+          "elapsedMs": 911,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 4339,
+      "evidenceSha256": "b7a8c5f711241a45d7119a091c0a61b271a1d35271383e47b2669860b48829d6"
+    },
+    {
+      "request": "A4HK906578",
+      "mode": "released",
+      "status": "complete",
+      "objects": 0,
+      "types": {},
+      "pageMetrics": [
+        {
+          "reads": 1,
+          "backendAttempts": 1,
+          "responseBytes": 5019,
+          "elapsedMs": 124,
+          "exhausted": false
+        }
+      ],
+      "wallMs": 3909,
+      "evidenceSha256": "9d343963153444b0b6e2d15746edee5d17f00ee1c272b40d9e0f9f384b634fa3"
+    }
+  ],
+  "objectTypes": {
+    "CLAS": 4,
+    "DEVC": 4,
+    "DOMA": 7,
+    "DTEL": 7,
+    "INTF": 2,
+    "MSAG": 1,
+    "PROG": 10,
+    "TABL": 4,
+    "FUGR_INCLUDE": 2,
+    "TTYP": 1,
+    "DDLS": 1,
+    "SUSO": 1,
+    "TRAN": 1
+  },
+  "coverageGapObjects": {
+    "whole-object non-source scope": 13,
+    "DEVC": 4,
+    "DOMA": 7,
+    "DTEL": 7,
+    "MSAG": 1,
+    "TABL": 4,
+    "FUGR_INCLUDE": 2,
+    "TTYP": 1,
+    "SUSO": 1,
+    "TRAN": 1
+  },
+  "limitations": [
+    "Selected existing demo/test requests; not a customer workload sample.",
+    "Page metrics exclude startup, final inventory revalidation and other calls.",
+    "Reviewer preparation time, rework and commercial benefit not measured."
+  ]
+}

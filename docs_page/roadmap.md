@@ -89,7 +89,6 @@ sequence.
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
 | [FEAT-86](#feat-86) | Broader historical transport coverage | P2 | L | Needs research | Developer workflow |
-| [FEAT-87](#feat-87) | Reusable SQL notebook runner | P2 | M | Ready | Data access |
 | [FEAT-88](#feat-88) | Current-caller policy explanations | P2 | M | Ready | Safety / UX |
 | [FEAT-23](#feat-23) | Recursive program include reading | P2 | M | Needs research | Developer workflow |
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
@@ -491,22 +490,6 @@ proven. [Evidence and stop conditions](https://github.com/arc-mcp/arc-1/blob/mai
 Verified include-existence metadata could distinguish truly absent speculative class parts from
 unavailable evidence. Whole-object PROG/CLAS reviews also retain non-source scope gaps until those
 historical adapters are verified; a 404 alone remains insufficient.
-
-<a id="feat-87"></a>
-### FEAT-87 — Reusable SQL notebook runner
-
-- **Priority / effort / status:** P2 / M / Ready
-- **Category:** Data access
-
-**Idea.** Save Markdown/SQL investigations and explicitly rerun them through SAPQuery.
-
-**Why it remains.** An unmerged local prototype imports the observed SAP 1.2 `.abapsql` format,
-uses explicit target mappings, preserves strings and returns bounded HTML/JSON. It needs its own
-review and tests; it is outside the transport-review PR.
-
-**Resume with.** Review import preservation, no auto-run, policy denials, exact decimal/identifier
-values, aggregate assertions and incomplete results. Keep a full editor deferred until usage
-justifies it. [NB-01 acceptance](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/evidence/ARC1_RESEARCH_HANDOFF.md#nb-01--sql-notebook-artifact-and-runner).
 
 <a id="feat-88"></a>
 ### FEAT-88 — Current-caller policy explanations

@@ -3,12 +3,18 @@ import type { ToolResult } from '../handlers/shared.js';
 /** Adapters must invoke the existing authenticated dispatcher/MCP connection. */
 export type ToolInvoker = (tool: string, args: Record<string, unknown>) => Promise<ToolResult>;
 export class WorkflowCallError extends Error {
-  readonly status: 'blocked' | 'error';
+  readonly status: 'blocked' | 'error' | 'incomplete';
   constructor(message: string) {
     super(message);
-    this.status = /blocked by safety|Insufficient scope|denied by server policy|not allowed by.*policy/i.test(message)
-      ? 'blocked'
-      : 'error';
+    this.status =
+      /^(?:DATA_SOURCE_BLOCKED|DATA_POLICY_UNAVAILABLE|DATA_LINEAGE_UNRESOLVED|DATA_SQL_UNSUPPORTED):|blocked by safety|Insufficient scope|denied by server policy|not allowed by.*policy/i.test(
+        message,
+      )
+        ? 'blocked'
+        : /^(?:\{"error":")?DATA_RESPONSE_TOO_LARGE\b/.test(message) ||
+            message === 'Tool output exceeds workflow input budget.'
+          ? 'incomplete'
+          : 'error';
   }
 }
 export async function callText(call: ToolInvoker, tool: string, args: Record<string, unknown>): Promise<string> {

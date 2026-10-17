@@ -1,0 +1,59 @@
+{
+  "checkedAt": "2026-10-17",
+  "system": "A4H",
+  "sapBasis": "758",
+  "route": "HTTPS /sap/bc/adt/datapreview/freestyle",
+  "client": "001",
+  "authentication": "Basic; existing test-system identity",
+  "allowWrites": false,
+  "sourceManifestSha256": "07fb3b216c62fe94e6010ea40954f4d55d9b5abc9f3574cd26b033af84dbb92d",
+  "sourceFiles": {
+    "src/workflows/artifact-files.ts": "10fad9436251f32af131ec2926b7cabcd35fa13c7423b965319bb0ae895e6c2d",
+    "src/workflows/artifact.ts": "c360d5650e8a10f85f48559389b447f01b58addeec5cbcc8e43fadc295da1866",
+    "src/workflows/cli.ts": "3e34c87727dd365e156f4dffe578f98706cd05960f72a37c9f6d39da2b320b71",
+    "src/workflows/notebook-cli.ts": "a3c906a34c02fef1015eebb79d0f088b98aa810ae9171f5e75eb2b01515b7d66",
+    "src/workflows/notebook-document.ts": "8a12122773271b78c2cfd4b2c4c669c9bd3c889cb3692706ff11e16456b45ca9",
+    "src/workflows/notebook-query.ts": "1c3318881dfd13208d61b74758ecdf924d70ba925f5eb22096710a69b618d694",
+    "src/workflows/review-schema.ts": "95042628a9d20b2dfdeb6a66d265650dcb7d846e70ff1cc3adb520980dec30fe",
+    "src/workflows/sql-notebook.ts": "afb66a19a37b0e4e9fd5d7359ff743ae8f9f188c5ed0512632f95ec4e0737218",
+    "src/workflows/transport-review.ts": "54d6b92c00fccda4dfd42f3c5bc9b15c7ba6c9323abc397f4c47d16a59a357ff"
+  },
+  "runs": [
+    {
+      "allowFreeSQL": true,
+      "label": "notebook-allowed-verified",
+      "profile": "758",
+      "url": "https://a4h.marianzeis.de",
+      "client": "001",
+      "exitCode": 0,
+      "elapsedMs": 3395,
+      "signal": null,
+      "mutations": 0,
+      "status": "success",
+      "responseBytes": 1512,
+      "detailStatus": "success",
+      "rowsReturned": 6,
+      "assertionStatus": "passed",
+      "jsonSha256": "7670bf26da33fb95acc4e47987ab569a0ba88d65cfbe704bb86762253df87cb6",
+      "htmlSha256": "b5e6d67c2bce30e3593f384bf992df944d9860c4aa01069efaa7b794bfd8361f"
+    },
+    {
+      "allowFreeSQL": false,
+      "label": "notebook-denied-verified",
+      "profile": "758",
+      "url": "https://a4h.marianzeis.de",
+      "client": "001",
+      "exitCode": 1,
+      "elapsedMs": 2460,
+      "signal": null,
+      "mutations": 0,
+      "status": "partial",
+      "responseBytes": 0,
+      "detailStatus": "blocked",
+      "rowsReturned": null,
+      "assertionStatus": "not-run",
+      "jsonSha256": "1d1352347d165393fb910dd6f20f875d2899cd8a41fd1b45bf229327ab7b885d",
+      "htmlSha256": "a9c409c91b04d5c44a0c815053b1bafd1f86be8b8a613cf643da55d365b86bb3"
+    }
+  ]
+}
