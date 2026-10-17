@@ -44,8 +44,8 @@ There is no source TTL. The SAP backend is the freshness authority on every cach
 
 | `version` | Behavior |
 |---|---|
-| `active` | Default. Reads the last activated source. If an inactive draft exists, ARC-1 prepends a note explaining that the source is the activated version. |
-| `inactive` | Reads the inactive draft. If no draft exists, SAP returns active source and ARC-1 prepends a note. |
+| `active` | Default. Reads the last activated source. If an inactive draft exists, ARC-1 adds a note explaining that the source is the activated version (`warning` field for SRVB). |
+| `inactive` | Reads the inactive draft. If no draft exists, SAP returns active source and ARC-1 adds a note (`warning` field for SRVB). |
 | `auto` | Uses the session's inactive-object list: inactive when a draft exists, otherwise active. |
 
 The inactive-object list is cached in memory per SAP username for 60 seconds. `SAPWrite` and `SAPActivate` invalidate it because those operations can create, consume, or delete inactive drafts. The list is not persisted to SQLite.
