@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-17",
+  "target": "A4H/001",
+  "release": "758",
+  "identity": "existing Basic user",
+  "writesEnabled": false,
+  "sqlEnabled": false,
+  "mutationCount": 0,
+  "results": [
+    {
+      "case": "diagnose-batch-inactive",
+      "status": "failed",
+      "rows": null,
+      "checkedObjectCount": 4,
+      "sha256": "d8361b40d56420a59e955d50d49884d911340ce9a6bcb5a5dd12fd0a1f939a16"
+    },
+    {
+      "case": "dumps-nonmatch",
+      "status": "available",
+      "rows": 0,
+      "checkedObjectCount": null,
+      "sha256": "5d184db536cfe80e769dd4fdac4abdf729596c41318d4c7c7b0dd39fa174b783"
+    },
+    {
+      "case": "feed-schema",
+      "status": "available",
+      "rows": null,
+      "checkedObjectCount": null,
+      "sha256": "e66b82e4db9f02f85e786d01f342463da3fdfaf0273971d115b3620fb545cf38"
+    },
+    {
+      "case": "log-DOMA",
+      "status": "available",
+      "rows": null,
+      "checkedObjectCount": null,
+      "sha256": "5f41e8da1bd69c4fb2a0033fa40f43c663142e64924e09806f3036c6735831f5"
+    },
+    {
+      "case": "log-DTEL",
+      "status": "unsupported",
+      "rows": null,
+      "checkedObjectCount": null,
+      "sha256": "a0a4d609dd2c3de360bf7352e7c43bfdec32c4689406cac1f2d8b01ba2f4ac49"
+    },
+    {
+      "case": "log-TABL",
+      "status": "unsupported",
+      "rows": null,
+      "checkedObjectCount": null,
+      "sha256": "84c4cb26e970ac80de9926a6734e0e51be12f23023c7ae6b0bb8546beec4af5b"
+    },
+    {
+      "case": "read-batch-active",
+      "status": "passed",
+      "rows": null,
+      "checkedObjectCount": 4,
+      "sha256": "444cf6910b7da25a78b3f2ca8487f77800dd2c25322df717f2269ee9d55333a6"
+    }
+  ],
+  "sourceTreeManifestSha256": "958f174e67c167ee45f80c7bf81c6c74026b2c5c39b1bcf56722d1c2b0e1c219",
+  "sourceHashes": {
+    "src/adt/feed-schema.ts": "01c1bbb44767e81fdee6bd6616fbe6b1756e72eb9f8b80659e860d286309d91b",
+    "src/adt/ddic-activation-log.ts": "74b1f7e0c3b1fd4817b3b8c2eb0aa4b18164737ec0a119f3f93bb47a7cc64274",
+    "src/adt/syntax-batch.ts": "8dcbd59db9bbc36b61cb59b2c007181e9bb35b32b0cc51c22484f377c7f925e5",
+    "src/handlers/diagnostic-inputs.ts": "99cafa4dce5ba4cfb3440658619ed4260b4d0b4b1817b49c3f25e154ddad4d9b"
+  },
+  "sourceCommit": "5bc693b3305c9dc509e0ab33b164ac97f0fb6ba8"
+}

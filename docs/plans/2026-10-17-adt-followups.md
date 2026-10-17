@@ -20,7 +20,7 @@ deployment, SAP mutation or permission change is part of this work.
 |---|---|---|
 | Pilot | Eight existing test-system requests, released and active modes; source, DDIC, text, FUGR, RAP and empty scope | Per-request status, gaps, calls/bytes/time; inspect every complete label; no invented time-saving estimate |
 | Notebook / NB-01 | Pure `.abapsql` import, versioned Markdown/SQL document, explicit run over existing SAPQuery, optional row export and scalar checks | Import never connects; invalid mappings reject before SQL; exact strings; saturated/malformed results stay incomplete; allowed/denied demo runs |
-| Policy / POL-01 | Explain the current caller's proposed operation using existing enforcement evaluators | Scope, ceiling, deny rule, target, feature, real package and SAP authority reported separately; unknown prerequisites never become permission; no mutation |
+| Policy / POL-01 (deferred) | Retain only deny-rule guidance and BOR gate regression (#1016) | Normal operation errors remain the workflow; require repeated user need and A/B benefit before reviving #1010 |
 | Syntax / SYN-01 | Bounded native multi-object syntax check | Per-object deterministic outcomes; missing, duplicated or unattributed reports cannot pass; observed release contracts |
 | Feeds / FEED-01 | Target-specific dump schema and typed filters | Discovered attributes/operators, grammar validation, old user/date inputs retained, no broadened result/page/time limits |
 | Dictionary / DDIC-01 | Advertised activation-log GET with bounded hierarchy | Canonical same-target link, unsupported/denied states, retrieval time separate from unknown activation time; no claim of latest-attempt correlation |
@@ -68,6 +68,7 @@ separate from a current activation attempt. Prefer a small focused module for ea
 - [x] Bounded historical investigation: no verified pair; keep adapters deferred (FEAT-86).
   See diagnostic draft #1011 for the 15-request probe and exact stop condition.
 - [x] Notebook runner, tests, docs, live run and three independent review rounds (#1009).
-- [ ] Policy explanations, parity tests, docs, live read-only check and independent review.
-- [ ] Verified syntax/feed/DDIC diagnostics, tests, docs, live checks and independent review.
-- [ ] Final preservation check and links to all draft PRs and evidence.
+- [x] Policy experiment reviewed, then deferred for lack of workflow value (#1010).
+  Deny-rule clarification and BOR gate regression extracted to #1016; no preflight action.
+- [x] Verified syntax/feed/DDIC diagnostics, tests, docs, 758 live checks and two independent review rounds; final approval at `b89bebd0` (#1011).
+- [x] Final preservation check: 67 original dirty files and 11 archived evidence files unchanged; all four draft PRs and evidence linked in the research index.

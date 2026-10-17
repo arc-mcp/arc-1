@@ -1,0 +1,227 @@
+{
+  "checkedAt": "2026-10-17",
+  "sapBasis": "758",
+  "target": "A4H/001",
+  "url": "https://a4h.marianzeis.de",
+  "authentication": "Existing Basic test identity; CLI has no inbound scopes",
+  "sourceManifestSha256": "45c8af1913d22999a16e4edc125e70eb6ac10f76fcd19ec857e3ca27f15784a6",
+  "sourceFiles": {
+    "src/authz/policy.ts": "282cc8711490e5dbf83be477555072bd2b5c6f4f1d366955979f2c98d8241f7d",
+    "src/handlers/dispatch.ts": "202f32ce7324a03a338a419e582044a29c37d6500ac4d0a70629196245a5835a",
+    "src/handlers/policy-explanation.ts": "49bdde14d8c3ae7d6d79afc95c094dfe8d18d496759a062ec9f6bb271a90504f",
+    "src/handlers/schemas.ts": "482da257be0c1b634590da77dc253a5d368bf4aa3c6c35bf3dd65a40854e2562",
+    "src/handlers/tools.ts": "f65619c18f4142546af3279cf671b53057b68cffba4facfd6cc8e6fd8c539195",
+    "src/server/multi-target-tools.ts": "62581779d311f8c9e8522de1eab5311c0c284addd758d345e2ae496daa2a4e1f"
+  },
+  "runs": [
+    {
+      "label": "policy-read",
+      "profile": "758",
+      "url": "https://a4h.marianzeis.de",
+      "client": "001",
+      "exitCode": 0,
+      "elapsedMs": 4923,
+      "signal": null,
+      "mutations": 0,
+      "allowWrites": false,
+      "allowFreeSQL": false,
+      "allowedPackages": [
+        "$TMP"
+      ],
+      "decision": "allowed",
+      "checks": {
+        "arguments": {
+          "status": "allowed",
+          "note": "Arguments pass the execution schema."
+        },
+        "scope": {
+          "status": "not-applicable",
+          "note": "Local/direct caller: no inbound scope gate."
+        },
+        "denyRule": {
+          "status": "allowed"
+        },
+        "targetGrant": {
+          "status": "not-applicable"
+        },
+        "targetCeiling": {
+          "status": "not-applicable"
+        },
+        "serverCeiling": {
+          "status": "allowed"
+        },
+        "effectiveSafety": {
+          "status": "allowed"
+        },
+        "feature": {
+          "status": "not-applicable"
+        },
+        "package": {
+          "status": "not-applicable"
+        }
+      },
+      "resultSha256": "3ff0aa46daf77b8e59fb6c57c02e883ff8477a7270d4562acd70dec87aaa789a"
+    },
+    {
+      "label": "policy-sql",
+      "profile": "758",
+      "url": "https://a4h.marianzeis.de",
+      "client": "001",
+      "exitCode": 0,
+      "elapsedMs": 4107,
+      "signal": null,
+      "mutations": 0,
+      "allowWrites": false,
+      "allowFreeSQL": false,
+      "allowedPackages": [
+        "$TMP"
+      ],
+      "decision": "denied",
+      "checks": {
+        "arguments": {
+          "status": "allowed",
+          "note": "Arguments pass the execution schema."
+        },
+        "scope": {
+          "status": "not-applicable",
+          "note": "Local/direct caller: no inbound scope gate."
+        },
+        "denyRule": {
+          "status": "allowed"
+        },
+        "targetGrant": {
+          "status": "not-applicable"
+        },
+        "targetCeiling": {
+          "status": "not-applicable"
+        },
+        "serverCeiling": {
+          "status": "denied",
+          "note": "Operation 'Proposed operation' (type F) is blocked by safety configuration (reason: allowFreeSQL=false)"
+        },
+        "effectiveSafety": {
+          "status": "denied",
+          "note": "Operation 'Proposed operation' (type F) is blocked by safety configuration (reason: allowFreeSQL=false)"
+        },
+        "feature": {
+          "status": "not-applicable"
+        },
+        "package": {
+          "status": "not-applicable"
+        },
+        "dataSources": {
+          "status": "unresolved",
+          "note": "SQL validation and live lineage authorization run on execution; data gates remain enforced."
+        }
+      },
+      "resultSha256": "d37613eb79e0645602d63e7540a67c373a056f91d271c95707fd2704dd05fb9a"
+    },
+    {
+      "label": "policy-mutation",
+      "profile": "758",
+      "url": "https://a4h.marianzeis.de",
+      "client": "001",
+      "exitCode": 0,
+      "elapsedMs": 2623,
+      "signal": null,
+      "mutations": 0,
+      "allowWrites": false,
+      "allowFreeSQL": false,
+      "allowedPackages": [
+        "$TMP"
+      ],
+      "decision": "denied",
+      "checks": {
+        "arguments": {
+          "status": "allowed",
+          "note": "Arguments pass the execution schema."
+        },
+        "scope": {
+          "status": "not-applicable",
+          "note": "Local/direct caller: no inbound scope gate."
+        },
+        "denyRule": {
+          "status": "allowed"
+        },
+        "targetGrant": {
+          "status": "not-applicable"
+        },
+        "targetCeiling": {
+          "status": "not-applicable"
+        },
+        "serverCeiling": {
+          "status": "denied",
+          "note": "Operation 'Proposed operation' (type D) is blocked by safety configuration (reason: allowWrites=false blocks mutations (C/D/U/A/W/X))"
+        },
+        "effectiveSafety": {
+          "status": "denied",
+          "note": "Operation 'Proposed operation' (type D) is blocked by safety configuration (reason: allowWrites=false blocks mutations (C/D/U/A/W/X))"
+        },
+        "feature": {
+          "status": "not-applicable"
+        },
+        "package": {
+          "status": "unresolved"
+        },
+        "operationPrerequisites": {
+          "status": "unresolved",
+          "note": "Action-specific ownership, transport, discovery and state checks remain execution-time requirements."
+        }
+      },
+      "resultSha256": "8ceb862a817de266c220c2acd8b58a3a59bc8dc49a0c8d407b8ccb0b2ac55365"
+    },
+    {
+      "label": "policy-package",
+      "profile": "758",
+      "url": "https://a4h.marianzeis.de",
+      "client": "001",
+      "exitCode": 0,
+      "elapsedMs": 2730,
+      "signal": null,
+      "mutations": 0,
+      "allowWrites": true,
+      "allowFreeSQL": false,
+      "allowedPackages": [
+        "$TMP"
+      ],
+      "decision": "denied",
+      "checks": {
+        "arguments": {
+          "status": "allowed",
+          "note": "Arguments pass the execution schema."
+        },
+        "scope": {
+          "status": "not-applicable",
+          "note": "Local/direct caller: no inbound scope gate."
+        },
+        "denyRule": {
+          "status": "allowed"
+        },
+        "targetGrant": {
+          "status": "not-applicable"
+        },
+        "targetCeiling": {
+          "status": "not-applicable"
+        },
+        "serverCeiling": {
+          "status": "allowed"
+        },
+        "effectiveSafety": {
+          "status": "allowed"
+        },
+        "feature": {
+          "status": "not-applicable"
+        },
+        "package": {
+          "status": "denied",
+          "note": "Resolved object package ZARC1_DEMO_REVIEW."
+        },
+        "operationPrerequisites": {
+          "status": "unresolved",
+          "note": "Action-specific ownership, transport, discovery and state checks remain execution-time requirements."
+        }
+      },
+      "resultSha256": "40d8d7b972f0fba227104b1fdceaa1a4aaac1fb01c4aafb98017d5917cb43940"
+    }
+  ]
+}

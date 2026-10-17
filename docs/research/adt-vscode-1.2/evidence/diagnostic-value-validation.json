@@ -1,0 +1,194 @@
+{
+  "productHead": "086dc2bdb27acbdc6edde1c96770c9c7e66f3b59",
+  "node": "24.11.1",
+  "branchFullSuite": {
+    "revision": "09646ac94f0649808094f6de85aabffefea1929f",
+    "files": 324,
+    "passed": 9047,
+    "failed": 0
+  },
+  "latestMainCombinedTree": {
+    "head": "74832f11a841c374c98354f91aa60645b75d7b6b",
+    "upstream": "79088b16c6fe64f2b07802646a769607335f4d5d",
+    "tree": "913108585b5747a8e15a924fd999c7a3c2568863",
+    "path": "/var/folders/h1/34p8s4d11lg9xzq3f7xzhc9m0000gn/T/arc1-value-integration-zgv1zsi_"
+  },
+  "combinedFullSuite": {
+    "files": 327,
+    "passed": 9105,
+    "failed": 2,
+    "cause": "Two unchanged shutdown child-process ready-signal checks exceeded their five-second startup budget under concurrent load."
+  },
+  "combinedReruns": [
+    {
+      "scope": "shutdown.test.ts",
+      "passed": 11,
+      "failed": 1,
+      "remaining": "HTTP child-process startup exceeded five seconds."
+    },
+    {
+      "scope": "HTTP SIGTERM case only",
+      "passed": 1,
+      "filtered": 11,
+      "failed": 0
+    }
+  ],
+  "qualification": "All failed scenarios passed in subsequent targeted runs. The combined full run itself was not green; timeouts were not changed.",
+  "focusedEvalTests": {
+    "revision": "086dc2bdb27acbdc6edde1c96770c9c7e66f3b59",
+    "passed": 17,
+    "failed": 0
+  },
+  "gates": {
+    "combinedTree": [
+      "build",
+      "typecheck",
+      "lint (3 informational suggestions)",
+      "validate:policy",
+      "check:sizes",
+      "strict documentation build"
+    ],
+    "revision": "74832f11a841c374c98354f91aa60645b75d7b6b"
+  },
+  "logs": {
+    "arc1-value-integrated-docs.log": {
+      "sha256": "0f4592407271a493e98b2be2e628ca421012dc52e27ab4fb5b95387676635675",
+      "bytes": 2300
+    },
+    "arc1-value-integrated-build.log": {
+      "sha256": "12892a890c2ac4cc13cb1a3f82be0b7d44c3bc0796bd009f95e0596fbf21385e",
+      "bytes": 286
+    },
+    "arc1-value-integrated-http-rerun.log": {
+      "sha256": "825822051365f33a8ea34db8813609e38e5b5018e4ce7e4a2235acc86aac15a9",
+      "bytes": 600
+    },
+    "arc1-value-integrated-lint.log": {
+      "sha256": "f6a410e7a58d36e247ec9cff7a9a583c8bfe69c9d83cfc43891e6868f91fe07c",
+      "bytes": 3722
+    },
+    "arc1-value-integrated-rerun.log": {
+      "sha256": "a492f2923cb944b8d41044a346a67d5cd744176ffe3d4630ef87e6c78b92524d",
+      "bytes": 2095
+    },
+    "arc1-value-integrated-typecheck.log": {
+      "sha256": "2b1e8ca5f9ac0740e7509cb1ced735eee298880b787a3b0044b5b7a34a2e8f24",
+      "bytes": 121
+    },
+    "arc1-value-integrated-policy.log": {
+      "sha256": "07c406bace330ace2709b241cb614be320b9b4920e05734791f5e4a1668d6926",
+      "bytes": 151
+    },
+    "arc1-value-integrated-unit.log": {
+      "sha256": "ba37b791b03e9c472b941f1cdf9de816253a08b0d406df5ae196158208fd8e30",
+      "bytes": 1328690
+    },
+    "arc1-value-integrated-sizes.log": {
+      "sha256": "7915cb3050eb70f6c6b42916ceedcd1c2571d0ec85bf7b296f75bc36ca4223c2",
+      "bytes": 1986
+    }
+  },
+  "srcTreeUnchangedSinceIntegrationInput": true,
+  "followup": {
+    "productRevision": "552b02c38597d2578b70f2d14d5926cab671aa90",
+    "productChangesSinceInitialValidation": "Tool descriptions and the invalid-filter recovery hint only. Native single-report correctness correction was already in the full-suite run.",
+    "focusedGuidanceTests": 91,
+    "finalFixtureGraderTests": 26,
+    "gates": [
+      "build",
+      "typecheck",
+      "lint (3 informational suggestions)",
+      "validate:policy",
+      "check:sizes",
+      "strict documentation build"
+    ],
+    "logs": {
+      "arc1-value-close-policy.log": {
+        "bytes": 151,
+        "sha256": "b95a5610acdb1e657df63078101349caa7f589baac5ccc24eae975e056e6eabe"
+      },
+      "arc1-value-close-sizes.log": {
+        "bytes": 1986,
+        "sha256": "0553caaa4ffce1f1e533271932cb3fbcba395dd119fd3ebab7661da987d2b7dc"
+      },
+      "arc1-value-close-lint.log": {
+        "bytes": 3722,
+        "sha256": "b701a6637acd5983b67bfe915b1aa86c75183f70504f8422574673bace433d64"
+      },
+      "arc1-value-close-build.log": {
+        "bytes": 286,
+        "sha256": "c78ed4a0e0425213bab417881c6d34ccf5edf57bc4ecabb71c66ebacfc3b399e"
+      },
+      "arc1-value-close-docs.log": {
+        "bytes": 2222,
+        "sha256": "8bd6178fe93b858e7d726f5fa3f77a7a8753d0a8977af1738a4bc0c791f31817"
+      },
+      "arc1-value-close-typecheck.log": {
+        "bytes": 121,
+        "sha256": "c70d78135d6fb7358b349ef78fa0bba647122295c10fc75aea4e0834b67f5066"
+      }
+    }
+  },
+  "standaloneCorrectnessFix": {
+    "pr": "https://github.com/arc-mcp/arc-1/pull/1019",
+    "revision": "bb984bd4",
+    "base": "79088b16c6fe64f2b07802646a769607335f4d5d",
+    "tests": {
+      "before": {
+        "failed": 2,
+        "passed": 2
+      },
+      "after": {
+        "files": 3,
+        "passed": 230
+      }
+    },
+    "gates": [
+      "typecheck",
+      "check:sizes",
+      "strict documentation build"
+    ],
+    "logs": {
+      "arc1-empty-native-after.log": {
+        "bytes": 18514,
+        "sha256": "dd2e58c5d4d6a2aa56091924b9402b80da20cd0376e2be24895d5af9c2e46432"
+      },
+      "arc1-empty-native-before.log": {
+        "bytes": 1722,
+        "sha256": "1e546f977eed54cf55a682297c45b792d8d405edc5cac7137f994ef45eed799a"
+      },
+      "arc1-empty-native-sizes.log": {
+        "bytes": 1987,
+        "sha256": "1f97c60a933f27e7c4d4605c25d3f23dc4322b15a6b1bd3375177a3dc8311c2e"
+      },
+      "arc1-empty-native-typecheck.log": {
+        "bytes": 121,
+        "sha256": "2b1e8ca5f9ac0740e7509cb1ced735eee298880b787a3b0044b5b7a34a2e8f24"
+      },
+      "arc1-empty-native-docs.log": {
+        "bytes": 2228,
+        "sha256": "0667c93067417e9c9e91da9ec3729e250730602fe555755023152b14d9867126"
+      }
+    }
+  },
+  "finalIndependentReview": {
+    "model": "Claude Code Opus 5.5 Max",
+    "interface": "GUI",
+    "diagnosticsRevision": "5d5c7824d66eba048baafe6d30d5efb06b437205",
+    "standaloneRevision": "bb984bd419040551d5dd6ab50ad0d9d7e4e6bfc7",
+    "report": "diagnostics-review/claude-value-review-3.md",
+    "reportSha256": "f1c551038a0879f56513db984dbe65085962a98081a997318ece88e891ace625",
+    "diagnosticsFocused": {
+      "files": 7,
+      "passed": 198
+    },
+    "standaloneFocused": {
+      "files": 8,
+      "passed": 382
+    },
+    "archiveHashesVerified": 131,
+    "adjudicationGradesVerified": 57,
+    "verdict": "No blockers; approve #1019; keep #1011 draft. Add R1 existing-route regression; R2/R3 optional.",
+    "disposition": "R1, R2, R3 and the unsupported-log review-note nit incorporated without changing product code, raw trials or scores. Later changes are documentation/evidence metadata/roadmap only."
+  }
+}

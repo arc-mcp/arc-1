@@ -1,12 +1,31 @@
 import type { AdtClient } from '../adt/client.js';
 import { syntaxCheck } from '../adt/devtools.js';
 import { AdtApiError } from '../adt/errors.js';
+import { SYNTAX_BATCH_TYPES, syntaxCheckBatch } from '../adt/syntax-batch.js';
 import type { SyntaxCheckResult } from '../adt/types.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
 import { type ToolResult, textResult, toolJson } from './shared.js';
 
 /** Shared wire and result contract for both syntax-check entry points. */
 export async function handleSyntaxCheck(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+  if (Array.isArray(args.objects)) {
+    const objects = args.objects.map((o: { type: string; name: string }) => {
+      const type = normalizeObjectType(o.type);
+      if (!(SYNTAX_BATCH_TYPES as readonly string[]).includes(type))
+        throw new Error('Batch syntax supports CLAS, PROG, INTF and DDLS.');
+      return { type, name: o.name, uri: objectUrlForType(type, o.name) };
+    });
+    return textResult(
+      toolJson(
+        await syntaxCheckBatch(
+          client.http,
+          client.safety,
+          objects,
+          args.version === 'inactive' ? 'inactive' : 'active',
+        ),
+      ),
+    );
+  }
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   let objectUrl = objectUrlForType(type, name);

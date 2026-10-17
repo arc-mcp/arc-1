@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-17",
+  "sourceCommit": "b89bebd0df21c47df9b2759406ac6d1977899f16",
+  "upstreamCommit": "041a9e48d7fbc0aaa573e952025ff30eda75de18",
+  "combinedTree": "4ae14e57a7a019b46bcbf185dd63eac75f3f3c0a",
+  "release": "1.6.0",
+  "node": "24.11.1",
+  "method": "Clean git merge-tree archive in an isolated directory; exact tracked paths indexed for the file-size gate. No SAP access.",
+  "unit": {
+    "workers": 2,
+    "files": 326,
+    "passed": 9103,
+    "failed": 0,
+    "seconds": 140.54
+  },
+  "gates": {
+    "typecheck": "passed",
+    "build": "passed",
+    "lint": "passed",
+    "validate:policy": "passed",
+    "check:sizes": "passed",
+    "docs:build": "passed"
+  },
+  "setupCorrection": "The first check:sizes attempt could not call git ls-files because the archive lacked a Git index. Initialized the isolated directory and indexed exactly the combined tree paths, then reran successfully. No source changed.",
+  "lintNotes": "Three informational style suggestions; no errors or warnings.",
+  "privateLogSha256": {
+    "full": "e4c56a052754be08ee3cc620ac8eaed7b3f24466f17c1cf81258b9c8b661c7e6",
+    "typecheck": "2b1e8ca5f9ac0740e7509cb1ced735eee298880b787a3b0044b5b7a34a2e8f24",
+    "build": "12892a890c2ac4cc13cb1a3f82be0b7d44c3bc0796bd009f95e0596fbf21385e",
+    "lint": "419c89f99005ec421811409e1aa1a8790c52371c2cfdb638397459d9009b71f5",
+    "validate-policy": "842d65a7ee23c918b0b87de5fecc2a665d9567b8189cbcc94d9df6517c907310",
+    "check-sizes": "c2e357fa64931af70dac642bf8e25fd6b18d23b33b07aced33928c2d7c93eb24",
+    "check-sizes-rerun": "18dcabd73b187afa2a20b63c622c06b5b0aa65a083dc553c62dbf622a3a2e03f",
+    "docs-build": "291d93a0feb9b0d0737634f3b2e620c17bf7b63e801d00e2ab08ea20fd556d68"
+  },
+  "limits": [
+    "Offline combined-tree qualification, not deployed-server or live IAM coverage",
+    "Live diagnostic evidence remains pinned to 5bc693b3; subsequent review corrections are offline-tested",
+    "No merge, release or deployment",
+    "Later report/archive/roadmap documentation does not change tested product code"
+  ]
+}

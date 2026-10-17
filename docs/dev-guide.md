@@ -404,3 +404,10 @@ passed subsequent checks; the SAP-internal cause remains inferred. See the
 - **Not yet shipped** (see `docs/plans/2026-06-12-test-isolation-and-parallel-runs.md`): CI `retry: 1` paired
   with flake telemetry (H2), a parallel read-only e2e project (F2), and a cross-run flake-aggregation
   workflow (H3). The plan rates these measure-first / conditional on the F1 numbers.
+
+## Diagnostic evidence
+
+Batch syntax, typed dump filters and existing DDIC logs reuse the dispatcher and read safety.
+See [contract, examples and bounds](../docs_page/diagnostic-evidence.md) and
+[live validation](research/2026-10-17-verified-diagnostics.md). Keep both syntax entry points in sync;
+no successful object report may conceal an unrecognized report. DDIC log readers never activate.

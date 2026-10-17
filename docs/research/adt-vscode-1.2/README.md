@@ -1,7 +1,8 @@
 # ADT for VS Code 1.2: ARC-1 adoption backlog
 
-**Decision record · 17 October 2026.** Start with trustworthy transport review. Then evaluate
-the notebook runner, policy explanations and verified diagnostics as separate changes.
+**Decision record · 17 October 2026.** Trustworthy transport review comes first, followed by
+the notebook runner and diagnostics in separate draft PRs. Policy explanations are deferred:
+ordinary denial feedback comes first; see FEAT-88 and the extraction in #1016.
 This is the durable index for the research, including ideas we deliberately defer.
 
 ## Read in this order
@@ -16,8 +17,8 @@ This is the durable index for the research, including ideas we deliberately defe
 | Evidence | Revalidated state | Limit |
 |---|---|---|
 | SAP extension | Marketplace Version History refreshed on October 17: **1.2.0**, published October 16; installed `sapse.adt-vscode-1.2.0-darwin-arm64` | A client feature does not establish backend availability |
-| ARC-1 release | **v1.5.2**; [1.6 release PR #970](https://github.com/arc-mcp/arc-1/pull/970) still open | Main and deployed connectors are separate baselines |
-| ARC-1 main | `b10acb15` (includes #1006) | Recheck before each implementation slice |
+| ARC-1 release | **v1.6.0** published October 17 at 11:21 UTC; [release PR #970](https://github.com/arc-mcp/arc-1/pull/970) merged during this work | Main and deployed connectors are separate baselines |
+| ARC-1 main | `79088b16` revalidated for the diagnostic value review; initial implementation used `041a9e48` | Combined-tree tests recorded separately from branch tests |
 | Original research | `9775645400fdb27f37aff486f14fe9845ecf8639`; 181 unit tests and eight synthetic observations | Observation probes are not assertions or live coverage |
 | Existing local prototype | `codex/post-1-6-review-workflows`; 67 uncommitted files preserved | Includes later stages; not shipped or included wholesale in the transport PR |
 | Live prototype evidence | A4H/001, SAP_BASIS 758 SP02, local CLI over HTTPS 443 | Does not prove 750, 816, BTP or the deployed connector |
@@ -37,7 +38,7 @@ must pass fresh review and tests before being treated as implemented product fun
 | 2 · TD-05–09 | Explicit source mode, revision evidence, bounded collection and inventory drift detection | Existing revision reader/diff; local prototype | Modes cannot substitute work states for released history; bounded bytes/work; caller/target-bound continuation; invalid history differs from empty |
 | 3 · REVIEW-01 | Reusable JSON and readable HTML review report | Existing intent dispatcher, SAPContext, syntax checks | Complete/partial/stale demos; real transport run; checks identify current source; no release-readiness verdict |
 | 4 · NB-01 | Portable Markdown/SQL notebook and small runner | SAPQuery; observed `.abapsql` flight fixture; local prototype | Explicit target mapping; no auto-run; SQL gates; exact string values; blocked/failed/incomplete states; real allowed and denied run |
-| 5 · POL-01 | Explain the caller's effective policy | ACTION_POLICY, dispatch, safety, package and target evaluators; prototype | Explanation agrees with enforcement; unresolved prerequisites explicit; never execute a mutation to test permission |
+| Deferred · POL-01 | Better policy troubleshooting only if normal errors prove insufficient | #1010 experiment; useful docs/test extracted to #1016 | Demonstrate task benefit before adding a preflight; no SAP authorization promise |
 | 6a · SYN-01 / FEAT-69 | Bounded native multi-object syntax checks | Observed 758 `checkObjectList`, prototype | Missing/unattributed reports cannot become passes; deterministic per-object results; cross-release limits |
 | 6b · FEED-01 / FEAT-74 | Discover diagnostic schema and validate focused dump filters | Existing feeds; 758/816 observations; prototype | Target-specific advertised attributes/operators; validated grammar; existing paging/time guards; denied differs from empty |
 | 6c · DDIC-01 / FEAT-71 | Read the advertised Dictionary activation log | Observed relation/media-type GET on 758; prototype | Canonical same-target link, bounded hierarchy, denied/unsupported states; old log never attributed to the newest attempt |
@@ -54,14 +55,14 @@ ordering. The earlier activation-log uncertainty is also superseded: the install
 |---|---|---|
 | Destination restrictions | Reuse merged opt-in XSUAA target grants, #677 / ADR-0008 | Release and landscape acceptance; no second ACL engine or incidental writes |
 | Package write restrictions | Reuse real-package exact/prefix/subtree checks | Explain clearly: write-package rules are not read/data restrictions |
-| Effective access explanation | POL-01 above | Review the prototype against actual evaluators; complex actions stay unresolved |
+| Effective access explanation | POL-01 deferred; #1016 retains docs/test only | FEAT-88: repeated failure of normal error guidance plus A/B evidence of improvement |
 | SQL notebooks | NB-01 above | Small runner first; editor only if repeated use identifies editing as the bottleneck |
 | Timeline / comparisons | REVIEW-01 above | Preserve provenance and uncertainty; avoid another diff engine |
 | Transport Organizer | Reuse list/get/history/mutations; build review workflow | Specific missing task/member action needs its own use case; owner fix #1003 is merged |
 | Diagnostic feeds | FEED-01 above | Dumps first; Gateway/ATC/Unit feeds only with advertised, verified contracts |
 | Dictionary activation log | DDIC-01 above | Reader before attempt correlation; never reactivate merely to get a log |
 | Object checking | SYN-01 above | Syntax, ATC and Unit are distinct; run relevant checks explicitly |
-| Source-code search | Reuse SAPSearch source_code | Reuse merged #1006; coordinate with open #1007; unavailable is not zero matches |
+| Source-code search | Reuse SAPSearch source_code | Reuse merged #1006; reuse merged #1007; unavailable is not zero matches |
 | Explanation / documentation | Reuse SAPContext, KTD and existing explanation skills | Improve citations/templates against a representative corpus; no core model-service dependency |
 | Source/file editing | Reuse method surgery; review open #586 | Validate duplicate anchors, stale source and locks; editor buffers need an explicit client bridge |
 | Object-action discovery | Conditional catalog of already classified operations | Concrete discovery use case; derive policy/capability-filtered catalog; never execute unknown advertised actions |
@@ -140,14 +141,36 @@ or unavailable during revalidation. The archive records the original observation
 
 ## Measure before expanding
 
-Pilot 5–10 representative transports. Record reviewer preparation time, false-complete outcomes,
-coverage gaps by family, backend calls/bytes/latency and report usefulness. Choose the next historical
-adapter from those gaps. Savings and commercial demand remain hypotheses until measured.
+The eight-request technical pilot records coverage gaps and backend calls/bytes/latency. Before
+expanding, measure reviewer preparation time, false-complete outcomes and report usefulness with
+real reviewers. Choose the next historical adapter from those results. Savings and commercial
+demand remain hypotheses until measured.
 
 ## Follow-up implementation
 
 The [eight-request transport pilot](../2026-10-17-transport-pilot.md) records actual coverage gaps
 and bounded metrics. The [follow-up plan](../../plans/2026-10-17-adt-followups.md) separates the
-notebook, policy and diagnostic slices. The notebook runner is implemented in this branch; its
-[guide](../../../docs_page/sql-notebooks.md) documents explicit execution, narrow scalar assertions
-and limits. Validation and independent-review results are recorded with its draft PR.
+notebook and diagnostic slices and the deferred policy proposal. Read the guides for
+[notebooks](../../../docs_page/sql-notebooks.md), [authorization](../../../docs_page/authorization.md)
+and [diagnostics](../../../docs_page/diagnostic-evidence.md). Each draft has tests, live observations
+with explicit limits, and independent review evidence.
+
+## Implementation checkpoints
+
+| Stage | Reviewable result | Evidence |
+|---|---|---|
+| Transport review | [Draft #1008](https://github.com/arc-mcp/arc-1/pull/1008) | Three Claude review rounds; final approval; eight-request pilot |
+| SQL notebook | [Draft #1009](https://github.com/arc-mcp/arc-1/pull/1009) | Allowed/denied live run; exact strings; three review rounds; final approval and 52 focused checks |
+| Policy explanation | [Deferred #1010](https://github.com/arc-mcp/arc-1/pull/1010); [extraction #1016](https://github.com/arc-mcp/arc-1/pull/1016) | Historical reviews prove implementation correctness, not product value. Normal errors remain the workflow. |
+| Diagnostics | [Draft #1011](https://github.com/arc-mcp/arc-1/pull/1011) · [validation](../2026-10-17-verified-diagnostics.md) | [48-trial value review](../2026-10-17-diagnostic-value-evaluation.md): narrow gains, failed freshness control; keep draft. Independent correctness fix: [#1019](https://github.com/arc-mcp/arc-1/pull/1019) |
+| Broader transport history | Research remains deferred | [Pilot follow-up](evidence/history-pilot-summary.json): no text history relation, current-only entries, one inaccessible archived domain revision |
+
+These are draft changes, not a released feature promise. Merge the stack in order after maintainer
+review. No measured preparation-time saving or blanket cross-release qualification is claimed.
+
+## Value review after implementation
+
+- **POL-01:** deferred; the runtime feature is removed from #1011. Keep only #1016.
+- **SYN-01 / FEED-01 / DDIC-01:** evaluated independently with the
+  [predeclared local-model comparison](../../plans/2026-10-17-diagnostic-value-evals.md).
+  The [completed value review](../2026-10-17-diagnostic-value-evaluation.md) keeps #1011 in draft; the local-model evidence does not justify a broad rollout. Earlier Claude approvals apply to their recorded revisions, not subsequent changes.

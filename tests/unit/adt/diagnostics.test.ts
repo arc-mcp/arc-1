@@ -416,15 +416,23 @@ describe('Runtime Diagnostics', () => {
     it('sends correct Accept header', async () => {
       const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
       await listDumps(http, unrestrictedSafetyConfig());
-      expect(http.get).toHaveBeenCalledWith('/sap/bc/adt/runtime/dumps?$top=50', {
-        Accept: 'application/atom+xml;type=feed',
-      });
+      expect(http.get).toHaveBeenCalledWith(
+        '/sap/bc/adt/runtime/dumps?$top=50',
+        {
+          Accept: 'application/atom+xml;type=feed',
+        },
+        expect.objectContaining({ deadline: expect.any(Number), responseBudget: expect.any(Object) }),
+      );
     });
 
     it('passes user filter as query parameter', async () => {
       const http = mockHttp('<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"></atom:feed>');
       await listDumps(http, unrestrictedSafetyConfig(), { user: 'DEVELOPER' });
-      expect(http.get).toHaveBeenCalledWith(expect.stringContaining('$query='), expect.any(Object));
+      expect(http.get).toHaveBeenCalledWith(
+        expect.stringContaining('$query='),
+        expect.any(Object),
+        expect.objectContaining({ deadline: expect.any(Number) }),
+      );
       const url = (http.get as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
       // The comma is URL-encoded by encodeURIComponent
       expect(url).toContain('equals(user%2CDEVELOPER)');

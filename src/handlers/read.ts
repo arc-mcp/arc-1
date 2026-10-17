@@ -197,7 +197,13 @@ export async function handleSAPRead(
   }
 
   if (type === 'SYNTAX')
-    return handleSyntaxCheck(client, { type: args.objectType, name, version: args.version, source: args.source });
+    return handleSyntaxCheck(client, {
+      type: args.objectType,
+      name,
+      version: args.version,
+      source: args.source,
+      objects: args.objects,
+    });
 
   // BTP: return helpful error for unavailable types
   if (isBtpSystem() && BTP_HINTS[type]) {

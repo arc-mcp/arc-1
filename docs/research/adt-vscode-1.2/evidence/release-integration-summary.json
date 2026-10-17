@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-17",
+  "sourceCommit": "d93272adc2dcd389e5d730aa3997b758b73d1fc0",
+  "upstreamCommit": "041a9e48d7fbc0aaa573e952025ff30eda75de18",
+  "combinedTree": "ea1f0685664234d26d5c6f028e125474d9dbc815",
+  "release": "1.6.0",
+  "node": "24.11.1",
+  "method": "Clean git merge-tree archive, isolated checkout, no SAP access.",
+  "unit": {
+    "initial": {
+      "workers": 4,
+      "passed": 9086,
+      "failed": 1,
+      "failure": "Unchanged shutdown.test.ts real SIGTERM startup timing"
+    },
+    "isolatedShutdown": {
+      "passed": 12,
+      "failed": 0
+    },
+    "final": {
+      "workers": 2,
+      "files": 326,
+      "passed": 9087,
+      "failed": 0,
+      "seconds": 131.34
+    }
+  },
+  "gates": {
+    "typecheck": "passed",
+    "build": "passed",
+    "lint": "passed",
+    "validate:policy": "passed",
+    "check:sizes": "passed",
+    "docs:build": "passed"
+  },
+  "lintNotes": "Three informational style suggestions; no errors or warnings.",
+  "privateLogSha256": {
+    "full": "03f68aa59af6ef28b961a1658abf88ca337a11c1e45db2aa83b74511f91d945f",
+    "shutdown": "70849fd4946a1e10147bfdc034341e6f8426b286324309d1f81331c7c0bd3b04",
+    "rerun": "2dc7639966cfe8fc41f45025a6bd33db75e201da8eb083aad3e27bb25cd4b3d6",
+    "typecheck": "2b1e8ca5f9ac0740e7509cb1ced735eee298880b787a3b0044b5b7a34a2e8f24",
+    "build": "12892a890c2ac4cc13cb1a3f82be0b7d44c3bc0796bd009f95e0596fbf21385e",
+    "lint": "6952a2cb2d4fcc87e96541c189cb4709186864aad7ffa3ea50cec88ae0a8d848",
+    "validate-policy": "842d65a7ee23c918b0b87de5fecc2a665d9567b8189cbcc94d9df6517c907310",
+    "check-sizes": "18dcabd73b187afa2a20b63c622c06b5b0aa65a083dc553c62dbf622a3a2e03f",
+    "docs-build": "9f9e4251a091db2c981d84f09da6fe04885fef5002e2ff0a7d0e42a673620c10"
+  },
+  "limits": [
+    "No deployed-server or live IAM qualification",
+    "No merge, release or deployment",
+    "Later review-documentation commits do not change tested product code"
+  ]
+}

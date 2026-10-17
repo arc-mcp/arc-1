@@ -1,7 +1,7 @@
 [
   {
     "name": "SAPRead",
-    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: read-only SAP check (objectType+name, optional source for unsaved text). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
+    "description": "Read SAP ABAP source, metadata or syntax-check results (BTP ABAP Environment). For purpose, explanations, specs, reviews or pre-change context, prefer SAPContext first. DDIC metadata: omit format (default text); structured is CLAS-only for ordinary reads. Types: CLAS, INTF, FUNC (released/custom only), FUGR (released/custom only), DDLS (primary data model on BTP), DCLS, DDLX, BDEF, SRVD, SRVB, SKTD/KTD (KTD aliases SKTD), TABL (custom tables AND structures — no separate STRU type), TABL/DTT (technical settings), TTYP, DOMA, DTEL, TABLE_CONTENTS (custom tables + released CDS only; standard tables blocked), TABLE_QUERY (multi-column WHERE on custom tables + released CDS; needs SAP_BASIS 752+), DEVC, SYSTEM, COMPONENTS, MSAG (custom only), BSP, BSP_DEPLOY, API_STATE (contract states C0-C4; objectType for non-class), INACTIVE_OBJECTS (no name; pending-activation list), ENHO. PROG/INCL/VIEW/TRAN/TEXT_ELEMENTS/VARIANTS and VERSIONS/VERSION_SOURCE are not available on BTP (use CLAS with IF_OO_ADT_CLASSRUN for console apps, DDLS for data models). SYNTAX: SAP check (objectType+name, optional unsaved source; or 1–20 explicit objects with stored active/inactive source). CLAS: method=\"*\" for signatures, method=\"NAME\" for one body, or grep. Global class declaration/implementation: MAIN (omit include). definitions/implementations contain local helpers. grep: case-insensitive regex; returns matching lines, context and line numbers, with owning class/method for CLAS.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -55,7 +55,7 @@
             "SAJT",
             "TABL/DTI"
           ],
-          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; TABL/DTI secondary index named TABLE~INDEX (read prefers pending JSON). Deprecated: MESSAGES→MSAG. ENQU lock object as JSON."
+          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name or objects[]. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; TABL/DTI secondary index named TABLE~INDEX (read prefers pending JSON). Deprecated: MESSAGES→MSAG. ENQU lock object as JSON."
         },
         "name": {
           "type": "string",
@@ -148,6 +148,35 @@
         "sqlFilter": {
           "type": "string",
           "description": "TABLE_CONTENTS condition expression only (no WHERE, no SELECT); broken on 758 (SAP expects SELECT). Use TABLE_QUERY where."
+        },
+        "objects": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": [
+              "type",
+              "name"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "CLAS",
+                  "INTF",
+                  "DDLS"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40,
+                "pattern": "^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_]+$"
+              }
+            }
+          }
         },
         "objectType": {
           "type": "string",
@@ -1204,7 +1233,7 @@
   },
   {
     "name": "SAPDiagnose",
-    "description": "ABAP diagnostics and runtime analysis. Actions:\n- \"syntax\": compatibility check; when available prefer SAPRead(type=\"SYNTAX\", objectType, name, version?, source?).\n- \"unittest\": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n- \"unittest_ci\": harmless package tests with source reconciliation; empty/incomplete runs fail.\n- \"atc\": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). \"atc_variants\": list variants + that default (variant = name filter; read-only).\n- \"atc_ci\": package ATC CI; requires available API and verified selection.\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": active/inactive ETags, hashes and divergence (name+type; CLAS: all includes). Server-driven types unsupported.\n- \"quickfix\": proposals at name+type+source+line (optional column/sourceUri).\n- \"apply_quickfix\": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n- \"dumps\": list/read ST22 short dumps (no id = list, newest first, user/from/to/maxResults; id = read; includeFullText, sections).\n- \"traces\": list profiler traces; id+analysis analyzes one.\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path); returns the sap-statistics timing split (DB/ABAP/framework/auth). Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
+    "description": "ABAP diagnostics and runtime analysis. Actions:\n- \"feed_schema\": dump filter attributes/operators. dumps filters are ANDed; datetime uses UTC YYYYMMDDHHMMSS.\n- \"activation_log\": existing DDIC log: type (DOMA/DTEL/TABL/DDLS) + name. No activation or attempt correlation.\n- \"syntax\": compatibility check; when available prefer SAPRead(type=\"SYNTAX\", objectType, name, version?, source?).\n- \"unittest\": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n- \"unittest_ci\": harmless package tests with source reconciliation; empty/incomplete runs fail.\n- \"atc\": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). \"atc_variants\": list variants + that default (variant = name filter; read-only).\n- \"atc_ci\": package ATC CI; requires available API and verified selection.\n- \"cds_testcases\": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n- \"object_state\": active/inactive ETags, hashes and divergence (name+type; CLAS: all includes). Server-driven types unsupported.\n- \"quickfix\": proposals at name+type+source+line (optional column/sourceUri).\n- \"apply_quickfix\": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n- \"dumps\": ST22 newest-first list (user/from/to/maxResults; filters e.g. attribute=runtimeError, operator=equals, values=[MESSAGE_TYPE_X]) or id detail (includeFullText, sections).\n- \"traces\": list profiler traces; id+analysis analyzes one.\n- \"trace_start\": arm a profiler trace for the NEXT matching execution, then reproduce and read via \"traces\" (write scope; defaults: next HTTP request, SQL on).\n- \"trace_requests\": list armed trace requests. \"trace_cancel\": cancel one by id (write scope).\n- \"system_messages\": list SM02 messages. \"gateway_errors\": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n- \"odata_perf\": diagnose why an OData call is slow (url = host-relative path); returns the sap-statistics timing split (DB/ABAP/framework/auth). Read-only; needs allowDataPreview.\n- \"authorization_trace\": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n- \"cds_sql\": show the native SQL a CDS view compiles to (name; read-only).\n- \"sql_trace_state\" / \"set_sql_trace_state\" (sqlOn; needs SAP_ALLOW_WRITES) / \"sql_trace_directory\": ST05 SQL-trace control.\nQuickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1212,6 +1241,8 @@
           "type": "string",
           "enum": [
             "syntax",
+            "feed_schema",
+            "activation_log",
             "unittest",
             "unittest_ci",
             "atc",
@@ -1236,6 +1267,39 @@
             "authorization_trace"
           ]
         },
+        "filters": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "attribute": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "operator": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "minItems": 1,
+                "maxItems": 2
+              }
+            },
+            "required": [
+              "attribute",
+              "operator",
+              "values"
+            ],
+            "additionalProperties": false
+          }
+        },
         "name": {
           "type": "string",
           "description": "syntax/unittest/atc/object_state object name; cds_testcases/cds_sql CDS entity or DDLS name."
@@ -1252,7 +1316,6 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 20,
-          "description": "ATC only, instead of name/type/url. One batch + at most one verification. Returns coverage; unreported objects stay incomplete. No packages.",
           "items": {
             "type": "object",
             "required": [
@@ -1285,7 +1348,8 @@
                 "pattern": "^(?:/[A-Za-z0-9_]+/)?[A-Za-z0-9_]+$"
               }
             }
-          }
+          },
+          "description": "ATC or syntax, instead of name/type/url/source. Syntax: CLAS/PROG/INTF/DDLS; stored active/inactive. Missing or ambiguous reports stay incomplete. No packages."
         },
         "source": {
           "type": "string",

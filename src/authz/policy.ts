@@ -142,6 +142,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
 
   // ── SAPDiagnose ──────────────────────────────────────────────────
   SAPDiagnose: { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.feed_schema': { scope: 'read', opType: OperationType.Read },
+  'SAPDiagnose.activation_log': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.syntax': { scope: 'read', opType: OperationType.Read },
   'SAPDiagnose.unittest': { scope: 'read', opType: OperationType.Test },
   'SAPDiagnose.unittest_ci': { scope: 'read', opType: OperationType.Test },

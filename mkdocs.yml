@@ -106,6 +106,7 @@ nav:
           - CLI Guide: cli-guide.md
           - Transport reviews: review-workflows.md
           - SQL notebooks: sql-notebooks.md
+          - Diagnostic evidence: diagnostic-evidence.md
           - Local Files in Codex: codex-file-source.md
           - SAP Trial Setup: sap-trial-setup.md
           - Authentication Test Process: auth-test-process.md

@@ -1,0 +1,245 @@
+{
+  "target": "A4H/001",
+  "release": "758",
+  "collectedAt": "2026-10-17T11:16:25.980Z",
+  "mutationCount": 0,
+  "metrics": {
+    "reads": 15,
+    "backendAttempts": 15,
+    "responseBytes": 30985,
+    "elapsedMs": 2433,
+    "exhausted": false
+  },
+  "evidence": [
+    {
+      "label": "domain-demo",
+      "path": "/sap/bc/adt/ddic/domains/ZARC1_TD_DOM",
+      "status": 200,
+      "bytes": 2474,
+      "sha256": "d047cd6101dda0ac0efa0a1105e7ee053bc171bf3193668cca3d0519eb902fff"
+    },
+    {
+      "label": "domain-demo-history",
+      "path": "/sap/bc/adt/ddic/domains/ZARC1_TD_DOM/versions",
+      "status": 200,
+      "bytes": 1414,
+      "sha256": "b456f69b32f32dda470fe7ba68976b3cd340fd673edfa913f62e1c3006a18392"
+    },
+    {
+      "label": "domain-demo",
+      "history": {
+        "count": 2,
+        "historicalCount": 1,
+        "revisions": [
+          {
+            "id": "00001",
+            "uri": "/sap/bc/adt/ddic/domains/ZARC1_TD_DOM/versions/20260803214201/00001/content",
+            "transport": "A4HK906369"
+          },
+          {
+            "id": "00000",
+            "uri": "/sap/bc/adt/ddic/domains/ZARC1_TD_DOM/versions/20260803214201/00000/content"
+          }
+        ],
+        "continuation": false
+      }
+    },
+    {
+      "label": "domain-demo-revision-00001",
+      "path": "/sap/bc/adt/ddic/domains/ZARC1_TD_DOM/versions/20260803214201/00001/content",
+      "status": 403,
+      "errorType": "AdtApiError"
+    },
+    {
+      "label": "domain-demo",
+      "historicalPair": "not-established"
+    },
+    {
+      "label": "domain-pilot",
+      "path": "/sap/bc/adt/ddic/domains/ZORFC_D_CHAR16",
+      "status": 200,
+      "bytes": 2496,
+      "sha256": "bf3f17c166a14fb29033280e48edf2aa700266c3dfd249ccac1dde42c8bb6108"
+    },
+    {
+      "label": "domain-pilot-history",
+      "path": "/sap/bc/adt/ddic/domains/ZORFC_D_CHAR16/versions",
+      "status": 200,
+      "bytes": 1109,
+      "sha256": "d18e2f896b21473b6b345a597a785e87abbb4a5f0517e1babf7391f52d5d0968"
+    },
+    {
+      "label": "domain-pilot",
+      "history": {
+        "count": 1,
+        "historicalCount": 0,
+        "revisions": [
+          {
+            "id": "00000",
+            "uri": "/sap/bc/adt/ddic/domains/ZORFC_D_CHAR16/versions/19700101101123/00000/content",
+            "transport": "A4HK906358"
+          }
+        ],
+        "continuation": false
+      }
+    },
+    {
+      "label": "domain-pilot",
+      "historicalPair": "not-established"
+    },
+    {
+      "label": "data-element-pilot",
+      "path": "/sap/bc/adt/ddic/dataelements/ZORFC_CHAR16",
+      "status": 200,
+      "bytes": 3233,
+      "sha256": "53f1401c827d5fad0bff41deded597479e23e5454ae01793d275aeadd592c1fb"
+    },
+    {
+      "label": "data-element-pilot-history",
+      "path": "/sap/bc/adt/ddic/dataelements/ZORFC_CHAR16/versions",
+      "status": 200,
+      "bytes": 1115,
+      "sha256": "1b05c87deb37abf32fad62d07d686b4af0ab9c7ff3d709cc008f8db48539f888"
+    },
+    {
+      "label": "data-element-pilot",
+      "history": {
+        "count": 1,
+        "historicalCount": 0,
+        "revisions": [
+          {
+            "id": "00000",
+            "uri": "/sap/bc/adt/ddic/dataelements/ZORFC_CHAR16/versions/19700101101123/00000/content",
+            "transport": "A4HK906358"
+          }
+        ],
+        "continuation": false
+      }
+    },
+    {
+      "label": "data-element-pilot",
+      "historicalPair": "not-established"
+    },
+    {
+      "label": "table-pilot",
+      "path": "/sap/bc/adt/ddic/tables/ZORFC_BETA_TX",
+      "status": 200,
+      "bytes": 3036,
+      "sha256": "6839de360ba0c065c7f3c2b7cb78b83232150f3aeb9a4e900938fbe617456780"
+    },
+    {
+      "label": "table-pilot-history",
+      "path": "/sap/bc/adt/ddic/tables/zorfc_beta_tx/source/main/versions",
+      "status": 200,
+      "bytes": 1090,
+      "sha256": "dc6a120b534845182605baebf9764290551401fc9be19e89d74482f60ef16de4"
+    },
+    {
+      "label": "table-pilot",
+      "history": {
+        "count": 1,
+        "historicalCount": 0,
+        "revisions": [
+          {
+            "id": "00000",
+            "uri": "/sap/bc/adt/ddic/tables/zorfc_beta_tx/source/main/versions/19700101101123/00000/content",
+            "transport": "A4HK906358"
+          }
+        ],
+        "continuation": false
+      }
+    },
+    {
+      "label": "table-pilot",
+      "historicalPair": "not-established"
+    },
+    {
+      "label": "table-type-pilot",
+      "path": "/sap/bc/adt/ddic/tabletypes/ZORFC_CHAR16_T",
+      "status": 200,
+      "bytes": 5245,
+      "sha256": "c505a81c5f646c34f3af76f9dc78d687f81bafa948b055176adb320ed9956794"
+    },
+    {
+      "label": "table-type-pilot-history",
+      "path": "/sap/bc/adt/ddic/tabletypes/ZORFC_CHAR16_T/versions",
+      "status": 200,
+      "bytes": 1114,
+      "sha256": "a77cb6b3c89c27d58353fdcfd509d12a3115c1200ff341ba7ef3e654cc46d9ab"
+    },
+    {
+      "label": "table-type-pilot",
+      "history": {
+        "count": 1,
+        "historicalCount": 0,
+        "revisions": [
+          {
+            "id": "00000",
+            "uri": "/sap/bc/adt/ddic/tabletypes/ZORFC_CHAR16_T/versions/19700101101123/00000/content",
+            "transport": "A4HK906358"
+          }
+        ],
+        "continuation": false
+      }
+    },
+    {
+      "label": "table-type-pilot",
+      "historicalPair": "not-established"
+    },
+    {
+      "label": "program-text",
+      "path": "/sap/bc/adt/textelements/programs/ZARC1_TD_REPORT",
+      "status": 200,
+      "bytes": 2660,
+      "sha256": "f223bec8c774bb4dd5462acb34e3406b106068853d6f3a365b1e4cfc0b3bf0c3"
+    },
+    {
+      "label": "program-text",
+      "history": "not-advertised"
+    },
+    {
+      "label": "class-text",
+      "path": "/sap/bc/adt/textelements/classes/ZCL_ARC1_TD_CALC",
+      "status": 200,
+      "bytes": 1448,
+      "sha256": "7bdf3d4140816de09e5e6eaf49f1374eeb67732811157d0796f8b8eedd45cdc9"
+    },
+    {
+      "label": "class-text",
+      "history": "not-advertised"
+    },
+    {
+      "label": "function-group-pilot",
+      "path": "/sap/bc/adt/functions/groups/ZORFC_BETA_V1",
+      "status": 200,
+      "bytes": 3452,
+      "sha256": "de7d99922b95eb705f12df33fd155d8c4322ffcd833ff69b110d56df95832676"
+    },
+    {
+      "label": "function-group-pilot-history",
+      "path": "/sap/bc/adt/functions/groups/ZORFC_BETA_V1/source/main/versions",
+      "status": 200,
+      "bytes": 1099,
+      "sha256": "97ab8a4183603f9c2f6b697a63b5f1c798533106e71898bd0953602b919e9bbe"
+    },
+    {
+      "label": "function-group-pilot",
+      "history": {
+        "count": 1,
+        "historicalCount": 0,
+        "revisions": [
+          {
+            "id": "00000",
+            "uri": "/sap/bc/adt/functions/groups/ZORFC_BETA_V1/source/main/versions/19700101101123/00000/content",
+            "transport": "A4HK906358"
+          }
+        ],
+        "continuation": false
+      }
+    },
+    {
+      "label": "function-group-pilot",
+      "historicalPair": "not-established"
+    }
+  ]
+}

@@ -273,9 +273,33 @@ export function normalizeTypeArgsForValidation(
   const cleaned = stripLlmEmptyValues(args);
   switch (toolName) {
     case 'SAPRead':
+      // Match SAPDiagnose's strict-client filler handling; an actual empty batch still fails.
+      if (
+        Array.isArray(cleaned.objects) &&
+        cleaned.objects.length === 0 &&
+        (normalizeObjectType(String(cleaned.type ?? '')) !== 'SYNTAX' ||
+          cleaned.name !== undefined ||
+          cleaned.objectType !== undefined)
+      ) {
+        delete cleaned.objects;
+      }
       return {
         ...cleaned,
         type: normalizeObjectType(String(cleaned.type ?? '')),
+        objects: Array.isArray(cleaned.objects)
+          ? cleaned.objects.map((obj) => {
+              if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return obj;
+              const item = obj as Record<string, unknown>;
+              return {
+                ...item,
+                type: typeof item.type === 'string' ? normalizeObjectType(item.type.trim()) : item.type,
+                name:
+                  typeof item.name === 'string'
+                    ? item.name.trim().replace(/[a-z]/g, (char) => char.toUpperCase())
+                    : item.name,
+              };
+            })
+          : cleaned.objects,
         objectType:
           cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
       };
@@ -348,12 +372,14 @@ export function normalizeTypeArgsForValidation(
         type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPDiagnose':
+      // An empty optional filter selection is the existing unfiltered call, including strict-client filler.
+      if (Array.isArray(cleaned.filters) && cleaned.filters.length === 0) delete cleaned.filters;
       // Strict-schema clients may supply an empty placeholder on single-object
       // or unrelated actions. An actual empty ATC batch remains a validation error.
       if (
         Array.isArray(cleaned.objects) &&
         cleaned.objects.length === 0 &&
-        (cleaned.action !== 'atc' ||
+        (!['atc', 'syntax'].includes(String(cleaned.action)) ||
           cleaned.name !== undefined ||
           cleaned.type !== undefined ||
           cleaned.url !== undefined)

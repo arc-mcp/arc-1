@@ -57,6 +57,8 @@ const MULTI_TARGET_ACTION_RULES = new Map<
     {
       actions: new Set([
         'syntax',
+        'feed_schema',
+        'activation_log',
         'unittest',
         'atc',
         'atc_variants',

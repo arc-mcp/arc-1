@@ -1,5 +1,31 @@
 # LLM Evals
 
+## Diagnostic feature value comparison
+
+The #1011 benchmark scores completed tasks and retrieved evidence, not just the
+first selected tool. It uses installed local Ollama models with the full read-only
+catalog and real handlers over synthetic HTTP responses. It never connects to SAP.
+Normal routing evals do not run it automatically.
+
+```bash
+DIAGNOSTIC_VALUE_EVAL=1 npx vitest run --config vitest.eval.config.ts tests/evals/diagnostic-value.test.ts
+```
+
+Defaults: `qwen3:30b,llama3.1:8b`, two repetitions, eight tasks, both catalogs.
+Override `DIAGNOSTIC_EVAL_MODELS` (comma-separated installed names),
+`DIAGNOSTIC_EVAL_REPEATS` (1–3), `DIAGNOSTIC_EVAL_CASES` (case IDs), or
+`DIAGNOSTIC_EVAL_OUTPUT` (artifact directory). `DIAGNOSTIC_EVAL_ARMS=candidate` runs an explicitly separate candidate-only confirmation; the default compares both arms. `OLLAMA_BASE_URL` must be local.
+Missing models fail explicitly; nothing is downloaded. The frozen baseline catalog from `62eb17b4` is vendored so squash merges do not
+break reproducibility. Full transcripts, schemas, model digests and
+scores go to `test-results/diagnostic-value/` by default.
+
+Review failures and natural-language answers manually: JSON-format compliance is
+not the same as task success. Unexpected fixture endpoints make a trial
+inconclusive. A passing Vitest run means evidence was collected, not that a feature
+demonstrated value. See the [decision plan](../../docs/plans/2026-10-17-diagnostic-value-evals.md).
+
+## Existing routing evals
+
 End-to-end tool-selection evals for the ARC-1 MCP tool surface. The harness
 runs two shapes of eval against your scenarios:
 

@@ -1078,7 +1078,7 @@ Work:
   `SAPDiagnose.odata_perf|authorization_trace` cannot bypass target consent.
 - Add `SAPLint` and `SAPTransport` only through explicit action allowlists:
   `lint|lint_and_fix|list_rules` and `list|get|check|history`. Permit the following `SAPDiagnose`
-  actions through a separate exact allowlist: `syntax`, `unittest`, `atc`, `atc_variants`,
+  actions through a separate exact allowlist: `syntax`, `feed_schema`, `activation_log`, `unittest`, `atc`, `atc_variants`,
   `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
   `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, and
   `authorization_trace`. The existing data gates still control `odata_perf` and

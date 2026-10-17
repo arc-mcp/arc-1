@@ -1,3 +1,5 @@
+import { readDdicActivationLog } from '../adt/ddic-activation-log.js';
+import { type FeedFilter, readDumpFeedSchema } from '../adt/feed-schema.js';
 /**
  * SAPDiagnose handler — runtime diagnostics: short dumps (ST22), traces, gateway errors, object
  * state, ATC, unit tests, CDS test cases.
@@ -648,6 +650,16 @@ export async function handleSAPDiagnose(
   const type = normalizeObjectType(String(args.type ?? ''));
 
   switch (action) {
+    case 'activation_log':
+      if (!name || !['DOMA', 'DTEL', 'TABL', 'DDLS'].includes(type))
+        return errorResult('activation_log requires name and type DOMA, DTEL, TABL or DDLS.');
+      return textResult(
+        toolJson(
+          await readDdicActivationLog(client.http, client.safety, { type, name, uri: objectUrlForType(type, name) }),
+        ),
+      );
+    case 'feed_schema':
+      return textResult(toolJson(await readDumpFeedSchema(client.http, client.safety)));
     case 'syntax':
       return handleSyntaxCheck(client, args);
     case 'unittest': {
@@ -1053,7 +1065,13 @@ export async function handleSAPDiagnose(
       const maxResults = args.maxResults ? Number(args.maxResults) : undefined;
       const from = args.from as string | undefined;
       const to = args.to as string | undefined;
-      const dumps = await listDumps(client.http, client.safety, { user, maxResults, from, to });
+      const dumps = await listDumps(client.http, client.safety, {
+        user,
+        maxResults,
+        from,
+        to,
+        filters: args.filters as FeedFilter[] | undefined,
+      });
       return textResult(toolJson(dumps));
     }
     case 'traces': {

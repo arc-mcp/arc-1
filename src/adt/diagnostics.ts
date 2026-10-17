@@ -9,7 +9,10 @@
  */
 
 import { createHash } from 'node:crypto';
+import { getCurrentContext } from '../server/context.js';
+import { DataResponseBudget } from './data-result-context.js';
 import { AdtApiError } from './errors.js';
+import { compileDumpFilters, type FeedFilter, readDumpFeedSchema } from './feed-schema.js';
 import type { AdtHttpClient } from './http.js';
 import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -65,7 +68,9 @@ interface FeedQueryOptions {
   to?: string;
 }
 
-export interface ListDumpsOptions extends FeedQueryOptions {}
+export interface ListDumpsOptions extends FeedQueryOptions {
+  filters?: FeedFilter[];
+}
 
 export interface ListSystemMessagesOptions extends FeedQueryOptions {}
 
@@ -232,6 +237,16 @@ export async function listDumps(
 ): Promise<DumpEntry[]> {
   checkOperation(safety, OperationType.Read, 'ListDumps');
 
+  const request = {
+    deadline: Date.now() + 30_000,
+    signal: getCurrentContext()?.signal,
+    responseBudget: new DataResponseBudget(2 * 1024 * 1024, 'dumps'),
+  };
+  const user = options?.user?.trim();
+  const filters = options?.filters
+    ? [...options.filters, ...(user ? [{ attribute: 'user', operator: 'equals', values: [user] }] : [])]
+    : undefined;
+  const compiled = filters ? compileDumpFilters(await readDumpFeedSchema(http, safety, request), filters) : undefined;
   const wanted = clampMaxResults(options?.maxResults, DEFAULT_DUMP_MAX_RESULTS, MAX_DUMP_RESULTS_CAP);
   const from = normalizeFeedTimestamp(options?.from, 'from');
   let to = normalizeFeedTimestamp(options?.to, 'to');
@@ -244,9 +259,15 @@ export async function listDumps(
       DEFAULT_DUMP_MAX_RESULTS,
       'user',
     );
-    const resp = await http.get(`/sap/bc/adt/runtime/dumps${queryString}`, {
-      Accept: 'application/atom+xml;type=feed',
-    });
+    const params = new URLSearchParams(queryString.slice(1));
+    if (compiled) params.set('$query', compiled);
+    const resp = await http.get(
+      `/sap/bc/adt/runtime/dumps${compiled ? `?${params}` : queryString}`,
+      {
+        Accept: 'application/atom+xml;type=feed',
+      },
+      request,
+    );
 
     const entries = parseDumpList(resp.body);
     const before = byId.size;

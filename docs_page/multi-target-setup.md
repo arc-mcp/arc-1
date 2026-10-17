@@ -352,7 +352,7 @@ permits it:
 | `SAPQuery` | SQL queries, only with the required data/SQL policy and scopes |
 | `SAPNavigate` | Code navigation |
 | `SAPLint` | `lint`, `lint_and_fix`, `list_rules` (offline in ARC-1; does not save fixes to SAP) |
-| `SAPDiagnose` | `syntax`, `unittest`, `atc`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, `authorization_trace` |
+| `SAPDiagnose` | `feed_schema`, `activation_log`, `syntax`, `unittest`, `atc`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, `authorization_trace` |
 | `SAPContext` | Dependency context |
 | `SAPTransport` | `list`, `get`, `check`, `history` |
 <!-- multi-target-action-contract:end -->
