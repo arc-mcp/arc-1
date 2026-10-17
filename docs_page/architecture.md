@@ -13,6 +13,7 @@ see [Authorization & Roles](authorization.md).
 | Area | Current architecture |
 | ---- | -------------------- |
 | Runtime | TypeScript MCP server on Node.js 22.19+, distributed as npm package and Docker image. |
+| Core implementation | Existing SAP APIs plus TypeScript; no built-in report/class execution, direct RFC, or custom ABAP helpers. Those capabilities belong in extensions. User ABAP development and dedicated ATC/Unit workflows remain supported. See [ADR-0009](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md). |
 | MCP transports | `stdio` for local clients and `http-streamable` for hosted/server deployments. |
 | Tool surface | Standard mode exposes 12 intent-based tools. Hyperfocused mode exposes one `SAP` tool. |
 | SAP access | ADT REST APIs under `/sap/bc/adt/*`, plus selected OData/utility endpoints for UI5, Git, FLP, and diagnostics. |
@@ -212,7 +213,7 @@ Standard mode groups many ADT endpoints into 12 intent-based tools.
 | `SAPWrite` | Create, update, delete, method surgery, RAP batch/scaffold actions. | Registered only when writes are enabled. |
 | `SAPActivate` | Activate objects and publish/unpublish service bindings. | Registered only when writes are enabled. |
 | `SAPNavigate` | Definition, references, completion, hierarchy. | Some ADT read endpoints use POST. |
-| `SAPQuery` | Freestyle ABAP SQL. | Requires SQL scope and `SAP_ALLOW_FREE_SQL=true`. |
+| `SAPQuery` | Saved SAPscript long texts or freestyle ABAP SQL. | Long texts require `data` scope + `SAP_ALLOW_DATA_PREVIEW`; SQL requires `sql` scope + `SAP_ALLOW_FREE_SQL`. Both flags default off. |
 | `SAPContext` | Dependency context, usages, and CDS impact analysis. | Usages query SAP’s live where-used index. |
 | `SAPLint` | Local abaplint, formatting, formatter settings, pre-write validation helpers. | Formatter settings mutation needs write permission. |
 | `SAPDiagnose` | Syntax, unit tests, ATC, headless CI ATC/AUnit, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |

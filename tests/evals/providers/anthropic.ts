@@ -9,7 +9,7 @@
  *   const response = await provider.chat(messages, tools);
  */
 
-import type { LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
+import type { LLMChatOptions, LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -86,7 +86,8 @@ export function createAnthropicProvider(model: string): LLMProvider {
     name: 'anthropic',
     model,
 
-    async chat(messages: Message[], tools: ToolDefinitionForLLM[]): Promise<LLMResponse> {
+    async chat(messages: Message[], tools: ToolDefinitionForLLM[], options?: LLMChatOptions): Promise<LLMResponse> {
+      options?.signal?.throwIfAborted();
       const apiKey = getAnthropicApiKey();
       if (!apiKey) {
         throw new Error('ANTHROPIC_API_KEY not set (add it to .env)');
@@ -110,6 +111,7 @@ export function createAnthropicProvider(model: string): LLMProvider {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify(body),
+        ...(options?.signal ? { signal: options.signal } : {}),
       });
 
       if (!resp.ok) {

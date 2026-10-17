@@ -12,6 +12,7 @@
 import type { ResolvedFeatures } from '../adt/types.js';
 import { getActionPolicy } from '../authz/policy.js';
 import type { ServerConfig } from '../server/types.js';
+import { createQueryDefinition } from './query-tool.js';
 import { isGitToolVisible } from './tool-registry.js';
 import type { ToolDefinition } from './tools.js';
 
@@ -95,7 +96,7 @@ export function getHyperfocusedToolDefinition(
   const readActions = [
     'read',
     'search',
-    ...(config.allowFreeSQL ? ['query'] : []),
+    ...(createQueryDefinition(config, resolvedFeatures) ? ['query'] : []),
     'navigate',
     'context',
     'lint',

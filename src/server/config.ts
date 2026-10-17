@@ -92,7 +92,11 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'ui-port', valueName: 'port', description: 'Admin UI port override' },
   { name: 'ui-open', valueName: 'boolean', description: 'Open the local admin UI in a browser (true/false)' },
   { name: 'allow-writes', valueName: 'boolean', description: 'Enable SAP mutations (true/false)' },
-  { name: 'allow-data-preview', valueName: 'boolean', description: 'Enable table data preview (true/false)' },
+  {
+    name: 'allow-data-preview',
+    valueName: 'boolean',
+    description: 'Enable table data preview and stored SAPscript texts (true/false)',
+  },
   { name: 'allow-free-sql', valueName: 'boolean', description: 'Enable freestyle SQL (true/false)' },
   {
     name: 'allow-transport-writes',

@@ -230,6 +230,9 @@ ADT **object** create/update/delete (CLAS, DDLS, …) stay on the roadmap as the
 
 ## Executing ABAP (classes and reports)
 
+Report/class execution and direct RFC integrations belong in extensions, as defined by
+[ADR-0009](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md).
+
 `ctx.run` exposes two named execution operations:
 
 - **`classRun(name)`** runs a class implementing `IF_OO_ADT_CLASSRUN` and returns its

@@ -55,7 +55,7 @@
             "SAJT",
             "TABL/DTI"
           ],
-          "description": "Object or metadata type. TABL includes DDIC structures; KTD aliases SKTD (Knowledge Transfer Documents). SYNTAX checks objectType+name. Server-driven objects use discovery-gated XML metadata and AFF JSON source (DTSC/DSFD/DTDC/DRTY use DDL text). DESD logical external schema; EVTB event binding; EVTO event object; CSNM CSN model; COTA communication target; DTSC static cache; DTDC dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template; TABL/DTI secondary index named TABLE~INDEX (read prefers pending JSON). Deprecated: MESSAGES→MSAG. ENQU lock object as JSON."
+          "description": "Repository or metadata type. TABL includes structures. KTD aliases SKTD; MESSAGES aliases MSAG. SYNTAX requires objectType+name. Server-driven: discovery-gated XML metadata, AFF JSON source; DTSC/DSFD/DTDC/DRTY use DDL text. ENQU: JSON. TABL/DTI: TABLE~INDEX, prefers pending JSON. DESD external schema; EVTB/EVTO event binding/object; CSNM CSN model; COTA communication target; DTSC/DTDC static/dynamic cache; DSFD scalar function; UIAD launchpad descriptor; DRTY CDS type; APLO log object; SAJC/SAJT job catalog/template."
         },
         "name": {
           "type": "string",
@@ -78,15 +78,15 @@
         },
         "fromLabel": {
           "type": "string",
-          "description": "action=\"diff\" optional display label for the OLD side in the summary and patch header, e.g. \"DNT-6-6: Validate discounts (DS7K900123)\". Does not affect source resolution."
+          "description": "Diff OLD-side display label; does not change source resolution."
         },
         "toLabel": {
           "type": "string",
-          "description": "action=\"diff\" optional display label for the NEW side in the summary and patch header, e.g. \"active\" or \"inactive draft\". Does not affect source resolution."
+          "description": "Diff NEW-side display label; does not change source resolution."
         },
         "include": {
           "type": "string",
-          "description": "TABL: indexes lists native secondary indexes. CLAS: omit include or use main for the global declaration + implementation; definitions/implementations select local helper classes, macros/testclasses their own sections. Explicit include wins over method auto-routing. For DDLS: use include=\"elements\" for the CDS field catalog (key fields, aliases, associations, expression types) instead of raw DDL. For VERSIONS (CLAS): include selects the class include history to query (main, definitions, implementations, macros, testclasses). BSP: case-sensitive path; name may also be APP/path."
+          "description": "TABL: indexes. CLAS: omit include or use main for global class; definitions/implementations are local helpers; macros/testclasses as named. Explicit include wins over method routing. DDLS: elements returns field catalog (keys, aliases, associations, types). VERSIONS CLAS: selects include history. BSP: case-sensitive path; name also accepts APP/path."
         },
         "group": {
           "type": "string",
@@ -99,7 +99,7 @@
         "grep": {
           "type": "string",
           "maxLength": 512,
-          "description": "Regex pattern (case-insensitive) to search within the object source. Returns only matching lines with 1-based line numbers and ±3 context lines, instead of the full source — token-efficient. For CLAS, matches are annotated with the owning class/method; combine with include= to scope a section, but do NOT combine with method= (use grep to find, then method= to read). Works for source-bearing types (CLAS, INTF, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL). Falls back to a literal search when the pattern is not valid regex."
+          "description": "Case-insensitive source regex: matching lines, 1-based numbers and ±3 context; invalid regex becomes literal. CLAS adds owning class/method; include scopes a section. Never combine with method. Works for source-bearing types (CLAS, INTF, DDLS, DCLS, BDEF, SRVD, SRVB, SKTD/KTD, DDLX, TABL)."
         },
         "lineStart": {
           "type": "integer",
@@ -131,7 +131,7 @@
         },
         "includeSignature": {
           "type": "boolean",
-          "description": "For FUNC type only. When true, response is JSON: {source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?} — each parameter parsed into {kind, name, type, byValue?, default?, optional?}; processingType reports rfc/update/normal. Default false (returns plain source body)."
+          "description": "FUNC only: return JSON {source,signature,processingType?,updateTaskKind?}. Signature groups importing/exporting/changing/tables/exceptions/raising parameters. Default false: raw source."
         },
         "force_refresh": {
           "type": "boolean",
@@ -170,7 +170,7 @@
         },
         "where": {
           "type": "array",
-          "description": "For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; use <> because 758 rejects !=. For IN/NOT IN: use bare comma-separated values; do NOT quote them. ARC-1 quotes and escapes values, e.g. \"261,262\". No subqueries. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
+          "description": "For TABLE_QUERY: structured WHERE conditions, ANDed together. Each item: {field, op, value?}. Ops: =, <>, <, <=, >, >=, LIKE, NOT LIKE, IN, NOT IN, IS NULL, IS NOT NULL; STARTS_WITH: literal prefix. Use <>; 758 rejects !=. IN/NOT IN: bare comma-separated values, e.g. \"261,262\". ARC-1 quotes/escapes them; no subqueries. Example: [{\"field\":\"MATNR\",\"op\":\"=\",\"value\":\"300006888\"},{\"field\":\"BUDAT_MKPF\",\"op\":\">=\",\"value\":\"20250101\"}].",
           "items": {
             "type": "object",
             "properties": {

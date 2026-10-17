@@ -31,11 +31,16 @@ describe('internal data-operation registry', () => {
       'DD02L',
       'DDLDEPENDENCY',
       'SEOMETAREL',
+      'STXH',
+      'STXL',
       'SUAUTHVALTRC',
       'SWOTLV',
+      'T002',
       'TADIR',
       'TOBJ',
       'TSTC',
+      'TTXID',
+      'TTXOB',
     ]);
   });
 
@@ -48,6 +53,11 @@ describe('internal data-operation registry', () => {
     ['SWOTLV', 'handlers/read.ts'],
     ['SUAUTHVALTRC', 'adt/authorization-trace.ts'],
     ['TOBJ', 'adt/authorization-trace.ts'],
+    ['STXH', 'adt/stored-text/source.ts'],
+    ['STXL', 'adt/stored-text/source.ts'],
+    ['TTXOB', 'adt/stored-text/source.ts'],
+    ['TTXID', 'adt/stored-text/source.ts'],
+    ['T002', 'adt/stored-text/source.ts'],
   ])('registry source %s is really read by %s', (source, file) => {
     expect(internalDataSources()).toContain(source);
     expect(read(file).toUpperCase()).toContain(source);
@@ -66,6 +76,7 @@ describe('internal data-operation registry', () => {
       'class_hierarchy',
       'bor_method_lookup',
       'authorization_trace',
+      'stored_text',
     ];
     const optional: InternalDataOperationId[] = ['tran_program_enrichment', 'interface_implementers'];
     for (const id of core) expect(INTERNAL_DATA_OPERATIONS[id].criticality).toBe('core');
@@ -78,6 +89,20 @@ describe('internal data-operation registry', () => {
     expect(message).toContain('source="adt"');
     // Honest about what the alternative cannot do.
     expect(message).toContain('orphan/ghost TADIR rows');
+  });
+
+  it('marks every stored-text source as required by the public query action', () => {
+    const sources = ['STXH', 'STXL', 'TTXOB', 'TTXID', 'T002'];
+    expect(INTERNAL_DATA_OPERATIONS.stored_text).toMatchObject({
+      sources,
+      consumer: 'SAPQuery(action="long_text")',
+      criticality: 'core',
+    });
+    for (const source of sources) {
+      expect(internalOperationsBlockedBy([source])).toEqual([
+        { id: 'stored_text', operation: INTERNAL_DATA_OPERATIONS.stored_text, blocked: [source] },
+      ]);
+    }
   });
 
   it('formats core denials through the minimal client-message contract', () => {

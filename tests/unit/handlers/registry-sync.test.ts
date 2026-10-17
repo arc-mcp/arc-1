@@ -45,7 +45,7 @@ const { resetCachedFeatures } = await import('../../../src/handlers/feature-cach
 
 // allowWrites registers SAPWrite (the BTP/onprem type matrix this file checks); the other gate
 // flags don't affect the type enums, so they're left at their defaults.
-const onpremFull: ServerConfig = onprem({ allowWrites: true });
+const onpremFull: ServerConfig = onprem({ allowWrites: true, allowDataPreview: true });
 const btpFull: ServerConfig = btp({ allowWrites: true });
 
 function typeEnum(config: ServerConfig, toolName: string): string[] {

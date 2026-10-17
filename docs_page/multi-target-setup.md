@@ -349,7 +349,7 @@ permits it:
 |---|---|
 | `SAPRead` | Source/metadata reads; data operations require additional gates |
 | `SAPSearch` | Repository search; database-backed variants require SQL gates |
-| `SAPQuery` | SQL queries, only with the required data/SQL policy and scopes |
+| `SAPQuery` | `long_text`, `sql`, subject to the selected target's data-preview/SQL gate and caller scopes |
 | `SAPNavigate` | Code navigation |
 | `SAPLint` | `lint`, `lint_and_fix`, `list_rules` (offline in ARC-1; does not save fixes to SAP) |
 | `SAPDiagnose` | `syntax`, `unittest`, `atc`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, `authorization_trace` |

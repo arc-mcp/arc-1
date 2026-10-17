@@ -106,8 +106,8 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 
 | Capability | Env var | Default | Policy note |
 | ---------- | ------- | ------- | ----------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Table previews and [saved SAPscript texts](tools.md#stored-sapscript-long-texts) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
+| Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 | Exact table/CDS blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Defense-in-depth denial with live CDS/replacement lineage; unresolved requests fail closed. Not an allowlist or SAP authorization replacement. |
 
 **Recommended security-focused profile.** Keep structured data access and remove caller-authored SQL,
@@ -120,7 +120,7 @@ SAP_BLOCKED_DATA_SOURCES=USR02,PA0002
 ```
 
 Blocklist + free SQL remains a supported *advanced* profile for installations that genuinely need
-`SAPQuery`; it is the less restrictive choice and subjects callers to the strict static-SQL subset.
+freestyle SQL; it is the less restrictive choice and subjects callers to the strict static-SQL subset.
 Either way, apply **SAP Note 3772411** independently — this feature is default-off and remediates
 nothing, and `SAP_ALLOW_WRITES=false` does not neutralize a database-side mutation reached through a
 vulnerable SQL Console host expression.
@@ -132,8 +132,8 @@ vulnerable SQL Console host expression.
 | Setting                            | Recommended | Rationale                                                                                      |
 |------------------------------------|-------------|------------------------------------------------------------------------------------------------|
 | `SAP_ALLOW_WRITES`                 | `false` unless writes are needed | Blocks every mutation — object writes, activation, transport writes, git writes. |
-| `SAP_ALLOW_FREE_SQL`               | `false` on sensitive systems | Blocks arbitrary SQL queries against the database via `SAPQuery`.                               |
-| `SAP_ALLOW_DATA_PREVIEW`           | `false` unless table preview is required | Blocks named table content preview.                                              |
+| `SAP_ALLOW_FREE_SQL`               | `false` on sensitive systems | Blocks `SAPQuery(action=sql)`. |
+| `SAP_ALLOW_DATA_PREVIEW`           | `false` unless application data is needed | Blocks table previews and `SAPQuery(action=long_text)`. |
 | `SAP_BLOCKED_DATA_SOURCES`         | Exact sensitive sources when data access is approved; keep data access disabled if the target lacks the required catalog metadata | Experimental, default-off emergency brake, slower by design (extra SAP metadata calls, no cache). Requires catalog access to `DD02L` and `DDLDEPENDENCY` under the caller identity; blocking either prevents table-lineage proof. Missing data-preview support returns `DATA_POLICY_UNAVAILABLE`. Fails closed on unsupported lineage but leaves every unlisted source eligible. Not an allowlist, not a DCL replacement, and not a remediation for SAP Note 3772411. |
 | `SAP_ALLOWED_PACKAGES`             | `$TMP` or `Z*,Y*,$TMP` | Restricts writes to custom-code packages. Prefix wildcards (`Z*`), exact matches, and DEVCLASS subtree rules (`ZFOO/**` — `ZFOO` plus every transitive sub-package) are all supported; subtree resolution is fail-closed on SAP errors. Reads are never package-gated. |
 | `SAP_ALLOW_TRANSPORT_WRITES`       | `false` unless CTS needed | Opt-in for transport mutations (`SAPTransport.create`/`release`/`delete`).                           |

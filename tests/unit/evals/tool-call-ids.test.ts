@@ -117,27 +117,31 @@ it('assigns fallback IDs once without mutating an ID-less provider response', as
 });
 
 it.each([
-  { maxToolCalls: 1, executed: 1, turns: 1 },
-  { maxToolCalls: 3, executed: 3, turns: 2 },
-  { maxToolCalls: 1.5, executed: 2, turns: 1 },
-])('caps execution across turns at $maxToolCalls calls', async ({ maxToolCalls, executed, turns }) => {
-  const provider: LLMProvider = {
-    name: 'fixture',
-    model: 'fixture',
-    chat: vi.fn().mockResolvedValue({
-      done: false,
-      toolCalls: [
-        { name: 'SAPRead', arguments: {} },
-        { name: 'SAPSearch', arguments: {} },
-      ],
-    }),
-  };
-  const liveExecutor = vi.fn().mockResolvedValue('fixture');
-  const result = await runScenario(provider, { ...scenario, maxToolCalls }, [], { liveExecutor });
-  expect(liveExecutor).toHaveBeenCalledTimes(executed);
-  expect(provider.chat).toHaveBeenCalledTimes(turns);
-  expect(result.toolCallCount).toBe(executed);
-});
+  { maxToolCalls: 1, executed: 1, observed: 2, turns: 1 },
+  { maxToolCalls: 3, executed: 3, observed: 4, turns: 2 },
+  { maxToolCalls: 1.5, executed: 2, observed: 2, turns: 1 },
+])(
+  'caps execution while tracing overflow calls at $maxToolCalls calls',
+  async ({ maxToolCalls, executed, observed, turns }) => {
+    const provider: LLMProvider = {
+      name: 'fixture',
+      model: 'fixture',
+      chat: vi.fn().mockResolvedValue({
+        done: false,
+        toolCalls: [
+          { name: 'SAPRead', arguments: {} },
+          { name: 'SAPSearch', arguments: {} },
+        ],
+      }),
+    };
+    const liveExecutor = vi.fn().mockResolvedValue('fixture');
+    const result = await runScenario(provider, { ...scenario, maxToolCalls }, [], { liveExecutor });
+    expect(liveExecutor).toHaveBeenCalledTimes(executed);
+    expect(provider.chat).toHaveBeenCalledTimes(turns);
+    expect(result.toolCallCount).toBe(observed);
+    expect(result.trace).toHaveLength(observed);
+  },
+);
 
 it('omits whitespace-only Anthropic assistant text while retaining its tool call', async () => {
   vi.stubEnv('ANTHROPIC_API_KEY', 'local-fixture-no-network');

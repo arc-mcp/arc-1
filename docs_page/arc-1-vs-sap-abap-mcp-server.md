@@ -286,7 +286,7 @@ diagnostics (ST22 dumps, traces)**. On the tested backend the server exposed **o
 | `SAPWrite` | Create / update / delete; class- & method-section surgery; RAP scaffolding & `generate_behavior_implementation`; `batch_create` |
 | `SAPActivate` | Activate (single & batch, ED064-aware); publish/unpublish service bindings |
 | `SAPNavigate` | Go-to-definition, references, where-used, completion |
-| `SAPQuery` | Freestyle SQL (admin-gated); named table preview is in `SAPRead` |
+| `SAPQuery` | Saved SAPscript long texts and freestyle SQL, separately admin-gated; table preview is in `SAPRead` |
 | `SAPTransport` | `list` · `get` · `diff` · `check` · `history` · layers/targets plus gated create/release/reassign/delete/remove-object workflows |
 | `SAPGit` | gCTS/abapGit reads plus gated abapGit workflows. gCTS mutations are quarantined; accepted abapGit mutations are fail-closed as incomplete when no authoritative postcondition exists. |
 | `SAPContext` | Dependency / contract / compressed-context extraction for LLMs |

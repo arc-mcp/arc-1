@@ -114,8 +114,8 @@ describe('hyperfocused mode', () => {
       expect(getHyperfocusedScope('git')).toBe('read');
     });
 
-    it('returns sql scope for query', () => {
-      expect(getHyperfocusedScope('query')).toBe('sql');
+    it('returns data scope for the mixed query delegator (SQL is checked downstream)', () => {
+      expect(getHyperfocusedScope('query')).toBe('data');
     });
   });
 
