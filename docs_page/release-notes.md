@@ -22,10 +22,9 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
-## 1.6.0 — optional target access and safer authoring (unreleased)
+## 1.6.0 — optional target access and safer authoring (2026-10-17)
 
-These notes cover changes already merged for 1.6. No new mandatory settings;
-refresh your MCP client's tool list after upgrading. Final release scope is pending.
+No new mandatory settings; refresh your MCP client's tool list after upgrading.
 
 | Change | Impact | Action |
 |---|---|---|
