@@ -488,8 +488,8 @@ complete an uncertain creation automatically.
 
 **Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` write source via `/source/main`. `SKTD`/`KTD` instead GETs the complete `<sktd:docu>` envelope and PUTs it back with the v2 KTD media type, changing only addressed Base64 long-text bodies and existing short-text attributes. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one KTD-capable ABAP object; `KTD` is accepted as a friendly alias. Create requires `refObjectType` and uses `name` as the documented object name. ARC-1 supports KTD creates for parent types with verified ADT parent URI routing, including `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `SRVB/SVB`, `DEVC/K`, and `SMBC/TYP` (Business Configuration Maintenance Object). `CLAS/OC`, `INTF/OI`, and `PROG/P` were not registered for KTD DOCUMENTATION scope on the tested SAP_BASIS 758 and 816 systems; use ABAP Doc for those code objects. Other SAP-registered KTD parent types require ARC-1 parent URI routing before create is enabled.
 
-To document an existing Business Configuration Maintenance Object, use its name and
-provide its description. Follow create or update with KTD activation:
+To document an existing Business Configuration Maintenance Object, use its name;
+`refObjectDescription` is optional. Follow create or update with KTD activation:
 
 ```text
 SAPWrite(action="create", type="KTD", name="Z_MY_CONFIGURATION", package="$TMP",

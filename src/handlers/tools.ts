@@ -854,7 +854,7 @@ export function getToolDefinitions(
           refObjectDescription: {
             type: 'string',
             description:
-              'SKTD/KTD create: optional parent description; omitted or blank values leave the XML attribute unset.',
+              'SKTD/KTD create: optional parent description; blank values are omitted.',
           },
           shortTexts: {
             type: 'array',
