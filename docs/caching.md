@@ -31,7 +31,7 @@ SAP then decides freshness:
 
 | SAP response | ARC-1 behavior |
 |---|---|
-| `304 Not Modified` | Return the cached body and mark the tool response with `[cached:revalidated]` |
+| `304 Not Modified` | Return the cached body and mark the tool response with `[cached:revalidated]` (SRVB JSON: a `"cached": "revalidated"` field) |
 | `200 OK` with body | Replace the cached body and `ETag`, then return the fresh source |
 | `200 OK` without `ETag` | Store the body without a validator; the next read performs a plain GET |
 | `404` or `410` | Drop the cache entry and surface the ADT error |
