@@ -83,6 +83,9 @@ program SAP would otherwise check the text as a standalone include without progr
 (fixed-point arithmetic off) and report false errors such as every `@` host variable. This does not activate or
 execute code. Results match the compatible `SAPDiagnose(action="syntax", type=..., name=...)` route.
 
+An empty native `<checkRunReports/>` response also means `checked:false`: SAP supplied no
+check evidence. The older message-only response format still supports an empty successful result.
+
 Only `type`, `objectType`, `name`, `version` and `source` apply. `name` and `objectType` are required;
 `version="auto"`, include/method selection, diff, and non-default output formats are refused.
 Harmless strict-client filler (false flags, empty arrays, `format="text"`, `maxResults=0`) is ignored.
