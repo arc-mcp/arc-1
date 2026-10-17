@@ -36,6 +36,37 @@ function property(tool: ToolDefinition, name: string): Record<string, unknown> {
 }
 
 describe('multi-target tool surface', () => {
+  it('narrows SAPQuery fields and guidance to the effective target data gates', () => {
+    const both = { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true };
+    const definitions = getToolDefinitions(both);
+    expect(
+      multiTargetToolDefinitions(definitions, DEFAULT_CONFIG).find((tool) => tool.name === 'SAPQuery'),
+    ).toBeUndefined();
+    const text = multiTargetToolDefinitions(definitions, { ...DEFAULT_CONFIG, allowDataPreview: true }).find(
+      (tool) => tool.name === 'SAPQuery',
+    )!;
+    expect(property(text, 'action').enum).toEqual(['long_text']);
+    expect(text.inputSchema.properties).toHaveProperty('longText');
+    expect(text.inputSchema.properties).not.toHaveProperty('sql');
+    expect(text.inputSchema.properties).not.toHaveProperty('maxRows');
+    expect(text.inputSchema.required).toEqual(['action', 'longText']);
+    expect(text.description).not.toMatch(/SQL|SELECT|TADIR/i);
+    const sql = multiTargetToolDefinitions(definitions, { ...DEFAULT_CONFIG, allowFreeSQL: true }).find(
+      (tool) => tool.name === 'SAPQuery',
+    )!;
+    expect(property(sql, 'action').enum).toEqual(['sql']);
+    expect(sql.inputSchema.properties).toHaveProperty('sql');
+    expect(sql.inputSchema.required).toEqual(['sql']);
+    expect(JSON.stringify(sql)).not.toMatch(/long_text|longText|SO10|SAPscript/u);
+    const mixed = multiTargetToolDefinitions(definitions, both).find((tool) => tool.name === 'SAPQuery')!;
+    expect(property(mixed, 'action').enum).toEqual(['sql', 'long_text']);
+    expect(mixed.inputSchema.required).toEqual([]);
+    const btp = multiTargetToolDefinitions(definitions, { ...both, systemType: 'btp' }).find(
+      (tool) => tool.name === 'SAPQuery',
+    )!;
+    expect(property(btp, 'action').enum).toEqual(['sql']);
+    expect(btp.inputSchema.properties).not.toHaveProperty('longText');
+  });
   it('keeps only the explicitly reviewed mutation-free tools and actions', () => {
     const tools = multiTargetToolDefinitions(getToolDefinitions(DEFAULT_CONFIG), DEFAULT_CONFIG);
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -157,6 +188,22 @@ describe('multi-target tool surface', () => {
 
   it('distinguishes target policy denial from the v1 hard ceiling', () => {
     expect(multiTargetInvocationDecision('SAPQuery', {}, DEFAULT_CONFIG)).toBe('target-policy-denied');
+    expect(multiTargetInvocationDecision('SAPQuery', { action: 'long_text' }, DEFAULT_CONFIG)).toBe(
+      'target-policy-denied',
+    );
+    expect(multiTargetInvocationDecision('SAPQuery', { action: 'future_read_action' }, DEFAULT_CONFIG)).toBe(
+      'forbidden',
+    );
+    expect(
+      multiTargetInvocationDecision('SAPQuery', { action: 'long_text' }, { ...DEFAULT_CONFIG, allowDataPreview: true }),
+    ).toBe('allowed');
+    expect(
+      multiTargetInvocationDecision(
+        'SAPQuery',
+        { action: 'long_text' },
+        { ...DEFAULT_CONFIG, allowDataPreview: true, systemType: 'btp' },
+      ),
+    ).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPWrite', { action: 'update' }, DEFAULT_CONFIG)).toBe('forbidden');
     expect(multiTargetInvocationDecision('SAPLint', { action: 'lint' }, DEFAULT_CONFIG)).toBe('allowed');
     expect(multiTargetInvocationDecision('SAPLint', { action: 'format' }, DEFAULT_CONFIG)).toBe('forbidden');

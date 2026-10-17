@@ -218,8 +218,8 @@ ARC-1's defaults are intentionally conservative: no writes, no named table previ
 
 | Capability | Env var to enable | Default | Why it is gated |
 | ---------- | ----------------- | ------- | --------------- |
-| Named table content preview (`SAPRead(type=TABLE_CONTENTS)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Can expose application-table data; keep off unless the use case is approved. |
-| Freestyle ABAP SQL (`SAPQuery`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; keep off unless the use case is approved. |
+| Table previews and [saved SAPscript texts](tools.md#stored-sapscript-long-texts) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
+| Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 
 For production, combine conservative tool exposure with real user identity, SAP-side authorization, audit logging, rate limits, and review against the current SAP policy.
 

@@ -12,7 +12,7 @@
  *   const response = await provider.chat(messages, tools);
  */
 
-import type { LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
+import type { LLMChatOptions, LLMProvider, LLMResponse, LLMToolCall, Message, ToolDefinitionForLLM } from '../types.js';
 
 /** Default model. Chosen for tool-calling quality / latency balance. */
 export const DEFAULT_OLLAMA_MODEL = 'qwen3.5:9b';
@@ -74,7 +74,8 @@ export function createOllamaProvider(model: string): LLMProvider {
     name: 'ollama',
     model,
 
-    async chat(messages: Message[], tools: ToolDefinitionForLLM[]): Promise<LLMResponse> {
+    async chat(messages: Message[], tools: ToolDefinitionForLLM[], options?: LLMChatOptions): Promise<LLMResponse> {
+      options?.signal?.throwIfAborted();
       const body = {
         model,
         messages: toOpenAIMessages(messages),
@@ -86,6 +87,7 @@ export function createOllamaProvider(model: string): LLMProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        ...(options?.signal ? { signal: options.signal } : {}),
       });
 
       if (!resp.ok) {

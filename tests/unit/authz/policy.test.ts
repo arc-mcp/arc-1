@@ -15,7 +15,9 @@ describe('ACTION_POLICY matrix', () => {
     expect(invocationPolicyKey('SAPRead', { type: 'table_contents' })).toBe('TABLE_CONTENTS');
     expect(invocationPolicyKey('SAPSearch', { searchType: 'tadir_lookup', source: 'DB' })).toBe('tadir_lookup_db');
     expect(invocationPolicyKey('SAPDiagnose', { action: 'atc' })).toBe('atc');
-    expect(invocationPolicyKey('SAPQuery', {})).toBeUndefined();
+    expect(invocationPolicyKey('SAPQuery', {})).toBe('sql');
+    expect(invocationPolicyKey('SAPQuery', { action: 'sql' })).toBe('sql');
+    expect(invocationPolicyKey('SAPQuery', { action: 'long_text' })).toBe('long_text');
   });
 
   it('includes tool-level defaults for every top-level tool', () => {

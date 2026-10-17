@@ -1458,12 +1458,14 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
       columns?: string[];
       where?: Array<{ field: string; op: string; value?: string }>;
       maxRows?: number;
+      /** Internal opt-in, verified on 758/816: retain repeated spaces through SAP's CONDENSE. */
+      preserveLiteralSpaces?: boolean;
     } = {},
   ): Promise<{ columns: string[]; rows: Record<string, string>[] }> {
     checkOperation(this.safety, OperationType.Query, 'RunTableQuery');
     // One canonical identity: authorize it, then build the statement from the SAME string.
     const source = canonicalDataSourceName(tableName, 'TABLE_QUERY table name');
-    const sql = buildTableQuerySql(source, opts.columns, opts.where);
+    const sql = buildTableQuerySql(source, opts.columns, opts.where, opts.preserveLiteralSpaces);
     const maxRows = clampPreviewRows(opts.maxRows);
     return this.withDataResultScope(async (budget, signal) => {
       await this.dataSourceBlocklistGuard(budget, signal).enforceSources([source]);

@@ -422,7 +422,7 @@ describe('multi-target MCP servers', () => {
     auditSpy.mockRestore();
   });
 
-  it('shows SAPQuery only when target consent, the instance ceiling, and user SQL scope all agree', async () => {
+  it('exposes only SAPQuery actions allowed by target consent, the instance ceiling and user scopes', async () => {
     const current = registry(2, { data: true, sql: true });
     const instanceConfig = { ...DEFAULT_CONFIG, allowDataPreview: true, allowFreeSQL: true };
     const server = createServer(buildAggregateToolSurfaceConfig(instanceConfig, current.targets), {
@@ -435,6 +435,7 @@ describe('multi-target MCP servers', () => {
     };
 
     expect(await names(['read'])).not.toContain('SAPQuery');
+    expect(await names(['read', 'data'])).toContain('SAPQuery');
     expect(await names(['read', 'sql'])).toContain('SAPQuery');
     expect(await names(['admin'])).toContain('SAPQuery');
 
@@ -446,7 +447,20 @@ describe('multi-target MCP servers', () => {
       { method: 'tools/list', params: {} },
       { authInfo: { ...readAuth, scopes: ['read', 'sql'] } },
     );
-    expect(withoutConsent.tools.map((tool: { name: string }) => tool.name)).not.toContain('SAPQuery');
+    const textOnly = withoutConsent.tools.find((tool: { name: string }) => tool.name === 'SAPQuery');
+    expect(textOnly.inputSchema.properties.action.enum).toEqual(['long_text']);
+    expect(textOnly.inputSchema.properties).not.toHaveProperty('sql');
+    expect(textOnly.inputSchema.properties).not.toHaveProperty('maxRows');
+    expect(new Set(textOnly.inputSchema.required)).toEqual(new Set(['action', 'longText', 'target']));
+    const noConsent = registry(2, { data: false, sql: false });
+    const noConsentServer = createServer(buildAggregateToolSurfaceConfig(instanceConfig, noConsent.targets), {
+      multiTarget: { mode: 'aggregate', registry: noConsent, instanceConfig },
+    });
+    const hidden = await requestHandler(noConsentServer, ListToolsRequestSchema.shape.method.value)(
+      { method: 'tools/list', params: {} },
+      { authInfo: adminAuth },
+    );
+    expect(hidden.tools.map((tool: { name: string }) => tool.name)).not.toContain('SAPQuery');
   });
 
   it('keeps admin catalog diagnostics reachable when destination discovery fails', async () => {

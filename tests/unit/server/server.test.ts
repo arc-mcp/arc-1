@@ -21,6 +21,7 @@ import type { ResolvedFeatures } from '../../../src/adt/types.js';
 import { MemoryCache } from '../../../src/cache/memory.js';
 import { getToolRegistry } from '../../../src/handlers/dispatch.js';
 import { resetCachedFeatures, setCachedFeatures } from '../../../src/handlers/feature-cache.js';
+import { createQueryDefinition } from '../../../src/handlers/query-tool.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { defineTool } from '../../../src/public/index.js';
 import { SYSTEM_LABEL_MAX_LENGTH } from '../../../src/server/config.js';
@@ -365,19 +366,54 @@ describe('MCP Server', () => {
   });
 
   it('keeps only query for sql-scoped users in hyperfocused mode', () => {
-    const tools = getToolDefinitions({
+    const config = {
       ...DEFAULT_CONFIG,
-      toolMode: 'hyperfocused',
+      toolMode: 'hyperfocused' as const,
       allowWrites: true,
       allowFreeSQL: true,
       allowTransportWrites: true,
-    });
-    const filtered = filterToolsByAuthScope(tools, ['sql']);
+    };
+    const tools = getToolDefinitions(config);
+    const filtered = filterToolsByAuthScope(tools, ['sql'], [], createQueryDefinition(config));
     const sap = filtered.find((tool) => tool.name === 'SAP');
     expect(sap).toBeDefined();
     const schema = sap!.inputSchema as Record<string, any>;
     const actionEnum: string[] = schema.properties.action.enum;
     expect(actionEnum).toEqual(['query']);
+  });
+
+  it.each([
+    { preview: false, sql: true, scopes: ['read', 'data'], deny: [], visible: false },
+    { preview: false, sql: true, scopes: ['sql'], deny: [], visible: true },
+    { preview: true, sql: false, scopes: ['data'], deny: [], visible: true },
+    { preview: true, sql: true, scopes: ['data'], deny: ['SAPQuery.sql'], visible: true },
+    { preview: true, sql: true, scopes: ['data'], deny: ['SAPQuery.long_text'], visible: false },
+    { preview: true, sql: true, scopes: ['admin'], deny: ['SAPQuery.*'], visible: false },
+    { preview: true, sql: true, scopes: ['admin'], deny: ['SAPQuery'], visible: false },
+    { preview: true, sql: true, scopes: ['admin'], deny: ['SAP.query'], visible: false },
+  ])(
+    'lists hyperfocused query only for usable concrete actions: %j',
+    async ({ preview, sql, scopes, deny, visible }) => {
+      const config = {
+        ...DEFAULT_CONFIG,
+        toolMode: 'hyperfocused' as const,
+        allowDataPreview: preview,
+        allowFreeSQL: sql,
+        denyActions: deny,
+      };
+      const server = createServer(config);
+      const handler = requestHandler(server, ListToolsRequestSchema.shape.method.value);
+      const result = await handler({ method: 'tools/list', params: {} }, { authInfo: { ...readAuth(), scopes } });
+      const sap = result.tools.find((tool: { name: string }) => tool.name === 'SAP');
+      expect(sap?.inputSchema.properties.action.enum.includes('query') ?? false).toBe(visible);
+      expect(sap?.description.includes('query') ?? false).toBe(visible);
+      await server.close();
+    },
+  );
+
+  it('fails closed for hyperfocused query when no concrete definition is supplied', () => {
+    const tools = getToolDefinitions({ ...DEFAULT_CONFIG, toolMode: 'hyperfocused', allowFreeSQL: true });
+    expect(filterToolsByAuthScope(tools, ['sql'])).toEqual([]);
   });
 
   it('passes explicit nullable-optionals mode through tools/list', async () => {

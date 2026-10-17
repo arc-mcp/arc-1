@@ -30,6 +30,7 @@ import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
 import { sourcePreconditionError } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
+import { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
 import { LiveRelationsInput, relationNumber } from './relation-input.js';
 import {
   ATC_BATCH_TYPES_BTP,
@@ -415,12 +416,7 @@ export const SAPSearchSchemaNoSource = z
 
 // ─── SAPQuery ───────────────────────────────────────────────────────
 
-export const SAPQuerySchema = z
-  .object({
-    sql: z.string(),
-    maxRows: z.coerce.number().optional(),
-  })
-  .strict();
+export { SAPQuerySchema, SAPQuerySchemaBtp } from './query-input.js';
 
 // ─── SAPWrite ───────────────────────────────────────────────────────
 
@@ -1466,7 +1462,7 @@ export function getToolSchema(toolName: string, isBtp: boolean, textSearchAvaila
     case 'SAPSearch':
       return textSearchAvailable === false ? SAPSearchSchemaNoSource : SAPSearchSchema;
     case 'SAPQuery':
-      return SAPQuerySchema;
+      return isBtp ? SAPQuerySchemaBtp : SAPQuerySchema;
     case 'SAPWrite':
       return isBtp ? SAPWriteSchemaBtp : SAPWriteSchema;
     case 'SAPActivate':

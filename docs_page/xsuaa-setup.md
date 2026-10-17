@@ -96,8 +96,8 @@ The included `xs-security.json` defines 7 scopes:
 |----------------|----------------------------------------------------------------|----------------------------------------------------------------------------------------------|
 | `read`         | Read SAP objects, search, navigate, lint, diagnose             | `SAPRead`, `SAPSearch`, `SAPNavigate`, `SAPContext`, `SAPLint`, `SAPDiagnose`, SAPManage/SAPTransport/SAPGit read actions |
 | `write`        | Create / update / delete / activate ABAP objects               | `SAPWrite`, `SAPActivate`, `SAPManage` package + FLP mutations                               |
-| `data`         | Preview named table contents                                   | `SAPRead(type=TABLE_CONTENTS)`                                                               |
-| `sql`          | Execute freestyle SQL queries                                  | `SAPQuery`                                                                                   |
+| `data`         | Preview tables and read saved SAPscript texts                  | `SAPRead(type=TABLE_CONTENTS/TABLE_QUERY)`, `SAPQuery(action=long_text)`                      |
+| `sql`          | Execute freestyle SQL queries                                  | `SAPQuery(action=sql)`; also implies `data`                                                  |
 | `transports`   | Create / release / delete CTS transports                       | `SAPTransport.create`/`release`/`delete`                                                     |
 | `git`          | Authorize gated abapGit mutation/egress actions; gCTS mutations remain quarantined | `SAPGit.external_info`/`clone`/`pull`/`push`/branch/unlink actions after server gates          |
 | `admin`        | Implies ALL other scopes at runtime                            | Everything                                                                                   |

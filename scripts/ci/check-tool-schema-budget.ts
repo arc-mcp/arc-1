@@ -211,7 +211,8 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       schemaTokenEstimate: 18_625,
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
-      descriptionCount: 281,
+      // LONG_TEXT adds eight field descriptions; shorter existing guidance preserves byte/token ceilings.
+      descriptionCount: 289,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_550,
     },
@@ -269,7 +270,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 18_625,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 281,
+      descriptionCount: 289,
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_550,
     },

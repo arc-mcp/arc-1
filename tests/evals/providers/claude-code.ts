@@ -34,6 +34,7 @@ import {
   scenarioPasses,
 } from '../expected-call.js';
 import type { EvalScenario, LLMToolCall, ScenarioScore } from '../types.js';
+import { unsupportedCliScenario } from './cli-scenario-support.js';
 
 export const DEFAULT_CLAUDE_CODE_MODEL = 'claude-haiku-4-5-20251001';
 
@@ -291,6 +292,8 @@ export async function runScenarioWithClaudeCode(
   scenario: EvalScenario,
   options: ClaudeCodeRunOptions & { passThreshold: number },
 ): Promise<ScenarioScore> {
+  const unsupported = unsupportedCliScenario(scenario, 'claude-code');
+  if (unsupported) return unsupported;
   const repoRoot = resolve(options.repoRoot ?? process.cwd());
   const model = options.model ?? DEFAULT_CLAUDE_CODE_MODEL;
   const timeoutMs = options.timeoutMs ?? 150_000;
@@ -340,11 +343,11 @@ export async function runScenarioWithClaudeCode(
 /**
  * Scoring tailored to the integration model:
  *   - If the LLM never called any ARC-1 tool → 0 (it ignored the MCP server).
- *   - First ARC-1 call must not be a forbidden tool.
+ *   - No ARC-1 call may be a forbidden tool.
  *   - Match against optimal / acceptable by tool name + required args.
  *   - Parameter score follows harness.ts conventions (case-insensitive for strings).
  */
-function scoreArcCalls(
+export function scoreArcCalls(
   arcCalls: LLMToolCall[],
   scenario: EvalScenario,
 ): { toolSelectionScore: number; parameterScore: number; explanation: string } {
@@ -358,11 +361,12 @@ function scoreArcCalls(
 
   const first = arcCalls[0];
 
-  if (scenario.forbidden?.includes(first.name)) {
+  const forbidden = arcCalls.find((call) => scenario.forbidden?.includes(call.name));
+  if (forbidden) {
     return {
       toolSelectionScore: 0,
       parameterScore: 0,
-      explanation: `Called forbidden ARC-1 tool first: ${first.name}`,
+      explanation: `Called forbidden ARC-1 tool in trace: ${forbidden.name}`,
     };
   }
 

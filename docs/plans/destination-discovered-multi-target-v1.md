@@ -588,9 +588,10 @@ Target input normalization is separate from general LLM empty-value stripping:
 
 The validated `target` key is removed before existing handler Zod validation.
 
-`SAPQuery` is listed only if at least one target is effectively SQL-enabled and the caller has SQL
-scope. Its target field follows the same all-target enum/pattern rule as other tools; do not reveal
-the SQL-enabled subset through a narrowed schema. Selected-target policy produces
+`SAPQuery` is listed if at least one target enables an action the caller may use: `sql` requires
+free SQL and SQL scope; `long_text` requires data preview and data scope. Its target field follows
+the same all-target enum/pattern rule as other tools; do not reveal the enabled subset through a
+narrowed target schema. Selected-target policy produces
 `TARGET_POLICY_DENIED` at runtime. Data-specific `SAPRead` variants follow the same rule.
 
 Do not mutate aggregate or pinned tool schemas after one user's feature probe. Discovered target

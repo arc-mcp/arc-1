@@ -875,7 +875,7 @@ export async function handleToolCall(
 
   // Unified scope enforcement via ACTION_POLICY — routes through action/type-aware lookup.
   // For SAPRead, the policy key is Tool.{type}; for other action-bearing tools, Tool.{action};
-  // for tools without an action/type enum (SAPSearch, SAPQuery), the tool-level default applies.
+  // for tools without an action/type enum (SAPSearch), the tool-level default applies.
   // For SAPSearch.tadir_lookup with source='db'|'both', synthesize a sub-action key so the
   // sql-scoped policy entry kicks in (otherwise viewer-only profiles could piggyback on the
   // ADT info-system route to issue freestyle SQL).

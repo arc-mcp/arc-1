@@ -1,0 +1,550 @@
+{
+  "date": "2026-10-17",
+  "baseCommit": "041a9e48",
+  "node": "24.19.0",
+  "profile": "FF06 / byte order 02 / code page 4103 / flat TLINE",
+  "systems": [
+    {
+      "basis": "750",
+      "components": [
+        {
+          "name": "SAP_ABA",
+          "release": "750",
+          "spLevel": "0002"
+        },
+        {
+          "name": "SAP_BASIS",
+          "release": "750",
+          "spLevel": "0002"
+        },
+        {
+          "name": "SAP_GWFND",
+          "release": "750",
+          "spLevel": "0002"
+        },
+        {
+          "name": "SAP_UI",
+          "release": "750",
+          "spLevel": "0002"
+        }
+      ],
+      "checks": {
+        "kernel-fixtures": {
+          "counts": {
+            "pass": 18
+          },
+          "maxLines": 2000,
+          "maxChunks": 0
+        },
+        "legacy-corpus": {
+          "counts": {
+            "pass": 58,
+            "excluded": 2
+          },
+          "maxLines": 129,
+          "maxChunks": 1
+        },
+        "unicode-edges": {
+          "counts": {
+            "pass": 6
+          },
+          "rawTlineBytesCompared": true,
+          "loneSurrogatesPreserved": true
+        }
+      },
+      "cleanup": {
+        "helperCount": 6,
+        "allAbsent": true
+      }
+    },
+    {
+      "basis": "758",
+      "components": [
+        {
+          "name": "SAP_ABA",
+          "release": "75I",
+          "spLevel": "0002"
+        },
+        {
+          "name": "SAP_BASIS",
+          "release": "758",
+          "spLevel": "0002"
+        },
+        {
+          "name": "SAP_GWFND",
+          "release": "758",
+          "spLevel": "0002"
+        },
+        {
+          "name": "SAP_UI",
+          "release": "758",
+          "spLevel": "0002"
+        }
+      ],
+      "checks": {
+        "kernel-fixtures": {
+          "counts": {
+            "pass": 18
+          },
+          "maxLines": 2000,
+          "maxChunks": 0
+        },
+        "corpus": {
+          "counts": {
+            "pass": 35,
+            "excluded": 5
+          },
+          "maxLines": 1596,
+          "maxChunks": 9
+        },
+        "corpus-E": {
+          "counts": {
+            "pass": 42
+          },
+          "maxLines": 988,
+          "maxChunks": 3
+        },
+        "roundtrip": {
+          "label": "758",
+          "status": "pass",
+          "chunks": 37,
+          "lines": 2000,
+          "compressedBytes": 292119,
+          "outputBytes": 548081,
+          "sha256": "f0634bd8f9c3d542b633e3179ed544b634c2b36f7a24e38b515be00fef253d7d"
+        },
+        "sql-key": {
+          "status": "pass",
+          "lines": 1,
+          "chunks": 1,
+          "route": "explicit-free-sql-concat-with-space"
+        },
+        "unicode-edges": {
+          "counts": {
+            "pass": 6
+          },
+          "rawTlineBytesCompared": true,
+          "loneSurrogatesPreserved": true
+        },
+        "stored-text-semantics": {
+          "status": "pass",
+          "nativeCases": 13,
+          "readerSingles": 13,
+          "readerBatchInputs": 14,
+          "readerBatchResults": 14,
+          "discoveryHeaders": 9,
+          "literalUnderscore": true,
+          "literalPercent": true,
+          "freeSqlEnabled": false,
+          "nonItfPolicy": "native API supports the fixture; candidate deliberately rejects STXB storage"
+        },
+        "data-gated-spaces": {
+          "status": "pass",
+          "lines": 1,
+          "freeSQL": false,
+          "consistency": "reread-matched"
+        },
+        "cli": {
+          "status": "pass",
+          "commands": [
+            "read",
+            "discover",
+            "batch",
+            "search"
+          ],
+          "freeSQL": false,
+          "helperWrites": false
+        }
+      },
+      "cleanup": {
+        "helperCount": 22,
+        "allAbsent": true,
+        "syntheticStoredText": "deleted-and-absence-verified",
+        "semanticFixturePrefixes": 4,
+        "semanticTablesChecked": [
+          "STXH",
+          "STXL",
+          "STXB"
+        ],
+        "allSemanticPrefixesAbsent": true
+      }
+    },
+    {
+      "basis": "816",
+      "components": [
+        {
+          "name": "SAP_ABA",
+          "release": "816",
+          "spLevel": "0001"
+        },
+        {
+          "name": "SAP_BASIS",
+          "release": "816",
+          "spLevel": "0001"
+        },
+        {
+          "name": "SAP_GWFND",
+          "release": "816",
+          "spLevel": "0001"
+        },
+        {
+          "name": "SAP_UI",
+          "release": "816",
+          "spLevel": "0001"
+        }
+      ],
+      "checks": {
+        "kernel-fixtures": {
+          "counts": {
+            "pass": 18
+          },
+          "maxLines": 2000,
+          "maxChunks": 0
+        },
+        "corpus": {
+          "counts": {
+            "pass": 34,
+            "fail": 1,
+            "excluded": 5
+          },
+          "maxLines": 1596,
+          "maxChunks": 9
+        },
+        "corpus-E": {
+          "counts": {
+            "pass": 42
+          },
+          "maxLines": 988,
+          "maxChunks": 3
+        },
+        "roundtrip": {
+          "label": "816",
+          "status": "pass",
+          "chunks": 37,
+          "lines": 2000,
+          "compressedBytes": 292119,
+          "outputBytes": 548081,
+          "sha256": "f0634bd8f9c3d542b633e3179ed544b634c2b36f7a24e38b515be00fef253d7d"
+        },
+        "sql-key": {
+          "status": "pass",
+          "lines": 1,
+          "chunks": 1,
+          "route": "explicit-free-sql-concat-with-space"
+        },
+        "unicode-edges": {
+          "counts": {
+            "pass": 6
+          },
+          "rawTlineBytesCompared": true,
+          "loneSurrogatesPreserved": true
+        },
+        "stored-text-semantics": {
+          "status": "pass",
+          "nativeCases": 13,
+          "readerSingles": 13,
+          "readerBatchInputs": 14,
+          "readerBatchResults": 14,
+          "discoveryHeaders": 9,
+          "literalUnderscore": true,
+          "literalPercent": true,
+          "freeSqlEnabled": false,
+          "nonItfPolicy": "native API supports the fixture; candidate deliberately rejects STXB storage"
+        },
+        "data-gated-spaces": {
+          "status": "pass",
+          "lines": 1,
+          "freeSQL": false,
+          "consistency": "reread-matched"
+        },
+        "cli": {
+          "status": "pass",
+          "commands": [
+            "read",
+            "discover",
+            "batch",
+            "search"
+          ],
+          "freeSQL": false,
+          "helperWrites": false
+        }
+      },
+      "cleanup": {
+        "helperCount": 22,
+        "allAbsent": true,
+        "syntheticStoredText": "deleted-and-absence-verified",
+        "semanticFixturePrefixes": 4,
+        "semanticTablesChecked": [
+          "STXH",
+          "STXL",
+          "STXB"
+        ],
+        "allSemanticPrefixesAbsent": true
+      }
+    }
+  ],
+  "exclusions": "Existing corpus oracle excludes texts over 3000 lines. The initial 816 exact-key query missed one repeated-space key; both the historical explicit SQL route and newer data-gated reader subsequently passed. Non-ITF is deliberately unsupported by the candidate reader.",
+  "privateCorpusReplay": {
+    "pass": 211,
+    "failed": 0
+  },
+  "rfcCalls": 0,
+  "independentReview": {
+    "reviewer": "Claude Code Opus 5.5 Max via GUI",
+    "completed": true,
+    "followup": "Trailer bound, raw Unicode oracles, segment guards and INT1 chunk limit; production integration gaps remain documented."
+  },
+  "followupReview": {
+    "reviewers": [
+      "Sol: SAP API semantics and live oracles",
+      "Sol: code quality and safety review",
+      "Luna: use-case research and synthetic semantic golden tests"
+    ],
+    "completed": true,
+    "noRemainingBlockersWithinDeclaredContract": true
+  },
+  "localValidation": {
+    "unitFiles": 317,
+    "unitTests": 9054,
+    "storedTextTests": 128,
+    "coreQueryTestsAdded": 3,
+    "workers": 4,
+    "phase": "manual-spike checkpoint"
+  },
+  "productionIntegration": {
+    "date": "2026-10-17",
+    "route": "SAPRead LONG_TEXT",
+    "systems": [
+      {
+        "label": "758",
+        "status": "pass",
+        "readonly": true,
+        "freeSqlEnabled": false,
+        "helperWritesEnabled": false,
+        "publicCalls": 4,
+        "stages": [
+          {
+            "stage": "read",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "discover",
+            "status": "pass",
+            "count": 1
+          },
+          {
+            "stage": "batch",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "search",
+            "status": "pass",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "816",
+        "status": "pass",
+        "readonly": true,
+        "freeSqlEnabled": false,
+        "helperWritesEnabled": false,
+        "publicCalls": 4,
+        "stages": [
+          {
+            "stage": "read",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "discover",
+            "status": "pass",
+            "count": 1
+          },
+          {
+            "stage": "batch",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "search",
+            "status": "pass",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "750",
+        "status": "pass",
+        "readonly": true,
+        "freeSqlEnabled": false,
+        "helperWritesEnabled": false,
+        "publicCalls": 1,
+        "stages": [
+          {
+            "stage": "capability",
+            "status": "unsupported-cleanly",
+            "code": "UNSUPPORTED_PLATFORM"
+          }
+        ]
+      }
+    ],
+    "notes": [
+      "Public handleToolCall dispatch; classic stored ITF scope only.",
+      "No RFC, free SQL, SAP writes, or helper installation in integration probes.",
+      "No business text, names, hosts, credentials, or SAP standard source retained here."
+    ],
+    "nativeOracleLineComparison": {
+      "systems": [
+        "758",
+        "816"
+      ],
+      "matched": true,
+      "fields": [
+        "TDFORMAT",
+        "TDLINE"
+      ],
+      "source": "Previously captured private READ_TEXT oracle; exact comparison after fixed-width ASCII-space unpadding."
+    },
+    "localValidation": {
+      "unitFiles": 324,
+      "unitTests": 9166,
+      "evalHarnessTests": 64,
+      "publicHandlerTests": 46,
+      "workers": 4,
+      "typecheck": "pass",
+      "build": "pass",
+      "lint": "pass",
+      "policy": "pass",
+      "schemaAndFileBudgets": "pass",
+      "package": "pass",
+      "toolWireBytesFull": 74456,
+      "existingWireCeilingsUnchanged": true
+    },
+    "phase": "Earlier SAPRead integration; retained historical evidence."
+  },
+  "queryIntegration": {
+    "date": "2026-10-17",
+    "route": "SAPQuery action=long_text",
+    "systems": [
+      {
+        "label": "758",
+        "tool": "SAPQuery",
+        "action": "long_text",
+        "status": "pass",
+        "readonly": true,
+        "freeSqlEnabled": false,
+        "helperWritesEnabled": false,
+        "publicCalls": 4,
+        "stages": [
+          {
+            "stage": "read",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "discover",
+            "status": "pass",
+            "count": 1
+          },
+          {
+            "stage": "batch",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "search",
+            "status": "pass",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "816",
+        "tool": "SAPQuery",
+        "action": "long_text",
+        "status": "pass",
+        "readonly": true,
+        "freeSqlEnabled": false,
+        "helperWritesEnabled": false,
+        "publicCalls": 4,
+        "stages": [
+          {
+            "stage": "read",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "discover",
+            "status": "pass",
+            "count": 1
+          },
+          {
+            "stage": "batch",
+            "status": "pass",
+            "count": 3
+          },
+          {
+            "stage": "search",
+            "status": "pass",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "label": "750",
+        "tool": "SAPQuery",
+        "action": "long_text",
+        "status": "pass",
+        "readonly": true,
+        "freeSqlEnabled": false,
+        "helperWritesEnabled": false,
+        "publicCalls": 1,
+        "stages": [
+          {
+            "stage": "capability",
+            "status": "unsupported-cleanly",
+            "code": "UNSUPPORTED_PLATFORM"
+          }
+        ]
+      }
+    ],
+    "notes": [
+      "Fresh public-dispatch rerun after moving stored text to SAPQuery.",
+      "Default disabled; data-preview/data scope only. SQL remains separately gated.",
+      "No RFC, free SQL, SAP writes, or helper installation.",
+      "No business text, names, hosts, credentials, or SAP standard source retained here."
+    ],
+    "nativeOracleLineComparison": {
+      "systems": [
+        "758",
+        "816"
+      ],
+      "matched": true,
+      "fields": [
+        "TDFORMAT",
+        "TDLINE"
+      ],
+      "source": "Previously captured private READ_TEXT oracle; exact comparison after fixed-width ASCII-space unpadding."
+    },
+    "localValidation": {
+      "unitFiles": 324,
+      "unitTests": 9192,
+      "evalHarnessTests": 64,
+      "publicHandlerTests": 57,
+      "workers": 4,
+      "typecheck": "pass",
+      "build": "pass",
+      "lint": "pass",
+      "policy": "pass",
+      "policyEntries": 132,
+      "toolSchemas": 14,
+      "schemaAndFileBudgets": "pass",
+      "package": "pass",
+      "toolWireBytesFull": 74468,
+      "existingWireCeilingsUnchanged": true
+    }
+  }
+}

@@ -2,6 +2,7 @@
 
 import { isOperationAllowed, OperationType, type OperationTypeCode } from '../adt/safety.js';
 import { getActionPolicy, invocationPolicyKey } from '../authz/policy.js';
+import { pruneQueryDefinition } from '../handlers/query-tool.js';
 import type { ToolDefinition } from '../handlers/tools.js';
 import type { TargetDescriptor } from './destination-registry.js';
 import { TARGET_CATALOG_MAX_OFFSET, TARGET_CATALOG_MAX_QUERY_LENGTH } from './multi-target-catalog.js';
@@ -25,6 +26,7 @@ const MULTI_TARGET_ACTION_RULES = new Map<
   string,
   { actions: ReadonlySet<string>; omittedProperties: ReadonlySet<string> }
 >([
+  ['SAPQuery', { actions: new Set(['sql', 'long_text']), omittedProperties: new Set() }],
   [
     'SAPLint',
     {
@@ -105,6 +107,7 @@ export function multiTargetInvocationDecision(
 ): 'allowed' | 'target-policy-denied' | 'forbidden' {
   if (!MULTI_TARGET_TOOLS.has(toolName)) return 'forbidden';
   const action = invocationPolicyKey(toolName, args);
+  if (toolName === 'SAPQuery' && action === 'long_text' && config.systemType === 'btp') return 'forbidden';
   const actionRule = MULTI_TARGET_ACTION_RULES.get(toolName);
   if (actionRule && (!action || !actionRule.actions.has(action.toLowerCase()))) return 'forbidden';
   const policy = getActionPolicy(toolName, action);
@@ -133,17 +136,20 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
   const prunedProperties = actionRule
     ? Object.fromEntries(Object.entries(properties).filter(([name]) => !actionRule.omittedProperties.has(name)))
     : properties;
-  return {
-    ...tool,
-    annotations: { ...tool.annotations, readOnlyHint: true, destructiveHint: false },
-    inputSchema: {
-      ...schema,
-      properties: {
-        ...prunedProperties,
-        [field]: { ...definition, enum: values },
+  return pruneQueryDefinition(
+    {
+      ...tool,
+      annotations: { ...tool.annotations, readOnlyHint: true, destructiveHint: false },
+      inputSchema: {
+        ...schema,
+        properties: {
+          ...prunedProperties,
+          [field]: { ...definition, enum: values },
+        },
       },
     },
-  };
+    values,
+  );
 }
 
 export function multiTargetToolDefinitions(tools: ToolDefinition[], config: ServerConfig): ToolDefinition[] {

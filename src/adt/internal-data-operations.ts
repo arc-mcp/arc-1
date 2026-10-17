@@ -1,8 +1,8 @@
 /**
  * Private registry of ARC-1's own fixed data reads.
  *
- * Some features read SAP metadata tables with statements ARC-1 builds itself: repository lookup,
- * class hierarchy, transaction enrichment, BOR method resolution and authorization-trace decoding.
+ * Some features read SAP tables with statements ARC-1 builds itself: repository lookup,
+ * class hierarchy, transaction enrichment, BOR method resolution, authorization-trace decoding and stored text.
  * They are declared here so that code, tests and operator documentation cannot drift apart, and so
  * that "which feature breaks if I block this table?" has one answer.
  *
@@ -31,7 +31,8 @@ export type InternalDataOperationId =
   | 'class_hierarchy'
   | 'interface_implementers'
   | 'bor_method_lookup'
-  | 'authorization_trace';
+  | 'authorization_trace'
+  | 'stored_text';
 
 export interface InternalDataOperation {
   /** Exact canonical sources this server-owned operation reads. */
@@ -95,6 +96,14 @@ export const INTERNAL_DATA_OPERATIONS: Record<InternalDataOperationId, InternalD
     guidance:
       'The authorization trace needs SUAUTHVALTRC for the trace rows and TOBJ to decode field names. ' +
       'Both are required: returning positional values without their field names would be ambiguous and misleading, so the action is denied rather than partially answered.',
+  },
+  stored_text: {
+    sources: ['STXH', 'STXL', 'TTXOB', 'TTXID', 'T002'],
+    consumer: 'SAPQuery(action="long_text")',
+    criticality: 'core',
+    guidance:
+      'Classic stored text requires STXH/STXL and the TTXOB/TTXID/T002 configuration. ' +
+      'Use an application-specific released API when these reads are not permitted; do not bypass the policy with RFC, helpers, or free SQL.',
   },
 };
 

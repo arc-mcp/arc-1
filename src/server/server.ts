@@ -29,6 +29,7 @@ import {
   setCachedDiscovery,
   setCachedFeatures,
 } from '../handlers/feature-cache.js';
+import { createQueryDefinition } from '../handlers/query-tool.js';
 import type { ToolResult } from '../handlers/shared.js';
 import { getToolDefinitions, type ToolDefinition, type ToolDefinitionOptions } from '../handlers/tools.js';
 import { VERSION } from '../version.js';
@@ -750,9 +751,19 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
 
     // When authenticated, only show tools the user has scopes for
     if (enforced) {
-      tools = filterToolsByAuthScope(tools, [...(projection?.scopes ?? [])], config.denyActions);
+      tools = filterToolsByAuthScope(
+        tools,
+        [...(projection?.scopes ?? [])],
+        config.denyActions,
+        createQueryDefinition(config, features),
+      );
     } else if (extra.authInfo) {
-      tools = filterToolsByAuthScope(tools, extra.authInfo.scopes, config.denyActions);
+      tools = filterToolsByAuthScope(
+        tools,
+        extra.authInfo.scopes,
+        config.denyActions,
+        createQueryDefinition(config, features),
+      );
     }
 
     // FEAT-61: append plugin (Custom_*) tools, gated identically to built-ins (deny-list + scope +
