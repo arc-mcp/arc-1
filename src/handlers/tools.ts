@@ -853,8 +853,7 @@ export function getToolDefinitions(
           },
           refObjectDescription: {
             type: 'string',
-            description:
-              'SKTD/KTD create: optional parent description; blank values are omitted.',
+            description: 'SKTD/KTD create: optional parent description; blank values are omitted.',
           },
           shortTexts: {
             type: 'array',
