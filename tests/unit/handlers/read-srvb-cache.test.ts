@@ -58,15 +58,23 @@ describe('SAPRead SRVB keeps JSON parseable with cache and draft notes', () => {
     expect({ ...secondJson, cached: undefined }).toEqual({ ...firstJson, cached: undefined });
   });
 
-  it('carries the draft note as a "warning" field', async () => {
+  it('keeps draft and revalidation notes together in JSON without caching the notes', async () => {
     mockFetch
       .mockResolvedValueOnce(mockResponse(200, SRVB_DRAFT))
-      .mockResolvedValueOnce(mockResponse(200, SRVB_XML, { etag: 'e1' }));
+      .mockResolvedValueOnce(mockResponse(200, SRVB_XML, { etag: 'e1' }))
+      .mockResolvedValueOnce(mockResponse(304, '', { etag: 'e1' }));
 
-    const result = await readSrvb(new CachingLayer(new MemoryCache()));
+    const cache = new MemoryCache();
+    const layer = new CachingLayer(cache);
+    const result = await readSrvb(layer);
     expect(result.isError).toBeUndefined();
     const json = JSON.parse(result.content[0]!.text);
     expect(json.warning).toContain('unactivated draft');
     expect(json.odataVersion).toBe('V4');
+    const second = JSON.parse((await readSrvb(layer)).content[0]!.text);
+    expect(second).toEqual({ ...json, cached: 'revalidated' });
+    const stored = JSON.parse(cache.getSource('SRVB', 'ZUI_TRAVEL_O4')!.source);
+    expect(stored.warning).toBeUndefined();
+    expect(stored.cached).toBeUndefined();
   });
 });
