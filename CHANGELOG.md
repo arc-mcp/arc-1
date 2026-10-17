@@ -5,6 +5,19 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.6.1](https://github.com/arc-mcp/arc-1/compare/v1.6.0...v1.6.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* keep empty native syntax reports unchecked ([#1019](https://github.com/arc-mcp/arc-1/issues/1019)) ([498c12b](https://github.com/arc-mcp/arc-1/commit/498c12bbab1b4c6337e01e3451c5811ba8b8aa97))
+
+
+### Tests
+
+* correct release-dependent 7.50 test prerequisites ([#1013](https://github.com/arc-mcp/arc-1/issues/1013)) ([79088b1](https://github.com/arc-mcp/arc-1/commit/79088b16c6fe64f2b07802646a769607335f4d5d))
+* preserve BOR gate regression and clarify deny rules ([#1016](https://github.com/arc-mcp/arc-1/issues/1016)) ([260c2b7](https://github.com/arc-mcp/arc-1/commit/260c2b71dec9608974e68d7383419d084a1e58b8))
+
 ## [1.6.0](https://github.com/arc-mcp/arc-1/compare/v1.5.2...v1.6.0) (2026-10-17)
 
 
