@@ -597,12 +597,15 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
     // Build the parent URI. ADT URIs use lowercase names by convention (matches the Eclipse trace).
     const refParentType = refType.split('/')[0] ?? '';
     const refUri = `${objectBasePath(refParentType)}${encodeURIComponent(refName.toLowerCase())}`;
+    // SADT_OBJECT_REFERENCE reads adtcore:description under check="not-initial(...)": an empty
+    // attribute fails with "Check of condition failed"; an absent one is skipped.
+    const refDescriptionAttr = refDescription.trim() ? ` adtcore:description="${escapeXmlAttr(refDescription)}"` : '';
 
     const ktdLang = normalizeAdtLanguage(config.language);
     const ktdBody = `<?xml version="1.0" encoding="UTF-8"?>
 <sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="${ktdLang}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="${ktdLang}">
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
-  <sktd:refObject adtcore:description="${escapeXmlAttr(refDescription)}" adtcore:name="${escapeXmlAttr(refName)}" adtcore:type="${escapeXmlAttr(refType)}" adtcore:uri="${escapeXmlAttr(refUri)}"/>
+  <sktd:refObject${refDescriptionAttr} adtcore:name="${escapeXmlAttr(refName)}" adtcore:type="${escapeXmlAttr(refType)}" adtcore:uri="${escapeXmlAttr(refUri)}"/>
 </sktd:docu>`;
 
     const ktdCreateUrl = '/sap/bc/adt/documentation/ktd/documents';
