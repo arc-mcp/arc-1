@@ -49,7 +49,7 @@ If-None-Match: <etag>
 
 | SAP response | ARC-1 behavior |
 |---|---|
-| `304 Not Modified` | Return the cached source with `[cached:revalidated]` |
+| `304 Not Modified` | Return the cached source with `[cached:revalidated]` (SRVB JSON: a `"cached": "revalidated"` field) |
 | `200 OK` | Replace the body and `ETag`, then return the fresh source |
 | `200 OK` without `ETag` | Store the body; the next read performs a normal GET |
 | `404` or `410` | Evict the entry and surface the ADT error |

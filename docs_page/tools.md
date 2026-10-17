@@ -317,7 +317,7 @@ SAPRead(type="CLAS", name="ZCL_ORDER", version="auto")           — draft if it
 
 For cache-supported source reads, ARC-1 uses the SAP-emitted `ETag`; `format="editable"` bypasses this cache. On the next read, ARC-1 sends `If-None-Match` so the server itself confirms freshness:
 
-- **`304 Not Modified`** → cached body is still authoritative; response is prefixed with `[cached:revalidated]`.
+- **`304 Not Modified`** → cached body is still authoritative; response is prefixed with `[cached:revalidated]`; SRVB JSON carries a `"cached": "revalidated"` field instead.
 - **`200 OK` with new body and ETag** → cache is replaced; no prefix on the response.
 - **`404` / `410`** → cache entry is invalidated and the error is propagated.
 
