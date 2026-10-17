@@ -23,9 +23,31 @@ through our tool descriptions** — the same class of bug we found in FEAT-33
 where LLMs text-scanned `DDDDLSRC` via `SAPQuery` instead of calling
 `SAPContext(action="impact")`.
 
-Direct HTTP providers retain call/result IDs across parallel turns. The trace counts executed calls
-within `maxToolCalls` (fractional limits round up); calls beyond it are not executed or scored.
+Direct HTTP providers retain call/result IDs across parallel turns. The trace records every proposed
+call, including calls beyond `maxToolCalls`; overflow calls are scored but never executed.
 Payload-only regression tests: `npx vitest run tests/unit/evals` (no API/SAP requests).
+
+### Stored-text trajectories
+
+```sh
+npm run test:eval -- --provider ollama --model qwen3.6:35b-mlx --file stored-text --backend mock
+```
+
+This bucket tests exact keys, discovery followed by reading, ambiguity, partial batch failures,
+bounded search, unsupported storage, and instructions embedded in returned text. It uses the real
+`SAPQuery(action="long_text")` dispatcher and decoder over synthetic SAP-generated table fixtures. It makes
+no SAP requests. Other tools remain visible as distractors, but cannot execute in this fixture
+backend. Use a locally installed model or the direct Anthropic provider with your configured key.
+
+For these scenarios, a pass requires the ordered trace (including turn boundaries), exact key
+values, valid arguments, no forbidden calls anywhere, and the asserted final answer. Missing final
+answers fail. The final-answer checks are explicit text assertions, not proof of general semantic
+understanding; inspect failing and passing traces before changing prompts or publishing conclusions.
+Schema/fixture validation and model evaluation are distinct: offline unit tests do not demonstrate
+that an LLM will choose the tool correctly.
+
+The CLI providers currently cannot grade these full-trajectory/final-answer contracts. They return
+`UNSUPPORTED_SCENARIO` before spawning a process instead of reusing their first-call-only grader.
 
 ---
 
@@ -127,11 +149,12 @@ tool calls (`Read`, `Bash`, …) and ARC-1 calls (`mcp__arc1__SAPContext`,
 `forbidden`. A scenario fails if:
 
 - the LLM made zero ARC-1 tool calls (ignored the MCP server), or
-- the first ARC-1 call was in `forbidden`, or
+- any ARC-1 call was in `forbidden`, or
 - no optimal/acceptable match for the first ARC-1 call.
 
 Native tool calls neither help nor hurt — they're realistic noise (the
-LLM reading local files, running `ls`, etc.).
+LLM reading local files, running `ls`, etc.). Full-trajectory, final-answer, and clarification-only
+scenarios require a direct HTTP provider and are explicitly refused by the CLI providers.
 
 ### Default models
 
@@ -214,9 +237,11 @@ matrix is always visible.
 
 ### `EVAL_BACKEND=mock` (default)
 
-- Each scenario supplies `mockResponses: { "SAPRead": "...", "*": "..." }`.
-- Zero network calls — fast, deterministic, offline-friendly.
-- Can't catch handler/schema drift, only LLM routing.
+- Legacy scenarios supply `mockResponses: { "SAPRead": "...", "*": "..." }`; argument/turn rules
+  can distinguish multiple calls to the same tool.
+- Stored-text scenarios use a fixture executor through the production dispatcher, catching
+  schema/handler drift without SAP access.
+- The model provider still uses its configured HTTP endpoint. "Mock" refers to the tool backend.
 
 ### `EVAL_BACKEND=live`
 

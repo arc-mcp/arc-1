@@ -564,9 +564,24 @@ function redactPayloadValue(value: unknown): string {
   return '[REDACTED]';
 }
 
+/** Long-text keys and phrases are business data, including on requests rejected before validation. */
+function summarizeLongTextArgs(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '[REDACTED stored-text parameters]';
+  const input = value as Record<string, unknown>;
+  const mode =
+    typeof input.mode === 'string' && ['discover', 'read', 'search'].includes(input.mode) ? input.mode : 'invalid';
+  // Accept our existing summary too: sanitizeArgs and the final sink redactor both run.
+  const keyCount = Array.isArray(input.keys) ? input.keys.length : input.keyCount;
+  return {
+    mode,
+    ...(typeof keyCount === 'number' && Number.isSafeInteger(keyCount) && keyCount >= 0 ? { keyCount } : {}),
+  };
+}
+
 function redactValue(key: string, value: unknown, state: RedactionState, depth: number, mode: RedactionMode): unknown {
   if (depth > MAX_REDACTION_DEPTH || state.remainingEntries <= 0) return REDACTION_LIMIT_MARKER;
   state.remainingEntries -= 1;
+  if (canonicalKey(key) === 'longtext') return summarizeLongTextArgs(value);
   if (isSensitiveKey(key)) return '[REDACTED]';
   if (mode === 'audit-event' && PAYLOAD_BODY_KEYS.has(canonicalKey(key))) {
     if (value == null) return value;
@@ -591,6 +606,29 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
     return result;
   }
   if (value && typeof value === 'object') {
+    const input = value as Record<string, unknown>;
+    const inputType = Array.isArray(input.type) && input.type.length === 1 ? input.type[0] : input.type;
+    const inputAction = Array.isArray(input.action) && input.action.length === 1 ? input.action[0] : input.action;
+    const params =
+      input.params && typeof input.params === 'object' ? (input.params as Record<string, unknown>) : undefined;
+    const paramsAction =
+      Array.isArray(params?.action) && params.action.length === 1 ? params.action[0] : params?.action;
+    const textAction = typeof inputAction === 'string' && /^long_text$/iu.test(inputAction);
+    const nestedTextAction =
+      typeof inputAction === 'string' &&
+      /^query$/iu.test(inputAction) &&
+      typeof paramsAction === 'string' &&
+      /^long_text$/iu.test(paramsAction);
+    if (textAction || nestedTextAction || (typeof inputType === 'string' && /^LONG_TEXT$/iu.test(inputType))) {
+      // Include malformed invocations too: old-style top-level name/phrase fields must not
+      // become a business-data logging path before long-text validation rejects them.
+      const summary = summarizeLongTextArgs(input.longText ?? params?.longText);
+      if (nestedTextAction) return { action: 'query', params: { action: 'long_text', longText: summary } };
+      return {
+        ...(textAction ? { action: 'long_text' } : { type: 'LONG_TEXT' }),
+        longText: summary,
+      };
+    }
     if (state.seen.has(value)) return REDACTION_LIMIT_MARKER;
     state.seen.add(value);
     const result: Record<string, unknown> = {};

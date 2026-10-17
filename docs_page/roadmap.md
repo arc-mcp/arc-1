@@ -104,6 +104,7 @@ sequence.
 | [FEAT-74](#feat-74) | Dump feed attribute filters | P3 | S | Ready | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
+| [FEAT-86](#feat-86) | Additional stored-text profiles and persistence | P3 | M | Needs research | Data access |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
 | [FEAT-42](#feat-42) | Additional CI output formats | P3 | XS | Revisit on trigger | CI |
@@ -823,6 +824,26 @@ ordering key.
 **Resume with.** Design keyset pagination for named-table preview where a unique ordering can be
 proven. Refuse ambiguous tables, preserve all data-preview gates, and include a schema-only mode if
 it can reuse the same safe contract.
+
+<a id="feat-86"></a>
+### FEAT-86 — Additional stored-text profiles and persistence
+
+- **Priority / effort / status:** P3 / M / Needs research
+- **Category:** Data access
+
+**Remaining gap.** `SAPQuery(action="long_text")` covers guarded discovery, ordered reads, stored header
+references, and bounded phrase search for the qualified FF06/4103 classic ITF profile
+([implementation and evidence](https://github.com/arc-mcp/arc-1/pull/1012)). Other container/code-page
+profiles, legacy ITCRF references, and non-ITF/STXB text remain unsupported. The tested 750 system
+lacks the required ADT preview endpoint. Memory, archives, custom/upgrade persistence, and form
+layouts need separate API evidence; they cannot be inferred from ordinary table bytes.
+
+**Resume with.** A concrete unsupported customer case and independently generated SAP oracle
+fixtures for that profile or persistence route. Preserve exact keys, typed errors, current-user
+identity, data gates/blocklists, cumulative budgets, and content-redacted audit logs. Matching
+rereads are not a snapshot; opaque compressor trailers are not authenticated. Keep
+[#1000](https://github.com/arc-mcp/arc-1/issues/1000)'s broader companion-service option and FEAT-76's
+parameterized-service work separate. No RFC or dynamically executed ABAP fallback belongs in the reader.
 
 <a id="feat-36"></a>
 ### FEAT-36 — Type information

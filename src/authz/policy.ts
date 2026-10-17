@@ -75,8 +75,10 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   'SAPSearch.tadir_lookup_db': { scope: 'sql', opType: OperationType.FreeSQL },
   'SAPSearch.tadir_lookup_both': { scope: 'sql', opType: OperationType.FreeSQL },
 
-  // ── SAPQuery (freestyle SQL) ─────────────────────────────────────
+  // ── SAPQuery: bounded business-data actions and separately gated freestyle SQL ──
   SAPQuery: { scope: 'sql', opType: OperationType.FreeSQL },
+  'SAPQuery.sql': { scope: 'sql', opType: OperationType.FreeSQL },
+  'SAPQuery.long_text': { scope: 'data', opType: OperationType.Query },
 
   // ── SAPWrite ─────────────────────────────────────────────────────
   SAPWrite: { scope: 'write', opType: OperationType.Update },
@@ -237,7 +239,8 @@ export const ACTION_POLICY: Record<string, ActionPolicy> = {
   SAP: { scope: 'read', opType: OperationType.Read },
   'SAP.read': { scope: 'read', opType: OperationType.Read },
   'SAP.search': { scope: 'read', opType: OperationType.Search },
-  'SAP.query': { scope: 'sql', opType: OperationType.FreeSQL },
+  // Mixed delegator: the concrete SAPQuery action enforces data or sql downstream.
+  'SAP.query': { scope: 'data', opType: OperationType.Query },
   'SAP.navigate': { scope: 'read', opType: OperationType.Intelligence },
   'SAP.context': { scope: 'read', opType: OperationType.Intelligence },
   'SAP.lint': { scope: 'read', opType: OperationType.Intelligence },
@@ -272,6 +275,8 @@ export function getActionPolicy(tool: string, action?: string): ActionPolicy | u
  * dispatch from applying different policy rules to the same invocation.
  */
 export function invocationPolicyKey(tool: string, args: Record<string, unknown>): string | undefined {
+  // SQL predates action routing. Its implicit form must obey the same deny rule as action=sql.
+  if (tool === 'SAPQuery' && (args.action === undefined || args.action === null || args.action === '')) return 'sql';
   if (
     tool === 'SAPSearch' &&
     args.searchType === 'tadir_lookup' &&

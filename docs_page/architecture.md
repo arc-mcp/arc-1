@@ -212,7 +212,7 @@ Standard mode groups many ADT endpoints into 12 intent-based tools.
 | `SAPWrite` | Create, update, delete, method surgery, RAP batch/scaffold actions. | Registered only when writes are enabled. |
 | `SAPActivate` | Activate objects and publish/unpublish service bindings. | Registered only when writes are enabled. |
 | `SAPNavigate` | Definition, references, completion, hierarchy. | Some ADT read endpoints use POST. |
-| `SAPQuery` | Freestyle ABAP SQL. | Requires SQL scope and `SAP_ALLOW_FREE_SQL=true`. |
+| `SAPQuery` | Saved SAPscript long texts or freestyle ABAP SQL. | Long texts require `data` scope + `SAP_ALLOW_DATA_PREVIEW`; SQL requires `sql` scope + `SAP_ALLOW_FREE_SQL`. Both flags default off. |
 | `SAPContext` | Dependency context, usages, and CDS impact analysis. | Usages query SAP’s live where-used index. |
 | `SAPLint` | Local abaplint, formatting, formatter settings, pre-write validation helpers. | Formatter settings mutation needs write permission. |
 | `SAPDiagnose` | Syntax, unit tests, ATC, headless CI ATC/AUnit, quick fixes, dumps, traces, gateway errors, system messages. | Diagnostic reads can still execute backend checks. |

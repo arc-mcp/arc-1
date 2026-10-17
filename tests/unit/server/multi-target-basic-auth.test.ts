@@ -484,7 +484,15 @@ describe('multi-target shared Basic authentication', () => {
     };
 
     expect(await names(['read'])).not.toContain('SAPQuery');
-    expect(await names(['read', 'data'])).not.toContain('SAPQuery');
+    expect(await names(['read', 'data'])).toContain('SAPQuery');
+    const dataTools = await list(
+      { method: 'tools/list', params: {} },
+      { authInfo: { ...READ_AUTH, scopes: ['read', 'data'] } },
+    );
+    const dataQuery = dataTools.tools.find((tool: { name: string }) => tool.name === 'SAPQuery');
+    expect(dataQuery.inputSchema.properties.action.enum).toEqual(['long_text']);
+    expect(dataQuery.inputSchema.properties.sql).toBeUndefined();
+    expect(dataQuery.inputSchema.properties.longText).toBeDefined();
     expect(await names(['read', 'data', 'sql'])).toContain('SAPQuery');
     expect(await names(['admin'])).toContain('SAPQuery');
     for (const scopes of [['read'], ['read', 'data'], ['read', 'data', 'sql'], ['admin']]) {

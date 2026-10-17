@@ -18,9 +18,11 @@ import type { LiveExecutor } from './live-backend.js';
 import type {
   EvalRunResult,
   EvalScenario,
+  ExpectedToolCall,
   LLMProvider,
   LLMToolCall,
   Message,
+  MockResponseRule,
   ScenarioScore,
   ToolDefinitionForLLM,
 } from './types.js';
@@ -41,86 +43,134 @@ When you have enough information, respond with a text summary.`;
 
 // ─── Tool Call Scoring ──────────────────────────────────────────────
 
-/** Score the first tool call against optimal/acceptable/forbidden expectations */
-function scoreFirstToolCall(
-  trace: LLMToolCall[],
-  scenario: EvalScenario,
-): { toolSelectionScore: number; parameterScore: number; explanation: string } {
+interface TraceScore {
+  toolSelectionScore: number;
+  parameterScore: number;
+  explanation: string;
+  tracePassed: boolean;
+}
+
+/** Score the full trace when specified; otherwise retain the historical first-call scoring. */
+export function scoreScenarioTrace(trace: LLMToolCall[], turns: LLMToolCall[][], scenario: EvalScenario): TraceScore {
+  const forbidden = trace.find((call) => scenario.forbidden?.includes(call.name));
+  if (forbidden) {
+    return {
+      toolSelectionScore: 0,
+      parameterScore: 0,
+      explanation: `Called forbidden tool in trace: ${forbidden.name}`,
+      tracePassed: false,
+    };
+  }
+
+  if (scenario.noFirstCall) {
+    const passed = trace.length === 0;
+    return {
+      toolSelectionScore: passed ? 1 : 0,
+      parameterScore: 1,
+      explanation: passed
+        ? 'Correctly made no tool calls'
+        : `Expected clarification without tools; observed ${trace.length} call(s)`,
+      tracePassed: passed,
+    };
+  }
+
+  if (scenario.expectedTrace) {
+    const expectedTurns = scenario.expectedTrace;
+    const slots = expectedTurns.reduce((sum, turn) => sum + turn.length, 0);
+    const actualSlots = turns.reduce((sum, turn) => sum + turn.length, 0);
+    let matchedTools = 0;
+    let parameterTotal = 0;
+    let exact = turns.length === expectedTurns.length && actualSlots === slots;
+
+    for (let turnIndex = 0; turnIndex < expectedTurns.length; turnIndex++) {
+      const expectedCalls = expectedTurns[turnIndex] ?? [];
+      const actualCalls = turns[turnIndex] ?? [];
+      if (actualCalls.length !== expectedCalls.length) exact = false;
+      for (let callIndex = 0; callIndex < expectedCalls.length; callIndex++) {
+        const expected = expectedCalls[callIndex]!;
+        const actual = actualCalls[callIndex];
+        if (!actual) continue;
+        if (actual.name === expected.tool) {
+          matchedTools++;
+          parameterTotal += scoreExpectedToolCallParameters(actual, expected);
+          if (!matchesExpectedToolCall(actual, expected)) exact = false;
+        } else {
+          exact = false;
+        }
+      }
+    }
+    if (actualSlots > slots) exact = false;
+    const denominator = Math.max(slots, actualSlots, 1);
+    const toolSelectionScore = slots === 0 && actualSlots === 0 ? 1 : matchedTools / denominator;
+    const parameterScore = slots === 0 ? 1 : parameterTotal / slots;
+    return {
+      toolSelectionScore,
+      parameterScore,
+      explanation: exact
+        ? 'Expected tool trace matched'
+        : `Tool trace mismatch: expected ${slots} call(s) across ${expectedTurns.length} turn(s), observed ${actualSlots} across ${turns.length}`,
+      tracePassed: exact,
+    };
+  }
+
   if (trace.length === 0) {
     return {
       toolSelectionScore: 0,
       parameterScore: 0,
       explanation: 'LLM did not make any tool calls',
+      tracePassed: false,
     };
   }
 
-  const firstCall = trace[0];
+  const firstCall = trace[0]!;
+  const scoreFirstMatch = (expected: ExpectedToolCall, selection: number, label: string): TraceScore => ({
+    toolSelectionScore: selection,
+    parameterScore: scoreExpectedToolCallParameters(firstCall, expected),
+    explanation: `${label}: ${firstCall.name}(${JSON.stringify(firstCall.arguments)})`,
+    tracePassed: true,
+  });
 
-  // Check forbidden tools
-  if (scenario.forbidden?.includes(firstCall.name)) {
-    return {
-      toolSelectionScore: 0,
-      parameterScore: 0,
-      explanation: `Called forbidden tool: ${firstCall.name}`,
-    };
-  }
-
-  // Check optimal match
   for (const expected of scenario.optimal) {
-    if (matchesExpectedToolCall(firstCall, expected)) {
-      // Score parameters: check how many required args are correct
-      const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
-      return {
-        toolSelectionScore: 1.0,
-        parameterScore: paramScore,
-        explanation: `Optimal: ${firstCall.name}(${JSON.stringify(firstCall.arguments)})`,
-      };
-    }
+    if (matchesExpectedToolCall(firstCall, expected)) return scoreFirstMatch(expected, 1, 'Optimal');
   }
-
-  // Check if tool name matches optimal but params are wrong
   for (const expected of scenario.optimal) {
-    if (firstCall.name === expected.tool) {
-      const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
-      return {
-        toolSelectionScore: 1.0,
-        parameterScore: paramScore,
-        explanation: `Correct tool ${firstCall.name} but params partially wrong: ${JSON.stringify(firstCall.arguments)}`,
-      };
-    }
+    if (firstCall.name === expected.tool)
+      return scoreFirstMatch(expected, 1, `Correct tool ${firstCall.name}, parameters partial`);
   }
-
-  // Check acceptable alternatives
-  if (scenario.acceptable) {
-    for (const expected of scenario.acceptable) {
-      if (matchesExpectedToolCall(firstCall, expected)) {
-        const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
-        return {
-          toolSelectionScore: 0.5,
-          parameterScore: paramScore,
-          explanation: `Acceptable alternative: ${firstCall.name}(${JSON.stringify(firstCall.arguments)})`,
-        };
-      }
-    }
-
-    // Check if tool name matches acceptable but params wrong
-    for (const expected of scenario.acceptable) {
-      if (firstCall.name === expected.tool) {
-        const paramScore = scoreExpectedToolCallParameters(firstCall, expected);
-        return {
-          toolSelectionScore: 0.5,
-          parameterScore: paramScore,
-          explanation: `Acceptable tool ${firstCall.name} but params partially wrong`,
-        };
-      }
-    }
+  for (const expected of scenario.acceptable ?? []) {
+    if (matchesExpectedToolCall(firstCall, expected)) return scoreFirstMatch(expected, 0.5, 'Acceptable alternative');
   }
-
+  for (const expected of scenario.acceptable ?? []) {
+    if (firstCall.name === expected.tool)
+      return scoreFirstMatch(expected, 0.5, `Acceptable tool ${firstCall.name}, parameters partial`);
+  }
   return {
     toolSelectionScore: 0,
     parameterScore: 0,
     explanation: `Wrong tool: ${firstCall.name}(${JSON.stringify(firstCall.arguments)}). Expected: ${scenario.optimal.map((e) => e.tool).join(' or ')}`,
+    tracePassed: false,
   };
+}
+
+export function scoreFinalAnswer(
+  answer: string | undefined,
+  scenario: EvalScenario,
+): { passed: boolean; explanation?: string } {
+  const expected = scenario.finalAnswer;
+  if (!expected) return { passed: true };
+  if (answer === undefined) return { passed: false, explanation: 'No final assistant answer was captured' };
+  if (expected.requireNonEmpty && !answer.trim())
+    return { passed: false, explanation: 'Final assistant answer was empty' };
+  for (const pattern of expected.required ?? []) {
+    pattern.lastIndex = 0;
+    if (!pattern.test(answer)) return { passed: false, explanation: `Final answer missed required pattern ${pattern}` };
+  }
+  for (const pattern of expected.forbidden ?? []) {
+    pattern.lastIndex = 0;
+    if (pattern.test(answer))
+      return { passed: false, explanation: `Final answer included forbidden pattern ${pattern}` };
+  }
+  return { passed: true };
 }
 
 // ─── Eval Loop ──────────────────────────────────────────────────────
@@ -133,11 +183,22 @@ export async function runScenario(
   provider: LLMProvider,
   scenario: EvalScenario,
   tools: ToolDefinitionForLLM[],
-  options?: { passThreshold?: number; liveExecutor?: LiveExecutor },
+  options?: { passThreshold?: number; liveExecutor?: LiveExecutor; signal?: AbortSignal },
 ): Promise<ScenarioScore> {
+  const signal = options?.signal;
+  signal?.throwIfAborted();
+  if (scenario.mockOnly && options?.liveExecutor) {
+    throw new Error(`Scenario ${scenario.id} uses synthetic SAP fixtures and cannot run against a live backend.`);
+  }
   const startTime = Date.now();
   const trace: LLMToolCall[] = [];
+  const traceTurns: LLMToolCall[][] = [];
   let totalTokens = 0;
+  let promptTokens = 0;
+  let maxPromptTokens = 0;
+  let completionTokens = 0;
+  let finalAnswer: string | undefined;
+  let validationFailure: string | undefined;
   const maxCalls = scenario.maxToolCalls ?? DEFAULT_MAX_TOOL_CALLS;
   const passThreshold = options?.passThreshold ?? DEFAULT_PASS_THRESHOLD;
   const liveExecutor = options?.liveExecutor;
@@ -150,26 +211,41 @@ export async function runScenario(
 
   // Agentic loop: LLM → tool call → {mock or live} response → LLM → ...
   let callCount = 0;
+  let turn = 0;
   while (callCount < maxCalls) {
-    const response = await provider.chat(messages, tools);
+    signal?.throwIfAborted();
+    turn++;
+    // Keep the historical two-argument provider call unless cancellation was supplied.
+    const response = signal ? await provider.chat(messages, tools, { signal }) : await provider.chat(messages, tools);
+    signal?.throwIfAborted();
 
     if (response.usage) {
       totalTokens += response.usage.totalTokens;
+      promptTokens += response.usage.promptTokens;
+      maxPromptTokens = Math.max(maxPromptTokens, response.usage.promptTokens);
+      completionTokens += response.usage.completionTokens;
     }
 
     // LLM is done (text response, no tool calls)
     if (response.done || !response.toolCalls?.length) {
+      finalAnswer = response.content ?? '';
       break;
     }
 
     // Assign IDs once and keep parallel calls in their original assistant turn.
-    const toolCalls = response.toolCalls.slice(0, Math.ceil(maxCalls - callCount)).map((call, index) => ({
+    const proposedCalls = response.toolCalls.map((call, index) => ({
       ...call,
       id: call.id || `call_${callCount + index + 1}`,
     }));
-    messages.push({ role: 'assistant', content: response.content, toolCalls });
+    const remainingCalls = Math.max(0, Math.ceil(maxCalls - callCount));
+    const toolCalls = proposedCalls.slice(0, remainingCalls);
+    const overflowCalls = proposedCalls.slice(remainingCalls);
+    messages.push({ role: 'assistant', content: response.content, toolCalls: proposedCalls });
+    const currentTurn: LLMToolCall[] = [];
     for (const toolCall of toolCalls) {
+      signal?.throwIfAborted();
       trace.push(toolCall);
+      currentTurn.push(toolCall);
       callCount++;
 
       // Live mode routes to a real MCP server; otherwise fall back to mocks.
@@ -177,16 +253,22 @@ export async function runScenario(
       // LLM as tool output so the agentic loop can observe and react — same
       // shape it would see in production.
       let toolContent: string;
-      if (liveExecutor) {
+      if (scenario.mockToolExecutor) {
+        toolContent = await scenario.mockToolExecutor(toolCall.name, toolCall.arguments);
+        if (toolContent.startsWith(`Invalid arguments for ${toolCall.name}:`)) {
+          validationFailure ??= `${toolCall.name} arguments failed production schema validation on turn ${turn}`;
+        }
+      } else if (liveExecutor) {
         try {
           toolContent = await liveExecutor(toolCall.name, toolCall.arguments);
         } catch (err) {
           toolContent = `[tool error] ${err instanceof Error ? err.message : String(err)}`;
         }
       } else {
-        toolContent = getMockResponse(scenario, toolCall);
+        toolContent = getMockResponse(scenario, toolCall, turn);
       }
 
+      signal?.throwIfAborted();
       // Add tool result
       messages.push({
         role: 'tool',
@@ -195,10 +277,29 @@ export async function runScenario(
         toolName: toolCall.name,
       });
     }
+    signal?.throwIfAborted();
+    for (const toolCall of overflowCalls) {
+      trace.push(toolCall);
+      currentTurn.push(toolCall);
+      messages.push({
+        role: 'tool',
+        content: `Harness tool-call limit reached (${maxCalls}); call was observed but not executed.`,
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+      });
+    }
+    traceTurns.push(currentTurn);
   }
 
   // Score the trace
-  const { toolSelectionScore, parameterScore, explanation } = scoreFirstToolCall(trace, scenario);
+  const {
+    toolSelectionScore,
+    parameterScore,
+    explanation: traceExplanation,
+    tracePassed,
+  } = scoreScenarioTrace(trace, traceTurns, scenario);
+  const answerScore = scoreFinalAnswer(finalAnswer, scenario);
+  const explanation = [traceExplanation, validationFailure, answerScore.explanation].filter(Boolean).join('; ');
   const overallScore = toolSelectionScore * 0.6 + parameterScore * 0.4;
   const durationMs = Date.now() - startTime;
 
@@ -209,15 +310,32 @@ export async function runScenario(
     overallScore,
     toolCallCount: trace.length,
     trace,
+    traceTurns,
+    finalAnswer: scenario.finalAnswer ? finalAnswer : undefined,
+    finalAnswerPassed: answerScore.passed,
+    tracePassed: tracePassed && !validationFailure,
     totalTokens,
+    promptTokens,
+    maxPromptTokens,
+    completionTokens,
     durationMs,
     explanation,
-    passed: scenarioPasses(scenario, overallScore, parameterScore, passThreshold),
+    passed:
+      scenarioPasses(scenario, overallScore, parameterScore, passThreshold) &&
+      tracePassed &&
+      !validationFailure &&
+      answerScore.passed,
   };
 }
 
-/** Get a mock response for a tool call */
-function getMockResponse(scenario: EvalScenario, toolCall: LLMToolCall): string {
+function mockRuleMatches(rule: MockResponseRule, toolCall: LLMToolCall, turn: number): boolean {
+  return (rule.turn === undefined || rule.turn === turn) && matchesExpectedToolCall(toolCall, rule);
+}
+
+/** Choose the first matching rule, then fall back to legacy tool-name mocks. */
+function getMockResponse(scenario: EvalScenario, toolCall: LLMToolCall, turn: number): string {
+  const rule = scenario.mockResponseRules?.find((candidate) => mockRuleMatches(candidate, toolCall, turn));
+  if (rule) return rule.response;
   if (!scenario.mockResponses) {
     return JSON.stringify({ status: 'ok', message: `Mock response for ${toolCall.name}` });
   }
@@ -245,7 +363,7 @@ export async function runEval(
   scenarios: EvalScenario[],
   tools: ToolDefinitionForLLM[],
   toolMode: 'standard' | 'hyperfocused' = 'standard',
-  options?: { passThreshold?: number; liveExecutor?: LiveExecutor },
+  options?: { passThreshold?: number; liveExecutor?: LiveExecutor; signal?: AbortSignal },
 ): Promise<EvalRunResult> {
   const scores: ScenarioScore[] = [];
 
@@ -278,6 +396,8 @@ export async function runEval(
   const avgCalls = scores.reduce((sum, s) => sum + s.toolCallCount, 0) / total;
   const avgDuration = scores.reduce((sum, s) => sum + s.durationMs, 0) / total;
   const totalTokens = scores.reduce((sum, s) => sum + (s.totalTokens ?? 0), 0);
+  const totalPromptTokens = scores.reduce((sum, s) => sum + (s.promptTokens ?? 0), 0);
+  const totalCompletionTokens = scores.reduce((sum, s) => sum + (s.completionTokens ?? 0), 0);
 
   return {
     model: provider.model,
@@ -294,6 +414,8 @@ export async function runEval(
       avgToolCalls: Math.round(avgCalls * 100) / 100,
       avgDurationMs: Math.round(avgDuration),
       totalTokens,
+      totalPromptTokens,
+      totalCompletionTokens,
     },
   };
 }

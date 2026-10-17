@@ -1,0 +1,400 @@
+{
+  "release": "758",
+  "source": "synthetic READ_TEXT semantic oracle",
+  "cases": [
+    {
+      "id": "normal-en",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_NORMAL",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "2",
+        "lines": [
+          {
+            "format": "*",
+            "text": "Synthetic English first"
+          },
+          {
+            "format": "/",
+            "text": "Synthetic English second"
+          }
+        ]
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_NORMAL",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 2,
+        "version": 0,
+        "modifiedDate": "20261017",
+        "modifiedTime": "132029",
+        "legacyReference": false,
+        "revision": "synthetic-758-normal-en"
+      },
+      "clusterBase64": "/wYCAQICgAA0MTAzAAAAAHUCAAASH50CGTMfAwMDIw+QYGBlwAJCGHwYPBn8GFwZ1kJUrgILs4ApRo51EMF9UDOY9oAYWgwKDMEMlQx5DCUMGQypQDKTIRko5goUSWfIAfKKgeIKDGlAVhGQXQJkD1e4Fxwi+gzEhUgxUC6ZIR8omoLHzKEN9+5nAQAA"
+    },
+    {
+      "id": "normal-de",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_NORMAL",
+        "TDID": "ST",
+        "TDSPRAS": "D"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "1",
+        "lines": [
+          {
+            "format": "*",
+            "text": "Synthetischer deutscher Text"
+          }
+        ]
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_NORMAL",
+          "TDID": "ST",
+          "TDSPRAS": "D"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 1,
+        "version": 0,
+        "modifiedDate": "20261017",
+        "modifiedTime": "132029",
+        "legacyReference": false,
+        "revision": "synthetic-758-normal-de"
+      },
+      "clusterBase64": "/wYCAQICgAA0MTAzAAAAAGMBAAASH50CjJmPgYGBkQdIMLAyYAEhDD4Mngx+DK4MayEqV4GFWcAUI8c6iOA+qBmMe0AMLQYFhmCGSoY8hhKGDIZUIJnJUMyQDGYXAeVSgHQpUBRZLARIVwDFFIYZ3LufBQAA"
+    },
+    {
+      "id": "blank-line",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_BLANK",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "1",
+        "lines": [
+          {
+            "format": "",
+            "text": ""
+          }
+        ]
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_BLANK",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 1,
+        "version": 0,
+        "modifiedDate": "20261017",
+        "modifiedTime": "132029",
+        "legacyReference": false,
+        "revision": "synthetic-758-blank-line"
+      },
+      "clusterBase64": "/wYCAQICgAA0MTAzAAAAAGMBAAASH50CMmY+BgYGRh4gwcDKgAWEMPgweDL4MbgyrIWoXAUWZgFTjBzrIIL7oGYw7gExFBhGIQzu3c8CAAA="
+    },
+    {
+      "id": "empty-cluster",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_EMPTY",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "0",
+        "lines": []
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_EMPTY",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 0,
+        "version": 0,
+        "modifiedDate": "00000000",
+        "modifiedTime": "000000",
+        "legacyReference": false,
+        "revision": "synthetic-758-empty-cluster"
+      },
+      "clusterBase64": "/wYCAQICgAA0MTAzAAAAAFEAAAASH50CNmY+BgYGRh4gwcDKgAWEMPgweDL4MbgyrIWoXAUWZgFTjBzrIIL7YGbsZwEAAA=="
+    },
+    {
+      "id": "header-only",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_HEADER",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "0",
+        "lines": []
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_HEADER",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 0,
+        "version": 0,
+        "modifiedDate": "00000000",
+        "modifiedTime": "000000",
+        "legacyReference": false,
+        "revision": "synthetic-758-header-only"
+      }
+    },
+    {
+      "id": "reference-one",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_REF1",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "0",
+        "lines": [
+          {
+            "format": "*",
+            "text": "Synthetic English first"
+          },
+          {
+            "format": "/",
+            "text": "Synthetic English second"
+          }
+        ]
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_REF1",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 0,
+        "version": 0,
+        "modifiedDate": "20261017",
+        "modifiedTime": "132029",
+        "reference": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_NORMAL",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "legacyReference": false,
+        "revision": "synthetic-758-reference-one"
+      }
+    },
+    {
+      "id": "reference-two",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_REF2",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "0",
+        "lines": [
+          {
+            "format": "*",
+            "text": "Synthetic English first"
+          },
+          {
+            "format": "/",
+            "text": "Synthetic English second"
+          }
+        ]
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_REF2",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 0,
+        "version": 0,
+        "modifiedDate": "20261017",
+        "modifiedTime": "132029",
+        "reference": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_REF1",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "legacyReference": false,
+        "revision": "synthetic-758-reference-two"
+      }
+    },
+    {
+      "id": "broken-reference",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_BROKEN",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 6,
+        "oldLineCounter": "0",
+        "lines": []
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_BROKEN",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "",
+        "storedLineCount": 0,
+        "version": 0,
+        "modifiedDate": "20261017",
+        "modifiedTime": "132029",
+        "reference": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_BROKENTARGET",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "legacyReference": false,
+        "revision": "synthetic-758-broken-reference"
+      }
+    },
+    {
+      "id": "deleted-target",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_BROKENTARGET",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 4,
+        "oldLineCounter": "0",
+        "lines": []
+      },
+      "header": null
+    },
+    {
+      "id": "non-itf",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_NONITF",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 0,
+        "oldLineCounter": "1",
+        "lines": [
+          {
+            "format": "*",
+            "text": "{\\rtf1\\ansi Synthetic RTF}"
+          }
+        ]
+      },
+      "header": {
+        "key": {
+          "TDOBJECT": "TEXT",
+          "TDNAME": "Z_ARC1_SEM_NONITF",
+          "TDID": "ST",
+          "TDSPRAS": "E"
+        },
+        "title": "",
+        "textType": "RTF",
+        "storedLineCount": 1,
+        "version": 0,
+        "modifiedDate": "20261017",
+        "modifiedTime": "132029",
+        "legacyReference": false,
+        "revision": "synthetic-758-non-itf"
+      }
+    },
+    {
+      "id": "empty-save",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_ZEROSAVE",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 4,
+        "oldLineCounter": "0",
+        "lines": []
+      },
+      "header": null
+    },
+    {
+      "id": "missing-key",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_MISSING",
+        "TDID": "ST",
+        "TDSPRAS": "E"
+      },
+      "nativeReadText": {
+        "status": 4,
+        "oldLineCounter": "0",
+        "lines": []
+      },
+      "header": null
+    },
+    {
+      "id": "missing-language",
+      "key": {
+        "TDOBJECT": "TEXT",
+        "TDNAME": "Z_ARC1_SEM_NORMAL",
+        "TDID": "ST",
+        "TDSPRAS": "F"
+      },
+      "nativeReadText": {
+        "status": 4,
+        "oldLineCounter": "0",
+        "lines": []
+      },
+      "header": null
+    }
+  ]
+}

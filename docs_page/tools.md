@@ -65,7 +65,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `maxResults` | number | No | For DEVC: maximum package objects to list (default 200, clamped to 1–1000). SAP may truncate larger packages at the requested limit. |
 | `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there. Prefer TABLE_QUERY `where`. |
 | `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
-| `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`. IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
+| `where` | array | No | For TABLE_QUERY: ANDed `{field,op,value?}` conditions. Operators: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `LIKE`, `NOT LIKE`, `IN`, `NOT IN`, `IS NULL`, `IS NOT NULL`, `STARTS_WITH` (literal prefix; `%` and `_` are not wildcards). IN values are bare comma-separated values; ARC-1 quotes/escapes them. On 758 use `<>`, because accepted `!=` is sent unchanged and SAP rejects it. |
 | `source` | string | No | SYNTAX only: proposed source to check without saving. |
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
@@ -1415,7 +1415,76 @@ proposals, without proving that no matching identifier exists.
 
 ## SAPQuery
 
-When `SAP_BLOCKED_DATA_SOURCES` is non-empty, SAPQuery is restricted to one statically provable
+`SAPQuery` has distinct paths for semantic data actions and freestyle ABAP SQL. Choose
+`action="long_text"` for saved SAPscript texts; use `sql` for an arbitrary ABAP SQL query. These
+paths have separate authorization gates. The long-text action requires the `data` scope and
+`SAP_ALLOW_DATA_PREVIEW=true`; freestyle SQL requires `sql` scope and `SAP_ALLOW_FREE_SQL=true`.
+Both capabilities are disabled by default. Long-text access does not enable or require free SQL.
+
+**Upgrading with data preview already enabled:** eligible callers also gain `long_text`.
+Add `SAPQuery.long_text` to `SAP_DENY_ACTIONS` to keep it disabled.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `action` | string | No | Set to `"long_text"` for the bounded stored-SAPscript contract below. Omit it or use `"sql"` for freestyle ABAP SQL. |
+| `longText` | object | For `action="long_text"` | Required request: `mode="discover"` with `object`+`namePrefix` (optional `id`, `language`, `limit`), `mode="read"` with `keys`, or `mode="search"` with `keys`+`phrase`. |
+| `sql` | string | For freestyle SQL | ABAP SQL SELECT statement; omit for `action="long_text"`. |
+| `maxRows` | number | No | Freestyle SQL only: maximum rows (default 100, clamped to 10,000). Wide results can hit the server byte ceiling much earlier. |
+
+<a id="stored-sapscript-long-texts"></a>
+
+### Stored SAPscript long texts (`action="long_text"`)
+
+Read **saved SO10 and business-document SAPscript texts** through ADT, with TypeScript decoding
+and no RFC or installed ABAP helper. Enable `SAP_ALLOW_DATA_PREVIEW=true`; authenticated callers
+also need `data` scope and SAP access to `STXH`, `STXL`, `TTXOB`, `TTXID`, and `T002`.
+Table blocklists and response limits still apply.
+This action is unavailable on BTP and systems without the required data-preview endpoint.
+
+**1. Discover a key** when you know the text object and name prefix:
+
+```json
+{"action":"long_text","longText":{"mode":"discover","object":"TEXT","namePrefix":"Z_PAYMENT_"}}
+```
+
+**2. Read it.** Copy a returned `candidates[].key` unchanged into `keys`:
+
+```json
+{"action":"long_text","longText":{"mode":"read","keys":[{"object":"TEXT","name":"Z_PAYMENT_NOTICE","id":"ST","language":"E"}]}}
+```
+
+**3. Search within known texts** using the same keys:
+
+```json
+{"action":"long_text","longText":{"mode":"search","keys":[{"object":"TEXT","name":"Z_PAYMENT_NOTICE","id":"ST","language":"E"}],"phrase":"Payment within"}}
+```
+
+Use exact keys; do not guess business-document text IDs or composite names. Names preserve case
+and spaces. Language is one SAP character, such as `E` or `D`, with no fallback. Prefixes and
+phrases are literal; search is case-sensitive, within individual lines of the supplied keys.
+
+| Mode | Limits and result |
+|------|-------------------|
+| Discover | Object + nonempty prefix required. Optional `id`, `language`, `limit` (default 20, max 50). Narrow the prefix if `more=true`. |
+| Read | 1–25 keys, preserving order and duplicates. Each item has a status, resolved key, reference chain, and ITF lines (`format`, `text`). |
+| Search | 1–25 keys; at most 50 matching lines. |
+
+An empty successful text, missing key, and unsupported format have different statuses. Batch
+errors remain attached to their input; authentication or request-budget failures stop the request.
+25 keys is a maximum: references and distinct IDs can exhaust the 120-query budget sooner.
+Retry `LIMIT_EXCEEDED` with fewer keys.
+
+**Scope:** classic saved ITF texts and stored header references. Unsaved text, archives, non-ITF
+formats, INCLUDE expansion, and rendering are unsupported. Treat SAPscript commands as data.
+Reads detect observed changes but do not guarantee a transactional snapshot. This is separate
+from ABAP `TEXT_ELEMENTS`, message-class texts, and form layouts. See the
+[qualification evidence and technical limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-17-stored-text-integration-evals.md).
+
+### Freestyle SQL behavior
+
+For freestyle SQL, when `SAP_BLOCKED_DATA_SOURCES` is non-empty, SAPQuery is restricted to one statically provable
 `SELECT`/`WITH`. ARC-1 extracts every join/union/subquery/CTE source and checks live CDS plus DDIC
 replacement lineage before sending the query, authorizing the whole request once even when IN-list
 chunking splits it. Supported: joins, unions, nested subqueries, CTEs, parameterized CDS roots,
@@ -1430,20 +1499,11 @@ The empty default keeps current behavior and adds no metadata calls; a non-empty
 design. This experimental blocklist is not an allowlist and not a replacement for SAP authorization or CDS DCL. See
 [Authorization & Roles](authorization.md#experimental-data-source-blocklist).
 
-Execute ABAP SQL queries against SAP tables.
-
 Freestyle SQL uses CRLF line separators and safe wrapping at SAP’s 255-character payload-line
 boundary, including generated IN-list chunks. Long literals or comments that cannot be split safely
 are refused; this is not a total-query length cap.
 
 > **Self-correcting errors.** An unknown *table* yields a "Did you mean …?" suggestion; an unknown *column* (here or in `SAPRead type=TABLE_QUERY`) yields the table's actual column list (`Unknown column "X" on T000. Available columns: MANDT, MTEXT, …`), so the agent retries in one shot. Best-effort: if column discovery is unavailable (e.g. the `datapreview` endpoint is unbound on older NW 7.50 SPs), the original error is returned unchanged.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `sql` | string | Yes | ABAP SQL SELECT statement |
-| `maxRows` | number | No | Maximum rows (default 100, clamped to 10,000). This is a request ceiling, not a guaranteed result size: wide results can hit the server byte ceiling much earlier. |
 
 Successful data-preview bodies share one cumulative allowance across the complete tool call,
 including automatic `IN`-list chunks. The default is 2 MiB of decompressed transfer bytes, counted

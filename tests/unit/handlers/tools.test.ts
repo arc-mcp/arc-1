@@ -283,8 +283,7 @@ describe('Tool Definitions', () => {
     const whereDescription = schema.properties.where.description as string;
 
     expect(whereDescription).toContain('bare comma-separated values');
-    expect(whereDescription).toContain('do NOT quote them');
-    expect(whereDescription).toContain('ARC-1 quotes and escapes values');
+    expect(whereDescription).toContain('ARC-1 quotes/escapes them');
     expect(whereDescription).toContain('"261,262"');
     expect(whereDescription).not.toContain('single-quoted literals');
   });
@@ -296,7 +295,8 @@ describe('Tool Definitions', () => {
     expect(schema.properties.maxRows.description).toContain('On 758, TABLE_CONTENTS returns N+1');
     expect(schema.properties.sqlFilter.description).toContain('broken on 758');
     expect(schema.properties.sqlFilter.description).toContain('TABLE_QUERY where');
-    expect(schema.properties.where.description).toContain('use <> because 758 rejects !=');
+    expect(schema.properties.where.description).toContain('Use <>; 758 rejects !=');
+    expect(schema.properties.where.description).toContain('STARTS_WITH: literal prefix');
     expect(schema.properties.where.description).not.toContain('Ops: =, !=');
   });
 
@@ -346,7 +346,7 @@ describe('Tool Definitions', () => {
     const typeEnum: string[] = schema.properties.type.enum;
     for (const t of ['DESD', 'EVTB', 'EVTO', 'DTSC', 'CSNM', 'COTA', 'DSFD', 'DTDC', 'UIAD'])
       expect(typeEnum).toContain(t);
-    expect(schema.properties.type.description).toContain('Server-driven objects');
+    expect(schema.properties.type.description).toContain('Server-driven: discovery-gated XML metadata');
   });
 
   it('SAPWrite exposes server-driven object types (write — 816)', () => {
