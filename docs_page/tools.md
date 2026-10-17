@@ -469,7 +469,7 @@ keep their separate behavior.
 | `version` | string | No | SRVB: service version for binding metadata (default `0001`) |
 | `refObjectType` | string | No | Required for SKTD/KTD create: parent ADT type/subtype such as `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `DEVC/K`, or `SMBC/TYP` (Business Configuration Maintenance Object). |
 | `refObjectName` | string | No | SKTD/KTD create: documented parent name; defaults to `name`. |
-| `refObjectDescription` | string | No | SKTD/KTD create: parent description shown in ADT tooltips; required and nonempty for `SMBC/TYP`. |
+| `refObjectDescription` | string | No | SKTD/KTD create: optional parent description. Omitted or blank values leave the XML attribute unset. |
 | `shortTexts` | array | No | SKTD/KTD update/create: `[{node, text}]`, where `node` is any name or id the SAPRead node index lists (the same resolver as `## <node>` headings; an ambiguous name is refused with its candidates), `text` is at most 60 characters, and `""` clears it. Works without `source`; nodes marked `obligation="forbidden"` are refused. |
 | `objects` | array | No | For `batch_create`: ordered list of objects (see below) |
 | `activateAtEnd` | boolean | No | For `batch_create` only. Default `false` (per-object inline activation). When `true`, ARC-1 writes inactive drafts for every object then issues one terminal batch-activate — SAP's activator resolves cross-references between siblings in a single pass. Use this for interdependent objects (composition-linked DDLS, RAP behavior stacks where parent references not-yet-active child). Partial-failure semantics are unchanged: a write-phase failure still breaks the loop and only the already-written subset is batch-activated. |

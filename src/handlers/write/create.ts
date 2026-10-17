@@ -588,12 +588,6 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       );
     }
     const refDescription = String(args.refObjectDescription ?? '');
-    // SAP_BASIS 758 rejects an empty SMBC parent description with only "Check of condition failed".
-    if (refType === 'SMBC/TYP' && !refDescription.trim()) {
-      return errorResult(
-        '"refObjectDescription" is required for SMBC/TYP KTD creation. Provide the business configuration description.',
-      );
-    }
     // Build the parent URI. ADT URIs use lowercase names by convention (matches the Eclipse trace).
     const refParentType = refType.split('/')[0] ?? '';
     const refUri = `${objectBasePath(refParentType)}${encodeURIComponent(refName.toLowerCase())}`;

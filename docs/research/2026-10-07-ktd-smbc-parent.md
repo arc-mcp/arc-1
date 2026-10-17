@@ -1,5 +1,10 @@
 # KTD documentation for SMBC parents (#933 / #934)
 
+Update, 2026-10-17: #1015 established that SAP rejects an **empty attribute**, not an
+absent one. Omitting `adtcore:description` passed create/update/activate/read/delete
+against an owned active SMBC on 758. The earlier required-description guard is
+therefore removed; the investigation below records the original finding.
+
 Research and independent verification on 2026-10-07. Scope: the KTD parent route
 for Business Configuration Maintenance Objects (`SMBC/TYP`), not general SMBC
 read/write/transport support. Continue [PR #934](https://github.com/arc-mcp/arc-1/pull/934)
