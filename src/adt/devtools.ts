@@ -1057,6 +1057,8 @@ function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCh
   // chkrun:statusText="Resource CLASS ZCL_X does not exist."/> — with zero messages, which would
   // otherwise read as "clean". Legacy <msg> shapes carry no report → treat as checked.
   const reports = findDeepNodes(parsed, 'checkReport');
+  // An empty native envelope is missing evidence, not the legacy message-only success shape.
+  const emptyNativeReport = Object.hasOwn(parsed, 'checkRunReports') && reports.length === 0 && msgs.length === 0;
   const unprocessed = reports.find((r) => r['@_status'] && String(r['@_status']) !== 'processed');
   const jsonReportValid =
     !expectedJsonUri ||
@@ -1070,7 +1072,8 @@ function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCh
   return {
     hasErrors: messages.some((m) => m.severity === 'error'),
     messages,
-    checked: !unprocessed && jsonReportValid,
+    checked: !unprocessed && jsonReportValid && !emptyNativeReport,
+    ...(emptyNativeReport ? { statusText: 'SAP returned no syntax-check report or messages.' } : {}),
     ...(unprocessed ? { statusText: String(unprocessed['@_statusText'] ?? '') } : {}),
     ...(!jsonReportValid && !unprocessed
       ? { statusText: 'SAP did not return a processed JSON candidate check for this object.' }
