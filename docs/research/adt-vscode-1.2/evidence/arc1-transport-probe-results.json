@@ -1,0 +1,138 @@
+{
+  "baseline": "9775645400fdb27f37aff486f14fe9845ecf8639",
+  "method": "Synthetic inputs against unmodified source; no SAP calls",
+  "records": [
+    {
+      "caseName": "undated matching active despite known released history",
+      "evidence": {
+        "current": "00000",
+        "previous": null,
+        "baseline": "no-prior-snapshot"
+      }
+    },
+    {
+      "caseName": "newer inactive draft competes with active source",
+      "evidence": {
+        "current": "99999",
+        "previous": "00001",
+        "baseline": "prior-revision"
+      }
+    },
+    {
+      "caseName": "whole class with unattributed changed sibling and three missing feeds",
+      "evidence": {
+        "type": "CLAS",
+        "name": "ZCL_DEMO",
+        "taskIds": [
+          "DEVK900002"
+        ],
+        "parts": [
+          {
+            "part": "main",
+            "baselineStatus": "prior-revision",
+            "selectionMethod": "exact-transport",
+            "from": "00001 (DEVK900001)",
+            "to": "00002 (DEVK900002)",
+            "added": 1,
+            "removed": 1,
+            "diff": "===================================================================\n--- ZCL_DEMO (00001 (DEVK900001))\n+++ ZCL_DEMO (00002 (DEVK900002))\n@@ -1,1 +1,1 @@\n-WRITE: / 1.\n+WRITE: / 2.\n"
+          },
+          {
+            "part": "implementations",
+            "baselineStatus": "prior-revision-unverified",
+            "selectionMethod": "latest-revision-fallback",
+            "from": "00001",
+            "to": "00002",
+            "added": 0,
+            "removed": 0,
+            "diff": "",
+            "note": "not changed by this transport"
+          }
+        ]
+      }
+    },
+    {
+      "caseName": "CTS-selected include returns 404 while main succeeds",
+      "evidence": {
+        "type": "CLAS",
+        "name": "ZCL_DEMO",
+        "taskIds": [
+          "DEVK900002"
+        ],
+        "parts": [
+          {
+            "part": "main",
+            "baselineStatus": "prior-revision",
+            "selectionMethod": "exact-transport",
+            "from": "00001 (DEVK900001)",
+            "to": "00002 (DEVK900002)",
+            "added": 1,
+            "removed": 1,
+            "diff": "===================================================================\n--- ZCL_DEMO (00001 (DEVK900001))\n+++ ZCL_DEMO (00002 (DEVK900002))\n@@ -1,1 +1,1 @@\n-WRITE: / 1.\n+WRITE: / 2.\n"
+          }
+        ]
+      }
+    },
+    {
+      "caseName": "text-pool-only transport with identical source",
+      "evidence": {
+        "type": "PROG",
+        "name": "ZDEMO",
+        "taskIds": [
+          "DEVK900002"
+        ],
+        "parts": [
+          {
+            "part": "main",
+            "baselineStatus": "prior-revision",
+            "selectionMethod": "exact-transport",
+            "from": "00001 (DEVK900001)",
+            "to": "00002 (DEVK900002)",
+            "added": 0,
+            "removed": 0,
+            "diff": "",
+            "note": "no source change between the selected revisions"
+          }
+        ]
+      }
+    },
+    {
+      "caseName": "one huge changed line bypasses line cap",
+      "evidence": {
+        "diffCharacters": 300154,
+        "diffTruncated": false
+      }
+    },
+    {
+      "caseName": "revision parser ignores continuation metadata",
+      "evidence": {
+        "object": {
+          "name": "ZDEMO",
+          "type": "PROG"
+        },
+        "revisions": [
+          {
+            "id": "00003",
+            "author": "",
+            "timestamp": "2026-10-17T12:00:00Z",
+            "uri": "/sap/bc/adt/demo/versions/20261017120000/00003/content"
+          }
+        ]
+      }
+    },
+    {
+      "caseName": "test-transport attribute is discarded and intervening snapshot becomes baseline",
+      "evidence": {
+        "parsedTestEntry": {
+          "id": "00002",
+          "author": "",
+          "timestamp": "2026-10-16T12:00:00Z",
+          "transport": "DEVK900099",
+          "uri": "/sap/bc/adt/demo/versions/20261017120000/00002/content"
+        },
+        "current": "00003",
+        "previous": "00002"
+      }
+    }
+  ]
+}

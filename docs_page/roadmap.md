@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-14
+**Last reviewed:** 2026-10-17
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -34,6 +34,10 @@ including fixes, documentation, refactors, and research. Update the roadmap in t
 
 Record the affected IDs in the PR description, or write "No roadmap impact" after checking.
 The PR template includes this check; unrelated changes do not require a roadmap edit.
+
+The [ADT 1.2 adoption backlog](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/README.md)
+indexes all 19 workflow areas, object families, original reports and staged acceptance criteria.
+It distinguishes local prototypes from shipped features.
 
 ### Labels
 
@@ -84,6 +88,9 @@ sequence.
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
+| [FEAT-86](#feat-86) | Broader historical transport coverage | P2 | L | Needs research | Developer workflow |
+| [FEAT-87](#feat-87) | Reusable SQL notebook runner | P2 | M | Ready | Data access |
+| [FEAT-88](#feat-88) | Current-caller policy explanations | P2 | M | Ready | Safety / UX |
 | [FEAT-23](#feat-23) | Recursive program include reading | P2 | M | Needs research | Developer workflow |
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
 | [FEAT-66](#feat-66) | Interactive confirmation for destructive actions | P3 | L | Blocked | Safety / UX |
@@ -463,6 +470,60 @@ release-sensitive. Generic web links would add little over existing model knowle
 **Resume with.** Demonstrate one discovery-advertised, structured endpoint on multiple supported
 releases and define a useful fallback when documentation is unavailable.
 
+<a id="feat-86"></a>
+### FEAT-86 — Broader historical transport coverage
+
+- **Priority / effort / status:** P2 / L / Needs research
+- **Category:** Developer workflow
+
+**Idea.** Compare historical text pools, function-group parts and metadata where customer reviews
+currently show explicit gaps.
+
+**Why it remains.** The bounded 758 investigation found current text pools, active-only FUGR
+history and too few differing DDIC snapshots to prove adapters. Test-transport filtering,
+method attribution across requests, deletion/Customizing keys and history continuation also lack
+representative live fixtures.
+
+**Resume with.** Choose a family from pilot coverage gaps, then capture two historical payloads,
+ownership/language/operation semantics and supported releases. Keep unsupported scope visible until
+proven. [Evidence and stop conditions](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/README.md#historical-coverage-research-queue).
+
+Verified include-existence metadata could distinguish truly absent speculative class parts from
+unavailable evidence. Whole-object PROG/CLAS reviews also retain non-source scope gaps until those
+historical adapters are verified; a 404 alone remains insufficient.
+
+<a id="feat-87"></a>
+### FEAT-87 — Reusable SQL notebook runner
+
+- **Priority / effort / status:** P2 / M / Ready
+- **Category:** Data access
+
+**Idea.** Save Markdown/SQL investigations and explicitly rerun them through SAPQuery.
+
+**Why it remains.** An unmerged local prototype imports the observed SAP 1.2 `.abapsql` format,
+uses explicit target mappings, preserves strings and returns bounded HTML/JSON. It needs its own
+review and tests; it is outside the transport-review PR.
+
+**Resume with.** Review import preservation, no auto-run, policy denials, exact decimal/identifier
+values, aggregate assertions and incomplete results. Keep a full editor deferred until usage
+justifies it. [NB-01 acceptance](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/evidence/ARC1_RESEARCH_HANDOFF.md#nb-01--sql-notebook-artifact-and-runner).
+
+<a id="feat-88"></a>
+### FEAT-88 — Current-caller policy explanations
+
+- **Priority / effort / status:** P2 / M / Ready
+- **Category:** Safety / UX
+
+**Idea.** Explain why a proposed operation is denied, allowed by ARC-1, or still unresolved.
+
+**Why it remains.** A local prototype reuses evaluators but only resolves selected existing-object
+package checks. Creation, structural ownership and SQL lineage need action-specific treatment.
+No explanation action is included in the transport-review change.
+
+**Resume with.** Review parity with dispatch/safety/target/package enforcement, avoid hidden inventory
+and keep SAP authorization unverified. Never execute a proposed mutation to test permissions.
+[POL-01 acceptance](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/evidence/ARC1_RESEARCH_HANDOFF.md#pol-01--explain-the-current-callers-effective-policy).
+
 <a id="feat-23"></a>
 ### FEAT-23 — Recursive program include reading
 
@@ -760,11 +821,15 @@ and aggregate counts. Bound concurrency if a per-object fallback is necessary.
 
 **Idea.** Return useful DDIC activation-log details after a failed or warning-producing activation.
 
-**Why it remains.** The known activation-log resource is not a simple readable GET endpoint. The
-request shape, lifetime, and relation to an activation request are not sufficiently established.
+**Why it remains.** ADT 1.2 follows the object's advertised
+`http://www.sap.com/adt/relations/ddic/activationlog` link with GET and
+`application/vnd.sap.adt.logs+xml`. A local prototype read nine entries from an existing 758 domain
+log; its old timestamp does not correlate it with a new activation attempt. The reader is not
+included in the transport-review change.
 
-**Resume with.** Capture the live request/response sequence for a controlled DDIC activation
-failure and define a bounded, sanitized output contract.
+**Resume with.** Review the bounded local reader, verify missing/denied/stale logs and supported
+releases, and preserve unknown attempt correlation. Do not reactivate an object to get a log.
+See the [research archive](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/README.md).
 
 <a id="feat-50"></a>
 ### FEAT-50 — ADT type-probe fixture coverage

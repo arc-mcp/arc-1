@@ -1197,6 +1197,7 @@ export interface RevisionInfo {
   author: string;
   timestamp: string;
   versionTitle?: string;
+  isTestTransport?: boolean;
   transport?: string;
   uri: string;
 }
@@ -1208,6 +1209,8 @@ export interface RevisionListResult {
     type: string;
   };
   revisions: RevisionInfo[];
+  historyComplete?: boolean;
+  continuationAdvertised?: boolean;
 }
 
 // ─── Class Structure Types (objectstructure endpoint, issue #303) ─────────

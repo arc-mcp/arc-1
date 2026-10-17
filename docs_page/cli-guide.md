@@ -507,3 +507,14 @@ as published APIs in SAP Business Accelerator Hub. Before production or agentic 
 [SAP API Policy and architecture alignment](sap-api-policy-and-architecture.md), verify the relevant
 endpoint status with SAP for your deployment, and apply your organization's data-egress and automation
 controls. Using the deterministic CLI does not change the endpoint's publication status.
+
+## Transport review reports
+
+```bash
+arc1-cli review A4HK906371 --mode released --output-dir reviews/A4HK906371
+```
+
+Writes local JSON and HTML evidence through the configured connection and existing policy checks.
+Add `--syntax` or `--context` for bounded current-source checks. Exit 0 means complete collection;
+check outcomes are separate and this is not a release verdict. See [Transport reviews](review-workflows.md)
+for comparison modes, coverage gaps, limits and examples.

@@ -19,9 +19,12 @@
  * `selectionMethod` and `baselineStatus` ride the result so a reviewer can tell exact
  * evidence from a fallback guess; SAP's tool reports neither.
  */
+import { createHash } from 'node:crypto';
 import { type AdtClient, CLASS_REVISION_INCLUDES, REVISION_TYPES } from './client.js';
-import { AdtApiError, isNotFoundError } from './errors.js';
+import { AdtApiError, AdtNetworkError, AdtResponseLimitError, isNotFoundError } from './errors.js';
+import { AdtRequestBudgetError } from './request-attempt-budget.js';
 import { unifiedDiff } from './source-diff.js';
+import { ReviewBudget } from './transport-review-budget.js';
 import type { RevisionInfo, TransportObject } from './types.js';
 
 /**
@@ -32,8 +35,16 @@ import type { RevisionInfo, TransportObject } from './types.js';
  * the status code alone is enough for a reviewer to see that something failed.
  */
 function describeError(err: unknown, minimalErrors?: boolean): string {
+  // Explain the cause, not the budget state: SAP may fail on the last allowed read.
+  if (err instanceof AdtApiError) return minimalErrors ? `SAP request failed (status ${err.statusCode})` : err.message;
+  if (err instanceof AdtResponseLimitError)
+    return `ARC-1 response exceeded its ${err.limitBytes}-byte review allowance; inspect this part in SAP.`;
+  if (err instanceof AdtRequestBudgetError) return err.message;
+  if (err instanceof AdtNetworkError && err.cause?.name === 'TimeoutError')
+    return 'ARC-1 review request time limit reached; source evidence was not collected.';
+  if (err instanceof Error && err.message === 'Review collection budget exhausted.')
+    return 'ARC-1 review page budget exhausted; remaining source evidence was not collected.';
   if (!minimalErrors) return err instanceof Error ? err.message : String(err);
-  if (err instanceof AdtApiError) return `SAP request failed (status ${err.statusCode})`;
   return 'request failed';
 }
 
@@ -43,6 +54,13 @@ export type RevisionSelectionMethod =
   | 'latest-revision-fallback'
   | 'active-only-fallback'
   | 'no-revisions';
+
+export type ReviewMode = 'legacy' | 'released' | 'active' | 'draft';
+export function revisionSourceState(r: RevisionInfo | null): 'released' | 'active' | 'draft' | 'unknown' {
+  if (!r) return 'unknown';
+  const num = revisionNumber(r);
+  return num === ACTIVE_VERSION ? 'active' : num === INACTIVE_VERSION ? 'draft' : num ? 'released' : 'unknown';
+}
 
 /** What the "before" side of a diff actually is. */
 export type BaselineStatus =
@@ -64,6 +82,8 @@ export interface TransportRevisionPair {
   previous: RevisionInfo | null;
   selectionMethod: RevisionSelectionMethod;
   skipped: SkippedRevision[];
+  /** A candidate predecessor exists, but its chronology cannot be established. */
+  baselineAmbiguous?: boolean;
 }
 
 /**
@@ -135,6 +155,7 @@ function compareDesc(a: number, b: number): number {
 export function selectTransportRevisionPair(
   revisions: RevisionInfo[],
   transportIds: Iterable<string>,
+  mode: ReviewMode = 'legacy',
 ): TransportRevisionPair {
   const sorted = sortNewestFirst(revisions);
   const wanted = new Set([...transportIds].map((id) => String(id).trim().toUpperCase()).filter(Boolean));
@@ -153,9 +174,18 @@ export function selectTransportRevisionPair(
   // the active entry (00000) carries the transport link, so it matches here and the walk
   // back lands on the last released state. That makes "what am I about to ship" the same
   // code path as "what did this transport ship", with the same evidence labels.
-  let currentIndex = sorted.findIndex(belongsToTransport);
+  let currentIndex = sorted.findIndex(
+    (r) => belongsToTransport(r) && (mode === 'legacy' || revisionSourceState(r) === mode),
+  );
   let selectionMethod: RevisionSelectionMethod = 'exact-transport';
 
+  if (currentIndex === -1 && (mode === 'active' || mode === 'draft')) {
+    currentIndex = sorted.findIndex((r) => revisionSourceState(r) === mode);
+    selectionMethod = 'active-only-fallback';
+  }
+  if (currentIndex === -1 && mode !== 'legacy') {
+    return { current: null, previous: null, selectionMethod: 'no-revisions', skipped: [] };
+  }
   if (currentIndex === -1) {
     // No revision names this transport. Prefer the newest real snapshot over a work state,
     // so the diff is still between two transported versions.
@@ -168,6 +198,14 @@ export function selectTransportRevisionPair(
   }
 
   const skipped: SkippedRevision[] = [];
+  const current = sorted[currentIndex];
+  // Work states are not numbered historical snapshots. In particular, undated 00000
+  // must not sort behind known history and turn that history into an empty baseline.
+  if (WORK_STATE_VERSIONS.has(revisionNumber(current)) && !Number.isFinite(Date.parse(current.timestamp))) {
+    const snapshots = sorted.filter((r) => !WORK_STATE_VERSIONS.has(revisionNumber(r)));
+    const previous = snapshots.find((r) => !belongsToTransport(r)) ?? null;
+    return { current, previous, selectionMethod, skipped, baselineAmbiguous: snapshots.length > 0 };
+  }
   let previousIndex = currentIndex + 1;
   while (previousIndex < sorted.length) {
     const candidate = sorted[previousIndex];
@@ -183,35 +221,54 @@ export function selectTransportRevisionPair(
     previousIndex += 1;
   }
 
+  const previous = previousIndex < sorted.length ? sorted[previousIndex] : null;
+  // Missing dates sort last, so date order cannot prove the pair: a predecessor numbered at or
+  // after `current`, or a foreign snapshot numbered between the two, leaves chronology open.
+  const [before, after] = [previous ? revisionNumber(previous) : '', revisionNumber(current)];
+  const currentIsWorkState = WORK_STATE_VERSIONS.has(after);
+  const conflictingOrder =
+    previous &&
+    ((revisionSourceState(current) === 'released' && before >= after) ||
+      sorted.some(
+        (r) =>
+          revisionSourceState(r) === 'released' &&
+          !belongsToTransport(r) &&
+          revisionNumber(r) > before &&
+          (currentIsWorkState || revisionNumber(r) < after),
+      ));
   return {
-    current: sorted[currentIndex],
-    previous: previousIndex < sorted.length ? sorted[previousIndex] : null,
+    current,
+    previous,
     selectionMethod,
     skipped,
+    ...(conflictingOrder ? { baselineAmbiguous: true } : {}),
   };
 }
 
 /**
  * Classify the "before" side.
  *
- * Creation is asserted ONLY when the current revision was matched to the transport and has
- * no predecessor. A missing predecessor under a fallback selection is ambiguous — it may
+ * No prior snapshot means only that no predecessor was found; it is not proof of creation.
+ * An exact transport match identifies attribution, not the completeness of retained history. A missing predecessor under a fallback selection is ambiguous — it may
  * simply mean the object's history was never snapshotted.
  */
 export function baselineStatusFor(pair: TransportRevisionPair, allRevisions: RevisionInfo[] = []): BaselineStatus {
   if (!pair.current) return 'baseline-unavailable';
+  if (pair.baselineAmbiguous) return 'baseline-ambiguous';
   const matched = pair.selectionMethod === 'exact-transport';
   if (pair.previous) return matched ? 'prior-revision' : 'prior-revision-unverified';
   if (!matched) return 'baseline-ambiguous';
-  // "Matched with no predecessor" normally means created here — but for an OPEN transport the
-  // active row carries the transport link, so `matched` is trivially true, and SAP only writes
-  // versions on release. If any revision has a strictly lower version number, the object plainly
-  // pre-existed and the walk-back simply failed to reach it (e.g. the transport's own revision
-  // is undated and sorts last). Creation is asserted only when nothing older exists.
-  const currentNum = Number(revisionNumber(pair.current));
+  // A lower numbered snapshot is evidence that the walk-back missed existing history
+  // (for example an undated current row sorted last). Neither result proves creation.
+  const currentVersion = revisionNumber(pair.current);
+  const currentNum = Number(currentVersion);
   const hasOlder = allRevisions.some((r) => {
     const raw = revisionNumber(r);
-    return /^\d+$/.test(raw) && !WORK_STATE_VERSIONS.has(raw) && Number(raw) < currentNum;
+    return (
+      /^\d+$/.test(raw) &&
+      !WORK_STATE_VERSIONS.has(raw) &&
+      (WORK_STATE_VERSIONS.has(currentVersion) || Number(raw) < currentNum)
+    );
   });
   return hasOlder ? 'baseline-ambiguous' : 'no-prior-snapshot';
 }
@@ -381,6 +438,7 @@ export function classIncludesFor(object: LogicalTransportObject): { includes: st
     // (`R3TR CLAS X` and `LIMU <sub> X` are mutually exclusive per request — measured across
     // ~640k LIMU rows on 758, zero counterexamples), so fall back to every include.
     if (c.pgmid !== 'LIMU') return { includes: [...CLASS_REVISION_INCLUDES], fromComponents: false };
+    if (c.type === 'REPT') continue;
     // The suffix starts at a FIXED offset: CTS pads the class name into a 30-char field. It
     // pads with '=' only when the name is shorter — 6.6% of live CINC rows are 30-char names
     // with no padding at all, where splitting on '=' returns the whole string and silently
@@ -404,9 +462,15 @@ const MAX_DIFF_LINES = 400;
 /** Trim a unified diff to `MAX_DIFF_LINES` body lines, keeping the header. */
 function capDiff(diff: string): { diff: string; truncated: boolean } {
   const lines = diff.split('\n');
-  if (lines.length <= MAX_DIFF_LINES) return { diff, truncated: false };
+  const maxBytes = 16 * 1024;
+  if (lines.length <= MAX_DIFF_LINES && Buffer.byteLength(diff) <= maxBytes) return { diff, truncated: false };
+  // Decode only complete UTF-8 code points; reserve space for the omission marker.
+  const capped = Buffer.from(lines.slice(0, MAX_DIFF_LINES).join('\n'))
+    .subarray(0, maxBytes - 100)
+    .toString('utf8')
+    .replace(/\uFFFD$/, '');
   return {
-    diff: `${lines.slice(0, MAX_DIFF_LINES).join('\n')}\n… diff truncated at ${MAX_DIFF_LINES} lines`,
+    diff: `${capped}\n… diff truncated (400-line / 16-KiB display limit)`,
     truncated: true,
   };
 }
@@ -423,6 +487,18 @@ export interface TransportPartDiff {
   /** The hunks were trimmed; `added`/`removed` still reflect the full change. */
   diffTruncated?: boolean;
   note?: string;
+  sourceState?: ReturnType<typeof revisionSourceState>;
+  activationStatus?: 'active' | 'saved-inactive' | 'historical-snapshot' | 'unknown';
+  comparisonMode?: ReviewMode;
+  selectionOrigin?: 'cts' | 'speculative';
+  attribution?: 'transport' | 'unverified';
+  historyCompleteness?: 'not-advertised' | 'partial';
+  revisions?: { before: RevisionInfo | null; after: RevisionInfo | null; skipped: SkippedRevision[] };
+  sourceHashes?: { before: string | null; after: string };
+  retrievedAt?: string;
+  statisticsComplete?: boolean;
+  change?: 'changed' | 'unchanged' | 'cosmetic' | 'unknown';
+  hunksOmitted?: boolean;
 }
 
 export interface TransportObjectDiff {
@@ -430,6 +506,9 @@ export interface TransportObjectDiff {
   name: string;
   taskIds: string[];
   parts: TransportPartDiff[];
+  components: LogicalTransportObject['components'];
+  coverageGaps?: string[];
+  scopeNote?: string;
   /** Set instead of `parts` when the object carries no diffable source at all. */
   inventoryReason?: string;
 }
@@ -448,12 +527,9 @@ function revisionLabel(revision: RevisionInfo): string {
  * for an object whose pair WAS identified is a false signal in the field a reviewer uses to
  * judge evidence quality.
  */
-function unavailablePart(
-  part: string,
-  note: string,
-  resolved?: Pick<TransportPartDiff, 'selectionMethod' | 'from' | 'to'>,
-): TransportPartDiff {
+function unavailablePart(part: string, note: string, resolved?: Partial<TransportPartDiff>): TransportPartDiff {
   return {
+    ...resolved,
     part,
     baselineStatus: 'baseline-unavailable',
     selectionMethod: resolved?.selectionMethod ?? 'no-revisions',
@@ -463,15 +539,16 @@ function unavailablePart(
     removed: 0,
     diff: '',
     note,
+    statisticsComplete: false,
+    change: 'unknown',
   };
 }
 
 /**
  * Diff one source part of one object across the transport boundary.
  *
- * Returns null ONLY for a class include that genuinely does not exist (most classes have no
- * CCAU test include) — every other failure becomes a visible `baseline-unavailable` row, so a
- * read error can never masquerade as "unchanged".
+ * Every selected or speculative part receives a result. A 404 cannot establish absence,
+ * deletion or unchanged source; report it as an evidence gap.
  */
 async function diffPart(
   client: AdtClient,
@@ -479,44 +556,78 @@ async function diffPart(
   name: string,
   part: string,
   transportIds: Set<string>,
-  opts: { group?: string; minimalErrors?: boolean },
-): Promise<TransportPartDiff | null> {
+  opts: { group?: string; minimalErrors?: boolean; mode?: ReviewMode; budget?: ReviewBudget; summary?: boolean },
+): Promise<TransportPartDiff> {
   const include = type === 'CLAS' ? part : undefined;
   let revisions: RevisionInfo[];
+  let historyCompleteness: 'not-advertised' | 'partial' = 'not-advertised';
   try {
-    revisions = (await client.getRevisions(type, name, { include, group: opts.group })).revisions;
+    const history = await (opts.budget
+      ? opts.budget.read((request) => client.getRevisions(type, name, { include, group: opts.group }, request))
+      : client.getRevisions(type, name, { include, group: opts.group }));
+    revisions = history.revisions;
+    if (history.historyComplete === false) historyCompleteness = 'partial';
   } catch (err) {
-    if (type === 'CLAS' && part !== 'main' && isNotFoundError(err)) return null;
+    if (type === 'CLAS' && part !== 'main' && isNotFoundError(err)) {
+      return unavailablePart(part, 'revision history returned 404; absence or deletion is not established');
+    }
     return unavailablePart(part, `revision history unavailable: ${describeError(err, opts.minimalErrors)}`);
   }
 
-  const pair = selectTransportRevisionPair(revisions, transportIds);
+  const pair = selectTransportRevisionPair(revisions, transportIds, opts.mode);
   const base = {
     part,
     baselineStatus: baselineStatusFor(pair, revisions),
     selectionMethod: pair.selectionMethod,
     from: pair.previous ? revisionLabel(pair.previous) : null,
     to: pair.current ? revisionLabel(pair.current) : null,
+    sourceState: revisionSourceState(pair.current),
+    activationStatus: (
+      { active: 'active', draft: 'saved-inactive', released: 'historical-snapshot', unknown: 'unknown' } as const
+    )[revisionSourceState(pair.current)],
+    comparisonMode: opts.mode ?? 'legacy',
+    attribution: pair.selectionMethod === 'exact-transport' ? ('transport' as const) : ('unverified' as const),
+    historyCompleteness,
+    revisions: { before: pair.previous, after: pair.current, skipped: pair.skipped },
   };
 
   if (!pair.current) {
-    return { ...base, added: 0, removed: 0, diff: '', note: 'no revision history for this part' };
+    return unavailablePart(part, 'No revision satisfies the requested source state and attribution.', base);
   }
 
   let after: string;
   let before: string;
   try {
-    // No predecessor: render the whole thing as an addition so a created object is still
-    // reviewable. `baselineStatus` says whether that is proven creation or a missing base.
-    [after, before] = await Promise.all([
-      client.getRevisionSource(pair.current.uri),
-      pair.previous ? client.getRevisionSource(pair.previous.uri) : Promise.resolve(''),
-    ]);
+    // Without a predecessor, additions only display the available source; they do not prove creation.
+    const read = (uri: string) =>
+      opts.budget
+        ? opts.budget.read((request) => client.getRevisionSource(uri, request))
+        : client.getRevisionSource(uri);
+    after = await read(pair.current.uri);
+    before = pair.previous ? await read(pair.previous.uri) : '';
   } catch (err) {
     return unavailablePart(part, `source read failed: ${describeError(err, opts.minimalErrors)}`, base);
   }
 
-  const result = unifiedDiff(before, after, `${name} (${base.from ?? 'none'})`, `${name} (${base.to})`, 3, true);
+  const sourceEvidence = {
+    sourceHashes: {
+      before: pair.previous ? createHash('sha256').update(before).digest('hex') : null,
+      after: createHash('sha256').update(after).digest('hex'),
+    },
+    retrievedAt: new Date().toISOString(),
+  };
+  let result: ReturnType<typeof unifiedDiff>;
+  try {
+    result = unifiedDiff(before, after, `${name} (${base.from ?? 'none'})`, `${name} (${base.to})`, 3, true, {
+      timeout: 100,
+      maxEditLength: 20_000,
+    });
+  } catch {
+    return unavailablePart(part, 'Diff calculation failed or exceeded its work budget; statistics are unavailable.', {
+      ...base,
+      ...sourceEvidence,
+    });
+  }
   const capped = capDiff(result.diff);
   const note = result.cosmeticOnly
     ? 'whitespace-only change (trailing blanks / final newline)'
@@ -528,7 +639,11 @@ async function diffPart(
     ...base,
     added: result.added,
     removed: result.removed,
-    diff: capped.diff,
+    diff: opts.summary ? '' : capped.diff,
+    ...(opts.summary && result.diff ? { hunksOmitted: true } : {}),
+    ...sourceEvidence,
+    statisticsComplete: true,
+    change: result.cosmeticOnly ? 'cosmetic' : result.identical ? 'unchanged' : 'changed',
     ...(capped.truncated ? { diffTruncated: true } : {}),
     ...(note ? { note } : {}),
   };
@@ -539,17 +654,46 @@ export async function diffTransportObject(
   client: AdtClient,
   object: LogicalTransportObject,
   transportIds: Set<string>,
-  opts: { minimalErrors?: boolean } = {},
+  opts: { minimalErrors?: boolean; mode?: ReviewMode; budget?: ReviewBudget; summary?: boolean } = {},
 ): Promise<TransportObjectDiff> {
+  opts = { ...opts, budget: opts.budget ?? new ReviewBudget() };
   const { type, name, taskIds } = object;
-  const head = { type, name, taskIds };
+  const textGap =
+    'Text-pool components are in scope; historical symbols, selection texts and headings were not compared.';
+  // A text-only CTS key names no source part; diffing main would review something CTS never selected.
+  if (object.components.length && object.components.every((c) => c.type === 'REPT')) {
+    return { type, name, taskIds, components: object.components, parts: [], inventoryReason: textGap };
+  }
+  // A whole-object entry also carries the text pool (and, for programs, screens and GUI status).
+  const wholeObject = (type === 'PROG' || type === 'CLAS') && object.components.some((c) => c.pgmid === 'R3TR');
+  const head = {
+    type,
+    name,
+    taskIds,
+    components: object.components,
+    ...(object.components.some((c) => c.type === 'METH')
+      ? {
+          scopeNote:
+            'Method CTS keys select class source. Hunks compare the whole source part; individual method attribution across requests is not established.',
+        }
+      : {}),
+    ...(wholeObject || object.components.some((c) => c.type === 'REPT')
+      ? {
+          coverageGaps: [
+            wholeObject
+              ? 'Whole-object entry: text pool (and for programs, screens and GUI status) was not compared; only source parts were.'
+              : textGap,
+          ],
+        }
+      : {}),
+  };
 
   if (type === FUGR_INCLUDE_TYPE) {
     return {
       ...head,
       parts: [],
       inventoryReason:
-        'function-group source (wbtype FUGR/*) — in scope, but its includes live under /functions/groups and have no revisions feed here',
+        'function-group source (wbtype FUGR/*) — in scope; historical include ownership and before/after coverage are not verified by this adapter',
     };
   }
 
@@ -557,7 +701,7 @@ export async function diffTransportObject(
     return {
       ...head,
       parts: [],
-      inventoryReason: `type ${type} has no ADT source revision feed — in scope, but no source diff available`,
+      inventoryReason: `type ${type} has no verified historical adapter — in scope, but no source diff available`,
     };
   }
 
@@ -566,7 +710,10 @@ export async function diffTransportObject(
   let group: string | undefined;
   if (type === 'FUNC') {
     try {
-      group = (await client.resolveFunctionGroup(name)) ?? undefined;
+      group =
+        (await (opts.budget
+          ? opts.budget.read((request) => client.resolveFunctionGroup(name, request))
+          : client.resolveFunctionGroup(name))) ?? undefined;
     } catch (err) {
       return {
         ...head,
@@ -579,54 +726,44 @@ export async function diffTransportObject(
     }
   }
 
-  // Parts are independent reads; http.ts funnels every request through the shared Semaphore
-  // (ARC1_MAX_CONCURRENT), so fanning out here is bounded without extra bookkeeping.
+  // Sequence parts within the shared page budget; never enqueue an unbounded batch.
   const selection = type === 'CLAS' ? classIncludesFor(object) : { includes: ['main'], fromComponents: true };
   const wanted = selection.includes;
-  const settled = await Promise.all(
-    wanted.map(async (part) => {
-      try {
-        return await diffPart(client, type, name, part, transportIds, { group, minimalErrors: opts.minimalErrors });
-      } catch (err) {
-        if (type === 'CLAS' && part !== 'main' && isNotFoundError(err)) return null;
-        return unavailablePart(part, `source read failed: ${describeError(err, opts.minimalErrors)}`);
-      }
-    }),
-  );
-  const parts = settled.filter((p): p is TransportPartDiff => p !== null);
-  // Every selected part turned out not to exist. Dropping them all would emit an object with
-  // no rows and no reason — indistinguishable from "nothing changed", which is the one thing
-  // this tool must never say by accident.
-  if (!parts.length) {
-    return {
-      ...head,
-      parts: [],
-      inventoryReason: `no readable source for ${wanted.join(', ')} — the object or its includes could not be found`,
-    };
+  const parts: TransportPartDiff[] = [];
+  for (const part of wanted) {
+    try {
+      const result = await diffPart(client, type, name, part, transportIds, { ...opts, group });
+      parts.push({ ...result, selectionOrigin: selection.fromComponents ? 'cts' : 'speculative' });
+    } catch (err) {
+      parts.push(unavailablePart(part, `source read failed: ${describeError(err, opts.minimalErrors)}`));
+    }
   }
-  return { ...head, parts: selection.fromComponents ? parts : suppressUntouchedParts(parts) };
+  return { ...head, parts };
 }
 
-/**
- * Blank the DIFF of parts this transport did not touch, keeping the row for coverage.
- *
- * ONLY valid for a SPECULATIVE part list. When the includes came from the transport's own
- * components, every selected part was named by CTS and therefore WAS changed — suppressing
- * one because its revision happens to carry no CTS id (a live-verified shape) would erase a
- * real diff and report it clean. The caller enforces that; this function assumes the parts
- * were probed blindly.
- *
- * Without it, the whole-class (`R3TR CLAS`) shape renders SAP's boilerplate headers in the
- * four untouched includes as fresh additions — noise around one real change.
- *
- * Two further guards: suppress only when a sibling part DID match the transport (so
- * attribution demonstrably works for this object), and NEVER touch a row whose read failed.
- */
-function suppressUntouchedParts(parts: TransportPartDiff[]): TransportPartDiff[] {
-  if (!parts.some((p) => p.selectionMethod === 'exact-transport')) return parts;
-  return parts.map((p) =>
-    p.selectionMethod === 'exact-transport' || p.baselineStatus === 'baseline-unavailable'
-      ? p
-      : { ...p, added: 0, removed: 0, diff: '', note: 'not changed by this transport' },
-  );
+/** Mutually exclusive counts for source parts and explicitly unreviewed components. */
+export function reviewCoverage(objects: TransportObjectDiff[]) {
+  const counts = { reviewed: 0, uncertain: 0, unavailable: 0, unsupported: 0 };
+  for (const object of objects) {
+    if (object.inventoryReason) counts.unsupported++;
+    counts.unsupported += object.coverageGaps?.length ?? 0;
+    for (const part of object.parts) {
+      if (part.baselineStatus === 'baseline-unavailable' || part.statisticsComplete === false) counts.unavailable++;
+      else if (
+        part.baselineStatus !== 'prior-revision' ||
+        part.historyCompleteness === 'partial' ||
+        !part.sourceHashes?.before ||
+        !part.sourceHashes.after ||
+        !part.revisions?.before ||
+        !part.revisions.after
+      )
+        counts.uncertain++;
+      else counts.reviewed++;
+    }
+  }
+  return {
+    denominator: 'returned source parts plus explicit non-source gaps',
+    expected: Object.values(counts).reduce((a, b) => a + b, 0),
+    ...counts,
+  };
 }

@@ -1029,11 +1029,23 @@
             "layers",
             "targets"
           ],
-          "description": "list: show transports (defaults to current user, modifiable only). Pass summary=true for a headers-only overview that omits each transport's object lists (keeps an objectCount) — far cheaper when many transports are open. get: fetch transport details including tasks and objects. diff: what a transport CHANGED — per object, the revision written under it vs the one before, as diff hunks (get only lists names). LIMU entries roll up to their class; an open transport compares to the last released revision. Read baselineStatus first: prior-revision = solid; prior-revision-unverified = pair guessed, may be another change; no-prior-snapshot = created here; baseline-ambiguous = no baseline, so an all-additions block is NOT proof of creation; baseline-unavailable = the read FAILED, never call that unchanged. create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. \"/TRG/\" or \"C11\"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). release: release a single transport or task. delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with \"...contains locked objects\"). remove_object: remove one object from a request, keeping the request — needs the full key pgmid+type+name. reassign: change transport owner (use recursive=true for tasks too). release_recursive: release all unreleased tasks first, then the transport itself. check: check create/modify transport needs for a package/object (requires type, name, package; operation defaults to create). history: inspect the current object lock and assignment candidates (legacy action name; not complete transport history; requires type, name; works without SAP_ALLOW_TRANSPORT_WRITES). layers: list the transport layers this system offers (name + description + resolved target where any) — the valid values for create's transportLayer. Use this to discover a real value instead of guessing; works without SAP_ALLOW_TRANSPORT_WRITES. targets: list the valid transport targets (Transportziel / TR_TARGET) this system offers — the valid values for create's target. Use this to discover a real target (e.g. before create with target=). Read-only. Both report unavailability at runtime on releases that lack the value-help endpoint."
+          "description": "list: current user, modifiable requests; summary=true (default) returns headers/counts. get: tasks and objects. diff: source revision under request/task vs predecessor, with CTS rollup and coverage gaps. reviewMode defaults legacy; released requires attributable numbered snapshots; active/draft select saved work state. Pass continuation with offset to detect inventory drift. Read baselineStatus: prior-revision = attributed pair; prior-revision-unverified = candidate pair; no-prior-snapshot/ambiguous = missing or uncertain baseline, never proof of creation; unavailable = missing readable evidence. create: Workbench request; needs description. Optional package determines routing; target overrides TR_TARGET. Discover with targets/layers; empty resolved target is local. release: single task/request; release_recursive: unreleased tasks then request. delete: recursive deletes tasks; removeLockedObjects strips locks. remove_object: full pgmid+type+name key. reassign: owner, recursive for tasks. check: create/modify transport requirements (type/name/package, operation defaults create). history: current lock/assignment candidates, not complete transport history (type/name). layers/targets: read-only value helps; unavailable on older releases."
         },
         "id": {
           "type": "string",
           "description": "Transport request ID, e.g. A4HK900123 (required for get/diff/release/delete/reassign/release_recursive/remove_object)"
+        },
+        "reviewMode": {
+          "type": "string",
+          "enum": [
+            "legacy",
+            "released",
+            "active",
+            "draft"
+          ]
+        },
+        "continuation": {
+          "type": "string"
         },
         "offset": {
           "type": "number",
@@ -1105,7 +1117,7 @@
         },
         "summary": {
           "type": "boolean",
-          "description": "For list only. DEFAULT true: headers-only — drops each transport's (and task's) object lists, keeping id/description/owner/status/target + objectCount; use action=\"get\" for one in full. Pass false for full object lists (~5x larger)."
+          "description": "diff: summary=true omits hunks. list DEFAULT true: headers-only — drops each transport's (and task's) object lists, keeping id/description/owner/status/target + objectCount; use action=\"get\" for one in full. Pass false for full object lists (~5x larger)."
         },
         "maxResults": {
           "type": "number",
@@ -1117,7 +1129,7 @@
             "legacy",
             "structured"
           ],
-          "description": "release actions: legacy (default) or structured JSON."
+          "description": "Default legacy: compact diff, text release. structured: full diff, JSON release."
         },
         "timeoutSeconds": {
           "type": "number",

@@ -54,6 +54,7 @@
       "tests/**",
       "bin/**",
       "scripts/smoke-live-relations.ts",
+      "scripts/demo-review-workflows.ts",
       "scripts/bench-context-parsing.ts",
       "scripts/spikes/pr677-target-authorization/**",
       "scripts/ci/check-target-authorization-mta.mjs",

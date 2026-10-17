@@ -53,6 +53,7 @@ import {
 } from './server/server.js';
 import { FileSink } from './server/sinks/file.js';
 import type { ConfigSource, ServerConfig } from './server/types.js';
+import { registerWorkflowCommands } from './workflows/cli.js';
 
 loadDotEnv({ quiet: true });
 
@@ -413,6 +414,8 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     const value = spec.valueOptional ? `[${spec.valueName}]` : `<${spec.valueName}>`;
     program.addOption(new Option(`--${spec.name} ${value}`, spec.description));
   }
+
+  registerWorkflowCommands(program, runtime);
 
   program
     .command('serve', { isDefault: true })

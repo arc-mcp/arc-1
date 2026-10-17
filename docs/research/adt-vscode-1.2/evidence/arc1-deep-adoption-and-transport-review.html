@@ -1,0 +1,308 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ARC-1 — Deep adoption and transport review</title><style>
+:root{color-scheme:light;--ink:#152a38;--muted:#526575;--line:#d9e3e8;--blue:#085b7a;--gold:#b36c00}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#edf2f4;color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1120px;margin:auto;background:white;padding:50px 64px 70px}header{padding:12px 0 34px;border-bottom:3px solid var(--ink)}.eyebrow{font-size:11px;letter-spacing:.16em;font-weight:750;color:var(--blue)}h1{font-size:46px;line-height:1.12;letter-spacing:-.035em;margin:18px 0}h2{font-size:29px;line-height:1.25;margin:0 0 24px;letter-spacing:-.025em}h3{font-size:21px;line-height:1.35;margin:34px 0 12px}h4{font-size:16px}.deck{font-size:21px;line-height:1.5;max-width:850px}.facts{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:650}.facts span{padding:5px 10px;border:1px solid var(--line);border-radius:5px}p{margin:14px 0}a{color:var(--blue);text-decoration-thickness:1px;text-underline-offset:3px}nav{display:grid;grid-template-columns:1fr 1fr;gap:9px 24px;padding:25px 0;font-size:14px;border-bottom:1px solid var(--line)}.verdict{padding:23px 25px;background:#e9f4f6;border-left:4px solid var(--blue);margin-top:28px}section{padding:44px 0 10px;scroll-margin-top:25px}section+section{margin-top:30px;border-top:1px solid var(--line)}table{border-collapse:collapse;width:100%;font-size:14px;margin:23px 0}th{text-align:left;background:#163644;color:white;font-weight:650;vertical-align:top}td,th{padding:13px 12px;border:1px solid var(--line)}td{vertical-align:top}tr:nth-child(even) td{background:#f6f9fa}code{font: .88em ui-monospace,SFMono-Regular,Menlo,monospace;background:#eff3f5;padding:2px 4px;border-radius:3px;overflow-wrap:anywhere}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#102b38;color:#d9edf2;padding:20px;border-radius:6px;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}.source,.small{font-size:12px;color:var(--muted)}.source{overflow-wrap:anywhere}.p1,.p2{font-size:12px;font-weight:750;display:inline-block;padding:2px 7px;border-radius:3px;margin-right:3px}.p1{background:#fbe9da;color:#884006}.p2{background:#e4eff6;color:#175273}.two{display:grid;grid-template-columns:1fr 1fr;gap:24px}.two article{background:#f4f8fa;padding:8px 22px 18px;border:1px solid var(--line)}li{margin:7px 0}ul{padding-left:23px}details{border:1px solid var(--line);border-radius:5px;padding:16px 20px;margin:25px 0}summary{cursor:pointer;font-weight:700}footer{padding-top:35px;margin-top:35px;border-top:2px solid var(--ink);color:var(--muted);font-size:12px}
+@media(max-width:760px){main{padding:28px 20px}h1{font-size:34px}h2{font-size:25px}.two,nav{grid-template-columns:1fr}table{display:block;overflow-x:auto;font-size:12px}td,th{min-width:150px}.deck{font-size:18px}}
+@media print{body{background:white}main{max-width:none;padding:0;font-size:10pt}nav,details{display:none}h1{font-size:30pt}h2{font-size:20pt}h3{font-size:15pt}table{font-size:9pt}a{color:inherit}section{break-before:auto}h2,h3{break-after:avoid}tr{break-inside:avoid}.facts span{border-color:#999}pre{background:#f0f3f5;color:#123}footer{font-size:9pt}}
+</style></head><body><main>
+<header><div class="eyebrow">ARC-1 · PRODUCT AND ENGINEERING RESEARCH · 17 OCTOBER 2026</div>
+<h1>Turn ADT 1.2 ideas into customer value</h1>
+<p class="deck">Build a trustworthy transport review workflow first. Use SQL notebooks to make investigations reusable. Make policy and diagnostics explain themselves.</p>
+<div class="facts"><span>181 existing tests passed</span><span>8 synthetic probes</span><span>5 read-only SAP calls</span><span>Installed SAP 1.2 inspected</span></div></header>
+<aside class="verdict"><b>The recommendation changed after deeper inspection.</b> ARC-1 already has the hard parts of transport diff. The highest-return work is correcting evidence gaps and turning that engine into a review someone can confidently hand to a colleague. A second SQL editor is a weaker first investment. A reproducible SQL investigation notebook is still worthwhile.</aside>
+<nav><a href="#value">1 · Value and priorities</a><a href="#transport">2 · Transport findings</a><a href="#design">3 · Review design</a><a href="#notebooks">4 · SQL notebooks</a><a href="#diagnostics">5 · Diagnostics and policy</a><a href="#research">6 · Investigation queue</a><a href="#delivery">7 · Delivery and benefit</a><a href="#evidence">8 · Evidence</a></nav>
+
+<section id="value"><h2>1. Where you can profit</h2>
+<p>For you as an ARC-1 maintainer and SAP consultant, there are three different returns: less repeated investigation work, fewer deployment/support dead ends, and a deliverable customers can use during review or handover. They deserve different success measures. A good demo attracts attention; a repeatable review or incident workflow creates ongoing use.</p>
+<table><thead><tr><th>Investment</th><th>Benefit for your work and customers</th><th>Decision</th><th>Estimated effort*</th></tr></thead><tbody>
+<tr><td><b>Transport evidence corrections</b></td><td>Stop unknown or unreviewed changes looking clean. Reduce reviewer rework and incorrect summaries.</td><td><span class="p1">First</span> · confirmed code paths</td><td>2–4 days for focused fixes, fixtures and one backend verification pass</td></tr>
+<tr><td><b>Transport review bundle</b></td><td>One shareable review: changed behavior, source evidence, coverage, checks and remaining questions. Useful for team handovers and consulting reviews.</td><td><span class="p1">Next</span> · extends existing tools</td><td>5–9 further days for comparison modes, collection, provenance and HTML/JSON output</td></tr>
+<tr><td><b>Notebook artifacts and runner</b></td><td>Save business questions, SQL, evidence and validation steps; rerun them after a fix or migration.</td><td><span class="p2">Build a small slice</span></td><td>2–4 days for a constrained local artifact/runner; 5–10 additional days for an interactive editor</td></tr>
+<tr><td><b>Policy explanation</b></td><td>Explain why an operation is blocked and which existing layer decides it. Shorter onboarding and support conversations.</td><td><span class="p2">Build</span> · especially useful for BTP adoption</td><td>2–4 days, depending on evaluator extraction</td></tr>
+<tr><td><b>Feed schema and filters</b></td><td>Find relevant incidents by object, package or error instead of fetching broad dump lists.</td><td><span class="p2">Promote FEAT-74</span></td><td>½–1 day 758 probe, then 3–5 days for dumps and shared schema/filter support</td></tr>
+<tr><td><b>DDIC activation log</b></td><td>Turn an opaque activation failure into specific dependency or Dictionary findings; reduce returns to Eclipse/SE11.</td><td><span class="p2">Targeted investigation now</span> · a concrete protocol lead exists</td><td>½–1 day verification; 2–4 days implementation if the backend supports it</td></tr>
+<tr><td><b>Mass syntax check</b></td><td>Fast first feedback on a transport’s object set before heavier ATC/test work.</td><td>Combine with review work · FEAT-69</td><td>1–3 days after validating the multi-object request</td></tr>
+<tr><td><b>OData inspection / SRVC authoring</b></td><td>Useful when a customer’s recurring job is integration repair or service consumption.</td><td>Conditional · prove the concrete workflow first</td><td>1–2 day contract spike; estimate authoring only after it</td></tr>
+</tbody></table>
+<p class="small">*Engineering estimates for one developer familiar with ARC-1, including focused tests and documentation. They are neither measured delivery times nor commitments. Deployment, customer-specific access and cross-release certification add work. Do not add every row into one release.</p>
+<p><b>Do not build again:</b> a basic Transport Organizer, generic version history, source search, package write restrictions, or explain-code tools. ARC-1 already has these capabilities, with backend-dependent support. Destination authorization also exists on current main under the opt-in read-only multi-target contract; it is not a reason to invent a second access-control system.</p>
+<p><b>Immediate operational opportunity:</b> this chat’s connected SAPTransport schema does not expose <code>diff</code>, while upstream does. Live VERSIONS responses here also omitted transport attribution. That establishes a difference in the available connector surface; it does not identify the running server version or prove the backend lacks the fields. Record the deployed version, MCP handshake and connector schema/cache, then align them with the intended release. Existing capabilities may deliver value before any new feature is built.</p>
+</section>
+
+<section id="transport"><h2>2. Transport diff: what works, and where it needs attention</h2>
+<p><b>The foundation is good.</b> ARC-1 matches request and task IDs, skips active/inactive pseudo-versions when selecting a historical baseline, skips contiguous same-transport snapshots, accepts predecessors with no transport ID, rolls CTS components into logical objects and selects relevant class includes. It keeps unsupported object types as inventory and distinguishes exact attribution from fallback selection. These are substantial advantages for review.</p>
+<p>The current source has nine revision-feed routes: PROG, CLAS, INTF, FUNC, INCL, DDLS, DCLS, BDEF and SRVD. Read/write support for another object type does not automatically mean historical transport diff support. TABL, DDLX, DOMA, DTEL, MSAG and function-group container/include coverage need separate treatment.</p>
+<p class="source">Implementation: <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L135">src/adt/transport-diff.ts:135</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/client.ts#L205">src/adt/client.ts:205</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/handlers/transport.ts#L262">src/handlers/transport.ts:262</a></p>
+
+<h3>A. A selected class include can disappear after a 404</h3>
+<p><span class="p1">Fix first</span> <code>diffPart()</code> returns null when a non-main class include’s history returns 404. This is reasonable only for a speculative include that genuinely does not exist. The same behavior applies when CTS explicitly lists that include. If another part succeeds, the missing include is filtered out and the object has no inventory warning.</p>
+<p><b>Reproduced:</b> a class with CTS entries for METH and CINC/CCIMP, a readable main history and a 404 implementations history returns only the main part. The current test covers “every part fails”; it does not cover this mixed result.</p>
+<p><b>Change:</b> pass the reason a part was selected into the reader. A CTS-selected part must produce a visible <code>unavailable</code> or <code>not-supported</code> row on 404. A speculative part may be marked <code>not-present</code> only when there is enough evidence of absence. A 404 alone does not establish deletion, lack of changes or lack of authorization.</p>
+<p><b>Your benefit:</b> a review cannot quietly lose a local helper or test include. Acceptance: expected parts equal returned parts plus explicitly classified omissions.</p>
+<p class="source"><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L476">src/adt/transport-diff.ts:476</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L538">src/adt/transport-diff.ts:538</a></p>
+
+<h3>B. Missing attribution can be reported as “not changed”</h3>
+<p><span class="p1">Fix first</span> For a whole-class R3TR entry, <code>suppressUntouchedParts()</code> blanks every successful fallback part if any sibling has an exact match. It changes its counts to zero and adds “not changed by this transport.”</p>
+<p><b>Reproduced:</b> main has exact transport attribution; implementations has two different sources but blank transport IDs. The implementations row retains <code>prior-revision-unverified</code>, yet its hunks and counts disappear and the note claims no change. The contradictory evidence labels make human and AI interpretation harder.</p>
+<p><b>Change:</b> distinguish <em>unattributed</em> from <em>unchanged</em>. Keep the candidate diff available in a separate section, preserve its statistics and explain that it cannot be assigned to this request. Collapse boilerplate visually when appropriate; do not replace uncertainty with certainty. A sibling’s successful attribution is not proof about another part.</p>
+<p><b>Your benefit:</b> less noise without losing potentially relevant changes. A reviewer can choose to inspect uncertain parts; the tool cannot make that choice invisibly.</p>
+<p class="source"><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L625">src/adt/transport-diff.ts:625</a></p>
+
+<h3>C. Text-pool changes are reduced to a source comparison</h3>
+<p><span class="p1">Add coverage warning immediately</span> LIMU REPT entries are rolled into PROG or CLAS. The output no longer retains the component inventory, and the engine only compares source parts. A changed text symbol, selection text or heading can therefore produce a plain “no source change between the selected revisions.” That statement can be true for source while the transport still changes user-facing text.</p>
+<p><b>Reproduced:</b> a REPT-only transport with identical source produces a zero-line source diff and no text-pool coverage warning.</p>
+<p><b>Change now:</b> preserve component kinds and emit <code>text-pool: not-reviewed</code>. <b>Investigate next:</b> historical text-pool reads, language handling, missing translations and serialization. ARC-1’s existing current text-element reader is useful infrastructure, but comparing today’s text to historical source does not create a historical text diff.</p>
+<p><b>Your benefit:</b> classic ABAP changes become reviewable without pretending that “zero code lines” means “zero functional change.” This also establishes a pattern for Dictionary metadata and Customizing inventory.</p>
+<p class="source"><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L298">src/adt/transport-diff.ts:298</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/text-elements.ts#L1">src/adt/text-elements.ts:1</a></p>
+
+<h3>D. An undated active revision can get the wrong baseline status</h3>
+<p><span class="p1">Fix the evidence classification</span> Sorting puts undated revisions last. A matching active pseudo-version <code>00000</code> with no timestamp can be selected there, leaving no predecessor in the forward walk even when released version <code>00002</code> exists. The later check compares numeric version numbers; no released number is less than zero, so it returns <code>no-prior-snapshot</code>.</p>
+<p><b>Reproduced:</b> [dated released 00002 from another request, undated active 00000 for the reviewed request] yields current 00000, previous null, no-prior-snapshot. The engine then compares the source against empty text. This is a synthetic edge case; I have not observed that exact feed on your server.</p>
+<p><b>Change:</b> handle active/inactive states separately from numbered historical snapshots. Never infer chronology from pseudo-version numbers. Where ordering is unresolved, return ambiguity. Also remove documentation that equates “no prior snapshot” with “created here”: missing or retained history alone cannot prove creation.</p>
+<p><b>Your benefit:</b> fewer misleading full-file additions and false “new object” summaries.</p>
+<p class="source"><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L135">src/adt/transport-diff.ts:135</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L201">src/adt/transport-diff.ts:201</a></p>
+
+<h3>E. Review intent and source state are currently mixed</h3>
+<p><span class="p1">Make the contract explicit</span> When an inactive draft 99999 and active state 00000 both match the request, the newest timestamp can select 99999. The existing tests intentionally accept this. That is useful for reviewing work in progress, but it is not the same as reviewing the currently active source or a released snapshot.</p>
+<p><b>Reproduced:</b> a newer inactive draft wins and is labelled <code>prior-revision</code>, with only the numeric revision identifying it as inactive. The transport status is not passed into the per-object selector.</p>
+<p><b>Change:</b> offer clearly defined modes: <code>released</code> for attributable historical snapshots, <code>active</code> for the current activated state of an open request, and <code>draft</code> for saved inactive work. Preserve the current behavior under an explicitly documented legacy/latest-work mode if needed for compatibility. Return <code>sourceState</code>, comparison intent and activation status. Missing history in released mode must not silently become today’s active source.</p>
+<p>Keep the existing release guard. SAP’s activation model requires objects to be activated before release; a draft review does not establish release readiness. Checks must state which source state they examined.</p>
+<p class="source"><a href="https://help.sap.com/docs/SAP_NETWEAVER_AS_ABAP_751_IP/c238d694b825421f940829321ffa326a/4ec196756e391014adc9fffe4e204223.html">SAP activation semantics</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L135">src/adt/transport-diff.ts:135</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/handlers/transport.ts#L45">src/handlers/transport.ts:45</a></p>
+
+<h3>F. SAP 1.2 has a test-transport revision rule worth adopting</h3>
+<p><span class="p2">Verify on live history, then implement</span> The installed SAP 1.2 client parses <code>adtcore:isTestTransport</code> on revision entries. Its transport diff excludes flagged entries unless they belong to the transport being reviewed. ARC-1’s revision parser does not retain this flag and its selector cannot apply the rule.</p>
+<p><b>Reproduced:</b> with requested revision 00003, flagged intermediate revision 00002 and earlier regular revision 00001, ARC-1 drops the flag and chooses 00002 as baseline. Depending on the workflow, that can show only the delta since a test transport instead of the intended regular correction boundary.</p>
+<p><b>Change:</b> preserve the flag, retain an auditable list of excluded revisions and define an explicit test-transport policy. Keep a flagged revision when it is the requested transport; normalize request/task identities consistently. Do not guess from transport descriptions, and do not treat every transport of copies as equivalent to this metadata flag.</p>
+<p><b>Live acceptance:</b> a normal request with an intervening flagged snapshot; the flagged request reviewed directly; missing flag; request/task attribution. Until those cases are captured, call this a verified client contract and parser gap, not a verified production incident.</p>
+<p class="source">Installed <code>com.sap.adt.tm.model_3.62.0</code> and <code>com.sap.adt.tools.core_3.62.0</code>; details in the evidence section. ARC-1 parser: <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/xml-parser.ts#L1368">src/adt/xml-parser.ts:1368</a></p>
+
+<h3>G. Pagination is ordered, but it does not freeze the review</h3>
+<p><span class="p2">Needed for multi-page review artifacts</span> Sorting prevents errors caused by SAP returning objects in a different order. Each offset call still re-reads the request. If objects are added or removed between calls, the index shifts: [A,B,C,D], first page [A,B], remove A, then offset 2 yields [D] and skips C. Source content can also change without any change to the inventory.</p>
+<p><b>Change:</b> include a fingerprint of the normalized object/component inventory, request status, target and comparison mode. Require it for continuation; reject/restart on drift. Bind continuation to the authenticated user, server target and request. Hash the exact source evidence used for a saved review. A stable inventory does not prove stable source; reread relevant state/hash evidence before calling an active review current. Do not imply an atomic SAP snapshot where none exists.</p>
+<p><b>Your benefit:</b> a review of 80 objects can demonstrate which 80 were examined, rather than merely concatenate pages taken at different times.</p>
+
+<h3>H. A line cap is not a complete workload or response budget</h3>
+<p><span class="p2">Add bounded collection before scaling</span> ARC-1 caps a page at 40 logical objects and each displayed diff at 400 lines. The full sources and patch are processed before this cap. At the current maximum, 40 whole classes × 5 parts × up to 3 reads is roughly 600 ADT reads, plus the transport read. The shared semaphore bounds concurrent requests, not total bytes, queued work or cumulative duration.</p>
+<p><b>Reproduced:</b> one changed line containing 300,000 characters returns a 300,154-character diff without <code>diffTruncated</code>. This is a stress fixture, not evidence that such ABAP lines are common. Ordinary large multi-object patches can also become expensive. The existing full added/removed counts remain useful even when display hunks are capped.</p>
+<p><b>Change:</b> add a byte budget, per-source bound, total review/request deadline and cancellable work queue. Start with summary/statistics and load selected hunks on demand. Cap at whole-hunk boundaries where possible, declare omitted content and provide bounded continuation. Use the diff library’s bounded-work options if supported by the installed version; do not assume the network semaphore protects the diff calculation.</p>
+<p><b>Your benefit:</b> predictable MCP responses, lower context use and fewer stalled reviews. Measure output bytes, backend requests, p95 latency and process memory on representative transports.</p>
+<p class="source"><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L405">src/adt/transport-diff.ts:405</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/handlers/transport.ts#L262">src/handlers/transport.ts:262</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/source-diff.ts#L1">src/adt/source-diff.ts:1</a></p>
+
+<h3>I. History completeness, deletions and ownership need targeted research</h3>
+<p>The revision parser drops continuation metadata and converts parse failure to an empty history. A synthetic <code>rel="next"</code> is ignored. I have not established that the relevant SAP version feeds paginate, so this is a contract check, not a demonstrated live omission. Validate the feed shape and mark unexpected XML separately from a valid empty history.</p>
+<p>Deletion evidence, historical text/metadata, function-group include ownership, transport-of-copies baselines and simultaneous method changes in different requests require dedicated fixtures. A full class main-source diff may be broader than the particular METH component recorded in CTS; retain those component identities and verify cross-request behavior before attributing every hunk to one request. Current unsupported inventory is preferable to invented history.</p>
+<p>A source-system correction diff also does not establish what is deployed in QAS/PRD. Target drift needs a separately labelled cross-system comparison using authorized read-only connections and a proven baseline.</p>
+</section>
+
+<section id="design"><h2>3. What the improved transport product should return</h2>
+<p><b>A reviewable evidence bundle:</b> a compact machine-readable result, plus a human-readable report with a changed-object list, source hunks, review findings and coverage. Put uncertain or unsupported areas beside the conclusion. Keep deterministic facts separate from the AI’s interpretation.</p>
+<div class="two"><article><h3>Deterministic evidence</h3><ul><li>System/client, request and task IDs, request type/status, retrieval time and comparison mode.</li><li>Raw CTS component inventory and logical-object mapping; inventory fingerprint.</li><li>Expected, attempted and returned source parts.</li><li>Revision IDs/URIs, transport attribution, source state, timestamps, source hashes and skipped-revision reasons.</li><li>Exact, unattributed, unavailable, unsupported, not-present, cosmetic and changed classifications.</li><li>Complete/truncated flags and bounded paths to remaining evidence.</li></ul></article><article><h3>Human and AI review</h3><ul><li>What behavior changed, with object/part/hunk references.</li><li>Which tests and checks actually ran, against what source state and when.</li><li>Risks and suggested tests, each linked to evidence.</li><li>Open questions for text, metadata, Customizing and missing history.</li><li>Separate check failure, blocked check, execution error, not-run and stale result.</li><li>No automatic “safe to release” verdict inferred from an empty diff or a successful tool response.</li></ul></article></div>
+<p><b>Proposed contract, not a current API:</b></p>
+<pre>{
+  "review": { "target": "DEV/001", "request": "DEVK900002",
+              "mode": "active", "inventoryFingerprint": "…" },
+  "coverage": { "status": "partial", "expectedParts": 4,
+                "reviewedParts": 2, "unavailableParts": 1,
+                "unsupportedParts": 1 },
+  "parts": [{ "object": "ZCL_DEMO", "part": "implementations",
+              "sourceState": "active", "attribution": "unverified",
+              "change": "changed", "evidenceRef": "…" }],
+  "checks": [{ "kind": "syntax", "status": "not-run" }]
+}</pre>
+<p>Use mutually exclusive coverage categories and publish the denominator. A percentage of “objects with any readable main source” is not a percentage of fully reviewed changes. Preserve the existing <code>baselineStatus</code> and <code>selectionMethod</code> fields for compatibility; add explicit coverage and source-state dimensions.</p>
+<p><b>Compose existing tools:</b> SAPTransport.diff → relevant SAPContext dependency analysis → syntax/ATC/ABAP Unit as requested → report. Run deeper analysis on changed or uncertain objects, not every dependency by default. Reuse current CI outputs and policies. The new work is evidence collection and presentation, not a replacement ATC engine. A read-only review does not require transport release rights.</p>
+<p><b>Live demo available now:</b> request <code>A4HK906371</code> still contains a METH entry for <code>ZCL_ARC1_TD_CALC</code>, its CCIMP component and program <code>ZARC1_TD_REPORT</code>. Read-only calls on 17 October confirmed main revisions 00001→00002 change <code>iv_a + iv_b</code> to <code>iv_a + iv_b + 1</code>; implementations change <code>iv * 2</code> to <code>iv * 3</code>. Both are deliberately seeded demo changes. This proves readable main/include history; it does not prove the new current-upstream transport engine end-to-end through this older connector.</p>
+<p><b>Good demonstration:</b> show those two independent changes, the exact revision evidence, the program’s separately collected coverage and any checks you actually execute. Then deliberately make one mocked part unavailable and show that the report becomes partial. That demonstrates why a customer should trust the output.</p>
+</section>
+
+<section id="notebooks"><h2>4. SQL notebooks: build reusable work, then decide about an editor</h2>
+<p>The useful idea from SAP is keeping the question, SQL and explanation together. ARC-1 already executes bounded queries. Its opportunity is to make an investigation reusable across AI clients and customer engagements.</p>
+<table><thead><tr><th>Notebook</th><th>Concrete workflow</th><th>Why it matters</th></tr></thead><tbody>
+<tr><td><b>Data quality investigation</b></td><td>Record a symptom; query duplicate or missing relationships; aggregate affected rows; document the business rule; rerun after remediation.</td><td>You reuse the investigation rather than rebuild it from a chat transcript.</td></tr>
+<tr><td><b>Transport validation</b></td><td>Run explicit aggregate checks before and after a change; attach query hashes, target, execution time and observed results to the review.</td><td>Connects code review to observed data behavior. A passing query is evidence only for its stated condition.</td></tr>
+<tr><td><b>Migration reconciliation</b></td><td>Compare well-defined counts or totals with client, currency/unit, filters, period and normalization stated.</td><td>Produces customer handover evidence. Cross-system execution needs separately authorized targets; a generic before/after equality check is not automatically valid.</td></tr>
+<tr><td><b>Performance investigation</b></td><td>Save query text, SAP-reported timing, row limits and relevant trace references; rerun under documented conditions.</td><td>Replaces anecdotes with reproducible evidence. One timing measurement does not prove improvement.</td></tr>
+<tr><td><b>Public showcase</b></td><td>Reuse the existing flight-capacity notebook and screenshot from your 2023 system.</td><td>Immediate visual proof, with demo data, while engineering work focuses on reusable execution.</td></tr>
+</tbody></table>
+<p><b>Small first implementation:</b> a versioned local document with Markdown and SQL cells, stable cell IDs, a logical target name, row cap and optional expected-result rule; a runner that calls existing SAPQuery; and an HTML/Markdown report. Keep saved results optional and separate from the reusable query document. Include requested and executed SQL, query hash, target/client, retrieval time, row count, completeness and backend timing when available.</p>
+<p>For assertions, execute purpose-built aggregate queries. Do not infer “no duplicates” from the first 100 rows of a detail query. Distinguish failure from truncated evidence, blocked query or backend error. Preserve string cell values, leading zeros and decimal precision. Do not auto-convert account numbers or silently reinterpret locale-sensitive amounts.</p>
+<p><b>Interop:</b> your <code>.abapsql</code> example demonstrates SAP’s current serialization, not a guaranteed public format contract. Start with an adapter for supported Markdown/SQL fields, preserve unknown fields where possible and report unsupported content. A VS Code destination name must be explicitly mapped to an ARC-1 target; it is not an authorization grant. Imported notebooks must not execute on open.</p>
+<p><b>Keep existing controls:</b> data-preview/free-SQL scopes and safety gates remain in the server. Keep the existing 10,000-row ceiling and configured response-byte budget. Do not copy SAP’s larger notebook row cap into ARC-1 by default. Query limits do not necessarily bound server-side scan cost; cancellations/timeouts and meaningful filters still matter. Avoid arbitrary query pagination—FEAT-32 correctly calls for keyset paging only where a unique ordering can be established.</p>
+<p><b>Do not expand the admin UI into an IDE.</b> If repeated use validates demand, add a thin client or VS Code notebook controller using the existing MCP/auth connection. Keep a text/HTML fallback for clients without interactive support. Do not create another SAP credential store. Sanitized rendering, escaping and explicit result export matter because the output may contain real customer data.</p>
+<p><b>Validation trigger for the editor:</b> several users rerun the saved notebooks for real investigations, and editing/rerunning cells is the observed friction. Until then, the artifact and runner deliver most of the reusable value for much less maintenance.</p>
+<p class="source">Existing query result and caps: <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/handlers/query.ts#L155">src/handlers/query.ts:155</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/client.ts#L1424">src/adt/client.ts:1424</a> · <a href="https://code.visualstudio.com/api/extension-guides/notebook">VS Code notebook API</a></p>
+</section>
+
+<section id="diagnostics"><h2>5. Diagnostics and policy: turn dead ends into explainable next steps</h2>
+<h3>Feed schemas and typed filters</h3>
+<p><b>Recommended:</b> promote FEAT-74 from a small diagnostics enhancement to the foundation of a focused incident workflow. Ask “TIME_OUT dumps for this object/package in this time window,” retrieve relevant details, then correlate with known changed objects and versions. Correlation should produce candidates, not an assertion that a particular transport caused the error.</p>
+<p>The roadmap already records live SAP_BASIS 816 evidence for <code>/sap/bc/adt/feeds</code>: typed attributes, operators and query depth. That is stronger than guessing a raw filter string, but it is not proof that every attribute exists on your 758 system.</p>
+<p><b>Implementation:</b> expose discovered schema for approved feed families; accept a small typed filter tree; validate attribute/operator/type/depth against that target’s schema; compile using a grammar-aware serializer; enforce row/time/page budgets; keep existing user/from/to parameters working. Group equivalent runtime errors and fetch detailed chapters only for relevant samples. Cache schema by target and relevant capability/auth context, not incident content across users.</p>
+<p><b>Important edge cases:</b> quotes and delimiters, time-zone normalization, missing attributes on 758, 403 versus an empty result, cap saturation and more than one page of incidents sharing a timestamp. Preserve current dump-pagination safeguards. Do not fix a saturated query by silently broadening it.</p>
+<p><b>Benefit to you:</b> repeatable triage and less irrelevant tool output; a natural consulting workflow of incident → evidence → candidate cause → proposed fix → verification. Measure time to the first relevant dump, backend calls and bytes returned, rather than how many new filter fields exist.</p>
+<p class="source"><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/docs_page/roadmap.md#L712">docs_page/roadmap.md:712</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/diagnostics.ts#L228">src/adt/diagnostics.ts:228</a></p>
+
+<h3>Dictionary activation logs: the investigation is now narrower</h3>
+<p><b>New evidence from installed SAP 1.2:</b> <code>DdicActivationLogSupport</code> resolves an object link with relation <code>http://www.sap.com/adt/relations/ddic/activationlog</code> and media type <code>application/vnd.sap.adt.logs+xml</code>. The language-server activation extension follows that URI with GET and parses a hierarchical log. This is a distinct path from probing <code>/activation/runs</code>.</p>
+<p>The previous roadmap’s “not a simple GET endpoint” description is therefore incomplete as a description of the current client. It should be revised after backend verification: <em>discover the object’s activation-log relation and validate the read contract and freshness.</em> This research did not establish that the link is present on your 2023 objects.</p>
+<p><b>First probe:</b> read metadata for an existing DDIC object with known activation history; locate the relation; follow only a canonical same-system ADT link with the advertised media type; record the object/type, severity hierarchy and available timestamps/run identity. Try an object without a log and a restricted user. Start with existing logs; a controlled failure fixture is a later test if the existing evidence is insufficient.</p>
+<p><b>Minimal implementation:</b> <code>SAPDiagnose(action="activation_log", type, name)</code> as a proposed read action; hierarchical entries with bounded depth, count and bytes; severity and object references; explicit unavailable/unsupported/denied outcomes. After an activation failure, optionally offer this diagnostic read. Never reactivate merely to obtain a log.</p>
+<p><b>Freshness is the acceptance gate:</b> an accessible log may belong to an earlier activation. If the backend supplies no reliable run/timestamp correlation, label it “latest available log; not correlated to this attempt.” Include retrieval time separately. Do not tell an agent that stale log text explains its current failure.</p>
+<p><b>Your benefit:</b> the RAP/DDIC generation workflow can stop guessing after a failure and explain the next concrete repair. It is especially useful for tables, structures, dependent types and CDS; exact availability still depends on backend metadata.</p>
+
+<h3>Policy explanation, using the policy ARC-1 already enforces</h3>
+<p><b>Recommended:</b> add a read-only explanation for the current caller and proposed action. Example: “Source reads are allowed; SQL is blocked by the server’s free-SQL setting; editing this object is blocked because its actual package is outside the allowed subtree.” That helps administrators configure a pilot and helps an agent avoid repeated doomed calls.</p>
+<p><b>Reuse:</b> ACTION_POLICY, dispatch checks, safety configuration, real-package resolution and target authorization. Refactor decision evaluation to produce structured reasons if needed; do not implement an independent approximation for the UI. Keep final authorization at execution time.</p>
+<p><b>Return separate layers:</b> target grant, required caller scope, server ceiling, deny-action rule, relevant feature availability, resolved package and match status. Distinguish “allowed by ARC-1,” “denied,” “unknown until object resolution,” and “SAP authorization not checked.” Never call a mutating endpoint to prove authorization. Package write restrictions do not imply package read restrictions or data-access restrictions.</p>
+<p>Current main’s target grants belong to the opt-in read-only BTP multi-target architecture. Keep single-target writable deployments and that read-only mode within their existing contracts. An open proposal for multi-target writes is not an approved extension of the design.</p>
+<p><b>Your benefit:</b> fewer configuration-support sessions and a clearer enterprise demo. Measure blocked-call retries and time from onboarding to the first permitted, useful operation.</p>
+<p class="source"><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/authz/policy.ts#L54">src/authz/policy.ts:54</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/handlers/write-helpers.ts#L934">src/handlers/write-helpers.ts:934</a> · <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/server/multi-target-authorization.ts#L37">src/server/multi-target-authorization.ts:37</a></p>
+</section>
+
+<section id="research"><h2>6. Investigation queue with explicit stop conditions</h2>
+<table><thead><tr><th>Question</th><th>Smallest useful experiment</th><th>Implement when</th><th>Otherwise</th></tr></thead><tbody>
+<tr><td><b>Test-transport baselines</b></td><td>Capture flagged and regular history, reviewing both the normal request and flagged request directly; include task IDs.</td><td>Flag meaning and requested-request exception agree with real release workflows.</td><td>Keep the metadata and uncertainty visible; do not silently change baseline semantics.</td></tr>
+<tr><td><b>Historical text pools</b></td><td>One program and one class, two versions, text-only edit, two languages; inspect advertised history links.</td><td>Both historical values and language are reliably addressable.</td><td>Retain explicit text-pool inventory gaps; current text is context only.</td></tr>
+<tr><td><b>Function-group sources</b></td><td>One owned TOP/include, one FM, a namespaced group and referenced SAP framework includes.</td><td>Ownership and historical endpoints are proven. Exclude unrelated shared framework includes.</td><td>Keep function-group includes as inventory; keep supported FUNC diffs working.</td></tr>
+<tr><td><b>Method attribution across requests</b></td><td>Two methods of a class changed in separate requests; compare main and component histories before and after release.</td><td>Hunks can be associated without hiding structural or dependent changes.</td><td>Label main-source diff as broader context and preserve CTS component scope.</td></tr>
+<tr><td><b>Deletion and metadata</b></td><td>Sanitized CTS fixtures for deletion, TABL/DTEL/MSAG changes and a Customizing/table-key entry; inspect operation/key metadata and historical serialization.</td><td>Before/after meaning and deletion evidence are verified per type.</td><td>Inventory with an explicit reason. A 404 is not proof of deletion.</td></tr>
+<tr><td><b>Version-feed completeness</b></td><td>Read long history on 750/758/816; inspect continuation/limits and malformed responses.</td><td>A continuation contract is actually advertised or observed.</td><td>Do not invent pagination; keep parse errors distinct and history completeness qualified.</td></tr>
+<tr><td><b>DDIC log on 758</b></td><td>Follow an existing object’s activation-log relation; compare successful, failed, missing and stale cases.</td><td>Bounded GET and sufficient provenance work.</td><td>Expose support status; retain activation messages and explain missing detail.</td></tr>
+<tr><td><b>Feed filters on 758</b></td><td>Capture schema and test one object filter, one error filter and a time range.</td><td>Supported typed operators produce bounded, correct results.</td><td>Offer only supported schema fields; retain current limited filters.</td></tr>
+<tr><td><b>SRVC and OData</b></td><td>Observe the exact backend request and generated artifacts for one customer-relevant service; start with metadata and safe GET inspection.</td><td>The workflow is frequent and the backend generation/activation contract is stable enough to test.</td><td>Use existing SAP tooling for authoring; deliver inspection and contract-test artifacts first.</td></tr>
+</tbody></table>
+<p><b>What to defer:</b> generic unclassified “run any object action,” arbitrary RFC parity, a full transport-management UI, complete object-type parity, broad ATC-exemption automation and a full timeline widget. Their cost and policy surface are larger than their presently demonstrated incremental value. Anchored source edits also have existing PR work; inspect that before opening a duplicate implementation.</p>
+<p><b>Customer segment matters:</b> for classic ERP maintenance, prioritize text pools, function groups and Dictionary/Customizing coverage after core fixes. For RAP teams, prioritize DDLS/BDEF/SRVD review, activation diagnostics and OData validation. Choose the next type family by coverage gaps in real reviews, not by the length of SAP’s release-note list.</p>
+</section>
+
+<section id="delivery"><h2>7. A practical delivery sequence and measurable return</h2>
+<table><thead><tr><th>Slice</th><th>Deliverable</th><th>Acceptance</th></tr></thead><tbody>
+<tr><td><b>0 · Running baseline</b></td><td>Record server/package version, enabled connector actions, release tag and target capabilities. Distinguish published 1.5.2 from main/unreleased work.</td><td>The intended server exposes the expected read capabilities. No assumption that a plugin update upgraded the remote server.</td></tr>
+<tr><td><b>1 · Correctness</b><br>2–4 days</td><td>Mixed-404 coverage, unattributed-part handling, text-pool inventory and pseudo-version baseline classification. Preserve raw component provenance.</td><td>The four reproduced cases cannot be described as a complete unchanged review. Existing 181 relevant tests still pass; new regression fixtures cover the mixed cases.</td></tr>
+<tr><td><b>2 · Review contract</b><br>3–5 days</td><td>Explicit source-state modes, revision evidence, coverage totals, inventory drift detection and bounded output.</td><td>A changing multi-page request is rejected or marked stale; an inactive review is labelled; incomplete evidence never earns a complete status.</td></tr>
+<tr><td><b>3 · Customer artifact</b><br>2–4 days</td><td>CLI/client collector and HTML + JSON report; selective context and test evidence; small representative transport corpus.</td><td>A colleague can understand the change and remaining gaps without the original chat. Source references match findings; checks are tied to the analyzed state.</td></tr>
+<tr><td><b>4 · Reusable investigation</b></td><td>Notebook artifact/runner, feed filters and the verified DDIC log reader, selected according to pilot needs.</td><td>Repeated real use and reduced handover/investigation effort. Build an interactive editor only after this need is observed.</td></tr>
+</tbody></table>
+<p>These slices are independently useful. Ship the small evidence corrections before a larger review UI. The first three engineering slices are approximately 7–13 developer-days, excluding deployment and extended multi-release validation. The test-transport and DDIC probes may change that range; time-box them and record the outcome.</p>
+<h3>How this can become paid value</h3>
+<p><b>Transport review service:</b> offer a bounded review of a customer’s transport set, with behavior changes, evidence, coverage and test recommendations. The deliverable is the review package; ARC-1 makes it repeatable. Do not market a full release certification when metadata or baselines remain unreviewed.</p>
+<p><b>Incident investigation service:</b> combine filtered runtime evidence, relevant source history and a reusable notebook. The customer receives the diagnosis, its limits and a reproducible verification procedure. That is more valuable than a transcript of tool calls.</p>
+<p><b>Enablement and supported deployment:</b> package policy explanation, verified capabilities and a few useful notebook/review templates into onboarding. Since ARC-1 is MIT-licensed, the practical commercial hypothesis is supported operation, integration, training and expert deliverables; feature work alone does not establish willingness to pay.</p>
+<p><b>Illustrative capacity calculation, not measured ROI:</b> 30 transport reviews/month × 15 minutes saved = 7.5 hours/month; 12 investigations × 20 minutes saved = 4 hours/month; 4 onboarding/support cases × 30 minutes saved = 2 hours/month. That is 13.5 hours/month under those assumptions. Replace the assumptions with pilot measurements and your actual utilization/value of time. Freed capacity is not automatically additional revenue.</p>
+<h3>Pilot measurements</h3>
+<ul><li>Median time to a reviewer-ready transport summary; correction/rework rate after human review.</li><li>Coverage by component type and source part; unknown, unavailable and unsupported rates.</li><li>False “unchanged” or “complete” classifications in the adversarial fixture set: target zero.</li><li>Backend requests, response bytes, p95 review latency and memory on small and large transports.</li><li>Time to a relevant incident and the number of irrelevant dump pages fetched.</li><li>Notebook rerun rate and whether a colleague can repeat the investigation without asking the author.</li><li>Onboarding time and repeated denied operations before and after policy explanations.</li></ul>
+<p><b>A strong public story:</b> “Review what changed, see what could not be reviewed, and rerun the checks.” Demonstrate your real class main/include changes and the flight notebook. Publish measured improvements only after the pilot. The credibility comes from visible evidence and honest coverage.</p>
+</section>
+
+<section id="evidence"><h2>8. Evidence and limits</h2>
+<p><b>ARC-1 baseline:</b> commit <code>9775645400fdb27f37aff486f14fe9845ecf8639</code> (14 October 2026), read in a separate scratch clone. Latest published release checked in the preceding review: v1.5.2; release PR #970 for 1.6.0 remains open at this check. The transport-diff engine and handler have no differences from tag v1.5.2; unrelated main changes and unreleased capabilities must not be conflated with that release.</p>
+<p><b>SAP baseline:</b> locally installed <code>sapse.adt-vscode-1.2.0-darwin-arm64</code>; transport/core/DDIC bundles 3.62.0 and language-server bundle <code>com.sap.adt.ls_1.2.0.202610161300</code>. Static inspection of the installed class metadata/bytecode established the revision flag, filter, whitespace option and activation-log lookup/GET. No claim is made that each behavior first appeared in 1.2, or that the same backend contract is available on every release.</p>
+<p><b>SAP comparison corrections:</b> 1.2 exposes an <code>ignoreWhitespace</code> option, default false. The old comparison’s blanket whitespace limitation should not be carried forward. Its inspected revision-selection methods still use a single correction-number match and an immediate predecessor rule; ARC-1’s task matching and same-transport walk remain valuable. Avoid a blanket “ARC-1 is more accurate than SAP” claim without an end-to-end comparative corpus.</p>
+<p><b>Tests:</b> 181 tests passed across transport-diff, source-diff, revision-feed transport parsing and transport handler test files, using Node 24.19.0. These are existing unit tests with mocked backends, including mock mutation tests; they did not change SAP. Eight additional synthetic probes called unmodified current source. Their outputs reproduce code behavior, not the incidence of those edge cases in customer systems.</p>
+<p><b>Live reads:</b> five read-only MCP calls: demo request A4HK906371; class main and implementations histories; explicit 00001→00002 diffs for both. These confirm the historical demo changes on the connected SAP system. No new SAP objects, transports, writes, activations or releases were performed.</p>
+<p><b>Unverified:</b> live occurrence of the new edge-case fixtures, 758 activation-log availability/freshness, 758 extended feed attributes, historical text/metadata contracts, revision-feed continuation and customer ROI. The currently connected tool surface does not expose upstream SAPTransport.diff; the two live diffs therefore validate underlying source-history reads, not the whole new engine through that connector.</p>
+<details><summary>Local probe results</summary><h4>undated matching active despite known released history</h4><pre>{
+  &quot;current&quot;: &quot;00000&quot;,
+  &quot;previous&quot;: null,
+  &quot;baseline&quot;: &quot;no-prior-snapshot&quot;
+}</pre><h4>newer inactive draft competes with active source</h4><pre>{
+  &quot;current&quot;: &quot;99999&quot;,
+  &quot;previous&quot;: &quot;00001&quot;,
+  &quot;baseline&quot;: &quot;prior-revision&quot;
+}</pre><h4>whole class with unattributed changed sibling and three missing feeds</h4><pre>{
+  &quot;type&quot;: &quot;CLAS&quot;,
+  &quot;name&quot;: &quot;ZCL_DEMO&quot;,
+  &quot;taskIds&quot;: [
+    &quot;DEVK900002&quot;
+  ],
+  &quot;parts&quot;: [
+    {
+      &quot;part&quot;: &quot;main&quot;,
+      &quot;baselineStatus&quot;: &quot;prior-revision&quot;,
+      &quot;selectionMethod&quot;: &quot;exact-transport&quot;,
+      &quot;from&quot;: &quot;00001 (DEVK900001)&quot;,
+      &quot;to&quot;: &quot;00002 (DEVK900002)&quot;,
+      &quot;added&quot;: 1,
+      &quot;removed&quot;: 1,
+      &quot;diff&quot;: &quot;===================================================================\n--- ZCL_DEMO (00001 (DEVK900001))\n+++ ZCL_DEMO (00002 (DEVK900002))\n@@ -1,1 +1,1 @@\n-WRITE: / 1.\n+WRITE: / 2.\n&quot;
+    },
+    {
+      &quot;part&quot;: &quot;implementations&quot;,
+      &quot;baselineStatus&quot;: &quot;prior-revision-unverified&quot;,
+      &quot;selectionMethod&quot;: &quot;latest-revision-fallback&quot;,
+      &quot;from&quot;: &quot;00001&quot;,
+      &quot;to&quot;: &quot;00002&quot;,
+      &quot;added&quot;: 0,
+      &quot;removed&quot;: 0,
+      &quot;diff&quot;: &quot;&quot;,
+      &quot;note&quot;: &quot;not changed by this transport&quot;
+    }
+  ]
+}</pre><h4>CTS-selected include returns 404 while main succeeds</h4><pre>{
+  &quot;type&quot;: &quot;CLAS&quot;,
+  &quot;name&quot;: &quot;ZCL_DEMO&quot;,
+  &quot;taskIds&quot;: [
+    &quot;DEVK900002&quot;
+  ],
+  &quot;parts&quot;: [
+    {
+      &quot;part&quot;: &quot;main&quot;,
+      &quot;baselineStatus&quot;: &quot;prior-revision&quot;,
+      &quot;selectionMethod&quot;: &quot;exact-transport&quot;,
+      &quot;from&quot;: &quot;00001 (DEVK900001)&quot;,
+      &quot;to&quot;: &quot;00002 (DEVK900002)&quot;,
+      &quot;added&quot;: 1,
+      &quot;removed&quot;: 1,
+      &quot;diff&quot;: &quot;===================================================================\n--- ZCL_DEMO (00001 (DEVK900001))\n+++ ZCL_DEMO (00002 (DEVK900002))\n@@ -1,1 +1,1 @@\n-WRITE: / 1.\n+WRITE: / 2.\n&quot;
+    }
+  ]
+}</pre><h4>text-pool-only transport with identical source</h4><pre>{
+  &quot;type&quot;: &quot;PROG&quot;,
+  &quot;name&quot;: &quot;ZDEMO&quot;,
+  &quot;taskIds&quot;: [
+    &quot;DEVK900002&quot;
+  ],
+  &quot;parts&quot;: [
+    {
+      &quot;part&quot;: &quot;main&quot;,
+      &quot;baselineStatus&quot;: &quot;prior-revision&quot;,
+      &quot;selectionMethod&quot;: &quot;exact-transport&quot;,
+      &quot;from&quot;: &quot;00001 (DEVK900001)&quot;,
+      &quot;to&quot;: &quot;00002 (DEVK900002)&quot;,
+      &quot;added&quot;: 0,
+      &quot;removed&quot;: 0,
+      &quot;diff&quot;: &quot;&quot;,
+      &quot;note&quot;: &quot;no source change between the selected revisions&quot;
+    }
+  ]
+}</pre><h4>one huge changed line bypasses line cap</h4><pre>{
+  &quot;diffCharacters&quot;: 300154,
+  &quot;diffTruncated&quot;: false
+}</pre><h4>revision parser ignores continuation metadata</h4><pre>{
+  &quot;object&quot;: {
+    &quot;name&quot;: &quot;ZDEMO&quot;,
+    &quot;type&quot;: &quot;PROG&quot;
+  },
+  &quot;revisions&quot;: [
+    {
+      &quot;id&quot;: &quot;00003&quot;,
+      &quot;author&quot;: &quot;&quot;,
+      &quot;timestamp&quot;: &quot;2026-10-17T12:00:00Z&quot;,
+      &quot;uri&quot;: &quot;/sap/bc/adt/demo/versions/20261017120000/00003/content&quot;
+    }
+  ]
+}</pre><h4>test-transport attribute is discarded and intervening snapshot becomes baseline</h4><pre>{
+  &quot;parsedTestEntry&quot;: {
+    &quot;id&quot;: &quot;00002&quot;,
+    &quot;author&quot;: &quot;&quot;,
+    &quot;timestamp&quot;: &quot;2026-10-16T12:00:00Z&quot;,
+    &quot;transport&quot;: &quot;DEVK900099&quot;,
+    &quot;uri&quot;: &quot;/sap/bc/adt/demo/versions/20261017120000/00002/content&quot;
+  },
+  &quot;current&quot;: &quot;00003&quot;,
+  &quot;previous&quot;: &quot;00002&quot;
+}</pre></details>
+<h3>Primary references</h3>
+<ul><li><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/transport-diff.ts#L135">src/adt/transport-diff.ts:135</a> and <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/handlers/transport.ts#L262">src/handlers/transport.ts:262</a> — current diff implementation.</li><li><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/xml-parser.ts#L1368">src/adt/xml-parser.ts:1368</a> and <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/src/adt/text-elements.ts#L1">src/adt/text-elements.ts:1</a> — revision metadata and current text-pool support.</li><li><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/tests/unit/adt/transport-diff.test.ts#L1">tests/unit/adt/transport-diff.test.ts:1</a> and <a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/tests/unit/handlers/transport.test.ts#L1124">tests/unit/handlers/transport.test.ts:1124</a> — existing regression coverage.</li><li><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/docs_page/roadmap.md#L712">docs_page/roadmap.md:712</a> — existing FEAT-74, FEAT-69, FEAT-71 and FEAT-32 research.</li><li><a href="https://github.com/arc-mcp/arc-1/blob/9775645400fdb27f37aff486f14fe9845ecf8639/docs/plans/2026-08-03-transport-diff.md#L1">docs/plans/2026-08-03-transport-diff.md:1</a> — historical live fixtures and prior design; some assumptions need the corrections described above.</li><li><a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools">SAP ADT for VS Code MCP tools</a> and <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/enabling-adt-mcp-server">MCP server access controls</a>.</li><li><a href="https://code.visualstudio.com/api/extension-guides/notebook">Official VS Code notebook API</a>.</li><li><a href="https://github.com/arc-mcp/arc-1/pull/970">Release PR #970</a> and <a href="https://github.com/arc-mcp/arc-1/pull/586">existing anchored-edit proposal #586</a>.</li></ul>
+<p class="small">This is a research and implementation recommendation. No production source files, deployed policy, customer systems or open PRs were modified. The roadmap was checked; proposed changes remain in this report rather than being written into the repository.</p>
+</section>
+<footer>Prepared for Marian Zeis · Evidence cut: 17 October 2026 · Research, validation and implementation recommendations</footer></main></body></html>

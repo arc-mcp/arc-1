@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADT for VS Code 1.2 release analysis and LinkedIn draft</title>
+<style>
+:root{color-scheme:light;--ink:#142434;--muted:#536474;--blue:#0968ac;--line:#dbe4eb;--paper:#fff;--bg:#f2f5f8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:1050px;margin:40px auto;background:var(--paper);padding:54px 62px;border:1px solid var(--line);border-radius:16px}h1{font-size:38px;line-height:1.18;letter-spacing:-1px;margin:8px 0 24px}h2{font-size:23px;line-height:1.3;margin:42px 0 16px}h3{font-size:18px;margin:26px 0 8px}p{margin:0 0 16px}.meta{color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.07em}.lead{font-size:21px;line-height:1.5}.callout{border-left:4px solid var(--blue);background:#eff7fc;padding:18px 22px;margin:24px 0}a{color:var(--blue);text-underline-offset:3px}table{border-collapse:collapse;width:100%;font-size:14px;margin:18px 0}th,td{text-align:left;vertical-align:top;padding:13px 12px;border-bottom:1px solid var(--line)}th{background:#edf3f7;font-size:12px;text-transform:uppercase;letter-spacing:.04em}td:first-child{width:22%;font-weight:600}ul{padding-left:22px}li{margin:8px 0}code{background:#edf2f6;border-radius:4px;padding:1px 5px;font-size:.9em;overflow-wrap:anywhere}.small{font-size:13px;color:var(--muted)}pre{white-space:pre-wrap;font:inherit;line-height:1.65;background:#f6f8fa;border:1px solid var(--line);padding:26px;border-radius:10px}.source{font-size:13px;color:var(--muted)}nav{display:flex;gap:14px;flex-wrap:wrap;margin:24px 0}nav a{font-size:14px}.pill{display:inline-block;padding:5px 11px;border:1px solid var(--line);border-radius:20px;text-decoration:none}@media(max-width:700px){main{margin:0;padding:26px 20px;border:0;border-radius:0}h1{font-size:31px}table{font-size:12px}th,td{padding:9px 7px}}@media print{body{background:white}main{border:0;margin:0;max-width:none;padding:12px}nav{display:none}h2,h3{break-after:avoid}tr,.callout{break-inside:avoid}a{color:inherit}}
+</style>
+</head>
+<body><main>
+<div class="meta">Release analysis · 16 October 2026 · SAPSE.adt-vscode</div>
+<h1>ADT for VS Code 1.2</h1>
+<p class="lead">The strongest story is the expansion of everyday ABAP workflows: transports, data inspection, version history, diagnostics and more capable AI tooling.</p>
+<p>Version 1.1 broadened the objects developers could work with. My assessment is that 1.2 makes it more practical to stay in VS Code through the surrounding development cycle. That is a stronger, more defensible LinkedIn angle than declaring complete Eclipse parity.</p>
+<nav><a class="pill" href="#changes">Detailed changes</a><a class="pill" href="#mcp">AI and MCP</a><a class="pill" href="#scope">Availability and qualifications</a><a class="pill" href="#post">LinkedIn draft</a></nav>
+<div class="callout"><strong>Verification scope.</strong> Your VS Code extension registry identifies <strong>1.2.0</strong> as installed. The retained <strong>1.1.2</strong> package provides a direct comparison baseline. This analysis combines those packages with SAP’s live documentation. It does not claim that every feature was exercised against a backend. Your screenshot supplies the previous post’s voice and 1.1.0 framing.</div>
+
+<h2 id="changes">What changed and why it matters</h2>
+<table>
+<thead><tr><th>Area</th><th>Change in 1.2</th><th>Practical significance and limits</th></tr></thead>
+<tbody>
+<tr><td>Transport Organizer</td><td>A dedicated Explorer view organizes requests, tasks and objects. New actions include owner changes, adding users or objects, filtering by user, opening changes and releasing requests or tasks.</td><td>Transport work becomes part of the editor workflow. Creating and finding transports already existed; the new organizer and release actions are the meaningful delta. Changing the view’s destination should not be described as changing a transport’s import target. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/transport-organizer">SAP documentation</a>; local manifest comparison.</td></tr>
+<tr><td>SQL Notebook</td><td>New <code>.abapsql</code> notebooks combine SQL code cells and Markdown. They support syntax checking, query results and statistics, and configurable row limits.</td><td>Save repeatable data investigations with explanations. SAP documents a default of 100 rows and a maximum of 100,000, plus exports to delimited text, HTML, XML and ABAP value statements. The installed commands also expose per-cell system and row-limit selection. This does not establish unrestricted database administration or data modification support. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/working-with-sql-console">SAP documentation</a>.</td></tr>
+<tr><td>ABAP Timeline</td><td>A dedicated history view shows object revisions with version, transport and author details. Compare a revision with its predecessor, another selected revision, or the latest version.</td><td>Useful for understanding regressions and reviewing changes. SAP documents that the latest version is editable in its comparison view. This is ABAP object history; it is not evidence of a new Git integration. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/abap-timeline-view">SAP documentation</a>.</td></tr>
+<tr><td>ABAP Feeds</td><td>A new panel exposes backend-provided feeds such as runtime errors, unit-test runs, ATC findings and Gateway errors. Filters can use templates or custom expressions.</td><td>Diagnostics can be investigated beside source. Available feeds depend on the selected backend. Entries can expose detail views; refresh is manual, so do not call it live monitoring. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/abap-feeds">SAP documentation</a>.</td></tr>
+<tr><td>Dictionary activation log</td><td>A new command and log document type expose technical activation information for Dictionary and supported CDS objects.</td><td>Helps explain failed activation beyond the headline error. It complements the debugger; it is not a new debugger capability merely because the README groups it nearby. Local command and language registrations; <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/displaying-abap-dictionary-log">SAP documentation</a>.</td></tr>
+<tr><td>Source-code search</td><td>System-side text search across source-based repository objects, with a new <code>Search in ABAP Source Code...</code> command.</td><td>Addresses investigation of existing codebases. Distinguish it from object-name search and local filesystem search. Local command registration; <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new">release notes</a>.</td></tr>
+<tr><td>ATC exemptions</td><td>Request an exemption from a finding in the editor, supplying validity, reason, justification and transport information where applicable.</td><td>The documented cloud workflow creates a transportable <code>CHKE</code> object. It applies to the latest ATC result and still requires approval; it does not repair the underlying finding. New MCP tools request exemptions and identify permitted approvers. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/requesting-atc-exemptions">SAP documentation</a>.</td></tr>
+<tr><td>Service consumption</td><td>Create service consumption models for OData, RFC and Web Services using local metadata files.</td><td>SAP documents EDMX for OData, XML for RFC and WSDL for Web Services. This extends integration development within VS Code; it does not mean arbitrary endpoints can be consumed without metadata and backend setup. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/creating-service-consumption-model">SAP documentation</a>.</td></tr>
+<tr><td>Swagger service testing</td><td>Launch Swagger UI from service bindings to test OData V2/V4 services.</td><td>Useful for RAP service checks. The V4 documentation excludes custom request headers and verbs outside GET, PUT, POST and DELETE; PATCH is therefore outside the documented tool scope. Avoid presenting it as a complete replacement for an API client. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/working-with-odata-v4-service-a449458b1816492eb972ae5728ca2a28">SAP documentation</a>.</td></tr>
+<tr><td>Custom system connections</td><td>The RFC destination wizard accepts a user-specified system without SAP Logon Pad.</td><td>Connection details can be entered directly, including server, instance, client and optional SAProuter/SNC settings. RFC itself was already present in 1.1.2. The new story is independent configuration of the system connection. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/establishing-connection-via-user-specified-system">SAP documentation</a>.</td></tr>
+<tr><td>Solution Manager connected systems</td><td>The release notes add object creation and modification in Solution Manager connected systems.</td><td>This may remove a blocker in managed landscapes. Do not expand this narrow statement into a claim of full ChaRM workflow support. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new">Release notes</a>.</td></tr>
+</tbody></table>
+
+<h2>Repository coverage</h2>
+<p>The installed README expands coverage to packages, message classes, data elements, BAdI implementations and enhancement spots, technical table settings, service consumption models, additional CDS artifacts, launchpad objects, application logs and transactions. These additions make ordinary application work more self-contained in VS Code.</p>
+<p>SAP’s 1.2 list additionally names business configuration maintenance objects (<code>SMBC</code>), application job templates/catalog entries (<code>SAJT</code>/<code>SAJC</code>), software component relations (<code>SWCR</code>), predefined field enabling (<code>PCFN</code>) and IAM apps (<code>SIA6</code>). It also includes scalar function definitions (<code>DSFD</code>), entity indexes (<code>DTIX</code>), static/dynamic caches (<code>DTSC</code>/<code>DTDC</code>), and launchpad descriptor/page/space objects (<code>UIAD</code>/<code>UIPG</code>/<code>UIST</code>). <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new">SAP release notes</a>.</p>
+<p><strong>Two wording traps:</strong> ENHS appears under both BAdI definitions and enhancement spots, so counting list entries as distinct new object types inflates the number. Your previous post already mentioned XSLT, and 1.1.2 contains its language registration. Describe 1.2’s documented transformation creation workflow specifically rather than saying that XSLT support first arrives now.</p>
+
+<h2 id="mcp">The AI and MCP changes</h2>
+<p>The practical advance is that an agent has more explicit ways to locate an object, obtain its source, modify it when enabled, check it and inspect diagnostic evidence. These are capabilities for building workflows; their presence does not demonstrate autonomous end-to-end correctness.</p>
+<table>
+<thead><tr><th>New documented tools</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>abap_repository_search_object</code></td><td>Find objects by name.</td></tr>
+<tr><td><code>abap_resolve_file_uris</code><br><code>abap_read_file</code><br><code>abap_edit_file</code></td><td>Resolve virtual file locations and read or edit source. Editing requires opt-in.</td></tr>
+<tr><td><code>abap_object_check</code></td><td>Check objects for errors.</td></tr>
+<tr><td><code>abap_feed_query</code><br><code>abap_feed_get_schema</code></td><td>Retrieve diagnostic feeds and their schema.</td></tr>
+<tr><td><code>abap_explain_object</code><br><code>abap_docs_dcp</code></td><td>Explain objects and search ABAP documentation.</td></tr>
+<tr><td><code>abap_atc_exemption_request</code><br><code>abap_atc_exemption_approvers</code></td><td>Request exemptions and discover permitted approvers.</td></tr>
+<tr><td><code>abap_object_list_actions</code><br><code>abap_object_run_action</code></td><td>Discover and execute supported object actions.</td></tr>
+</tbody></table>
+<p class="source">Tool names and scope: <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools">SAP MCP tools reference</a>. Local 1.2 plugin registrations independently confirm additions for file access, search, checks, feeds, exemptions and object actions.</p>
+<p><strong>Access restrictions are a major part of the release.</strong> They default to enabled. Destination rules restrict reads and writes; package rules restrict object creation and modification within allowed destinations. Reading other packages in an allowed destination remains possible. The shipped default allowlists are empty, and the edit-file tool defaults to disabled. This deserves a configuration review when adopting the new MCP behavior. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/enabling-adt-mcp-server">SAP setup documentation</a>.</p>
+<p><strong>Licensing and migration:</strong> SAP labels object explanation and documentation search as requiring token consumption/additional costs. Several mechanical tools are marked as not requiring those costs, but SAP separately conditions MCP support on a valid Joule for Developers ABAP AI capabilities license. “No additional tool token cost” is not equivalent to “everything is license-free.” The reference also warns that tool names changed, so existing agent instructions may need updates. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools">SAP MCP tools reference</a>.</p>
+
+<h2 id="scope">Availability and technical qualifications</h2>
+<p>Installing the client does not make every backend feature available. The 1.2 release table often references ABAP environment 2611 and S/4HANA Cloud Public Edition 2702; on-premise/private-cloud ranges vary by feature. Some listed backend releases are later than this analysis date. Check the applicable feature and backend combination before promising availability. <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new">SAP release matrix</a>.</p>
+<p>The live release table also links its source-search entry to a transformation page. Its <a href="https://help.sap.com/docs/abap-cross-product/roadmap-info/tools">roadmap</a> and release table give differing ranges for some entries, including static caches. For the post, the defensible qualification is “availability depends on backend release”; an exact compatibility promise needs system-specific verification.</p>
+<table>
+<thead><tr><th>Installed-package evidence</th><th>1.1.2 → 1.2.0</th><th>Interpretation</th></tr></thead>
+<tbody>
+<tr><td>VS Code engine requirement</td><td><code>^1.105.1</code> → <code>^1.109.5</code></td><td>The extension now requires at least VS Code 1.109.5 within major version 1.</td></tr>
+<tr><td>Command registrations</td><td>36 → 68</td><td>32 added command registrations, not 32 distinct user features.</td></tr>
+<tr><td>Views and notebook</td><td>Transport Organizer, ABAP Timeline, ABAP Feeds; ABAP SQL notebook and renderer</td><td>These are shipped contributions, independently of the indexed Marketplace description.</td></tr>
+<tr><td>Bundled agent instructions</td><td>Explicit repository search, URI resolution and editing-tool guidance</td><td>Better directions for working with ABAP’s virtual filesystem. Instructions were inspected as product data, not followed as instructions for this analysis.</td></tr>
+<tr><td>MCP settings</td><td>New access controls and opt-in editing; experimental tags removed from existing MCP settings</td><td>Metadata changes do not establish full product maturity or Eclipse parity.</td></tr>
+<tr><td>JSON integration</td><td>New schema registration and “Show JSON Schema” command</td><td>The bundled schema explicitly suppresses VS Code’s default JSON features for ABAP JSON files; do not advertise it as stronger schema validation without examining the language-server behavior.</td></tr>
+<tr><td>Distribution support wording</td><td>README adds an OpenVSX/VS Code fork support qualification</td><td>SAP limits support to problems reproducible in official Microsoft VS Code. This wording alone does not date the first availability in OpenVSX.</td></tr>
+</tbody></table>
+<p class="small">Local evidence: readme.md, package.json, agents/abap-developer.agent.md, bundled plugin.xml registrations and schemas/abap-json.schema.json under the installed SAPSE extension packages. Extension registry checked in extensions.json. No credentials or SAP business data were required.</p>
+
+<h2>How to frame the LinkedIn post</h2>
+<p>Your previous post works because it combines concrete capabilities with a measured Eclipse comparison. Keep that credibility, but make the first two lines carry the story. Lead with the earlier verdict, then show which daily workflows now challenge it. Short feature paragraphs give readers more entry points than a dense list of repository types.</p>
+<p>The closing question asks for a specific remaining workflow, which gives ABAP developers something useful to discuss. Avoid unsupported performance numbers, universal compatibility, a claim that AI was first introduced in 1.2, or a guarantee that the post will go viral.</p>
+<p><strong>Suggested visual:</strong> use a clean capture from your 1.2 installation showing the Transport Organizer beside an SQL notebook or the ABAP Timeline. Include the version badge, and use demo object names and data. A visible workflow supports this story better than repeating the previous Marketplace screenshot. This is a visual recommendation, not a claim that such a demo was executed here.</p>
+
+<h2 id="post">LinkedIn draft</h2>
+<p><a href="linkedin-adt-1.2.txt">Open the plain-text version for copying</a>. The text retains your measured tone while adding a clearer opening and a specific discussion prompt.</p>
+<pre id="post-text">“Not ready to replace Eclipse.”
+
+That was part of my verdict on ADT for VS Code 1.1.
+
+I just updated to 1.2.0, and this release tackles several of the everyday workflows behind that verdict.
+
+The additions that stand out:
+
+→ Transport Organizer: manage requests and tasks, inspect changes, and release transports from VS Code.
+
+→ SQL notebooks: run queries, inspect results, and save SQL alongside Markdown notes.
+
+→ ABAP Timeline: inspect an object’s version history and compare revisions.
+
+→ Troubleshooting: access backend feeds for runtime errors, ATC findings and Gateway errors, plus Dictionary activation logs.
+
+→ More repository coverage: packages, data elements, message classes, BAdIs, service consumption models and Fiori launchpad objects.
+
+There is also a substantial ABAP + AI update: new MCP tools for finding, reading, checking and explaining objects, querying runtime feeds, and opt-in source editing. Access can now be restricted by destination, with object changes limited to selected packages.
+
+Source-code search, Swagger testing for OData V2/V4 services, and custom RFC connections without SAP Logon Pad round out the release.
+
+My takeaway: 1.2 gives us more of the surrounding workflow that makes an editor useful for daily ABAP work.
+
+Feature availability still depends on the backend release, and some AI capabilities have additional licensing requirements. I would still judge Eclipse replacement against the work your team actually does.
+
+Which remaining workflow keeps you opening Eclipse?
+
+#ABAP #SAP #VSCode #SAPDevelopers #MCP</pre>
+<p class="source">Suggested source link to accompany the post: <a href="https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new">SAP’s official 1.2 release notes</a>. Installation listing: <a href="https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode">SAP ADT for VS Code</a>. The indexed Marketplace text was behind the installed 1.2 README when checked.</p>
+</main></body></html>

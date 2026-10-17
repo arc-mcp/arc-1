@@ -51,7 +51,7 @@ const BUDGETS = {
   // "reference" as a transport id, and a malformed escape threw away the whole feed
   // (docs/plans/2026-08-03-transport-diff.md).
   // -25: parseXml decodes entities itself, so the per-parser decodes went away.
-  'src/adt/xml-parser.ts': 1769,
+  'src/adt/xml-parser.ts': 1537, // Revision feed split; includes 12 lines from upstream #1007 name normalization.
   // diagnostics.ts gained the ABAP trace-request engine (#508) + the OData perf probe + CDS Show-SQL (#509)
   // + ST05 SQL-trace control (#510) + clientWait split. Split out a perf/trace module if it grows much further.
   // +88 for dump paging: SAP caps the dumps feed at 100 entries and ignores $skip, so listDumps walks
@@ -72,7 +72,7 @@ const BUDGETS = {
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
   // TABL write-route cache removed (never cache subtype routes for mutations); +9 for refusing TABL
   // mutations whose subtype cannot be verified on 7.50/7.51 (the resolver's error text).
-  'src/adt/client.ts': 1697,
+  'src/adt/client.ts': 1699, // Thread existing request budgets through revision/search reads.
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
@@ -82,7 +82,7 @@ const BUDGETS = {
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   'src/adt/http.ts': 1543, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
-  'src/adt/transport.ts': 1507, // Keep the safe CTS explanation in minimal-error mode.
+  'src/adt/transport.ts': 1508, // Pass the review request budget through transport inventory GET.
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main, with 3 lines of headroom.
   'src/server/server.ts': 1487,

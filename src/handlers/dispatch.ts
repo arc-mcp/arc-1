@@ -197,6 +197,9 @@ function buildBaseErrorMessage(
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
     return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
   }
+  if (err instanceof AdtResponseLimitError && err.endpointFamily === 'transport-review') {
+    return `${message} The request inventory is too large for an automated review page; review it in SAP. This is an analysis limit, not a connectivity failure.`;
+  }
   if (err instanceof AdtResponseLimitError) {
     const mebibytes = err.limitBytes / (1024 * 1024);
     const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;

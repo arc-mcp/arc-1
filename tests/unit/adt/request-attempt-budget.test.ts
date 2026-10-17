@@ -9,6 +9,7 @@ import {
   RequestAttemptBudget,
 } from '../../../src/adt/request-attempt-budget.js';
 import { Semaphore } from '../../../src/adt/semaphore.js';
+import { ReviewBudget } from '../../../src/adt/transport-review-budget.js';
 
 const servers: Server[] = [];
 describe('analysis deadline classification', () => {
@@ -56,6 +57,25 @@ async function setup(proxy: boolean, listener: RequestListener) {
     }),
   };
 }
+it('charges review CSRF and retry sends against the actual 180-send page cap', async () => {
+  const methods: string[] = [];
+  let posts = 0;
+  const { client } = await setup(false, (req, res) => {
+    methods.push(req.method!);
+    if (req.method === 'HEAD') res.setHeader('x-csrf-token', 'TEST');
+    if (req.method === 'POST' && posts++ === 0) res.writeHead(429, { 'Retry-After': '0' });
+    res.end('ok');
+  });
+  const budget = new ReviewBudget();
+  for (let i = 0; i < 177; i++) await budget.read((request) => client.get('/sap/bc/adt/test', undefined, request));
+  await budget.read((request) => client.post('/sap/bc/adt/test', '<read/>', 'text/xml', undefined, request));
+  await expect(budget.read((request) => client.get('/sap/bc/adt/test', undefined, request))).rejects.toBeInstanceOf(
+    AdtRequestBudgetError,
+  );
+  expect(methods).toHaveLength(180);
+  expect(methods.slice(-3)).toEqual(['HEAD', 'POST', 'POST']);
+  expect(budget.metrics()).toMatchObject({ reads: 179, backendAttempts: 180, exhausted: true });
+});
 describe.each([false, true])('request attempt budget, Connectivity proxy=%s', (proxy) => {
   it.each(['GET', 'POST'] as const)('never hides an implicit 421 %s replay outside the allowance', async (method) => {
     const sends: string[] = [];

@@ -1490,15 +1490,23 @@ Every part carries the evidence behind its diff — read `baselineStatus` before
 
 | `baselineStatus` | Meaning |
 |---|---|
-| `prior-revision` | The diff is what this transport changed. |
+| `prior-revision` | Attributed source-part pair; inspect CTS scope and history completeness before attributing individual hunks. |
 | `prior-revision-unverified` | A predecessor exists, but the "after" side was only guessed — it may belong to another change. |
-| `no-prior-snapshot` | Created in this transport. |
-| `baseline-ambiguous` | No usable baseline. An all-additions block is **not** proof of creation. |
+| `no-prior-snapshot` | No predecessor found; this does **not** prove creation in this transport. |
+| `baseline-ambiguous` | Missing or uncertain baseline chronology. Candidate hunks are **not** proof of creation. |
 | `baseline-unavailable` | The read failed. Never report this as unchanged. |
 
-Objects with no source revision feed (domains, data elements, function-group sources, …) are returned
-with an `inventoryReason` instead of parts: they are in scope, just not diffable. Long diffs are
-truncated per part with `diffTruncated: true`; `added`/`removed` still reflect the full change.
+Objects without a verified historical adapter (domains, data elements, function-group sources, …)
+return an `inventoryReason`: they remain in scope. Failed selected class parts remain visible, and
+text-pool components have an explicit coverage gap. Long diffs set `diffTruncated`; statistics remain
+complete only when `statisticsComplete` is true. See [Transport reviews](review-workflows.md) for
+source modes, JSON/HTML reports, bounds and continuation.
+
+Diff `status` and `coverage` describe the returned page; the review CLI reconciles all pages.
+An out-of-range offset is an error. `resultFormat="structured"` adds full revision records and source hashes;
+normal replies retain hunks, raw CTS components and coverage gaps with a smaller payload.
+Malformed or empty revision-feed responses now fail explicitly in both transport review and `SAPRead VERSIONS`;
+a valid empty Atom feed still returns empty history.
 
 **Parameters:**
 
@@ -1506,6 +1514,8 @@ truncated per part with `diffTruncated: true`; `added`/`removed` still reflect t
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `list`, `get`, `diff`, `create`, `release`, `delete`, `remove_object`, `reassign`, `release_recursive`, `check`, `history`, `layers`, or `targets` (the last two are advertised only when transport support is enabled) |
 | `id` | string | No | Transport request ID, e.g. `A4HK900123` (for get/diff/release/delete/remove_object/reassign/release_recursive) |
+| `reviewMode` | string | No | For `diff`: `legacy` (default), `released`, `active`, or `draft`. Released mode never substitutes current work. |
+| `continuation` | string | No | For `diff`: reuse the previous page's token with `offset` and the same mode to detect inventory/caller/target changes. |
 | `offset` | number | No | For `diff`: index of the first object to diff (default 0). Page with `limit`. |
 | `limit` | number | No | For `diff`: objects per call (default 20, max 40 — the same ceiling SAP's own transport-diff tool uses). |
 | `description` | string | No | Transport description text (required for create) |
@@ -1522,9 +1532,9 @@ truncated per part with `diffTruncated: true`; `added`/`removed` still reflect t
 | `owner` | string | No | New owner SAP username (required for reassign) |
 | `recursive` | boolean | No | Apply recursively to child tasks (for delete/reassign). `release_recursive` always recurses. |
 | `removeLockedObjects` | boolean | No | For delete: remove locked object entries from each task before deleting when SAP would otherwise reject the request as containing locked objects. This mutates request contents. |
-| `summary` | boolean | No | For `list` only. **Default `true`** — headers-only: omits each transport's (and task's) `objects[]`, keeping `id`/`description`/`owner`/`status`/`target` plus an `objectCount`. Pass `false` for full object lists (~5x larger). |
+| `summary` | boolean | No | For `diff`, true omits hunks. For `list`, **Default `true`** — headers-only: omits each transport's (and task's) `objects[]`, keeping `id`/`description`/`owner`/`status`/`target` plus an `objectCount`. Pass `false` for full object lists (~5x larger). |
 | `maxResults` | number | No | Maximum list rows or check/history assignment candidates (defaults: list/history 50, check 10; max 1000). |
-| `resultFormat` | string | No | For `release`/`release_recursive`: `legacy` text (default) or `structured` JSON with outcome, per-ID confirmation evidence, polls, elapsed time, and SAP reports. |
+| `resultFormat` | string | No | For `diff`: `legacy` compact JSON (default) or `structured` full provenance. For `release`/`release_recursive`: `legacy` text (default) or `structured` JSON with outcome, per-ID confirmation evidence, polls, elapsed time, and SAP reports. |
 | `timeoutSeconds` | number | No | For `release`/`release_recursive`: terminal-state verification budget; default `300`, range `1..1800`. |
 
 **Actions:**

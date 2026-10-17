@@ -1245,7 +1245,7 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
       expect(parts[0].note).toMatch(/revision history unavailable/);
     });
 
-    it('reports an inventory reason rather than an empty object when every part 404s', async () => {
+    it('retains explicit unavailable parts when every selected part 404s', async () => {
       mockFetch.mockImplementation((url: string) => {
         const u = String(url);
         if (u.includes('/cts/transportrequests/')) return Promise.resolve(mockResponse(200, ccimpTransportXml()));
@@ -1256,9 +1256,11 @@ describe('SAPTransport + SAPWrite transport behavior', () => {
         id: 'A4HK906291',
       });
       const payload = JSON.parse(result.content[0]?.text ?? '{}');
-      expect(payload.objects[0].parts).toEqual([]);
-      // Without this the object is indistinguishable from "nothing changed".
-      expect(payload.objects[0].inventoryReason).toMatch(/no readable source/);
+      expect(payload.objects[0].parts).toHaveLength(1);
+      expect(payload.objects[0].parts[0]).toMatchObject({
+        part: 'implementations',
+        baselineStatus: 'baseline-unavailable',
+      });
     });
 
     it('withholds SAP diagnostics from result notes under minimalErrors', async () => {

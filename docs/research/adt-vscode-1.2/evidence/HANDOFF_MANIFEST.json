@@ -1,0 +1,63 @@
+{
+  "researchDate": "2026-10-17",
+  "researchRepository": "https://github.com/arc-mcp/arc-1",
+  "researchCommit": "9775645400fdb27f37aff486f14fe9845ecf8639",
+  "releaseAtResearch": "v1.5.2",
+  "sapExtensionAtResearch": "sapse.adt-vscode-1.2.0-darwin-arm64",
+  "verification": {
+    "existingUnitTestsPassed": 181,
+    "syntheticProbes": 8,
+    "readOnlySapCalls": 5,
+    "productionImplementationPerformed": false
+  },
+  "entrypoint": "ARC1_RESEARCH_HANDOFF.md",
+  "implementationPrompt": "ARC1_IMPLEMENTATION_PROMPT.txt",
+  "notes": [
+    "Recheck current repository, release and connector state before implementation.",
+    "Synthetic probes establish code behavior, not live frequency.",
+    "Notebook screenshot was captured from SAP official extension, not an enabled ARC-1 SQL connection.",
+    "No credentials or proprietary SAP binary/disassembly files are included."
+  ],
+  "files": [
+    {
+      "name": "ARC1_RESEARCH_HANDOFF.md",
+      "bytes": 29467,
+      "sha256": "6b0fafe5116893d2959ae1d295fc56be6ac6012596a675e84cf7446cd76961fb"
+    },
+    {
+      "name": "ARC1_IMPLEMENTATION_PROMPT.txt",
+      "bytes": 7732,
+      "sha256": "6102ac7eea976de4537db76c2fcf87c57c511e6fbfd4a19037cb72d05b9b3644"
+    },
+    {
+      "name": "arc1-deep-adoption-and-transport-review.html",
+      "bytes": 57947,
+      "sha256": "cc0d40b37fa5009e961b432b58cda2a8315156c7a6066839e1d5ec2c676047b4"
+    },
+    {
+      "name": "arc1-adt12-adoption-review.html",
+      "bytes": 41569,
+      "sha256": "0cb7bd1a15b02d91ed111b1d8de6e896eafd40adb1545c05565b3acfe3789a79"
+    },
+    {
+      "name": "arc1-transport-probe-results.json",
+      "bytes": 4085,
+      "sha256": "f21e3f098182bb89d1a9309d4ee9fff6dd15174668c38c7f55087fa1856a74cb"
+    },
+    {
+      "name": "arc1-transport-diff-probes.mts",
+      "bytes": 5840,
+      "sha256": "9cc71b5dfa85067fb112e1ae8500f0a3dcc34db0dfcebcf8b4c0c3b99bdee68e"
+    },
+    {
+      "name": "Flight_Capacity_Showcase.abapsql",
+      "bytes": 749,
+      "sha256": "30b434a6112e482b71a6107cbd28e12346d05fb51d7a77005b97283f60ede691"
+    },
+    {
+      "name": "ADT_1.2_SQL_Notebook.png",
+      "bytes": 516848,
+      "sha256": "1e4486daf4155bed8befff50d1268b8f4f6e5e18943ef15f6a3291e65150d51d"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+Implement the worthwhile ARC-1 improvements from my completed ADT for VS Code 1.2 research. I want working code, meaningful tests, documentation and usable artifacts, not another analysis-only response.
+
+First read this handoff fully:
+/Users/marianzeis/Documents/Codex/2026-10-16/i-x20/outputs/ARC1_RESEARCH_HANDOFF.md
+
+Then read the detailed report and evidence in the same directory:
+- arc1-deep-adoption-and-transport-review.html
+- arc1-transport-probe-results.json
+- arc1-transport-diff-probes.mts
+- arc1-adt12-adoption-review.html (earlier broad comparison; the deeper report supersedes its prioritization)
+- Flight_Capacity_Showcase.abapsql and ADT_1.2_SQL_Notebook.png
+
+If the files have been moved or attached here, use the extracted/attached handoff package instead. Treat the findings as dated evidence to verify, and proposed API names as suggestions, not rigid specifications.
+
+The repository is https://github.com/arc-mcp/arc-1; my normal local checkout is /Users/marianzeis/DEV/arc-1. Inspect its status, branch, remotes, current upstream, AGENTS.md, relevant dev-guide sections, roadmap and related PRs before changing code. Preserve my uncommitted work. Use a suitable isolated checkout/worktree if needed. The research used commit 9775645400fdb27f37aff486f14fe9845ecf8639; do not assume that is still current. Distinguish released features from main and the actually deployed MCP surface.
+
+Work in reviewable stages, beginning with transport correctness, and continue through the independent implementation items without stopping after a plan. Reuse existing ARC-1 functionality and preserve backward compatibility where practical.
+
+1. Reproduce and fix the transport findings TD-01 through TD-04:
+   - CTS-selected class includes must remain visible as coverage gaps when their history fails or returns 404, even when another part succeeds.
+   - Missing transport attribution must not erase a changed part's evidence or label it unchanged.
+   - Preserve CTS components and explicitly report unreviewed text-pool changes.
+   - Handle active/inactive pseudo-versions independently of numbered history; missing/undated history must not falsely establish creation or an empty baseline.
+   Add regression tests for the actual mixed and edge cases.
+
+2. Improve transport evidence and collection:
+   - Define explicit released/active/draft review semantics and source-state labels, with a compatible migration from existing behavior.
+   - Preserve structured revision/attribution evidence, skipped reasons, source hashes and clear completeness/coverage classifications.
+   - Preserve SAP's isTestTransport revision metadata; verify the live semantics before enabling any baseline filtering rule. Keep the requested flagged transport reviewable and normalize request/task IDs.
+   - Detect inventory drift across pages and qualify source drift. Bind any continuation state to the correct user, target, request and mode.
+   - Bound source bytes, result bytes, cumulative work and duration; support summary-first and bounded detail retrieval with explicit truncation.
+   - Distinguish invalid history responses from valid empty histories. Investigate actual history pagination before inventing support for it.
+
+3. Deliver a usable transport review collector and HTML/JSON evidence report using existing intent tools. Include raw-to-logical scope, changed behavior, exact source evidence, gaps and checks actually run. Reuse SAPContext, syntax/ATC/Unit capabilities selectively. Tie checks to the source state they actually examined; current active checks do not prove a historical snapshot. Do not infer release readiness from an empty diff. Include fixtures/demo output for a complete review, a partial review and stale/drifting evidence. Add FEAT-69 mass syntax checking after validating the bounded multi-object request contract.
+
+4. Implement a small reusable SQL notebook artifact and runner over existing SAPQuery: Markdown/SQL cells, stable IDs, explicit authorized target mapping, row limits, optional aggregate assertions, execution metadata and optional results/export. Use the existing .abapsql demo as an interoperability fixture, not an assumed permanent SAP format specification. Preserve values/precision and distinguish failed, blocked, incomplete and successful checks. Keep existing SQL/data policies and byte/row limits. Do not auto-run imported notebooks, build another credential store, or expand the admin UI into an IDE. A full interactive editor is deferred until usage justifies it.
+
+5. Implement a current-caller policy explanation using the same evaluators as actual enforcement: required scope, server ceiling, deny rule, target grant, feature status and actual package. Distinguish allowed by ARC-1 from SAP authorization verified, and unresolved checks from denials. Keep enforcement at execution time and never test permission through a mutation.
+
+6. Verify and implement diagnostic improvements where supported:
+   - FEAT-74: per-target discovered feed schemas and typed/validated filters, starting with dumps. Preserve existing filters and pagination safeguards; verify SAP_BASIS 758 instead of extrapolating all fields from 816.
+   - FEAT-71: follow the object's advertised relation http://www.sap.com/adt/relations/ddic/activationlog with media type application/vnd.sap.adt.logs+xml. SAP's installed 1.2 client uses GET. Verify availability, bounded parsing and freshness/correlation, then add the reader under existing diagnostics. Do not activate an object merely to obtain a log; an old log must not be presented as explaining the latest attempt.
+
+7. Perform bounded investigations for historical text pools, FUGR ownership/history, DDIC/metadata/deletions, method attribution across requests and transport-of-copies baselines. Implement additional adapters only when the historical contract is proven. Record unsupported cases and concrete resume conditions. Investigate OData/SRVC only after the priority work and a concrete useful workflow; do not pursue generic RFC/action execution or blanket object-type parity.
+
+Use the handoff's per-item acceptance criteria. Current AGENTS.md, central policies and ADRs remain binding: do not broaden multi-target writes, weaken package checks, bypass data gates, share user caches, retain SAP locks across MCP turns or introduce arbitrary endpoint execution. Avoid duplicate work from existing PRs. Update relevant documentation and roadmap entries as implementation changes their status.
+
+For live read-only verification, the SAP test-system URL is https://a4h.marianzeis.de, port 443 with no port suffix, client 001. Never use :50000 or :50001. Existing demo transport A4HK906371 / task A4HK906372 and class ZCL_ARC1_TD_CALC have readable main and implementations histories 00001 -> 00002. The main adds +1 and the local helper changes *2 to *3. This request covers local implementation and tests; deployment, public publication, SAP mutations and transport releases need separate authorization when required. Start with existing read-only fixtures and evidence.
+
+Use a supported Node runtime and run meaningful focused tests plus the repository-required checks. The research had 181 passing unit tests and eight synthetic observations; neither proves the new implementation or live contracts. Preserve proof of which checks ran, what passed, what failed and what could not be verified.
+
+If one backend-dependent item cannot be completed, record the exact evidence and blocker and continue independent work. Do not claim a guessed or unsupported feature is implemented. Finish with the changes, validated behavior, compatibility notes, remaining investigations, demo/artifact paths and measured results. Do not merge or deploy automatically.
