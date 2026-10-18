@@ -41,6 +41,7 @@ function startServer() {
   });
   let stderr = '';
   let stdout = '';
+  child.stdout.setEncoding('utf8');
   child.stderr.on('data', (d) => {
     stderr += d;
   });
@@ -54,7 +55,9 @@ function startServer() {
     new Promise((resolveResponse, reject) => {
       const timer = setTimeout(() => reject(new Error(`no response for id ${id}`)), TIMEOUT_MS);
       const check = () => {
-        for (const line of stdout.split('\n')) {
+        // The last segment may be a partial line: large responses arrive in several pipe chunks.
+        const lines = stdout.split('\n').slice(0, -1);
+        for (const line of lines) {
           if (!line.trim()) continue;
           const message = JSON.parse(line);
           if (message.id === id) {
