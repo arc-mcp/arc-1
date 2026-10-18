@@ -15,12 +15,12 @@ function legacyDb(cache: SqliteCache): Database.Database {
   return (cache as unknown as { db: Database.Database }).db;
 }
 
-describe('SqliteCache', () => {
+describe.each(['better-sqlite3', 'node:sqlite'] as const)('SqliteCache (%s)', (driver) => {
   let cache: SqliteCache;
 
   beforeEach(() => {
     // Use in-memory SQLite for tests (no file cleanup needed)
-    cache = new SqliteCache(':memory:');
+    cache = new SqliteCache(':memory:', driver);
   });
 
   afterEach(() => {
@@ -30,7 +30,7 @@ describe('SqliteCache', () => {
   it('creates file-backed cache databases with private file permissions', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-cache-mode-'));
     const dbPath = path.join(dir, 'cache.db');
-    const fileCache = new SqliteCache(dbPath);
+    const fileCache = new SqliteCache(dbPath, driver);
 
     try {
       expect(fileMode(dbPath)).toBe(0o600);
@@ -46,7 +46,7 @@ describe('SqliteCache', () => {
     fs.writeFileSync(dbPath, '', { mode: 0o666 });
     fs.chmodSync(dbPath, 0o666);
 
-    const fileCache = new SqliteCache(dbPath);
+    const fileCache = new SqliteCache(dbPath, driver);
     try {
       expect(fileMode(dbPath)).toBe(0o600);
     } finally {
@@ -168,7 +168,7 @@ describe('SqliteCache', () => {
       .run('PROG:Z_OLD', 'PROG', 'Z_OLD', 'REPORT.', 'h1', '2025-01-01');
     rawDb.close();
 
-    const migrated = new SqliteCache(dbPath);
+    const migrated = new SqliteCache(dbPath, driver);
     const cols = (migrated as unknown as { db: Database.Database }).db
       .prepare("PRAGMA table_info('sources')")
       .all()
@@ -207,7 +207,7 @@ describe('SqliteCache', () => {
     let migrated: SqliteCache | undefined;
     let reopened: SqliteCache | undefined;
     try {
-      migrated = new SqliteCache(dbPath);
+      migrated = new SqliteCache(dbPath, driver);
       expect(migrated.getSource('CLAS', 'ZCL_KEEP')?.source).toBe(source);
       expect(
         legacyDb(migrated).prepare('SELECT object_name FROM dep_graphs WHERE source_hash = ?').get(sourceHash),
@@ -222,7 +222,7 @@ describe('SqliteCache', () => {
       migrated.close();
       migrated = undefined;
 
-      reopened = new SqliteCache(dbPath);
+      reopened = new SqliteCache(dbPath, driver);
       expect(reopened.getSource('CLAS', 'ZCL_KEEP')?.etag).toBe('etag-1');
       expect(reopened.stats().contractCount).toBe(1);
       reopened.close();

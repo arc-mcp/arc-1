@@ -48,6 +48,29 @@ Defaults to HTTP Streamable on `:8080`. Connect MCP clients to `http://localhost
 
 For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP config), add `-e SAP_TRANSPORT=stdio` and use `docker run -i --rm` instead of `-d`.
 
+### Single-file executable (no Node.js, no `node_modules`)
+
+Each [GitHub Release](https://github.com/arc-mcp/arc-1/releases) carries one executable per platform plus `SHA256SUMS.txt`:
+
+| Platform | File |
+|---|---|
+| Windows x64 | `arc-1-<version>-windows-x64.exe` |
+| Linux x64 / arm64 | `arc-1-<version>-linux-x64`, `arc-1-<version>-linux-arm64` |
+| macOS Apple Silicon / Intel | `arc-1-<version>-macos-arm64`, `arc-1-<version>-macos-x64` |
+
+```bash
+arc-1-1.7.0-linux-x64 --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASS --client 100
+```
+
+The npm package installs several thousand files that antivirus scanners inspect on first start; the executable is one file ([#957](https://github.com/arc-mcp/arc-1/issues/957)). It runs the same code on the Node.js runtime it was built with (a [Node SEA](https://nodejs.org/api/single-executable-applications.html)), so behavior matches the npm package apart from these differences:
+
+- **SQLite cache** — the native `better-sqlite3` addon cannot be embedded, so `ARC1_CACHE=sqlite` uses Node's built-in `node:sqlite` (prints an `ExperimentalWarning` on stderr; stdout is unaffected). Cache files use the same schema.
+- **Not available** — the read-only local UI (`public/ui`) is not embedded, and `ARC1_PLUGINS` extensions are untested in the executable. Use npm or Docker for those.
+- **First start can still be slow** — Windows Defender and similar tools scan every new executable once (several seconds for ~100 MB). Later starts are fast. The binaries are not code-signed yet; verify downloads with `SHA256SUMS.txt`. macOS executables are ad-hoc signed; if Gatekeeper blocks a download, run `xattr -d com.apple.quarantine <file>`.
+- **Updating** — download the new file; there is no auto-update.
+
+Build one yourself with `npm run build && npm run build:sea` (current platform only; output in `dist-sea/`), then check it with `npm run test:sea-smoke -- dist-sea/<file>`.
+
 ### git clone (contributing or running from source)
 
 For every contribution, check the [idea roadmap](roadmap.md) before starting and before opening or

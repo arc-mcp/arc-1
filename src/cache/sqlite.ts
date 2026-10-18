@@ -1,5 +1,5 @@
 /**
- * SQLite cache implementation using better-sqlite3.
+ * SQLite cache implementation using better-sqlite3 (or the node:sqlite built-in as fallback).
  *
  * Persistent cache — survives process restarts.
  * Explicit opt-in backend for persistent cache across restarts.
@@ -9,7 +9,6 @@
  */
 
 import { chmodSync, closeSync, openSync } from 'node:fs';
-import Database from 'better-sqlite3';
 import type {
   Cache,
   CacheApi,
@@ -19,13 +18,15 @@ import type {
   CacheStats,
 } from './cache.js';
 import { hashSource, sourceKey } from './cache.js';
+import { openSqliteDatabase, type SqliteDb, type SqliteDriverName } from './sqlite-driver.js';
 
 export class SqliteCache implements Cache {
-  private db: Database.Database;
+  private db: SqliteDb;
 
-  constructor(dbPath: string) {
+  /** `driver` defaults to better-sqlite3 with a node:sqlite fallback (single-executable builds). */
+  constructor(dbPath: string, driver: SqliteDriverName | 'auto' = 'auto') {
     ensurePrivateSqliteFile(dbPath);
-    this.db = new Database(dbPath);
+    this.db = openSqliteDatabase(dbPath, driver);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('synchronous = NORMAL');
     this.dropOldSourcesTableIfNeeded();
