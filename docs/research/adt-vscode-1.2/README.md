@@ -1,18 +1,19 @@
 # ADT for VS Code: ARC-1 research index
 
-**Updated 18 October 2026.** Current decisions are deliberately smaller than the original
+**Updated 19 October 2026.** Current decisions are deliberately smaller than the original
 1.2 adoption proposal. Existing ARC-1 capabilities are the starting point, not client parity.
 
 | Area | Decision after review |
 |---|---|
-| Transport review, #1008 | Fix source attribution, missing parts, scope and bounds through MCP; no CLI/HTML/report framework |
+| Transport review, #1008 | Merged: source attribution, missing parts, scope and bounds through MCP; no CLI/HTML/report framework |
 | SQL notebook, #1009 | Closed after #1023: native .abapsql guidance and zero-count regression; no runner |
 | Policy preview, #1010 | Rejected broad preview; deny-rule documentation/BOR regression merged in #1016 |
-| Broad diagnostics, #1011 | Evaluate focused extractions separately; do not merge the umbrella |
+| Broad diagnostics, #1011 | Dump filters merged in #1020; bounded syntax in draft #1029. Saved DDIC logs deferred; do not merge the umbrella |
 
 Current transport [plan](../../plans/2026-10-18-transport-review-mcp.md),
 [fresh SAP evidence](../2026-10-18-transport-review-mcp.md), and
 [user workflow](../../../docs_page/review-workflows.md).
+The [syntax extraction evidence](../2026-10-19-bounded-syntax-extraction.md) records current validation and review limits.
 The original reports used older revisions; their claims are not current acceptance evidence.
 
 ## All 19 workflow areas
@@ -25,9 +26,9 @@ The original reports used older revisions; their claims are not current acceptan
 | SQL notebooks | Native .abapsql guidance and exact-count regression merged in #1023; runner rejected | Use the native format; no custom runner or notebook schema |
 | Timeline / comparisons | MCP source diff improvements in #1008; no renderer | Preserve provenance and uncertainty; avoid another diff engine |
 | Transport Organizer | Reuse list/get/history/mutations; build review workflow | Specific missing task/member action needs its own use case; owner fix #1003 is merged |
-| Diagnostic feeds | Focused dump filtering in #1020; broader #1011 remains separate | Dumps first; Gateway/ATC/Unit feeds only with advertised, verified contracts |
-| Dictionary activation log | Keep DDIC activation-log research separate from saved application logs (#1024) | Reader before attempt correlation; never reactivate merely to get a log |
-| Object checking | Empty-report correctness fixed in #1019; broader batches still need evidence | Syntax, ATC and Unit are distinct; run relevant checks explicitly |
+| Diagnostic feeds | Dump filtering merged in #1020; broader #1011 remains separate | Dumps first; Gateway/ATC/Unit feeds only with advertised, verified contracts |
+| Dictionary activation log | Saved DOMA log GET verified; latest-attempt correlation unverified. Saved application logs are separately merged in #1024 | FEAT-71: historical-log use case or independent correlation evidence; never reactivate merely to get a log |
+| Object checking | Empty-report fix #1019 merged; draft #1029 validated on A4H and awaiting Claude review | FEAT-69: other releases/live BTP, additional types and source reconciliation before transport integration |
 | Source-code search | Reuse SAPSearch source_code | Reuse merged #1006/#1007; unavailable is not zero matches |
 | Explanation / documentation | Reuse SAPContext, KTD and existing explanation skills | Improve citations/templates against a representative corpus; no core model-service dependency |
 | Source/file editing | Reuse method surgery; review open #586 | Validate duplicate anchors, stale source and locks; editor buffers need an explicit client bridge |

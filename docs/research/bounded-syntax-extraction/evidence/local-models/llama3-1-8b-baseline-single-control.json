@@ -1,0 +1,88 @@
+{
+  "summary": {
+    "model": "llama3.1:8b",
+    "arm": "baseline",
+    "task": "single-control",
+    "revision": "c23d6291ce4960f04356aad6001b8b0f3c0f0571",
+    "correct": false,
+    "toolCalls": 1,
+    "nativeCalls": 0,
+    "toolErrors": 1,
+    "returnedBytes": 48,
+    "catalogBytes": 45622,
+    "maxPromptTokens": 10795,
+    "nearContextLimit": false,
+    "durationMs": 35574
+  },
+  "expected": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_EVAL_OK",
+      "status": "passed"
+    }
+  ],
+  "calls": [
+    {
+      "name": "SAPRead",
+      "args": {
+        "type": "SYNTAX",
+        "objectType": "CLAS",
+        "name": "ZCL_EVAL_OK",
+        "source": "active"
+      },
+      "isError": true,
+      "bytes": 48,
+      "content": "Offline eval supports stored-source syntax only."
+    }
+  ],
+  "turns": [
+    {
+      "model": "llama3.1:8b",
+      "created_at": "2026-10-18T22:20:29.721975Z",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_de3n2953",
+            "function": {
+              "index": 0,
+              "name": "SAPRead",
+              "arguments": {
+                "type": "SYNTAX",
+                "objectType": "CLAS",
+                "name": "ZCL_EVAL_OK",
+                "source": "active"
+              }
+            }
+          }
+        ]
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 33069654292,
+      "load_duration": 6261031708,
+      "prompt_eval_count": 10795,
+      "prompt_eval_duration": 22741513000,
+      "eval_count": 42,
+      "eval_duration": 4022290000
+    },
+    {
+      "model": "llama3.1:8b",
+      "created_at": "2026-10-18T22:20:32.206285Z",
+      "message": {
+        "role": "assistant",
+        "content": "{\"results\":[{\"name\":\"ZCL_EVAL_OK\",\"status\":\"not-checked\"}]}"
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 2474934458,
+      "load_duration": 10285791,
+      "prompt_eval_count": 186,
+      "prompt_eval_duration": 279250000,
+      "eval_count": 17,
+      "eval_duration": 453703000
+    }
+  ],
+  "final": "{\"results\":[{\"name\":\"ZCL_EVAL_OK\",\"status\":\"not-checked\"}]}"
+}

@@ -1,0 +1,86 @@
+{
+  "summary": {
+    "model": "qwen3.6:35b-mlx",
+    "arm": "baseline",
+    "task": "single-control",
+    "revision": "c23d6291ce4960f04356aad6001b8b0f3c0f0571",
+    "correct": true,
+    "toolCalls": 1,
+    "nativeCalls": 1,
+    "toolErrors": 0,
+    "returnedBytes": 48,
+    "catalogBytes": 45622,
+    "maxPromptTokens": 12539,
+    "nearContextLimit": false,
+    "durationMs": 22020
+  },
+  "expected": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_EVAL_OK",
+      "status": "passed"
+    }
+  ],
+  "calls": [
+    {
+      "name": "SAPDiagnose",
+      "args": {
+        "action": "syntax",
+        "name": "ZCL_EVAL_OK",
+        "type": "CLAS"
+      },
+      "isError": false,
+      "bytes": 48,
+      "content": "{\"hasErrors\":false,\"messages\":[],\"checked\":true}"
+    }
+  ],
+  "turns": [
+    {
+      "model": "qwen3.6:35b-mlx",
+      "created_at": "2026-10-18T22:18:50.218445Z",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "call_u56kbhxt",
+            "function": {
+              "index": 0,
+              "name": "SAPDiagnose",
+              "arguments": {
+                "action": "syntax",
+                "name": "ZCL_EVAL_OK",
+                "type": "CLAS"
+              }
+            }
+          }
+        ]
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 17154395208,
+      "load_duration": 13022417,
+      "prompt_eval_count": 12457,
+      "prompt_eval_duration": 16189952500,
+      "eval_count": 55,
+      "eval_duration": 917243791
+    },
+    {
+      "model": "qwen3.6:35b-mlx",
+      "created_at": "2026-10-18T22:18:54.979248Z",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"results\": [\n    {\n      \"name\": \"ZCL_EVAL_OK\",\n      \"status\": \"passed\"\n    }\n  ]\n}"
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 4738471333,
+      "load_duration": 61099125,
+      "prompt_eval_count": 12539,
+      "prompt_eval_duration": 269006084,
+      "eval_count": 37,
+      "eval_duration": 887859708
+    }
+  ],
+  "final": "{\n  \"results\": [\n    {\n      \"name\": \"ZCL_EVAL_OK\",\n      \"status\": \"passed\"\n    }\n  ]\n}"
+}

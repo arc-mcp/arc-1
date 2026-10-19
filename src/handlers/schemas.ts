@@ -24,6 +24,7 @@ import {
 import { DTEL_MAX_LABEL_LENGTHS, TABLE_TYPE_DIMENSION_MAX } from '../adt/ddic-xml.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
+import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
@@ -1132,6 +1133,22 @@ export const SAPDiagnoseSchema = z
   .strict()
   .superRefine((input, ctx) => {
     validateDumpFilterInputs(input, ctx);
+    if (input.action === 'syntax' && input.objects !== undefined) {
+      if (input.objects.some((object) => !(SYNTAX_BATCH_TYPES as readonly string[]).includes(object.type)))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['objects'],
+          message: 'Syntax batches support CLAS, INTF, PROG and DDLS.',
+        });
+      for (const [key, value] of Object.entries(input)) {
+        const filler =
+          value === false || (Array.isArray(value) && value.length === 0) || (key === 'maxResults' && value === 0);
+        if (value !== undefined && !['action', 'objects', 'version'].includes(key) && !filler)
+          ctx.addIssue({ code: 'custom', path: [key], message: `${key} is not supported for syntax batches.` });
+      }
+      return;
+    }
+
     // These actions have a complete allowlist above, including harmless strict-client defaults.
     if (input.action === 'feed_schema' || (input.action === 'dumps' && input.filters !== undefined)) return;
     const ci = input.action === 'atc_ci' || input.action === 'unittest_ci';
