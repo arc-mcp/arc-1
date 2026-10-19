@@ -99,7 +99,7 @@ sequence.
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
-| [FEAT-69](#feat-69) | Mass syntax check | P2 | S | Needs research | Diagnostics |
+| [FEAT-69](#feat-69) | Wider syntax-batch qualification | P3 | S | Needs research | Diagnostics |
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
 | [FEAT-91](#feat-91) | Validate the legacy dump user filter | P2 | S | Needs research | Diagnostics |
 | [FEAT-74](#feat-74) | Qualify dump-filter matching | P2 | S | Needs research | Diagnostics |
@@ -773,20 +773,19 @@ Keep schema discovery optional and ordinary list/detail behavior unchanged.
 [Extraction and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-17-dump-filter-extraction.md).
 
 <a id="feat-69"></a>
-### FEAT-69 — Mass syntax check
+### FEAT-69 — Wider syntax-batch qualification
 
-- **Priority / effort / status:** P2 / S / Needs research
+- **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Diagnostics
 
-**Remaining gap.** Draft [#1011](https://github.com/arc-mcp/arc-1/pull/1011) has bounded native
-batch syntax checks. A model completed four checks in one call; a synthetic transport-review spike
-preserved source checks while reducing diagnostic HTTP calls 21→18 and increasing returned bytes.
-This remains useful unextracted work after the dump-filter extraction.
+**Remaining gap.** Explicit CLAS/INTF/PROG/DDLS lists are implemented through `SAPDiagnose syntax`,
+with bounded requests and per-object evidence. A4H/001 establishes the native batch contract;
+other releases, live BTP/PP and additional type families remain unqualified.
 
-**Resume with.** An independent batch-only extraction onto main. Preserve single-object behavior,
-missing reports, per-object failures, supported types and target qualification. Transport integration
-needs a separate policy/source-reconciliation review; do not bypass the dispatcher with raw HTTP.
-[Prior code and evidence](https://github.com/arc-mcp/arc-1/blob/5725fab6515f7a410e3e488003ae1a7aa3d8c249/docs/research/2026-10-17-diagnostic-main-decision.md).
+**Resume with.** A concrete target/type need and comparison with its native single-object checks.
+Transport integration additionally needs policy, failure isolation and source reconciliation:
+a current-source check never proves a historical transport snapshot. No automatic collector or
+hidden raw-HTTP scheduling. [Plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-19-bounded-syntax-checks.md).
 
 <a id="feat-71"></a>
 ### FEAT-71 — Dictionary activation log

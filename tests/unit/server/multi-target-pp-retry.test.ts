@@ -488,3 +488,78 @@ describe('transport review through selected BTP identity', () => {
     }
   });
 });
+
+describe('syntax batches through selected BTP identity', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetCachedFeatures();
+    resolveRuntimeSubaccountPpDestination.mockReset();
+  });
+  it.each(['aggregate', 'pinned'] as const)('keeps %s identity, cancellation, read policy and audit', async (mode) => {
+    const current = registry();
+    const target = current.targets[0];
+    setCachedFeatures(featuresOff(), target.target);
+    resolveRuntimeSubaccountPpDestination.mockResolvedValue({
+      destination: DESTINATION,
+      authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
+    });
+    const audit = vi.spyOn(logger, 'emitAudit');
+    const signal = new AbortController().signal;
+    const post = vi
+      .spyOn(AdtHttpClient.prototype, 'post')
+      .mockImplementation(async (path, body, _contentType, _headers, options) => {
+        expect(path).toBe('/sap/bc/adt/checkruns');
+        expect(getCurrentContext()).toMatchObject({ target: 'A4H/100', identity: 'per-user', user: 'RETRY_TEST_USER' });
+        expect(options).toMatchObject({ signal, deadline: expect.any(Number), responseBudget: expect.anything() });
+        expect(body).toContain('ZCL_BATCH_A');
+        expect(body).toContain('ZCL_BATCH_B');
+        return {
+          statusCode: 200,
+          headers: {},
+          body: '<checkRunReports><checkReport reporter="abapCheckRun" triggeringUri="/sap/bc/adt/oo/classes/ZCL_BATCH_A" status="processed"/><checkReport reporter="abapCheckRun" triggeringUri="/sap/bc/adt/oo/classes/ZCL_BATCH_B" status="processed"/></checkRunReports>',
+        };
+      });
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: {
+        mode,
+        registry: current,
+        instanceConfig: DEFAULT_CONFIG,
+        ...(mode === 'pinned' ? { target } : {}),
+      },
+    });
+    try {
+      const result = await requestHandler(server)(
+        {
+          method: 'tools/call',
+          params: {
+            name: 'SAPDiagnose',
+            arguments: {
+              action: 'syntax',
+              objects: [
+                { type: 'CLAS', name: 'ZCL_BATCH_A' },
+                { type: 'CLAS', name: 'ZCL_BATCH_B' },
+              ],
+              ...(mode === 'aggregate' ? { target: target.target } : {}),
+            },
+          },
+        },
+        { authInfo: READ_AUTH, signal },
+      );
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ status: 'passed', checkedObjectCount: 2 });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'tool_call_end',
+          tool: 'SAPDiagnose',
+          target: 'A4H/100',
+          identity: 'per-user',
+        }),
+      );
+      expect(resolveRuntimeSubaccountPpDestination).toHaveBeenCalledWith(BTP_CONFIG, DESTINATION.Name, READ_AUTH.token);
+    } finally {
+      await server.close();
+    }
+  });
+});

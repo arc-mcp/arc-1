@@ -2181,8 +2181,8 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action` | string | Yes | `syntax`, `unittest`, `unittest_ci`, `atc`, `atc_ci`, `atc_variants`, `cds_testcases`, `dumps`, `feed_schema`, `traces`, `trace_start`, `trace_requests`, `trace_cancel`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `apply_quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, `sql_trace_directory`, or `authorization_trace` |
-| `name` | string | No | Object or package name (required for syntax/unittest/object_state/quickfix/apply_quickfix, and atc without objects; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
-| `objects` | array | No | ATC only: 1–20 `{type,name}` entries instead of top-level `name`, `type`, or `url`. Supported: `CLAS`, `INTF`, `PROG`, `FUGR`, `DDLS`, `DCLS`, `BDEF`, `DDLX`, `SRVD`, `SRVB`, `TABL`, `DTEL`, `DOMA`. `TABL` includes tables and structures (`TABL/DT` and `TABL/DS` aliases). Names and type aliases are normalized; duplicates execute once. No package expansion or per-item system selection. `PROG` is on-premises only. |
+| `name` | string | No | Object or package name (required for unittest/object_state/quickfix/apply_quickfix, and syntax/atc without objects; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
+| `objects` | array | No | ATC or syntax: 1–20 `{type,name}` entries instead of top-level `name`, `type`, or `url`. Syntax supports `CLAS`, `INTF`, `PROG`, `DDLS` only. ATC supports `CLAS`, `INTF`, `PROG`, `FUGR`, `DDLS`, `DCLS`, `BDEF`, `DDLX`, `SRVD`, `SRVB`, `TABL`, `DTEL`, `DOMA`. `TABL` includes tables and structures (`TABL/DT` and `TABL/DS` aliases). Names and type aliases are normalized. ATC duplicates execute once; syntax duplicates are rejected. No package expansion or per-item system selection. `PROG` is on-premises only. |
 | `url` | string | No | For `odata_perf`: the host-relative OData path to probe (from the Fiori app's Network tab), e.g. `/sap/opu/odata4/sap/.../Entity?$filter=...`. Must be a path on the SAP system ARC-1 connects to — absolute URLs are rejected. |
 | `type` | string | No | Object type. `unittest` supports `CLAS`, `PROG`, `FUGR`, and `DEVC` (package); other actions accept their documented ADT types. |
 | `sourceUri` | string | No | Exact ADT source URI for quickfix/apply_quickfix; defaults to the type/name main source. Use it for class-local includes. |
@@ -2228,7 +2228,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 
 **Actions:**
 
-- **`syntax`** — Compatibility route; prefer [SAPRead syntax checks](#read-only-syntax-checks). `version` defaults to active; inactive checks a saved draft. Optional `source` checks unsaved text without writing. Returns errors/warnings with line, column, and message; `checked:false` means no validation occurred.
+- **`syntax`** — Check an explicit `objects` list in one request (see [syntax batches](#check-several-objects-for-syntax-errors)). For a single object, prefer [SAPRead syntax checks](#read-only-syntax-checks). `version` defaults to active; inactive checks a saved draft. For single objects, optional `source` checks unsaved text without writing. Returns errors/warnings with line, column, and message; `checked:false` means no validation occurred.
 - **`unittest`** — Run ABAP unit tests for one `CLAS`, `PROG`, or `FUGR`, or for a whole `DEVC` package, with the maximum risk fixed to **harmless** (`dangerous=false`, `critical=false`) and all three duration categories enabled. Package scope is exact by default; `includeSubpackages=true` explicitly includes the subtree. Native JUnit uses SAP's package object set; legacy, coverage, and corroboration runs use the resolved executable roots. ARC-1 reads package membership and active source before and after the run. Changed membership/source, unreadable source, invalid object URIs, and the 1,000-row package-search bound are incomplete evidence, never a pass. Returns results per test class/method with status, alert messages, and execution time. Risk-level refusals are skipped/incomplete evidence, not passing tests. Pass `coverage=true` to also return **statement / branch / procedure** coverage (`{executed, total, percent}` each) plus **`methodsBelowFull`** — the methods under 100% statement coverage, worst first — via a second ADT round-trip to the coverage-measurement endpoint; the output becomes `{tests, coverage}`. Best-effort — if the coverage endpoint is unavailable the tests still return with a `coverageNote`. Use `resultFormat="structured"` for explicit outcome/completeness evidence or `resultFormat="junit"` for native/generated JUnit; the latter still reconciles public-endpoint results with a harmless legacy run so missing risk alerts cannot turn the result green.
 - **`unittest_ci`** — Single-target CI adapter for explicit packages/package trees. Runs the existing harmless-only native AUnit API plus legacy and active-source reconciliation for each package under one deadline. Empty, all-skipped, omitted-test or otherwise incomplete evidence sets `fail:true` and `status:"incomplete"`; failures also set `fail:true`. Returns totals and per-package outcomes. No risky test or failure-bypass controls. Requires API availability and normal ADT source access. Uses the configured SAP identity; BTP API authorization may require `SAP_COM_0735`.
 
@@ -2301,6 +2301,35 @@ SAPDiagnose(action="sql_trace_state")                               — is the S
 SAPDiagnose(action="set_sql_trace_state", sqlOn=true, user="DEVELOPER") — arm the SQL trace for one user (needs SAP_ALLOW_WRITES)
 SAPDiagnose(action="sql_trace_directory")                           — get SAP's SQL Trace Analysis deep-link to read the records
 ```
+
+### Check several objects for syntax errors
+
+Use `SAPDiagnose` with an explicit list of stored objects:
+
+```json
+{
+  "action": "syntax",
+  "objects": [
+    { "type": "CLAS", "name": "ZCL_ORDER" },
+    { "type": "DDLS", "name": "ZI_ORDER" }
+  ],
+  "version": "active"
+}
+```
+
+- Up to 20 distinct classes, interfaces, programs or CDS definitions. Programs are on-premises only.
+- `active` is the default; `inactive` requests drafts. For unsaved text or another object type,
+  use the existing single-object `SAPRead(type="SYNTAX", objectType, name, source?)`.
+- Each object is `passed`, `failed` or `not-checked`. The overall result is `incomplete` when
+  reports are missing, ambiguous or unowned; inspect the per-object findings, including known failures.
+- One native check request, with a 30-second deadline and 512-KiB response-body limit. No automatic
+  single-object retries. Omit top-level `name`, `type`, `url` and `source` for batches.
+- This checks stored source at execution time. It does not prove a historical transport snapshot,
+  activation success or a source hash. SAP may report warnings even when syntax passes.
+
+Class/interface/program/CDS batches were read-only tested on A4H/001 (previously recorded 758 SP02),
+including an existing inactive error and an absent program. Live BTP/PP and other releases remain
+unqualified. [Plan and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-19-bounded-syntax-checks.md).
 
 ### Find a particular runtime error
 

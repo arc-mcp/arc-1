@@ -1001,7 +1001,7 @@ function extractInactiveObjectEntries(
  *  Format 1 (attribute): <msg shortText="..."/>
  *  Format 2 (element):   <msg><shortText><txt>line1</txt><txt>line2</txt></shortText></msg>
  */
-function extractShortText(m: Record<string, unknown>): string {
+export function extractShortText(m: Record<string, unknown>): string {
   // Try attribute first (older SAP systems / some message types)
   const attr = m['@_shortText'];
   if (attr) return String(attr);
@@ -1018,6 +1018,30 @@ function extractShortText(m: Record<string, unknown>): string {
   return '';
 }
 
+/** Map one native syntax message; shared by single and batch checks. */
+export function parseSyntaxMessage(m: Record<string, unknown>): SyntaxMessage {
+  const type = String(m['@_type'] ?? '');
+  let line = Number.parseInt(String(m['@_line'] ?? '0'), 10);
+  let column = Number.parseInt(String(m['@_col'] ?? '0'), 10);
+  const uri = String(m['@_uri'] ?? '');
+  const startMatch = uri.match(/#start=(\d+),(\d+)/);
+  if (startMatch) {
+    if (!line) line = Number.parseInt(startMatch[1], 10);
+    if (!column) column = Number.parseInt(startMatch[2], 10);
+  }
+  const code = String(m['@_code'] ?? '');
+  const t100 = findDeepNodes(m, 't100Key')[0];
+  return {
+    severity: type === 'E' ? 'error' : type === 'W' ? 'warning' : 'info',
+    text: String(m['@_shortText'] ?? ''),
+    line: Number.isFinite(line) ? line : 0,
+    column: Number.isFinite(column) ? column : 0,
+    ...(uri ? { uri } : {}),
+    ...(code ? { code } : {}),
+    ...(t100 ? { t100: { id: String(t100['@_msgid'] ?? ''), number: String(t100['@_msgno'] ?? '') } } : {}),
+  };
+}
+
 function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCheckResult {
   // JSON candidate checks must prove that SAP processed this object. Keep legacy ABAP responses
   // compatible, but never interpret a login page, truncated XML, or missing report as a clean UIAD.
@@ -1030,28 +1054,7 @@ function parseSyntaxCheckResult(xml: string, expectedJsonUri?: string): SyntaxCh
   //   - <chkrun:checkMessage chkrun:type="E" chkrun:shortText="..." chkrun:uri="...#start=LINE,COL"/>
   //     (NW 7.50 /checkruns response — uri carries the position via #start=line,col)
   const msgs = [...findDeepNodes(parsed, 'msg'), ...findDeepNodes(parsed, 'checkMessage')];
-  const messages: SyntaxMessage[] = msgs.map((m) => {
-    const type = String(m['@_type'] ?? '');
-    let line = Number.parseInt(String(m['@_line'] ?? '0'), 10);
-    let column = Number.parseInt(String(m['@_col'] ?? '0'), 10);
-    const uri = String(m['@_uri'] ?? '');
-    const startMatch = uri.match(/#start=(\d+),(\d+)/);
-    if (startMatch) {
-      if (!line) line = Number.parseInt(startMatch[1], 10);
-      if (!column) column = Number.parseInt(startMatch[2], 10);
-    }
-    const code = String(m['@_code'] ?? '');
-    const t100 = findDeepNodes(m, 't100Key')[0];
-    return {
-      severity: type === 'E' ? 'error' : type === 'W' ? 'warning' : 'info',
-      text: String(m['@_shortText'] ?? ''),
-      line: Number.isFinite(line) ? line : 0,
-      column: Number.isFinite(column) ? column : 0,
-      ...(uri ? { uri } : {}),
-      ...(code ? { code } : {}),
-      ...(t100 ? { t100: { id: String(t100['@_msgid'] ?? ''), number: String(t100['@_msgno'] ?? '') } } : {}),
-    };
-  });
+  const messages = msgs.map(parseSyntaxMessage);
 
   // SAP reports refusal to check via <chkrun:checkReport chkrun:status="notProcessed"
   // chkrun:statusText="Resource CLASS ZCL_X does not exist."/> — with zero messages, which would

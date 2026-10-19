@@ -1115,7 +1115,7 @@ export function getToolDefinitions(
       name: 'SAPDiagnose',
       description:
         'ABAP diagnostics:\n' +
-        '- "syntax": compatibility; prefer SAPRead(type="SYNTAX", objectType, name, version?, source?) when available.\n' +
+        '- "syntax": check objects[] (CLAS/INTF/PROG/DDLS; version active/inactive). Single: prefer SAPRead SYNTAX.\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
         '- "unittest_ci": harmless package tests with source reconciliation; empty/incomplete runs fail.\n' +
         '- "atc": ATC (name+type or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. "atc_variants": read variants/default, optional variant name filter.\n' +
@@ -1185,7 +1185,7 @@ export function getToolDefinitions(
             minItems: 1,
             maxItems: ATC_BATCH_MAX_OBJECTS,
             description:
-              'ATC only, instead of name/type/url. One batch + at most one verification. Returns coverage; unreported objects stay incomplete. No packages.',
+              'ATC/syntax list instead of name/type/url. ATC may verify once. Missing reports stay incomplete. No packages.',
             items: {
               type: 'object',
               required: ['type', 'name'],
