@@ -207,11 +207,13 @@ function buildBaseErrorMessage(
     const mebibytes = err.limitBytes / (1024 * 1024);
     const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;
     const hint =
-      err.endpointFamily === 'feed-schema'
-        ? 'Inspect the advertised feed schema in SAP ADT; this response cannot be paged here.'
-        : err.endpointFamily === 'dumps'
-          ? 'Narrow from/to or filters, or lower maxResults.'
-          : undefined;
+      err.endpointFamily === 'syntax-batch'
+        ? 'Check fewer objects or use single-object SYNTAX.'
+        : err.endpointFamily === 'feed-schema'
+          ? 'Inspect the advertised feed schema in SAP ADT; this response cannot be paged here.'
+          : err.endpointFamily === 'dumps'
+            ? 'Narrow from/to or filters, or lower maxResults.'
+            : undefined;
     return toolJson({
       error: err.code,
       message: hint

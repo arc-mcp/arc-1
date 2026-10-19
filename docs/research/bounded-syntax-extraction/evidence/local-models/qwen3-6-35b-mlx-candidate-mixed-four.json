@@ -1,0 +1,133 @@
+{
+  "summary": {
+    "model": "qwen3.6:35b-mlx",
+    "arm": "candidate",
+    "task": "mixed-four",
+    "revision": "e3a5fd95384130149d2d4f25835e774a7615674a",
+    "correct": true,
+    "toolCalls": 1,
+    "nativeCalls": 1,
+    "toolErrors": 0,
+    "returnedBytes": 1116,
+    "catalogBytes": 45585,
+    "maxPromptTokens": 12912,
+    "nearContextLimit": false,
+    "durationMs": 16907
+  },
+  "expected": [
+    {
+      "type": "CLAS",
+      "name": "ZCL_EVAL_OK",
+      "status": "passed"
+    },
+    {
+      "type": "PROG",
+      "name": "ZEVAL_BAD",
+      "status": "failed"
+    },
+    {
+      "type": "INTF",
+      "name": "ZIF_EVAL_OK",
+      "status": "passed"
+    },
+    {
+      "type": "DDLS",
+      "name": "ZEVAL_MISSING",
+      "status": "not-checked"
+    }
+  ],
+  "calls": [
+    {
+      "name": "SAPDiagnose",
+      "args": {
+        "action": "syntax",
+        "objects": [
+          {
+            "name": "ZCL_EVAL_OK",
+            "type": "CLAS"
+          },
+          {
+            "name": "ZEVAL_BAD",
+            "type": "PROG"
+          },
+          {
+            "name": "ZIF_EVAL_OK",
+            "type": "INTF"
+          },
+          {
+            "name": "ZEVAL_MISSING",
+            "type": "DDLS"
+          }
+        ]
+      },
+      "isError": false,
+      "bytes": 1116,
+      "content": "{\"status\":\"incomplete\",\"checkedAt\":\"2026-10-18T22:19:53.682Z\",\"requestedVersion\":\"active\",\"sourceEvidence\":\"Stored-source check requested; SAP supplies no immutable source hash or independent version proof.\",\"requestedObjectCount\":4,\"checkedObjectCount\":3,\"unexpectedReports\":[],\"unattributedMessages\":[],\"results\":[{\"type\":\"CLAS\",\"name\":\"ZCL_EVAL_OK\",\"uri\":\"/sap/bc/adt/oo/classes/ZCL_EVAL_OK\",\"status\":\"passed\",\"checked\":true,\"hasErrors\":false,\"messages\":[]},{\"type\":\"PROG\",\"name\":\"ZEVAL_BAD\",\"uri\":\"/sap/bc/adt/programs/programs/ZEVAL_BAD\",\"status\":\"failed\",\"checked\":true,\"hasErrors\":true,\"messages\":[{\"severity\":\"error\",\"text\":\"Unknown variable LV_MISSING\",\"line\":7,\"column\":2,\"uri\":\"/sap/bc/adt/programs/programs/zeval_bad/source/main#start=7,2\"}]},{\"type\":\"INTF\",\"name\":\"ZIF_EVAL_OK\",\"uri\":\"/sap/bc/adt/oo/interfaces/ZIF_EVAL_OK\",\"status\":\"passed\",\"checked\":true,\"hasErrors\":false,\"messages\":[]},{\"type\":\"DDLS\",\"name\":\"ZEVAL_MISSING\",\"uri\":\"/sap/bc/adt/ddic/ddl/sources/ZEVAL_MISSING\",\"status\":\"not-checked\",\"checked\":false,\"hasErrors\":false,\"messages\":[],\"statusText\":\"Missing or ambiguous object report.\"}]}"
+    }
+  ],
+  "turns": [
+    {
+      "model": "qwen3.6:35b-mlx",
+      "created_at": "2026-10-18T22:19:53.678081Z",
+      "message": {
+        "role": "assistant",
+        "content": "I'll check the stored active syntax for all four objects. Let me make the calls simultaneously.",
+        "tool_calls": [
+          {
+            "id": "call_6rqd0pxt",
+            "function": {
+              "index": 0,
+              "name": "SAPDiagnose",
+              "arguments": {
+                "action": "syntax",
+                "objects": [
+                  {
+                    "name": "ZCL_EVAL_OK",
+                    "type": "CLAS"
+                  },
+                  {
+                    "name": "ZEVAL_BAD",
+                    "type": "PROG"
+                  },
+                  {
+                    "name": "ZIF_EVAL_OK",
+                    "type": "INTF"
+                  },
+                  {
+                    "name": "ZEVAL_MISSING",
+                    "type": "DDLS"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 13938526833,
+      "load_duration": 8508333,
+      "prompt_eval_count": 12477,
+      "prompt_eval_duration": 5251925166,
+      "eval_count": 123,
+      "eval_duration": 8606852500
+    },
+    {
+      "model": "qwen3.6:35b-mlx",
+      "created_at": "2026-10-18T22:19:56.624186Z",
+      "message": {
+        "role": "assistant",
+        "content": "```json\n{\n  \"results\": [\n    {\n      \"name\": \"ZCL_EVAL_OK\",\n      \"status\": \"passed\"\n    },\n    {\n      \"name\": \"ZEVAL_BAD\",\n      \"status\": \"failed\"\n    },\n    {\n      \"name\": \"ZIF_EVAL_OK\",\n      \"status\": \"passed\"\n    },\n    {\n      \"name\": \"ZEVAL_MISSING\",\n      \"status\": \"not-checked\"\n    }\n  ]\n}\n```"
+      },
+      "done": true,
+      "done_reason": "stop",
+      "total_duration": 2934080667,
+      "load_duration": 11058958,
+      "prompt_eval_count": 12912,
+      "prompt_eval_duration": 636885125,
+      "eval_count": 116,
+      "eval_duration": 2249455333
+    }
+  ],
+  "final": "```json\n{\n  \"results\": [\n    {\n      \"name\": \"ZCL_EVAL_OK\",\n      \"status\": \"passed\"\n    },\n    {\n      \"name\": \"ZEVAL_BAD\",\n      \"status\": \"failed\"\n    },\n    {\n      \"name\": \"ZIF_EVAL_OK\",\n      \"status\": \"passed\"\n    },\n    {\n      \"name\": \"ZEVAL_MISSING\",\n      \"status\": \"not-checked\"\n    }\n  ]\n}\n```"
+}
