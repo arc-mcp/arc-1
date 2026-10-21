@@ -76,7 +76,7 @@ describe('temporary dependency audit exception', () => {
     expect(result.allowlistedAdvisoriesFound).toEqual([FORGE]);
   });
 
-  it.each(['2026-10-21T00:00:00+02:00', '2026-10-22T00:00:00+02:00'])(
+  it.each(['2026-11-18T00:00:00+01:00', '2026-11-19T00:00:00+01:00'])(
     'blocks the advisory at and after expiry (%s)',
     async (now) => {
       vi.setSystemTime(new Date(now));

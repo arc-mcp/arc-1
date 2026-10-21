@@ -531,8 +531,9 @@ pick up newly published OS security fixes.
 `audit-ci.json` temporarily accepts only
 [`GHSA-86w9-cpqp-85rv`](https://github.com/advisories/GHSA-86w9-cpqp-85rv), the RSA
 signature-verification advisory affecting `node-forge` through 1.4.0 with no published patch as of
-7 October 2026. The exception expires automatically at **00:00 Europe/Berlin on 21 October 2026**.
-It lets unrelated dependency maintenance proceed; it does not fix the vulnerability or establish
+21 October 2026. The exception expires automatically at **00:00 Europe/Berlin on 18 November 2026**.
+Its first window (to 21 October) was renewed after rechecking that neither `node-forge`, `jks-js`
+nor `@sap-cloud-sdk/connectivity` had published a release without the vulnerable code. It lets unrelated dependency maintenance proceed; it does not fix the vulnerability or establish
 that ARC-1 cannot be affected. Remove the exception when the affected dependency paths are fixed,
 or reassess it before expiry in a separate reviewed change.
 
