@@ -73,6 +73,22 @@ npm run dev:http           # builds + runs HTTP streamable on 0.0.0.0:8080
 npm run build && npm start # production-style: compile to dist/, run from there
 ```
 
+**Windows: `npm ci` fails looking for Visual Studio.** If the failure comes from
+`node-gyp rebuild` for `better-sqlite3` 13, an [npm bug](https://github.com/npm/cli/issues/9837)
+can trigger compilation despite its bundled prebuilt binaries. For this specific failure, try:
+
+```powershell
+npm ci --ignore-scripts
+npm run build
+node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); console.log(db.prepare('SELECT 1 AS ok').get()); db.close()"
+```
+
+The SQLite check should print `{ ok: 1 }`. If it fails, the workaround is insufficient;
+resolve the native-module error before continuing. `--ignore-scripts` skips **all** install
+scripts, including Git-hook setup: run `npm run prepare` before committing. Keep this flag
+on the affected install command rather than setting it globally. See [#1038](https://github.com/arc-mcp/arc-1/issues/1038)
+for the reported Windows environment and results.
+
 | Script | What it does | When to use it |
 |---|---|---|
 | `npm run dev` | `tsx src/index.ts` — runs from source over stdio. No build step; does not watch files or restart automatically. | Iterating on stdio-mode code; pairing with `node` debugger. |
