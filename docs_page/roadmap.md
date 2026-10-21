@@ -118,6 +118,7 @@ sequence.
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
 | [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
+| [OPS-07](#ops-07) | Signed single-file executables | P3 | M | Revisit on trigger | Operations |
 | [OPS-08](#ops-08) | SAP outage isolation and queue deadlines | P2 | M | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
@@ -1064,6 +1065,23 @@ token lifetime, keep users isolated, and keep ADR-0007's request-local Basic cre
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
 the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
+
+<a id="ops-07"></a>
+### OPS-07 — Signed single-file executables
+
+- **Priority / effort / status:** P3 / M / Revisit on trigger
+- **Category:** Operations
+
+**Idea.** Close the gaps of the unsigned Node SEA executables shipped with each release: code
+signing/notarization, embedded UI assets, `ARC1_PLUGINS` support, and a Windows arm64 target.
+
+**Why it remains.** The executables remove the thousands-of-files antivirus scan, but an unsigned
+Windows binary is still scanned once on first start, and the SEA build does not embed the UI assets
+or verify plugin loading. Signing needs a certificate and secret handling that the project does not have.
+
+**Resume when.** Users report SmartScreen/Defender blocks despite checksums, or a supported
+`windows-11-arm` runner is available. Define the signing identity and key custody first; verify
+plugin loading in a SEA before claiming support.
 
 <a id="ops-08"></a>
 ### OPS-08 — SAP outage isolation and queue deadlines

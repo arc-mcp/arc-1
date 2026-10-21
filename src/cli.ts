@@ -971,5 +971,8 @@ export async function main(
 
 // Keep `npm run cli -- ...` working without making imports execute a command.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2));
+  // No top-level await: the single-executable bundle is CommonJS, which cannot contain one.
+  void main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  });
 }

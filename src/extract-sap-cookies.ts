@@ -389,6 +389,7 @@ export async function run(argv: string[] = process.argv.slice(2)): Promise<void>
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // No top-level await: the single-executable bundle is CommonJS, which cannot contain one.
   run().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`${message}\n`);
