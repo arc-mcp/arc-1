@@ -1106,6 +1106,16 @@ export class AdtHttpClient {
         response = await probe('GET');
       }
 
+      // Some on-premise ADT stacks accept discovery and issue a CSRF token only when
+      // X-sap-adt-sessiontype is absent. Their stateful HEAD and GET both return 400
+      // (often "Service cannot be reached"), while the same GET succeeds statelessly.
+      // Bootstrap the token without the header; the actual lock/write requests still
+      // carry `stateful` and establish the application context normally.
+      if (this.config.sessionType === 'stateful' && response.status === 400) {
+        delete headers['X-sap-adt-sessiontype'];
+        response = await probe('GET');
+      }
+
       // Older ADT handlers may return an empty 200 for a missing core resource (#817).
       // A real auth/server failure must not be hidden by trying another endpoint.
       if (response.status === 404 || response.status === 405 || (response.ok && !usableToken(response))) {
