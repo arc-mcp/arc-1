@@ -1,0 +1,55 @@
+{
+  "label": "baseline",
+  "at": "2026-10-17T22:36:43.176Z",
+  "route": "local public dispatcher / Basic / A4H/001 HTTPS 443",
+  "readCalls": 18,
+  "mutations": 0,
+  "review": {
+    "totalObjects": 2,
+    "shown": 2,
+    "objects": [
+      {
+        "type": "CLAS",
+        "name": "ZCL_ARC1_TD_CALC",
+        "parts": [
+          {
+            "part": "implementations",
+            "selectionMethod": "exact-transport",
+            "baselineStatus": "prior-revision",
+            "from": "00001 (A4HK906369)",
+            "to": "00002 (A4HK906371)",
+            "added": 1,
+            "removed": 1,
+            "diffSha256": "8c9d516b8a3c74afc0317a433c2decb21220d98ac68a50cfa8a2fe43e61876c5"
+          },
+          {
+            "part": "main",
+            "selectionMethod": "exact-transport",
+            "baselineStatus": "prior-revision",
+            "from": "00001 (A4HK906369)",
+            "to": "00002 (A4HK906371)",
+            "added": 1,
+            "removed": 1,
+            "diffSha256": "a83622ee7966716f2411bfcecf5b3c054d73e942138ec651a2a44aa96fbcd290"
+          }
+        ]
+      },
+      {
+        "type": "PROG",
+        "name": "ZARC1_TD_REPORT",
+        "parts": [
+          {
+            "part": "main",
+            "selectionMethod": "exact-transport",
+            "baselineStatus": "prior-revision",
+            "from": "00001 (A4HK906369)",
+            "to": "00002 (A4HK906371)",
+            "added": 1,
+            "removed": 1,
+            "diffSha256": "be5b04fc8f4bde9b8a2541a29729650edb50d346f26f768e6aac2698e5969ee1"
+          }
+        ]
+      }
+    ]
+  }
+}

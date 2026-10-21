@@ -72,7 +72,7 @@ authorized caller and therefore is not a per-user SAP authorization boundary.
 | Target policy | Read by default; `arc1.allow_data_preview` and `arc1.allow_free_sql` are explicit per-target opt-ins. |
 | Writes | Impossible on multi-target routes in v1. Do not document or test a multi-target full-write configuration. |
 | Cache | `ARC1_CACHE=none` while the mode is enabled. |
-| Tool surface | Standard mode only; no hyperfocused alias, plugins, or optional UI. Explicit additions are offline `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|check|history`, and `SAPDiagnose.atc|unittest`; all other actions remain governed by the structural ceiling and explicit allowlists. |
+| Tool surface | Standard mode only; no hyperfocused alias, plugins, or optional UI. Explicit additions are offline `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|diff|check|history`, and `SAPDiagnose.atc|unittest`; all other actions remain governed by the structural ceiling and explicit allowlists. |
 | Catalog | No standalone HTTP catalog. Aggregate-only `SAPTargets` is read-scoped: readers see it only with more than one active target and receive compact target/description/identity rows; admins see it at zero, one, or many targets and during registry failure, with secret-safe diagnostics and passive shared-auth health. Pinned endpoints never expose it. |
 | Target discovery | Aggregate schemas use exact target enums through 16 targets and a syntax pattern from 17–256; `SAPTargets` supplies IDs and descriptions without probing SAP user availability. |
 | User availability | Never guessed, probed in bulk, persisted, or negatively cached. A failed target call may be retried immediately. |
@@ -841,7 +841,7 @@ logs so one successful call does not create several billable BTP Audit Log recor
   It becomes stale when SAP access changes and does not survive deployment. A target list is a config
   inventory, not an entitlement inventory.
 - Offline `SAPLint.lint|lint_and_fix|list_rules`, read-only
-  `SAPTransport.list|get|check|history`, and the reviewed mutation-free `SAPDiagnose` actions are
+  `SAPTransport.list|get|diff|check|history`, and the reviewed mutation-free `SAPDiagnose` actions are
   exposed through explicit action allowlists. ATC and ABAP Unit execute SAP workloads, retain the
   existing `read` scope, and remain subject to SAP authorization, global concurrency/rate limits,
   and `SAP_DENY_ACTIONS`.
@@ -1078,9 +1078,9 @@ Work:
   SQL/data paths such as `SAPSearch.tadir_lookup_db|both` and
   `SAPDiagnose.odata_perf|authorization_trace` cannot bypass target consent.
 - Add `SAPLint` and `SAPTransport` only through explicit action allowlists:
-  `lint|lint_and_fix|list_rules` and `list|get|check|history`. Permit the following `SAPDiagnose`
+  `lint|lint_and_fix|list_rules` and `list|get|diff|check|history`. Permit the following `SAPDiagnose`
   actions through a separate exact allowlist: `syntax`, `unittest`, `atc`, `atc_variants`,
-  `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
+  `cds_testcases`, `dumps`, `feed_schema`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
   `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, and
   `authorization_trace`. The existing data gates still control `odata_perf` and
   `authorization_trace`. Reject every omitted action at both list time and call time.

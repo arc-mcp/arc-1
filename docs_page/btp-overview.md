@@ -29,6 +29,11 @@ its artifact; ask the deployment owner if that revision is unknown. Proposed set
 
     Start with the topology table below only when that recommendation does not fit your landscape.
 
+For custom MCP, SAP's reference architecture is the main design and control baseline. The
+[API-policy assessment](sap-api-policy-and-architecture.md) explains the conditional path, remaining
+controls and the ADT-specific clarification required for ARC-1. Technical setup alone does not
+establish policy permission.
+
 ## Choose the topology
 
 | Your SAP landscape | ARC-1 shape | SAP identity | Continue with |

@@ -101,6 +101,7 @@ describe('ACTION_POLICY matrix', () => {
     expect(getActionPolicy('SAPTransport', 'history')?.scope).toBe('read');
     expect(getActionPolicy('SAPTransport', 'list')?.scope).toBe('read');
     expect(getActionPolicy('SAPTransport', 'get')?.scope).toBe('read');
+    expect(getActionPolicy('SAPTransport', 'diff')?.scope).toBe('read');
   });
 
   it('SAPTransport mutations require transports scope', () => {

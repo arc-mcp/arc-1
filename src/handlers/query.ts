@@ -4,6 +4,7 @@
 
 import { type AdtClient, clampPreviewRows } from '../adt/client.js';
 import { AdtApiError, extractUnknownColumn, formatUnknownColumnHint } from '../adt/errors.js';
+import { handleApplicationLog } from './application-log.js';
 import { handleLongText } from './long-text.js';
 import { classifySapQueryParserError, maskSqlStringLiterals } from './query-errors.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
@@ -158,6 +159,7 @@ export async function handleSAPQuery(
   args: Record<string, unknown>,
   minimalErrors: boolean,
 ): Promise<ToolResult> {
+  if (args.action === 'application_log') return handleApplicationLog(client, args.applicationLog);
   if (args.action === 'long_text') return handleLongText(client, args.longText, minimalErrors);
   const sql = String(args.sql ?? '');
   const maxRows = Number(args.maxRows ?? 100);

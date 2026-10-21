@@ -204,14 +204,18 @@ Full reference: [xsuaa-setup.md](xsuaa-setup.md).
 ARC-1 starts **fully restrictive**. Every capability below is a positive opt-in. Per-user scopes (from JWT or API-key profile) can only restrict further — they never expand beyond what these flags allow. This is the server ceiling.
 
 !!! warning "Data preview and free SQL need explicit governance"
-    `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` expose higher-risk data paths, so they stay off by default and require explicit server opt-in for approved use cases — SAP's API Policy adds controls around large-scale extraction and ungoverned autonomous AI call patterns. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason) and [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md).
+    `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` are technical gates, not API-policy permission.
+    SAP's FAQ Q33 places business-data reads and backend SQL outside ADT's intended development-tooling
+    scope. Keep these flags off unless the specific use has a documented allowance or SAP authorization
+    under the applicable agreements. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason)
+    and [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md).
 
 ### Capability flags
 
 | Flag | Env var | Default | Effect |
 |---|---|---|---|
 | `--allow-writes` | `SAP_ALLOW_WRITES` | `false` | Master switch for every mutation: `SAPWrite` (create/update/delete), `SAPActivate`, package CRUD, FLP mutations. When `false`, every mutating tool call is rejected at the safety layer regardless of caller scopes. Also required (in addition to the specific flag below) for transport and git writes. |
-| `--allow-data-preview` | `SAP_ALLOW_DATA_PREVIEW` | `false` | Enables `SAPRead` table previews (`TABLE_CONTENTS`, `TABLE_QUERY`) and `SAPQuery(action=long_text)`. Ordinary object/source reads do not need this flag. |
+| `--allow-data-preview` | `SAP_ALLOW_DATA_PREVIEW` | `false` | Enables `SAPRead` table previews (`TABLE_CONTENTS`, `TABLE_QUERY`) and `SAPQuery` actions `long_text` / `application_log`. Ordinary object/source reads do not need this flag. |
 | `--allow-free-sql` | `SAP_ALLOW_FREE_SQL` | `false` | Enables the freestyle SQL action of `SAPQuery`. Saved SAPscript texts use the separate data-preview flag. |
 | `--blocked-data-sources` | `SAP_BLOCKED_DATA_SOURCES` | empty (off) | **Experimental.** Exact comma-separated table/CDS identities denied on `SAPQuery`, `TABLE_QUERY` and `TABLE_CONTENTS`, directly and transitively. Unset, empty and ASCII-whitespace-only mean off; once non-empty, **every comma-separated field is mandatory** (`,` `,,,` `,USR02` `USR02,` `USR02,,PA0002` all fail startup). Entries are validated as raw ASCII before case folding, uppercased, deduplicated preserving first-occurrence order, limited to 128 characters, and never silently stripped. A non-empty list activates strict SQL parsing plus live CDS/replacement lineage checks before every data request; direct or transitive matches are denied and unresolved/unsupported lineage fails closed. Allowed-table proof needs fixed metadata reads of `DD02L` and `DDLDEPENDENCY` under the caller identity; missing or ambiguous metadata fails closed. A missing data-preview endpoint returns `DATA_POLICY_UNAVAILABLE`. See [Authorization & Roles](authorization.md#experimental-data-source-blocklist). |
 | `--allow-transport-writes` | `SAP_ALLOW_TRANSPORT_WRITES` | `false` | Enables `SAPTransport.create` / `release` / `release_recursive` / `delete` / `remove_object` / `reassign`. **Requires `SAP_ALLOW_WRITES=true`** — without it, transport mutations fail even with this flag on, because users without `write` scope are treated as no-mutation users. Transport *reads* (`list` / `get` / `diff` / `check` / `history` / `layers` / `targets`) remain available. |
@@ -253,7 +257,7 @@ The `(tool, action) → (scope, opType)` mapping lives at [src/authz/policy.ts](
 |---|---|---|
 | Read | (always allowed) | `SAPRead` (except TABLE_CONTENTS/TABLE_QUERY), `SAPSearch`, many others |
 | Search / Intelligence / Test / Lock | (always allowed) | `SAPSearch`, `SAPNavigate`, `SAPLint`, `SAPContext`, unit tests, internal CRUD lock |
-| Query | `SAP_ALLOW_DATA_PREVIEW` | `SAPRead(type=TABLE_CONTENTS/TABLE_QUERY)`, `SAPQuery(action=long_text)` |
+| Query | `SAP_ALLOW_DATA_PREVIEW` | `SAPRead(type=TABLE_CONTENTS/TABLE_QUERY)`, `SAPQuery(action=long_text/application_log)` |
 | FreeSQL | `SAP_ALLOW_FREE_SQL` | `SAPQuery(action=sql)`; omitted action also means SQL |
 | Create / Update / Delete / Activate / Workflow | `SAP_ALLOW_WRITES` | `SAPWrite`, `SAPActivate`, FLP mutations |
 | Transport | `SAP_ALLOW_WRITES` + `SAP_ALLOW_TRANSPORT_WRITES` | `SAPTransport.create`/`release`/`release_recursive`/`delete`/`remove_object`/`reassign` |

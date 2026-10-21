@@ -1657,22 +1657,9 @@ lv = CONV string( 1 ).`,
       );
     });
 
-    it('supplements DDLS update guidance with scoped where-used results when unfiltered results are partial', async () => {
+    it('uses one native where-used result for DDLS and BDEF update guidance', async () => {
       mockFetch.mockReset();
-      const scopeXml = `<?xml version="1.0" encoding="UTF-8"?>
-<usageReferences:scopeResponse xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
-  <usageReferences:objectType type="DDLS/DF" description="DDL Source" count="3"/>
-  <usageReferences:objectType type="BDEF/BO" description="Behavior Definition" count="1"/>
-</usageReferences:scopeResponse>`;
-      const unfilteredWhereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
-<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
-  <usageReferences:referencedObjects>
-    <usageReferences:referencedObject uri="/sap/bc/adt/ddic/ddl/sources/ZI_CHILD_ONE" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
-      <usageReferences:adtObject adtcore:name="ZI_CHILD_ONE" adtcore:type="DDLS/DF" xmlns:adtcore="http://www.sap.com/adt/core"/>
-    </usageReferences:referencedObject>
-  </usageReferences:referencedObjects>
-</usageReferences:usageReferenceResult>`;
-      const scopedDdlsWhereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
+      const whereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
 <usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
   <usageReferences:referencedObjects>
     <usageReferences:referencedObject uri="/sap/bc/adt/ddic/ddl/sources/zi_child_one" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
@@ -1684,21 +1671,17 @@ lv = CONV string( 1 ).`,
     <usageReferences:referencedObject uri="/sap/bc/adt/ddic/ddl/sources/zi_child_three" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
       <usageReferences:adtObject adtcore:name="ZI_CHILD_THREE" adtcore:type="DDLS/DF" xmlns:adtcore="http://www.sap.com/adt/core"/>
     </usageReferences:referencedObject>
-  </usageReferences:referencedObjects>
-</usageReferences:usageReferenceResult>`;
-      const scopedBdefWhereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
-<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
-  <usageReferences:referencedObjects>
     <usageReferences:referencedObject uri="/sap/bc/adt/bo/behaviordefinitions/ZI_ROOT" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
       <usageReferences:adtObject adtcore:name="ZI_ROOT" adtcore:type="BDEF/BO" xmlns:adtcore="http://www.sap.com/adt/core"/>
     </usageReferences:referencedObject>
+      <usageReferences:referencedObject uri="/sap/bc/adt/ddic/ddl/sources/ZI_CHILD_ONE" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
+      <usageReferences:adtObject adtcore:name="ZI_CHILD_ONE" adtcore:type="DDLS/DF" xmlns:adtcore="http://www.sap.com/adt/core"/>
+    </usageReferences:referencedObject>
   </usageReferences:referencedObjects>
 </usageReferences:usageReferenceResult>`;
-
       mockFetch.mockImplementation((url: string | URL, opts?: { method?: string; body?: string }) => {
         const method = (opts?.method ?? 'GET').toUpperCase();
         const urlStr = String(url);
-        const body = String(opts?.body ?? '');
         if (method === 'POST' && urlStr.includes('_action=LOCK')) {
           return Promise.resolve(
             mockResponse(200, '<asx:values><LOCK_HANDLE>LH_DDLS</LOCK_HANDLE><CORRNR></CORRNR></asx:values>', {
@@ -1706,17 +1689,8 @@ lv = CONV string( 1 ).`,
             }),
           );
         }
-        if (method === 'POST' && urlStr.includes('/usageReferences/scope')) {
-          return Promise.resolve(mockResponse(200, scopeXml, { 'x-csrf-token': 'T' }));
-        }
         if (method === 'POST' && urlStr.includes('/sap/bc/adt/repository/informationsystem/usageReferences?uri=')) {
-          if (body.includes('objectTypeFilter value="DDLS/DF"')) {
-            return Promise.resolve(mockResponse(200, scopedDdlsWhereUsedXml, { 'x-csrf-token': 'T' }));
-          }
-          if (body.includes('objectTypeFilter value="BDEF/BO"')) {
-            return Promise.resolve(mockResponse(200, scopedBdefWhereUsedXml, { 'x-csrf-token': 'T' }));
-          }
-          return Promise.resolve(mockResponse(200, unfilteredWhereUsedXml, { 'x-csrf-token': 'T' }));
+          return Promise.resolve(mockResponse(200, whereUsedXml, { 'x-csrf-token': 'T' }));
         }
         return Promise.resolve(mockResponse(200, '<ok/>', { 'x-csrf-token': 'T' }));
       });
@@ -1740,8 +1714,9 @@ lv = CONV string( 1 ).`,
       const usageBodies = mockFetch.mock.calls
         .map((call) => String((call[1] as { body?: string } | undefined)?.body ?? ''))
         .filter((body) => body.includes('usageReferenceRequest'));
-      expect(usageBodies.some((body) => body.includes('objectTypeFilter value="DDLS/DF"'))).toBe(true);
-      expect(usageBodies.some((body) => body.includes('objectTypeFilter value="BDEF/BO"'))).toBe(true);
+      expect(usageBodies).toHaveLength(1);
+      expect(usageBodies[0]).not.toContain('objectTypeFilter');
+      expect(mockFetch.mock.calls.some(([url]) => String(url).includes('/usageReferences/scope'))).toBe(false);
     });
 
     it('still skips BDEF for pre-write lint', async () => {

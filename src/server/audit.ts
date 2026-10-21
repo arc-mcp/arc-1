@@ -475,7 +475,7 @@ function sanitizeUrlAssignments(value: string): string {
 }
 
 function sanitizeUrl(value: string): string {
-  const normalizedValue = normalizeEscapedUrlSlashes(value);
+  const normalizedValue = redactApplicationLogUrl(normalizeEscapedUrlSlashes(value));
   try {
     const parsed = new URL(normalizedValue);
     let changed = parsed.username.length > 0 || parsed.password.length > 0;
@@ -520,12 +520,20 @@ function sanitizeUrl(value: string): string {
 }
 
 function sanitizeText(value: string): string {
-  const normalized = normalizeEscapedUrlSlashes(value);
+  const normalized = redactApplicationLogUrl(normalizeEscapedUrlSlashes(value));
   return redactCredentialAssignments(normalized).replace(/https?:\/\/[^\s<>"']+/gi, (candidate) => {
     const trailing = candidate.match(/[),.;]+$/)?.[0] ?? '';
     const core = trailing ? candidate.slice(0, -trailing.length) : candidate;
     return `${sanitizeUrl(core)}${trailing}`;
   });
+}
+
+/** Log numbers and opaque handles in native OData paths are business identifiers. */
+function redactApplicationLogUrl(value: string): string {
+  return value.replace(
+    /(\/sap\/opu\/odata\/sap\/APL_LOG_MANAGEMENT_SRV\/)[^\r\n]*/giu,
+    '$1[REDACTED application-log request]',
+  );
 }
 
 function boundAuditString(value: string, originalLength = value.length): string {
@@ -582,6 +590,7 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
   if (depth > MAX_REDACTION_DEPTH || state.remainingEntries <= 0) return REDACTION_LIMIT_MARKER;
   state.remainingEntries -= 1;
   if (canonicalKey(key) === 'longtext') return summarizeLongTextArgs(value);
+  if (canonicalKey(key) === 'applicationlog') return '[REDACTED application-log parameters]';
   if (isSensitiveKey(key)) return '[REDACTED]';
   if (mode === 'audit-event' && PAYLOAD_BODY_KEYS.has(canonicalKey(key))) {
     if (value == null) return value;
@@ -612,6 +621,16 @@ function redactValue(key: string, value: unknown, state: RedactionState, depth: 
       input.params && typeof input.params === 'object' ? (input.params as Record<string, unknown>) : undefined;
     const paramsAction =
       Array.isArray(params?.action) && params.action.length === 1 ? params.action[0] : params?.action;
+    const logAction = typeof inputAction === 'string' && /^application_log$/iu.test(inputAction);
+    const nestedLogAction =
+      typeof inputAction === 'string' &&
+      /^query$/iu.test(inputAction) &&
+      typeof paramsAction === 'string' &&
+      /^application_log$/iu.test(paramsAction);
+    if (logAction || nestedLogAction) {
+      const safe = { action: 'application_log', applicationLog: '[REDACTED application-log parameters]' };
+      return nestedLogAction ? { action: 'query', params: safe } : safe;
+    }
     const textAction = typeof inputAction === 'string' && /^long_text$/iu.test(inputAction);
     const nestedTextAction =
       typeof inputAction === 'string' &&

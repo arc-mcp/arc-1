@@ -1,0 +1,183 @@
+{
+  "at": "2026-10-17T22:57:43.576Z",
+  "route": "local Streamable HTTP MCP / viewer API key / read-only Basic SAP identity / A4H/001 HTTPS 443",
+  "mutations": 0,
+  "reads": 66,
+  "results": [
+    {
+      "id": "A4HK906371",
+      "bytes": 2207,
+      "reads": 10,
+      "elapsedMs": 1785,
+      "totalObjects": 2,
+      "shown": 2,
+      "pageSummary": {
+        "baselines": {
+          "prior-revision": 3
+        },
+        "inventoryOnly": 0,
+        "objectsWithUncomparedScope": 1
+      },
+      "objects": [
+        {
+          "type": "CLAS",
+          "name": "ZCL_ARC1_TD_CALC",
+          "parts": [
+            {
+              "part": "implementations",
+              "baselineStatus": "prior-revision",
+              "selectionMethod": "exact-transport",
+              "from": "00001 (A4HK906369)",
+              "to": "00002 (A4HK906371)",
+              "added": 1,
+              "removed": 1,
+              "diffSha256": "8c9d516b8a3c74afc0317a433c2decb21220d98ac68a50cfa8a2fe43e61876c5"
+            },
+            {
+              "part": "main",
+              "baselineStatus": "prior-revision",
+              "selectionMethod": "exact-transport",
+              "from": "00001 (A4HK906369)",
+              "to": "00002 (A4HK906371)",
+              "added": 1,
+              "removed": 1,
+              "diffSha256": "a83622ee7966716f2411bfcecf5b3c054d73e942138ec651a2a44aa96fbcd290"
+            }
+          ]
+        },
+        {
+          "type": "PROG",
+          "name": "ZARC1_TD_REPORT",
+          "notCompared": [
+            "metadata",
+            "text pool",
+            "screens",
+            "GUI status"
+          ],
+          "parts": [
+            {
+              "part": "main",
+              "baselineStatus": "prior-revision",
+              "selectionMethod": "exact-transport",
+              "from": "00001 (A4HK906369)",
+              "to": "00002 (A4HK906371)",
+              "added": 1,
+              "removed": 1,
+              "diffSha256": "be5b04fc8f4bde9b8a2541a29729650edb50d346f26f768e6aac2698e5969ee1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A4HK906372",
+      "error": true,
+      "bytes": 31,
+      "reads": 1,
+      "elapsedMs": 115,
+      "message": "Transport A4HK906372 not found."
+    },
+    {
+      "id": "A4HK906369",
+      "bytes": 5023,
+      "reads": 16,
+      "elapsedMs": 2366,
+      "totalObjects": 5,
+      "shown": 5,
+      "pageSummary": {
+        "baselines": {
+          "no-prior-snapshot": 7,
+          "baseline-unavailable": 1
+        },
+        "inventoryOnly": 1,
+        "objectsWithUncomparedScope": 4
+      }
+    },
+    {
+      "id": "A4HK905229",
+      "bytes": 14770,
+      "reads": 23,
+      "elapsedMs": 3078,
+      "totalObjects": 9,
+      "shown": 9,
+      "pageSummary": {
+        "baselines": {
+          "no-prior-snapshot": 10,
+          "baseline-unavailable": 2
+        },
+        "inventoryOnly": 5,
+        "objectsWithUncomparedScope": 4
+      }
+    },
+    {
+      "id": "A4HK906287",
+      "bytes": 573,
+      "reads": 1,
+      "elapsedMs": 110,
+      "totalObjects": 1,
+      "shown": 1,
+      "pageSummary": {
+        "baselines": {},
+        "inventoryOnly": 1,
+        "objectsWithUncomparedScope": 0
+      }
+    },
+    {
+      "id": "A4HK906357",
+      "bytes": 3685,
+      "reads": 1,
+      "elapsedMs": 163,
+      "totalObjects": 17,
+      "shown": 17,
+      "pageSummary": {
+        "baselines": {},
+        "inventoryOnly": 17,
+        "objectsWithUncomparedScope": 0
+      }
+    },
+    {
+      "id": "A4HK906375",
+      "bytes": 6214,
+      "reads": 10,
+      "elapsedMs": 1105,
+      "totalObjects": 6,
+      "shown": 6,
+      "pageSummary": {
+        "baselines": {
+          "no-prior-snapshot": 3,
+          "baseline-unavailable": 3
+        },
+        "inventoryOnly": 0,
+        "objectsWithUncomparedScope": 6
+      }
+    },
+    {
+      "id": "A4HK906379",
+      "bytes": 18186,
+      "reads": 3,
+      "elapsedMs": 693,
+      "totalObjects": 5,
+      "shown": 5,
+      "pageSummary": {
+        "baselines": {
+          "no-prior-snapshot": 1
+        },
+        "inventoryOnly": 4,
+        "objectsWithUncomparedScope": 1
+      }
+    },
+    {
+      "id": "A4HK906578",
+      "bytes": 442,
+      "reads": 1,
+      "elapsedMs": 123,
+      "totalObjects": 0,
+      "shown": 0,
+      "pageSummary": {
+        "baselines": {},
+        "inventoryOnly": 0,
+        "objectsWithUncomparedScope": 0
+      }
+    }
+  ]
+}

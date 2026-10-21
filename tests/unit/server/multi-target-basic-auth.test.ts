@@ -23,7 +23,8 @@ vi.mock('../../../src/server/multi-target-destination-runtime.js', async (import
 }));
 
 const { AdtClient } = await import('../../../src/adt/client.js');
-const { AdtApiError } = await import('../../../src/adt/errors.js');
+const featureProbeModule = await import('../../../src/adt/features.js');
+const { AdtApiError, AdtNetworkError } = await import('../../../src/adt/errors.js');
 const { AdtHttpClient } = await import('../../../src/adt/http.js');
 const { featuresOff } = await import('../handlers/handler-test-config.js');
 const { getCachedDiscovery, getCachedFeatures, resetCachedFeatures, setCachedDiscovery, setCachedFeatures } =
@@ -44,7 +45,7 @@ const { DEFAULT_CONFIG } = await import('../../../src/server/types.js');
 
 type RequestHandler = (
   request: Record<string, unknown>,
-  extra: { authInfo?: AuthInfo },
+  extra: { authInfo?: AuthInfo; signal?: AbortSignal },
 ) => Promise<Record<string, any>>;
 
 function requestHandler(server: Server): RequestHandler {
@@ -1153,5 +1154,94 @@ describe('multi-target shared Basic authentication', () => {
     expect(payload.admin.sharedAuthentication).toEqual({ targets: 1, statusCounts: { healthy: 1 } });
     expect(JSON.stringify(payload)).not.toContain('SENTINEL_TECHNICAL_USER');
     expect(JSON.stringify(payload)).not.toContain('SENTINEL_TECHNICAL_PASSWORD');
+  });
+});
+
+describe('bounded transport review with shared Basic identity', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetCachedFeatures();
+    resolveRuntimeSubaccountDestination.mockReset();
+  });
+  const inventory =
+    '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:status="R" tm:owner="T" tm:type="K"><tm:task tm:number="A4HK900002" tm:status="R"><tm:abap_object_list><tm:abap_object tm:pgmid="R3TR" tm:type="CLAS" tm:name="ZCL_DEMO" tm:wbtype="CLAS/OC"/></tm:abap_object_list></tm:task></tm:request></tm:root>';
+  const review = {
+    method: 'tools/call',
+    params: { name: 'SAPTransport', arguments: { action: 'diff', id: 'A4HK900001' } },
+  };
+  function setup() {
+    vi.spyOn(featureProbeModule, 'probeFeatures').mockResolvedValue(featuresOff());
+    const current = registry();
+    const target = current.targets[0];
+    const sharedAuthState = new MultiTargetSharedAuthState();
+    setCachedFeatures(featuresOff(), target.target);
+    resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
+    });
+    return { server, call: requestHandler(server), sharedAuthState };
+  }
+  it('stops on a part-level 401 and blocks the next call without another SAP read', async () => {
+    const get = vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async function (
+      this: InstanceType<typeof AdtHttpClient>,
+      path,
+    ) {
+      if (path === '/sap/bc/adt/core/discovery') return DISCOVERY_RESPONSE;
+      if (path.includes('/cts/transportrequests/')) return { statusCode: 200, headers: {}, body: inventory };
+      const config = (
+        this as unknown as { config: { onUnauthorized?: (context: { path: string; statusCode: 401 }) => void } }
+      ).config;
+      config.onUnauthorized?.({ path, statusCode: 401 });
+      throw new AdtApiError('SECRET_SAP_BODY', 401, path);
+    });
+    const { server, call, sharedAuthState } = setup();
+    try {
+      const first = await call(review, { authInfo: READ_AUTH });
+      expect(JSON.parse(first.content[0].text)).toMatchObject({ error: 'SAP_AUTHENTICATION_FAILED', retryable: false });
+      expect(first.content[0].text).not.toContain('SECRET_');
+      expect(get).toHaveBeenCalledTimes(3); // canary, inventory, first history
+      const second = await call(review, { authInfo: READ_AUTH });
+      expect(JSON.parse(second.content[0].text)).toMatchObject({ error: 'SAP_AUTHENTICATION_FAILED' });
+      expect(get).toHaveBeenCalledTimes(3);
+      expect(sharedAuthState.getHealth('A4H/100').status).toBe('authentication_failed');
+    } finally {
+      await server.close();
+    }
+  });
+  it('cancellation during history stops the fan-out and releases a queued caller', async () => {
+    let entered!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const abort = new AbortController();
+    const get = vi.spyOn(AdtHttpClient.prototype, 'get').mockImplementation(async (path, _headers, options) => {
+      if (path === '/sap/bc/adt/core/discovery') return DISCOVERY_RESPONSE;
+      if (path.includes('/cts/transportrequests/')) return { statusCode: 200, headers: {}, body: inventory };
+      entered();
+      await new Promise<void>((_resolve, reject) =>
+        options?.signal?.addEventListener(
+          'abort',
+          () => reject(new AdtNetworkError('Cancelled', new DOMException('Cancelled', 'AbortError'))),
+          { once: true },
+        ),
+      );
+      throw new Error('Cancelled read should reject');
+    });
+    const { server, call } = setup();
+    try {
+      const first = call(review, { authInfo: READ_AUTH, signal: abort.signal });
+      await reading;
+      const second = call(
+        { method: 'tools/call', params: { name: 'SAPTransport', arguments: { action: 'get', id: 'A4HK900001' } } },
+        { authInfo: READ_AUTH },
+      );
+      abort.abort();
+      expect((await first).isError).toBe(true);
+      expect((await second).isError).not.toBe(true);
+      expect(get.mock.calls.filter(([path]) => path.endsWith('/versions'))).toHaveLength(1);
+    } finally {
+      await server.close();
+    }
   });
 });

@@ -674,6 +674,10 @@ cap, or disable one or both with
 SAP-native attribution belong to the destination technical user even though ARC-1 audits the human
 caller.
 
+On shared Basic targets, a transport diff page can hold the serialized target lane for about
+20 seconds; multiple queued pages can exceed the 30-second acquisition timeout. Use
+`ARC1_RATE_LIMIT` to control frequency or `SAP_DENY_ACTIONS=SAPTransport.diff` to disable it.
+
 <a id="10-operational-checklist"></a>
 
 ## Operational checklist

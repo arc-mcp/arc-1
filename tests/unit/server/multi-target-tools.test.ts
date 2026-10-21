@@ -94,6 +94,7 @@ describe('multi-target tool surface', () => {
       'atc_variants',
       'cds_testcases',
       'dumps',
+      'feed_schema',
       'traces',
       'trace_requests',
       'system_messages',
@@ -106,10 +107,13 @@ describe('multi-target tool surface', () => {
     ]);
 
     const transport = tools.find((tool) => tool.name === 'SAPTransport') as ToolDefinition;
-    expect(property(transport, 'action').enum).toEqual(['list', 'get', 'check', 'history']);
+    expect(property(transport, 'action').enum).toEqual(['list', 'get', 'diff', 'check', 'history']);
     expect(transport.inputSchema.properties).not.toHaveProperty('target');
     expect(transport.inputSchema.properties).not.toHaveProperty('transportLayer');
     expect(transport.inputSchema.properties).not.toHaveProperty('resultFormat');
+    expect(transport.inputSchema.properties).toHaveProperty('offset');
+    expect(transport.inputSchema.properties).toHaveProperty('limit');
+    expect(multiTargetInvocationDecision('SAPTransport', { action: 'diff' }, DEFAULT_CONFIG)).toBe('allowed');
   });
 
   it('adds data and SQL only when the effective target/union policy permits them', () => {
@@ -126,6 +130,7 @@ describe('multi-target tool surface', () => {
       'atc_variants',
       'cds_testcases',
       'dumps',
+      'feed_schema',
       'traces',
       'trace_requests',
       'system_messages',

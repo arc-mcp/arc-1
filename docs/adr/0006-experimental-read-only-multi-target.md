@@ -41,7 +41,7 @@ ARC-1 may expose experimental multi-target endpoints only when
 - a structural multi-target ceiling that forbids writes, activation, transport/Git mutations,
   enqueue locks, and SAP-backed formatter/settings actions regardless of administrator role or
   single-target configuration. The reviewed mutation-free additions are offline
-  `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|check|history`, and the
+  `SAPLint.lint|lint_and_fix|list_rules`, read-only `SAPTransport.list|get|diff|check|history`, and the
   explicit `SAPDiagnose` allowlist in the implementation plan. Diagnostic data actions retain the
   normal destination/instance/XSUAA/SAP data gates; adding a general diagnostic action does not add
   it to multi-target mode automatically.
@@ -127,3 +127,11 @@ must be restricted before SAP is contacted.
   shared state, and the cache would be incomplete after deployment.
 - **Separate HTTP/browser catalog:** it duplicates the MCP discovery surface and needs another auth,
   rate-limit, and payload contract. V1 keeps one role-sensitive `SAPTargets` tool instead.
+
+### Transport diff qualification (18 October 2026)
+
+The read allowlist includes `SAPTransport.diff` with one explicitly selected target and
+identity per call. It uses bounded sequential source reads, cancellation, response/attempt
+limits and capped diff work; no files or review sessions are stored. Offset pages reread SAP
+and do not promise snapshot consistency. This adds no mutation or identity fallback. See
+[the transport plan](../plans/2026-10-18-transport-review-mcp.md) for evidence and limitations.

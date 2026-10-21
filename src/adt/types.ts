@@ -1208,6 +1208,7 @@ export interface RevisionListResult {
     type: string;
   };
   revisions: RevisionInfo[];
+  historyComplete?: boolean;
 }
 
 // ─── Class Structure Types (objectstructure endpoint, issue #303) ─────────

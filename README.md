@@ -23,7 +23,7 @@ Built for organizations that need AI-assisted SAP development with guardrails. I
 - **Safe by default** — read-only, no free SQL, no table preview, no transport writes, no Git writes. Enable each capability with explicit `SAP_ALLOW_*` flags
 - **Action deny list** — block specific tool actions with `SAP_DENY_ACTIONS` (for example `SAPWrite.delete`), without exposing low-level operation codes to admins
 - **Package restrictions** — limit AI write operations (create, update, delete) to specific packages with wildcards (`--allowed-packages "Z*,$TMP"`). Read operations are not restricted by package — use SAP's native authorization for read-level access control
-- **Data access control (off by default)** — table previews and saved SAPscript texts require `SAP_ALLOW_DATA_PREVIEW=true`; freestyle SQL separately requires `SAP_ALLOW_FREE_SQL=true`. Review enabled uses against the [SAP API Policy](docs_page/sap-api-policy-and-architecture.md), your SAP agreement, and internal data-governance rules.
+- **Data access control (off by default)** — table previews, saved SAPscript texts and SLG1 messages require `SAP_ALLOW_DATA_PREVIEW=true`; freestyle SQL separately requires `SAP_ALLOW_FREE_SQL=true`. Review enabled uses against the [SAP API Policy](docs_page/sap-api-policy-and-architecture.md), your SAP agreement, and internal data-governance rules.
 - **Experimental data-source emergency brake** — approved data/SQL deployments can set `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002`. ARC-1 then parses each SQL request and resolves active CDS plus replacement-object lineage before execution, denying direct or transitive exact-name matches and failing closed when lineage is unsupported or cannot be proven. The empty default adds no metadata calls. This denylist is defense in depth, not a production allowlist or replacement for SAP authorization/CDS DCL; see [Authorization & Roles](docs_page/authorization.md#experimental-data-source-blocklist).
 - **Transport safety** — transport reads are available for review, while transport mutations require both `--allow-writes` and `--allow-transport-writes`. Update/delete operations auto-use the lock correction number when no explicit transport is provided
 - **Git workflow safety** — Git operations are disabled by default. Enable explicitly with `--allow-git-writes` / `SAP_ALLOW_GIT_WRITES=true`
@@ -119,22 +119,25 @@ ARC-1 probes the SAP system at startup and adapts its behavior:
 
 ## ADT API Status and Strategy
 
-ARC-1 is a governed development-tooling proxy around ADT behavior — code checks, build/activate,
-transport management, AI-assisted ABAP authoring, Git workflows — not a bulk data-extraction product.
-It runs with real user identity, respects SAP authorization, and keeps audit and rate controls in place.
+For a custom MCP server such as ARC-1, SAP's
+[Third-Party MCP Access reference architecture](https://architecture.learning.sap.com/docs/ref-arch/137800)
+is the primary design and control baseline we recommend. For a shared service, start with BTP Cloud
+Foundry, XSUAA and strict principal propagation. SAP's API Policy FAQ Q56 allows custom MCP servers
+under conditions; Q32 confirms that Integration Suite is not mandatory.
 
-**Where this stands under SAP's API Policy is covered in full in
-[SAP API Policy & Architecture Alignment](docs_page/sap-api-policy-and-architecture.md)** — what
-[API Policy v.4.2026a](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf) says
-clause by clause, why the ADT question is more nuanced than "undocumented API", where ARC-1 sits against
-SAP's reference architecture for third-party MCP access, and the specific questions to put to your SAP
-contact. Short version: **usable at your own risk, and worth asking SAP before production.**
+**[SAP API Policy & Architecture Alignment](docs_page/sap-api-policy-and-architecture.md)** explains
+that path, the controls ARC-1 already supports, and the remaining gaps. FAQ Q33 classifies ADT APIs
+as internal and limits them to endorsed development channels; ARC-1's direct TypeScript ADT client
+is not specifically identified as one. Clarify that channel and the intended AI-assisted development
+use with SAP before adoption, including dev/test. BTP hosting and security controls alone do not
+establish full policy adherence. Per-user SAP identity applies to PP; shared Basic modes retain a
+shared SAP identity.
 
 Two ARC-1 capabilities can expose business data or execute ad-hoc SQL. Both are **off by default** and require explicit opt-in env vars, so the operator makes a deliberate decision before they are reachable:
 
 | Capability | Env var | Default | Policy note |
 | ---------- | ------- | ------- | ----------- |
-| Table previews (`SAPRead(type=TABLE_CONTENTS/TABLE_QUERY)`) and [saved SAPscript texts](docs_page/tools.md#stored-sapscript-long-texts) (`SAPQuery(action=long_text)`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
+| Table previews (`SAPRead(type=TABLE_CONTENTS/TABLE_QUERY)`), [saved SAPscript texts](docs_page/tools.md#stored-sapscript-long-texts) and [SLG1 messages](docs_page/tools.md#saved-application-logs-actionapplication_log) (`SAPQuery` actions `long_text` / `application_log`) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
 | Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 | Exact source blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Denies exact direct/transitive table or CDS dependencies; active mode is deliberately fail-closed and slower. |
 
@@ -144,9 +147,13 @@ and serialization. `SAPQuery.maxRows` is separately clamped to 10,000, but wide 
 byte limit much earlier. See [Configuration](docs_page/configuration-reference.md) before tuning
 `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` or `ARC1_MAX_CONCURRENT_DATA_RESULTS`.
 
-With both flags at their defaults, ARC-1's data/sql rows are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
+With both flags at their defaults, ARC-1's data/sql rows are unreachable. FAQ Q33 excludes application-table
+reads, business-data export and backend SQL from ADT's intended development-tooling scope. Keep these
+flags off unless the specific use has a documented allowance or SAP authorization under the applicable
+agreements; internal approval or a technical opt-in alone is insufficient. Use Published business APIs
+for business-data integration.
 
-ARC-1's strategy is to stay close to documented and discoverable ADT behavior, probe system capabilities before exposing tools, keep conservative security defaults (writes off, data preview off, free SQL off, package allowlist `$TMP`), and continuously review SAP's guidance as it evolves. This README is not a compliance decision for any specific customer landscape, but the default posture is intended to support normal governed development use rather than block it.
+ARC-1 combines capability discovery with conservative defaults and centralized authorization. Discovery establishes technical availability, not API-policy permission. Follow the reference architecture and verify both the API-specific allowance and the deployed controls.
 
 ## Versioning & Stability
 

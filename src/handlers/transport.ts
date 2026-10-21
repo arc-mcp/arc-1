@@ -26,19 +26,16 @@ import {
   supportsExplicitTransportTarget,
   type TransportReleaseResult,
 } from '../adt/transport.js';
-import { diffTransportObject, type LogicalTransportObject, rollupTransportObjects } from '../adt/transport-diff.js';
 import type { InactiveObject, ObjectTransportHistory, TransportReleaseReport, TransportRequest } from '../adt/types.js';
 import { logger } from '../server/logger.js';
 import type { ServerConfig } from '../server/types.js';
 import { functionGroupObjectUrl, functionModuleObjectUrl, objectUrlForType } from './object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from './shared.js';
+import { handleTransportReview } from './transport-review.js';
 
 /** Default page size for `list`. Object lists dominate the payload, so the backlog sets the cost. */
 const DEFAULT_TRANSPORT_RESULTS = 50;
 const DEFAULT_TRANSPORT_CHECK_RESULTS = 10;
-/** `diff` page size. Cap matches SAP's own transport-diff tool (pageSize max 40) so results compare. */
-const DEFAULT_DIFF_OBJECTS = 20;
-const MAX_DIFF_OBJECTS = 40;
 
 /**
  * Pre-release guard: find inactive objects that belong to `transportId`. Releasing a transport that
@@ -259,75 +256,8 @@ export async function handleSAPTransport(
       if (!transport) return textResult(`Transport ${id} not found.`);
       return textResult(toolJson(transport));
     }
-    case 'diff': {
-      const id = String(args.id ?? '');
-      if (!id) return errorResult('Transport ID is required for "diff" action.');
-      const transport = await getTransport(client.http, client.safety, id);
-      if (!transport) return textResult(`Transport ${id} not found.`);
-
-      // A transport of copies records its objects on the REQUEST, not under a task, so
-      // reviewing only `tasks` returns an empty change set. A released workbench request also
-      // MIRRORS its task objects at request level — add only the entries no task already
-      // carries, otherwise the request id lands in `taskIds` and reads as an extra task.
-      const taskObjectKeys = new Set(
-        transport.tasks.flatMap((t) => t.objects.map((o) => `${o.pgmid}:${o.type}:${o.name}`.toUpperCase())),
-      );
-      const requestOnly = (transport.requestObjects ?? []).filter(
-        (o) => !taskObjectKeys.has(`${o.pgmid}:${o.type}:${o.name}`.toUpperCase()),
-      );
-      const objects = rollupTransportObjects([
-        ...transport.tasks,
-        ...(requestOnly.length ? [{ id: transport.id, objects: requestOnly }] : []),
-      ]);
-      const offset = Math.max(0, Number(args.offset ?? 0) || 0);
-      const limit = Math.min(
-        clampSearchResults(args.limit as number | undefined, DEFAULT_DIFF_OBJECTS),
-        MAX_DIFF_OBJECTS,
-      );
-      // Stable order across pages: the transport is re-read per call, and SAP does not promise
-      // a fixed task/object sequence, so an unsorted slice could skip or repeat an object.
-      // Plain code-point comparison, NOT localeCompare — collation is ICU/locale dependent
-      // (da-DK sorts "AA" after "Z"), so two instances behind a load balancer would page
-      // differently. The key mirrors the rollup key so entries can never compare equal.
-      const sortKey = (o: LogicalTransportObject) => `${o.pgmid}:${o.type}:${o.name}`;
-      objects.sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0));
-      const page = objects.slice(offset, offset + limit);
-
-      // Match the request AND its tasks: version records reference the request on the systems
-      // verified so far, but matching both can only add correct matches, never remove one.
-      const transportIds = new Set<string>([transport.id, ...transport.tasks.map((t) => t.id)].filter(Boolean));
-
-      // Objects are independent reads; http.ts caps real concurrency via the shared Semaphore.
-      const diffs = await Promise.all(
-        page.map((object) =>
-          diffTransportObject(client, object, transportIds, { minimalErrors: config.minimalErrors }),
-        ),
-      );
-
-      return textResult(
-        toolJson({
-          transport: {
-            id: transport.id,
-            description: transport.description,
-            owner: transport.owner,
-            status: transport.status,
-          },
-          // One model for released and open transports alike: while a transport is open its
-          // objects are locked, so the active revision carries its id and matches the same way.
-          comparison: 'transport-correction-to-immediate-previous',
-          totalObjects: objects.length,
-          offset,
-          shown: page.length,
-          // parseTransportList only harvests objects nested under <tm:task>; a request whose
-          // objects sit at request level would otherwise read as "nothing changed".
-          ...(objects.length === 0 ? { note: 'This transport records no reviewable objects.' } : {}),
-          ...(offset + page.length < objects.length
-            ? { hint: `Showing ${page.length} of ${objects.length}. Next page: offset=${offset + page.length}.` }
-            : {}),
-          objects: diffs,
-        }),
-      );
-    }
+    case 'diff':
+      return handleTransportReview(client, args, config);
     case 'create': {
       const description = String(args.description ?? '');
       if (!description) return errorResult('Description is required for "create" action.');

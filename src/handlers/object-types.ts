@@ -341,19 +341,21 @@ export function normalizeTypeArgsForValidation(
         delete cleaned.depth;
         delete cleaned.expandPackages;
       }
-      // Only normalize `type` (for URL building). `objectType` is passed to SAP's
-      // where-used scope API in slash format (e.g., CLAS/OC) — normalizing it would break the filter.
+      // Only normalize `type` (for URL building). Keep `objectType` in slash format
+      // (e.g., CLAS/OC) for where-used filtering; normalizing it would lose the subtype.
       return {
         ...cleaned,
         type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPDiagnose':
+      // Empty optional filter selections preserve the ordinary call, including strict-client filler.
+      if (Array.isArray(cleaned.filters) && cleaned.filters.length === 0) delete cleaned.filters;
       // Strict-schema clients may supply an empty placeholder on single-object
-      // or unrelated actions. An actual empty ATC batch remains a validation error.
+      // or unrelated actions. An actual empty ATC/syntax batch remains a validation error.
       if (
         Array.isArray(cleaned.objects) &&
         cleaned.objects.length === 0 &&
-        (cleaned.action !== 'atc' ||
+        (!['atc', 'syntax'].includes(String(cleaned.action)) ||
           cleaned.name !== undefined ||
           cleaned.type !== undefined ||
           cleaned.url !== undefined)

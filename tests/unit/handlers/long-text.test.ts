@@ -561,6 +561,7 @@ describe('SAPQuery long_text policy and rejection behavior', () => {
     expect(dataOnly).toBeDefined();
     expect((dataOnly.inputSchema as { properties: { action: { enum: string[] } } }).properties.action.enum).toEqual([
       'long_text',
+      'application_log',
     ]);
     expect((dataOnly.inputSchema as { properties: Record<string, unknown> }).properties.longText).toBeDefined();
     const btp = getToolDefinitions({ ...config, allowFreeSQL: true, systemType: 'btp' }).find(
