@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -50,6 +52,38 @@ describe.each(['better-sqlite3', 'node:sqlite'] as const)('SqliteCache (%s)', (d
     try {
       expect(fileMode(dbPath)).toBe(0o600);
     } finally {
+      fileCache.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('waits for a brief write lock held by another connection', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-cache-contention-'));
+    const dbPath = path.join(dir, 'cache.db');
+    const fileCache = new SqliteCache(dbPath, driver);
+    const child = spawn(
+      process.execPath,
+      [
+        '-e',
+        `const { DatabaseSync } = require('node:sqlite');
+         const db = new DatabaseSync(process.argv[1]);
+         db.exec('BEGIN IMMEDIATE');
+         process.send('locked');
+         setTimeout(() => { db.exec('COMMIT'); db.close(); process.disconnect(); }, 200);`,
+        dbPath,
+      ],
+      { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] },
+    );
+    const exited = once(child, 'exit');
+
+    try {
+      const [state] = await once(child, 'message');
+      expect(state).toBe('locked');
+      fileCache.putApi({ name: 'ZCL_SHARED', type: 'CLAS', releaseState: 'released' });
+      expect(fileCache.getApi('ZCL_SHARED', 'CLAS')?.releaseState).toBe('released');
+    } finally {
+      child.kill();
+      await exited;
       fileCache.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }

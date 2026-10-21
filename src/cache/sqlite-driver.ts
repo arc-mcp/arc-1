@@ -59,6 +59,8 @@ function openBetterSqlite(dbPath: string): SqliteDb {
 function openNodeSqlite(dbPath: string): SqliteDb {
   const { DatabaseSync } = nodeRequire('node:sqlite') as { DatabaseSync: new (path: string) => NodeSqliteDatabase };
   const db = new DatabaseSync(dbPath);
+  // Match better-sqlite3's default wait when another process writes the shared cache.
+  db.exec('PRAGMA busy_timeout = 5000');
   return {
     driver: 'node:sqlite',
     pragma: (statement) => db.exec(`PRAGMA ${statement}`),
