@@ -1105,7 +1105,7 @@ Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRA
 
 #### `action="change_method_visibility"` — move a method between sections (body preserved)
 
-Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
+Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Its directly attached ABAP Doc (`"!`) moves with it; blank lines and ordinary comments mark the boundary. Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
 
 - Interface method redefinitions must remain public; protected/private moves are refused before saving.
 - Idempotent: if the method is already in the target section, it's a no-op (no write).

@@ -259,7 +259,8 @@ function removeLinesAndJoinSpacing(source: string, sr: number, er: number): stri
 
 /**
  * Move a method's METHODS clause from its current visibility section to a new
- * location in the DEFINITION block, leaving the IMPLEMENTATION block UNTOUCHED.
+ * location in the DEFINITION block, including attached ABAP Doc and leaving the
+ * IMPLEMENTATION block UNTOUCHED.
  *
  * This is the body-preserving primitive behind `change_method_visibility`
  * (issue #303 follow-up). Contrast with `delete_method` + `add_method`, which
@@ -287,14 +288,18 @@ export function moveMethodDefinition(source: string, method: MethodStructure, ta
   if (!method.definition) {
     throw new Error(`moveMethodDefinition: method ${method.name} has no definition range`);
   }
-  const { sr, er } = method.definition;
+  const lines = splitLines(source);
+  const { er } = method.definition;
+  let sr = method.definition.sr;
+  // SAP excludes attached ABAP Doc from the declaration range. Move it with
+  // the method without crossing blank lines or ordinary comments.
+  while (sr > 1 && /^[ \t]*"!/.test(lines[sr - 2]!)) sr--;
   if (targetAfterLine >= sr && targetAfterLine <= er) {
     throw new RangeError(
       `moveMethodDefinition: targetAfterLine ${targetAfterLine} is inside the moved method's definition range [${sr}, ${er}]`,
     );
   }
   const eol = detectEol(source);
-  const lines = splitLines(source);
   const clause = lines.slice(sr - 1, er);
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {

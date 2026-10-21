@@ -2056,6 +2056,39 @@ ENDCLASS.`.replace(/\n/g, '\r\n');
       expect(calls.some((c) => c.url.includes('_action=UNLOCK'))).toBe(true);
     });
 
+    it('change_method_visibility moves attached ABAP Doc with the declaration (#1048)', async () => {
+      const docs = '    "! @parameter name | Greeting recipient';
+      const signature =
+        '    METHODS hello\n      IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.';
+      const block = `${docs}\n${signature}`;
+      const mainSource = PROBE_MAIN.replace(signature, block);
+      const shiftedRow = (row: string) => Number(row) + (Number(row) >= 3 ? 1 : 0);
+      const structureXml = PROBE_STRUCTURE.replace(
+        /start=(\d+),(\d+);end=(\d+),(\d+)/g,
+        (_, sr, sc, er, ec) => `start=${shiftedRow(sr)},${sc};end=${shiftedRow(er)},${ec}`,
+      );
+      const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource, structureXml });
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+        action: 'change_method_visibility',
+        type: 'CLAS',
+        name: 'ZCL_PROBE',
+        method: 'hello',
+        visibility: 'private',
+      });
+      expect(result.isError, result.content[0]?.text).toBeUndefined();
+      const expected = mainSource
+        .replace(`${block}\n`, '')
+        .replace('  PRIVATE SECTION.\n', `  PRIVATE SECTION.\n${block}\n`);
+      const puts = calls.filter((call) => call.method === 'PUT');
+      expect(puts).toHaveLength(1);
+      expect(puts[0]?.body).toBe(expected);
+      expect(
+        calls
+          .filter((call) => call.url.includes('_action='))
+          .map((call) => new URL(call.url).searchParams.get('_action')),
+      ).toEqual(['LOCK', 'UNLOCK']);
+    });
+
     it('edit_class_definition repairs a redefinition in the wrong section without changing its body', async () => {
       const broken = PROBE_MAIN.replace('FINAL CREATE PUBLIC', 'INHERITING FROM zcl_parent CREATE PUBLIC')
         .replace('PUBLIC SECTION.', 'PROTECTED SECTION.')
