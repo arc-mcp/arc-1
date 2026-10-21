@@ -6,8 +6,8 @@
     {
       "GHSA-86w9-cpqp-85rv": {
         "active": true,
-        "expiry": "2026-11-18T00:00:00+01:00",
-        "notes": "Temporary acceptance of the unpatched node-forge RSA signature-verification advisory to unblock dependency maintenance. Renewed on 21 October 2026: node-forge 1.4.0 is still the latest release, and jks-js and @sap-cloud-sdk/connectivity have no release without it (SAP/cloud-sdk-js#7023). Remove when the affected dependency paths are fixed; review before 18 November 2026. This is not a finding of non-exploitability."
+        "expiry": "2026-10-28T00:00:00+01:00",
+        "notes": "Temporary acceptance of the unpatched node-forge RSA signature-verification advisory to unblock dependency maintenance. Renewed on 21 October 2026: node-forge 1.4.0 is still the latest release, and jks-js and @sap-cloud-sdk/connectivity have no release without it (SAP/cloud-sdk-js#7023). Remove when the affected dependency paths are fixed; review before 28 October 2026. This is not a finding of non-exploitability."
       }
     }
   ]
