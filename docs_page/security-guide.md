@@ -100,7 +100,10 @@ All safety flags are **positive opt-ins** (default: `false` / restrictive). Enab
 
 ### SAP API Policy and data-access gates
 
-SAP's API Policy restricts large-scale extraction and ungoverned autonomous AI call patterns, which is part of why these two capabilities are gated. See **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** for the clause-by-clause treatment and ARC-1's position; validate your productive setup against SAP documentation, your SAP agreement, and internal governance.
+SAP's API Policy FAQ Q33 places business-data reads and backend SQL outside ADT's intended
+development-tooling scope. The API Policy also conditions agent-driven API sequences and large-scale
+extraction on documented, endorsed pathways. **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**
+explains the recommended custom-MCP architecture and the remaining ADT-channel and control gaps.
 
 Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and require explicit env vars before they are reachable:
 
@@ -110,8 +113,9 @@ Two ARC-1 capabilities can expose business data or execute ad-hoc SQL and requir
 | Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 | Exact table/CDS blocklist (experimental) | `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` | empty (off) | Defense-in-depth denial with live CDS/replacement lineage; unresolved requests fail closed. Not an allowlist or SAP authorization replacement. |
 
-**Recommended security-focused profile.** Keep structured data access and remove caller-authored SQL,
-which is the largest parser and SQL-Console surface:
+**For data access whose specific use is documented or authorized by SAP:** this narrower technical
+profile removes caller-authored SQL, the largest parser and SQL-Console surface. It does not establish
+API-policy permission:
 
 ```bash
 SAP_ALLOW_DATA_PREVIEW=true
@@ -119,13 +123,16 @@ SAP_ALLOW_FREE_SQL=false
 SAP_BLOCKED_DATA_SOURCES=USR02,PA0002
 ```
 
-Blocklist + free SQL remains a supported *advanced* profile for installations that genuinely need
-freestyle SQL; it is the less restrictive choice and subjects callers to the strict static-SQL subset.
+Blocklist + free SQL is a technically supported *advanced* profile, subject to the same SAP allowance;
+it is less restrictive and subjects callers to the strict static-SQL subset.
 Either way, apply **SAP Note 3772411** independently — this feature is default-off and remediates
 nothing, and `SAP_ALLOW_WRITES=false` does not neutralize a database-side mutation reached through a
 vulnerable SQL Console host expression.
 
-**Recommendation for productive systems:** keep both flags at their defaults unless there is an approved use case. ARC-1 still covers the core developer-tooling surface — read source/metadata, search, navigate, lint, write/activate ABAP objects, manage transports, drive Git workflows. Turning either flag on can be appropriate, but should be a deliberate operator decision against the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules.
+**Recommendation, including dev/test:** keep both flags off unless the specific use has a documented
+allowance or SAP authorization under the applicable agreements. An internal approval or technical
+opt-in is insufficient. Conservative data gates reduce exposure; they do not establish permission
+for the remaining ADT development operations. Review those against FAQ Q33 as well.
 
 ### Recommended production defaults
 
@@ -531,10 +538,12 @@ pick up newly published OS security fixes.
 `audit-ci.json` temporarily accepts only
 [`GHSA-86w9-cpqp-85rv`](https://github.com/advisories/GHSA-86w9-cpqp-85rv), the RSA
 signature-verification advisory affecting `node-forge` through 1.4.0 with no published patch as of
-7 October 2026. The exception expires automatically at **00:00 Europe/Berlin on 21 October 2026**.
-It lets unrelated dependency maintenance proceed; it does not fix the vulnerability or establish
-that ARC-1 cannot be affected. Remove the exception when the affected dependency paths are fixed,
-or reassess it before expiry in a separate reviewed change.
+21 October 2026. The exception expires automatically at **00:00 Europe/Berlin on 28 October 2026**.
+Its first window (to 21 October) was renewed for one week after rechecking that neither `node-forge`,
+`jks-js` nor `@sap-cloud-sdk/connectivity` had published a release that removes the affected dependency
+path. It lets unrelated dependency maintenance proceed; it does not fix the vulnerability or
+establish that ARC-1 cannot be affected. Remove the exception when the affected dependency paths are
+fixed, or reassess it before expiry in a separate reviewed change.
 
 Run `npm run audit:ci` and `npm run audit:ci -- --directory btp/approuter` to reproduce the PR
 gates. Both retain the high/critical threshold, development dependencies, and the existing optional

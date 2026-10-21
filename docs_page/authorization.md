@@ -57,7 +57,10 @@ Important details:
 
 ## SAP API Policy: data preview and free SQL are gated for a reason
 
-These two gates exist partly because SAP's API Policy restricts large-scale extraction and ungoverned autonomous AI call patterns — see **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** for what the policy says and how ARC-1 is positioned against it. Operators should validate productive use against SAP documentation, their SAP agreement, and internal governance.
+SAP's API Policy FAQ Q33 places business-data reads and backend SQL outside ADT's intended
+development-tooling scope. The API Policy also conditions agent-driven API sequences and large-scale
+extraction on documented, endorsed pathways. See **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**
+for the custom-MCP architecture path and the separate ADT-channel question.
 
 ARC-1's defaults keep the highest-risk data paths disabled. Two server flags map directly onto capabilities that can expose business data or run ad-hoc SQL, and both default to off:
 
@@ -66,7 +69,10 @@ ARC-1's defaults keep the highest-risk data paths disabled. Two server flags map
 | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | `SAPRead` table previews and `SAPQuery` actions `long_text` / `application_log` | Reads application data; requires `data` scope. |
 | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | `SAPQuery(action=sql)` — freestyle ABAP SQL | Executes ad-hoc ABAP SQL; requires `sql` scope. |
 
-With both flags at their defaults, the data/sql rows in the capability matrix below are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
+With both flags at their defaults, the data/sql rows in the capability matrix below are unreachable.
+Keep the flags off unless the specific use has a documented allowance or SAP authorization under
+the applicable agreements. Internal approval, SAP technical authorizations and ARC-1 flags alone
+do not establish that allowance, including in dev/test. Apply internal data-protection rules as well.
 
 The `data` and `sql` user scopes (and the `viewer-data`, `viewer-sql`, `developer-data`, `developer-sql` API-key profiles) only become useful after the matching server flag is on. Granting `data` / `sql` to a user does **not** widen the server ceiling.
 

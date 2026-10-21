@@ -242,12 +242,16 @@ it('replaces an aged shared transport for new requests while previously created 
     ),
   );
   const f = await startRotationFactory();
-  /** Cookie header of the first SAP request a tool call sends ('' = logs on with the configured credentials). */
+  /** Inspect this tool's source request, excluding any still-finishing startup auth probe. */
   const firstCookie = async (server = runtime.factory!()) => {
     mockFetch.mockClear();
     const result = await callTool(server, 'SAPRead', { type: 'PROG', name: 'ZTEST' });
     expect(result.isError, result.content[0]?.text).not.toBe(true);
-    return String(mockFetch.mock.calls[0]?.[1].headers.Cookie ?? '');
+    const sourceCalls = mockFetch.mock.calls.filter(
+      ([url]) => new URL(String(url)).pathname === '/sap/bc/adt/programs/programs/ZTEST/source/main',
+    );
+    expect(sourceCalls).toHaveLength(1);
+    return String(sourceCalls[0]?.[1].headers.Cookie ?? '');
   };
 
   expect(await firstCookie()).toBe('');

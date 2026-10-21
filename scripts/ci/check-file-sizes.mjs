@@ -43,8 +43,8 @@ const BUDGETS = {
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
   // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
-  'src/handlers/tools.ts': 1765,
-  'src/handlers/schemas.ts': 1529, // +17: syntax batch subset and conflicting-input validation beside ATC objects.
+  'src/handlers/tools.ts': 1771, // +6: FUNC parameter description field (#1040).
+  'src/handlers/schemas.ts': 1542, // +13: FUNC parameter description validation (#1040).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -84,7 +84,8 @@ const BUDGETS = {
   'tests/unit/adt/client.test.ts': 2874,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1543, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
+  // +3: classify caller cancellation before generic network wrapping (#1045).
+  'src/adt/http.ts': 1546, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1508, // Pass the review request budget through transport inventory GET.
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed

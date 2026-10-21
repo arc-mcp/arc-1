@@ -212,7 +212,13 @@ The three-layer model (server flag + user scope + SAP authorization) is describe
 
 ## SAP API Policy and data access
 
-ARC-1 is a governed development-tooling proxy around ADT behavior, not a bulk data-extraction product — real user identity, SAP authorization, audit logging and rate controls throughout. Where that stands under SAP's API Policy, and what to ask your SAP contact before production, is covered in **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**.
+For a custom MCP server such as ARC-1, use SAP's
+[Third-Party MCP Access reference architecture](https://architecture.learning.sap.com/docs/ref-arch/137800)
+as the main design and control baseline. SAP's FAQ allows custom MCP servers under conditions;
+Integration Suite is not mandatory. Our preferred shared deployment is BTP with strict principal
+propagation. **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** explains
+the path, remaining control gaps and the specific FAQ Q33 clarification needed for ARC-1's direct
+ADT client. Architecture alignment and BTP hosting alone do not establish full adherence.
 
 ARC-1's defaults are intentionally conservative: no writes, no named table preview, no freestyle SQL, no transport mutations, no Git mutations. Two capabilities are especially sensitive and are **off by default** behind explicit opt-in env vars:
 
@@ -221,7 +227,9 @@ ARC-1's defaults are intentionally conservative: no writes, no named table previ
 | Table previews, [saved SAPscript texts](tools.md#stored-sapscript-long-texts) and [SLG1 messages](tools.md#saved-application-logs-actionapplication_log) | `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | Reads application data; authenticated callers also need `data` scope. |
 | Freestyle ABAP SQL (`SAPQuery(action=sql)`) | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | Executes ad-hoc ABAP SQL; authenticated callers also need `sql` scope. |
 
-For production, combine conservative tool exposure with real user identity, SAP-side authorization, audit logging, rate limits, and review against the current SAP policy.
+FAQ Q33 places business-data reads and backend SQL outside ADT's intended development-tooling scope.
+Keep these flags off unless the specific use has a documented allowance or SAP authorization under
+the applicable agreements. Technical opt-ins and internal approval do not supply that allowance.
 
 ## Documentation
 

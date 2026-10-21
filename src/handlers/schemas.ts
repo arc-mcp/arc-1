@@ -22,6 +22,7 @@ import {
   ATC_BATCH_TYPES,
 } from '../adt/atc-batch.js';
 import { DTEL_MAX_LABEL_LENGTHS, TABLE_TYPE_DIMENSION_MAX } from '../adt/ddic-xml.js';
+import { isValidFmParameterDescription } from '../adt/fm-parameter-docs.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
 import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
@@ -593,18 +594,30 @@ function validateFunctionProcessingInput(
 // FM signature parameter (issue #252). One entry per IMPORTING/EXPORTING/CHANGING/
 // TABLES/EXCEPTIONS/RAISING line in the FUNCTION signature region. ARC-1 builds
 // the ABAP source from this array; SAP's own signature lives inline in /source/main.
-const fmParameterSchema = z.object({
-  kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
-  name: z.string(),
-  /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
-  type: z.string().optional(),
-  /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
-  byValue: looseOptionalBoolean,
-  /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
-  default: z.string().optional(),
-  /** Emit `OPTIONAL` keyword. */
-  optional: looseOptionalBoolean,
-});
+const fmParameterSchema = z
+  .object({
+    kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
+    name: z.string(),
+    description: z
+      .string()
+      .min(1)
+      .max(60)
+      .refine(isValidFmParameterDescription, 'Use 1–60 printable characters; blank descriptions are not supported.')
+      .optional(),
+    /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
+    type: z.string().optional(),
+    /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
+    byValue: looseOptionalBoolean,
+    /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
+    default: z.string().optional(),
+    /** Emit `OPTIONAL` keyword. */
+    optional: looseOptionalBoolean,
+  })
+  .refine(
+    (parameter) =>
+      parameter.description === undefined || (parameter.kind !== 'exceptions' && parameter.kind !== 'raising'),
+    { path: ['description'], message: 'description is supported only for importing/exporting/changing/tables.' },
+  );
 
 const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
 const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();

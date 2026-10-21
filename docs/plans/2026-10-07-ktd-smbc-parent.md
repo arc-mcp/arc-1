@@ -1,5 +1,8 @@
 # KTD creation for Business Configuration Maintenance Objects (#933 / #934)
 
+Later correction: omitting the empty description attribute removes the need for the
+SMBC-only guard; see [the updated live evidence](../research/2026-10-07-ktd-smbc-parent.md).
+
 ## Research and root cause
 
 `SMBC/TYP` is already recorded as SAP-registered for DOCUMENTATION scope, but the

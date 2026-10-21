@@ -70,7 +70,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
-| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
+| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, description?, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
 ### Read-only syntax checks
 
@@ -369,7 +369,7 @@ SAPRead(type="CLAS", name="ZCL_ORDER", version="auto")           — draft if it
 
 For cache-supported source reads, ARC-1 uses the SAP-emitted `ETag`; `format="editable"` bypasses this cache. On the next read, ARC-1 sends `If-None-Match` so the server itself confirms freshness:
 
-- **`304 Not Modified`** → cached body is still authoritative; response is prefixed with `[cached:revalidated]`.
+- **`304 Not Modified`** → cached body is still authoritative; response is prefixed with `[cached:revalidated]`; SRVB JSON carries a `"cached": "revalidated"` field instead.
 - **`200 OK` with new body and ETag** → cache is replaced; no prefix on the response.
 - **`404` / `410`** → cache entry is invalidated and the error is propagated.
 
@@ -463,7 +463,7 @@ keep their separate behavior.
 | `rowTypeDecimals` | integer | No | `TTYP` built-in decimal places; same validation and update semantics as `rowTypeLength`. Explicit zero clears the scale. |
 | `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
 | `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
-| `parameters` | array | No | FUNC structured signature: `{kind,name,type?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
+| `parameters` | array | No | FUNC structured signature: `{kind,name,type?,description?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
 | `name` | string | No | Object name (for single object actions) |
 | `expectedSourceHash` | string | No | SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. Omitted/null/blank: no protection against stale replacements across calls. See [Source preconditions](#source-preconditions). |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
@@ -518,7 +518,7 @@ keep their separate behavior.
 | `version` | string | No | SRVB: service version for binding metadata (default `0001`) |
 | `refObjectType` | string | No | Required for SKTD/KTD create: parent ADT type/subtype such as `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `DEVC/K`, or `SMBC/TYP` (Business Configuration Maintenance Object). |
 | `refObjectName` | string | No | SKTD/KTD create: documented parent name; defaults to `name`. |
-| `refObjectDescription` | string | No | SKTD/KTD create: parent description shown in ADT tooltips; required and nonempty for `SMBC/TYP`. |
+| `refObjectDescription` | string | No | SKTD/KTD create: optional parent description. Omitted or blank values leave the XML attribute unset. |
 | `shortTexts` | array | No | SKTD/KTD update/create: `[{node, text}]`, where `node` is any name or id the SAPRead node index lists (the same resolver as `## <node>` headings; an ambiguous name is refused with its candidates), `text` is at most 60 characters, and `""` clears it. Works without `source`; nodes marked `obligation="forbidden"` are refused. |
 | `objects` | array | No | For `batch_create`: ordered list of objects (see below) |
 | `activateAtEnd` | boolean | No | For `batch_create` only. Default `false` (per-object inline activation). When `true`, ARC-1 writes inactive drafts for every object then issues one terminal batch-activate — SAP's activator resolves cross-references between siblings in a single pass. Use this for interdependent objects (composition-linked DDLS, RAP behavior stacks where parent references not-yet-active child). Partial-failure semantics are unchanged: a write-phase failure still breaks the loop and only the already-written subset is batch-activated. |
@@ -537,8 +537,8 @@ complete an uncertain creation automatically.
 
 **Source-based DDIC writes:** `TABL`, `DDLS`, `DCLS`, `BDEF`, and `SRVD` write source via `/source/main`. `SKTD`/`KTD` instead GETs the complete `<sktd:docu>` envelope and PUTs it back with the v2 KTD media type, changing only addressed Base64 long-text bodies and existing short-text attributes. `TABL` covers both transparent tables (`TABL/DT`) and DDIC structures (`TABL/DS`); ARC-1 auto-resolves between `/ddic/tables/` and `/ddic/structures/` for read/update. `SKTD` writes Markdown knowledge-transfer documentation attached to one KTD-capable ABAP object; `KTD` is accepted as a friendly alias. Create requires `refObjectType` and uses `name` as the documented object name. ARC-1 supports KTD creates for parent types with verified ADT parent URI routing, including `DDLS/DF`, `BDEF/BDO`, `SRVD/SRV`, `SRVB/SVB`, `DEVC/K`, and `SMBC/TYP` (Business Configuration Maintenance Object). `CLAS/OC`, `INTF/OI`, and `PROG/P` were not registered for KTD DOCUMENTATION scope on the tested SAP_BASIS 758 and 816 systems; use ABAP Doc for those code objects. Other SAP-registered KTD parent types require ARC-1 parent URI routing before create is enabled.
 
-To document an existing Business Configuration Maintenance Object, use its name and
-provide its description. Follow create or update with KTD activation:
+To document an existing Business Configuration Maintenance Object, use its name;
+`refObjectDescription` is optional. Follow create or update with KTD activation:
 
 ```text
 SAPWrite(action="create", type="KTD", name="Z_MY_CONFIGURATION", package="$TMP",
@@ -763,9 +763,23 @@ Each parameter:
 | `kind` | string | One of `importing`, `exporting`, `changing`, `tables`, `exceptions`, `raising`. |
 | `name` | string | Parameter / exception name. Always uppercased on emit. |
 | `type` | string | ABAP type expression (`STRING`, `I`, `BAPIRET2`, `TYPE STANDARD TABLE OF X`, `LIKE DOKHL-OBJECT`, …). Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. For TABLES, include the leading `TYPE` or `LIKE` keyword. |
+| `description` | string | Optional short text for importing/exporting/changing/tables: 1–60 printable characters, not blank. Write it in the function group’s original language. |
 | `byValue` | boolean | Emit `VALUE(name)` wrapper. Default `false` (pass-by-reference). |
 | `default` | string | Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim (no escaping). Examples: `'X'`, `0`, `space`. |
 | `optional` | boolean | Emit `OPTIONAL` keyword. |
+
+A parameter such as `{kind: "importing", name: "IV_INPUT", type: "CHAR10", description: "Input value"}`
+writes native synchronized ABAP Doc with the function group's original language; no DDIC description
+is copied automatically. Activate and use `SAPRead(includeSignature=true, force_refresh=true)` to read
+its `description` from source; this does not independently read the SE37 metadata field. Native SE37
+synchronization requires SAP_BASIS 7.50+ and was verified on 758 SP02. An absent `description` does
+not prove the SE37 text is blank: texts maintained only in SE37 may have no ABAP Doc.
+
+Omitting a description preserves documentation in the source being edited; an empty description is
+rejected. Omit `source` to edit the stored source, or include its documentation in a full `source`. A
+body-only `source` replaces the whole function source. Signature edits preserve leading comments and
+the body, and remove attached documentation for removed parameters. Ambiguous short-text markup is
+refused; edit full `source` without `parameters` in that case.
 
 Example — create an FM with a typed signature:
 
@@ -1070,7 +1084,7 @@ Backing pattern for class surgery: lock the class → read fresh editable source
 
 #### `action="edit_class_definition"` — replace the DEFINITION block whole
 
-Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim.
+Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim. If you include ABAP Doc (`"!`) directly above the new `CLASS` declaration, it replaces the attached old class documentation. Otherwise, existing class documentation is kept.
 
 With `include=definitions|implementations|macros|testclasses`, send the full replacement body for that local include. For ABAP Unit tests, target `include="testclasses"` and write local `ltc_*` classes; ARC-1 creates the missing CCAU include automatically on first write.
 
@@ -1125,7 +1139,7 @@ preserving existing code; `edit_method` can only replace a body that already exi
 
 #### `action="edit_method_signature"` — replace one METHODS clause
 
-One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract.
+One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract. Include ABAP Doc (`"!`) directly above the new `METHODS` clause to replace its attached documentation; omit it to keep the current documentation.
 
 ```jsonc
 {
@@ -1154,7 +1168,7 @@ Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRA
 
 #### `action="change_method_visibility"` — move a method between sections (body preserved)
 
-Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
+Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Its directly attached ABAP Doc (`"!`) moves with it; blank lines and ordinary comments mark the boundary. Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
 
 - Interface method redefinitions must remain public; protected/private moves are refused before saving.
 - Idempotent: if the method is already in the target section, it's a no-op (no write).
@@ -1298,6 +1312,12 @@ writes and cleanup.
 
 Activate ABAP objects. Supports single object or batch activation.
 
+Activation has a five-minute client budget shared by the initial request, preaudit confirmation,
+and any ED064 fallback. A timeout or cancellation leaves completion unconfirmed; SAP may keep
+working. Check `SAPRead(type="INACTIVE_OBJECTS")` and read the object with `force_refresh=true`
+before another activation. An active definition alone does not prove dependent generation has
+finished. ARC-1 does not replay activation after availability or database-session errors.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -1337,8 +1357,7 @@ unconfirmed: use `SAPRead(type="SRVB", name="…")` to inspect state before anot
 Minimal errors retain HTTP status and request-correlation guidance while hiding SAP details.
 Existing authentication/CSRF/content-negotiation handling remains: a 403 on the publish POST
 still refreshes the CSRF token and re-sends once, even when the 403 has another cause. Thus
-one publish invocation can still contain multiple protocol sends. Unpublish and other
-operations keep their existing retry policies.
+one publish invocation can still contain multiple protocol sends. Unpublish keeps its existing retry policy; activation also disables transient replay as described above.
 
 **Examples:**
 ```

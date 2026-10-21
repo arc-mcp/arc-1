@@ -27,7 +27,7 @@ describe('KTD creation for SMBC parents', () => {
       name: '/LCE/SFC_XYZ_TRSHLDS',
       package: '$TMP',
       refObjectType: 'SMBC/TYP',
-      refObjectDescription: 'XYZ-Schwellenwerte pflegen',
+      refObjectDescription: '  Parent & <"quoted"> \'description\'  ',
     });
 
     expect(result.isError).toBeUndefined();
@@ -37,13 +37,16 @@ describe('KTD creation for SMBC parents', () => {
     expect(postCall).toBeDefined();
     expect(postCall!.body).toContain('adtcore:type="SMBC/TYP"');
     expect(postCall!.body).toContain('adtcore:uri="/sap/bc/adt/bct/smbctyp/%2Flce%2Fsfc_xyz_trshlds"');
-    expect(postCall!.body).toContain('adtcore:description="XYZ-Schwellenwerte pflegen"');
+    expect(postCall!.body).toContain(
+      'adtcore:description="  Parent &amp; &lt;&quot;quoted&quot;&gt; &apos;description&apos;  "',
+    );
   });
 
-  it.each([undefined, '   '])(
-    'SKTD create rejects an empty SMBC parent description (%s) before POST',
+  it.each([undefined, '', '   ', ' \t\r\n '])(
+    'SKTD create omits an empty SMBC parent description (%s)',
     async (refObjectDescription) => {
       mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(201, '<sktd:docu/>', { 'x-csrf-token': 'T' }));
       const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
         action: 'create',
         type: 'KTD',
@@ -52,9 +55,13 @@ describe('KTD creation for SMBC parents', () => {
         refObjectType: 'SMBC/TYP',
         refObjectDescription,
       });
-      expect(result.isError).toBe(true);
-      expect(result.content[0]?.text).toContain('"refObjectDescription" is required for SMBC/TYP');
-      expect(mockFetch).not.toHaveBeenCalled();
+      expect(result.isError).toBeUndefined();
+      const post = mockFetch.mock.calls.find(
+        ([url, opts]) => String(url).includes('/documentation/ktd/documents') && opts?.method === 'POST',
+      );
+      expect(post).toBeDefined();
+      expect(String(post![1]?.body)).toMatch(/<sktd:refObject adtcore:name=/);
+      expect(String(post![1]?.body)).not.toContain('adtcore:description');
     },
   );
 

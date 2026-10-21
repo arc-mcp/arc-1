@@ -92,8 +92,8 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
 
       // Step 2: Create FM with structured parameters.
       const initialParams = [
-        { kind: 'importing' as const, name: 'IV_INPUT', type: 'STRING', byValue: true },
-        { kind: 'exporting' as const, name: 'EV_OUTPUT', type: 'STRING', byValue: true },
+        { kind: 'importing' as const, name: 'IV_INPUT', type: 'STRING', byValue: true, description: 'Input value' },
+        { kind: 'exporting' as const, name: 'EV_OUTPUT', type: 'STRING', byValue: true, description: 'Output value' },
       ];
       let fmCreateResult: ToolResult;
       try {
@@ -151,8 +151,8 @@ describe('FUNC parameter lifecycle (issue #252)', () => {
         source: string;
         signature: { importing: { name: string }[]; exporting: { name: string }[] };
       };
-      expect(readPayload.signature.importing[0]?.name).toBe('IV_INPUT');
-      expect(readPayload.signature.exporting[0]?.name).toBe('EV_OUTPUT');
+      expect(readPayload.signature.importing[0]).toMatchObject({ name: 'IV_INPUT', description: 'Input value' });
+      expect(readPayload.signature.exporting[0]).toMatchObject({ name: 'EV_OUTPUT', description: 'Output value' });
       expect(readPayload.source.toLowerCase()).toContain('ev_output = iv_input');
 
       // Step 5: Update with extra parameters (CHANGING + TABLES + RAISING).

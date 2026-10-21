@@ -371,6 +371,24 @@ export async function handleSAPRead(
     return textResult(`${note}${indicator}${source}`);
   };
 
+  /** JSON answers (SRVB) carry the draft note and cache indicator as fields, so the text stays parseable. */
+  const cachedJsonResult = (json: string, cacheHit: boolean, revalidated: boolean, warning?: string): ToolResult => {
+    const indicator = cacheHit && revalidated;
+    if (hasLineRange || (!indicator && !warning)) return cachedTextResult(json, cacheHit, revalidated, warning);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return cachedTextResult(json, cacheHit, revalidated, warning);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return cachedTextResult(json, cacheHit, revalidated, warning);
+    }
+    return textResult(
+      JSON.stringify({ ...(warning ? { warning } : {}), ...(indicator ? { cached: 'revalidated' } : {}), ...parsed }),
+    );
+  };
+
   /** When args.grep is set, return only matching source lines (+context) instead of full source. */
   const grepText = (source: string, hint?: string): ToolResult => {
     const g = grepSource(source, String(args.grep));
@@ -689,7 +707,7 @@ export async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('SRVB', name, effectiveVersion, (ifNoneMatch) =>
         client.getSrvb(name, { ifNoneMatch, version: effectiveVersion }),
       );
-      return cachedTextResult(source, cacheHit, revalidated, versionWarning);
+      return cachedJsonResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'SKTD': {
       try {

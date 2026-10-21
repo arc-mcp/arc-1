@@ -20,7 +20,7 @@ import {
 import { activate, activateBatch } from '../../adt/devtools.js';
 import { badiContainerXml, hasBadiImplementations } from '../../adt/enhancement-impl.js';
 import { AdtApiError, AdtSafetyError } from '../../adt/errors.js';
-import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
+import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
 import { checkOperation, checkPackage, OperationType } from '../../adt/safety.js';
 import { isServerDrivenObjectType } from '../../adt/server-driven.js';
 import { getTransport } from '../../adt/transport.js';
@@ -36,6 +36,7 @@ import {
   isTablesEndpointAvailable,
   isTableTypesEndpointAvailable,
 } from '../feature-cache.js';
+import { resolveFmDescriptionLanguage } from '../function-parameter-language.js';
 import type { FunctionProcessingType, FunctionUpdateTaskKind } from '../function-processing.js';
 import {
   canonicalTablType,
@@ -99,6 +100,7 @@ function prepareFunctionModuleCreateSource(
   name: string,
   source: string | undefined,
   parameters: FmParameter[] | undefined,
+  language?: string,
 ): { shouldWrite: boolean; source: string; warnings: string[] } {
   const shouldWrite = !!source || (parameters !== undefined && parameters.length > 0);
   if (!shouldWrite) return { shouldWrite: false, source: '', warnings: [] };
@@ -109,12 +111,14 @@ function prepareFunctionModuleCreateSource(
     const baseSource =
       !prepared || prepared.trim() === ''
         ? `FUNCTION ${name}.\nENDFUNCTION.\n`
-        : /^\s*FUNCTION\s+/i.test(prepared)
+        : findFmHeader(prepared)
           ? prepared
           : `FUNCTION ${name}.\n${prepared}\nENDFUNCTION.\n`;
     try {
-      prepared = spliceFmSignature(baseSource, name, parameters);
-    } catch {
+      prepared = spliceFmSignature(baseSource, name, parameters, language);
+    } catch (error) {
+      // Explicit descriptions must never be silently dropped by the legacy source fallback.
+      if (parameters.some((parameter) => parameter.description !== undefined)) throw error;
       prepared = baseSource;
       warnings.push(
         'Could not splice structured parameters into the FUNCTION source. Used the source without structured parameter changes.',
@@ -588,21 +592,18 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
       );
     }
     const refDescription = String(args.refObjectDescription ?? '');
-    // SAP_BASIS 758 rejects an empty SMBC parent description with only "Check of condition failed".
-    if (refType === 'SMBC/TYP' && !refDescription.trim()) {
-      return errorResult(
-        '"refObjectDescription" is required for SMBC/TYP KTD creation. Provide the business configuration description.',
-      );
-    }
     // Build the parent URI. ADT URIs use lowercase names by convention (matches the Eclipse trace).
     const refParentType = refType.split('/')[0] ?? '';
     const refUri = `${objectBasePath(refParentType)}${encodeURIComponent(refName.toLowerCase())}`;
+    // SADT_OBJECT_REFERENCE reads adtcore:description under check="not-initial(...)": an empty
+    // attribute fails with "Check of condition failed"; an absent one is skipped.
+    const refDescriptionAttr = refDescription.trim() ? ` adtcore:description="${escapeXmlAttr(refDescription)}"` : '';
 
     const ktdLang = normalizeAdtLanguage(config.language);
     const ktdBody = `<?xml version="1.0" encoding="UTF-8"?>
 <sktd:docu xmlns:sktd="http://www.sap.com/wbobj/texts/sktd" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:language="${ktdLang}" adtcore:name="${escapeXmlAttr(name)}" adtcore:type="SKTD/TYP" adtcore:masterLanguage="${ktdLang}">
   <adtcore:packageRef adtcore:name="${escapeXmlAttr(pkg)}"/>
-  <sktd:refObject adtcore:description="${escapeXmlAttr(refDescription)}" adtcore:name="${escapeXmlAttr(refName)}" adtcore:type="${escapeXmlAttr(refType)}" adtcore:uri="${escapeXmlAttr(refUri)}"/>
+  <sktd:refObject${refDescriptionAttr} adtcore:name="${escapeXmlAttr(refName)}" adtcore:type="${escapeXmlAttr(refType)}" adtcore:uri="${escapeXmlAttr(refUri)}"/>
 </sktd:docu>`;
 
     const ktdCreateUrl = '/sap/bc/adt/documentation/ktd/documents';
@@ -678,7 +679,12 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
   // or transport entry. FUNC parameters can synthesize source even when source is omitted.
   const funcPreparation =
     type === 'FUNC'
-      ? prepareFunctionModuleCreateSource(name, source, args.parameters as FmParameter[] | undefined)
+      ? prepareFunctionModuleCreateSource(
+          name,
+          source,
+          args.parameters as FmParameter[] | undefined,
+          await resolveFmDescriptionLanguage(client, groupArg, args.parameters as FmParameter[] | undefined),
+        )
       : { shouldWrite: !!source, source: source ?? '', warnings: [] };
   const shouldWriteSource = funcPreparation.shouldWrite;
   const lintWarnings = runPreWriteLint(funcPreparation.source, type, name, config, lintOverride);
@@ -947,6 +953,11 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.name,
           plan.source,
           plan.obj.parameters as FmParameter[] | undefined,
+          await resolveFmDescriptionLanguage(
+            client,
+            plan.group ?? '',
+            plan.obj.parameters as FmParameter[] | undefined,
+          ),
         );
         plan.source = prepared.shouldWrite ? prepared.source : undefined;
         warnings.push(...prepared.warnings.map((warning) => `${plan.type} ${plan.name}: ${warning}`));

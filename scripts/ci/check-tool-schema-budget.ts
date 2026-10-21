@@ -214,7 +214,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       descriptionTokenEstimate: 12_800,
       // Includes expectedSourceHash (#853) and SAPRead.source (#855).
       // LONG_TEXT adds eight field descriptions; shorter existing guidance preserves byte/token ceilings.
-      descriptionCount: 291,
+      descriptionCount: 292, // +1: FUNC parameter description (#1040).
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_550,
     },
@@ -231,7 +231,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
       // Combined relations + bounded ATC objects[]; retain a tighter BTP token ratchet.
       schemaTokenEstimate: 17_650,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 277,
+      descriptionCount: 278, // +1: FUNC parameter description (#1040).
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },
@@ -272,7 +272,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 18_750,
       descriptionTokenEstimate: 12_800,
-      descriptionCount: 291,
+      descriptionCount: 292, // +1: FUNC parameter description (#1040).
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: 23_550,
     },
@@ -285,7 +285,7 @@ export const TOOL_SCHEMA_SCENARIOS: ToolSchemaScenario[] = [
     budget: {
       schemaTokenEstimate: 17_650,
       descriptionTokenEstimate: 12_200,
-      descriptionCount: 277,
+      descriptionCount: 278, // +1: FUNC parameter description (#1040).
       maxTotalWireBytes: WRITE_WIRE_WALL,
       maxPerToolWireBytes: PER_TOOL_WIRE_WALL,
     },

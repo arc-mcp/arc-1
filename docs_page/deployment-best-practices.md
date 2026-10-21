@@ -75,8 +75,10 @@ not alert. Wire these into your APM/log platform:
 
 ### Trace context and agent attribution
 
-Aligned with the SAP Architecture Center guidance for
-[third-party MCP access](https://architecture.learning.sap.com/docs/ref-arch/137800):
+These capabilities support SAP's guidance for
+[third-party MCP access](https://architecture.learning.sap.com/docs/ref-arch/137800).
+See [the control assessment](sap-api-policy-and-architecture.md#current-control-assessment) for
+requirements that remain partial or deployment-dependent:
 
 - **W3C trace context passes through.** A valid `traceparent` (and its `tracestate`) on an inbound
   MCP request is forwarded verbatim on every outbound SAP call, so one trace spans agent → ARC-1 →
@@ -88,10 +90,12 @@ Aligned with the SAP Architecture Center guidance for
   (`name/version`); over HTTP the transport is stateless, so it is the `User-Agent` — best-effort,
   caller-controlled, and never an authorization input. It sits next to `clientId` (the registered
   OAuth client) on every audit event and in the BTP Audit Log.
-- **SAP still sees the human, not the agent.** Principal propagation exchanges the user token for a
-  per-user SAP credential via the Destination Service (the protocol depends on the destination type), and ABAP has no claim slot
-  for an agent identity — so SAP-side logs (SM20, transport owner, `adtcore:changedBy`) attribute
-  the *user*. Agent attribution lives in ARC-1's audit trail; correlate on `requestId`/`traceparent`.
+- **Registered agent identity remains a gap.** ARC-1's supported principal-propagation flow obtains
+  a per-user SAP credential through a destination-dependent exchange. `clientAgent` is only an
+  ARC-1 audit label; it does not establish the registered Cloud Identity Services agent identity
+  SAP's architecture requires in the downstream credential. Tool scopes also do not prove that
+  the SAP credential is narrowed separately for each tool. Validate the tenant-supported identity
+  flow; correlate current user/client audit records through `requestId`/`traceparent`.
 
 ### Example: enterprise with multiple SAP systems
 
