@@ -49,7 +49,7 @@ If-None-Match: <etag>
 
 | SAP response | ARC-1 behavior |
 |---|---|
-| `304 Not Modified` | Return the cached source with `[cached:revalidated]` |
+| `304 Not Modified` | Return the cached source with `[cached:revalidated]` (SRVB JSON: a `"cached": "revalidated"` field) |
 | `200 OK` | Replace the body and `ETag`, then return the fresh source |
 | `200 OK` without `ETag` | Store the body; the next read performs a normal GET |
 | `404` or `410` | Evict the entry and surface the ADT error |
@@ -79,7 +79,8 @@ returns `304`. Under principal propagation the existing dependency-payload cache
 The retired aggregate read/write APIs and in-memory graph store have been removed. Existing SQLite
 aggregate rows/schema remain untouched for compatibility and cache statistics; they never enter
 context results. No cache reset or database migration is required.
-`SAPRead` still uses `[cached:revalidated]` for a source body revalidated by SAP.
+`SAPRead` uses `[cached:revalidated]` for a source body revalidated by SAP; SRVB JSON carries
+`"cached": "revalidated"` instead.
 
 Unchanged ABAP source does not need repeated CPU-heavy parsing. ARC-1 memoizes public contract
 extraction and dependency-name extraction by source content hash, object name/type and ABAP parser
