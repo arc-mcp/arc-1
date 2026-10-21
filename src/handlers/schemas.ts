@@ -22,11 +22,14 @@ import {
   ATC_BATCH_TYPES,
 } from '../adt/atc-batch.js';
 import { DTEL_MAX_LABEL_LENGTHS, TABLE_TYPE_DIMENSION_MAX } from '../adt/ddic-xml.js';
+import { isValidFmParameterDescription } from '../adt/fm-parameter-docs.js';
 import { canonicalRevisionSourcePath, isCanonicalHostRelativeAdtPath } from '../adt/path-safety.js';
 import { isServerDrivenObjectType } from '../adt/server-driven.js';
+import { SYNTAX_BATCH_TYPES } from '../adt/syntax-batch.js';
 import { TEXT_ELEMENT_PARTS as SAPREAD_TEXT_ELEMENT_INCLUDES } from '../adt/text-elements.js';
 import { MAX_GREP_PATTERN_LENGTH } from '../context/grep.js';
 import { CI_PACKAGES_SCHEMA } from './diagnose-fields.js';
+import { dumpFilters, validateDumpFilterInputs } from './dump-filter-inputs.js';
 import { sourcePreconditionError } from './editable-source.js';
 import { FUNCTION_PROCESSING_TYPES, FUNCTION_UPDATE_TASK_KINDS } from './function-processing.js';
 import { CLASS_WRITE_INCLUDES, KNOWN_BASE_TYPES } from './object-types.js';
@@ -591,18 +594,30 @@ function validateFunctionProcessingInput(
 // FM signature parameter (issue #252). One entry per IMPORTING/EXPORTING/CHANGING/
 // TABLES/EXCEPTIONS/RAISING line in the FUNCTION signature region. ARC-1 builds
 // the ABAP source from this array; SAP's own signature lives inline in /source/main.
-const fmParameterSchema = z.object({
-  kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
-  name: z.string(),
-  /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
-  type: z.string().optional(),
-  /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
-  byValue: looseOptionalBoolean,
-  /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
-  default: z.string().optional(),
-  /** Emit `OPTIONAL` keyword. */
-  optional: looseOptionalBoolean,
-});
+const fmParameterSchema = z
+  .object({
+    kind: z.enum(['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising']),
+    name: z.string(),
+    description: z
+      .string()
+      .min(1)
+      .max(60)
+      .refine(isValidFmParameterDescription, 'Use 1–60 printable characters; blank descriptions are not supported.')
+      .optional(),
+    /** ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. */
+    type: z.string().optional(),
+    /** Emit `VALUE(name)` wrapper. Default false (pass-by-reference). */
+    byValue: looseOptionalBoolean,
+    /** Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. */
+    default: z.string().optional(),
+    /** Emit `OPTIONAL` keyword. */
+    optional: looseOptionalBoolean,
+  })
+  .refine(
+    (parameter) =>
+      parameter.description === undefined || (parameter.kind !== 'exceptions' && parameter.kind !== 'raising'),
+    { path: ['description'], message: 'description is supported only for importing/exporting/changing/tables.' },
+  );
 
 const dtelShortLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.short).optional();
 const dtelMediumLengthSchema = z.coerce.number().int().min(0).max(DTEL_MAX_LABEL_LENGTHS.medium).optional();
@@ -975,6 +990,20 @@ export const SAPNavigateSchema = z
     type: z.string().optional(),
     name: z.string().optional(),
     objectType: z.string().optional(),
+    packages: z
+      .array(
+        z
+          .string()
+          .trim()
+          .toUpperCase()
+          .min(1)
+          .max(30)
+          .regex(/^\$?[A-Z0-9_/]+$/),
+      )
+      .min(1)
+      .max(20)
+      .optional(),
+    detail: z.enum(['objects', 'positions', 'snippets']).optional(),
     maxResults: relationNumber.optional(),
     line: z.coerce.number().optional(),
     column: z.coerce.number().optional(),
@@ -985,6 +1014,9 @@ export const SAPNavigateSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.action !== 'references' && (value.packages !== undefined || value.detail !== undefined)) {
+      ctx.addIssue({ code: 'custom', message: 'packages and detail apply only to references.' });
+    }
     if (value.action === 'relations') {
       const checked = LiveRelationsInput.safeParse(value);
       if (!checked.success)
@@ -1048,6 +1080,7 @@ export const SAPDiagnoseSchema = z
       'atc_variants',
       'cds_testcases',
       'dumps',
+      'feed_schema',
       'traces',
       'trace_start',
       'trace_requests',
@@ -1081,6 +1114,7 @@ export const SAPDiagnoseSchema = z
     detailUrl: z.string().optional(),
     errorType: z.string().optional(),
     user: z.string().optional(),
+    filters: dumpFilters.optional(),
     authObject: z.string().optional(),
     from: z.string().optional(),
     to: z.string().optional(),
@@ -1111,6 +1145,25 @@ export const SAPDiagnoseSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    validateDumpFilterInputs(input, ctx);
+    if (input.action === 'syntax' && input.objects !== undefined) {
+      if (input.objects.some((object) => !(SYNTAX_BATCH_TYPES as readonly string[]).includes(object.type)))
+        ctx.addIssue({
+          code: 'custom',
+          path: ['objects'],
+          message: 'Syntax batches support CLAS, INTF, PROG and DDLS.',
+        });
+      for (const [key, value] of Object.entries(input)) {
+        const filler =
+          value === false || (Array.isArray(value) && value.length === 0) || (key === 'maxResults' && value === 0);
+        if (value !== undefined && !['action', 'objects', 'version'].includes(key) && !filler)
+          ctx.addIssue({ code: 'custom', path: [key], message: `${key} is not supported for syntax batches.` });
+      }
+      return;
+    }
+
+    // These actions have a complete allowlist above, including harmless strict-client defaults.
+    if (input.action === 'feed_schema' || (input.action === 'dumps' && input.filters !== undefined)) return;
     const ci = input.action === 'atc_ci' || input.action === 'unittest_ci';
     if (ci) {
       const count = (input.packages?.length ?? 0) + (input.packageTrees?.length ?? 0);

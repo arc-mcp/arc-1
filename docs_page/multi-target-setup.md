@@ -352,9 +352,9 @@ permits it:
 | `SAPQuery` | `long_text`, `sql`, subject to the selected target's data-preview/SQL gate and caller scopes |
 | `SAPNavigate` | Code navigation |
 | `SAPLint` | `lint`, `lint_and_fix`, `list_rules` (offline in ARC-1; does not save fixes to SAP) |
-| `SAPDiagnose` | `syntax`, `unittest`, `atc`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, `authorization_trace` |
+| `SAPDiagnose` | `syntax`, `unittest`, `atc`, `atc_variants`, `cds_testcases`, `dumps`, `feed_schema`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, `authorization_trace` |
 | `SAPContext` | Dependency context |
-| `SAPTransport` | `list`, `get`, `check`, `history` |
+| `SAPTransport` | `list`, `get`, `diff`, `check`, `history` |
 <!-- multi-target-action-contract:end -->
 
 This is the maximum reviewed action set, not a promise of access. Diagnostic data actions still

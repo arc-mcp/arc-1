@@ -27,6 +27,15 @@ Direct HTTP providers retain call/result IDs across parallel turns. The trace re
 call, including calls beyond `maxToolCalls`; overflow calls are scored but never executed.
 Payload-only regression tests: `npx vitest run tests/unit/evals` (no API/SAP requests).
 
+### Application-log trajectories
+
+The `application-log` mock-only bucket covers exact SLG1 numbers, asking for missing keys,
+authorization denial without SQL/RFC/helper fallbacks, continuation using `nextOffset`, and SO10
+routing to `long_text`. Responses are synthetic; the SO10 case reuses the stored-text fixture.
+`npx vitest run tests/unit/evals/application-log.test.ts` validates deterministic scenario contracts
+only. It does not call a model or establish an actual model score. Run real model evaluations
+separately with an explicitly configured provider and `--file application-log --backend mock`.
+
 ### Stored-text trajectories
 
 ```sh

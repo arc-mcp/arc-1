@@ -95,7 +95,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   {
     name: 'allow-data-preview',
     valueName: 'boolean',
-    description: 'Enable table data preview and stored SAPscript texts (true/false)',
+    description: 'Enable table data preview, stored SAPscript texts and saved application logs (true/false)',
   },
   { name: 'allow-free-sql', valueName: 'boolean', description: 'Enable freestyle SQL (true/false)' },
   {

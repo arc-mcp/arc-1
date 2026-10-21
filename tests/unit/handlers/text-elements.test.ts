@@ -261,7 +261,7 @@ describe('text elements routing and safety', () => {
       expect(result.isError).toBe(true);
       const message = result.content[0]?.text ?? '';
       expect(message.match(/Text elements were saved, but activation was not confirmed\./g)).toHaveLength(1);
-      expect(message).toContain('Retry the same text write.');
+      expect(message).toContain('Inspect the text pool before retrying the same text write.');
       if (minimalErrors) {
         expect(message).not.toContain('Activation refused');
         expect(message).toContain('ARC1_MINIMAL_ERRORS=true');

@@ -4,13 +4,15 @@
 **Source:** [architecture.learning.sap.com/docs/ref-arch/137800](https://architecture.learning.sap.com/docs/ref-arch/137800)
 **Related SAP pages:** [A2A and MCP for Interoperability](https://architecture.learning.sap.com/docs/ref-arch/76ec36) ·
 [Agentic AI & AI Agents](https://architecture.learning.sap.com/docs/ref-arch/98efa0)
-**Status:** evaluated; two gaps closed in this change, the rest classified below.
+**Status:** historical July assessment; superseded for current policy and control conclusions.
 
-> **Scope note.** This dossier answers *"is the architecture sound?"* — measurable, and mostly yes.
-> It does **not** answer *"is the use permitted?"* under the SAP API Policy, which turns on ADT being a
-> non-published API and on §2.2.2's endorsed-architecture requirement. That question, and the
-> recommendation to consult your SAP contact, live in
-> [`docs_page/sap-api-policy-and-architecture.md`](../../docs_page/sap-api-policy-and-architecture.md).
+> **Correction, 2026-10-21:** use the [current research dossier](2026-10-21-sap-api-policy-custom-mcp.md)
+> and [public guidance](../../docs_page/sap-api-policy-and-architecture.md). SAP's FAQ Q56 supports
+> custom MCP under conditions; Q33 gives explicit ADT-channel and data-use restrictions. Current
+> SAP Help documents remote MCP proxying through Integration Suite. July's “Met” ratings below
+> are historical judgments, not a current compliance score. In particular, user propagation does
+> not establish registered agent identity or per-tool downstream scope; TLS, secrets, quotas and
+> alerts require deployment evidence. The affected rows and rationale are corrected below.
 
 ---
 
@@ -61,19 +63,19 @@ deviations" below.
 |---|---|---|---|
 | 2 | Authenticate every inbound request and every outbound API call | **Met** | XSUAA → OIDC → API key inbound; SAP-native (`S_DEVELOP`, `S_ADT_RES`) outbound. stdio is unauthenticated by design (local, single-user, scope checks skipped) |
 | 3 | Never store long-lived credentials | **Partial** | PP is the documented default and the recommended production topology. Shared `SAP_USER`/`SAP_PASSWORD` remains supported for on-prem/stdio, and the ADR-0007 shared-Basic multi-target identity is default-off, mutation-free and one-instance. Both are operator choices with stated ceilings, not silent fallbacks |
-| 4 | **Never proxy the caller's token to a downstream API — use RFC 8693 token exchange** | **Met** | PP goes through the Destination Service: `OAuth2UserTokenExchange` / `OAuth2JWTBearer` (RFC 8693) or a SAML bearer assertion. The one path that *reads* like an exception — `SAP-Connectivity-Authentication: Bearer <userJwt>` — targets the **Cloud Connector**, which exchanges it for a short-lived X.509 user certificate. Recorded explicitly in [security-model.md §4](../security-model.md#4-deployment-mode-scoping) so it is not misfiled in review |
-| 5 | **The exchanged token must carry the calling agent's identity while retaining user context** | **Partial — structurally bounded** | User context: yes, that is exactly what PP produces. Agent identity: **ABAP has no claim slot for it.** SAP-side records (SM20, `adtcore:changedBy`, transport owner) attribute the human. ARC-1 closes its own half — `clientAgent` on every audit event and in the BTP Audit Log, beside the registered `clientId`. Claiming more would be false |
+| 4 | New downstream credentials instead of caller-token forwarding | **Partial; corrected 2026-10-21** | Destination-specific user-context exchange is supported. `OAuth2UserTokenExchange` / `OAuth2JWTBearer` are not interchangeable with `OAuth2TokenExchange` or universally RFC 8693. Connectivity-proxy PP is an intermediary flow; see the current dossier for agent/scope gaps. |
+| 5 | Agent identity retained alongside user context | **Partial; corrected 2026-10-21** | Current PP preserves user context but does not establish a registered CIS agent identity in the downstream credential. `clientAgent` is a caller-controlled audit label. The earlier claim that ABAP universally has no agent-identity slot was unsupported. |
 | 6 | Input validation and sanitization of all tool parameters | **Met** | Zod v4 schemas + `stripLlmEmptyValues` + invariant **I6** (per-segment URL encoding, SQL/XML escaping, header charset allowlists) |
-| 7 | TLS 1.2+ on all connections | **Met** | Platform TLS, certificate validation on by default; `SAP_INSECURE` logs a warning (R7 closed) |
+| 7 | TLS 1.2+ on all connections | **Deployment-dependent** | Certificate validation defaults on; verify actual inbound/outbound TLS and configuration. Code defaults alone are not evidence that every deployed hop satisfies the requirement. |
 | 8 | Dedicated secrets management (SAP Credential Store, Vault) | **Deviates** | Env vars + CF service bindings + Destination Service. See "Deliberate deviations" |
-| 9 | Adhere to OWASP MCP Top 10 | **Met, now provable** | Substantively covered by the 7 invariants + residual-risk register; the explicit mapping is now [security-model.md §9](../security-model.md#9-external-framework-mapping--owasp-mcp-top-10) |
+| 9 | OWASP MCP Top 10 mitigations | **Mapped, not certified** | See [security-model.md §9](../security-model.md#9-external-framework-mapping--owasp-mcp-top-10) and its residual risks; a mapping is not proof of comprehensive compliance. |
 
 ### Scalability and reliability
 
 | # | SAP requirement | Verdict | ARC-1 |
 |---|---|---|---|
-| 10 | Rate limits must never exceed the underlying SAP API quotas; per-consumer limits when agents share an entry point | **Met, operator-configured** | Three layers: per-IP OAuth, per-IP/per-user MCP, and a server-wide SAP concurrency semaphore. Defaults are conservative rather than landscape-derived (`ARC1_RATE_LIMIT` 0, `ARC1_MAX_CONCURRENT` 10 — not read from `rdisp/wp_no_dia`), so the ceiling is a deployment decision documented in the checklist. Whether to change the shipped default is in "Open" |
-| 11 | Timeouts and circuit breakers | **Partial / Deviates** | Timeouts: 120 s `AbortSignal.timeout` on every request. 503 and 429 retried once honouring `Retry-After`. Circuit breaker: not implemented, deliberately |
+| 10 | Downstream API quotas and per-consumer limits | **Deployment-dependent** | Limits exist; the user limit defaults off. Tool calls can fan out into many SAP requests and replicas multiply process-local allowances. Quota adherence requires workload and deployment evidence. |
+| 11 | Timeouts and circuit breakers | **Partial** | HTTP timeouts and retry limits exist. No built-in circuit breaker; ordinary semaphore waits have no universal queue deadline. See the current dossier for the remaining gap. |
 | 12 | Stateless design for horizontal scaling | **Met, with per-process state documented** | No session store; the MCP transport runs stateless and OAuth `client_id`s are HMAC-derived rather than stored. Rate limiters, feature probe and cache are per-process, and ADR-0007 shared-Basic requires exactly one instance. Consequences now documented in [deployment-best-practices.md](../../docs_page/deployment-best-practices.md#scaling-out-what-changes-at-more-than-one-instance) |
 
 ### Observability
@@ -82,7 +84,7 @@ deviations" below.
 |---|---|---|---|
 | 13 | Log every tool invocation with caller identity, parameters (PII redacted), target API, response status | **Met** | Typed `tool_call_start` / `tool_call_end` / `http_request` events with `user`, `clientId`, `clientAgent`, `requestId`; central redaction before any sink write (R5 closed); file sink `0600` |
 | 14 | **Propagate distributed trace context (W3C TraceContext) through to SAP APIs** | **Gap — closed here** | A valid inbound `traceparent`/`tracestate` is now forwarded verbatim on every outbound SAP call. See "What changed" |
-| 15 | Alerts on error spikes, latency degradation, authentication failures | **Met (operator-side)** | Every field needed was already emitted; the missing piece was guidance. Now [What to alert on](../../docs_page/deployment-best-practices.md#what-to-alert-on) |
+| 15 | Alerts on errors, latency and authentication failures | **Operator configuration required** | Audit fields and [alert guidance](../../docs_page/deployment-best-practices.md#what-to-alert-on) exist; functioning alerts still need configuration and testing. |
 
 ### Lifecycle
 
@@ -95,7 +97,7 @@ deviations" below.
 
 | # | SAP guidance | ARC-1 |
 |---|---|---|
-| 18 | Prefer the MCP Gateway in SAP Integration Suite, Joule Studio-generated MCP servers, or A2A via the Agent Gateway | Joule Studio generates from SAP's **business** API catalog; there is no ADT/developer-tooling surface in it, so it does not overlap ARC-1's domain. A2A is for multi-agent delegation, orthogonal to a tool server. The MCP Gateway is complementary infrastructure rather than a substitute — but note it **cannot front ARC-1 today**: its documented creation methods (API artifact, OpenAPI HTTP endpoint, RFC backend) are API-to-MCP wrapping, not MCP-to-MCP federation. Detail and sources in [`docs_page/sap-api-policy-and-architecture.md` §4](../../docs_page/sap-api-policy-and-architecture.md) |
+| 18 | SAP-managed MCP infrastructure | **Updated 2026-10-21:** SAP now documents remote MCP servers as an Integration Suite source. The previous claim that the Gateway cannot front ARC-1 is superseded. ARC-1 interoperability and delegated identity through that path remain unverified; see [current guidance](../../docs_page/sap-api-policy-and-architecture.md). |
 
 ---
 
@@ -140,12 +142,12 @@ the first traced call; the fix would be a patch, not a config flag.
 
 ## Deliberate deviations
 
-Each of these is a "no" with a reason, so they do not return as review comments.
+Historical decisions, with corrections where current evidence does not support the original rationale.
 
 | Item | Why not |
 |---|---|
-| **Circuit breaker** (#11) | A breaker protects a caller from one of *many* backends. ARC-1 has exactly one, already bounded by a server-wide semaphore, a 120 s timeout, and single-shot 503/429 retries honouring `Retry-After`. Adding a breaker introduces a new failure mode (open circuit on a healthy system) to solve a problem the semaphore already solves |
-| **SAP Credential Store / Vault** (#8) | Env + CF service bindings + Destination Service is the CF-native path and already satisfies "no long-lived credentials in the server" for the recommended PP topology. A credential-store dependency adds a runtime call and an outage mode without changing the threat model |
+| **Circuit breaker** (#11) | **Earlier rejection superseded.** A semaphore bounds concurrency but does not suppress repeated failing calls, including to a single backend. Evaluate target-specific outage isolation and recovery; see OPS-08 in the current roadmap. |
+| **SAP Credential Store / Vault** (#8) | **Earlier equivalence withdrawn.** PP avoids end-user passwords but application credentials remain. Environment variables and CF bindings are not evidence of dedicated storage/rotation. Verify the deployed secret lifecycle against the reference architecture. |
 | **Saga / compensation engine** | See the caveat under #1. `batch_create` already reports per-item outcomes and flags written-but-not-activated objects. Automatic rollback of development objects destroys diagnostic evidence; the developer decides |
 | **Generating a `traceparent` when the client sends none** | ARC-1 is not a tracer. `requestId` already correlates its logs; a synthesized trace-id no collector knows about is noise, and the spec asks pass-through systems to forward, not originate |
 | **`SAP-PASSPORT`** | SAP's own end-to-end trace header is a distinct format requiring real span generation and an SAP-side collector. Genuinely useful for STAD/Solution Manager correlation — a candidate for later, not a small change |
@@ -154,7 +156,7 @@ Each of these is a "no" with a reason, so they do not return as review comments.
 
 ---
 
-## Open — needs a decision, not code
+## Historical open questions — verify current status before resuming
 
 1. **Should the shipped `ARC1_RATE_LIMIT` default change?** (#10) The layers are there and documented;
    the question is only whether "off unless configured" is the right *default* for a multi-user HTTP

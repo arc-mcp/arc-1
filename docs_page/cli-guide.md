@@ -502,8 +502,9 @@ ARC-1 starts read-only. SQL, data preview, object writes, transport writes, and 
 positive opt-ins. Per-user scopes can restrict the server ceiling but cannot expand it. Keep package
 and transport allowlists narrow, and use `SAP_DENY_ACTIONS` for action-level exclusions.
 
-ARC-1 primarily uses ADT REST endpoints under `/sap/bc/adt/*`. SAP does not list that complete surface
-as published APIs in SAP Business Accelerator Hub. Before production or agentic use, review the
-[SAP API Policy and architecture alignment](sap-api-policy-and-architecture.md), verify the relevant
-endpoint status with SAP for your deployment, and apply your organization's data-egress and automation
-controls. Using the deterministic CLI does not change the endpoint's publication status.
+ARC-1 primarily uses ADT REST endpoints under `/sap/bc/adt/*`. SAP's API Policy FAQ Q33 classifies
+ADT APIs as internal and limits development use to endorsed channels; ARC-1's standalone TypeScript
+client is not specifically identified as one. Follow the custom-MCP architecture and clarify this
+channel and intended use with SAP as described in [SAP API Policy and architecture alignment](sap-api-policy-and-architecture.md),
+including dev/test. A deterministic CLI does not itself establish an endorsed channel or alter the
+API's permitted use. Apply your organization's data-egress and automation controls as well.

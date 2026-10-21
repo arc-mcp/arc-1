@@ -536,8 +536,8 @@ export class AdtClient {
   }
 
   /** Resolve by URI: some releases decorate search names with "(Function Module)". */
-  async resolveFunctionGroup(fmName: string): Promise<string | null> {
-    const results = await this.searchObject(fmName, 10);
+  async resolveFunctionGroup(fmName: string, request?: AdtRequestOptions): Promise<string | null> {
+    const results = await this.searchObject(fmName, 10, undefined, request);
     for (const r of results) {
       const match = r.uri.match(/\/functions\/groups\/([^/]+)\/fmodules\/([^/?#]+)(?:[/?#]|$)/i);
       if (match && decodeURIComponent(match[2]!).toUpperCase() === fmName.toUpperCase()) {
@@ -930,15 +930,16 @@ export class AdtClient {
     type: string,
     name: string,
     opts: { include?: string; group?: string } = {},
+    request?: AdtRequestOptions,
   ): Promise<RevisionListResult> {
     checkOperation(this.safety, OperationType.Read, 'GetRevisions');
     const url = this.revisionsUrlFor(type, name, opts);
-    const resp = await this.http.get(url, { Accept: 'application/atom+xml;type=feed' });
+    const resp = await this.http.get(url, { Accept: 'application/atom+xml;type=feed' }, request);
     return parseRevisionFeed(resp.body);
   }
 
   /** Read source content for a specific revision URI from the revisions feed. */
-  async getRevisionSource(versionUri: string): Promise<string> {
+  async getRevisionSource(versionUri: string, request?: AdtRequestOptions): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'GetRevisionSource');
     const canonicalUri = canonicalRevisionSourcePath(versionUri);
     if (!canonicalUri) {
@@ -946,7 +947,7 @@ export class AdtClient {
         'Path must be a canonical host-relative ADT path under /sap/bc/adt/ and a source URI from a VERSIONS response.',
       );
     }
-    const resp = await this.http.get(canonicalUri, { Accept: 'text/plain' });
+    const resp = await this.http.get(canonicalUri, { Accept: 'text/plain' }, request);
     return resp.body;
   }
 
@@ -1014,12 +1015,19 @@ export class AdtClient {
   // ─── Search Operations ─────────────────────────────────────────────
 
   /** Search for ABAP objects by name pattern */
-  async searchObject(query: string, maxResults = 100, objectType?: string): Promise<AdtSearchResult[]> {
+  async searchObject(
+    query: string,
+    maxResults = 100,
+    objectType?: string,
+    request?: AdtRequestOptions,
+  ): Promise<AdtSearchResult[]> {
     checkOperation(this.safety, OperationType.Search, 'SearchObject');
     const limit = clampSearchResults(maxResults, 100);
     const typeFilter = objectType ? `&objectType=${encodeURIComponent(objectType)}` : '';
     const resp = await this.http.get(
       `/sap/bc/adt/repository/informationsystem/search?operation=quickSearch&query=${encodeURIComponent(query)}&maxResults=${limit}${typeFilter}`,
+      undefined,
+      request,
     );
     return parseSearchResults(resp.body);
   }

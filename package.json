@@ -106,7 +106,7 @@
     "audit:ci": "audit-ci --config audit-ci.json"
   },
   "dependencies": {
-    "@abaplint/core": "^2.120.71",
+    "@abaplint/core": "^2.120.80",
     "@arc-mcp/xsuaa-auth": "^1.1.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@sap-cloud-sdk/connectivity": "^4.9.1",
@@ -117,16 +117,16 @@
     "commander": "^15.0.0",
     "cors": "2.8.6",
     "diff": "^9.0.0",
-    "dotenv": "^18.0.6",
-    "express": "^5.2.1",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
     "fast-xml-parser": "^5.11.2",
     "helmet": "^8.3.0",
     "jose": "^6.2.12",
     "on-headers": "^1.1.0",
-    "rate-limiter-flexible": "^11.2.1",
-    "undici": "^8.11.2",
-    "zod": "^4.6.5"
+    "rate-limiter-flexible": "^11.2.2",
+    "undici": "^8.12.2",
+    "zod": "^4.6.7"
   },
   "overrides": {
     "@hono/node-server": "2.0.10",
@@ -145,7 +145,7 @@
     "@types/node": "^22.20.5",
     "@types/on-headers": "^1.0.4",
     "@types/supertest": "^7.2.1",
-    "@vitest/coverage-v8": "^5.0.3",
+    "@vitest/coverage-v8": "^5.0.5",
     "audit-ci": "7.1.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",

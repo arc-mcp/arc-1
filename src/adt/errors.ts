@@ -26,6 +26,9 @@ export class AdtError extends Error {
   /** A plugin POST failed without establishing whether its service executed it. */
   pluginPostOutcome?: 'unknown';
 
+  /** Activation failed without establishing whether SAP completed it. */
+  activationOutcome?: 'unknown';
+
   /**
    * Optional remediation hint attached by a handler when it has context the
    * generic error formatter lacks (e.g., the list of blocking dependents
@@ -76,6 +79,7 @@ export interface SapErrorClassification {
     | 'method-not-supported'
     | 'icf-handler-not-bound'
     | 'icf-service-inactive'
+    | 'gateway-service-not-found'
     | 'bdef-base-not-extensible'
     | 'include-not-initialized'
     | 'data-view-not-authorized'
@@ -613,6 +617,24 @@ export function classifySapDomainError(
   const bodyLower = bodyRaw.toLowerCase();
   const typeId = extractExceptionType(bodyRaw);
 
+  // Gateway MED/170 is a service-resolution failure, even though it returns 403.
+  // Verified on 7.50/8.16; match the structured code, not localized message text (SAP KBA 2498534).
+  if (statusCode === 403 && path?.startsWith('/sap/opu/odata/')) {
+    let code: unknown;
+    try {
+      code = JSON.parse(bodyRaw)?.error?.code;
+    } catch {
+      // Non-JSON responses retain their existing classification.
+    }
+    if (code === '/IWFND/MED/170') {
+      return {
+        category: 'gateway-service-not-found',
+        hint: 'SAP Gateway could not resolve the OData service. Ask Basis to check service registration and routing in /IWFND/MAINT_SERVICE and /IWBEP/REG_SERVICE before retrying.',
+        transaction: '/IWFND/MAINT_SERVICE',
+      };
+    }
+  }
+
   // A direct save to an uninitialized CCAU include fails with this error (#303).
   // NW 7.50 uses the same message for missing programs, which need the normal not-found hint.
   if (
@@ -1050,6 +1072,14 @@ export class AdtNetworkError extends AdtError {
   ) {
     super(`ADT network error: ${message}`);
     this.name = 'AdtNetworkError';
+  }
+
+  get isTimeout(): boolean {
+    return this.cause?.name === 'TimeoutError';
+  }
+
+  get isCancelled(): boolean {
+    return this.cause?.name === 'AbortError';
   }
 }
 

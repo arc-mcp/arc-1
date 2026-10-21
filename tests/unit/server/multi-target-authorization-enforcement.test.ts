@@ -530,6 +530,17 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
     }
   });
 
+  it('refuses a transport diff on an ungranted target before SAP contact', async () => {
+    await start();
+    const token = addUser(['A4H/000'], ['read']);
+    const denied = await call(token, 'SAPTransport', { target: 'A4H/001', action: 'diff', id: 'A4HK900001' });
+    expect(denied.isError).toBe(true);
+    expect(logger.emitAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'target_resolution_failed', errorCode: 'TARGET_NOT_GRANTED' }),
+    );
+    expect(network).not.toHaveBeenCalled();
+  });
+
   it('reprojects renewed tokens immediately without retaining an earlier caller grant', async () => {
     await start();
     const before = addUser(['A4H/000']);

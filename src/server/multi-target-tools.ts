@@ -37,7 +37,7 @@ const MULTI_TARGET_ACTION_RULES = new Map<
   [
     'SAPTransport',
     {
-      actions: new Set(['list', 'get', 'check', 'history']),
+      actions: new Set(['list', 'get', 'diff', 'check', 'history']),
       omittedProperties: new Set([
         'description',
         'pgmid',
@@ -47,10 +47,6 @@ const MULTI_TARGET_ACTION_RULES = new Map<
         'recursive',
         'removeLockedObjects',
         'resultFormat',
-        // `diff` is not in the multi-target action set, so its paging params would only
-        // nudge the model toward an action this surface refuses.
-        'offset',
-        'limit',
       ]),
     },
   ],
@@ -64,6 +60,7 @@ const MULTI_TARGET_ACTION_RULES = new Map<
         'atc_variants',
         'cds_testcases',
         'dumps',
+        'feed_schema',
         'traces',
         'trace_requests',
         'system_messages',

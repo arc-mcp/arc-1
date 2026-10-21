@@ -1,15 +1,14 @@
 /**
  * CDS impact + pre-write hint helpers.
  *
- * Downstream-impact bucketing/ordering, where-used scoping, the update/delete/activation
+ * Downstream-impact bucketing/ordering, where-used lookups, the update/delete/activation
  * dependency hints, and the CDS reserved-keyword guard. Shared by the SAPWrite, SAPActivate and
  * SAPContext handlers.
  */
 
 import { type CdsImpactDownstream, classifyCdsImpact } from '../adt/cds-impact.js';
 import type { AdtClient } from '../adt/client.js';
-import { findWhereUsed, getWhereUsedScope, type WhereUsedResult } from '../adt/codeintel.js';
-import { AdtApiError } from '../adt/errors.js';
+import { findWhereUsedWithScope, type WhereUsedResult } from '../adt/codeintel.js';
 import type { ResolvedFeatures } from '../adt/types.js';
 import { normalizeObjectType } from './object-types.js';
 import { errorResult } from './shared.js';
@@ -70,20 +69,6 @@ interface CdsOrderedObject {
 }
 
 const CDS_ORDERABLE_TYPES = new Set(['DDLS', 'DCLS', 'DDLX', 'BDEF', 'SRVD', 'SRVB']);
-const CDS_IMPACT_WHERE_USED_TYPES = new Set([
-  'DDLS',
-  'DCLS',
-  'DDLX',
-  'BDEF',
-  'SRVD',
-  'SRVB',
-  'CLAS',
-  'INTF',
-  'PROG',
-  'FUGR',
-  'TABL',
-  'SKTD',
-]);
 
 function formatCdsImpactBuckets(downstream: CdsImpactDownstream, maxNames = 4): string[] {
   const lines: string[] = [];
@@ -185,56 +170,20 @@ function dedupeWhereUsedResults(results: readonly WhereUsedResult[]): WhereUsedR
   return deduped;
 }
 
-function isCdsImpactWhereUsedType(objectType: string): boolean {
-  return CDS_IMPACT_WHERE_USED_TYPES.has(mainObjectType(objectType));
-}
-
-async function loadScopedCdsWhereUsedResults(client: AdtClient, objectUrl: string): Promise<WhereUsedResult[]> {
+async function loadCdsImpactDownstream(
+  client: AdtClient,
+  objectUrl: string,
+): Promise<{ downstream?: CdsImpactDownstream; emptyResultDescription?: string }> {
   try {
-    const scope = await getWhereUsedScope(client.http, client.safety, objectUrl);
-    const scopedTypes = Array.from(
-      new Set(
-        scope.entries
-          .filter((entry) => entry.count > 0 && isCdsImpactWhereUsedType(entry.objectType))
-          .map((entry) => entry.objectType),
-      ),
-    );
-    const scopedResults: WhereUsedResult[] = [];
-
-    for (const objectType of scopedTypes) {
-      try {
-        scopedResults.push(...(await findWhereUsed(client.http, client.safety, objectUrl, objectType)));
-      } catch {
-        // Scoped results only enrich guidance; one unsupported filter must not
-        // make the write/delete/activate path fail.
-      }
-    }
-
-    return scopedResults;
-  } catch (err) {
-    if (err instanceof AdtApiError && [404, 405, 415, 501].includes(err.statusCode)) {
-      return [];
-    }
-    // Where-used enrichment is advisory; the original write/delete/activate
-    // result should not fail just because a scoped lookup is unavailable.
-    return [];
-  }
-}
-
-async function loadCdsImpactDownstream(client: AdtClient, objectUrl: string): Promise<CdsImpactDownstream | undefined> {
-  try {
-    const whereUsed = await findWhereUsed(client.http, client.safety, objectUrl);
-    // Some SAP releases return a shallow/default result set for unfiltered
-    // usageReferences. Scope + object-type filters usually expose the full
-    // bucket fan-out, which is exactly what CRUD guidance needs.
-    const scopedWhereUsed = await loadScopedCdsWhereUsedResults(client, objectUrl);
-    const combinedWhereUsed = dedupeWhereUsedResults([...whereUsed, ...scopedWhereUsed]);
-    return classifyCdsImpact(combinedWhereUsed, { includeIndirect: true });
-  } catch (err) {
-    if (err instanceof AdtApiError && [404, 405, 415, 501].includes(err.statusCode)) {
-      return undefined;
-    }
-    return undefined;
+    const lookup = await findWhereUsedWithScope(client.http, client.safety, objectUrl);
+    return {
+      downstream: classifyCdsImpact(dedupeWhereUsedResults(lookup.results), { includeIndirect: true }),
+      // SAP can return HTTP 200 with an unsupported-position message instead of a search result.
+      // Keep its explanation verbatim, without classifying translated message text.
+      emptyResultDescription: lookup.results.length === 0 ? lookup.searchedFor : undefined,
+    };
+  } catch {
+    return {};
   }
 }
 
@@ -242,7 +191,8 @@ export async function buildCdsUpdateCrudHint(client: AdtClient, name: string, ob
   const lines: string[] = [];
   lines.push(`CDS update follow-up for ${name}:`);
 
-  const downstream = await loadCdsImpactDownstream(client, objectUrl);
+  const { downstream, emptyResultDescription } = await loadCdsImpactDownstream(client, objectUrl);
+  if (emptyResultDescription) lines.push(`- SAP where-used response: ${emptyResultDescription}`);
   let orderedReactivation: CdsOrderedObject[] = [];
   if (downstream) {
     const bucketLines = formatCdsImpactBuckets(downstream);
@@ -251,7 +201,7 @@ export async function buildCdsUpdateCrudHint(client: AdtClient, name: string, ob
       lines.push(...bucketLines);
       orderedReactivation = collectOrderedCdsObjects(downstream, CDS_REACTIVATION_BUCKET_ORDER);
     } else {
-      lines.push('- No downstream consumers found in the current ADT where-used index.');
+      lines.push('- ADT returned no downstream consumers; this does not establish that none exist.');
     }
   } else {
     lines.push('- Where-used index is unavailable on this system (impact list could not be fetched).');
@@ -274,10 +224,11 @@ export async function buildCdsDeleteDependencyHint(
   name: string,
   objectUrl: string,
 ): Promise<string | undefined> {
-  const downstream = await loadCdsImpactDownstream(client, objectUrl);
+  const { downstream, emptyResultDescription } = await loadCdsImpactDownstream(client, objectUrl);
   if (!downstream || downstream.summary.total === 0) {
     const lines: string[] = [];
     lines.push(`Delete dependency follow-up for ${type} ${name}:`);
+    if (emptyResultDescription) lines.push(`- SAP where-used response: ${emptyResultDescription}`);
     if (!downstream) {
       lines.push('- ADT where-used lookup is unavailable on this system or failed during error enrichment.');
     } else {
@@ -324,10 +275,11 @@ export async function buildCdsActivationDependencyHint(
   objectUrl: string,
 ): Promise<string> {
   const lines: string[] = [];
-  const downstream = await loadCdsImpactDownstream(client, objectUrl);
+  const { downstream, emptyResultDescription } = await loadCdsImpactDownstream(client, objectUrl);
   let orderedReactivation: CdsOrderedObject[] = [];
 
   lines.push(`CDS activation impact for ${name}:`);
+  if (emptyResultDescription) lines.push(`- SAP where-used response: ${emptyResultDescription}`);
   if (!downstream || downstream.summary.total === 0) {
     lines.push('- No downstream consumers found in ADT where-used index, or index is unavailable.');
   } else {

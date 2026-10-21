@@ -14,6 +14,7 @@ import type { ServerConfig } from '../server/types.js';
 import { API_RELEASE_FIELDS } from './api-release-fields.js';
 import * as DtelFields from './data-element-fields.js';
 import { SAPDIAGNOSE_ADDITIONAL_INPUTS } from './diagnose-fields.js';
+import { dumpFiltersJson } from './dump-filter-inputs.js';
 import * as FuncProcessing from './function-processing.js';
 import { getHyperfocusedToolDefinition } from './hyperfocused.js';
 import { CLASS_WRITE_INCLUDES } from './object-types.js';
@@ -492,7 +493,7 @@ export function getToolDefinitions(
           includeSignature: {
             type: 'boolean',
             description:
-              'FUNC only: return JSON {source,signature,processingType?,updateTaskKind?}. Signature groups importing/exporting/changing/tables/exceptions/raising parameters. Default false: raw source.',
+              'FUNC: JSON {source,signature,processingType?,updateTaskKind?}. Signature and descriptions come from source. Default false: raw source.',
           },
           force_refresh: {
             type: 'boolean',
@@ -780,20 +781,27 @@ export function getToolDefinitions(
           parameters: {
             type: 'array',
             description:
-              'FUNC: structured signature parameters. ARC-1 builds the IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause and splices it into the FM body. When omitted, the supplied source is PUT verbatim.',
+              'FUNC: replace the source signature with these parameters; preserve the body. Omit to PUT source verbatim.',
             items: {
               type: 'object',
               properties: {
                 kind: {
                   type: 'string',
                   enum: ['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising'],
-                  description: 'Parameter kind. EXCEPTIONS/RAISING use only `name`; the others require `type`.',
+                  description: 'EXCEPTIONS/RAISING need only name; other kinds need type.',
                 },
                 name: { type: 'string', description: 'Parameter / exception name (uppercased on emit).' },
+                description: {
+                  type: 'string',
+                  minLength: 1,
+                  maxLength: 60,
+                  description:
+                    'Importing/exporting/changing/tables short text: 1–60 printable characters in the original language; omit to preserve.',
+                },
                 type: {
                   type: 'string',
                   description:
-                    'ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. Examples: "STRING", "I", "BAPIRET2", "TYPE STANDARD TABLE OF X", "LIKE DOKHL-OBJECT". For TABLES, include the leading TYPE/LIKE keyword.',
+                    'ABAP type, e.g. STRING, I, BAPIRET2. TABLES includes TYPE/LIKE, e.g. TYPE STANDARD TABLE OF X or LIKE DOKHL-OBJECT. Ignored for exceptions/raising.',
                 },
                 byValue: {
                   type: 'boolean',
@@ -801,8 +809,7 @@ export function getToolDefinitions(
                 },
                 default: {
                   type: 'string',
-                  description:
-                    'Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. Example: "\'X\'", "0", "SPACE".',
+                  description: 'Raw ABAP literal for IMPORTING/CHANGING, e.g. "\'X\'", "0", "SPACE".',
                 },
                 optional: { type: 'boolean', description: 'Emit `OPTIONAL` keyword.' },
               },
@@ -1011,8 +1018,8 @@ export function getToolDefinitions(
   tools.push({
     name: 'SAPNavigate',
     description: btp
-      ? 'Navigate code (BTP ABAP Environment): definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC); type+name replaces uri. Scope = released SAP + custom Z/Y. hierarchy queries SEOMETAREL: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action="impact") classifies where-used into RAP buckets.'
-      : 'Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action="impact") classifies where-used into RAP buckets.',
+      ? 'Navigate code (BTP ABAP Environment): definitions, references, completion, hierarchy. references: where-used objects by default; detail=positions/snippets adds bounded native usages; objectType filters results (e.g. CLAS/OC); type+name replaces uri. Scope = released SAP + custom Z/Y. hierarchy queries SEOMETAREL: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action="impact") classifies where-used into RAP buckets.'
+      : 'Navigate code: definitions, references, completion, hierarchy. references: where-used objects by default; detail=positions/snippets adds bounded native usages; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action="impact") classifies where-used into RAP buckets.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1035,6 +1042,20 @@ export function getToolDefinitions(
           type: 'string',
           description:
             'references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. Omit for all consumer types. A bare prefix ("CLAS") matches every subtype.',
+        },
+        packages: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          items: { type: 'string', maxLength: 30 },
+          description:
+            'references: exact package names (e.g. ["$TMP"]); no wildcards or implicit subpackages. Native scope when available, otherwise local filtering.',
+        },
+        detail: {
+          type: 'string',
+          enum: ['objects', 'positions', 'snippets'],
+          description:
+            'references: objects (default), or expand at most 10 native nodes for positions/snippets. Method positions can be component-relative; inspect usageDetails limits.',
         },
         maxResults: {
           type: 'number',
@@ -1099,26 +1120,27 @@ export function getToolDefinitions(
     {
       name: 'SAPDiagnose',
       description:
-        'ABAP diagnostics and runtime analysis. Actions:\n' +
-        '- "syntax": compatibility check; when available prefer SAPRead(type="SYNTAX", objectType, name, version?, source?).\n' +
+        'ABAP diagnostics:\n' +
+        '- "syntax": check objects[] (CLAS/INTF/PROG/DDLS; version active/inactive). Single: prefer SAPRead SYNTAX.\n' +
         '- "unittest": harmless ABAP Unit for CLAS/PROG/FUGR or DEVC (exact; includeSubpackages recurses).\n' +
         '- "unittest_ci": harmless package tests with source reconciliation; empty/incomplete runs fail.\n' +
-        '- "atc": run ATC checks (name+type or objects [{type,name}], max 20; omit variant to bind the system default; unknown variant = error). "atc_variants": list variants + that default (variant = name filter; read-only).\n' +
+        '- "atc": ATC (name+type or objects [{type,name}], max 20). Omit variant for system default; unknown variant errors. "atc_variants": read variants/default, optional variant name filter.\n' +
         '- "atc_ci": package ATC CI; requires available API and verified selection.\n' +
-        '- "cds_testcases": SAP-suggested ABAP Unit test cases for a CDS entity (name; read-only; SAP_BASIS 8.16+).\n' +
-        '- "object_state": active/inactive ETags, hashes and divergence (name+type; CLAS: all includes). Server-driven types unsupported.\n' +
-        '- "quickfix": proposals at name+type+source+line (optional column/sourceUri).\n' +
-        '- "apply_quickfix": return proposal text deltas without writing; needs quickfix inputs + proposalUri/proposalUserContent.\n' +
-        '- "dumps": list/read ST22 short dumps (no id = list, newest first, user/from/to/maxResults; id = read; includeFullText, sections).\n' +
+        '- "cds_testcases": read suggested CDS Unit tests (name; SAP_BASIS 8.16+).\n' +
+        '- "object_state": active/inactive ETags/hashes/divergence (name+type; CLAS includes). No server-driven types.\n' +
+        '- "quickfix": proposals: name+type+source+line; optional column/sourceUri.\n' +
+        '- "apply_quickfix": text deltas, no save; quickfix inputs + proposalUri/proposalUserContent.\n' +
+        '- "dumps": ST22, newest: user/from/to/maxResults/filters; id=detail.\n' +
+        '- "feed_schema": optional dump filters; action only.\n' +
         '- "traces": list profiler traces; id+analysis analyzes one.\n' +
-        '- "trace_start": arm a profiler trace for the NEXT matching execution, then reproduce and read via "traces" (write scope; defaults: next HTTP request, SQL on).\n' +
-        '- "trace_requests": list armed trace requests. "trace_cancel": cancel one by id (write scope).\n' +
+        '- "trace_start": arm NEXT matching execution (write; defaults HTTP, SQL on); reproduce, then read "traces".\n' +
+        '- "trace_requests": list armed traces. "trace_cancel": cancel by id (write).\n' +
         '- "system_messages": list SM02 messages. "gateway_errors": list /IWFND/ERROR_LOG (on-prem; detailUrl or id+errorType for detail).\n' +
-        '- "odata_perf": diagnose why an OData call is slow (url = host-relative path); returns the sap-statistics timing split (DB/ABAP/framework/auth). Read-only; needs allowDataPreview.\n' +
-        '- "authorization_trace": read the on-prem STUSERTRACE auth trace (SUAUTHVALTRC); needs SAP_ALLOW_DATA_PREVIEW.\n' +
-        '- "cds_sql": show the native SQL a CDS view compiles to (name; read-only).\n' +
+        '- "odata_perf": read OData timing (url: host-relative; DB/ABAP/framework/auth); needs allowDataPreview.\n' +
+        '- "authorization_trace": read STUSERTRACE/SUAUTHVALTRC (on-prem; needs SAP_ALLOW_DATA_PREVIEW).\n' +
+        '- "cds_sql": read CDS native SQL (name).\n' +
         '- "sql_trace_state" / "set_sql_trace_state" (sqlOn; needs SAP_ALLOW_WRITES) / "sql_trace_directory": ST05 SQL-trace control.\n' +
-        'Quickfix workflow: syntax/ATC → quickfix → apply_quickfix → write via SAPWrite. Full action reference: docs_page SAPDiagnose.',
+        'Quickfix: syntax/ATC → quickfix → apply_quickfix → SAPWrite.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1133,6 +1155,7 @@ export function getToolDefinitions(
               'atc_variants',
               'cds_testcases',
               'dumps',
+              'feed_schema',
               'traces',
               'trace_start',
               'trace_requests',
@@ -1168,7 +1191,7 @@ export function getToolDefinitions(
             minItems: 1,
             maxItems: ATC_BATCH_MAX_OBJECTS,
             description:
-              'ATC only, instead of name/type/url. One batch + at most one verification. Returns coverage; unreported objects stay incomplete. No packages.',
+              'ATC/syntax list instead of name/type/url. ATC may verify once. Missing reports stay incomplete. No packages.',
             items: {
               type: 'object',
               required: ['type', 'name'],
@@ -1233,8 +1256,7 @@ export function getToolDefinitions(
           },
           id: {
             type: 'string',
-            description:
-              'Dump or trace ID (for dumps/traces actions); also the trace-request id to cancel (for trace_cancel). Omit to list, provide to get details.',
+            description: 'dumps/traces: omit to list, supply for detail. trace_cancel: request ID.',
           },
           detailUrl: {
             type: 'string',
@@ -1245,6 +1267,10 @@ export function getToolDefinitions(
             description: 'gateway_errors: required with id instead of detailUrl, e.g. "Frontend Error".',
           },
           user: { type: 'string', description: 'SAP-user filter for dumps, feeds, or authorization_trace.' },
+          filters: {
+            ...dumpFiltersJson,
+            description: 'AND ≤8 incl. user: [{attribute:"runtimeError",operator:"equals",values:["MESSAGE_TYPE_X"]}].',
+          },
           authObject: { type: 'string', description: 'Authorization object filter, e.g. S_TCODE.' },
           from: {
             type: 'string',
@@ -1551,7 +1577,7 @@ export function getToolDefinitions(
             description:
               "list: show transports (defaults to current user, modifiable only). Pass summary=true for a headers-only overview that omits each transport's object lists (keeps an objectCount) — far cheaper when many transports are open. " +
               'get: fetch transport details including tasks and objects. ' +
-              'diff: what a transport CHANGED — per object, the revision written under it vs the one before, as diff hunks (get only lists names). LIMU entries roll up to their class; an open transport compares to the last released revision. Read baselineStatus first: prior-revision = solid; prior-revision-unverified = pair guessed, may be another change; no-prior-snapshot = created here; baseline-ambiguous = no baseline, so an all-additions block is NOT proof of creation; baseline-unavailable = the read FAILED, never call that unchanged. ' +
+              'diff: source review. Released requests need attributed snapshots; open requests use active source, never drafts. baselineStatus: prior-revision=attributed pair; prior-revision-unverified=unattributed candidate; no-prior-snapshot=missing history, NOT creation; baseline-ambiguous=uncertain predecessor; baseline-unavailable=no comparison, NOT unchanged. Non-source gaps are explicit. Follow nextOffset; pages are not snapshots. ' +
               'create: create a new transport request (description required). To target another system, pass target=<system | system.client | /group/> (the Transportziel / TR_TARGET, e.g. "/TRG/" or "C11"; the group and system.client forms require extended transport control to be active). Otherwise omit target and pass an optional package to let SAP infer the route (defaults to $TMP). The response reports the resolved transport target; an empty target means a LOCAL request (cannot be transported onward). ' +
               'release: release a single transport or task. ' +
               'delete: delete a transport (use recursive=true to delete tasks first; removeLockedObjects=true to strip locked objects that otherwise block deletion with "...contains locked objects"). ' +
@@ -1624,7 +1650,7 @@ export function getToolDefinitions(
           summary: {
             type: 'boolean',
             description:
-              'For list only. DEFAULT true: headers-only — drops each transport\'s (and task\'s) object lists, keeping id/description/owner/status/target + objectCount; use action="get" for one in full. Pass false for full object lists (~5x larger).',
+              'diff: true omits hunks, retaining counts and evidence (same SAP reads). For list, DEFAULT true: headers-only — drops each transport\'s (and task\'s) object lists, keeping id/description/owner/status/target + objectCount; use action="get" for one in full. Pass false for full object lists (~5x larger).',
           },
           maxResults: {
             type: 'number',

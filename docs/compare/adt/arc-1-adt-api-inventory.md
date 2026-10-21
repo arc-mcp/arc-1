@@ -155,9 +155,11 @@
 |---|--------|------------------|---------------------|-------|
 | 30 | `POST` | `/sap/bc/adt/navigation/target?uri={sourceUrl}&line={line}&column={column}` | `codeintel.ts` (`findDefinition`) | Body: current **source** (`text/plain`). `Accept: application/xml`. |
 | 31 | `GET` | `/sap/bc/adt/repository/informationsystem/usageReferences?uri={objectUrl}` | `codeintel.ts` (`findReferences`) | Simpler reference list. `Accept: application/xml`. |
-| 32 | `POST` | `/sap/bc/adt/repository/informationsystem/usageReferences/scope` | `codeintel.ts` (`getWhereUsedScope`) | XML body (`usageReferences:scopeRequest`). |
 | 33 | `POST` | `/sap/bc/adt/repository/informationsystem/usageReferences?uri={objectUrl}` | `codeintel.ts` (`findWhereUsed`) | `Content-Type: application/vnd.sap.adt.repository.usagereferences.request.v1+xml`; `Accept: application/vnd.sap.adt.repository.usagereferences.result.v1+xml`. |
 | 34 | `POST` | `/sap/bc/adt/abapsource/codecompletion/proposals?uri={sourceUrl}&line={line}&column={column}` | `codeintel.ts` (`getCompletion`) | Body: source (`text/plain`). |
+
+Former entry 32 (`getWhereUsedScope`) was removed after its contract failed live
+verification; see [the correction](../../research/2026-10-17-where-used-scope-correction.md).
 
 ---
 

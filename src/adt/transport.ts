@@ -169,11 +169,12 @@ export async function getTransport(
   http: AdtHttpClient,
   safety: SafetyConfig,
   transportId: string,
+  options?: AdtRequestOptions,
 ): Promise<TransportRequest | null> {
   checkTransport(safety, transportId, 'GetTransport', false);
 
   const url = `/sap/bc/adt/cts/transportrequests/${encodeURIComponent(transportId)}`;
-  const resp = await http.get(url, { Accept: CTS_CONTENT_TYPE_ORGANIZER });
+  const resp = await http.get(url, { Accept: CTS_CONTENT_TYPE_ORGANIZER }, options);
 
   const transports = parseTransportList(resp.body, url);
   // NW 7.50 returns HTTP 200 with the caller's full transport list when the

@@ -81,6 +81,7 @@ nav:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
       - MCP Usage Guide: mcp-usage.md
+      - SQL Notebook Authoring: sql-notebook-authoring.md
       - Skills: skills.md
       - More:
           - Blog Series: blog-series.md
@@ -104,6 +105,7 @@ nav:
       - Architecture: architecture.md
       - More:
           - CLI Guide: cli-guide.md
+          - Transport reviews: review-workflows.md
           - Local Files in Codex: codex-file-source.md
           - SAP Trial Setup: sap-trial-setup.md
           - Authentication Test Process: auth-test-process.md

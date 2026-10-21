@@ -2931,7 +2931,7 @@ describe('SAPTransport diff (integration)', () => {
       objects: Array<{ type: string; name: string; parts: Part[] }>;
     };
 
-    expect(payload.comparison).toBe('transport-correction-to-immediate-previous');
+    expect(payload.comparison).toBe('released transport snapshot against preceding snapshot');
     // The transport lists a method, never a class — the rollup is what makes this reviewable.
     const clas = payload.objects.find((o) => o.type === 'CLAS');
     expect(clas?.name).not.toMatch(/\s|=/);

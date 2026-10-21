@@ -1877,11 +1877,8 @@ describe('XML Parser', () => {
       expect(result.revisions).toEqual([]);
     });
 
-    it('returns empty result for malformed XML', () => {
-      expect(parseRevisionFeed('<atom:feed><atom:title>broken')).toEqual({
-        object: { name: '', type: '' },
-        revisions: [],
-      });
+    it('rejects malformed history instead of reporting an empty feed', () => {
+      expect(() => parseRevisionFeed('<atom:feed><atom:title>broken')).toThrow(/Invalid/);
     });
   });
 

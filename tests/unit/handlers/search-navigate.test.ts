@@ -664,6 +664,30 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
       expect(parsed.rows).toHaveLength(2);
     });
 
+    it('preserves a scalar COUNT row when SAP reports zero input matches', async () => {
+      // Values observed on A4H 758 SP02/001, 2026-10-17 (#1009); XML envelope synthesized.
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          '<dataPreview:tableData xmlns:dataPreview="http://www.sap.com/adt/dataPreview"><dataPreview:totalRows>0</dataPreview:totalRows><dataPreview:columns><dataPreview:metadata dataPreview:name="N"/><dataPreview:dataSet><dataPreview:data>0 </dataPreview:data></dataPreview:dataSet></dataPreview:columns></dataPreview:tableData>',
+        ),
+      );
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPQuery', {
+        sql: 'SELECT COUNT( * ) AS N FROM /DMO/FLIGHT WHERE seats_occupied < 0',
+        maxRows: 20,
+      });
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0]!.text)).toEqual({
+        totalRows: 0,
+        rowsReturned: 1,
+        columns: ['N'],
+        rows: [{ N: '0 ' }],
+      });
+      expect(freestylePostCalls()).toHaveLength(1);
+    });
+
     it('reports when an oversized maxRows value is clamped at the freestyle sink', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'mock-csrf-token' }));
@@ -1578,13 +1602,15 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         );
       });
 
-      it('searches the whole object without a position and omits searchedFor', async () => {
+      it('reports SAP’s explanation for whole-object searches too', async () => {
         const { result, requestedUri } = await navigate(
           { uri: '/sap/bc/adt/oo/classes/zcl_test' },
           'References for: ZCL_TEST (Class) [SID]',
         );
         expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test');
-        expect(JSON.parse(result.content[0]?.text as string)).not.toHaveProperty('searchedFor');
+        expect(JSON.parse(result.content[0]?.text as string).searchedFor).toBe(
+          'References for: ZCL_TEST (Class) [SID]',
+        );
       });
 
       it.each([

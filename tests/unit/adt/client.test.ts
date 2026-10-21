@@ -666,6 +666,7 @@ describe('AdtClient', () => {
   });
 
   describe('getRevisions', () => {
+    beforeEach(() => mockFetch.mockResolvedValue(mockResponse(200, '<feed/>', { 'x-csrf-token': 'T' })));
     it('returns parsed revision list for a program', async () => {
       mockFetch.mockReset();
       mockFetch.mockResolvedValue(mockResponse(200, loadFixture('revision-feed-prog.xml'), { 'x-csrf-token': 'T' }));

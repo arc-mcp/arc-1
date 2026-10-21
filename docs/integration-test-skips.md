@@ -133,6 +133,7 @@ On **SAP_BASIS < 7.51** the ADT REST handler `CL_REST_HTTP_HANDLER` does not hon
 | `TEST_TRANSPORT_PACKAGE not configured` | transport-scoped CRUD (~3 tests) | Opt-in: set `TEST_TRANSPORT_PACKAGE=Z_LLM_TEST_PACKAGE`; write paths additionally require `TEST_TRANSPORT_PACKAGE_WRITE_TESTS=true` |
 | `TEST_TRANSPORT_PACKAGE_WRITE_TESTS not enabled` | transportable-package write cleanup can leave locked CTS tasks | Expected on shared SAP systems unless running a manual destructive cleanup experiment |
 | `NO_FIXTURE (RSHOWTIM)` | search by pattern (1 test) | RSHOWTIM report not on this system |
+| `NO_FIXTURE: set TEST_APPLICATION_LOG_NUMBERS` | `application-log.integration.test.ts` (1) | No stable saved logs configured; set 1–10 exact log numbers for a read-only qualification run. Configured fixtures must succeed, including native authorization. |
 
 **When to investigate:** Basic integration helpers require URL, user and password and fail setup if any is missing. Dedicated BTP suites skip when their service-key configuration is absent; that is not BTP test coverage.
 

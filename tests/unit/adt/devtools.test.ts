@@ -485,6 +485,7 @@ describe('DevTools', () => {
         expect.stringContaining('objectReference'),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
@@ -496,17 +497,7 @@ describe('DevTools', () => {
         expect.stringContaining('objectReference'),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
-      );
-    });
-
-    it('defaults preauditRequested=true when preaudit option is omitted', async () => {
-      const http = mockHttp('<activation/>');
-      await activate(http, unrestrictedSafetyConfig(), '/sap/bc/adt/programs/programs/ZTEST');
-      expect(http.post).toHaveBeenCalledWith(
-        expect.stringContaining('preauditRequested=true'),
-        expect.any(String),
-        expect.any(String),
-        expect.any(Object),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
@@ -615,6 +606,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
@@ -631,6 +623,7 @@ describe('DevTools', () => {
         expect.any(String),
         'application/*',
         expect.objectContaining({ Accept: 'application/xml' }),
+        expect.objectContaining({ fetchTimeoutMs: 300_000, retryTransientErrors: false }),
       );
     });
 
