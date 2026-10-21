@@ -44,6 +44,8 @@ SE37 short text, despite source readback decoding them. Generated text therefore
 text. SAP's current [ABAP Doc syntax](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENDOCCOMMENT.html)
 permits escaping special characters when necessary. Exact generated-source tests cover create and
 replacement, including literal entity-looking input; a parser round trip alone cannot verify native decoding.
+After this correction, save/activation and native SE37 checks returned `Owner's "text" @home!` exactly.
+The other parameter kinds retained `& <value>`, Unicode text, and literal entity-looking text unchanged.
 
 ## Source preservation
 
