@@ -22,6 +22,22 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
+## 1.7.0 — application data, diagnostics and safer authoring (unreleased)
+
+Refresh your MCP client's tool list. Existing data-preview permissions also enable the new data actions below; review the opt-outs before upgrading.
+
+| Change | Impact | Action |
+|---|---|---|
+| Saved texts and logs ([#1012](https://github.com/arc-mcp/arc-1/pull/1012), [#1024](https://github.com/arc-mcp/arc-1/pull/1024)) | `SAPQuery.long_text` reads saved classic SAPscript texts; `application_log` reads SLG1 messages by log number. Both require data-preview permission and data scope; BTP ABAP is unsupported. | To exclude either, add `SAPQuery.long_text` or `SAPQuery.application_log` to `SAP_DENY_ACTIONS`. See [data actions](tools.md#sapquery). |
+| Diagnostics ([#1020](https://github.com/arc-mcp/arc-1/pull/1020), [#1029](https://github.com/arc-mcp/arc-1/pull/1029), [#1019](https://github.com/arc-mcp/arc-1/pull/1019)) | Filter dumps using advertised conditions; syntax-check up to 20 stored objects. Missing reports remain unchecked. | Inspect incomplete results; see [syntax batches](tools.md#check-several-objects-for-syntax-errors). |
+| References and transport reviews ([#1026](https://github.com/arc-mcp/arc-1/pull/1026), [#1022](https://github.com/arc-mcp/arc-1/pull/1022), [#1008](https://github.com/arc-mcp/arc-1/pull/1008)) | Package-filter references and request positions/snippets; append lookup avoids an invalid preflight. Transport diffs retain missing-history and non-source gaps. | Follow [bounded reviews](review-workflows.md); empty results do not prove absence. |
+| Source and metadata reads ([#1037](https://github.com/arc-mcp/arc-1/pull/1037), [#1017](https://github.com/arc-mcp/arc-1/pull/1017)) | Program/include reads support bounded nested expansion; cached SRVB metadata remains valid JSON. | Request `expand_includes`; inspect omitted sources. |
+| ABAP documentation ([#1049](https://github.com/arc-mcp/arc-1/pull/1049), [#1051](https://github.com/arc-mcp/arc-1/pull/1051), [#1055](https://github.com/arc-mcp/arc-1/pull/1055), [#1015](https://github.com/arc-mcp/arc-1/pull/1015)) | Class/method edits replace supplied documentation and move it with visibility changes. FUNC parameters accept short descriptions; KTD parent descriptions become optional. | Write function texts in the original language; activate before checking native synchronization. |
+| Activation and connectivity ([#1050](https://github.com/arc-mcp/arc-1/pull/1050), [#1046](https://github.com/arc-mcp/arc-1/pull/1046), [#1043](https://github.com/arc-mcp/arc-1/pull/1043)) | Activation allows five minutes. Stateful CSRF discovery gains a compatibility retry; cold-client startup reduces unused SAP sessions. | After timeout/cancellation, inspect inactive objects and refresh source before retrying: completion is uncertain. |
+| Standalone downloads ([#1027](https://github.com/arc-mcp/arc-1/pull/1027)) | Optional executables bundle Node.js for Windows, Linux and macOS. | Verify checksums; review [unsigned-binary, SQLite and extension limits](local-development.md). |
+| Dependencies and installation ([#1054](https://github.com/arc-mcp/arc-1/pull/1054), [#1059](https://github.com/arc-mcp/arc-1/pull/1059), [#1060](https://github.com/arc-mcp/arc-1/pull/1060), [#1052](https://github.com/arc-mcp/arc-1/pull/1052)) | Updates follow-redirects, Hono and its Node adapter; documents the Windows native-build workaround. The node-forge advisory remains unresolved. | Review the [exception expiring 28 October](security-guide.md) and [Windows instructions](local-development.md). |
+| Test evidence ([#1013](https://github.com/arc-mcp/arc-1/pull/1013), [#1016](https://github.com/arc-mcp/arc-1/pull/1016), [#1058](https://github.com/arc-mcp/arc-1/pull/1058)) | Improves release prerequisites, denial regressions and sanitized where-used diagnostics. | `none` |
+
 ## 1.6.0 — optional target access and safer authoring (2026-10-17)
 
 No new mandatory settings; refresh your MCP client's tool list after upgrading.
