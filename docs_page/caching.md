@@ -79,7 +79,8 @@ returns `304`. Under principal propagation the existing dependency-payload cache
 The retired aggregate read/write APIs and in-memory graph store have been removed. Existing SQLite
 aggregate rows/schema remain untouched for compatibility and cache statistics; they never enter
 context results. No cache reset or database migration is required.
-`SAPRead` still uses `[cached:revalidated]` for a source body revalidated by SAP.
+`SAPRead` uses `[cached:revalidated]` for a source body revalidated by SAP; SRVB JSON carries
+`"cached": "revalidated"` instead.
 
 Unchanged ABAP source does not need repeated CPU-heavy parsing. ARC-1 memoizes public contract
 extraction and dependency-name extraction by source content hash, object name/type and ABAP parser
