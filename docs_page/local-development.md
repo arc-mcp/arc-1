@@ -73,9 +73,10 @@ npm run dev:http           # builds + runs HTTP streamable on 0.0.0.0:8080
 npm run build && npm start # production-style: compile to dist/, run from there
 ```
 
-**Windows: `npm ci` fails looking for Visual Studio.** If the failure comes from
-`node-gyp rebuild` for `better-sqlite3` 13, an [npm bug](https://github.com/npm/cli/issues/9837)
-can trigger compilation despite its bundled prebuilt binaries. For this specific failure, try:
+**`npm ci` fails looking for Python or Visual Studio.** An [npm bug](https://github.com/npm/cli/issues/9837)
+can run `node-gyp rebuild` for `better-sqlite3` 13 when installing from a lockfile, despite its
+bundled prebuilt binaries. This commonly affects Windows machines without the build toolchain.
+For this specific failure, skip install scripts for this one install:
 
 ```powershell
 npm ci --ignore-scripts
