@@ -129,6 +129,23 @@ export function insertBeforeLine(source: string, lineNo: number, text: string): 
   return joinLines([...before, ...insertLines, ...after], eol);
 }
 
+// SAP declaration ranges exclude attached ABAP Doc. Stop at blank lines and
+// ordinary comments so documentation belonging to another declaration stays put.
+function attachedAbapDocStart(lines: string[], declarationRow: number): number {
+  let start = declarationRow;
+  while (start > 1 && /^[ \t]*"!/.test(lines[start - 2]!)) start--;
+  return start;
+}
+
+function replacementStart(source: string, declarationRow: number, replacement: string): number {
+  const lines = splitLines(replacement);
+  const firstCodeLine = lines.findIndex((line) => !/^[ \t]*(?:["*]|$)/.test(line));
+  // Only documentation attached to the first declaration replaces the old doc;
+  // e.g. method documentation inside a new class definition does not qualify.
+  const hasAttachedDoc = firstCodeLine > 0 && /^[ \t]*"!/.test(lines[firstCodeLine - 1]!);
+  return hasAttachedDoc ? attachedAbapDocStart(splitLines(source), declarationRow) : declarationRow;
+}
+
 // ─── Splice helpers backed by ClassStructure ───────────────────────────
 
 /**
@@ -138,7 +155,7 @@ export function insertBeforeLine(source: string, lineNo: number, text: string): 
  */
 export function spliceClassDefinition(source: string, structure: ClassStructure, newDefBlock: string): string {
   const r = structure.classDefinitionBlock;
-  return spliceLines(source, r.sr, r.er, newDefBlock);
+  return spliceLines(source, replacementStart(source, r.sr, newDefBlock), r.er, newDefBlock);
 }
 
 /**
@@ -152,7 +169,7 @@ export function spliceMethodSignature(source: string, method: MethodStructure, n
     throw new Error(`spliceMethodSignature: method ${method.name} has no definition range`);
   }
   const r = method.definition;
-  return spliceLines(source, r.sr, r.er, ensureClauseTerminator(newSig));
+  return spliceLines(source, replacementStart(source, r.sr, newSig), r.er, ensureClauseTerminator(newSig));
 }
 
 // ─── insertMethodPair: atomic DEFINITION + IMPLEMENTATION add ──────────
@@ -235,10 +252,7 @@ export function removeMethodPair(source: string, method: MethodStructure): strin
     next = removeLinesAndJoinSpacing(next, method.implementation.sr, method.implementation.er);
   }
   const lines = splitLines(next);
-  let start = method.definition.sr;
-  // SAP's METHODS range excludes its attached ABAP Doc. Do not consume ordinary comments
-  // or cross a blank line, which could attach documentation to a different declaration.
-  while (start > 1 && /^[ \t]*"!/.test(lines[start - 2]!)) start--;
+  const start = attachedAbapDocStart(lines, method.definition.sr);
   next = removeLinesAndJoinSpacing(next, start, method.definition.er);
   return next;
 }

@@ -1021,7 +1021,7 @@ Backing pattern for class surgery: lock the class → read fresh editable source
 
 #### `action="edit_class_definition"` — replace the DEFINITION block whole
 
-Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim.
+Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim. If you include ABAP Doc (`"!`) directly above the new `CLASS` declaration, it replaces the attached old class documentation. Otherwise, existing class documentation is kept.
 
 With `include=definitions|implementations|macros|testclasses`, send the full replacement body for that local include. For ABAP Unit tests, target `include="testclasses"` and write local `ltc_*` classes; ARC-1 creates the missing CCAU include automatically on first write.
 
@@ -1076,7 +1076,7 @@ preserving existing code; `edit_method` can only replace a body that already exi
 
 #### `action="edit_method_signature"` — replace one METHODS clause
 
-One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract.
+One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract. Include ABAP Doc (`"!`) directly above the new `METHODS` clause to replace its attached documentation; omit it to keep the current documentation.
 
 ```jsonc
 {

@@ -1331,6 +1331,45 @@ ENDCLASS.
   </abapsource:objectStructureElement>
 </abapsource:objectStructureElement>`;
 
+    it.each(['edit_class_definition', 'edit_method_signature'])(
+      '%s replaces attached ABAP Doc in the saved source (#1041)',
+      async (action) => {
+        const oldClassDoc = '"! Old class documentation';
+        const oldMethodDoc = '    "! @parameter name | Old parameter documentation';
+        const documentedMain = `${oldClassDoc}\n${PROBE_MAIN.replace('    METHODS hello', `${oldMethodDoc}\n    METHODS hello`)}`;
+        // Added one class-doc row and one method-doc row, outside SAP's ranges.
+        const shiftedRow = (row: string) => Number(row) + 1 + (Number(row) >= 3 ? 1 : 0);
+        const structureXml = PROBE_STRUCTURE.replace(
+          /start=(\d+),(\d+);end=(\d+),(\d+)/g,
+          (_, sr, sc, er, ec) => `start=${shiftedRow(sr)},${sc};end=${shiftedRow(er)},${ec}`,
+        );
+        const calls = mockClassSurgeryFlow({ className: 'ZCL_PROBE', mainSource: documentedMain, structureXml });
+        const oldDoc = action === 'edit_class_definition' ? oldClassDoc : oldMethodDoc;
+        const newDoc = oldDoc.replace('Old', 'New');
+        const expected = documentedMain.replace(oldDoc, newDoc);
+        const source =
+          action === 'edit_class_definition'
+            ? expected.slice(0, expected.indexOf('ENDCLASS.') + 'ENDCLASS.'.length)
+            : `${newDoc}\n    METHODS hello\n      IMPORTING name TYPE string\n      RETURNING VALUE(result) TYPE string.`;
+        const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+          action,
+          type: 'CLAS',
+          name: 'ZCL_PROBE',
+          method: 'hello',
+          source,
+        });
+        expect(result.isError, result.content[0]?.text).toBeUndefined();
+        const puts = calls.filter((call) => call.method === 'PUT');
+        expect(puts).toHaveLength(1);
+        expect(puts[0]?.body).toBe(expected);
+        expect(
+          calls
+            .filter((call) => call.url.includes('_action='))
+            .map((call) => new URL(call.url).searchParams.get('_action')),
+        ).toEqual(['LOCK', 'UNLOCK']);
+      },
+    );
+
     // ── edit_class_definition ────────────────────────────────────────
 
     it('edit_class_definition happy path: no method-set change (drop FINAL)', async () => {
