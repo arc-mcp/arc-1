@@ -12,7 +12,9 @@ describe('KTD creation without a parent description', () => {
   // an empty attribute fails with "Check of condition failed", an absent one is skipped.
   it.each([
     ['omitted', undefined],
+    ['empty', ''],
     ['blank', '   '],
+    ['whitespace-only', ' \t\r\n '],
   ])(
     'SKTD create sends no description attribute when the parent description is %s',
     async (_label, refObjectDescription) => {
@@ -32,7 +34,8 @@ describe('KTD creation without a parent description', () => {
       });
 
       expect(result.isError).toBeUndefined();
-      const body = posts.find((b) => b.includes('<sktd:docu'));
+      expect(posts).toHaveLength(1);
+      const body = posts[0];
       expect(body).toContain('<sktd:refObject adtcore:name="ZUI_TRAVEL_O4" adtcore:type="SRVD/SRV"');
       expect(body).not.toContain('adtcore:description');
     },

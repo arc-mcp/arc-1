@@ -27,7 +27,7 @@ describe('KTD creation for SMBC parents', () => {
       name: '/LCE/SFC_XYZ_TRSHLDS',
       package: '$TMP',
       refObjectType: 'SMBC/TYP',
-      refObjectDescription: 'Parent & "quoted" description',
+      refObjectDescription: '  Parent & <"quoted"> \'description\'  ',
     });
 
     expect(result.isError).toBeUndefined();
@@ -37,10 +37,12 @@ describe('KTD creation for SMBC parents', () => {
     expect(postCall).toBeDefined();
     expect(postCall!.body).toContain('adtcore:type="SMBC/TYP"');
     expect(postCall!.body).toContain('adtcore:uri="/sap/bc/adt/bct/smbctyp/%2Flce%2Fsfc_xyz_trshlds"');
-    expect(postCall!.body).toContain('adtcore:description="Parent &amp; &quot;quoted&quot; description"');
+    expect(postCall!.body).toContain(
+      'adtcore:description="  Parent &amp; &lt;&quot;quoted&quot;&gt; &apos;description&apos;  "',
+    );
   });
 
-  it.each([undefined, '   '])(
+  it.each([undefined, '', '   ', ' \t\r\n '])(
     'SKTD create omits an empty SMBC parent description (%s)',
     async (refObjectDescription) => {
       mockFetch.mockReset();
@@ -59,6 +61,7 @@ describe('KTD creation for SMBC parents', () => {
       );
       expect(post).toBeDefined();
       expect(String(post![1]?.body)).toMatch(/<sktd:refObject adtcore:name=/);
+      expect(String(post![1]?.body)).not.toContain('adtcore:description');
     },
   );
 

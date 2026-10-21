@@ -5,6 +5,20 @@ absent one. Omitting `adtcore:description` passed create/update/activate/read/de
 against an owned active SMBC on 758. The earlier required-description guard is
 therefore removed; the investigation below records the original finding.
 
+Reverified 2026-10-22 on build `f91d4ef1`, SAP_BASIS 758 SP02, direct HTTPS/Basic:
+`SADT_OBJECT_REFERENCE` places the description attribute inside
+`tt:cond check="not-initial(OBJECT_REFERENCE.DESCRIPTION)"`. SAP's
+[ST contract](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENST_TT_COND.html)
+explains why an absent optional attribute is skipped while an empty value fails its check.
+For each disposable active SRVD and SMBC parent, adding only the empty attribute to
+the candidate's create request reproduced HTTP 400; the unmodified request succeeded.
+Both KTDs passed two update/activate/active-read cycles with identical parent-reference
+XML. All KTDs and parents were deleted and returned 404. The SMBC referenced an
+existing draft-enabled demo service without changing it. KTD operations used the
+candidate handler; SMBC fixture setup/cleanup used guarded ADT helpers. An initial
+harness supplied an ambiguous root heading and was corrected after cleanup; no product
+change was needed. This revalidation did not cover 816, BTP, or principal propagation.
+
 Research and independent verification on 2026-10-07. Scope: the KTD parent route
 for Business Configuration Maintenance Objects (`SMBC/TYP`), not general SMBC
 read/write/transport support. Continue [PR #934](https://github.com/arc-mcp/arc-1/pull/934)
