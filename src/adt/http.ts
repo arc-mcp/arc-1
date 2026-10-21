@@ -25,6 +25,7 @@ import {
   throwIfRequestCancelled,
   withoutResponseBudget,
 } from './http-deadline.js';
+import { parseRetryAfter } from './http-retry-after.js';
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import { legacyContentHandlerFallback, rejectEmptyAdtHtmlResponse } from './legacy-content-handler.js';
 import { fetchWithAttemptBudget } from './request-attempt-budget.js';
@@ -33,6 +34,7 @@ import type { Semaphore } from './semaphore.js';
 import { resolveSapUserAgent } from './user-agent.js';
 
 export type { AdtRequestOptions } from './http-deadline.js';
+export { parseRetryAfter } from './http-retry-after.js';
 
 /**
  * Opt-in wire-level debug logging.
@@ -614,6 +616,7 @@ export class AdtHttpClient {
 
         await sleepWithinRequestBudget(jitterMs, options);
 
+        this.refreshSessionHeaders(method, headers);
         const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
 
@@ -653,6 +656,7 @@ export class AdtHttpClient {
 
         await sleepWithinRequestBudget(jitterMs, options);
 
+        this.refreshSessionHeaders(method, headers);
         const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
 
@@ -813,6 +817,7 @@ export class AdtHttpClient {
             errorBody: `Content negotiation ${response.status} — retrying with fallback headers`,
           });
 
+          this.refreshSessionHeaders(method, fallbackHeaders);
           const retryResp = await this.doFetch(url, method, fallbackHeaders, wireBody, options);
           const retryBody = await retryResp.text();
 
@@ -1248,6 +1253,14 @@ export class AdtHttpClient {
     return Array.from(merged, ([name, value]) => `${name}=${value}`).join('; ');
   }
 
+  /** Read the current pair together after a wait or a response that can rotate the session. */
+  private refreshSessionHeaders(method: string, headers: Record<string, string>): void {
+    const cookie = this.composeCookieHeader();
+    if (cookie) headers.Cookie = cookie;
+    else delete headers.Cookie;
+    if (isModifyingMethod(method)) headers['X-CSRF-Token'] = this.csrfToken;
+  }
+
   private storeCookies(response: Response): void {
     for (const cookie of response.headers.getSetCookie() ?? []) {
       // Set-Cookie: name=value; Path=/; HttpOnly; ...
@@ -1330,10 +1343,7 @@ export class AdtHttpClient {
         if (waited) {
           // A preceding response may have replaced both fields while this send waited.
           // Keep the refreshed pair for this logical request's negotiation/retry paths too.
-          const cookie = this.composeCookieHeader();
-          if (cookie) headers.Cookie = cookie;
-          else delete headers.Cookie;
-          if (isModifyingMethod(method)) headers['X-CSRF-Token'] = this.csrfToken;
+          this.refreshSessionHeaders(method, headers);
         }
         const response = await this.sendRequest(url, method, headers, body, options);
         const fetchingCsrf = headers['X-CSRF-Token']?.toLowerCase() === 'fetch';
@@ -1498,46 +1508,6 @@ function isModifyingMethod(method: string): boolean {
 function usableCsrfToken(response: Response): string | undefined {
   const token = response.headers.get('x-csrf-token')?.trim();
   return response.ok && token && token.toLowerCase() !== 'required' ? token : undefined;
-}
-
-/**
- * Parse RFC 7231 `Retry-After` header into a delay in milliseconds.
- *
- * Accepts both forms allowed by the spec:
- * - delta-seconds (e.g. `"5"`)
- * - HTTP-date (e.g. `"Wed, 12 May 2026 14:30:00 GMT"`)
- *
- * On missing, NaN, malformed, past-date, or negative input, falls back to `fallbackMs`.
- * Always clamps to `[0, 60_000]` ms so a misbehaving gateway can't stall us indefinitely
- * and a too-small/past value can't degenerate into a hot retry loop.
- *
- * Returns `{ delayMs, source }` — `source: 'header' | 'fallback'` lets audit events
- * record whether the delay came from the server or from our jitter floor (useful for
- * capacity tuning).
- */
-export function parseRetryAfter(
-  header: string | null | undefined,
-  fallbackMs: number,
-): { delayMs: number; source: 'header' | 'fallback' } {
-  const clamp = (ms: number): number => Math.max(0, Math.min(60_000, ms));
-  if (header == null || header === '') {
-    return { delayMs: clamp(fallbackMs), source: 'fallback' };
-  }
-  const trimmed = header.trim();
-  // delta-seconds form: integer (and only digits, optionally signed)
-  if (/^-?\d+$/.test(trimmed)) {
-    const seconds = Number.parseInt(trimmed, 10);
-    if (Number.isFinite(seconds)) {
-      return { delayMs: clamp(seconds * 1000), source: 'header' };
-    }
-    return { delayMs: clamp(fallbackMs), source: 'fallback' };
-  }
-  // HTTP-date form
-  const epochMs = Date.parse(trimmed);
-  if (Number.isFinite(epochMs)) {
-    return { delayMs: clamp(epochMs - Date.now()), source: 'header' };
-  }
-  return { delayMs: clamp(fallbackMs), source: 'fallback' };
 }
 
 /**

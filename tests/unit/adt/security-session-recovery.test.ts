@@ -422,4 +422,40 @@ describe('SAP security session recovery', () => {
     expect(JSON.stringify(event)).not.toContain('CONTEXT');
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
+
+  it.each([406, 429, 503])('reuses the cold owner session on its HTTP %i retry', async (status) => {
+    const cookies: Array<string | undefined> = [];
+    mockFetch.mockImplementation(async (_url, init) => {
+      cookies.push(init.headers.Cookie);
+      return cookies.length === 1
+        ? mockResponse(status, 'retry', { 'retry-after': '0' }, ['SAP_SESSIONID_A4H_001=S1; Path=/'])
+        : mockResponse(200, 'ok');
+    });
+    const client = new AdtHttpClient(config);
+    await client.get('/owner', { Accept: 'application/vnd.sap.adt.test.v1+xml' });
+
+    expect(cookies).toEqual([undefined, 'SAP_SESSIONID_A4H_001=S1']);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([415, 429, 503])('keeps a rotated cookie/token pair on a modifying HTTP %i retry', async (status) => {
+    const writes: Array<{ cookie?: string; token?: string }> = [];
+    mockFetch.mockImplementation(async (_url, init) => {
+      if (init.method === 'HEAD') return sessionResponse('S0', 'TOKEN-S0');
+      writes.push({ cookie: init.headers.Cookie, token: init.headers['X-CSRF-Token'] });
+      return writes.length === 1
+        ? mockResponse(status, 'retry', { 'retry-after': '0', 'x-csrf-token': 'TOKEN-S1' }, [
+            'SAP_SESSIONID_A4H_001=S1; Path=/',
+          ])
+        : mockResponse(200, 'ok');
+    });
+    const client = new AdtHttpClient(config);
+    await client.post('/write', 'body', 'application/vnd.sap.adt.test.v1+xml');
+
+    expect(writes).toEqual([
+      { cookie: 'SAP_SESSIONID_A4H_001=S0', token: 'TOKEN-S0' },
+      { cookie: 'SAP_SESSIONID_A4H_001=S1', token: 'TOKEN-S1' },
+    ]);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
 });
