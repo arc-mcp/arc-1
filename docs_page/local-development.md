@@ -61,6 +61,9 @@ to record the tested build, SAP release, deployment/authentication route, observ
 untested scenarios. If you lack access, explain why and what still needs verification; this does
 not prevent you from contributing. Documentation-only changes can mark live testing as N/A.
 
+For contributor tooling (`lint-staged`), use Node.js 22.22.1+ or 24+; the published package's
+runtime minimum remains Node.js 22.19.
+
 ```bash
 git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
