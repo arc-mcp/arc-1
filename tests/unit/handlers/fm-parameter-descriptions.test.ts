@@ -48,6 +48,29 @@ function writtenSource(): string | undefined {
 }
 
 describe('FUNC parameter descriptions through handlers', () => {
+  it.each([
+    ['create', ''],
+    ['create', '"! Keep function documentation\n'],
+    ['update', ''],
+    ['update', '"! Keep function documentation\n'],
+  ])('%s preserves a namespaced FUNCTION envelope with prefix %j', async (action, prefix) => {
+    const body = '\n WRITE / 1.\nENDFUNCTION.\n* Keep footer\n';
+    const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPWrite', {
+      action,
+      ...identity,
+      name: '/NS/DEMO',
+      source: `${prefix}FUNCTION /NS/DEMO.\n${body}`,
+      parameters: [{ kind: 'importing', name: 'IV_INPUT', type: 'CHAR10' }],
+    });
+    expect(result.isError, result.content[0]?.text).not.toBe(true);
+    const output = writtenSource()!;
+    expect(output.match(/^FUNCTION /gm)).toHaveLength(1);
+    expect(output.match(/^ENDFUNCTION\./gm)).toHaveLength(1);
+    expect(output.startsWith(`${prefix}FUNCTION /NS/DEMO\n`)).toBe(true);
+    expect(output).toContain('IV_INPUT TYPE CHAR10');
+    expect(output.endsWith(body)).toBe(true);
+  });
+
   it.each(['create', 'update'])(
     '%s recognizes documented full source and uses original rather than request language',
     async (action) => {

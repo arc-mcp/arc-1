@@ -57,7 +57,7 @@ export function findFmHeader(source: string): { start: number; end: number } | u
       offset += line.length;
       continue;
     }
-    const match = /^[ \t]*FUNCTION[ \t]+[A-Za-z_][A-Za-z0-9_]*/i.exec(line);
+    const match = /^[ \t]*FUNCTION[ \t]+(?:\/[A-Za-z0-9_]+\/)?[A-Za-z_][A-Za-z0-9_]*/i.exec(line);
     return match ? { start: offset, end: offset + match[0].length } : undefined;
   }
   return undefined;
