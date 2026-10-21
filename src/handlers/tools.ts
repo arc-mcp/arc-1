@@ -860,7 +860,7 @@ export function getToolDefinitions(
           },
           refObjectDescription: {
             type: 'string',
-            description: 'SKTD/KTD create: parent description; required and nonempty for SMBC/TYP (BCMO).',
+            description: 'SKTD/KTD create: optional parent description; blank values are omitted.',
           },
           shortTexts: {
             type: 'array',
