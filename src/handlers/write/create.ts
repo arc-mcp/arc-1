@@ -686,7 +686,7 @@ export async function writeActionCreate(ctx: SapWriteContext): Promise<ToolResul
           name,
           source,
           args.parameters as FmParameter[] | undefined,
-          await resolveFmDescriptionLanguage(client.http, groupArg, args.parameters as FmParameter[] | undefined),
+          await resolveFmDescriptionLanguage(client, groupArg, args.parameters as FmParameter[] | undefined),
         )
       : { shouldWrite: !!source, source: source ?? '', warnings: [] };
   const shouldWriteSource = funcPreparation.shouldWrite;
@@ -957,7 +957,7 @@ export async function writeActionBatchCreate(ctx: SapWriteContext): Promise<Tool
           plan.source,
           plan.obj.parameters as FmParameter[] | undefined,
           await resolveFmDescriptionLanguage(
-            client.http,
+            client,
             plan.group ?? '',
             plan.obj.parameters as FmParameter[] | undefined,
           ),

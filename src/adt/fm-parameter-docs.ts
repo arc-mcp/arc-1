@@ -1,6 +1,5 @@
 /** Native, attached ABAP Doc short texts for function-module data parameters. */
 import type { FmParameter } from './fm-signature.js';
-import { decodeXmlEntities } from './xml-entities.js';
 
 export function isValidFmParameterDescription(value: string): boolean {
   return (
@@ -16,6 +15,7 @@ function isDataParameter(parameter: FmParameter): boolean {
 }
 
 const PARAMETER_DOC_START = /^[ \t]*"![ \t]*@parameter[ \t]+[^\s|]+[ \t]*\|/i;
+const NATIVE_ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&#64;': '@' };
 
 interface DocSection {
   tag?: string;
@@ -57,8 +57,8 @@ function shortTexts(
 }
 
 function shortTextMarkerCount(text: string): number {
-  // Count even an unfinished class attribute so malformed markup cannot invite a second paragraph.
-  return [...text.matchAll(/<p\b[^>\r\n]*\bclass\s*=\s*["'][^"'\r\n]*\bshorttext\b/gi)].length;
+  // Count even unquoted or unfinished attributes so malformed markup cannot invite a second paragraph.
+  return [...text.matchAll(/<p\b[^>\r\n]*\bshorttext\b/gi)].length;
 }
 
 export function readFmParameterDescriptions(prefix: string, parameters: FmParameter[]): void {
@@ -77,7 +77,8 @@ export function readFmParameterDescriptions(prefix: string, parameters: FmParame
       /[<\r\n]/.test(paragraph.content)
     )
       continue;
-    const description = decodeXmlEntities(paragraph.content);
+    // Match the verified native escape set; preserve all other entities literally.
+    const description = paragraph.content.replace(/&amp;|&lt;|&gt;|&#64;/g, (entity) => NATIVE_ENTITIES[entity]!);
     if (isValidFmParameterDescription(description)) parameter.description = description;
   }
 }
@@ -108,7 +109,7 @@ function replaceDescription(section: DocSection, description: string, language: 
   if (paragraph) {
     return (
       section.text.slice(0, paragraph.start) +
-      paragraph.open.replace(/\s+lang\s*=\s*(["'])[^"']*\1/gi, '').replace(/>$/, ` lang="${language}">`) +
+      paragraph.open.replace(/\s+lang\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '').replace(/>$/, ` lang="${language}">`) +
       escapeDescription(description) +
       '</p>' +
       section.text.slice(paragraph.end)

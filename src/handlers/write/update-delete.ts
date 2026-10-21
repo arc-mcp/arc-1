@@ -139,7 +139,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   let fmParamStripWarning: string | undefined;
   const parameters = args.parameters as FmParameter[] | undefined;
   const descriptionLanguage =
-    type === 'FUNC' ? await resolveFmDescriptionLanguage(client.http, String(args.group ?? ''), parameters) : undefined;
+    type === 'FUNC' ? await resolveFmDescriptionLanguage(client, String(args.group ?? ''), parameters) : undefined;
   const needsCurrentFunctionSource = type === 'FUNC' && parameters !== undefined && !source.trim();
   const prepareFunctionSource = (baseSource: string): string => {
     if (parameters !== undefined) baseSource = spliceFmSignature(baseSource, name, parameters, descriptionLanguage);

@@ -21,6 +21,11 @@ describe('function parameter documentation', () => {
     ]);
   });
 
+  it('keeps externally authored entities literal unless native synchronization decodes them', () => {
+    const input = source.replace('Input text', 'Owner&apos;s &quot;text&quot; &#33; &amp;lt; &#64;');
+    expect(parseFmSignature(input).params[0]?.description).toBe('Owner&apos;s &quot;text&quot; &#33; &lt; @');
+  });
+
   it('preserves the complete prefix and body/footer when descriptions are omitted', () => {
     const output = spliceFmSignature(source, 'Z_DEMO', [
       { kind: 'importing', name: 'IV_INPUT', type: 'STRING', byValue: true },
@@ -62,6 +67,18 @@ describe('documentation-safe signature edits', () => {
     const output = edit(source, 'Eingabewert', 'de');
     expect(output).toContain('lang="de">Eingabewert</p>');
     expect(output).not.toContain('lang="en"');
+  });
+
+  it('replaces an unquoted language attribute with one verified original language', () => {
+    const output = edit(source.replace('lang="en"', 'lang=en'), 'Eingabewert', 'de');
+    expect(output).toContain('<p class="shorttext synchronized" lang="de">Eingabewert</p>');
+    expect(output.match(/\blang=/g)).toHaveLength(1);
+  });
+
+  it('refuses an unquoted shorttext class instead of inserting another paragraph', () => {
+    const input = source.replace('class="shorttext synchronized"', 'class=shorttext synchronized');
+    expect(() => edit(input)).toThrow(/ABAP Doc/);
+    expect(parseFmSignature(input).params[0]?.description).toBeUndefined();
   });
 
   it('adds a short text to existing prose without replacing it', () => {

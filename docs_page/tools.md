@@ -723,11 +723,14 @@ A parameter such as `{kind: "importing", name: "IV_INPUT", type: "CHAR10", descr
 writes native synchronized ABAP Doc with the function group's original language; no DDIC description
 is copied automatically. Activate and use `SAPRead(includeSignature=true, force_refresh=true)` to read
 its `description` from source; this does not independently read the SE37 metadata field. Native SE37
-synchronization was verified on SAP_BASIS 758 SP02.
+synchronization requires SAP_BASIS 7.50+ and was verified on 758 SP02. An absent `description` does
+not prove the SE37 text is blank: texts maintained only in SE37 may have no ABAP Doc.
 
-Omitting a description preserves existing documentation; an empty description is rejected. Structured
-signature edits preserve leading comments and the body, and remove attached documentation for removed
-parameters. Ambiguous short-text markup is refused; edit full `source` without `parameters` in that case.
+Omitting a description preserves documentation in the source being edited; an empty description is
+rejected. Omit `source` to edit the stored source, or include its documentation in a full `source`. A
+body-only `source` replaces the whole function source. Signature edits preserve leading comments and
+the body, and remove attached documentation for removed parameters. Ambiguous short-text markup is
+refused; edit full `source` without `parameters` in that case.
 
 Example — create an FM with a typed signature:
 
