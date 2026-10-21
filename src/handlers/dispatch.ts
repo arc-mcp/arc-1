@@ -170,6 +170,13 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtError && err.activationOutcome === 'unknown') {
+    // The activation boundary attaches inspection guidance; suppress generic replay/connectivity hints.
+    if (!config.minimalErrors) return message;
+    return err instanceof AdtApiError
+      ? formatMinimalAdtError(err)
+      : 'Activation request failed. Use the request ID to correlate server-side logs.';
+  }
   if (err instanceof AdtError && err.pluginPostOutcome === 'unknown') {
     const detail = config.minimalErrors
       ? err instanceof AdtApiError
@@ -386,6 +393,12 @@ function buildBaseErrorMessage(
   }
 
   if (err instanceof AdtNetworkError) {
+    if (err.isTimeout) {
+      return `${message}\n\nHint: The SAP request exceeded its client time limit. SAP may still be processing it; check the operation's state before retrying.`;
+    }
+    if (err.isCancelled) {
+      return `${message}\n\nHint: The SAP request was cancelled. Submitted work may continue in SAP; check its state before retrying.`;
+    }
     if (tool === 'SAPRead' && String(args.type ?? '').toUpperCase() === 'SYSTEM') {
       return (
         `${message}\n\nHint: Connectivity probe failed. Fix connectivity first, then retry ` +
@@ -725,6 +738,13 @@ export function classifyMultiTargetSapError(
   identity: 'per-user' | 'shared' = 'per-user',
 ): MultiTargetSapFailure | undefined {
   if (error instanceof AdtNetworkError) {
+    if (error.isTimeout || error.isCancelled) {
+      return {
+        code: 'SAP_REQUEST_FAILED',
+        retryable: false,
+        message: `The request to SAP target ${target} ${error.isTimeout ? 'exceeded its client time limit' : 'was cancelled'} while running ${toolName}. Submitted work may continue in SAP; check its state before retrying.`,
+      };
+    }
     return {
       code: 'SAP_REQUEST_FAILED',
       message: `ARC-1 could not reach SAP target ${target} while running ${toolName}. Check Cloud Connector and SAP availability, then try again now.`,

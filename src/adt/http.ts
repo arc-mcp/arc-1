@@ -364,6 +364,7 @@ export class AdtHttpClient {
           throw error;
         }
         if (!options?.signal && options?.deadline === undefined) throw error;
+        if (options?.signal?.aborted) throwIfRequestCancelled(options);
         const cause = error instanceof Error ? error : new Error(String(error));
         throw new AdtNetworkError(cause.message, cause);
       }
@@ -915,6 +916,7 @@ export class AdtHttpClient {
       }
 
       if (err instanceof AdtNetworkError || err instanceof AdtResponseLimitError) throw err;
+      if (options?.signal?.aborted) throwIfRequestCancelled(options);
 
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(message, err instanceof Error ? err : undefined);
@@ -1138,6 +1140,7 @@ export class AdtHttpClient {
       return path;
     } catch (err) {
       if (err instanceof AdtApiError || err instanceof AdtNetworkError) throw err;
+      if (options?.signal?.aborted) throwIfRequestCancelled(options);
       const message = err instanceof Error ? err.message : String(err);
       throw new AdtNetworkError(`CSRF token fetch failed: ${message}`, err instanceof Error ? err : undefined);
     }

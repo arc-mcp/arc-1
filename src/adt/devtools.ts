@@ -9,9 +9,10 @@
  */
 
 import { XMLValidator } from 'fast-xml-parser';
+import { getCurrentContext } from '../server/context.js';
 import { logger } from '../server/logger.js';
 import { type AunitRunResult, parseAunitRunResult, withAunitCoverage } from './aunit.js';
-import { AdtApiError, AdtSafetyError } from './errors.js';
+import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
 import { canonicalHostRelativeAdtPath } from './path-safety.js';
@@ -162,6 +163,18 @@ export interface ActivationResult {
   details: ActivationMessage[];
 }
 
+const ACTIVATION_TIMEOUT_MS = 300_000;
+
+/** One budget for the complete activation, including preaudit and ED064 recovery. */
+function activationRequestOptions(): AdtRequestOptions {
+  return {
+    deadline: Date.now() + ACTIVATION_TIMEOUT_MS,
+    fetchTimeoutMs: ACTIVATION_TIMEOUT_MS,
+    signal: getCurrentContext()?.signal,
+    retryTransientErrors: false,
+  };
+}
+
 /** Activate (publish) ABAP objects.
  *
  *  Implements the ADT preaudit handshake: the first POST with preauditRequested=true
@@ -172,6 +185,16 @@ export async function activate(
   http: AdtHttpClient,
   safety: SafetyConfig,
   objectUrl: string,
+  options?: { preaudit?: boolean; name?: string },
+): Promise<ActivationResult> {
+  return activateWithinBudget(http, safety, objectUrl, activationRequestOptions(), options);
+}
+
+async function activateWithinBudget(
+  http: AdtHttpClient,
+  safety: SafetyConfig,
+  objectUrl: string,
+  requestOptions: AdtRequestOptions,
   options?: { preaudit?: boolean; name?: string },
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'Activate');
@@ -190,6 +213,7 @@ export async function activate(
       body,
       'application/*',
       { Accept: 'application/xml' },
+      requestOptions,
     );
     const phase1DurationMs = Date.now() - phase1Start;
 
@@ -198,7 +222,7 @@ export async function activate(
       return outcomeToResult(outcome);
     }
 
-    return confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs);
+    return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions);
   } catch (err) {
     return rethrowOrLockHint(err, options?.name ?? objectUrl);
   }
@@ -218,6 +242,7 @@ export async function activateBatch(
   options?: { preaudit?: boolean },
 ): Promise<ActivationResult> {
   checkOperation(safety, OperationType.Activate, 'ActivateBatch');
+  const requestOptions = activationRequestOptions();
 
   const preaudit = options?.preaudit !== false;
   const refs = objects
@@ -239,20 +264,28 @@ ${refs}
       body,
       'application/*',
       { Accept: 'application/xml' },
+      requestOptions,
     );
     const phase1DurationMs = Date.now() - phase1Start;
 
     const outcome = parseActivationOutcome(resp.body);
     if (outcome.kind !== 'preaudit' || !preaudit) {
       const result = outcomeToResult(outcome);
-      return retryBatchActivationIndividuallyAfterEd064(http, safety, objects, result, options);
+      return await retryBatchActivationIndividuallyAfterEd064(http, safety, objects, result, requestOptions, options);
     }
 
-    return confirmPreaudit(http, outcome.refs, objects.map((o) => o.name).join(', '), phase1DurationMs, {
-      ed064RetryObjects: objects,
-      preaudit: options?.preaudit,
-      safety,
-    });
+    return await confirmPreaudit(
+      http,
+      outcome.refs,
+      objects.map((o) => o.name).join(', '),
+      phase1DurationMs,
+      requestOptions,
+      {
+        ed064RetryObjects: objects,
+        preaudit: options?.preaudit,
+        safety,
+      },
+    );
   } catch (err) {
     return rethrowOrLockHint(err, objects.map((o) => o.name).join(', '));
   }
@@ -268,6 +301,7 @@ async function confirmPreaudit(
   refs: Array<{ uri: string; name: string }>,
   objectLabel: string,
   phase1DurationMs: number,
+  requestOptions: AdtRequestOptions,
   options?: {
     ed064RetryObjects?: Array<{ url: string; name: string }>;
     preaudit?: boolean;
@@ -298,6 +332,7 @@ ${refLines}
       body,
       'application/*',
       { Accept: 'application/xml' },
+      requestOptions,
     );
     result = outcomeToResult(parseActivationOutcome(resp.body));
     if (options?.ed064RetryObjects) {
@@ -306,6 +341,7 @@ ${refLines}
         options.safety,
         options.ed064RetryObjects,
         result,
+        requestOptions,
         { preaudit: options.preaudit },
       );
     }
@@ -349,6 +385,7 @@ async function retryBatchActivationIndividuallyAfterEd064(
   safety: SafetyConfig,
   objects: Array<{ url: string; name: string }>,
   original: ActivationResult,
+  requestOptions: AdtRequestOptions,
   options?: { preaudit?: boolean },
 ): Promise<ActivationResult> {
   if (!isRecoverableEd064BatchQuirk(original) || objects.length === 0) return original;
@@ -360,7 +397,10 @@ async function retryBatchActivationIndividuallyAfterEd064(
 
   const retryResults: Array<{ object: { url: string; name: string }; result: ActivationResult }> = [];
   for (const object of objects) {
-    const result = await activate(http, safety, object.url, { name: object.name, preaudit: options?.preaudit });
+    const result = await activateWithinBudget(http, safety, object.url, requestOptions, {
+      name: object.name,
+      preaudit: options?.preaudit,
+    });
     retryResults.push({ object, result });
   }
 
@@ -411,6 +451,13 @@ async function retryBatchActivationIndividuallyAfterEd064(
 // S/4's auth-failure HTML is "Anmeldung fehlgeschlagen" (also no match). So this
 // branch self-scopes without an explicit detectSystemCapabilities() check.
 function rethrowOrLockHint(err: unknown, objectLabel: string): never | ActivationResult {
+  if (err instanceof AdtNetworkError || (err instanceof AdtApiError && (err.statusCode === 429 || err.isServerError))) {
+    err.activationOutcome = 'unknown';
+    err.extraHint =
+      'If activation was submitted, its completion is unconfirmed; SAP may still finish it. ' +
+      'Check SAPRead(type="INACTIVE_OBJECTS") and inspect the object with force_refresh=true before another activation. ' +
+      'An active definition alone does not prove that dependent generation has finished.';
+  }
   if (
     err instanceof AdtApiError &&
     (err.statusCode === 400 || err.statusCode === 401 || err.statusCode === 403) &&

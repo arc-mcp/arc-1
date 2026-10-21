@@ -26,6 +26,9 @@ export class AdtError extends Error {
   /** A plugin POST failed without establishing whether its service executed it. */
   pluginPostOutcome?: 'unknown';
 
+  /** Activation failed without establishing whether SAP completed it. */
+  activationOutcome?: 'unknown';
+
   /**
    * Optional remediation hint attached by a handler when it has context the
    * generic error formatter lacks (e.g., the list of blocking dependents
@@ -1069,6 +1072,14 @@ export class AdtNetworkError extends AdtError {
   ) {
     super(`ADT network error: ${message}`);
     this.name = 'AdtNetworkError';
+  }
+
+  get isTimeout(): boolean {
+    return this.cause?.name === 'TimeoutError';
+  }
+
+  get isCancelled(): boolean {
+    return this.cause?.name === 'AbortError';
   }
 }
 

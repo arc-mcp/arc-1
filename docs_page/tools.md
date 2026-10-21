@@ -1249,6 +1249,12 @@ writes and cleanup.
 
 Activate ABAP objects. Supports single object or batch activation.
 
+Activation has a five-minute client budget shared by the initial request, preaudit confirmation,
+and any ED064 fallback. A timeout or cancellation leaves completion unconfirmed; SAP may keep
+working. Check `SAPRead(type="INACTIVE_OBJECTS")` and read the object with `force_refresh=true`
+before another activation. An active definition alone does not prove dependent generation has
+finished. ARC-1 does not replay activation after availability or database-session errors.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -1288,8 +1294,7 @@ unconfirmed: use `SAPRead(type="SRVB", name="…")` to inspect state before anot
 Minimal errors retain HTTP status and request-correlation guidance while hiding SAP details.
 Existing authentication/CSRF/content-negotiation handling remains: a 403 on the publish POST
 still refreshes the CSRF token and re-sends once, even when the 403 has another cause. Thus
-one publish invocation can still contain multiple protocol sends. Unpublish and other
-operations keep their existing retry policies.
+one publish invocation can still contain multiple protocol sends. Unpublish keeps its existing retry policy; activation also disables transient replay as described above.
 
 **Examples:**
 ```

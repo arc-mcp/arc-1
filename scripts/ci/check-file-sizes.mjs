@@ -84,7 +84,8 @@ const BUDGETS = {
   'tests/unit/adt/client.test.ts': 2874,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1543, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
+  // +3: classify caller cancellation before generic network wrapping (#1045).
+  'src/adt/http.ts': 1546, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1508, // Pass the review request budget through transport inventory GET.
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
