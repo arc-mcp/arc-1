@@ -50,7 +50,7 @@ For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP c
 
 ### Single-file executable (no Node.js, no `node_modules`)
 
-Each [GitHub Release](https://github.com/arc-mcp/arc-1/releases) carries one executable per platform plus `SHA256SUMS.txt`:
+Starting with 1.7.0, each [GitHub Release](https://github.com/arc-mcp/arc-1/releases) carries one executable per platform plus `SHA256SUMS.txt`:
 
 | Platform | File |
 |---|---|
@@ -58,8 +58,11 @@ Each [GitHub Release](https://github.com/arc-mcp/arc-1/releases) carries one exe
 | Linux x64 / arm64 | `arc-1-<version>-linux-x64`, `arc-1-<version>-linux-arm64` |
 | macOS Apple Silicon / Intel | `arc-1-<version>-macos-arm64`, `arc-1-<version>-macos-x64` |
 
+On Linux or macOS, replace the filename below with the one you downloaded, then make it executable and run it from that directory:
+
 ```bash
-arc-1-1.7.0-linux-x64 --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASS --client 100
+chmod +x arc-1-1.7.0-linux-x64
+./arc-1-1.7.0-linux-x64 --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASS --client 100
 ```
 
 The npm package installs several thousand files that antivirus scanners inspect on first start; the executable is one file ([#957](https://github.com/arc-mcp/arc-1/issues/957)). It runs the same code on the Node.js runtime it was built with (a [Node SEA](https://nodejs.org/api/single-executable-applications.html)), so behavior matches the npm package apart from these differences:

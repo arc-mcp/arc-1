@@ -22,7 +22,7 @@ important `0.7.0` authorization migration retained below.
      release-please rebuilds that branch from main with `force: true`, so a commit added there is
      lost the next time a feat:/fix: merges. See .claude/commands/release-notes.md. -->
 
-## 1.7.0 — application data, diagnostics and safer authoring (unreleased)
+## 1.7.0 — application data, diagnostics and safer authoring (2026-10-22)
 
 Refresh your MCP client's tool list. Existing data-preview permissions also enable the new data actions below; review the opt-outs before upgrading.
 
