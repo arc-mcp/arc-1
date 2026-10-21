@@ -183,6 +183,49 @@ describe('stateful CSRF discovery recovery (#1044)', () => {
     }
     expect(warn).not.toHaveBeenCalled();
   });
+  it.each([200, 403])('keeps the lock context during CSRF refresh when the retried PUT returns %s', async (status) => {
+    const client = new AdtHttpClient({ ...config, sessionType: undefined, username: 'user', password: 'password' });
+    mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'PARENT' }));
+    await client.fetchCsrfToken();
+    mockFetch.mockClear();
+
+    mockFetch.mockResolvedValueOnce(mockResponse(200, 'locked', {}, ['sap-contextid=LOCKCTX; Path=/']));
+    mockFetch.mockResolvedValueOnce(mockResponse(403, 'refresh required'));
+    rejectStatefulDiscovery();
+    mockFetch.mockResolvedValueOnce(mockResponse(200, '', { 'x-csrf-token': 'FRESH' }));
+    mockFetch.mockResolvedValueOnce(mockResponse(status, 'write result'));
+    mockFetch.mockResolvedValueOnce(mockResponse(200, 'unlocked'));
+    mockFetch.mockResolvedValueOnce(mockResponse(200, '', {}, ['sap-contextid=0; Path=/']));
+
+    const operation = client.withStatefulSession(async (session) => {
+      await session.post('/lock');
+      try {
+        return await session.put('/source', 'replacement');
+      } finally {
+        await session.post('/unlock');
+      }
+    });
+    if (status === 200) await expect(operation).resolves.toMatchObject({ statusCode: status });
+    else await expect(operation).rejects.toMatchObject({ statusCode: status, path: '/source' });
+
+    expect(mockFetch).toHaveBeenCalledTimes(8);
+    expect(request(0).headers['X-CSRF-Token']).toBe('PARENT');
+    for (const index of [2, 3]) expect(request(index).headers['X-sap-adt-sessiontype']).toBe('stateful');
+    expect(request(4).headers['X-sap-adt-sessiontype']).toBeUndefined();
+    for (const index of [5, 6]) {
+      expect(request(index).headers).toMatchObject({ 'X-sap-adt-sessiontype': 'stateful', 'X-CSRF-Token': 'FRESH' });
+    }
+    for (let index = 1; index < 8; index++) {
+      expect(request(index).headers.Cookie).toContain('sap-contextid=LOCKCTX');
+      expect(request(index).headers.Authorization).toBe(request(0).headers.Authorization);
+    }
+    expect(request(0).headers.Authorization).toBe(`Basic ${Buffer.from('user:password').toString('base64')}`);
+    expect(request(7)).toMatchObject({
+      path: '/sap/bc/adt/core/http/sessions',
+      headers: { 'X-sap-adt-sessiontype': 'stateless', 'sap-contextid': 'LOCKCTX' },
+    });
+  });
+
   it('keeps BTP identity and the proxy connection through headerless CSRF recovery and a stateful write', async () => {
     mockClientRequest
       .mockResolvedValueOnce(mockClientResponse(400, ''))
