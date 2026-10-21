@@ -55,9 +55,8 @@ function shortTexts(
 }
 
 function shortTextMarkerCount(text: string): number {
-  return [...text.matchAll(/\bclass\s*=\s*(["'])(.*?)\1/gi)].filter((match) =>
-    match[2]!.toLowerCase().split(/\s+/).includes('shorttext'),
-  ).length;
+  // Count even an unfinished class attribute so malformed markup cannot invite a second paragraph.
+  return [...text.matchAll(/\bclass\s*=\s*["'][^"'\r\n]*\bshorttext\b/gi)].length;
 }
 
 export function readFmParameterDescriptions(prefix: string, parameters: FmParameter[]): void {
