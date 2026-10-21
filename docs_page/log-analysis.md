@@ -38,6 +38,9 @@ File audit output is independent of the stderr level; it records emitted audit e
 not ordinary log messages. E2E runs retain it as `mcp-audit.ndjson` beside `mcp-server.log`
 in the uploaded log directory. CSRF events describe
 each probe: a HEAD 400 followed by GET 200 with a usable token is a healthy fallback.
+If both stateful probes return 400, ARC-1 retries the discovery GET once without the
+session header (`adtMode: unspecified`). Lock and write requests remain stateful;
+this recovery does not repair a lost SAP session or lock.
 
 ## Event Types
 
