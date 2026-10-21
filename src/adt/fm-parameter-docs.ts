@@ -58,7 +58,7 @@ function shortTexts(
 
 function shortTextMarkerCount(text: string): number {
   // Count even an unfinished class attribute so malformed markup cannot invite a second paragraph.
-  return [...text.matchAll(/\bclass\s*=\s*["'][^"'\r\n]*\bshorttext\b/gi)].length;
+  return [...text.matchAll(/<p\b[^>\r\n]*\bclass\s*=\s*["'][^"'\r\n]*\bshorttext\b/gi)].length;
 }
 
 export function readFmParameterDescriptions(prefix: string, parameters: FmParameter[]): void {
@@ -87,12 +87,10 @@ function escapeDescription(value: string): string {
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
     '@': '&#64;',
-    '!': '&#33;',
   };
-  return value.replace(/[&<>"'@!]/g, (character) => entities[character]!);
+  // Native short-text synchronization accepts this escape set; quotes and ! remain element text.
+  return value.replace(/[&<>@]/g, (character) => entities[character]!);
 }
 
 function replaceDescription(section: DocSection, description: string, language: string): string {

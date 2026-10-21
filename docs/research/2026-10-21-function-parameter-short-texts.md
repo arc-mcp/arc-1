@@ -8,7 +8,7 @@ changing, or table parameters. It does not copy a DDIC label automatically. The 
 
 SAP documents [parameter ABAP Doc tags](https://help.sap.com/saphelp_em92/helpdata/en/4e/c511186e391014adc9fffe4e204223/content.htm)
 and [short-text synchronization](https://help.sap.com/docs/SAP_NETWEAVER_750/c238d694b825421f940829321ffa326a/8327c3ff3fcb424584636bbc33211d53.html).
-The short-text limit is 60 characters; synchronization is available from 7.5 and uses the original language.
+ARC-1 accepts up to 60 characters; synchronization is available from 7.5 and uses the original language.
 
 The following sequence was verified on SAP_BASIS 758 SP02 through direct HTTPS Basic ADT
 requests and native SE37 inspection, using disposable local function groups and RFC function modules:
@@ -37,6 +37,13 @@ read of the SE37 metadata field: a missing or incorrect `lang` can leave those t
 different. Explicit structured writes set the verified original language; omitted descriptions preserve
 existing documentation. Clearing descriptions, exception descriptions, and automatic DDIC label lookup
 are outside this change.
+
+On the same release, native synchronization kept `&#39;`, `&#33;`, `&quot;`, and `&apos;` literally in the
+SE37 short text, despite source readback decoding them. Generated text therefore uses `&amp;`,
+`&lt;`, `&gt;`, and `&#64;`, with literal quotes and exclamation marks in paragraph
+text. SAP's current [ABAP Doc syntax](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/ABENDOCCOMMENT.html)
+permits escaping special characters when necessary. Exact generated-source tests cover create and
+replacement, including literal entity-looking input; a parser round trip alone cannot verify native decoding.
 
 ## Source preservation
 

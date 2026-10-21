@@ -92,10 +92,28 @@ describe('documentation-safe signature edits', () => {
         [{ kind, name: 'VALUE_IN', type: 'CHAR10', description }],
         'en',
       );
-      expect(output).toContain('R&amp;D &lt;input&gt; &quot;quoted&quot; &#39;&#64;name&#39;&#33; &amp;lt;');
+      expect(output).toContain(`R&amp;D &lt;input&gt; "quoted" '&#64;name'! &amp;lt;`);
       expect(parseFmSignature(output).params[0]?.description).toBe(description);
     },
   );
+
+  it.each([
+    ['creation', 'FUNCTION z_demo.\nENDFUNCTION.\n'],
+    ['replacement', source],
+  ])('uses native short-text escaping for %s', (_label, input) => {
+    const description = `Owner's "text" @home!`;
+    const output = edit(input, description);
+    expect(output).toContain(`<p class="shorttext synchronized" lang="en">Owner's "text" &#64;home!</p>`);
+    expect(parseFmSignature(output).params[0]?.description).toBe(description);
+  });
+
+  it('does not mistake quoted description text for paragraph attributes', () => {
+    const description = 'Use class="shorttext" & docs';
+    const output = edit(source, description);
+    expect(output).toContain('>Use class="shorttext" &amp; docs</p>');
+    expect(parseFmSignature(output).params[0]?.description).toBe(description);
+    expect(edit(output, 'Replacement')).toContain('>Replacement</p>');
+  });
 
   it('does not attach distant or ordinary comments to the FUNCTION', () => {
     const distant = `${docs}\n" Ordinary comment\n`;
