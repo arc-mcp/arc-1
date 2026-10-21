@@ -48,6 +48,124 @@ describe('SAP security session recovery', () => {
     expect(issued).toBe(1);
   });
 
+  it.each([503, 429, 502, 401])(
+    'keeps cold HTTP %i recovery serialized until SAP establishes a session',
+    async (status) => {
+      let coldInFlight = 0;
+      let maxColdInFlight = 0;
+      let issued = 0;
+      let calls = 0;
+      mockFetch.mockImplementation(async (_url, init) => {
+        if (init.headers.Cookie) return mockResponse(200, 'ok');
+        coldInFlight++;
+        maxColdInFlight = Math.max(maxColdInFlight, coldInFlight);
+        const first = ++calls === 1;
+        await nextTurn();
+        coldInFlight--;
+        return first ? mockResponse(status, 'gateway error', { 'retry-after': '0' }) : sessionResponse(`S${++issued}`);
+      });
+      const client = new AdtHttpClient(config);
+      const results = await Promise.allSettled(['/a', '/b', '/c', '/d'].map((path) => client.get(path)));
+
+      expect(issued).toBe(1);
+      expect(maxColdInFlight).toBe(1);
+      expect(mockFetch).toHaveBeenCalledTimes(status === 502 ? 4 : 5);
+      expect(results.map((result) => result.status)).toEqual([
+        status === 502 ? 'rejected' : 'fulfilled',
+        'fulfilled',
+        'fulfilled',
+        'fulfilled',
+      ]);
+    },
+  );
+
+  it('does not invalidate a waiter session when an earlier cold 401 body finishes', async () => {
+    const bodyStarted = deferred();
+    const bodyRelease = deferred();
+    let ownerCalls = 0;
+    let issued = 0;
+    const cookies: Array<string | undefined> = [];
+    mockFetch.mockImplementation(async (url, init) => {
+      cookies.push(init.headers.Cookie);
+      if (new URL(url).pathname === '/owner' && ++ownerCalls === 1) {
+        const response = mockResponse(401, 'Unauthorized');
+        vi.spyOn(response, 'text').mockImplementation(async () => {
+          bodyStarted.resolve();
+          await bodyRelease.promise;
+          return 'Unauthorized';
+        });
+        return response;
+      }
+      return init.headers.Cookie ? mockResponse(200, 'ok') : sessionResponse(`S${++issued}`);
+    });
+    const client = new AdtHttpClient(config);
+    const owner = client.get('/owner');
+    await bodyStarted.promise;
+    await client.get('/waiter');
+    bodyRelease.resolve();
+    await owner;
+    await client.get('/after');
+
+    expect(issued).toBe(1);
+    expect(cookies).toEqual([undefined, undefined, 'SAP_SESSIONID_A4H_001=S1', 'SAP_SESSIONID_A4H_001=S1']);
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not reset a newer session when an old 401 response arrives', async () => {
+    const oldStarted = deferred();
+    const oldRelease = deferred();
+    let oldCalls = 0;
+    let resetCalls = 0;
+    const cookies: Array<string | undefined> = [];
+    mockFetch.mockImplementation(async (url, init) => {
+      cookies.push(init.headers.Cookie);
+      const path = new URL(url).pathname;
+      if (path === '/warm') return sessionResponse('OLD');
+      if (path === '/old' && ++oldCalls === 1) {
+        oldStarted.resolve();
+        await oldRelease.promise;
+        return mockResponse(401, 'Unauthorized');
+      }
+      if (path === '/reset') return ++resetCalls === 1 ? mockResponse(401, 'Unauthorized') : sessionResponse('FRESH');
+      return mockResponse(200, 'ok');
+    });
+    const client = new AdtHttpClient(config);
+    await client.get('/warm');
+    const old = client.get('/old');
+    await oldStarted.promise;
+    await client.get('/reset');
+    oldRelease.resolve();
+    await old;
+    await client.get('/after');
+
+    expect(cookies).toEqual([
+      undefined,
+      'SAP_SESSIONID_A4H_001=OLD',
+      'SAP_SESSIONID_A4H_001=OLD',
+      undefined,
+      'SAP_SESSIONID_A4H_001=FRESH',
+      'SAP_SESSIONID_A4H_001=FRESH',
+    ]);
+    expect(mockFetch).toHaveBeenCalledTimes(6);
+  });
+
+  it('keeps the shared Basic rejection guard when unauthorized retries are disabled', async () => {
+    const cookies: Array<string | undefined> = [];
+    mockFetch.mockImplementation(async (url, init) => {
+      cookies.push(init.headers.Cookie);
+      const path = new URL(url).pathname;
+      if (path === '/warm') return sessionResponse('S1');
+      return mockResponse(path === '/denied' ? 401 : 200, 'response');
+    });
+    const client = new AdtHttpClient({ ...config, retryUnauthorized: false });
+    await client.get('/warm');
+    await expect(client.get('/denied')).rejects.toThrow();
+    await expect(client.get('/after')).rejects.toThrow('already rejected');
+
+    expect(cookies).toEqual([undefined, 'SAP_SESSIONID_A4H_001=S1']);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
   it.each([401, 500])('includes the internal HTTP %i reset retry in bootstrap', async (status) => {
     const retryStarted = deferred();
     const release = deferred();

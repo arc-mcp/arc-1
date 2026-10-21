@@ -12,9 +12,11 @@ timestamps identify requests after exhaustion, not necessarily its cause.
 
 The per-client gate admits one cold wire request. Its response stores cookies and any successful
 CSRF token together before waiting callers proceed. A network failure hands ownership to one
-survivor; a real response without a session cookie allows normal parallel operation. Existing
+survivor. Without a session cookie, only a successful response (2xx or 304) allows parallel operation;
+an HTTP error leaves one next caller in charge of bootstrap. Existing
 internal retries and standalone CSRF fetches use the same gate. Resets invalidate old response
 cookies/tokens; an interrupted CSRF bootstrap fails instead of restoring stale authentication state.
+An eligible 401 resets at the headers boundary, before a waiting caller can establish a new session.
 Waiting callers retain their own cancellation/deadline and refresh the cookie/token pair before sending.
 
 Offline reproduction issued four sessions for four baseline reads and one with the contributor's

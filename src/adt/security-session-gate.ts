@@ -22,14 +22,14 @@ export class SecuritySessionGate {
   }
 
   /**
-   * Serialize only the first wire response. A rejection lets one waiter take over;
-   * a real cookie-less response opens the gate for systems without security sessions.
+   * A failed cold request lets one waiter take over. A successful response (or 304)
+   * opens the gate even without cookies, for systems without security sessions.
    */
-  async run<T>(
+  async run(
     hasSessionCookie: () => boolean,
-    request: (waited: boolean) => Promise<T>,
+    request: (waited: boolean) => Promise<Response>,
     options?: RequestDeadlineOptions,
-  ): Promise<T> {
+  ): Promise<Response> {
     let waited = false;
     while (this.pending) {
       waited = true;
@@ -46,7 +46,7 @@ export class SecuritySessionGate {
     this.pending = pending;
     try {
       const result = await request(waited);
-      if (generation === this.generation) this.ready = true;
+      if (generation === this.generation && (result.ok || result.status === 304)) this.ready = true;
       return result;
     } finally {
       if (this.pending === pending) this.pending = undefined;

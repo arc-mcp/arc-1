@@ -527,7 +527,14 @@ export class AdtHttpClient {
     let retried429 = false;
 
     try {
-      let response = await this.doFetch(url, method, headers, wireBody, options);
+      let response = await this.doFetch(
+        url,
+        method,
+        headers,
+        wireBody,
+        options,
+        this.config.retryUnauthorized !== false,
+      );
       let responseBody = await response.text();
 
       // Detect broken DB connection on the assigned work process.
@@ -691,9 +698,6 @@ export class AdtHttpClient {
           durationMs: Date.now() - httpStart,
           errorBody: '401 session expired — resetting session and retrying',
         });
-
-        // Clear session to force fresh authentication
-        this.resetSession();
 
         // Pick up an out-of-band rotated cookie file so the call that observes the
         // expiry can recover; the lazy `cookiesCleared` reload stays the fallback.
@@ -1334,6 +1338,7 @@ export class AdtHttpClient {
     headers: Record<string, string>,
     body?: string | Buffer,
     options?: AdtRequestOptions,
+    resetOnUnauthorized = false,
   ): Promise<Response> {
     const cookieNames = () => [...this.cookieJar.keys(), ...Object.keys(this.config.cookies ?? {})];
     const response = await this.securitySessionGate.run(
@@ -1353,6 +1358,8 @@ export class AdtHttpClient {
           // Ordinary responses (including 404) can carry a token without proving a Fetch probe succeeded.
           const token = fetchingCsrf ? usableCsrfToken(response) : response.headers.get('x-csrf-token');
           if (token && token !== 'Required') this.csrfToken = token;
+          // Reset before releasing waiters; a slow 401 body must not clear their new session.
+          if (resetOnUnauthorized && response.status === 401) this.resetSession();
         } else if (fetchingCsrf) {
           await response.body?.cancel();
           throw new AdtNetworkError('SAP session changed during CSRF bootstrap. Retry the request.');

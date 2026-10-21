@@ -146,7 +146,7 @@ describe('AdtHttpClient', () => {
       expect(maxInFlight).toBe(3);
     });
 
-    it('stops gating after the first response even when SAP sends no session cookie', async () => {
+    it.each([200, 304])('stops gating after HTTP %i even when SAP sends no session cookie', async (status) => {
       let inFlight = 0;
       let maxInFlight = 0;
       mockFetch.mockImplementation(async () => {
@@ -154,7 +154,7 @@ describe('AdtHttpClient', () => {
         maxInFlight = Math.max(maxInFlight, inFlight);
         await new Promise((resolve) => setTimeout(resolve, 5));
         inFlight--;
-        return mockResponse(200, 'ok');
+        return mockResponse(status, status === 304 ? '' : 'ok');
       });
 
       const client = new AdtHttpClient(getDefaultConfig());
