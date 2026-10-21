@@ -28,6 +28,7 @@ import {
 import { prepareDataPreviewWireBody } from './http-wire-body.js';
 import { legacyContentHandlerFallback, rejectEmptyAdtHtmlResponse } from './legacy-content-handler.js';
 import { fetchWithAttemptBudget } from './request-attempt-budget.js';
+import { hasSecuritySessionCookie, SecuritySessionGate } from './security-session-gate.js';
 import type { Semaphore } from './semaphore.js';
 import { resolveSapUserAgent } from './user-agent.js';
 
@@ -197,6 +198,8 @@ export class AdtHttpClient {
   private dbRetryInProgress = false;
   /** Set after a 401 clears stale cookies — triggers file reload on the next request */
   private cookiesCleared = false;
+  /** Keeps a cold client at one SAP security session (see security-session-gate.ts). */
+  private readonly securitySessionGate = new SecuritySessionGate();
   /** Shared by stateful clones so one rejected Basic credential cannot fan out internally. */
   private readonly authenticationAttemptState: AuthenticationAttemptState;
   constructor(config: AdtHttpConfig, authenticationAttemptState?: AuthenticationAttemptState) {
@@ -525,9 +528,6 @@ export class AdtHttpClient {
       let response = await this.doFetch(url, method, headers, wireBody, options);
       let responseBody = await response.text();
 
-      // Persist any Set-Cookie headers from the response
-      this.storeCookies(response);
-
       // Detect broken DB connection on the assigned work process.
       // SAP's ICM routes all requests with the same session cookie to the same
       // work process. If that WP has a broken HANA connection, every request fails
@@ -574,7 +574,6 @@ export class AdtHttpClient {
 
           const retryResp = await this.doFetch(url, method, headers, wireBody, options);
           const retryBody = await retryResp.text();
-          this.storeCookies(retryResp);
           const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path, expectBody);
 
           logger.emitAudit({
@@ -617,7 +616,6 @@ export class AdtHttpClient {
 
         const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
-        this.storeCookies(retryResp);
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -657,7 +655,6 @@ export class AdtHttpClient {
 
         const retryResp = await this.doFetch(url, method, headers, wireBody, options);
         const retryBody = await retryResp.text();
-        this.storeCookies(retryResp);
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -725,7 +722,6 @@ export class AdtHttpClient {
 
         response = await this.doFetch(url, method, headers, wireBody, options);
         responseBody = await response.text();
-        this.storeCookies(response);
 
         logger.emitAudit({
           timestamp: new Date().toISOString(),
@@ -761,7 +757,6 @@ export class AdtHttpClient {
         }
         response = await this.doFetch(url, method, headers, wireBody, options);
         responseBody = await response.text();
-        this.storeCookies(response);
         // A refreshed session can still need legacy content negotiation below (#996).
       }
 
@@ -820,13 +815,6 @@ export class AdtHttpClient {
 
           const retryResp = await this.doFetch(url, method, fallbackHeaders, wireBody, options);
           const retryBody = await retryResp.text();
-          this.storeCookies(retryResp);
-
-          // Store CSRF token from retry response
-          const retryToken = retryResp.headers.get('x-csrf-token');
-          if (retryToken && retryToken !== 'Required') {
-            this.csrfToken = retryToken;
-          }
 
           const retryResult = this.handleResponse(retryResp.status, retryResp.headers, retryBody, path, expectBody);
 
@@ -857,12 +845,6 @@ export class AdtHttpClient {
           return retryResult;
         }
         // No meaningful header change — fall through to normal error handling
-      }
-
-      // Store CSRF token from response
-      const responseToken = response.headers.get('x-csrf-token');
-      if (responseToken && responseToken !== 'Required') {
-        this.csrfToken = responseToken;
       }
 
       const result = this.handleResponse(response.status, response.headers, responseBody, path, expectBody);
@@ -1045,12 +1027,6 @@ export class AdtHttpClient {
       this.reloadCookiesFromSource();
     }
 
-    // A token only counts as proof when the response itself succeeded: SAP returns one on
-    // failures too, and the old code accepted a token from a 401 — masking the auth error.
-    const usableToken = (response: Response): string | undefined => {
-      const token = response.headers.get('x-csrf-token')?.trim();
-      return response.ok && token && token.toLowerCase() !== 'required' ? token : undefined;
-    };
     // Every probe keeps the same identity, current cookies and caller's request budget.
     const probe = async (method: 'HEAD' | 'GET'): Promise<Response> => {
       const cookieHeader = this.composeCookieHeader();
@@ -1058,7 +1034,6 @@ export class AdtHttpClient {
       else delete headers.Cookie;
       const started = Date.now();
       const response = await this.doFetch(this.buildUrl(path), method, headers, undefined, options);
-      this.storeCookies(response);
       logger.emitAudit({
         timestamp: new Date().toISOString(),
         level: 'debug',
@@ -1067,12 +1042,12 @@ export class AdtHttpClient {
         path,
         statusCode: response.status,
         durationMs: Date.now() - started,
-        success: !!usableToken(response),
+        success: !!usableCsrfToken(response),
         adtMode:
           headers['X-sap-adt-sessiontype'] === undefined ? 'unspecified' : (this.config.sessionType ?? 'unspecified'),
-        hasContext: /(?:^|;\s*)sap-contextid=/.test(cookieHeader ?? ''),
+        hasContext: /(?:^|;\s*)sap-contextid=/.test(headers.Cookie ?? ''),
       });
-      if (method === 'GET' && response.status === 200 && !usableToken(response)) {
+      if (method === 'GET' && response.status === 200 && !usableCsrfToken(response)) {
         // Check login pages, but preserve the header-only legacy discovery fallback.
         this.handleResponse(response.status, response.headers, await response.text(), path, false);
       }
@@ -1106,7 +1081,7 @@ export class AdtHttpClient {
       // Retry these HEAD refusals or a successful response without a token on the same path.
       // A successful HEAD with a usable token remains the one-request fast path.
       const headStatus = response.status;
-      if ([400, 403, 405].includes(response.status) || (response.ok && !usableToken(response))) {
+      if ([400, 403, 405].includes(response.status) || (response.ok && !usableCsrfToken(response))) {
         response = await probe('GET');
       }
 
@@ -1119,12 +1094,12 @@ export class AdtHttpClient {
 
       // Older ADT handlers may return an empty 200 for a missing core resource (#817).
       // A real auth/server failure must not be hidden by trying another endpoint.
-      if (response.status === 404 || response.status === 405 || (response.ok && !usableToken(response))) {
+      if (response.status === 404 || response.status === 405 || (response.ok && !usableCsrfToken(response))) {
         path = '/sap/bc/adt/discovery';
         response = await probe('GET');
       }
 
-      const token = usableToken(response);
+      const token = usableCsrfToken(response);
       if (!token) {
         if (response.status === 401) {
           if (this.isCookieAuthMode()) this.clearCookiesAndMark();
@@ -1145,7 +1120,6 @@ export class AdtHttpClient {
         throw new AdtApiError(`No CSRF token in response (HTTP ${response.status})`, response.status, path);
       }
 
-      this.csrfToken = token;
       return path;
     } catch (err) {
       if (err instanceof AdtApiError || err instanceof AdtNetworkError) throw err;
@@ -1191,8 +1165,7 @@ export class AdtHttpClient {
    */
   private clearCookiesAndMark(): void {
     this.config.cookies = {};
-    this.cookieJar.clear();
-    this.csrfToken = '';
+    this.resetSession();
     this.cookiesCleared = true;
   }
 
@@ -1241,6 +1214,7 @@ export class AdtHttpClient {
   private resetSession(): void {
     this.cookieJar.clear();
     this.csrfToken = '';
+    this.securitySessionGate.reset();
   }
 
   /**
@@ -1275,10 +1249,7 @@ export class AdtHttpClient {
   }
 
   private storeCookies(response: Response): void {
-    const setCookieHeaders = response.headers.getSetCookie();
-    if (!setCookieHeaders || setCookieHeaders.length === 0) return;
-
-    for (const cookie of setCookieHeaders) {
+    for (const cookie of response.headers.getSetCookie() ?? []) {
       // Set-Cookie: name=value; Path=/; HttpOnly; ...
       const nameValue = cookie.split(';')[0];
       if (!nameValue) continue;
@@ -1351,6 +1322,45 @@ export class AdtHttpClient {
     body?: string | Buffer,
     options?: AdtRequestOptions,
   ): Promise<Response> {
+    const cookieNames = () => [...this.cookieJar.keys(), ...Object.keys(this.config.cookies ?? {})];
+    const response = await this.securitySessionGate.run(
+      () => hasSecuritySessionCookie(cookieNames()),
+      async (waited) => {
+        const generation = this.securitySessionGate.generation;
+        if (waited) {
+          // A preceding response may have replaced both fields while this send waited.
+          // Keep the refreshed pair for this logical request's negotiation/retry paths too.
+          const cookie = this.composeCookieHeader();
+          if (cookie) headers.Cookie = cookie;
+          else delete headers.Cookie;
+          if (isModifyingMethod(method)) headers['X-CSRF-Token'] = this.csrfToken;
+        }
+        const response = await this.sendRequest(url, method, headers, body, options);
+        const fetchingCsrf = headers['X-CSRF-Token']?.toLowerCase() === 'fetch';
+        if (generation === this.securitySessionGate.generation) {
+          // Store once at the headers boundary, before releasing the bootstrap owner.
+          this.storeCookies(response);
+          // Ordinary responses (including 404) can carry a token without proving a Fetch probe succeeded.
+          const token = fetchingCsrf ? usableCsrfToken(response) : response.headers.get('x-csrf-token');
+          if (token && token !== 'Required') this.csrfToken = token;
+        } else if (fetchingCsrf) {
+          await response.body?.cancel();
+          throw new AdtNetworkError('SAP session changed during CSRF bootstrap. Retry the request.');
+        }
+        return response;
+      },
+      options,
+    );
+    return prepareBoundedResponse(response, url, options);
+  }
+
+  private async sendRequest(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body?: string | Buffer,
+    options?: AdtRequestOptions,
+  ): Promise<Response> {
     throwIfRequestCancelled(options);
     // Forward the caller's W3C trace context to SAP so one trace spans agent → ARC-1 → SAP.
     // Empty unless the MCP client sent a valid `traceparent`; ARC-1 never originates a trace.
@@ -1382,7 +1392,7 @@ export class AdtHttpClient {
         options?.attemptBudget,
       )) as Response;
     }
-    return prepareBoundedResponse(response, url, options);
+    return response;
   }
 
   /**
@@ -1482,6 +1492,12 @@ export class AdtHttpClient {
 /** HTTP methods that modify server state and require CSRF token */
 function isModifyingMethod(method: string): boolean {
   return ['POST', 'PUT', 'DELETE', 'PATCH'].includes(method.toUpperCase());
+}
+
+/** A token on an unsuccessful response is not proof of authentication. */
+function usableCsrfToken(response: Response): string | undefined {
+  const token = response.headers.get('x-csrf-token')?.trim();
+  return response.ok && token && token.toLowerCase() !== 'required' ? token : undefined;
 }
 
 /**
