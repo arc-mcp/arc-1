@@ -172,7 +172,11 @@ function buildBaseErrorMessage(
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
   if (err instanceof AdtError && err.activationOutcome === 'unknown') {
     // The activation boundary attaches inspection guidance; suppress generic replay/connectivity hints.
-    if (!config.minimalErrors) return message;
+    if (!config.minimalErrors) {
+      return err instanceof AdtApiError && !err.diagnosticsOmitted
+        ? withDependentSyntaxHint(err, enrichWithSapDetails(err, message))
+        : message;
+    }
     return err instanceof AdtApiError
       ? formatMinimalAdtError(err)
       : 'Activation request failed. Use the request ID to correlate server-side logs.';
@@ -364,12 +368,8 @@ function buildBaseErrorMessage(
     }
     // Server errors (500, 502, 503, etc.)
     if (err.isServerError) {
-      // Detect syntax errors in dependent objects (e.g., BDEF syntax errors blocking SRVB activation)
-      const syntaxMatch = err.message.match(/[Ss]yntax error in program (\S+)/);
-      if (syntaxMatch) {
-        const program = syntaxMatch[1].replace(/=+\w*$/, ''); // Strip "====BD" padding
-        return `${enriched}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first, then retry. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
-      }
+      const syntaxHint = withDependentSyntaxHint(err, enriched);
+      if (syntaxHint !== enriched) return syntaxHint;
       return `${enriched}\n\nHint: SAP application server error (${err.statusCode}). This is often transient — wait 10-30 seconds and retry. If the error persists, check SAPDiagnose(action="dumps") for short dumps, or verify the SAP system is responding via SAPRead(type="SYSTEM").`;
     }
     return enriched;
@@ -517,6 +517,14 @@ function resultTextForAuditPreview(toolName: string, content: ToolResult['conten
     if (prefix.length >= 501) break;
   }
   return prefix;
+}
+
+/** Preserve dependent-object syntax guidance without suggesting a generic server-error replay. */
+function withDependentSyntaxHint(err: AdtApiError, message: string): string {
+  const syntaxMatch = err.isServerError && err.message.match(/[Ss]yntax error in program (\S+)/);
+  if (!syntaxMatch) return message;
+  const program = syntaxMatch[1].replace(/=+\w*$/, ''); // Strip "====BD" padding
+  return `${message}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first, then retry. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
 }
 
 /** Enrich error message with additional SAP XML diagnostic detail (extra messages, properties) */
@@ -738,13 +746,6 @@ export function classifyMultiTargetSapError(
   identity: 'per-user' | 'shared' = 'per-user',
 ): MultiTargetSapFailure | undefined {
   if (error instanceof AdtNetworkError) {
-    if (error.isTimeout || error.isCancelled) {
-      return {
-        code: 'SAP_REQUEST_FAILED',
-        retryable: false,
-        message: `The request to SAP target ${target} ${error.isTimeout ? 'exceeded its client time limit' : 'was cancelled'} while running ${toolName}. Submitted work may continue in SAP; check its state before retrying.`,
-      };
-    }
     return {
       code: 'SAP_REQUEST_FAILED',
       message: `ARC-1 could not reach SAP target ${target} while running ${toolName}. Check Cloud Connector and SAP availability, then try again now.`,
