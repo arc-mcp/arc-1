@@ -269,6 +269,7 @@ jobs:
           path: |
             test-results/integration.json
             test-results/integration-skips.ndjson
+            test-results/where-used-diagnostics.json
           retention-days: 7
           if-no-files-found: warn
 
