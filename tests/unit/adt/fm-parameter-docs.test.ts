@@ -111,6 +111,7 @@ describe('documentation-safe signature edits', () => {
     source.replace('Input text</p>', 'Input text</p><p class="shorttext synchronized">Second</p>'),
     source.replace('Input text</p>', '<b>Input text</b></p>'),
     source.replace('Input text</p>', 'Input text'),
+    source.replace('Input text</p>', 'Input text</p><p class="shorttext synchronized">Unclosed'),
     source.replace('shorttext synchronized', 'shorttext'),
   ])('refuses ambiguous or unsupported short-text edits', (input) => {
     expect(() => edit(input)).toThrow(/ABAP Doc/);

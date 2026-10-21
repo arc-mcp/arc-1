@@ -54,6 +54,12 @@ function shortTexts(
   return result;
 }
 
+function shortTextMarkerCount(text: string): number {
+  return [...text.matchAll(/\bclass\s*=\s*(["'])(.*?)\1/gi)].filter((match) =>
+    match[2]!.toLowerCase().split(/\s+/).includes('shorttext'),
+  ).length;
+}
+
 export function readFmParameterDescriptions(prefix: string, parameters: FmParameter[]): void {
   const { sections } = attachedDocumentation(prefix);
   for (const parameter of parameters.filter(isDataParameter)) {
@@ -63,7 +69,13 @@ export function readFmParameterDescriptions(prefix: string, parameters: FmParame
     if (matches.length !== 1) continue;
     const paragraphs = shortTexts(matches[0]!.text);
     const paragraph = paragraphs[0];
-    if (paragraphs.length !== 1 || !paragraph?.synchronized || /[<\r\n]/.test(paragraph.content)) continue;
+    if (
+      paragraphs.length !== 1 ||
+      shortTextMarkerCount(matches[0]!.text) !== 1 ||
+      !paragraph?.synchronized ||
+      /[<\r\n]/.test(paragraph.content)
+    )
+      continue;
     const description = decodeXmlEntities(paragraph.content);
     if (isValidFmParameterDescription(description)) parameter.description = description;
   }
@@ -85,7 +97,11 @@ function escapeDescription(value: string): string {
 function replaceDescription(section: DocSection, description: string, language: string): string {
   const paragraphs = shortTexts(section.text);
   const paragraph = paragraphs[0];
-  if (paragraphs.length > 1 || (paragraph && (!paragraph.synchronized || /[<\r\n]/.test(paragraph.content)))) {
+  if (
+    paragraphs.length > 1 ||
+    shortTextMarkerCount(section.text) !== paragraphs.length ||
+    (paragraph && (!paragraph.synchronized || /[<\r\n]/.test(paragraph.content)))
+  ) {
     throw new Error(`Cannot safely replace ABAP Doc short text for ${section.name}; edit the full source instead.`);
   }
   if (paragraph) {
@@ -96,9 +112,6 @@ function replaceDescription(section: DocSection, description: string, language: 
       '</p>' +
       section.text.slice(paragraph.end)
     );
-  }
-  if (/\bclass\s*=\s*["'][^"']*\bshorttext\b/i.test(section.text)) {
-    throw new Error(`Cannot safely replace ABAP Doc short text for ${section.name}; edit the full source instead.`);
   }
   const pipe = /^[ \t]*"![ \t]*@parameter[ \t]+[^\s|]+[ \t]*\|/i.exec(section.text);
   if (!pipe) throw new Error(`Cannot locate ABAP Doc parameter ${section.name}; edit the full source instead.`);
