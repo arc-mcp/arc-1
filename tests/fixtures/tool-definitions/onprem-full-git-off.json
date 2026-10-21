@@ -147,7 +147,7 @@
         },
         "includeSignature": {
           "type": "boolean",
-          "description": "FUNC only: return JSON {source,signature,processingType?,updateTaskKind?}. Signature groups importing/exporting/changing/tables/exceptions/raising parameters. Default false: raw source."
+          "description": "FUNC: JSON {source,signature,processingType?,updateTaskKind?}. Signature and descriptions come from source. Default false: raw source."
         },
         "force_refresh": {
           "type": "boolean",
@@ -641,7 +641,7 @@
         },
         "parameters": {
           "type": "array",
-          "description": "FUNC: structured signature parameters. ARC-1 builds the IMPORTING/EXPORTING/CHANGING/TABLES/EXCEPTIONS/RAISING clause and splices it into the FM body. When omitted, the supplied source is PUT verbatim.",
+          "description": "FUNC: replace the source signature with these parameters; preserve the body. Omit to PUT source verbatim.",
           "items": {
             "type": "object",
             "properties": {
@@ -655,15 +655,21 @@
                   "exceptions",
                   "raising"
                 ],
-                "description": "Parameter kind. EXCEPTIONS/RAISING use only `name`; the others require `type`."
+                "description": "EXCEPTIONS/RAISING need only name; other kinds need type."
               },
               "name": {
                 "type": "string",
                 "description": "Parameter / exception name (uppercased on emit)."
               },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60,
+                "description": "Importing/exporting/changing/tables short text: 1–60 printable characters in the original language; omit to preserve."
+              },
               "type": {
                 "type": "string",
-                "description": "ABAP type expression. Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. Examples: \"STRING\", \"I\", \"BAPIRET2\", \"TYPE STANDARD TABLE OF X\", \"LIKE DOKHL-OBJECT\". For TABLES, include the leading TYPE/LIKE keyword."
+                "description": "ABAP type, e.g. STRING, I, BAPIRET2. TABLES includes TYPE/LIKE, e.g. TYPE STANDARD TABLE OF X or LIKE DOKHL-OBJECT. Ignored for exceptions/raising."
               },
               "byValue": {
                 "type": "boolean",
@@ -671,7 +677,7 @@
               },
               "default": {
                 "type": "string",
-                "description": "Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim. Example: \"'X'\", \"0\", \"SPACE\"."
+                "description": "Raw ABAP literal for IMPORTING/CHANGING, e.g. \"'X'\", \"0\", \"SPACE\"."
               },
               "optional": {
                 "type": "boolean",
@@ -862,6 +868,11 @@
                     },
                     "name": {
                       "type": "string"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 60
                     },
                     "type": {
                       "type": "string"

@@ -40,6 +40,11 @@ export const FUNCTION_MODULE_BATCH_TOOL_PROPERTIES = {
           enum: ['importing', 'exporting', 'changing', 'tables', 'exceptions', 'raising'],
         },
         name: { type: 'string' },
+        description: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 60,
+        },
         type: { type: 'string' },
         byValue: { type: 'boolean' },
         default: { type: 'string' },

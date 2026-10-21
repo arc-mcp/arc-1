@@ -131,7 +131,7 @@
         },
         "includeSignature": {
           "type": "boolean",
-          "description": "FUNC only: return JSON {source,signature,processingType?,updateTaskKind?}. Signature groups importing/exporting/changing/tables/exceptions/raising parameters. Default false: raw source."
+          "description": "FUNC: JSON {source,signature,processingType?,updateTaskKind?}. Signature and descriptions come from source. Default false: raw source."
         },
         "force_refresh": {
           "type": "boolean",

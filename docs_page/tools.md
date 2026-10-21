@@ -70,7 +70,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
-| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
+| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, description?, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
 ### Read-only syntax checks
 
@@ -414,7 +414,7 @@ keep their separate behavior.
 | `rowTypeDecimals` | integer | No | `TTYP` built-in decimal places; same validation and update semantics as `rowTypeLength`. Explicit zero clears the scale. |
 | `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
 | `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
-| `parameters` | array | No | FUNC structured signature: `{kind,name,type?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
+| `parameters` | array | No | FUNC structured signature: `{kind,name,type?,description?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
 | `name` | string | No | Object name (for single object actions) |
 | `expectedSourceHash` | string | No | SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. Omitted/null/blank: no protection against stale replacements across calls. See [Source preconditions](#source-preconditions). |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
@@ -714,9 +714,20 @@ Each parameter:
 | `kind` | string | One of `importing`, `exporting`, `changing`, `tables`, `exceptions`, `raising`. |
 | `name` | string | Parameter / exception name. Always uppercased on emit. |
 | `type` | string | ABAP type expression (`STRING`, `I`, `BAPIRET2`, `TYPE STANDARD TABLE OF X`, `LIKE DOKHL-OBJECT`, …). Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. For TABLES, include the leading `TYPE` or `LIKE` keyword. |
+| `description` | string | Optional short text for importing/exporting/changing/tables: 1–60 printable characters, not blank. Write it in the function group’s original language. |
 | `byValue` | boolean | Emit `VALUE(name)` wrapper. Default `false` (pass-by-reference). |
 | `default` | string | Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim (no escaping). Examples: `'X'`, `0`, `space`. |
 | `optional` | boolean | Emit `OPTIONAL` keyword. |
+
+A parameter such as `{kind: "importing", name: "IV_INPUT", type: "CHAR10", description: "Input value"}`
+writes native synchronized ABAP Doc with the function group's original language; no DDIC description
+is copied automatically. Activate and use `SAPRead(includeSignature=true, force_refresh=true)` to read
+its `description` from source; this does not independently read the SE37 metadata field. Native SE37
+synchronization was verified on SAP_BASIS 758 SP02.
+
+Omitting a description preserves existing documentation; an empty description is rejected. Structured
+signature edits preserve leading comments and the body, and remove attached documentation for removed
+parameters. Ambiguous short-text markup is refused; edit full `source` without `parameters` in that case.
 
 Example — create an FM with a typed signature:
 
