@@ -34,7 +34,7 @@ _Last updated: 2026-04-27_
 | commit | **22517d4** | **Fix lock-handle bug class: add modificationSupport check to lockObject()** | **crud.ts reliability** |
 | issue | **#104** | **CSRF fetch via HEAD fails on S/4HANA public cloud (CL_ADT_WB_RES_APP returns 403)** | **http.ts CSRF resilience** |
 | issue | **#98** | **423 on DDLS LOCK+UPDATE in separate sessions — root cause confirmed** | **Verify withStatefulSession for CDS** |
-| issue | **#124** | **STRATEGIC: SAP API Policy v.4.2026 may classify ADT REST as off-limits for productive use** | **Project narrative — not code** |
+| issue | **#124** | **STRATEGIC: API Policy and direct ADT access; assessment corrected 2026-10-21** | **FAQ Q56 supports custom MCP under conditions; Q33 requires ARC-1 channel clarification. See updated evaluation; upstream state not rechecked.** |
 | ~~issue~~ | ~~#9~~ | ~~Transport 406 Accept header (same class as fr0ster 415)~~ | ~~Critical #3~~ ✅ ARC-1 has 415/406 retry |
 
 ### Medium Priority (evaluate/verify)

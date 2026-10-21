@@ -11,7 +11,7 @@ import {
 import { deleteObject, lockObject, safeUpdateClassInclude, safeUpdateSource, unlockObject } from '../../adt/crud.js';
 import { getBadiEnhancementImplementation } from '../../adt/enhancement-impl.js';
 import { AdtApiError } from '../../adt/errors.js';
-import { type FmParameter, spliceFmSignature } from '../../adt/fm-signature.js';
+import { type FmParameter, findFmHeader, spliceFmSignature } from '../../adt/fm-signature.js';
 import type { AdtHttpClient } from '../../adt/http.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
 import { withActiveTextPoolForDelete } from '../../adt/text-elements.js';
@@ -22,6 +22,7 @@ import {
   guardCdsSyntax,
 } from '../cds-hints.js';
 import { getCachedFeatures } from '../feature-cache.js';
+import { resolveFmDescriptionLanguage } from '../function-parameter-language.js';
 import { CLASS_WRITE_INCLUDES, canonicalTablType, classIncludeUrl } from '../object-types.js';
 import { errorResult, type ToolResult, textResult } from '../shared.js';
 import {
@@ -137,9 +138,11 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   let effectiveSource = source;
   let fmParamStripWarning: string | undefined;
   const parameters = args.parameters as FmParameter[] | undefined;
+  const descriptionLanguage =
+    type === 'FUNC' ? await resolveFmDescriptionLanguage(client, String(args.group ?? ''), parameters) : undefined;
   const needsCurrentFunctionSource = type === 'FUNC' && parameters !== undefined && !source.trim();
   const prepareFunctionSource = (baseSource: string): string => {
-    if (parameters !== undefined) baseSource = spliceFmSignature(baseSource, name, parameters);
+    if (parameters !== undefined) baseSource = spliceFmSignature(baseSource, name, parameters, descriptionLanguage);
     const stripped = stripFmParamCommentBlock(baseSource);
     if (stripped.wasStripped) {
       fmParamStripWarning =
@@ -149,7 +152,7 @@ export async function writeActionUpdate(ctx: SapWriteContext): Promise<ToolResul
   };
   if (type === 'FUNC' && !needsCurrentFunctionSource) {
     // Only caller-supplied body text may be wrapped. A fetched source must contain the real FUNCTION envelope.
-    const bodyOnly = parameters !== undefined && !/^\s*FUNCTION\s+/i.test(source);
+    const bodyOnly = parameters !== undefined && !findFmHeader(source);
     effectiveSource = prepareFunctionSource(bodyOnly ? `FUNCTION ${name}.\n${source}\nENDFUNCTION.\n` : source);
   }
   if (!needsCurrentFunctionSource && !effectiveSource.trim()) {

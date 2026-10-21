@@ -60,6 +60,7 @@ const MULTI_TARGET_ACTION_RULES = new Map<
         'atc_variants',
         'cds_testcases',
         'dumps',
+        'feed_schema',
         'traces',
         'trace_requests',
         'system_messages',

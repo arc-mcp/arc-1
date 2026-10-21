@@ -33,7 +33,8 @@ CLASS zcl_calculator IMPLEMENTATION.
   METHOD add.
     rv_result = iv_a + iv_b.
   ENDMETHOD.
-ENDCLASS.`;
+ENDCLASS.
+`;
 
 const VALID_ONPREM_REPORT = `REPORT zcalculator.
 DATA: lv_result TYPE i.
@@ -110,6 +111,20 @@ describe('E2E: Lint Pipeline', () => {
       const preWrite = validateBeforeWrite(VALID_CLOUD_CLASS, filename, { systemType: 'btp' });
       expect(preWrite.pass).toBe(true);
       expect(preWrite.errors).toHaveLength(0);
+    });
+
+    it('fixes a missing final newline without blocking a cloud write', () => {
+      const source = VALID_CLOUD_CLASS.trimEnd();
+      const filename = detectFilename(source, 'ZCL_CALCULATOR');
+      const config = buildLintConfig({ systemType: 'btp' });
+
+      expect(lintAbapSource(source, filename, config).map((issue) => issue.rule)).toContain('final_newline');
+      expect(validateBeforeWrite(source, filename, { systemType: 'btp' }).pass).toBe(true);
+
+      const result = lintAndFix(source, filename, config);
+      expect(result.fixedRules).toContain('final_newline');
+      expect(result.fixedSource).toBe(VALID_CLOUD_CLASS);
+      expect(result.remainingIssues.some((issue) => issue.rule === 'final_newline')).toBe(false);
     });
 
     it('class with obsolete ADD is caught and fixable on cloud', () => {

@@ -1,581 +1,510 @@
 # ARC-1 vs. the SAP ABAP MCP Server — Decision Guide
 
-This page compares **ARC-1** with **SAP's official ABAP MCP Server** (the *ADT MCP Server* bundled
-with *ABAP Development Tools for VS Code* and *ADT for Eclipse*) so you can decide which to run —
-**only ARC-1, only the SAP ABAP MCP Server, or both together.**
+**Updated 18 October 2026.** Compare ARC-1 with SAP's official ABAP MCP Server and the
+surrounding ABAP Development Tools (ADT) experience. The main choice is **where the agent works,
+whose SAP identity it uses, and who controls its access**.
 
-!!! note "Neutral by design — and not either/or"
-    This is a decision aid, not a sales page. The two products were built for *different jobs* and the
-    honest answer for many teams is **"use both"** — and you are **not limited to these two**: MCP is
-    composable, so you can run ARC-1, the SAP ADT MCP Server, the [SAP docs/notes MCP
-    servers](#14-its-not-eitheror-the-composable-mcp-ecosystem) and a skills layer side by side. Where
-    ARC-1 is stronger it says so; where the SAP server is stronger it says so just as plainly.
+**Choose SAP's server for development integrated with ADT. Choose ARC-1 for an independently
+hosted, centrally governed MCP service. Use both when you need both workflows.** Source access,
+object search, editing and runtime feeds are now documented SAP MCP capabilities; they are no
+longer defensible blanket differentiators for ARC-1.
 
-!!! info "How the facts here were sourced — public vs. snapshot"
-    *Public guidance rechecked 2026-10-04 against SAP’s Marketplace listing, GA announcements, and
-    licensing documentation. The detailed tool and object inventories below retain the original
-    2026-06-16 observation; they are not a fresh test of the latest SAP server.*
-
-    - **Public / primary sources** (strongest): SAP's Marketplace listing, the **SAP Help "Model
-      Context Protocol Tools"** page (toolset + per-tool *Joule License* column), SAP Help
-      *Enabling/Configuring ADT MCP Server*, SAP-samples (RAP130), SAP News, the
-      [ARC-1 repo/docs](https://github.com/arc-mcp/arc-1), and the MCP spec. The **20-tool set and exact
-      IDs** below are the documented inventory used for the June comparison. Check current SAP Help
-      and your server’s `tools/list` before treating an absent tool as a product limitation. See [Sources](#sources).
-    - **Author's live snapshot (2026-06-16 — observed, not product-wide):** a running `ADT MCP Server`
-      v1.0.0 in **Eclipse** (port **2234**, MCP protocol `2025-06-18` *as that server reported it* —
-      newer MCP revisions exist; Jetty 12.1.9) bound to **one** on-prem **S/4HANA 2023** backend. Tool
-      counts and creatable-object lists are **backend/version dependent** — treat them as a snapshot.
-
-**One-line verdict:** if you are **one developer working in your IDE on a modern ABAP/RAP system**,
-the SAP server is the most frictionless, best-integrated choice. If you need **a shared, governed,
-audited endpoint for many users / non-IDE agents (Copilot Studio, automation, CI) / on-prem & classic
-ABAP / SQL · git · transports · dumps**, that is ARC-1's design center. Many teams run **both**.
-
----
+!!! info "Versions and evidence"
+    - **SAP:** current SAP Help, the official Marketplace listing, and the installed
+      **ADT for VS Code 1.2.0** package were checked for this update. The documented catalog is
+      not a successful live test of every tool. Backend release, installed server, configuration
+      and entitlement determine availability. VS Code findings are not automatically Eclipse findings.
+    - **ARC-1:** the released baseline is **[1.6.0](https://github.com/arc-mcp/arc-1/releases/tag/v1.6.0)**,
+      published 17 October. Later merged work and open proposals are identified separately below;
+      a `package.json` still saying 1.6.0 on `main` does not put later commits in that release.
+    - Existing research, live-test records and PRs were reconciled with current source. This update
+      performed documentation/package/source checks, not a new SAP mutation test or comparative
+      performance benchmark. The [evidence record](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-18-sap-mcp-comparison-refresh.md)
+      records the scope and remaining gaps.
 
 ## 1. At a glance
 
-| | **ARC-1** | **SAP ABAP MCP Server** |
+| Dimension | ARC-1 | SAP ABAP MCP Server / ADT |
 |---|---|---|
-| **What it is** | Independent MCP server translating AI tool calls into ADT REST calls | The *ADT MCP Server* SAP ships *inside* ADT for VS Code / Eclipse |
-| **Vendor / support** | Community open-source (MIT); no SAP support contract | SAP SE, first-party; SAP announced the ABAP MCP Server as generally available in 2026 ([announcement](https://community.sap.com/t5/technology-blog-posts-by-sap/entering-the-new-era-of-agentic-ai-for-abap-development/ba-p/14394643)) |
-| **Where it runs** | BTP Cloud Foundry, Docker, npm/`npx`, or local stdio | A local HTTP server the IDE starts on `localhost` (default port **2234**) |
-| **Distribution** | npm · Docker · **`.mcpb` one-click bundle** · **Claude Code plugin (+skills)** · cross-agent skills CLI · BTP connector | Bundled in the SAP ADT extension (VS Code + Eclipse) |
-| **Auth to the *server*** | XSUAA OAuth · OIDC JWT · API key · (stdio = none) | Auto-generated bearer token on `localhost` |
-| **Auth to *SAP*** | Per-user principal propagation, or shared service user | **Inherits the IDE's ADT destination** — RFC (SNC/SSO) on-prem, HTTP+OAuth cloud |
-| **Central governance** | Yes — safety ceiling, scopes, package allowlist, **rate limits**, central audit | None (local IDE settings + your SAP authorizations); no comparable central limiter documented here |
-| **MCP clients** | Any — Claude, **Copilot Studio, automation/CI**, Cursor, CLI, JetBrains, web | Intended for local IDE agents; any local client *can* connect with URL+token |
-| **System reach** | Systems exposing the ADT REST endpoints a tool needs (on-prem→cloud) | **Connects to old & new** (ADT VS Code supports down to NW 7.3 EHP1 SP04); modern/RAP/AI need newer/cloud backends |
-| **Object types** | Classic **and** modern (PROG, FUGR, TABL, DOMA, DTEL, MSAG, ENHO… + CLAS, CDS, RAP) | 24 creatable types in the June snapshot (CLAS, INTF, CDS, RAP, FUGR, PROG, TABL…); see §8 for that snapshot’s omissions |
-| **Writes to SAP?** | Yes — create/update/delete + surgery + RAP scaffolding | **Yes — creates & generates objects** (`abap_creation-create_object`, `abap_generators-*`); editing existing source is done in the IDE editor |
-| **Server-side AI** | None — uses *your* LLM (Claude/GPT/Gemini/…) | Optional **Joule** AI (model not publicly pinned) for the 2 ATC AI-fix tools — licensed |
-| **Cost** | Free (you pay only your infra + your LLM) | Extension has no additional purchase price; the documented ATC AI-fix tools require Joule entitlement. On-stack and side-by-side licensing differ (§12) |
+| Product | Independent, MIT-licensed MCP server | SAP's MCP server supplied with ADT |
+| Deployment | BTP Cloud Foundry, Docker, npm, local stdio or HTTP | IDE-managed local HTTP endpoint; VS Code 1.2 defaults to port **2236** |
+| Best fit | Shared services, remote agents, automation, governed backend workflows | Developers working with ADT projects, editors and SAP's native development workflows |
+| Identity | Client OAuth/JWT/API key; SAP identity depends on the configured propagation or shared-identity route | Reuses the developer's ADT destination/session |
+| Access controls | Server safety ceiling, scopes, package write rules, action denials, optional target grants | Destination/project access restrictions and package creation/modification restrictions |
+| Source workflows | Backend reads and writes, class/method and FORM/MODULE surgery | Documented MCP file resolution/read/edit; editing is opt-in and interacts with IDE tooling |
+| SQL | Gated SQL and table preview over MCP | Native SQL notebook in the IDE; no dedicated SQL tool in the inspected MCP reference |
+| Diagnostics | Explicit syntax, ATC, Unit, dump and trace workflows | MCP checks/feeds plus native IDE diagnostic views |
+| AI | Uses the client's chosen model; no bundled model service | External agent plus optional SAP Joule capabilities |
+| Support and cost | Community maintenance; infrastructure, SAP access and model costs remain | SAP product terms; MCP support and AI costs have separate conditions (§12) |
 
----
+SAP facts: [MCP tools](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools),
+[server setup](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/enabling-adt-mcp-server),
+[Marketplace](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode).
+ARC-1: [architecture](architecture.md), [authorization](authorization.md), [tools](tools.md).
 
 ## 2. Decision guide — only ARC-1, only SAP, or both?
 
-### Pick the SAP ABAP MCP Server if…
+| Your requirement | Starting point | Reason / qualification |
+|---|---|---|
+| Work on open objects, unsaved code and native editor workflows | **SAP ADT + its MCP server** | Closest integration with the developer's workspace; check which file tools the connected server actually exposes |
+| First-party generators, ATC exemption requests or Joule explanation | **SAP** | Documented native workflows; backend and entitlement requirements apply |
+| One managed endpoint for multiple users or remote agents | **ARC-1** | Independent server lifecycle, authentication, central policy and audit |
+| Backend source work without an IDE running | **ARC-1** | Direct ADT access; does not require access to ADT's virtual filesystem |
+| SQL queries through MCP | **ARC-1** | Separate data/SQL permissions and bounded results |
+| Interactive saved SQL investigation in VS Code | **SAP SQL notebook** | Native editor, results and statistics; ARC-1 can help prepare the queries |
+| Governed CTS release or supported Git workflows through MCP | **ARC-1** | Explicit operations and gates; Git limitations still apply |
+| Old ECC/NetWeaver or mixed classic/modern objects | **Evaluate the exact workflow on both** | Connectivity, editor coverage and backend API availability are different questions |
+| Research remotely, then inspect/edit locally in ADT | **Both** | Keep target/client/identity explicit; native ARC-1 editor-link integration remains a draft (§15) |
 
-- You work **inside VS Code or Eclipse** and want the AI to act on the code you already have open.
-- Your system is **S/4HANA (Cloud/RISE/recent on-prem) or BTP ABAP** and your work is **RAP / ABAP
-  Cloud / clean-core**.
-- You want **near-zero setup** — reuse your ADT logon, enable one setting, done.
-- You want **SAP’s own AI** for ATC fix proposals (Joule), and have the required entitlement for your deployment.
-- You value a **first-party** tool and the surrounding IDE’s **debugger / completion / form editors**.
-
-### Pick ARC-1 if…
-
-- You need a **shared, always-on MCP endpoint** for **many users or agents** (team server, CI, an
-  agent platform) rather than a per-laptop process.
-- You need **non-IDE clients**: **Microsoft Copilot Studio, automation/CI scenarios**, Joule Studio,
-  Gemini CLI, a custom agent, a web app — anything that speaks remote MCP over HTTP.
-- You need **central governance**: read-only by default, package allowlists, per-action deny rules,
-  per-user scopes, **rate limits**, and a **central audit trail**.
-- You need **per-user SAP identity at scale** (XSUAA + BTP Destination Service principal propagation).
-- You work on **on-prem ECC / NetWeaver / older S/4** or with **classic objects** (reports, function
-  groups, DDIC domains/data elements, message classes, enhancements) — or you need **free SQL,
-  git (gCTS/abapGit), transport release, or ST22 dump / trace analysis**.
-- You want to choose your LLM and run ARC-1 independently of an IDE. Both servers support external agents; LLM choice alone does not distinguish them.
-
-### Run both — and add more — if… (common for teams on VS Code ADT)
-
-- Developers use the **SAP server in-IDE** for context-aware editing, debugging, RAP generation and
-  Joule AI fixes **on their personal dev systems**, **and**
-- The team/platform runs **ARC-1 centrally** for governed multi-user access, **non-IDE agents**, on-prem
-  & classic reach, SQL, git, transport release, and runtime diagnostics — with a central audit log,
-- plus **docs/notes MCP servers and a skills layer** (see §14). They don't conflict — namespaces differ
-  (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold several connections at once. *This is a
-  reasoned architecture recommendation, not a vendor-endorsed pattern.*
-
-### Scenario cheat-sheet
-
-| Your situation | Recommended |
-|---|---|
-| Solo dev, RAP on S/4 Cloud/BTP, lives in VS Code | **SAP server** |
-| Solo dev, modern types, wants SAP-tuned AI fixes | **SAP server** (+ Joule licence) |
-| Team wants one governed endpoint with audit + scopes | **ARC-1** |
-| AI agent on **Copilot Studio / automation / a website** | **ARC-1** (remote MCP + JWT) |
-| On-prem ECC 7.4 / NetWeaver / pre-2023 S/4 | **ARC-1** (validate per tool — see §8) |
-| Heavy **classic ABAP** (reports, FUGR, DDIC, messages, enhancements) | **ARC-1** |
-| Need **SQL / git / transport release / ST22 dumps / traces** | **ARC-1** |
-| Want docs search, SAP Notes, RAP/CDS skills alongside | **Add the docs MCP + skills** (§14) |
-| Modern shop that adopted VS Code ADT **and** runs agent platforms | **Both (+ docs MCP + skills)** |
-
----
+A local CLI or desktop agent can also use SAP's local MCP endpoint when it supports the transport
+and authentication. “Outside Copilot” does not automatically mean “requires ARC-1.”
+Conversely, SAP documenting file tools does not turn its IDE-managed server into a hosted
+multi-user service. See [SAP client configuration](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/configuring-adt-mcp-server-ed94320814734d97801f51a5b6deb802).
 
 ## 3. What each product is
 
-=== "ARC-1"
+**ARC-1** translates intent-based MCP calls into existing SAP ADT/OData operations. Its 12
+standard tools use parameters such as `type` and `action`; an optional hyperfocused mode exposes
+one dispatcher. Distribution includes npm/Docker, a desktop bundle, an agent plugin and skills.
+Its server can run locally or independently of any IDE. See [deployment](deployment.md) and
+[agent plugin](agent-plugin.md).
 
-    A standalone **TypeScript MCP server** (npm package `arc-1`, Docker image
-    `ghcr.io/arc-mcp/arc-1`) that turns AI tool calls into **ADT REST** requests (`/sap/bc/adt/*`) —
-    the ADT interface also used by SAP’s tooling; third-party usage terms are discussed in §13.
+**SAP's ABAP MCP Server** is part of SAP's ADT tooling. In VS Code, the extension and bundled ABAP
+language server supply the local development environment. The MCP server makes selected
+capabilities available to an agent, while the IDE supplies additional editors, views and commands.
+SAP's [Marketplace description](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode)
+covers the **whole extension**, not just MCP.
 
-    - **Distribution — "and other stuff":** `npx`/global npm; **Docker**; a **`.mcpb` one-click bundle**
-      for Claude Desktop; a **Claude Code plugin** that bundles the server **and SAP skills**
-      (RAP, CDS, ABAP Unit, clean-core, UI5); a **cross-agent skills CLI** (`npx skills add` for Cursor,
-      Copilot, Codex, Gemini CLI); and a **remote BTP CF connector** (URL + XSUAA OAuth). See
-      [Install in Claude](install-in-claude.md).
-    - **Maturity:** the current release is **1.5.0**, with a **semantic-versioning
-      stability commitment** from 1.0 onward (experimental, default-off features like multi-target are
-      excluded until promoted). The project **positions itself** as production-ready, write-capable,
-      multi-user; open source (MIT), community-maintained (no independent SLA claimed here).
-    - **Design center:** a **centrally hosted, admin-governed, multi-tenant** proxy — one server, many
-      AI users, each mapped to their own SAP identity, every call audited and policy-checked.
-    - **Tool model:** **12 intent tools** with a `type`/`action` parameter (vs 200+ endpoint tools), plus
-      a "hyperfocused" 1-tool mode for tight context windows.
-
-=== "SAP ABAP MCP Server"
-
-    The **ADT MCP Server** SAP **bundles inside its IDE tooling** — *ABAP Development Tools for VS Code*
-    (official SAP SE extension, free on the Marketplace) and *ADT for Eclipse*. It sits on a **larger
-    redesign**: a headless **ABAP Language Server** (the Eclipse ADT client repackaged) plus the **ABAP
-    MCP Server** on top.
-
-    - **Distribution:** ships with the extension; **not** a standalone package you host. When enabled it
-      runs as a **local HTTP server** at `http://localhost:<port>/mcp` (port **2234** in the tested
-      Eclipse install; SAP-samples VS Code material references 2236; configurable 1024–65535), with an
-      **auto-generated bearer token**.
-    - **Maturity / status:** SAP announced general availability of the ABAP MCP Server in 2026.
-      Earlier exercise material carries an experimental warning; it should not be used to describe
-      every current build. See the [SAP announcement](https://community.sap.com/t5/technology-blog-posts-by-sap/entering-the-new-era-of-agentic-ai-for-abap-development/ba-p/14394643)
-      and the [current Marketplace listing](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode).
-      Enable it through the IDE’s MCP settings (Eclipse: *ABAP Development → MCP Server*;
-      VS Code: `adt.mcpServer.enabled`).
-    - **AI:** the AI capabilities are **Joule for Developers**, separately entitled capabilities with on-stack and side-by-side deployment options —
-      see §12. **The specific model is not publicly pinned** (it is *not* simply "SAP-ABAP-1"); SAP's
-      GenAI Hub orchestrates a mix of foundation models plus an SAP ABAP-trained model.
-    - **Tool model:** **20 tools in the June inventory** (§7.1), heavily prompt-engineered, partly **server-driven**
-      (adapts to what the connected backend offers).
-
----
+A fair comparison therefore distinguishes **MCP operation**, **IDE feature**, **client-package
+implementation**, and **successful backend execution**. A command in an extension manifest or a
+tool in public documentation establishes less than a successful call against your target.
 
 ## 4. Architecture & where it runs
 
 ```mermaid
 flowchart LR
-  subgraph SAP_MODEL["SAP ABAP MCP Server — per developer"]
-    direction TB
-    A1["AI agent in IDE<br/>(Copilot Agent Mode / Joule)"] -->|localhost:2234 + bearer token| A2["ADT MCP Server<br/>(in the ADT extension)"]
-    A2 -->|inherits the IDE's ADT destination<br/>RFC+SNC on-prem / HTTP+OAuth cloud| A3["Your SAP system"]
+  subgraph local["Developer machine"]
+    Agent["Local AI client"] -->|HTTP + bearer token| SAPMCP["SAP ADT MCP Server"]
+    SAPMCP --> ADT["ADT destination / developer session"]
+    Editor["SAP ADT editor"] --> ADT
   end
-  subgraph ARC1_MODEL["ARC-1 — centrally hosted"]
-    direction TB
-    B1["Many AI clients<br/>Claude · Copilot Studio · automation · CLI · web"] -->|HTTPS + OAuth/JWT/API key| B2["ARC-1 server<br/>(safety ceiling · scopes · rate limits · audit)"]
-    B2 -->|ADT REST + principal propagation| B3["BTP Destination + Cloud Connector"]
-    B3 --> B4["SAP systems with the needed ADT endpoints"]
+  subgraph service["Managed ARC-1 deployment"]
+    Clients["Remote or local AI clients"] -->|HTTPS + OAuth/JWT/API key| ARC["ARC-1 policy + audit"]
+    ARC --> Route["Configured SAP connection / BTP destination"]
   end
+  ADT --> SAP["SAP backend"]
+  Route --> SAP
 ```
 
-| Dimension | ARC-1 | SAP ABAP MCP Server |
+| Concern | ARC-1 | SAP ADT MCP |
 |---|---|---|
-| Process model | A server you deploy (CF app / container / `npx` / stdio) | A `localhost` process the IDE starts for you |
-| Network exposure | Remote over HTTPS (or local stdio) | **`localhost` only** + auto-generated bearer token (a Host-header / DNS-rebinding guard was also observed in teardown) |
-| Multi-user | **Yes** — one endpoint, many users | No — one server per developer machine, tied to the IDE session |
-| Multiple SAP systems | Single target by default. Experimental BTP CF multi-target mode is read-only; writable access uses separate instances ([setup](multi-target-setup.md)) | **Yes** — every tool takes a `destination` arg, so one running server spans all the systems your IDE has configured |
-| Connection to SAP | ADT REST (HTTP) everywhere, incl. on-prem via Cloud Connector | **Inherits the IDE destination**: RFC (SNC/SSO) on-prem, HTTP (OAuth) cloud |
-| Runtime footprint | Lightweight Node process | Bundled inside the ADT engine (heavier; the price of full ADT fidelity) |
-| Who operates it | You (or your platform team) | Developer/admin maintains the IDE, destinations, credentials, and updates |
+| Process lifetime | Managed service or client-launched local process | Tied to the local ADT runtime |
+| Many users | Central authentication, policy and audit | Developer-local session; no comparable shared-service model established here |
+| Multiple systems | Single target by default; experimental BTP CF multi-target mode is mutation-free | Destination-aware tools work with the allowed configured ADT connections |
+| Writable multi-system access | Separate ARC-1 instances; open proposals do not change this boundary | Depends on allowed destinations, packages, tools and SAP authorization |
+| Network to SAP | HTTP ADT; BTP destinations/Cloud Connector where configured | RFC destinations for on-premise/private cloud; HTTP destinations for ABAP environment/public cloud |
+| Operations | You own deployment, TLS termination, updates and capacity | You maintain IDE/client version, destinations, local credentials and SAP prerequisites |
 
----
+ARC-1's [multi-target contract](multi-target-setup.md) is default-off. It requires explicit target
+selection, and its optional shared Basic mode is separately enabled, labeled shared and limited
+to one CF instance. It is never a principal-propagation fallback.
+[Multi-target administration](multi-target-administration.md) documents these constraints.
+
+ADT 1.2 also supports entering a custom system connection without SAP Logon Pad. That is a
+connection-setup improvement, not a new ARC-1 requirement to implement RFC.
+[SAP 1.2 release notes](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new)
 
 ## 5. Authentication & identity
 
-Two distinct questions: **(a) how the AI client authenticates to the MCP server**, and **(b) how the
-server authenticates to SAP.**
+There are two authentication hops: **client → MCP server**, then **MCP server → SAP**.
 
-| Layer | ARC-1 | SAP ABAP MCP Server |
+| Layer | ARC-1 | SAP ADT MCP |
 |---|---|---|
-| **Auth to the MCP server** | XSUAA OAuth 2.0 · external OIDC JWT (e.g. Entra ID) · API keys (`key:profile`); stdio has none | A single auto-generated **bearer token**, trusted because the server is `localhost`-only |
-| **Per-AI-user identity** | Yes — JWT/`clientId`/`userName` flows through every call | No concept of multiple MCP users |
-| **Auth to SAP** | **Principal propagation** — each AI user → their own SAP user via BTP Destination Service + Cloud Connector; or a shared service user | **Inherits the IDE's existing ADT destination** — it does not authenticate to SAP itself |
-| **SAP-side authorizations** | Enforced by SAP (`S_DEVELOP`, `S_ADT_RES`, `S_TRANSPRT`) **and** ARC-1 scopes as defense-in-depth | Enforced by SAP for **your** user |
+| Client authentication | XSUAA OAuth, external OIDC JWT or API keys; local stdio has no separate HTTP authentication layer | Generated bearer token for the local HTTP endpoint |
+| SAP authentication | Principal propagation, Basic identity, BTP OAuth or configured cookie-based routes, depending on deployment | Existing ADT connection and developer logon |
+| Per-user SAP identity | Achieved through a correctly configured per-user route such as principal propagation | The user of the local ADT session |
+| Important limitation | An OAuth-authenticated MCP request does **not** by itself prove SAP principal propagation | A local MCP client does **not** receive a separate SAP identity from the developer's session |
 
-!!! info "What SSO the SAP server actually uses (it rides the IDE destination)"
-    The ADT MCP Server doesn't log in on its own — it reuses whatever connection the IDE already has, so
-    the available SSO depends on the IDE and release:
+Both remain subject to SAP authorization. ARC-1 scopes narrow its server ceiling; they do not grant
+SAP rights. A shared SAP credential remains a shared backend identity even if ARC-1 logs distinct
+MCP callers. See [authentication overview](enterprise-auth.md) and
+[principal propagation](principal-propagation-setup.md).
 
-    - **On-premise / Private Cloud — via RFC.** *ADT for VS Code* v1 initially supported **SNC with SSO**
-      destinations only (plain username/password / non-SNC RFC was on the roadmap for a later release).
-      *ADT for Eclipse* (what this snapshot ran) supports the **full range**: username/password (Basic),
-      **SAP logon / reentrance tickets** (SSO), and **SNC** (Kerberos/SPNEGO, X.509 certificates). RFC
-      ports: **48xx** = RFC with SNC, **33xx** = RFC without SNC.
-    - **Public Cloud / BTP — via HTTP** with **OAuth** (and SAML/IdP-based SSO).
-
-    So "SSO" here means SNC (Kerberos/SPNEGO/X.509) and SAP logon/reentrance tickets for on-prem, OAuth/SAML
-    for cloud — inherited from the IDE. (ARC-1, by contrast, terminates client auth itself via
-    XSUAA/OIDC/API-key, then maps to SAP via principal propagation, Basic, BTP service-key OAuth, or a
-    cookie file for SSO-only systems.)
-
-!!! note "Both share one hard limit"
-    Neither tool can grant SAP rights the backend user doesn't have. **ARC-1 can only restrict further;
-    the SAP backend's own authorizations still decide final access** in both products.
-
----
+The former page's early VS Code “SNC/SSO only” guidance is not a current compatibility rule.
+Validate the authentication choices for the installed ADT release and destination type.
+[SAP connection documentation](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new)
 
 ## 6. Central configuration & governance
 
-The SAP ADT MCP Server **does not provide a central multi-user policy, scope and audit layer comparable
-to ARC-1.** Control is **local IDE configuration plus the developer's SAP authorizations and backend
-workflow controls** (e.g. the human-in-the-loop transport selection its tools enforce) — appropriate for
-a personal developer tool with no "across users" dimension. It also has no comparable central limiter documented here.
+**SAP 1.2 has explicit MCP access controls.** Its
+[setup documentation](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/enabling-adt-mcp-server)
+and installed settings agree: access restrictions default to enabled; the shipped destination and
+package lists are empty; native file editing defaults to disabled. Destination/project rules
+limit both reads and writes. Package rules limit creation/modification, **not package reads**.
 
-ARC-1's reason to exist is the opposite: an **admin-controlled safety ceiling** every call passes through.
-
-| Governance control | ARC-1 | SAP ABAP MCP Server |
+| Control | ARC-1 | SAP ADT for VS Code 1.2 |
 |---|---|---|
-| Read-only by default | **Yes** — writes are opt-in (`SAP_ALLOW_WRITES`) | No server-side gate (your SAP authorizations are the limit) |
-| Separate gates for data preview / free SQL / transport / git writes | **Yes**, each independent | n/a (those tools aren't exposed) |
-| **Package allowlist** (`$TMP`, `Z*`, subtree) enforced fail-closed on every mutation | **Yes** | No |
-| **Per-action deny** (e.g. block `SAPWrite.delete`) | **Yes** (`SAP_DENY_ACTIONS`) | No |
-| **Scopes** (read / write / data / sql / transports / git / admin) | **Yes**, per user/profile | No |
-| **Rate limiting** | **Yes** — per-IP OAuth, per-user MCP, server-wide SAP semaphore | Not verified in the current build |
-| **Central audit log** with user identity | **Yes** (stderr / file / **BTP Audit Log**) | No central log; activity is implicit in the SAP system |
-| Configuration locus | Central server env/CLI/`.env` | Per-developer IDE settings (enable flag, port) + the developer's SAP auth |
+| Initial access | Writes, data preview and free SQL require separate opt-ins | Server disabled initially; restrictions enabled with empty lists; file-edit tool separately disabled |
+| Package write rules | Real-package enforcement; exact names, prefixes and subtrees | Configurable package patterns for object creation/modification |
+| Package read isolation | Write allowlist does not restrict source reads | Package change list does not restrict reads within an allowed destination |
+| Target access | Optional IAM-assigned XSUAA target grants in experimental multi-target mode | Allowed destinations/projects |
+| Operation restrictions | Per-action deny rules and per-user scopes intersect the server ceiling | Selected tool/configuration controls; no equivalent central per-user scope model established |
+| Data controls | Preview/SQL gates, result budgets and optional exact-source blocklist | SAP authorization and applicable tool settings; package write rules are not data isolation |
+| Central audit | Structured events to configured stderr/file/BTP Audit Log sinks | Local tooling and SAP-side records; no equivalent central ARC-1-style sink established here |
+| Capacity controls | SAP concurrency cap, data-result admission limits, OAuth/HTTP rate controls and optional per-user limits | No comparable central service-level capacity contract verified |
+| Configuration ownership | Operator configuration; CF uses MTA properties/environment, local use supports CLI/environment/`.env` | IDE settings, subject to the organization's workstation management |
 
-!!! warning "The honest counterpoint"
-    For a **single developer on a sandbox / personal dev tier**, ARC-1's governance is overhead they
-    don't need. ARC-1's controls earn their keep when an AI endpoint is **shared**, **automated**, or
-    **pointed at systems where uncontrolled writes are unacceptable** — not on a lone developer's `$TMP`
-    playground.
+For a concrete SAP example:
 
----
+```json
+{
+  "adt.mcpServer.enabled": true,
+  "adt.mcpServer.accessRestrictionsEnabled": true,
+  "adt.mcpServer.accessRestrictions": {
+    "destinations": "DEV_001",
+    "packages-objectChanges": "ZDEMO*"
+  },
+  "adt.mcpServer.enableEditFileToolForABAPObjects": false
+}
+```
+
+`DEV_001` must be your actual local destination alias. This allows MCP access to that destination
+and restricts object changes to matching packages; it does **not** hide source in other packages,
+and disabling the file-edit tool does **not** disable every other mutation tool.
+
+For ARC-1, [authorization and roles](authorization.md),
+[target grants](multi-target-authorization.md), and
+[configuration precedence](configuration-precedence.md) define the corresponding server controls.
+Neither product's package write list is a general confidentiality boundary.
 
 ## 7. Capabilities & tool surface
 
-### 7.1 The SAP server’s tools — June 2026 inventory
+### 7.1 SAP's current documented catalog
 
-The inventory used in June, with IDs and licensing from SAP Help’s **Model Context Protocol Tools**
-page. This historical list is retained for comparison; the connected backend and installed ADT version
-determine today’s available tools. Consult [SAP Help](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/model-context-protocol-tools) and `tools/list`.
+The current [SAP MCP reference](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools)
+lists **33 tool identifiers**, grouped below. This is a **documentation count**, not a universal
+`tools/list` result or a ranking against ARC-1's 12 broader intent tools.
 
-| Toolset | Tool IDs | Joule licence |
-|---|---|---|
-| **ABAP Server Destinations** | `abap_lists_destinations` | Not required |
-| **ABAP Object Creation** | `abap_creation-get_all_creatable_objects` · `abap_creation-get_object_type_details` · `abap_creation-run_validation` · `abap_creation-create_object` | Not required |
-| **ABAP Object Activation** | `abap_activate_objects` | Not required |
-| **ABAP Transport** | `abap_transport-get` · `abap_transport-create` · `abap_transport-unifiedDifference` | Not required |
-| **Execute ABAP Unit Test** | `abap_run_unit_tests` | Not required |
-| **ABAP Repository Object Generation** | `abap_generators-list_generators` · `abap_generators-get_schema` · `abap_generators-generate_objects` | Not required |
-| **ABAP Business Service** | `abap_business_services-fetch_services` · `abap_business_services-fetch_service_information` | Not required |
-| **ABAP Test Cockpit** | `abap_run_atc` · `abap_atc_get_result` · `abap_atc_execute_deterministic_quickfixes` · `abap_atc_apply_ai_fix` · `abap_atc_get_ai_fix_result` | **Required** for the 2 AI-fix tools; others not required |
-
-!!! note "Names: documented vs. tested build"
-    The IDs above are the **published list used for that snapshot**. The build tested live returned the **same 20 tools** with
-    **two minor ID variants** — `abap_list_destinations` (vs documented `abap_lists_destinations`) and
-    `abap_atc_run` (vs documented `abap_run_atc`). Trust your client's own `tools/list` over any article;
-    the set is **backend/version dependent** (SAP's roadmap includes an *ABAP object search* tool).
-
-**It does write** — `abap_creation-create_object` creates objects and `abap_generators-generate_objects`
-generates them (tables, CDS views, behavior definitions, service definitions/bindings, even an *OData UI
-Service from Scratch*). What it does **not** expose is an MCP tool to **edit the source of an existing
-object** — that is done in the IDE editor (the agent reads/edits through the editor + virtual workspace,
-not via an MCP tool). Other notable gaps in the documented set: **no source-read / search / where-used
-tool** (matters for non-IDE clients), and **no free SQL, git, transport release/delete, or runtime
-diagnostics (ST22 dumps, traces)**. On the tested backend the server exposed **only tools** (no MCP
-`resources`/`prompts`) — an observed snapshot.
-
-### 7.2 ARC-1's tools (12 intent tools)
-
-| Tool | Covers |
+| Family | Documented IDs |
 |---|---|
-| `SAPRead` | Read source & metadata for supported ADT object types; `grep`; where-used; version history; method-level surgery reads |
-| `SAPSearch` | `quick_search`, `tadir_lookup` (ADT / DB / both) |
-| `SAPWrite` | Create / update / delete; class- & method-section surgery; RAP scaffolding & `generate_behavior_implementation`; `batch_create` |
-| `SAPActivate` | Activate (single & batch, ED064-aware); publish/unpublish service bindings |
-| `SAPNavigate` | Go-to-definition, references, where-used, completion |
-| `SAPQuery` | Saved SAPscript long texts and freestyle SQL, separately admin-gated; table preview is in `SAPRead` |
-| `SAPTransport` | `list` · `get` · `diff` · `check` · `history` · layers/targets plus gated create/release/reassign/delete/remove-object workflows |
-| `SAPGit` | gCTS/abapGit reads plus gated abapGit workflows. gCTS mutations are quarantined; accepted abapGit mutations are fail-closed as incomplete when no authoritative postcondition exists. |
-| `SAPContext` | Dependency / contract / compressed-context extraction for LLMs |
-| `SAPLint` | abaplint (offline) + Pretty Printer + formatter settings |
-| `SAPDiagnose` | `syntax` · `atc` · `quickfix`/`apply_quickfix` · ABAP Unit · **ST22 dumps** · **traces** · gateway/system messages · RAP preflight · CDS test-case suggestions |
-| `SAPManage` | Package create/delete/move (DEVC) · API release state · FLP catalogs/groups/tiles · feature probe · cache stats |
+| Destinations | `abap_lists_destinations` |
+| Creation | `abap_object_create`, `abap_object_get_creatable_type_detail`, `abap_repository_list_creatable_types`, `abap_object_validate_creation` |
+| Activation / checks | `abap_activate_objects`, `abap_object_check` |
+| Search | `abap_repository_search_object` |
+| Files | `abap_resolve_file_uris`, `abap_read_file`, `abap_edit_file` |
+| Transports | `abap_transport_create_request`, `abap_transport_get_request`, `abap_transport_get_unified_diff` |
+| Unit | `abap_run_unit_tests` |
+| Generators | `abap_objects_generator_list`, `abap_objects_generator_get_schema`, `abap_objects_generator_run` |
+| Business services | `abap_business_service_get_info`, `abap_business_service_list` |
+| ATC | `abap_run_atc`, `abap_atc_get_result`, `abap_atc_execute_deterministic_quickfixes`, `abap_atc_apply_ai_fix`, `abap_atc_get_ai_fix_result`, `abap_atc_exemption_request`, `abap_atc_exemption_approvers` |
+| Feeds | `abap_feed_query`, `abap_feed_get_schema` |
+| Joule explanation / documentation | `abap_explain_object`, `abap_docs_dcp` |
+| Object actions | `abap_object_list_actions`, `abap_object_run_action` |
 
-All gated operations also depend on the target system exposing the needed ADT/OData services and the SAP
-user being authorized.
+**Names vary across documentation and builds.** The installed 1.2 package inspection in
+[PR #1025's research](https://github.com/arc-mcp/arc-1/blob/adfae1e1addbe2b785089458316d0b5dae39e006/docs/research/2026-10-17-adt12-native-ide-links.md)
+found names including `abap_object_get_file_uri`, `abap_object_list_file_uris`,
+`abap_object_read_file`, `abap_object_edit_file` and `abap_repository_find_references`.
+The canonical resolver was unavailable in that tested Copilot session. Use the connected server's
+actual catalog and schemas when configuring agents; do not blindly substitute article IDs.
+
+### 7.2 ARC-1's 12 intent tools
+
+| Tool | Scope |
+|---|---|
+| `SAPRead` | Source/metadata, bounded source windows and grep, versions, text elements, gated table preview |
+| `SAPSearch` | Object-name search, exact TADIR lookup and backend-gated source-code text search |
+| `SAPWrite` | Create/update/delete, class/method and procedural-unit surgery, text changes, RAP scaffolding |
+| `SAPActivate` | Single/batch activation and service-binding publication workflows |
+| `SAPNavigate` | Definition, references, completion, hierarchy and optional bounded live relations |
+| `SAPQuery` | Gated SQL; exact-key stored SAPscript text reading is **post-1.6.0** merged work |
+| `SAPTransport` | List/get/diff/check/history, layers/targets and gated lifecycle operations |
+| `SAPGit` | Backend-dependent Git reads and gated abapGit workflows; gCTS mutations quarantined |
+| `SAPContext` | Dependency, API contract and compressed source context |
+| `SAPLint` | Offline abaplint and SAP formatting workflows |
+| `SAPDiagnose` | Syntax, ATC, quick fixes, Unit, dumps, traces and other qualified diagnostics |
+| `SAPManage` | Package/API-state/FLP operations, feature probes and cache administration |
+
+The [tool reference](tools.md) defines parameters and restrictions. Feature probes, backend release,
+deployment mode and policy can narrow the advertised surface. Hyperfocused mode, extensions and the
+aggregate-only `SAPTargets` catalog are separate cases; “12” is the standard intent-tool baseline.
+For abapGit mutations, an accepted request can still be reported as incomplete when no authoritative
+postcondition is available. Do not read “Git support” as an unrestricted, verified mutation lifecycle.
 
 ### 7.3 Capability matrix
 
-SAP MCP absences below describe the June inventory, not a verified absence from every later release. IDE features are labeled separately.
+**Documented** means SAP publishes the capability; **IDE** means the surrounding editor supplies it.
+An operation absent from the inspected catalog is not proof that no backend-specific object action
+can ever provide it.
 
-| Capability | ARC-1 | SAP ABAP MCP Server |
-|---|:---:|:---:|
-| **Create objects** | ✅ | ✅ `create_object` |
-| **Generate objects** (RAP/CDS/Fiori service) | ⚠️ scaffolding + skills | ✅ native generator framework |
-| Edit existing source | ✅ incl. method/section surgery | ⚠️ via IDE editor + LS (no MCP edit-source tool) |
-| Activate | ✅ | ✅ |
-| Run ABAP Unit | ✅ | ✅ |
-| ATC run + results | ✅ | ✅ |
-| ATC **deterministic** quickfix | ✅ | ✅ |
-| ATC **AI** fix | ❌ (use your client LLM manually) | ✅ **Joule** — requires a licence |
-| Read source **over MCP** | ✅ `SAPRead` | ❌ not in the documented toolset (IDE editor reads instead) |
-| Search / where-used **over MCP** | ✅ | ❌ not in the documented toolset (roadmap item) |
-| Free SQL · table preview | ✅ (gated) | ❌ |
-| Git reads / gated abapGit workflows | ✅ (gCTS mutations quarantined) | ❌ |
-| Transport create / get / diff | ✅ | ✅ |
-| Transport **release / delete** | ✅ (gated) | ❌ |
-| Runtime diagnostics — **ST22 dumps, traces** | ✅ | ❌ |
-| Pretty Printer / offline lint | ✅ | ⚠️ formatting via IDE, no abaplint |
-| Integrated **debugger** | ❌ (MCP is RPC) | ✅ (in the IDE) |
-| Inline completion / form editors | ❌ | ✅ (in the IDE) |
-| Server-side AI model | ❌ (bring your own LLM) | ✅ Joule (licensed; model not publicly pinned) |
-| Rate limiting | ✅ (3 layers; per-user limit is opt-in) | No comparable central control verified |
-| Multiple SAP targets in one server | 🧪 BTP CF read-only v1: pinned URLs or explicit `target`; single-target remains default | ✅ (`destination` arg per tool) |
-| Token efficiency (hyperfocused / context compression / method surgery) | Supported | No comparative token benchmark performed |
+| Workflow | ARC-1 | SAP MCP / ADT |
+|---|---|---|
+| Object-name search | MCP | Documented MCP |
+| Read source | MCP, backend source state | Documented MCP files; virtual editor integration |
+| Edit source | MCP, including focused surgery | Documented MCP file edit, opt-in; IDE editing also available |
+| Source text search / references | MCP, backend-dependent | Source text search is an IDE feature; reference tool found in installed package, not established as available in every session |
+| Create / activate | MCP | Documented MCP and IDE |
+| RAP generation | Scaffolding, implementation generation and skills | Backend-driven generator catalog |
+| Syntax / ATC / Unit | Separate explicit workflows | Documented MCP checks, ATC and Unit |
+| ATC deterministic fixes | Supported, with operation-specific save/apply semantics | Documented MCP |
+| Joule explanation / AI fixes / documentation retrieval | No embedded Joule service; use client model and documentation tools | Documented additional-cost capabilities |
+| ATC exemption requests / approver lookup | No equivalent released workflow established | Documented MCP and IDE |
+| Short dumps / Gateway errors / system messages | Qualified diagnostic operations | Documented MCP feeds; IDE Feeds view also available |
+| SQL / table data via MCP | Gated, bounded | No dedicated SQL MCP tool in the inspected reference |
+| Saved SQL notebook | Native-format authoring guidance; no ARC-1 runner | IDE `.abapsql` notebook |
+| Transport get/create/diff | MCP; stronger review semantics merged after 1.6.0 | Documented MCP |
+| Transport release | Gated MCP | IDE Transport Organizer; no dedicated release MCP ID in the inspected reference |
+| gCTS / abapGit | Reads; constrained abapGit mutations | No dedicated Git family in the inspected MCP reference |
+| Dictionary activation-log viewer | No verified reader on current main | IDE feature |
+| Debugger / inline completion / specialized editors | No integrated IDE | Native ADT features |
+| Generic object-action execution | No unrestricted core dispatcher; classified tools/extensions | Documented action discovery/execution |
+| Central multi-user service | Supported deployment model | No comparable hosted model established |
+| Comparative speed / token savings | No head-to-head benchmark | No head-to-head benchmark |
 
-⚠️ = available but indirectly / partially, or only inside the IDE.
+Sources: [SAP MCP catalog](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools),
+[SAP release matrix](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new),
+[ARC-1 tools](tools.md), and the [current adoption research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/README.md).
 
----
+### 7.4 The surrounding IDE workflows matter too
+
+These are useful reasons to keep ADT in the workflow even when ARC-1 supplies the agent's backend
+access. They must not be counted as additional MCP tools.
+
+| ADT workflow | Practical value | ARC-1 relationship |
+|---|---|---|
+| ABAP Timeline | Inspect object revisions and compare versions in an editor | Version/source reads and transport diffs supply backend evidence; no native timeline UI |
+| SQL Notebook | Save SQL and Markdown; inspect results/statistics and export output | Prepare a native notebook or query through MCP; the execution routes remain separate |
+| Transport Organizer | Browse requests/tasks/objects and perform native transport actions | Explicit MCP transport operations for agent workflows; no claim of identical UI/action coverage |
+| Feeds and Dictionary activation log | Investigate backend diagnostics next to source | Existing diagnostic tools overlap with feeds; a general Dictionary activation-log reader remains deferred |
+| Service consumption models | Build integrations from service metadata | No equivalent native SRVC authoring workflow established in ARC-1 |
+| Swagger from service bindings | Inspect/test OData V2/V4 services in the IDE | Reading a binding or publishing it is not equivalent to an interactive service test client |
+
+See [SAP's release notes](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new),
+[Timeline](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/abap-timeline-view),
+[Transport Organizer](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/transport-organizer),
+and [SQL Notebook](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/working-with-sql-console).
 
 ## 8. System & object-type reach
 
-!!! note "Read this as four separate axes — they don't move together"
-    Don't conflate **(a) IDE/backend connectivity**, **(b) which MCP tools a backend exposes**, **(c)
-    Joule/ABAP-AI availability + licensing** (§12), and — for ARC-1 — **(d) which ADT REST
-    endpoints a given system exposes** (varies by release, decides per-tool coverage).
+Check four things separately: **connection support, editor support, exposed MCP operations, and
+backend/AI prerequisites**. Installing a newer client does not upgrade the SAP backend.
 
-**The SAP server connects to old systems too.** ADT for VS Code is documented to support releases **down
-to NetWeaver 7.3 EHP1 SP04**, and Eclipse ADT reaches further still. What is *not* available on older /
-non-cloud backends is the **ABAP-Cloud-model** workflows (RAP/CDS/generators need newer backends) and the
-**Joule AI** features (deployment and entitlement dependent) — **connectivity is not the limiter**.
+SAP's [1.2 release matrix](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new)
+names ABAP environment **2611**, S/4HANA Cloud Public Edition **2702**, and differing
+on-premise/private-cloud releases for new features. Some named releases are later than this
+comparison date. These rows are not evidence that every documented MCP tool works today on
+S/4HANA 2023, nor a basis for declaring every older system unsupported.
 
-| | ARC-1 | SAP ABAP MCP Server |
+| Object/workflow | ARC-1 baseline | SAP ADT 1.2 evidence |
 |---|---|---|
-| On-prem S/4HANA | ✅ where ADT endpoints exist | ✅ (RFC; RAP/ABAP-Cloud focus) |
-| **On-prem ECC 7.4+ / NetWeaver 7.3 EHP1 SP04+** | ⚠️ validate **per tool** — older ECC/NW vary in ADT endpoint coverage | ✅ connects; modern/RAP/AI features gated by backend & BTP/AI Core |
-| RISE / Private Cloud · S/4 Cloud Public · BTP ABAP | ✅ | ✅ |
-| **Classic procedural** (PROG, FUGR/FUNC, includes) | ✅ | ✅ creatable (observed live on S/4 2023); not the marketing focus |
-| **DDIC** (TABL, STRU) | ✅ | ✅ (TABL/DT, TABL/DS) |
-| **DOMA / DTEL / MSAG / SHLP / ENHO / XSLT** | DOMA/DTEL/MSAG read/write; ENHO BAdI implementations read/write, other enhancements read-only. No SHLP/XSLT tool type | Absent from the June creatable set observed |
-| Modern (CLAS, INTF, DDLS, DDLX, DCLS, BDEF, SRVD, SRVB, DRTY…) | Supported where backend endpoints exist; DRAS is not an ARC-1 tool type | Backend-dependent; see the snapshot below |
-| **Dynpro / Web Dynpro / module pools** | ⚠️ limited (ADT itself is thin here) | ❌ not planned (SAP states classic Dynpro/Web Dynpro are not in the current focus) |
+| Programs, includes, classes, interfaces, function groups/modules | Reads/writes with type-specific limits; procedural and method surgery | Native IDE coverage; query creatable types for the specific MCP destination |
+| Data elements, message classes, packages | Read/write/manage workflows | Explicit current IDE coverage; their absence from a June snapshot is obsolete evidence |
+| Domains | Structured read/write | Not established by the inspected VS Code 1.2 coverage list; verify separately |
+| BAdI implementations / enhancements | ENHO/XHB authoring in 1.6.0; broader enhancement authoring remains limited | BAdI implementations and spots documented; do not infer every enhancement subtype |
+| Table types, technical settings, indexes | Release-dependent table-type/settings/classic-index support | Technical settings and CDS entity indexes documented; classic indexes and CDS indexes are different contracts |
+| CDS/RAP and server-driven objects | Specific registered families, gated by backend discovery | Broad current editor/generator coverage, also backend-dependent |
+| SMBC | Read support; no source authoring | Listed in ADT's object coverage |
+| Service consumption / transformations | No native SRVC/XSLT authoring established | Native service-consumption and transformation workflows documented |
+| Launchpad | UIAD plus separate legacy FLP operations; no claim of page/space template parity | UIAD/UIPG/UIST coverage documented |
+| Transactions | Metadata reads; native source/write endpoint not established | IDE transaction support listed |
+| Dynpro / Web Dynpro | Limited ADT reach; no complete designer | Do not infer full classic designer parity from program support |
 
-!!! note "The 24 creatable types observed live (one S/4HANA 2023 on-prem backend)"
-    `abap_creation-get_all_creatable_objects` returned **24** types — broader than "modern-only":
-    **CLAS, INTF, FUGR (group/module/include), PROG (program/include), TABL (table/structure), ENQU
-    (lock object), TYPE (type group), DTEB (entity buffer), CHDO, NROB, NONT, RONT** plus the modern
-    **DDLS, DDLX, DCLS, DRAS, DRTY, BDEF, SRVD, SRVB**. **Absent:** DOMA, DTEL, MSAG, SHLP, ENHO, XSLT,
-    and all Dynpro/Web Dynpro. This is a **backend-driven snapshot**, not a product-wide guarantee — and
-    even where *create* is supported there is **no read/search** over MCP. ARC-1 supports the read/search path and the types listed in its [tool reference](tools.md);
-    it does not cover every type absent from this snapshot.
-
----
+See [ARC-1 type-specific contracts](tools.md), its
+[remaining object coverage](roadmap.md), and
+[SAP's supported object types](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/supported-object-types).
+Counts alone hide read/create/update/activate differences and unsupported subtypes.
 
 ## 9. MCP client & IDE compatibility
 
-| Client | ARC-1 | SAP ABAP MCP Server |
-|---|:---:|:---:|
-| GitHub Copilot (Agent Mode) in VS Code/Eclipse | ✅ | ✅ (the primary client SAP demonstrates) |
-| SAP Joule (in-IDE) | ✅ | ✅ |
-| Claude Desktop / Code | ✅ (`.mcpb` / plugin) | ⚠️ technically, if pointed at the localhost URL+token |
-| **Microsoft Copilot Studio** (remote agents) | ✅ | ❌ (no remote endpoint) |
-| **Automation / CI / scripts** | ✅ | ❌ (localhost, per-developer) |
-| **SAP Joule Studio** (custom agents) | ✅ | ❌ |
-| Cursor / other VS-Code-family editors | ✅ | ⚠️ in-IDE; needs virtual-workspace filesystem support |
-| Gemini CLI / custom CLI agents | ✅ | ⚠️ localhost only |
-| JetBrains / web apps | ✅ | ❌ |
+| Client situation | ARC-1 | SAP ADT MCP |
+|---|---|---|
+| Copilot with SAP ADT in VS Code | Local or remote MCP; backend workflows | Native development integration |
+| Claude/Codex/Gemini or another local MCP client | stdio or HTTP, subject to client support | Local HTTP + bearer token can be configured; actual tools and virtual-file handling matter |
+| Remote agent platform, CI worker or automation | Independently hosted endpoint | IDE-local process is not a documented substitute for a centrally hosted service |
+| Browser client | Requires compatible authentication/CORS/hosting | Do not expose the local endpoint publicly to imitate a team service |
+| VS Code fork | ARC-1 is independent of the editor | SAP limits support to problems reproducible in official Microsoft VS Code |
 
-**SAP's supported/intended scenario is a local IDE agent against a local ADT MCP Server.** A local
-MCP-compatible client *can* connect to the `localhost` URL with the token, but the server is **not designed
-as a remote, centrally hosted team endpoint**. **ARC-1 is the one you expose (securely) to remote and
-automated clients — Copilot Studio agents, CI pipelines, web apps, scheduled automation.**
-
----
+MCP compatibility does not prove that every client supports the same authentication, virtual
+filesystem or edit-review experience. SAP's file tools narrow the old filesystem gap, but their
+presence must be checked in the actual connection. See the
+[Marketplace support qualification](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode)
+and [ARC-1 installation options](deployment.md).
 
 ## 10. Security posture (summary)
 
-| | ARC-1 | SAP ABAP MCP Server |
-|---|---|---|
-| Trust boundary | Shared/remote — HTTPS, CORS allowlist, OAuth/JWT/API-key | **Local-machine** — `localhost` + bearer token |
-| Blast radius if token leaks | Token/JWT scoped + rate-limited; admin can revoke | Anyone *on that machine* who reads the token gets the developer's ADT rights (observed; confirm token storage with SAP docs) |
-| Write safety | Default-deny + allowlists + deny-actions + scopes | The developer's SAP authorizations are the gate; **SAP authorizations remain final** |
-| Auditability | Central, per-user, structured (incl. BTP Audit Log) | The SAP system's own logging |
-| Secrets handling | `.env`/service keys redacted in logs; never committed | Token in IDE settings; destinations in the IDE config |
-| Supply-chain hardening | Dependabot · CodeQL · Trivy image scan · npm provenance · SHA-pinned actions · `SECURITY.md` | Closed-source; covered by SAP's PSRT process |
+The useful distinction is **local development trust** versus **operating a shared service**.
 
-Neither is "insecure" — they make **different trust assumptions**. The SAP server assumes a **local-machine
-trust boundary** and relies on SAP authorizations; ARC-1 assumes a shared, possibly hostile-adjacent
-environment and adds layers accordingly.
+SAP combines the local endpoint/token, explicit MCP restrictions and the developer's SAP rights.
+ARC-1 adds a central policy and audit boundary when deployed as a shared service. Its value depends
+on configuring that boundary correctly, including the SAP identity route and data permissions.
+Neither setup makes arbitrary agent instructions trustworthy.
 
----
+For both, source code, diagnostics and queried business data can reach the selected model provider.
+An allowed package for changes does not restrict all data the agent can read. An audit record also
+does not prove that a requested change was correct or every backend effect was independently verified.
+
+ARC-1 operators should use the [security guide](security-guide.md),
+[authorization contract](authorization.md) and [data-result sizing guidance](btp-administration.md#data-preview-ram-sizing).
+SAP provides its own
+[security recommendations](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/security-recommendations-and-considerations).
+This comparison is not a security certification of either product.
 
 ## 11. Setup effort
 
-Both are **easy for the local single-developer case** — that's the SAP server's home turf, and ARC-1
-matches it there:
+**SAP local workflow:** install/update ADT, configure and log on to the destination, enable MCP,
+set explicit destination/package restrictions, then configure the client with the local URL and
+generated token. Enable native file editing only if that is the intended workflow; SAP warns that
+it can conflict with other edit tools. The VS Code default is `http://localhost:2236/mcp`.
+The old Eclipse observation used 2234; it is not the VS Code default.
+[SAP setup](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/enabling-adt-mcp-server)
 
-=== "SAP ABAP MCP Server (local)"
+**ARC-1 local workflow:** follow the [quickstart](quickstart.md) or
+[desktop/plugin installation](install-in-claude.md), configure the SAP connection, and start with
+the default read-only policy. Enable only the operations needed.
 
-    1. Install *ABAP Development Tools for VS Code* (or use Eclipse ADT) and log on to your SAP system.
-    2. Enable the server — Eclipse: *ABAP Development → MCP Server → Enable ADT MCP Server*; VS Code:
-       `adt.mcpServer.enabled`. It starts at `http://localhost:<port>/mcp` (default **2234** here;
-       SAP-samples references 2236) and **auto-generates a bearer token**.
-    3. Point your IDE AI agent (Copilot Agent Mode / Joule) at it.
+**ARC-1 shared deployment:** start with the [BTP topology guide](btp-overview.md), then the
+[Cloud Foundry runbook](btp-cloud-foundry-deployment.md). Destinations, roles, propagation,
+Cloud Connector, memory sizing and operational ownership make this a larger setup.
+The effort buys a service that can run independently of developer laptops.
 
-    Setup reuses the existing IDE and SAP destination; prerequisites still depend on the backend and authentication method.
-
-=== "ARC-1 (local)"
-
-    ```bash
-    npx arc-1@latest --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASS
-    ```
-
-    Or one-click via the **`.mcpb`** bundle in Claude Desktop, or the **Claude Code plugin** (server +
-    skills). **Effort: minutes** — as easy as the SAP server for a single developer.
-
-=== "ARC-1 (the target architecture)"
-
-    Centrally hosted on **BTP Cloud Foundry** with XSUAA OAuth, BTP Destination Service + Cloud Connector
-    for principal propagation, and the audit-log sink. This unlocks the multi-user/governed story — and
-    it's **more work**: BTP entitlements, destinations, role collections, deployment.
-
-!!! important "The key trade-off in one sentence"
-    ARC-1 is *just as easy as the SAP server* when run locally — but local isn't where its value is. Its
-    design center is the **central, governed deployment**, which costs real setup. The SAP server is
-    purpose-built for the local case and asks for **nothing**. Choose by the *architecture* you need.
-
----
+No measured setup-time comparison was performed.
 
 ## 12. Cost & licensing
 
-| | ARC-1 | SAP ABAP MCP Server |
+| Question | ARC-1 | SAP ADT / MCP |
 |---|---|---|
-| The server itself | Free, open source (MIT) | Free (ships with the official extension) |
-| Non-AI tools | Free | No Joule licence for the non-AI tools in the documented inventory; backend and external-agent terms still apply |
-| AI tools | n/a (you bring your own LLM) | **`abap_atc_apply_ai_fix` + `abap_atc_get_ai_fix_result` require a Joule for Developers licence** |
-| AI model | Your choice (Claude/GPT/Gemini/…) | **Not publicly pinned** — SAP GenAI Hub orchestrates a mix of foundation models + an SAP ABAP model (do **not** assume "SAP-ABAP-1") |
-| Licensing model | Your LLM provider's pricing | SAP documents an additional licence for on-stack capabilities and AI Units for side-by-side capabilities; confirm the applicable product terms |
-| Where the AI runs | Your LLM endpoint | Depends on the on-stack or side-by-side setup; see SAP prerequisites |
-| Infrastructure | Your BTP CF / container / host | Your laptop (none extra) |
+| Software licence | MIT; no ARC-1 licence fee | SAP Developer License Agreement and applicable SAP product terms |
+| Infrastructure | Your local host/container/BTP deployment | Local ADT runtime plus any required SAP services |
+| External model | Your chosen provider's terms and costs | Your agent provider's terms also apply |
+| Embedded AI | No bundled model endpoint | Joule-dependent features can consume tokens/incur additional costs |
+| Support | Community-maintained; no SAP support contract for ARC-1 | SAP's current MCP reference conditions support on a valid Joule for Developers, ABAP AI capabilities licence |
 
-!!! note "Check the entitlement for your deployment"
-    SAP distinguishes on-stack and side-by-side Joule capabilities. Its
-    [administrator prerequisites](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/748fe7cd693a4639b765cdc4ddbe4b68.html)
-    reference SAP Note 3571857 for on-stack licensing and 3740750 for side-by-side AI Units.
-    A successful non-AI MCP call does not establish an AI entitlement. Confirm current availability,
-    product terms, and pricing for your landscape with SAP.
+The current SAP table marks **object explanation, ABAP documentation retrieval, and the two ATC AI-fix
+tools** as requiring token consumption/additional costs. Other entries have different cost treatment.
+That table is **not a blanket “no licence required” statement**, and support entitlement is a separate
+condition. Verify the applicable deployment and commercial terms with SAP.
+[SAP MCP reference](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools),
+[SAP extension licence](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode)
 
----
+Both can work with an external agent; freedom to choose an LLM is not exclusive to ARC-1.
+This page does not assume a particular underlying Joule model or quote unverified prices.
 
-## 13. A note on SAP's API policy (unsettled)
+## 13. SAP's API policy and the custom-MCP path
 
-Both products ultimately call SAP's **ADT REST endpoints** (`/sap/bc/adt/*`). The short version: SAP’s official MCP server is SAP’s own client, subject to its product terms. ARC-1, like
-[`abap-adt-api`](https://github.com/marcellourbani/abap-adt-api), abapGit and abaplint, uses those same
-endpoints. Their publication status and permitted third-party use need to be assessed per endpoint;
-absence from the Business Accelerator Hub alone does not settle that question. Treat third-party ADT-API use as **not-officially-confirmed**; obtain a decision for your use case from your SAP contact.
-Developer use alone does not establish a contractual exemption.
+Checked **21 October 2026**: the [API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf)
+is v.4.2026a, and the [official FAQ](https://www.sap.com/documents/2026/04/e2a0665e-4c7f-0010-bca6-c68f7e60039b.html)
+is v1.3 (June 2026). Q56 allows custom MCP servers under conditions; Q32 does not require Integration
+Suite. For custom MCP, SAP's [reference architecture 137800](https://architecture.learning.sap.com/docs/ref-arch/137800)
+is the main design and control baseline we recommend.
 
-**→ [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** is the full
-treatment: what API Policy v.4.2026a says clause by clause, why the ADT question is more nuanced than
-"undocumented API", what the MCP Gateway can and cannot do today, and the specific questions to put to
-your SAP contact. Informational, not legal advice.
-
----
+Q33 classifies ADT APIs as internal and limits development use to endorsed channels. SAP-provided
+developer tools are among its examples; ARC-1's direct TypeScript ADT client is not specifically
+identified. SAP shipping its own MCP server does not authorize third-party ADT use by analogy.
+BTP hosting and development-only positioning do not settle that channel-specific question.
+See [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md) for the recommended
+path, remaining controls and the specific clarification to obtain from SAP.
 
 ## 14. It's not either/or — the composable MCP ecosystem
 
-You are **not locked into one MCP server**. MCP clients can connect to several at once, and a skills layer
-adds reusable workflows on top. Beyond the two compared here, high-value additions include:
+Clients can combine servers and reusable skills. A useful arrangement is SAP ADT for local editor
+workflows, ARC-1 for governed backend access, and documentation/Notes tools for research.
 
-- **SAP docs MCP** (`mcp-sap-docs`) — unified search over SAP developer docs (ABAP/RAP keyword docs, Clean
-  ABAP, BTP, SAP Help, SAP Community). Great for grounding any agent in real documentation.
-- **SAP Notes MCP** — search/retrieve SAP Notes & KBAs.
-- **Official SAP dev-tooling MCP servers** — Fiori elements, CAP, UI5, UI5 Web Components, MDK (npm-distributed).
-- **Skills** — ARC-1 ships **SAP skills** (RAP, CDS, ABAP Unit, clean-core, UI5 modernization) usable
-  across agents via `npx skills add`.
+SAP now documents its own ABAP documentation tool. Broader documentation or Notes connectors can
+still add coverage; check their sources, credentials and terms instead of assuming one documentation
+tool covers every SAP product. ARC-1's [skills](skills.md) supply reusable workflows rather than
+new backend permissions.
 
-A curated, regularly-updated catalog of SAP MCP servers, AI skills and Claude plugins lives at
-**[github.com/marianfoo/sap-ai-mcp-servers](https://github.com/marianfoo/sap-ai-mcp-servers)** — a good
-starting point for assembling the stack that fits you (e.g. *SAP ADT MCP for in-IDE actions + ARC-1 for
-governed/remote reach + SAP docs MCP for grounding + skills for workflows*).
-
----
+The [SAP MCP/skills catalog](https://github.com/marianfoo/sap-ai-mcp-servers) is a discovery resource,
+not an endorsement or proof of compatibility for every listed combination.
 
 ## 15. Using them together
 
-A pattern that works well for a modern team on VS Code ADT (a **recommended architecture**, not a
-vendor-endorsed one):
+### Research, then open the native editor
 
-- **Per developer, in the IDE:** the SAP server for context-aware editing, debugging, ABAP Unit/ATC,
-  repository-object generation and Joule AI fixes on their **personal dev system**, **and**
-- **Centrally, for everyone & for agents:** ARC-1 as the **governed, audited** endpoint for multi-user
-  access, **non-IDE agents** (Copilot Studio, automation/CI), on-prem/classic reach, and the operations
-  the SAP server omits — **SQL, git, transport release, ST22 dumps/traces** — plus a **docs/notes MCP and
-  skills** (§14) for grounding and reusable workflows.
+An agent can use ARC-1 to investigate backend objects and SAP ADT to inspect the corresponding
+source locally. Keep the **system, SAP client, destination alias and source state** explicit.
+A BTP destination name or SAP SID is not necessarily the local ADT destination alias.
 
-Namespaces differ (`abap_*` vs `SAPRead`/`SAPWrite`/…) and an agent can hold several connections at once.
+[Draft PR #1025](https://github.com/arc-mcp/arc-1/pull/1025) implements optional native ADT 1.2 links
+for qualified source types, including request-specific HTTP/BTP destination mapping.
+The recorded live checks include Copilot → local HTTP ARC-1 → native editor opening. **Live CF
+routing/OAuth and pinned/aggregate acceptance remain unqualified.** Opening a link also does not
+prove canonical dirty-buffer reuse, Keep/Undo, saving, activation or transport-selection parity.
+The earlier [#676 bridge proposal](https://github.com/arc-mcp/arc-1/pull/676) was closed unmerged.
 
----
+### Investigate data, then save a notebook
 
-## 16. Where each genuinely wins
+Use ARC-1's gated SQL tools for agent queries, and SAP's native `.abapsql` notebook for an interactive
+investigation with Markdown, results and statistics.
+[SAP's notebook documentation](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/working-with-sql-console)
+describes row limits and exports. ARC-1's [authoring guide](sql-notebook-authoring.md) preserves the
+native format; it does not install a notebook runner. Executing a cell in ADT uses **ADT's**
+destination and controls, not ARC-1 policy.
 
-=== "SAP ABAP MCP Server is better at…"
+### Review a transport, then run appropriate checks
 
-    - **Near-zero-config** in-IDE experience; reuses your ADT session.
-    - **First-party**, on SAP's roadmap, actively developed.
-    - **Server-driven creation + repository-object generators** that auto-track backend capabilities
-      (incl. *OData UI Service from Scratch*).
-    - **Joule AI** ATC fix proposals (licensed; see §12).
-    - The surrounding **IDE**: debugger, completion, navigation, form editors, virtual workspace.
-    - **Human-in-the-loop** transport selection baked into the tools.
-    - **Multi-destination** — one running server spans every system configured in your IDE (each tool
-      takes a `destination` arg), handy when you hop between systems.
-    - The same MCP tooling across **Eclipse and VS Code**.
+Both expose transport diffs. ARC-1's post-1.6.0 [review improvements](review-workflows.md) distinguish
+released history from current active source, retain missing/unreviewed scope and bound the work.
+They do not supply a complete historical review of text pools, DDIC metadata, Customizing or every
+function-group component. Paging is not an immutable snapshot. Syntax, ATC and Unit runs on current
+objects do not validate an older transport snapshot.
 
-=== "ARC-1 is better at…"
+### Status of the existing comparison-driven work
 
-    - **Central, multi-user hosting** with one governed endpoint; usable **outside any IDE** (Copilot
-      Studio, automation/CI, web).
-    - **Enterprise auth**: XSUAA + OIDC + API key, and **per-user principal propagation**.
-    - **Governance**: read-only default, package allowlists, deny-actions, scopes, **rate limits**, central
-      audit log.
-    - **Reach**: classic objects (PROG, FUGR, DDIC, MSAG, ENHO…) and **read/search over MCP** wherever the
-      backend exposes the endpoints.
-    - **Ops breadth**: free SQL, git, transport release/delete, **ST22 dumps & traces**.
-    - **Any MCP client** and **any LLM**; multiple **distribution** options (`.mcpb`, Claude Code plugin +
-      skills, Docker, npm, BTP connector).
-    - **Token efficiency** — hyperfocused 1-tool mode (~200 tokens), context compression, and
-      method-level surgery keep tight context windows and mid-tier LLMs viable.
-    - **No ARC-1 licence fee**. Direct local connections need no AI Core; BTP deployments, SAP access, and your LLM have their own requirements.
+Status checked **18 October 2026**. These distinctions prevent research plans from becoming product claims.
 
-### ARC-1's honest limitations
+| Work | Status | What this page can claim |
+|---|---|---|
+| Target grants, BAdI writes, table/text authoring improvements | **Released in 1.6.0** | Use the [release notes](release-notes.md#160-optional-target-access-and-safer-authoring-2026-10-17) for individual limits |
+| [#1008 transport review](https://github.com/arc-mcp/arc-1/pull/1008) | **Merged after 1.6.0** | Improved bounded MCP source review; requires a newer build |
+| [#1012 stored texts](https://github.com/arc-mcp/arc-1/pull/1012) | **Merged after 1.6.0** | Exact-key classic SAPscript text reading; not a generic cluster decoder |
+| [#1023 notebook guidance](https://github.com/arc-mcp/arc-1/pull/1023) | **Merged**; [#1009](https://github.com/arc-mcp/arc-1/pull/1009) closed unmerged | Native-format example/guidance and regression evidence; no runner/importer |
+| [#1016 deny-rule guidance](https://github.com/arc-mcp/arc-1/pull/1016), [#1019 syntax result fix](https://github.com/arc-mcp/arc-1/pull/1019) | **Merged after 1.6.0** | Narrow fixes; no policy-preview feature from closed [#1010](https://github.com/arc-mcp/arc-1/pull/1010) |
+| [#1020 dump filters](https://github.com/arc-mcp/arc-1/pull/1020) | **Open draft** | Research/implementation evidence, not a released capability |
+| [#1024 saved application logs](https://github.com/arc-mcp/arc-1/pull/1024) | **Open draft** | Native SLG1-reader proposal; not Dictionary activation logs |
+| [#1025 editor links](https://github.com/arc-mcp/arc-1/pull/1025) | **Open draft** | Qualified local opening evidence and remaining deployment gaps |
+| [#1011 broader diagnostics](https://github.com/arc-mcp/arc-1/pull/1011) | **Open draft** | Source of separate investigations; not blanket shipped parity |
 
-- **Community open source** — no SAP support contract/SLA; "production-ready" is the project's own positioning.
-- **You** operate and secure it (for the central deployment).
-- **No server-side AI model** — quality is whatever your chosen LLM produces.
-- **No IDE UX** — no debugger, no inline completion, no form editors; it's RPC tools.
-- Its ADT layer is **hand-maintained**; new SAP object types/editors may need ARC-1 code, whereas SAP's
-  server-driven framework adapts automatically.
-- Per-tool reach depends on the **backend's ADT/OData endpoints** — older ECC/NetWeaver should be validated
-  per feature; and third-party ADT-API use is **not officially confirmed** (§13).
-- For a **lone developer on a modern dev system living in the IDE**, the SAP server is the better-fitting,
-  lower-friction tool — ARC-1 doesn't pretend otherwise.
+The [research index](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/README.md)
+records later decisions that supersede the original adoption recommendations.
 
----
+## 16. Where each fits best
+
+**SAP ADT and its MCP server** provide the strongest fit when the developer's editor, existing
+session, native generators, object editors and Joule workflows are central to the task. The 1.2
+expansion materially narrows earlier gaps in agent source access and diagnostics.
+
+**ARC-1** provides the strongest fit when a team needs an independent MCP service, central controls,
+explicit backend workflows and remote agent access. Source surgery, SQL access and its supported
+transport/Git operations remain useful concrete capabilities.
+
+ARC-1's limits remain material: it is community-maintained, you operate it, backend contracts vary,
+multi-target is experimental and mutation-free, gCTS mutations are quarantined, and it does not
+replace an IDE. Core report/class execution and direct RFC are deliberately excluded; opted-in
+extensions have their own gates. See [extensions](extensions.md) and
+[ADR-0009](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md).
+
+Neither a larger tool count nor a smaller schema proves better task completion. Choose using a
+representative workflow on your actual backend, then verify the resulting source, data and identity.
 
 ## Sources
 
-### Public / primary sources
+### Current primary references
 
-- [ABAP Development Tools for VS Code — Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode) — official SAP SE extension (checked 2026-10-04): free, integrated AI/MCP, debugger, Unit, ATC, transports, RFC/HTTP connectivity, additional licence for certain Joule features.
-- [SAP Help — Model Context Protocol Tools](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/243d050c1be846e788f38f8c23c45d3a.html) — **canonical toolset, exact tool IDs, and per-tool Joule License column** (source for §7.1 and §12).
-- [SAP Help — Configuring ADT MCP Server](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/ed94320814734d97801f51a5b6deb802.html) and [Enabling ADT MCP Server](https://help.sap.com/docs/ABAP_AI/c7f5ef43ab274d078baf22f995fd2161/6f6e72852b9746ffbe083d5a818fbbec.html) — URL `http://localhost:<port>/mcp`, port preference, auto-generated bearer token.
-- [SAP-samples — RAP130 Exercise 1: Enable the ADT MCP Server](https://github.com/SAP-samples/abap-platform-rap130/blob/main/exercises/ex01/README.md) — `adt.mcpServer.enabled`, Copilot Agent mode, and an older experimental warning; use the later GA announcement for current product status.
-- [SAP Joule for Developers — product page](https://www.sap.com/products/artificial-intelligence/joule-for-developers.html) · [GA announcement: ABAP AI capabilities incl. agentic](https://community.sap.com/t5/artificial-intelligence-blogs-posts/sap-joule-for-developers-abap-ai-capabilities-including-agentic/ba-p/14417633) · [Entering the New Era of Agentic AI for ABAP Development](https://community.sap.com/t5/technology-blog-posts-by-sap/entering-the-new-era-of-agentic-ai-for-abap-development/ba-p/14394643) — Joule licensing (Joule Premium / AI Units), BTP-hosted hub, model mix.
-- [SAP Business AI — Release Highlights Q1 2026](https://news.sap.com/2026/04/sap-business-ai-release-highlights-q1-2026/) — Joule model landscape / GenAI Hub.
-- ADT connectivity & SSO: [ADT for VS Code — Everything You Need to Know](https://community.sap.com/t5/technology-blog-posts-by-sap/abap-development-tools-for-vs-code-everything-you-need-to-know/ba-p/14258129) · [VS Code now on the Marketplace (Q&A on SNC/SSO, RFC ports)](https://community.sap.com/t5/technology-blog-posts-by-sap/abap-development-tools-for-visual-studio-code-is-now-available-on-the-vs/ba-p/14402120) · [ABAP Tools VS Code Quick Start (software-heroes)](https://software-heroes.com/en/blog/abap-tools-vs-code-quick-start-en) · [Installing ADT for Eclipse — config/SSO/SNC (PDF)](https://help.sap.com/doc/2e9cf4a457d84c7a81f33d8c3fdd9694/Cloud/en-US/inst_guide_abap_development_tools.pdf).
-- API policy: [Impacts of SAP API Policy v4/2026 on existing integrations (SAP Community)](https://community.sap.com/t5/technology-q-a/impacts-of-sap-api-policy-v4-2026-on-existing-customer-integrations/qaq-p/14381879) · [Joys and sorrows of the ABAP Developer Tools API](https://community.sap.com/t5/application-development-and-automation-blog-posts/joys-and-sorrows-of-the-abap-developer-tools-api/ba-p/13409390) · [`marcellourbani/abap-adt-api`](https://github.com/marcellourbani/abap-adt-api).
-- Ecosystem: [github.com/marianfoo/sap-ai-mcp-servers](https://github.com/marianfoo/sap-ai-mcp-servers) — curated catalog of SAP MCP servers, AI skills and Claude plugins (lists ARC-1, MCP SAP Docs, SAP Notes MCP, and the official SAP dev-tooling servers).
-- [Model Context Protocol specification — 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18) — the revision the tested server reported (newer revisions exist).
-- ARC-1: [Install in Claude](install-in-claude.md) · [Architecture](architecture.md) · [Auth overview](enterprise-auth.md) · [Authorization & roles](authorization.md) · [Configuration reference](configuration-reference.md) · [Tools reference](tools.md) · [Security guide](security-guide.md) · [Skills](skills.md).
+- [SAP ADT for VS Code — Marketplace](https://marketplace.visualstudio.com/items?itemName=SAPSE.adt-vscode)
+- [SAP MCP tool catalog](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/mcp-tools)
+- [SAP MCP enabling and restrictions](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/enabling-adt-mcp-server)
+- [SAP MCP client configuration](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/configuring-adt-mcp-server-ed94320814734d97801f51a5b6deb802)
+- [SAP ADT release/backend matrix](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/what-s-new)
+- [SAP SQL notebook](https://help.sap.com/docs/abap-cloud/abap-development-tools-for-visual-studio-code/working-with-sql-console)
+- [SAP API Policy PDF](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf)
+- [ARC-1 1.6.0 release](https://github.com/arc-mcp/arc-1/releases/tag/v1.6.0), [tool contracts](tools.md),
+  [authorization](authorization.md), [security](security-guide.md), [roadmap](roadmap.md)
+- [Refresh evidence and PR reconciliation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-18-sap-mcp-comparison-refresh.md)
 
-### Author's live snapshot (2026-06-16 — observed, not product-wide)
+### Historical snapshot
 
-A running `ADT MCP Server` v1.0.0 in **Eclipse** (port **2234**, MCP `2025-06-18`, Jetty 12.1.9), bound to
-one on-prem **S/4HANA 2023** backend: `tools/list` returned the 20-tool set (with the two ID variants noted
-in §7.1), `resources/list`/`prompts/list` returned *Method not found*, and
-`abap_creation-get_all_creatable_objects` returned the **24** creatable types in §8. These exact counts and
-lists are **backend/version dependent** — verify against your own `tools/list`.
+The original **16 June 2026** observation used Eclipse's `ADT MCP Server` v1.0.0 on one S/4HANA 2023
+backend: 20 tools, 24 creatable object types, port 2234, and no working MCP resources/prompts listing.
+Those are historical observations only. They do not describe VS Code 1.2, establish current absences,
+or supersede today's documentation and the connected server's actual catalog.

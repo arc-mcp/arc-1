@@ -1,12 +1,29 @@
 import type { AdtClient } from '../adt/client.js';
 import { syntaxCheck } from '../adt/devtools.js';
 import { AdtApiError } from '../adt/errors.js';
+import { syntaxCheckBatch } from '../adt/syntax-batch.js';
 import type { SyntaxCheckResult } from '../adt/types.js';
 import { normalizeObjectType, objectUrlForType } from './object-types.js';
 import { type ToolResult, textResult, toolJson } from './shared.js';
 
 /** Shared wire and result contract for both syntax-check entry points. */
 export async function handleSyntaxCheck(client: AdtClient, args: Record<string, unknown>): Promise<ToolResult> {
+  if (Array.isArray(args.objects)) {
+    const objects = args.objects.map((object: { type: string; name: string }) => ({
+      ...object,
+      uri: objectUrlForType(object.type, object.name),
+    }));
+    return textResult(
+      toolJson(
+        await syntaxCheckBatch(
+          client.http,
+          client.safety,
+          objects,
+          args.version === 'inactive' ? 'inactive' : 'active',
+        ),
+      ),
+    );
+  }
   const type = normalizeObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
   let objectUrl = objectUrlForType(type, name);

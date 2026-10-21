@@ -57,7 +57,11 @@ function requestTimeoutError(): DOMException {
 }
 
 function requestAbortError(signal: AbortSignal): AdtNetworkError {
-  const cause = signal.reason instanceof Error ? signal.reason : new Error('The ADT request was aborted.');
+  const reason = signal.reason;
+  const cause =
+    reason instanceof Error && (reason.name === 'TimeoutError' || reason.name === 'AbortError')
+      ? reason
+      : new DOMException('The ADT request was cancelled.', 'AbortError');
   return new AdtNetworkError(cause.message, cause);
 }
 

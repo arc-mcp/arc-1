@@ -41,6 +41,33 @@ describe('text-pool writes report observed native state', () => {
       textPart,
     });
 
+  it.each([false, true])(
+    'requires inspection before retry after activation fails (minimal=%s)',
+    async (minimalErrors) => {
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve(
+          mockResponse(
+            String(url).includes('/activation?') ? 503 : 200,
+            String(url).includes('_action=LOCK') ? LOCK : '',
+            { 'x-csrf-token': 'T' },
+          ),
+        ),
+      );
+      const result = await handleToolCall(createClient(), { ...DEFAULT_CONFIG, minimalErrors }, 'SAPWrite', {
+        action: 'edit_text_symbols',
+        type: 'CLAS',
+        name: 'ZTEST',
+        source: '@MaxLength:20\n001=New',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain('Inspect the text pool before retrying the same text write.');
+      expect(result.content[0]?.text).toContain('INACTIVE_OBJECTS');
+      expect(result.content[0]?.text).not.toContain('Retry the same text write.');
+      expect(calls().filter(([url]) => String(url).includes('/activation?'))).toHaveLength(1);
+      expect(calls().some(([url]) => String(url).includes('_action=UNLOCK'))).toBe(true);
+    },
+  );
+
   it.each([
     ['CLAS', 'CLAS/OCX'],
     ['FUGR', 'FUGR/PX'],

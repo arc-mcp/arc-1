@@ -84,6 +84,9 @@ to record the tested build, SAP release, deployment/authentication route, observ
 untested scenarios. If you lack access, explain why and what still needs verification; this does
 not prevent you from contributing. Documentation-only changes can mark live testing as N/A.
 
+For contributor tooling (`lint-staged`), use Node.js 22 (22.22.1 or later) or 24; the published package's
+runtime minimum remains Node.js 22.19.
+
 ```bash
 git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
@@ -95,6 +98,23 @@ npm run dev                # stdio from source; restart after edits
 npm run dev:http           # builds + runs HTTP streamable on 0.0.0.0:8080
 npm run build && npm start # production-style: compile to dist/, run from there
 ```
+
+**`npm ci` fails looking for Python or Visual Studio.** An [npm bug](https://github.com/npm/cli/issues/9837)
+can run `node-gyp rebuild` for `better-sqlite3` 13 when installing from a lockfile, despite its
+bundled prebuilt binaries. This commonly affects Windows machines without the build toolchain.
+For this specific failure, skip install scripts for this one install:
+
+```powershell
+npm ci --ignore-scripts
+npm run build
+node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); console.log(db.prepare('SELECT 1 AS ok').get()); db.close()"
+```
+
+The SQLite check should print `{ ok: 1 }`. If it fails, the workaround is insufficient;
+resolve the native-module error before continuing. `--ignore-scripts` skips **all** install
+scripts, including Git-hook setup: run `npm run prepare` before committing. Keep this flag
+on the affected install command rather than setting it globally. See [#1038](https://github.com/arc-mcp/arc-1/issues/1038)
+for the reported Windows environment and results.
 
 | Script | What it does | When to use it |
 |---|---|---|

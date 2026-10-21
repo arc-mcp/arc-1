@@ -42,7 +42,9 @@ const BUDGETS = {
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
-  'src/handlers/tools.ts': 1745,
+  // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
+  'src/handlers/tools.ts': 1771, // +6: FUNC parameter description field (#1040).
+  'src/handlers/schemas.ts': 1542, // +13: FUNC parameter description validation (#1040).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -58,7 +60,8 @@ const BUDGETS = {
   // +88 for dump paging: SAP caps the dumps feed at 100 entries and ignores $skip, so listDumps walks
   // the inclusive `to` bound, refuses to guess when a second holds a full page, and rejects bounds
   // SAP would silently discard or roll over to another day.
-  'src/adt/diagnostics.ts': 1933,
+  // +5: bounded typed dump query hook; schema/compiler/budget setup live in feed-schema.ts.
+  'src/adt/diagnostics.ts': 1938,
   // The ADT client facade aggregates every read/write op; set_api_state (#506) + runQueryWithMetrics
   // (SAPQuery metrics) + getEffectiveUser (BTP JWT-derived user, G-5) + getSourceAtObjectUrl
   // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past
@@ -81,7 +84,8 @@ const BUDGETS = {
   'tests/unit/adt/client.test.ts': 2874,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1543, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
+  // +3: classify caller cancellation before generic network wrapping (#1045).
+  'src/adt/http.ts': 1546, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1508, // Pass the review request budget through transport inventory GET.
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed

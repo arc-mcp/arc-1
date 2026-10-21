@@ -8,7 +8,6 @@ import {
   findWhereUsed,
   findWhereUsedWithScope,
   getCompletion,
-  getWhereUsedScope,
 } from '../../../src/adt/codeintel.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { defaultSafetyConfig, unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
@@ -151,54 +150,6 @@ describe('Code Intelligence', () => {
       await findReferences(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
       expect(http.get).toHaveBeenCalledWith(
         expect.stringContaining('/sap/bc/adt/repository/informationsystem/usageReferences'),
-        expect.objectContaining({ Accept: 'application/xml' }),
-      );
-    });
-  });
-
-  // ─── getWhereUsedScope ─────────────────────────────────────────────
-
-  describe('getWhereUsedScope', () => {
-    it('returns scope entries from XML fixture', async () => {
-      const xml = readFileSync(join(fixturesDir, 'where-used-scope.xml'), 'utf-8');
-      const http = mockHttp(xml);
-      const scope = await getWhereUsedScope(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
-      expect(scope.entries).toHaveLength(3);
-      expect(scope.entries[0]).toEqual({
-        objectType: 'PROG/P',
-        objectTypeDescription: 'Program',
-        count: 3,
-      });
-      expect(scope.entries[1]).toEqual({
-        objectType: 'CLAS/OC',
-        objectTypeDescription: 'Class',
-        count: 2,
-      });
-      expect(scope.entries[2]).toEqual({
-        // FUGR/FF is what live ADT actually emits for function modules — see
-        // PR #223 (issue #218 audit). The fixture was previously FUNC/FM
-        // which is invented; updated to reflect real ADT output.
-        objectType: 'FUGR/FF',
-        objectTypeDescription: 'Function Module',
-        count: 1,
-      });
-    });
-
-    it('returns empty entries when scope response has no object types', async () => {
-      const xml =
-        '<?xml version="1.0" encoding="UTF-8"?><usageReferences:scopeResponse xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences"/>';
-      const http = mockHttp(xml);
-      const scope = await getWhereUsedScope(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_EMPTY');
-      expect(scope.entries).toEqual([]);
-    });
-
-    it('POSTs to the scope endpoint with correct content type', async () => {
-      const http = mockHttp('<scopeResponse/>');
-      await getWhereUsedScope(http, unrestrictedSafetyConfig(), '/sap/bc/adt/oo/classes/ZCL_TEST');
-      expect(http.post).toHaveBeenCalledWith(
-        '/sap/bc/adt/repository/informationsystem/usageReferences/scope',
-        expect.stringContaining('/sap/bc/adt/oo/classes/ZCL_TEST'),
-        'application/xml',
         expect.objectContaining({ Accept: 'application/xml' }),
       );
     });

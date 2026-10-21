@@ -1080,7 +1080,7 @@ Work:
 - Add `SAPLint` and `SAPTransport` only through explicit action allowlists:
   `lint|lint_and_fix|list_rules` and `list|get|diff|check|history`. Permit the following `SAPDiagnose`
   actions through a separate exact allowlist: `syntax`, `unittest`, `atc`, `atc_variants`,
-  `cds_testcases`, `dumps`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
+  `cds_testcases`, `dumps`, `feed_schema`, `traces`, `trace_requests`, `system_messages`, `gateway_errors`,
   `object_state`, `quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `sql_trace_directory`, and
   `authorization_trace`. The existing data gates still control `odata_perf` and
   `authorization_trace`. Reject every omitted action at both list time and call time.

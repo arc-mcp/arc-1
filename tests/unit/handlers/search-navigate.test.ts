@@ -1602,13 +1602,15 @@ describe('SAPSearch / SAPQuery / SAPGit / SAPNavigate handlers', () => {
         );
       });
 
-      it('searches the whole object without a position and omits searchedFor', async () => {
+      it('reports SAP’s explanation for whole-object searches too', async () => {
         const { result, requestedUri } = await navigate(
           { uri: '/sap/bc/adt/oo/classes/zcl_test' },
           'References for: ZCL_TEST (Class) [SID]',
         );
         expect(requestedUri).toBe('/sap/bc/adt/oo/classes/zcl_test');
-        expect(JSON.parse(result.content[0]?.text as string)).not.toHaveProperty('searchedFor');
+        expect(JSON.parse(result.content[0]?.text as string).searchedFor).toBe(
+          'References for: ZCL_TEST (Class) [SID]',
+        );
       });
 
       it.each([

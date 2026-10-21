@@ -95,10 +95,13 @@ export async function handleSAPNavigate(
         uri = `${uri.split('#')[0]}#start=${line},${column}`;
       }
       // objectType keeps its slash format (CLAS/OC, PROG/P) — do NOT normalize; the suffix is
-      // semantically meaningful. Filtering happens client-side (SAP ignores objectTypeFilter).
+      // semantically meaningful. Filtering happens client-side.
       const objectType = args.objectType ? String(args.objectType) : undefined;
       const maxResults = args.maxResults === undefined ? undefined : Number(args.maxResults);
-      const lookup = await lookupLiveUsages(client, uri, objectType, maxResults);
+      const lookup = await lookupLiveUsages(client, uri, objectType, maxResults, {
+        packages: args.packages as string[] | undefined,
+        detail: args.detail as 'objects' | 'positions' | 'snippets' | undefined,
+      });
       const { results, total, truncated } = lookup;
 
       // No early text return for the empty case: a consumer that parses the envelope would throw on
@@ -111,7 +114,9 @@ export async function handleSAPNavigate(
           truncated,
           // SAP falls back to the whole object when the cursor is not on an identifier, so a
           // position search reports what was actually searched.
-          ...(lookup.searchedFor && uri.split('#')[1] ? { searchedFor: lookup.searchedFor } : {}),
+          ...(lookup.searchedFor ? { searchedFor: lookup.searchedFor } : {}),
+          ...(lookup.scopeFiltering ? { scopeFiltering: lookup.scopeFiltering } : {}),
+          ...(lookup.usageDetails ? { usageDetails: lookup.usageDetails } : {}),
           ...(lookup.warning ? { warning: lookup.warning } : {}),
           ...(truncated
             ? {

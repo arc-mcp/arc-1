@@ -70,7 +70,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `objectType` | string | No | Required for SYNTAX: repository type (e.g. CLAS, PROG, DDLS). For API_STATE: SAP object type (CLAS, INTF, PROG, FUGR, FUNC, etc.) — auto-detected from name if omitted; FUNC also uses `group` |
 | `version` | string | No | Object version: `active`, `inactive`, or `auto`. Source-bearing types default to `active`, except SMBC and [server-driven objects](#server-driven-object-writes), where omitted/`auto` uses SAP's developer view (TABL/DTI explicitly prefers pending source) and explicit `active`/`inactive` must be confirmed by metadata. [TABL/DTT settings](#technical-table-settings) also prefer pending state and verify explicit versions. ENHO uses the developer view and refuses explicit version selection. For DTEL/ENQU metadata, omitted and `auto` use SAP's developer view; explicit `active` or `inactive` is passed to SAP. See [Active vs Inactive Source](#active-vs-inactive-source) below. |
 | `force_refresh` | boolean | No | For source reads: bypass the cached source AND the inactive-list cache before reading. Use when you know the object changed outside ARC-1 in a way conditional GET can't catch. |
-| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
+| `includeSignature` | boolean | No | For `FUNC` only. When `true`, response is JSON `{source, signature: {importing[], exporting[], changing[], tables[], exceptions[], raising[]}, processingType?, updateTaskKind?}` — each parameter parsed into `{kind, name, type, description?, byValue?, default?, optional?}`; `processingType` reports `normal`/`rfc`/`update` (a metadata read, so it may add `propertiesError` instead if that GET fails). Default `false` (returns plain source body). See [SAPWrite for FUNC](#sapwrite-for-func-create-update-with-structured-parameters) for the round-trip. |
 
 ### Read-only syntax checks
 
@@ -414,7 +414,7 @@ keep their separate behavior.
 | `rowTypeDecimals` | integer | No | `TTYP` built-in decimal places; same validation and update semantics as `rowTypeLength`. Explicit zero clears the scale. |
 | `processingType` | string | No | On-prem `FUNC` create only: `normal`, `rfc` (Remote-Enabled), or `update`. Omit it to preserve the legacy SAP-default behavior. |
 | `updateTaskKind` | string | No | Required when `processingType="update"`: `startImmediate` (V1 restartable), `immediateStartNoRestart` (V1 non-restartable), or `startDelayed` (V2). Rejected for normal/RFC modules. |
-| `parameters` | array | No | FUNC structured signature: `{kind,name,type?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
+| `parameters` | array | No | FUNC structured signature: `{kind,name,type?,description?,byValue?,default?,optional?}` rows for importing/exporting/changing/tables/exceptions/raising. ARC-1 builds and splices the clauses; omit to send `source` verbatim. |
 | `name` | string | No | Object name (for single object actions) |
 | `expectedSourceHash` | string | No | SHA-256 from `SAPRead(format="editable")`; rejects changed source under the SAP lock before an update or class/procedural edit. Omitted/null/blank: no protection against stale replacements across calls. See [Source preconditions](#source-preconditions). |
 | `source` | string | No | ABAP source code. For `create`/`update`: full source body. For `edit_method`: new method body. For `edit_unit`/`add_unit`: the complete replacement/new `FORM … ENDFORM.` or `MODULE … ENDMODULE.` block. For `edit_class_definition` without `include=`: ONLY the new global `CLASS … DEFINITION … ENDCLASS.` block (~10–80 lines instead of full class). For `edit_class_definition` with `include=`: the FULL replacement body of that class-local include; for `include="testclasses"` this normally includes both local `CLASS ltc_* DEFINITION` and `CLASS ltc_* IMPLEMENTATION`. For `edit_method_signature`: ONLY the new METHODS clause for one method (~1–5 lines). Not used by `add_method`/`delete_method`/`change_method_visibility` — pass the method clause/name and target visibility via `method`/`visibility` instead. |
@@ -714,9 +714,23 @@ Each parameter:
 | `kind` | string | One of `importing`, `exporting`, `changing`, `tables`, `exceptions`, `raising`. |
 | `name` | string | Parameter / exception name. Always uppercased on emit. |
 | `type` | string | ABAP type expression (`STRING`, `I`, `BAPIRET2`, `TYPE STANDARD TABLE OF X`, `LIKE DOKHL-OBJECT`, …). Required for IMPORTING/EXPORTING/CHANGING/TABLES; ignored for EXCEPTIONS/RAISING. For TABLES, include the leading `TYPE` or `LIKE` keyword. |
+| `description` | string | Optional short text for importing/exporting/changing/tables: 1–60 printable characters, not blank. Write it in the function group’s original language. |
 | `byValue` | boolean | Emit `VALUE(name)` wrapper. Default `false` (pass-by-reference). |
 | `default` | string | Raw ABAP literal — IMPORTING/CHANGING only. Emitted verbatim (no escaping). Examples: `'X'`, `0`, `space`. |
 | `optional` | boolean | Emit `OPTIONAL` keyword. |
+
+A parameter such as `{kind: "importing", name: "IV_INPUT", type: "CHAR10", description: "Input value"}`
+writes native synchronized ABAP Doc with the function group's original language; no DDIC description
+is copied automatically. Activate and use `SAPRead(includeSignature=true, force_refresh=true)` to read
+its `description` from source; this does not independently read the SE37 metadata field. Native SE37
+synchronization requires SAP_BASIS 7.50+ and was verified on 758 SP02. An absent `description` does
+not prove the SE37 text is blank: texts maintained only in SE37 may have no ABAP Doc.
+
+Omitting a description preserves documentation in the source being edited; an empty description is
+rejected. Omit `source` to edit the stored source, or include its documentation in a full `source`. A
+body-only `source` replaces the whole function source. Signature edits preserve leading comments and
+the body, and remove attached documentation for removed parameters. Ambiguous short-text markup is
+refused; edit full `source` without `parameters` in that case.
 
 Example — create an FM with a typed signature:
 
@@ -821,7 +835,8 @@ This helps pinpoint the exact failing field/annotation instead of retrying blind
 - Delete hints include cycle-break guidance for mutually-dependent projection graphs (strip redirected/composition clauses, activate stripped versions, then delete).
 - If delete guidance lists dependents that were just deleted, treat it as possible stale SAP active dependency/index state and retry after a short wait before deeper cleanup.
 - If SAP reports a delete dependency error but current where-used results are empty, ARC-1 now adds stale active-dependency guidance: wait/retry after recent cleanup, activate restored/stripped sources first, then re-check references/locks.
-- ARC-1 combines unfiltered ADT where-used results with scoped object-type filters where available. This avoids under-reporting dependents on SAP systems that return only a shallow default usageReferences result.
+- CDS hints use one unfiltered ADT where-used request and deduplicate its results.
+- Empty CDS results retain SAP's explanation when supplied; HTTP 200 alone does not prove the search was supported.
 - If the where-used endpoint is unavailable on the backend, ARC-1 keeps the CRUD action behavior unchanged and adds a short "impact unavailable" note instead of failing the call.
 
 **Blue framework package handling:** `TABL` and `BDEF` create calls now pass package in both the XML (`packageRef`) and URL query (`_package=<pkg>`), alongside transport (`corrNr`) when provided.
@@ -1020,7 +1035,7 @@ Backing pattern for class surgery: lock the class → read fresh editable source
 
 #### `action="edit_class_definition"` — replace the DEFINITION block whole
 
-Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim.
+Without `include=`, send only the new global `CLASS … DEFINITION … ENDCLASS.` block (typical ~10–80 lines for a 20-method class). ARC-1 fetches the existing `/source/main`, splices the new DEFINITION over the existing one, and PUTs back. The IMPLEMENTATION block is preserved verbatim. If you include ABAP Doc (`"!`) directly above the new `CLASS` declaration, it replaces the attached old class documentation. Otherwise, existing class documentation is kept.
 
 With `include=definitions|implementations|macros|testclasses`, send the full replacement body for that local include. For ABAP Unit tests, target `include="testclasses"` and write local `ltc_*` classes; ARC-1 creates the missing CCAU include automatically on first write.
 
@@ -1075,7 +1090,7 @@ preserving existing code; `edit_method` can only replace a body that already exi
 
 #### `action="edit_method_signature"` — replace one METHODS clause
 
-One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract.
+One range replacement on a method's declaration. The IMPLEMENTATION block is untouched — any body incompatibility surfaces at `SAPActivate`, same as today's `edit_method` contract. Include ABAP Doc (`"!`) directly above the new `METHODS` clause to replace its attached documentation; omit it to keep the current documentation.
 
 ```jsonc
 {
@@ -1104,7 +1119,7 @@ Drops both the METHODS clause and the METHOD…ENDMETHOD body in one PUT. ABSTRA
 
 #### `action="change_method_visibility"` — move a method between sections (body preserved)
 
-Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
+Moves a method's METHODS clause from its current visibility section to a target section (`public` / `protected` / `private`). Its directly attached ABAP Doc (`"!`) moves with it; blank lines and ordinary comments mark the boundary. Touches the **DEFINITION only** — the IMPLEMENTATION block (the method body) is preserved verbatim. This is the safe, token-efficient way to change visibility: send the method name + target section instead of re-sending the whole DEFINITION (`edit_class_definition`), and without the data loss of `delete_method` + `add_method`.
 
 - Interface method redefinitions must remain public; protected/private moves are refused before saving.
 - Idempotent: if the method is already in the target section, it's a no-op (no write).
@@ -1248,6 +1263,12 @@ writes and cleanup.
 
 Activate ABAP objects. Supports single object or batch activation.
 
+Activation has a five-minute client budget shared by the initial request, preaudit confirmation,
+and any ED064 fallback. A timeout or cancellation leaves completion unconfirmed; SAP may keep
+working. Check `SAPRead(type="INACTIVE_OBJECTS")` and read the object with `force_refresh=true`
+before another activation. An active definition alone does not prove dependent generation has
+finished. ARC-1 does not replay activation after availability or database-session errors.
+
 **Parameters:**
 
 | Parameter | Type | Required | Description |
@@ -1287,8 +1308,7 @@ unconfirmed: use `SAPRead(type="SRVB", name="…")` to inspect state before anot
 Minimal errors retain HTTP status and request-correlation guidance while hiding SAP details.
 Existing authentication/CSRF/content-negotiation handling remains: a 403 on the publish POST
 still refreshes the CSRF token and re-sends once, even when the 403 has another cause. Thus
-one publish invocation can still contain multiple protocol sends. Unpublish and other
-operations keep their existing retry policies.
+one publish invocation can still contain multiple protocol sends. Unpublish keeps its existing retry policy; activation also disables transient replay as described above.
 
 **Examples:**
 ```
@@ -1320,7 +1340,9 @@ The existing actions below are unchanged.
 | `uri` | string | No | Source URI of the object. Optional for `references` if `type`+`name` are provided. |
 | `type` | string | No | Object type (PROG, CLAS, INTF, FUNC, etc.) — alternative to `uri` for `references`. |
 | `name` | string | No | Object name — alternative to `uri` for `references`. |
-| `objectType` | string | No | For `references`: keep only results of this ADT type, slash format (`CLAS/OC`, `PROG/P`, `FUGR/FF`). A bare prefix (`CLAS`) matches every subtype. Applied client-side. |
+| `objectType` | string | No | For `references`: keep only results of this ADT type, slash format (`CLAS/OC`, `PROG/P`, `FUGR/FF`). A bare prefix (`CLAS`) matches every subtype. Always filtered locally. |
+| `packages` | string[] | No | For `references`: 1–20 exact package names, e.g. `["$TMP"]`. No wildcards or implicit subpackages. |
+| `detail` | string | No | For `references`: `objects` (default), `positions`, or `snippets`. Details expand at most 10 native nodes. |
 | `maxResults` | number | No | For `references`: max entries (default 100, max 1000). `total` counts every match of the filter. |
 | `line` | number | No | Line number (1-based). For `references`, together with `column`: search the symbol at that position. |
 | `column` | number | No | ADT cursor column (0-based integer) |
@@ -1346,9 +1368,9 @@ For `relations`, use only `action`, `type`, `name` and its four optional paramet
 navigation parameters (`uri`, `objectType`, `line`, `column`, `source`) are rejected. See the
 [experimental guide](live-relations.md) for coverage limits and examples.
 
-**References action (Where-Used):** Uses the full scope-based Where-Used API, returning detailed results with package info. Falls back to the simpler reference lookup on older SAP systems that don't support the scope endpoint.
+**References action (Where-Used):** Uses SAP's Where-Used API and returns reference entries with package info. Ordinary lookups fall back to the simpler reference API when the main endpoint is unavailable. A missing native scope endpoint alone does not require that fallback.
 
-Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, searchedFor?, warning?, references}` — because where-used is
+Returns a paged envelope — `{total, countMeaning, shown, truncated, hint?, searchedFor?, warning?, scopeFiltering?, usageDetails?, references}` — because where-used is
 unbounded: `CL_ABAP_TYPEDESCR` has 6,644 references (~968K tokens, several times a context window).
 **`total` counts matching reference entries before paging, not distinct consumer objects or runtime
 calls.** The `countMeaning` field states this explicitly. Tree/container rows and multiple references
@@ -1356,17 +1378,34 @@ to one object can appear; even an untruncated or empty page is not proof of syst
 If optional interface-implementer enrichment fails, native results are retained with a `warning`.
 An absent warning does not prove that enrichment ran or that the result is complete.
 
-Paging and `objectType` filtering are both client-side, and deliberately so: SAP's
-`usageReferences` endpoint declares only `{?uri}` and ignores every limit or filter we can send
-(verified live across nine request variants, all byte-identical). The full set therefore still
-crosses the wire — this bounds what reaches the model, not what SAP computes.
+`packages` uses native scope when discovery advertises it (verified on 2025 and BTP).
+Otherwise package filtering is local and the full native result still crosses the wire.
+`scopeFiltering` reports `server` or `client` for package-filtered requests. `objectType` filtering
+and paging always happen locally; object-type-only lookups keep the existing request path.
+Package filters exclude package container rows. Optional interface-implementer enrichment is
+skipped with a warning because that lookup provides no package names.
+
+`detail="positions"` or `"snippets"` adds `usageDetails.usages`: object, component, URI, position
+and SAP's raw `matches` (access/grade). Snippets also include up to 1,000 characters of the code
+line, with `snippetTruncated` when cut. Method positions can be relative to the named component;
+use the URI and component together, rather than treating every line as a full-class source line.
+Snippets come from SAP's working-area source, which can include unactivated edits and differ
+from the indexed source.
+
+Details expand at most 10 native identifiers in one request. `identifiersAvailable`,
+`identifiersExpanded`, `unexpandedEntries`, `shown` and `truncated` expose the limits; entries
+without identifiers remain in the object list but cannot be expanded. `identifiersWithoutUsages`
+counts expanded nodes for which SAP returned no usage entries. `maxResults` caps each
+returned list. The native request sequence has a 30-second deadline, an 8 MiB metadata budget
+and a separate 2 MiB snippet budget. Budget or authorization failures return errors. Missing
+snippet capability is reported explicitly; ARC-1 does not guess usages by scanning source.
 
 Without a position, `references` searches the whole object. With `line` and `column` (both, as ADT
 cursor coordinates: line from 1, column from 0) it searches the symbol at that position in the source
 behind `uri`, for example one method of a class; `type`+`name` positions refer to the main source.
 ARC-1 sends the cursor as the URI fragment `#start=<line>,<column>`, replacing any fragment already in
 `uri`. When the cursor is not on an identifier, SAP silently searches the whole object instead. A
-position search therefore returns `searchedFor`: SAP's result description, verbatim, which names
+search therefore returns `searchedFor` when SAP supplies it: SAP's result description, verbatim, which names
 what was searched, for example `References for: /SCWM/CL_TM - CLEANUP (Method) [SID]` or, after a
 fallback, `References for: /SCWM/CL_TM (Class) [SID]`. The wording differs by release. If SAP omits
 the description (including on the older fallback endpoint), a `warning` says the searched symbol
@@ -1389,6 +1428,7 @@ not enumerate subclasses or prove a complete inheritance/implementation list.
 SAPNavigate(action="definition", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=5, source="...")
 SAPNavigate(action="references", uri="/sap/bc/adt/oo/classes/zcl_order")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER")
+SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", packages=["ZORDERS"], detail="snippets")
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", line=12, column=12)
 SAPNavigate(action="references", type="CLAS", name="ZCL_ORDER", objectType="PROG/P")
 SAPNavigate(action="completion", uri="/sap/bc/adt/programs/programs/ztest/source/main", line=10, column=15, source="...")
@@ -1419,21 +1459,22 @@ proposals, without proving that no matching identifier exists.
 ## SAPQuery
 
 `SAPQuery` has distinct paths for semantic data actions and freestyle ABAP SQL. Choose
-`action="long_text"` for saved SAPscript texts; use `sql` for an arbitrary ABAP SQL query. These
-paths have separate authorization gates. The long-text action requires the `data` scope and
+`action="long_text"` for saved SAPscript texts or `action="application_log"` for a known SLG1 log;
+use `sql` for an arbitrary ABAP SQL query. The bounded actions require the `data` scope and
 `SAP_ALLOW_DATA_PREVIEW=true`; freestyle SQL requires `sql` scope and `SAP_ALLOW_FREE_SQL=true`.
-Both capabilities are disabled by default. Long-text access does not enable or require free SQL.
+All are disabled by default. Bounded data access does not enable or require free SQL.
 
-**Upgrading with data preview already enabled:** eligible callers also gain `long_text`.
-Add `SAPQuery.long_text` to `SAP_DENY_ACTIONS` to keep it disabled.
+**Upgrading with data preview already enabled:** eligible callers gain both bounded actions.
+Use `SAP_DENY_ACTIONS` to disable `SAPQuery.long_text` or `SAPQuery.application_log` individually.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | No | Set to `"long_text"` for the bounded stored-SAPscript contract below. Omit it or use `"sql"` for freestyle ABAP SQL. |
+| `action` | string | No | `"long_text"` for stored SAPscript or `"application_log"` for saved SLG1 messages. Omit it or use `"sql"` for freestyle ABAP SQL. |
 | `longText` | object | For `action="long_text"` | Required request: `mode="discover"` with `object`+`namePrefix` (optional `id`, `language`, `limit`), `mode="read"` with `keys`, or `mode="search"` with `keys`+`phrase`. |
-| `sql` | string | For freestyle SQL | ABAP SQL SELECT statement; omit for `action="long_text"`. |
+| `applicationLog` | object | For `action="application_log"` | Exact `logNumber`, optional `maxRows` (default 50, max 100) and `offset` (default 0, max 5000). |
+| `sql` | string | For freestyle SQL | ABAP SQL SELECT statement; omit for bounded data actions. |
 | `maxRows` | number | No | Freestyle SQL only: maximum rows (default 100, clamped to 10,000). Wide results can hit the server byte ceiling much earlier. |
 
 <a id="stored-sapscript-long-texts"></a>
@@ -1485,6 +1526,38 @@ formats, INCLUDE expansion, and rendering are unsupported. Treat SAPscript comma
 Reads detect observed changes but do not guarantee a transactional snapshot. This is separate
 from ABAP `TEXT_ELEMENTS`, message-class texts, and form layouts. See the
 [qualification evidence and technical limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-17-stored-text-integration-evals.md).
+
+### Saved application logs (`action="application_log"`)
+
+Read a known **SLG1 log number** using SAP's `APL_LOG_MANAGEMENT_SRV` service. Enable
+`SAP_ALLOW_DATA_PREVIEW=true`; authenticated callers need `data` scope and SAP service/log
+authorizations. No RFC, ABAP helper, or free SQL is used.
+
+Use this to inspect errors from a saved import, background job, or activation log. If you only
+know the job or business document, first find its log number in SAP (for example, SLG1).
+
+```json
+{"action":"application_log","applicationLog":{"logNumber":"00000000000000000042","maxRows":50}}
+```
+
+Copy the exact 20-digit number from SAP, including leading zeros. The result contains the log
+header and SAP-rendered messages. When `more=true`, use the returned `nextOffset` as `offset`.
+Default page size is 50, maximum 100; offsets stop at 5000. `limitReached=true` means the read
+is incomplete and cannot continue through this action. Paging is not a snapshot.
+`not_found_or_not_visible` means no log is visible for that number, not proof that it does not exist.
+A successful empty result contains no messages on that page. `hasLongText` and `hasDetails`
+indicate availability; their contents are not returned. Message `number` identifies a row in
+the log, not a T100 message class/number.
+
+This first version does not discover logs or expand message details/long texts. It is qualified
+on the tested 7.58 system; other systems need the native service enabled and accessible. BTP ABAP
+targets and deployments with `SAP_BLOCKED_DATA_SOURCES` configured are unsupported. SAP loads
+the selected log internally even when ARC-1 returns a small page. To disable this action alone,
+set `SAP_DENY_ACTIONS=SAPQuery.application_log`.
+
+If SAP returns `No service found` (`/IWFND/MED/170`), ask Basis to check this service's Gateway
+registration in `/IWFND/MAINT_SERVICE`. That response can be HTTP 403; it does not establish
+that the user lacks log permissions. ARC-1 does not activate services or bypass the error.
 
 ### Freestyle SQL behavior
 
@@ -1866,7 +1939,7 @@ shortcut is no longer used. See
 
 ### action="structure" — DDIC includes + append structures (TABL only)
 
-Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from the TABL source (`include <name>;`, named includes, and classic `.INCLUDE`) and resolves append/extension structures through ADT where-used. Append candidates are only returned after ARC-1 reads the candidate source and confirms it contains `extend type <base> with`; `.APPEND` is not parsed from the base source because ADT does not emit append structures there.
+Returns a JSON tree for a DDIC structure or transparent table. ARC-1 parses embedded includes from the TABL source (`include <name>;`, named includes, and classic `.INCLUDE`) and resolves append/extension structures through ADT where-used. Append candidates are only returned after ARC-1 reads the candidate source and confirms it contains `extend type <base> with`; `.APPEND` is not parsed from the base source because ADT does not emit append structures there. A missing where-used endpoint or more than 50 structure candidates leaves the include tree intact and adds an incomplete-discovery warning. Large where-used searches can add latency even when the candidate cap stops source inspection. Results reflect SAP’s current index; an empty result does not prove that no append exists.
 
 **Example:**
 ```json
@@ -1998,7 +2071,8 @@ entries before paging, not distinct objects or runtime calls** (`shown` is the p
 `countMeaning` explains the count; an optional `warning` reports failed interface-implementer
 enrichment without discarding native results. No warning is not proof of complete coverage.
 For class-only results use `SAPNavigate(action="references", objectType="CLAS/OC", type=..., name=...)`;
-`SAPContext.usages` has no result-type filter. Navigation uses `total` and `references` instead of
+`SAPContext.usages` has no result-type filter. Both `usages` and `impact` preserve SAP’s search
+explanation in `searchedFor` when supplied, including unsupported-position explanations. Navigation uses `total` and `references` instead of
 `usageCount` and `usages`. `SAPContext(action="impact")` caps each downstream bucket while `summary`
 keeps the unsliced bucket counts, not a guarantee of every system dependency.
 
@@ -2125,9 +2199,9 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `action` | string | Yes | `syntax`, `unittest`, `unittest_ci`, `atc`, `atc_ci`, `atc_variants`, `cds_testcases`, `dumps`, `traces`, `trace_start`, `trace_requests`, `trace_cancel`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `apply_quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, `sql_trace_directory`, or `authorization_trace` |
-| `name` | string | No | Object or package name (required for syntax/unittest/object_state/quickfix/apply_quickfix, and atc without objects; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
-| `objects` | array | No | ATC only: 1–20 `{type,name}` entries instead of top-level `name`, `type`, or `url`. Supported: `CLAS`, `INTF`, `PROG`, `FUGR`, `DDLS`, `DCLS`, `BDEF`, `DDLX`, `SRVD`, `SRVB`, `TABL`, `DTEL`, `DOMA`. `TABL` includes tables and structures (`TABL/DT` and `TABL/DS` aliases). Names and type aliases are normalized; duplicates execute once. No package expansion or per-item system selection. `PROG` is on-premises only. |
+| `action` | string | Yes | `syntax`, `unittest`, `unittest_ci`, `atc`, `atc_ci`, `atc_variants`, `cds_testcases`, `dumps`, `feed_schema`, `traces`, `trace_start`, `trace_requests`, `trace_cancel`, `system_messages`, `gateway_errors`, `object_state`, `quickfix`, `apply_quickfix`, `odata_perf`, `cds_sql`, `sql_trace_state`, `set_sql_trace_state`, `sql_trace_directory`, or `authorization_trace` |
+| `name` | string | No | Object or package name (required for unittest/object_state/quickfix/apply_quickfix, and syntax/atc without objects; the CDS entity / DDLS source name for `cds_testcases` and `cds_sql`) |
+| `objects` | array | No | ATC or syntax: 1–20 `{type,name}` entries instead of top-level `name`, `type`, or `url`. Syntax supports `CLAS`, `INTF`, `PROG`, `DDLS` only. ATC supports `CLAS`, `INTF`, `PROG`, `FUGR`, `DDLS`, `DCLS`, `BDEF`, `DDLX`, `SRVD`, `SRVB`, `TABL`, `DTEL`, `DOMA`. `TABL` includes tables and structures (`TABL/DT` and `TABL/DS` aliases). Names and type aliases are normalized. ATC duplicates execute once; syntax duplicates are rejected. No package expansion or per-item system selection. `PROG` is on-premises only. |
 | `url` | string | No | For `odata_perf`: the host-relative OData path to probe (from the Fiori app's Network tab), e.g. `/sap/opu/odata4/sap/.../Entity?$filter=...`. Must be a path on the SAP system ARC-1 connects to — absolute URLs are rejected. |
 | `type` | string | No | Object type. `unittest` supports `CLAS`, `PROG`, `FUGR`, and `DEVC` (package); other actions accept their documented ADT types. |
 | `sourceUri` | string | No | Exact ADT source URI for quickfix/apply_quickfix; defaults to the type/name main source. Use it for class-local includes. |
@@ -2146,9 +2220,10 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 | `detailUrl` | string | No | For Gateway-error detail: canonical host-relative `/sap/bc/adt/gw/errorlog/...` path. Absolute URLs, traversal, encoded separators, and non-canonical encodings are rejected. |
 | `errorType` | string | No | Gateway error type required when requesting detail by `id` rather than `detailUrl`, e.g. `Frontend Error`. |
 | `user` | string | No | SAP-user filter for dumps, runtime feeds, or `authorization_trace` |
+| `filters` | array | No | Dumps list only: target-advertised `{attribute, operator, values}` conditions, combined with AND; eight conditions including `user` |
 | `authObject` | string | No | For `authorization_trace`: filter to one authorization object, for example `S_TCODE` |
-| `from` | string | No | Lower time boundary for `system_messages`/`gateway_errors`. |
-| `to` | string | No | Upper time boundary for `system_messages`/`gateway_errors`. |
+| `from` | string | No | Lower time boundary for `dumps`/`system_messages`/`gateway_errors`. |
+| `to` | string | No | Upper time boundary for `dumps`/`system_messages`/`gateway_errors`. |
 | `onlyFailures` | boolean | No | For `authorization_trace`: return only denied checks (`RC <> 0`) |
 | `maxResults` | number | No | Maximum results (default 50 for dumps/feeds, 100 for `authorization_trace`; safely capped) |
 | `sections` | array | No | Dump chapter IDs for detail mode, e.g. `["kap0","kap3","kap8"]`; omit for focused defaults. |
@@ -2172,7 +2247,7 @@ administrators can disable them with `SAP_DENY_ACTIONS`.
 
 **Actions:**
 
-- **`syntax`** — Compatibility route; prefer [SAPRead syntax checks](#read-only-syntax-checks). `version` defaults to active; inactive checks a saved draft. Optional `source` checks unsaved text without writing. Returns errors/warnings with line, column, and message; `checked:false` means no validation occurred.
+- **`syntax`** — Check an explicit `objects` list in one request (see [syntax batches](#check-several-objects-for-syntax-errors)). For a single object, prefer [SAPRead syntax checks](#read-only-syntax-checks). `version` defaults to active; inactive checks a saved draft. For single objects, optional `source` checks unsaved text without writing. Returns errors/warnings with line, column, and message; `checked:false` means no validation occurred.
 - **`unittest`** — Run ABAP unit tests for one `CLAS`, `PROG`, or `FUGR`, or for a whole `DEVC` package, with the maximum risk fixed to **harmless** (`dangerous=false`, `critical=false`) and all three duration categories enabled. Package scope is exact by default; `includeSubpackages=true` explicitly includes the subtree. Native JUnit uses SAP's package object set; legacy, coverage, and corroboration runs use the resolved executable roots. ARC-1 reads package membership and active source before and after the run. Changed membership/source, unreadable source, invalid object URIs, and the 1,000-row package-search bound are incomplete evidence, never a pass. Returns results per test class/method with status, alert messages, and execution time. Risk-level refusals are skipped/incomplete evidence, not passing tests. Pass `coverage=true` to also return **statement / branch / procedure** coverage (`{executed, total, percent}` each) plus **`methodsBelowFull`** — the methods under 100% statement coverage, worst first — via a second ADT round-trip to the coverage-measurement endpoint; the output becomes `{tests, coverage}`. Best-effort — if the coverage endpoint is unavailable the tests still return with a `coverageNote`. Use `resultFormat="structured"` for explicit outcome/completeness evidence or `resultFormat="junit"` for native/generated JUnit; the latter still reconciles public-endpoint results with a harmless legacy run so missing risk alerts cannot turn the result green.
 - **`unittest_ci`** — Single-target CI adapter for explicit packages/package trees. Runs the existing harmless-only native AUnit API plus legacy and active-source reconciliation for each package under one deadline. Empty, all-skipped, omitted-test or otherwise incomplete evidence sets `fail:true` and `status:"incomplete"`; failures also set `fail:true`. Returns totals and per-package outcomes. No risky test or failure-bypass controls. Requires API availability and normal ADT source access. Uses the configured SAP identity; BTP API authorization may require `SAP_COM_0735`.
 
@@ -2193,7 +2268,8 @@ Both CI actions are excluded from multi-target mode. Software-component selectio
 - **`object_state`** — Compare active and inactive source versions for one object. For `CLAS`, ARC-1 checks main, definitions, implementations, macros, and testclasses includes (up to 10 parallel reads per class; sequence calls when sweeping many classes). Returns ETags, byte lengths, SHA-256 hashes, and divergence flags without returning full source. Useful for diagnosing activation failures where active and inactive class includes disagree. Server-driven types are refused because SAP may substitute one version for another; matching hashes alone cannot prove version identity. Use `SAPRead` with an explicit `version` for those types.
 - **`quickfix`** — Get SAP quickfix proposals for a specific source position (`name`, `type`, `source`, `line`, optional `column`). Classes/interfaces must already exist in SAP; activation and saving the supplied edits are not required. Returns proposal entries with `uri`, `type`, `name`, `description`, `userContent`.
 - **`apply_quickfix`** — Apply one proposal (`proposalUri` + `proposalUserContent`) and return text deltas (range + replacement content). The class/interface must still exist. Preserve the returned whitespace, review affected objects, and syntax-check the edited buffer: SAP can suggest incomplete types. This does not write source; use `SAPWrite` to persist.
-- **`dumps`** — List short dumps (ST22). Without `id`: returns recent dumps (filterable by `user`, `maxResults`). With `id`: returns full dump detail including error type, exception, program, stack trace, and formatted output.
+- **`dumps`** — List short dumps (ST22), newest first, with `user`, `from`, `to`, `maxResults` and optional typed `filters`. With `id`: read full detail including error type, exception, program, stack trace and formatted output; filters are refused in detail mode.
+- **`feed_schema`** — Optional discovery of supported dump attributes/operators; accepts only `action`. Known filters can be called directly.
 - **`traces`** — List ABAP profiler traces. Without `id`: returns trace list. With `id` + `analysis`: returns trace analysis (`hitlist` = call hierarchy with hit counts and timings, `statements` = executed statements, `dbAccesses` = database access details).
 - **`trace_start`** — Arm an ABAP profiler request for the next matching execution. Defaults to the next HTTP request by the connected user, with SQL capture on. This changes SAP trace-request state and needs `write` scope plus `SAP_ALLOW_WRITES=true`; reproduce the workload, then read it through `traces`.
 - **`trace_requests`** — List armed profiler requests, optionally filtered by `traceUser`. Read-only.
@@ -2244,6 +2320,66 @@ SAPDiagnose(action="sql_trace_state")                               — is the S
 SAPDiagnose(action="set_sql_trace_state", sqlOn=true, user="DEVELOPER") — arm the SQL trace for one user (needs SAP_ALLOW_WRITES)
 SAPDiagnose(action="sql_trace_directory")                           — get SAP's SQL Trace Analysis deep-link to read the records
 ```
+
+### Check several objects for syntax errors
+
+Use `SAPDiagnose` with an explicit list of stored objects:
+
+```json
+{
+  "action": "syntax",
+  "objects": [
+    { "type": "CLAS", "name": "ZCL_ORDER" },
+    { "type": "DDLS", "name": "ZI_ORDER" }
+  ],
+  "version": "active"
+}
+```
+
+- Up to 20 distinct classes, interfaces, programs or CDS definitions. Programs are on-premises only.
+- `active` is the default; `inactive` requests drafts. For unsaved text or another object type,
+  use the existing single-object `SAPRead(type="SYNTAX", objectType, name, source?)`.
+- Each object is `passed`, `failed` or `not-checked`. The overall result is `incomplete` when
+  reports are missing, ambiguous or unowned; inspect the per-object findings, including known failures.
+- One native check request, with a 30-second deadline and 512-KiB response-body limit. No automatic
+  single-object retries. Omit top-level `name`, `type`, `url` and `source` for batches.
+- This checks stored source at execution time. It does not prove a historical transport snapshot,
+  activation success or a source hash. SAP may report warnings even when syntax passes.
+
+Class/interface/program/CDS batches were read-only tested on A4H/001 (previously recorded 758 SP02),
+including an existing inactive error and an absent program. Live BTP/PP and other releases remain
+unqualified. [Plan and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-19-bounded-syntax-checks.md).
+
+### Find a particular runtime error
+
+Call the list directly when the filter is known:
+
+```json
+{
+  "action": "dumps",
+  "from": "2026-10-17",
+  "to": "2026-10-17T23:59:59Z",
+  "maxResults": 20,
+  "filters": [{ "attribute": "runtimeError", "operator": "equals", "values": ["MESSAGE_TYPE_X"] }]
+}
+```
+
+If SAP does not advertise an attribute/operator, the call returns an error without listing
+unfiltered dumps. `SAPDiagnose({"action":"feed_schema"})` can help choose a supported filter;
+there is no mandatory discovery step. Each filtered call validates against the selected target.
+
+| Contract | Behavior |
+|---|---|
+| Combination | Flat AND, up to eight conditions including a nonempty legacy `user`; no OR or nested expressions |
+| Values | One or two values as advertised. Strings: 1–128 ASCII letters/digits or `_ / $ . -` (without spaces). Wildcards, whitespace and query delimiters are refused. Datetimes: valid UTC `YYYYMMDDHHMMSS`. |
+| Paging | Existing inclusive `from`/`to`, deduplication and 500-row cap; every page retains the filters. A same-second paging limit stays an error. |
+| Budgets | Filtered list: 30 seconds and 2 MiB cumulative schema/page bodies. Standalone schema: 15 seconds / 256 KiB. No shared schema cache. |
+| Compatibility | Ordinary list/detail calls keep their request behavior. `filters: []` is treated as omitted. A `user` combined with filters must meet the narrower string rules. |
+| Policy | Both actions require read scope. Denying `SAPDiagnose.feed_schema` hides explicit discovery; allowed `dumps` still validates its own filters internally. |
+
+The extraction is live-qualified on A4H/001 (last recorded SAP_BASIS 758 SP02). Other targets,
+attributes and operators need their own qualification; advertised metadata alone does not prove
+matching semantics. [Validation and remaining gaps](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-17-dump-filter-extraction.md).
 
 ### Quickfix Workflow
 

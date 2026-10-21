@@ -259,7 +259,7 @@ npm run btp:validate
 | Update vulnerability reporting policy | `SECURITY.md` (Supported Versions, Reporting channels, Response SLAs, CVE handling, Out of Scope, Safe Harbor) |
 | Add CLI sub-command (`call`, `tools`, shortcuts) | `src/cli.ts` (Commander wiring), `src/cli-args.ts` (pure arg parsing + tests) — never duplicate Zod validation; `handleToolCall` does it. |
 | Add SAP version-quirk workaround (NW 7.50 / S/4 gating) | Prefer `extractExceptionType` in `src/adt/errors.ts` (structured XML error). Body-marker heuristics only with a release-scoped guard — see `convertHtmlConflictToProperError` in `src/adt/crud.ts` (scoped to `abapRelease < 751`). Inline-comment why the heuristic self-scopes. ADR-0002 (#199). |
-| Add activation batch quirk recovery | `src/adt/devtools.ts` (`activateBatch`, ED064 retry helper), `tests/unit/adt/devtools.test.ts`. Pure ED064 / "no next/previous object found" failures retried once as individual activations; mixed real errors must not retry. |
+| Add activation batch quirk recovery | `src/adt/devtools.ts` (`activateBatch`, ED064 retry helper), `tests/unit/adt/{devtools,activation-timeout}.test.ts`. Pure ED064 retries singles; mixed real errors must not retry. The initial POST, preaudit confirmation and singles share one 300 s deadline and caller signal; transient HTTP errors are not replayed. |
 | Add a plugin elicitation prompt (`ctx.elicit`) | `src/server/plugin-loader.ts` (`buildMcpCapabilities`) — the only live elicitation path (opt-in, for extension tools). Core tools have no interactive elicitation; destructive-op safety is the config ceiling (`allowWrites`/`allowedPackages`/`denyActions`). |
 | Add XSUAA/JWT auth | Provided by [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth) (`createXsuaaTokenVerifier` / `createChainedTokenVerifier`); wired in `src/server/http.ts` + `src/server/server.ts`. (Was `src/server/xsuaa.ts`, extracted in #456.) |
 | Modify OAuth DCR client store / signed-token format | Now [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth)'s `StatelessDcrClientStore`; ARC-1 sets `clientIdPrefix: 'arc1-'` + `dcrKdfLabel: 'arc1-dcr/v1'` in `src/server/http.ts`. Bump the kdf label to revoke issued client_ids. Audit: `oauth_client_registered`/`oauth_client_lookup_failed`/`oauth_redirect_uri_registered`. (Was `src/server/stateless-client-store.ts`, extracted in #456.) |
@@ -403,3 +403,16 @@ passed subsequent checks; the SAP-internal cause remains inferred. See the
 - **Not yet shipped** (see `docs/plans/2026-06-12-test-isolation-and-parallel-runs.md`): CI `retry: 1` paired
   with flake telemetry (H2), a parallel read-only e2e project (F2), and a cross-run flake-aggregation
   workflow (H3). The plan rates these measure-first / conditional on the F1 numbers.
+
+## Dump feed filters
+
+`feed-schema.ts` reads only the fixed dumps schema, compiles bounded flat AND conditions and
+creates one filtered-call budget. `diagnostics.ts` retains cursor paging and the legacy query
+encoder. `dump-filter-inputs.ts` owns schema fragments and action-specific validation. Keep the
+JSON schema, Zod, handler, policy and multi-target allowlist aligned. Unfiltered calls must remain
+exactly `(path, headers)` without new schema/budget options. Typed values are deliberately narrower
+than legacy `user`; do not broaden them without wire evidence.
+
+Tests: `tests/unit/{adt,handlers}/dump-filters.test.ts`, existing diagnostics and tool-surface tests.
+[Evidence](research/2026-10-17-dump-filter-extraction.md) distinguishes live matching from synthetic
+pagination/model checks. See [usage](../docs_page/tools.md#find-a-particular-runtime-error).

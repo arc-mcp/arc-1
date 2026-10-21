@@ -170,6 +170,17 @@ function buildBaseErrorMessage(
   config: ServerConfig,
 ): string {
   if (err instanceof AdtRequestBudgetError || err instanceof AdtAnalysisDeadlineError) return message;
+  if (err instanceof AdtError && err.activationOutcome === 'unknown') {
+    // The activation boundary attaches inspection guidance; suppress generic replay/connectivity hints.
+    if (!config.minimalErrors) {
+      return err instanceof AdtApiError && !err.diagnosticsOmitted
+        ? withDependentSyntaxHint(err, enrichWithSapDetails(err, message))
+        : message;
+    }
+    return err instanceof AdtApiError
+      ? formatMinimalAdtError(err)
+      : 'Activation request failed. Use the request ID to correlate server-side logs.';
+  }
   if (err instanceof AdtError && err.pluginPostOutcome === 'unknown') {
     const detail = config.minimalErrors
       ? err instanceof AdtApiError
@@ -194,6 +205,9 @@ function buildBaseErrorMessage(
     }
     return `${detail}\nCreate completion is unconfirmed. ${inspection} Do not blindly repeat create.`;
   }
+  if (err instanceof AdtResponseLimitError && ['where-used', 'where-used snippets'].includes(err.endpointFamily)) {
+    return `${message} Narrow with packages where native scope is supported, a cursor, or a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
+  }
   if (err instanceof AdtResponseLimitError && err.endpointFamily === 'repository-relations') {
     return `${message} Reduce depth or choose a smaller root. maxResults does not reduce SAP's native response size. This is an analysis limit, not a connectivity failure.`;
   }
@@ -203,11 +217,20 @@ function buildBaseErrorMessage(
   if (err instanceof AdtResponseLimitError) {
     const mebibytes = err.limitBytes / (1024 * 1024);
     const displayLimit = Number.isInteger(mebibytes) ? `${mebibytes} MiB` : `${err.limitBytes}-byte`;
+    const hint =
+      err.endpointFamily === 'syntax-batch'
+        ? 'Check fewer objects or use single-object SYNTAX.'
+        : err.endpointFamily === 'feed-schema'
+          ? 'Inspect the advertised feed schema in SAP ADT; this response cannot be paged here.'
+          : err.endpointFamily === 'dumps'
+            ? 'Narrow from/to or filters, or lower maxResults.'
+            : undefined;
     return toolJson({
       error: err.code,
-      message:
-        `The SAP data-preview result exceeded the ${displayLimit} server limit. ` +
-        'Submit a new request with lower maxRows, fewer columns, or a restrictive non-overlapping key-range WHERE clause.',
+      message: hint
+        ? `The SAP diagnostic response exceeded the ${displayLimit} limit. ${hint}`
+        : `The SAP data-preview result exceeded the ${displayLimit} server limit. ` +
+          'Submit a new request with lower maxRows, fewer columns, or a restrictive non-overlapping key-range WHERE clause.',
       limitBytes: err.limitBytes,
       retryable: false,
       requestId: err.requestId ?? getCurrentContext()?.requestId,
@@ -345,12 +368,8 @@ function buildBaseErrorMessage(
     }
     // Server errors (500, 502, 503, etc.)
     if (err.isServerError) {
-      // Detect syntax errors in dependent objects (e.g., BDEF syntax errors blocking SRVB activation)
-      const syntaxMatch = err.message.match(/[Ss]yntax error in program (\S+)/);
-      if (syntaxMatch) {
-        const program = syntaxMatch[1].replace(/=+\w*$/, ''); // Strip "====BD" padding
-        return `${enriched}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first, then retry. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
-      }
+      const syntaxHint = withDependentSyntaxHint(err, enriched);
+      if (syntaxHint !== enriched) return syntaxHint;
       return `${enriched}\n\nHint: SAP application server error (${err.statusCode}). This is often transient — wait 10-30 seconds and retry. If the error persists, check SAPDiagnose(action="dumps") for short dumps, or verify the SAP system is responding via SAPRead(type="SYSTEM").`;
     }
     return enriched;
@@ -374,6 +393,12 @@ function buildBaseErrorMessage(
   }
 
   if (err instanceof AdtNetworkError) {
+    if (err.isTimeout) {
+      return `${message}\n\nHint: The SAP request exceeded its client time limit. SAP may still be processing it; check the operation's state before retrying.`;
+    }
+    if (err.isCancelled) {
+      return `${message}\n\nHint: The SAP request was cancelled. Submitted work may continue in SAP; check its state before retrying.`;
+    }
     if (tool === 'SAPRead' && String(args.type ?? '').toUpperCase() === 'SYSTEM') {
       return (
         `${message}\n\nHint: Connectivity probe failed. Fix connectivity first, then retry ` +
@@ -492,6 +517,14 @@ function resultTextForAuditPreview(toolName: string, content: ToolResult['conten
     if (prefix.length >= 501) break;
   }
   return prefix;
+}
+
+/** Preserve dependent-object syntax guidance without suggesting a generic server-error replay. */
+function withDependentSyntaxHint(err: AdtApiError, message: string): string {
+  const syntaxMatch = err.isServerError && err.message.match(/[Ss]yntax error in program (\S+)/);
+  if (!syntaxMatch) return message;
+  const program = syntaxMatch[1].replace(/=+\w*$/, ''); // Strip "====BD" padding
+  return `${message}\n\nHint: A dependent object has syntax errors that block this operation. The program "${program}" has syntax errors — fix those first, then retry. Use SAPRead to inspect the object, or SAPDiagnose(action="dumps") for details.`;
 }
 
 /** Enrich error message with additional SAP XML diagnostic detail (extra messages, properties) */
@@ -729,6 +762,14 @@ export function classifyMultiTargetSapError(
     };
   }
   const classification = classifySapDomainError(error.statusCode, error.responseBody, error.path);
+  if (classification?.category === 'gateway-service-not-found') {
+    return {
+      code: 'SAP_REQUEST_FAILED',
+      event: 'sap_service_unavailable',
+      message: `SAP Gateway could not resolve the OData service required by ${toolName} on target ${target}. Ask Basis to check service registration and routing in /IWFND/MAINT_SERVICE and /IWBEP/REG_SERVICE before retrying.`,
+      retryable: false,
+    };
+  }
   if (classification?.category === 'icf-service-inactive') {
     return {
       code: 'SAP_SERVICE_INACTIVE',
