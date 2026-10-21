@@ -147,6 +147,41 @@ describe('findIncludeStatements', () => {
   it.each([
     ['a string template with a period after its line break', 'DATA(s) = |a {\n  v }. b|.\nINCLUDE zinc1.', ['zinc1@3']],
     [
+      'an include on the closing line of a multiline template',
+      'DATA(s) = |a {\n  v }. b|. INCLUDE zsame.',
+      ['zsame@2'],
+    ],
+    [
+      'an include after multiline template text without a period',
+      'REPORT zr.\nDATA(t) = |a{ b\n }c|. INCLUDE zsame.',
+      ['zsame@3'],
+    ],
+    [
+      'an include after a quote in multiline template text',
+      'REPORT zr.\nDATA(t) = |a{ b\n }c"x|. INCLUDE zsame.',
+      ['zsame@3'],
+    ],
+    [
+      'an include chain on the closing line of a multiline template',
+      'REPORT zr.\nDATA(t) = |a{ b\n }|. INCLUDE: za, zb IF FOUND.',
+      ['za@3', 'zb@3?'],
+    ],
+    [
+      'an include after a three-line template expression',
+      "REPORT zr.\nDATA(t) = |a{ cond #(\n when x = 1 then 'y'\n else 'z' ) }.|. INCLUDE zsame.",
+      ['zsame@4'],
+    ],
+    [
+      'an include after nested multiline templates with escaped delimiters',
+      'DATA(t) = |a { |b {\n v } \\| \\{ INCLUDE zfake. | } c|. INCLUDE zsame.',
+      ['zsame@2'],
+    ],
+    [
+      'an include starting on a template closing line and continuing on the next',
+      'DATA(t) = |a {\n v } b|. INCLUDE\n zsame.',
+      ['zsame@3'],
+    ],
+    [
       'a string template with an apostrophe after its line break',
       "DATA(s) = |it {\n  v }'s|.\nINCLUDE zinc2.",
       ['zinc2@3'],

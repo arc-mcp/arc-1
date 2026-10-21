@@ -160,24 +160,43 @@ function includeStatementRanges(lines: string[]): Array<[number, number]> {
   let pending = false;
   let mentions = false;
   let start = 0;
+  let templateText = false;
+  let templateDepth = 0;
   const open = (row: number) => {
     if (!pending) start = row;
     pending = true;
   };
   for (let row = 0; row < lines.length; row++) {
     const line = lines[row]!;
-    if (line.startsWith('*')) {
+    // A later INCLUDE on this line must keep the prefix of a multiline statement too.
+    const rowStart = pending ? start : row;
+    if (!templateText && line.startsWith('*')) {
       pendingAtEnd[row] = pending;
       continue;
     }
     let i = 0;
     while (i < line.length) {
       const char = line[i]!;
+      // Keep template state across rows; { resumes code and } resumes text, including nested templates.
+      if (templateText) {
+        if (char === '\\') i += 2;
+        else {
+          if (char === '|') templateDepth--;
+          if (char === '|' || char === '{') templateText = false;
+          i++;
+        }
+        continue;
+      }
       if (char === '"') break;
-      if (char === "'" || char === '`' || char === '|') {
-        open(row);
+      if (char === '|' || (char === '}' && templateDepth > 0)) {
+        open(rowStart);
+        if (char === '|') templateDepth++;
+        templateText = true;
+        i++;
+      } else if (char === "'" || char === '`') {
+        open(rowStart);
         let j = i + 1;
-        while (j < line.length && line[j] !== char) j += char === '|' && line[j] === '\\' ? 2 : 1;
+        while (j < line.length && line[j] !== char) j++;
         i = j + 1;
       } else if (char === '.') {
         if (pending && mentions) ranges.push([start, row]);
@@ -185,13 +204,13 @@ function includeStatementRanges(lines: string[]): Array<[number, number]> {
         mentions = false;
         i++;
       } else if (isWordChar(line.charCodeAt(i))) {
-        open(row);
+        open(rowStart);
         let j = i + 1;
         while (j < line.length && isWordChar(line.charCodeAt(j))) j++;
         if (j - i === KEYWORD.length && line.slice(i, j).toUpperCase() === KEYWORD) mentions = true;
         i = j;
       } else {
-        if (char !== ' ' && char !== '\t' && char !== '\r') open(row);
+        if (char !== ' ' && char !== '\t' && char !== '\r') open(rowStart);
         i++;
       }
     }
