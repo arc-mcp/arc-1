@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-18
+**Last reviewed:** 2026-10-21
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -81,6 +81,8 @@ sequence.
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
+| [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
+| [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
@@ -116,6 +118,7 @@ sequence.
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
 | [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
+| [OPS-08](#ops-08) | SAP outage isolation and queue deadlines | P2 | M | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
 
@@ -417,6 +420,42 @@ source. This is an existing policy coverage limit, documented during
 SAP metadata for implicit dependencies and test representative releases. Choose a bounded proof or
 explicit refusal for affected functions; do not infer full lineage from the present graph or add a
 hard-coded table list without proving its completeness.
+
+<a id="sec-19"></a>
+### SEC-19 — Registered agent identity and downstream tool scopes
+
+- **Priority / effort / status:** P2 / L / Needs research
+- **Category:** Auth / Security
+
+**Idea.** Investigate a supported credential flow carrying a registered Cloud Identity Services
+agent identity and original user context, with downstream permissions narrowed for the invoked tool.
+
+**Why it remains.** SAP ref. 137800 requires these properties. ARC-1's PP flow preserves user context,
+but `clientAgent` is only an audit label and MCP tool scopes do not narrow the SAP credential per tool.
+See the [2026-10-21 evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md).
+
+**Resume with.** Tenant/release-specific SAP documentation and a test tenant supporting the required
+agent registration, delegation and scope contract. Prove user/agent attribution and fail-closed
+behavior without broadening existing PP or multi-target exceptions. Do not invent an IAS setup
+requirement or claim this resolves the separate ADT-channel permission question.
+
+<a id="compat-22"></a>
+### COMPAT-22 — Integration Suite remote MCP gateway validation
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Idea.** Validate ARC-1 behind Integration Suite's documented remote-MCP proxy and, if successful,
+document a supported configuration.
+
+**Why it remains.** Current SAP Help now documents Streamable HTTP remote MCP sources, superseding
+the July inventory. ARC-1 interoperability and delegated identity through the gateway are unverified.
+See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
+
+**Resume with.** A suitable Integration Suite plan, Integration Cell, documented discovery/runtime
+authentication and two users with different SAP permissions. Verify identity, scopes, tool filtering,
+audit/traces, quotas, errors and reconnect behavior. Do not silently substitute a shared credential
+for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
 
 ## Developer workflows
 
@@ -1022,6 +1061,24 @@ token lifetime, keep users isolated, and keep ADR-0007's request-local Basic cre
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
 the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
+
+<a id="ops-08"></a>
+### OPS-08 — SAP outage isolation and queue deadlines
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Operations
+
+**Idea.** Define target-specific circuit-breaker behavior and bounded queue waits for SAP calls.
+
+**Why it remains.** SAP ref. 137800 calls for outage protection. ARC-1 has HTTP timeouts, bounded
+retry paths and concurrency admission, but no built-in circuit breaker; ordinary semaphore waits
+lack a queue deadline. A semaphore does not suppress repeated calls to an unavailable backend.
+See the [current gap assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md).
+
+**Resume with.** Define transient-failure classification, target isolation, recovery probes, queue
+deadlines and actionable errors. Test outage/recovery without replaying uncertain writes, treating
+one user's authorization denial as a system outage, or letting one failed target block healthy ones.
+Compare application and gateway controls before choosing where the breaker belongs.
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener

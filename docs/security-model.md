@@ -199,15 +199,15 @@ with a least-privileged technical SAP identity and its own safety ceiling. This 
 mandatory: mixed mode is supported with explicit `SAP_PP_STRICT=false`, but one endpoint then has both
 per-user and shared SAP audit identities.
 
-> **ARC-1 never proxies the caller's token to a SAP API.** Principal propagation exchanges the user
-> JWT for a scoped, user-context credential — `OAuth2UserTokenExchange` / `OAuth2JWTBearer`
-> (RFC 8693) or a SAML bearer assertion, minted by the BTP Destination Service. One path looks like
-> an exception and is not: `SAP-Connectivity-Authentication: Bearer <userJwt>`
-> ([`multi-target-destination-runtime.ts`](../src/server/multi-target-destination-runtime.ts))
-> hands the user JWT to the **Cloud Connector**, which validates it and mints a short-lived X.509
-> user certificate for the on-premise call. The recipient is the connectivity proxy performing the
-> exchange, not a downstream business API — the SAP-prescribed CC principal-propagation flow. The
-> credential that actually reaches SAP is never the caller's MCP token.
+> **Principal propagation uses destination-specific credentials.** The configured flow can return
+> an exchanged user-context bearer token, a SAML assertion, or connectivity-proxy credentials that
+> lead to a short-lived X.509 user certificate for on-premise SAP. `OAuth2UserTokenExchange`,
+> `OAuth2JWTBearer` and `OAuth2TokenExchange` are distinct authentication types; do not describe
+> every exchange as RFC 8693. `SAP-Connectivity-Authentication: Bearer <userJwt>` in the
+> [multi-target runtime](../src/server/multi-target-destination-runtime.ts) is sent to the connectivity
+> intermediary for principal propagation, not used as the downstream SAP application's bearer token.
+> These flows preserve user context but do not establish registered agent identity or per-tool
+> narrowing of the downstream credential. See the [current architecture assessment](../docs_page/sap-api-policy-and-architecture.md).
 
 ---
 

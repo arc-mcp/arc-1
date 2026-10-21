@@ -204,7 +204,11 @@ Full reference: [xsuaa-setup.md](xsuaa-setup.md).
 ARC-1 starts **fully restrictive**. Every capability below is a positive opt-in. Per-user scopes (from JWT or API-key profile) can only restrict further — they never expand beyond what these flags allow. This is the server ceiling.
 
 !!! warning "Data preview and free SQL need explicit governance"
-    `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` expose higher-risk data paths, so they stay off by default and require explicit server opt-in for approved use cases — SAP's API Policy adds controls around large-scale extraction and ungoverned autonomous AI call patterns. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason) and [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md).
+    `SAP_ALLOW_DATA_PREVIEW` and `SAP_ALLOW_FREE_SQL` are technical gates, not API-policy permission.
+    SAP's FAQ Q33 places business-data reads and backend SQL outside ADT's intended development-tooling
+    scope. Keep these flags off unless the specific use has a documented allowance or SAP authorization
+    under the applicable agreements. See [authorization.md](authorization.md#sap-api-policy-data-preview-and-free-sql-are-gated-for-a-reason)
+    and [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md).
 
 ### Capability flags
 
