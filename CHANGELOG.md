@@ -5,6 +5,42 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.7.0](https://github.com/arc-mcp/arc-1/compare/v1.6.0...v1.7.0) (2026-10-21)
+
+
+### Features
+
+* add bounded dump filtering with optional schema discovery ([#1020](https://github.com/arc-mcp/arc-1/issues/1020)) ([b57006f](https://github.com/arc-mcp/arc-1/commit/b57006ff5c0d95e6ad724a843aa406ed95ec848c))
+* add package filters and native where-used details ([#1026](https://github.com/arc-mcp/arc-1/issues/1026)) ([a92ffa6](https://github.com/arc-mcp/arc-1/commit/a92ffa6e73b211142bdf1614f36c0e0ef56adcd0))
+* build single-file executables with Node SEA in GitHub Actions ([#1027](https://github.com/arc-mcp/arc-1/issues/1027)) ([a6ae0b6](https://github.com/arc-mcp/arc-1/commit/a6ae0b63d6df56c60e9d3aaa5b3adc28a84cc421))
+* check bounded syntax object lists through SAPDiagnose ([#1029](https://github.com/arc-mcp/arc-1/issues/1029)) ([ddc441d](https://github.com/arc-mcp/arc-1/commit/ddc441dd6c22f1cbe6505aeaf94671bfc6096a4a))
+* read saved SLG1 application logs via native SAP service ([#1024](https://github.com/arc-mcp/arc-1/issues/1024)) ([2827948](https://github.com/arc-mcp/arc-1/commit/2827948ece8ab326588b0f7605b99f196d98afe2))
+* read stored SAPscript long texts without RFC ([#1012](https://github.com/arc-mcp/arc-1/issues/1012)) ([37fece9](https://github.com/arc-mcp/arc-1/commit/37fece94359c8a48523af56b0ff71f52359a7c21))
+* **read:** expand nested includes of programs and includes ([#1037](https://github.com/arc-mcp/arc-1/issues/1037)) ([1fc1e94](https://github.com/arc-mcp/arc-1/commit/1fc1e94f9bfc9d9ff231088d2cc5fcc899997df4))
+
+
+### Bug Fixes
+
+* allow bounded long activations and report uncertain completion ([#1050](https://github.com/arc-mcp/arc-1/issues/1050)) ([e6df1fd](https://github.com/arc-mcp/arc-1/commit/e6df1fd6d8619d509c5b4610798c5ef76da59ede))
+* **deps:** patch follow-redirects and renew the node-forge audit exception ([#1054](https://github.com/arc-mcp/arc-1/issues/1054)) ([079dc69](https://github.com/arc-mcp/arc-1/commit/079dc694dc84b2706785d29738c92e5562da2f4e))
+* keep empty native syntax reports unchecked ([#1019](https://github.com/arc-mcp/arc-1/issues/1019)) ([498c12b](https://github.com/arc-mcp/arc-1/commit/498c12bbab1b4c6337e01e3451c5811ba8b8aa97))
+* keep SRVB read answers parseable JSON on cache hits and drafts ([#1017](https://github.com/arc-mcp/arc-1/issues/1017)) ([62691e4](https://github.com/arc-mcp/arc-1/commit/62691e409d93b128c70107861ffa203779786de0))
+* leave out an empty KTD parent description instead of sending it ([#1015](https://github.com/arc-mcp/arc-1/issues/1015)) ([59b3290](https://github.com/arc-mcp/arc-1/commit/59b32903b1b6ecd577f3bbc6bfbf3dc3fffa1b95))
+* make transport source reviews reliable and bounded over MCP ([#1008](https://github.com/arc-mcp/arc-1/issues/1008)) ([15db422](https://github.com/arc-mcp/arc-1/commit/15db42217a28634b3a64bed3dfd5fa90e432d942))
+* move ABAP Doc with method visibility changes ([#1051](https://github.com/arc-mcp/arc-1/issues/1051)) ([15fd80f](https://github.com/arc-mcp/arc-1/commit/15fd80f0978ca2aee9c66060951a22e173aa7d66))
+* open one SAP security session before a cold client fans out ([#1043](https://github.com/arc-mcp/arc-1/issues/1043)) ([3959961](https://github.com/arc-mcp/arc-1/commit/395996197236a7b7633a741cdc76bcaa41552f60))
+* replace attached ABAP Doc during class surgery ([#1049](https://github.com/arc-mcp/arc-1/issues/1049)) ([d5d080b](https://github.com/arc-mcp/arc-1/commit/d5d080b4f8216c3a03bab1b6cc203bf9c8d43b51))
+* resolve appends without the invalid where-used scope preflight ([#1022](https://github.com/arc-mcp/arc-1/issues/1022)) ([a778d05](https://github.com/arc-mcp/arc-1/commit/a778d057014e115772c53d9e55f4b451b1566f8e))
+* retry stateful CSRF discovery without session header ([#1046](https://github.com/arc-mcp/arc-1/issues/1046)) ([5cfbe93](https://github.com/arc-mcp/arc-1/commit/5cfbe9318f69b79dd34c5fbe58f13746b593afe6))
+* support native function parameter short texts ([#1055](https://github.com/arc-mcp/arc-1/issues/1055)) ([8d7171e](https://github.com/arc-mcp/arc-1/commit/8d7171e694971ed341887f82cd80128ade749c74))
+
+
+### Tests
+
+* capture where-used failure diagnostics ([#1058](https://github.com/arc-mcp/arc-1/issues/1058)) ([6e5fa3d](https://github.com/arc-mcp/arc-1/commit/6e5fa3deb1ed084ffc35044fd3ca9da802ba2225))
+* correct release-dependent 7.50 test prerequisites ([#1013](https://github.com/arc-mcp/arc-1/issues/1013)) ([79088b1](https://github.com/arc-mcp/arc-1/commit/79088b16c6fe64f2b07802646a769607335f4d5d))
+* preserve BOR gate regression and clarify deny rules ([#1016](https://github.com/arc-mcp/arc-1/issues/1016)) ([260c2b7](https://github.com/arc-mcp/arc-1/commit/260c2b71dec9608974e68d7383419d084a1e58b8))
+
 ## [1.6.0](https://github.com/arc-mcp/arc-1/compare/v1.5.2...v1.6.0) (2026-10-17)
 
 
