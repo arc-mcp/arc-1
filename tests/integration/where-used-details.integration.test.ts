@@ -1,8 +1,9 @@
 /** Owned class fixtures verify native usages, independent of installed SAP example content. */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest';
 import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { handleToolCall } from '../../src/handlers/dispatch.js';
 import { DEFAULT_CONFIG } from '../../src/server/types.js';
+import { recordWhereUsed } from '../helpers/where-used-diagnostics.js';
 import { generateUniqueName } from './crud-harness.js';
 import { getTestClient, requireSapCredentials } from './helpers.js';
 
@@ -11,6 +12,7 @@ describe('where-used filters and snippets — live (#1018)', () => {
   const root = generateUniqueName('ZAR1018_ROOT');
   const consumer = generateUniqueName('ZAR1018_USE');
   const created: string[] = [];
+  let activatedAt = 0;
   async function call(tool: string, args: Record<string, unknown>) {
     const result = await handleToolCall(client, DEFAULT_CONFIG, tool, args);
     if (result.isError) throw new Error(result.content[0]?.text ?? 'Tool failed');
@@ -41,6 +43,7 @@ ENDCLASS.`,
       await call('SAPWrite', { action: 'create', type: 'CLAS', name, package: '$TMP', source });
       await call('SAPActivate', { type: 'CLAS', name });
     }
+    activatedAt = Date.now();
   });
   afterAll(async () => {
     const failures: string[] = [];
@@ -54,9 +57,20 @@ ENDCLASS.`,
     expect(failures, 'remove every owned where-used fixture').toEqual([]);
   });
   it('returns the consumer and component-relative native usages, respecting exact packages', async () => {
+    const evidence = recordWhereUsed(client.http, { root, consumer, activatedAt });
+    onTestFailed(() => evidence.writeFailure());
     const args = { action: 'references', type: 'CLAS', name: root, objectType: 'CLAS' };
-    const ordinary = JSON.parse(await call('SAPNavigate', args));
-    const objects = JSON.parse(await call('SAPNavigate', { ...args, packages: ['$TMP'] }));
+    let ordinary: { references: { name: string; uri: string; packageName: string }[] };
+    let objects: typeof ordinary;
+    try {
+      ordinary = JSON.parse(await call('SAPNavigate', args));
+      evidence.recordResult('ordinary', ordinary);
+      evidence.phase = 'scoped';
+      objects = JSON.parse(await call('SAPNavigate', { ...args, packages: ['$TMP'] }));
+      evidence.recordResult('scoped', objects);
+    } finally {
+      evidence.restore();
+    }
     const uris = (rows: { uri: string }[]) => rows.map((row) => row.uri).sort();
     expect(uris(objects.references)).toEqual(
       uris(ordinary.references.filter((row: { packageName: string }) => row.packageName === '$TMP')),
