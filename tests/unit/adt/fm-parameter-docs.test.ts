@@ -122,6 +122,21 @@ describe('documentation-safe signature edits', () => {
     ).toBe(true);
   });
 
+  it('refuses a missing parameter delimiter before replacing an existing short text', () => {
+    const malformed = source.replace('@parameter iv_input |', '@parameter iv_input');
+    expect(() => edit(malformed)).toThrow(/ABAP Doc/);
+    expect(
+      spliceFmSignature(malformed, 'Z_DEMO', [parameter]).startsWith(
+        docs.replace('@parameter iv_input |', '@parameter iv_input'),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not read a short text from a malformed parameter tag without its delimiter', () => {
+    const malformed = source.replace('@parameter iv_input |', '@parameter iv_input');
+    expect(parseFmSignature(malformed).params[0]?.description).toBeUndefined();
+  });
+
   it('reads ABAP Doc text without claiming that native SE37 synchronization occurred', () => {
     const withoutLanguage = source.replace(' lang="en"', '');
     expect(parseFmSignature(withoutLanguage).params[0]?.description).toBe('Input text');

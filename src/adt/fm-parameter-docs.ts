@@ -15,6 +15,8 @@ function isDataParameter(parameter: FmParameter): boolean {
   return parameter.kind !== 'exceptions' && parameter.kind !== 'raising';
 }
 
+const PARAMETER_DOC_START = /^[ \t]*"![ \t]*@parameter[ \t]+[^\s|]+[ \t]*\|/i;
+
 interface DocSection {
   tag?: string;
   name?: string;
@@ -65,7 +67,7 @@ export function readFmParameterDescriptions(prefix: string, parameters: FmParame
     const matches = sections.filter(
       (section) => section.tag === 'parameter' && section.name === parameter.name.toUpperCase(),
     );
-    if (matches.length !== 1) continue;
+    if (matches.length !== 1 || !PARAMETER_DOC_START.test(matches[0]!.text)) continue;
     const paragraphs = shortTexts(matches[0]!.text);
     const paragraph = paragraphs[0];
     if (
@@ -94,6 +96,8 @@ function escapeDescription(value: string): string {
 }
 
 function replaceDescription(section: DocSection, description: string, language: string): string {
+  const pipe = PARAMETER_DOC_START.exec(section.text);
+  if (!pipe) throw new Error(`Cannot locate ABAP Doc parameter ${section.name}; edit the full source instead.`);
   const paragraphs = shortTexts(section.text);
   const paragraph = paragraphs[0];
   if (
@@ -112,8 +116,6 @@ function replaceDescription(section: DocSection, description: string, language: 
       section.text.slice(paragraph.end)
     );
   }
-  const pipe = /^[ \t]*"![ \t]*@parameter[ \t]+[^\s|]+[ \t]*\|/i.exec(section.text);
-  if (!pipe) throw new Error(`Cannot locate ABAP Doc parameter ${section.name}; edit the full source instead.`);
   const offset = pipe[0].length;
   return (
     section.text.slice(0, offset) +
