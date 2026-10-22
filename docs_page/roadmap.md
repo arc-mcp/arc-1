@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-21
+**Last reviewed:** 2026-10-22
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -68,6 +68,7 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
+| [FEAT-93](#feat-93) | Pinned PP object writes with exact target grants | P1 | XL | Needs research | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
@@ -173,6 +174,30 @@ would create a public compatibility surface without a known consumer.
 
 **Resume when.** A concrete embedding customer can define lifecycle, isolation, writable-safety,
 and upgrade requirements. Do not widen the mutation-free multi-target contract as a shortcut.
+
+<a id="feat-93"></a>
+### FEAT-93 — Pinned PP object writes with exact target grants
+
+- **Priority / effort / status:** P1 / XL / Needs research
+- **Category:** Architecture
+
+**Remaining gap.** Multi-target routes remain mutation-free. Target authorization from #677
+controls target access, but its global functional scopes do not express “write A, read B.”
+[PR #906](https://github.com/arc-mcp/arc-1/pull/906) proposes pinned PP writes but needs integration
+with current authorization, a narrower action surface, transport-recording checks and live PP
+acceptance. The [current-main assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-multi-target-write-strategy.md)
+also distinguishes route/client identity from the cross-client SAP repository affected by writes.
+
+**Resume with.** A new write ADR and live XSUAA/client spikes proving exact capability-bound
+grants, followed by strict policy diagnostics and a small object-write beta on one non-production
+PP target. Reuse current source-hash and uncertain-outcome controls. Keep aggregate and Basic
+mutation-free. Reuse `SAP_ALLOW_WRITES` without a duplicate multi-target switch, combine instance
+and destination restrictions, and retain existing pinned URLs. Make precedence, supported gates,
+minimal setup and effective-policy diagnostics explicit in the operator guides. Validate complete
+activation scope and lock/session cleanup; single-target authentication stays unchanged. Transport
+management, Git, caching, SaaS and embedding remain separate. The
+[V2 roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/multi-target-v2-roadmap.md)
+is supporting design history; revalidate its older gap statements against current code.
 
 ## Authentication, compatibility, and security
 
