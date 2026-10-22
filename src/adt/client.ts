@@ -27,6 +27,7 @@ import { readEnhancementImplementation } from './enhancements.js';
 import { AdtApiError, AdtError, AdtSafetyError, isNotFoundError } from './errors.js';
 import { AdtHttpClient, type AdtHttpConfig, type AdtResponse } from './http.js';
 import type { AdtRequestOptions } from './http-deadline.js';
+import { getDirectPackageContents } from './package-browser.js';
 import { requirePackageFilteredSearch } from './package-contents.js';
 import { AdtPackageHierarchyResolver, type PackageHierarchyResolver } from './package-hierarchy.js';
 import { canonicalRevisionSourcePath } from './path-safety.js';
@@ -780,8 +781,8 @@ export class AdtClient {
 
   /** Resolve the canonical ADT URL for a TABL name (transparent table or structure)
    *  for the **read** path. Probes /tables/ first and falls back to /structures/ on
-   *  404. The source body is identical either way, so the fallback is safe for reads.
-   *  Result is cached per client.
+   *  404. On 750, the fallback exposes fields/types without full table semantics.
+   *  Result is cached per client for reads only.
    *
    *  Do NOT use this for writes/activates — on NW 7.50 the /tables/ endpoint is
    *  absent entirely, so transparent tables (TABL/DT) fall through to /structures/
@@ -1196,6 +1197,11 @@ export class AdtClient {
 
   // ─── Package Operations ────────────────────────────────────────────
 
+  /** Explicit bounded direct contents; does not replace indexed search or the safety resolver. */
+  async getDirectPackageContents(packageName: string, maxResults?: number, objectType?: string) {
+    return getDirectPackageContents(this.http, this.safety, packageName, maxResults, objectType);
+  }
+
   /**
    * Get package contents (objects and subpackages).
    *
@@ -1371,7 +1377,7 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
     // so the name the policy authorized is byte-for-byte the name SAP receives.
     return this.withDataResultScope(async (budget, signal) => {
       await this.dataSourceBlocklistGuard(budget, signal).enforceTableContents(source, sqlFilter);
-      return parseTableContents(
+      const result = parseTableContents(
         await this.postDataPreview(
           `/sap/bc/adt/datapreview/ddic?rowNumber=${rowLimit}&ddicEntityName=${encodeURIComponent(source)}`,
           sqlFilter,
@@ -1379,6 +1385,8 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
           signal,
         ),
       );
+      // DDIC preview may include a lookahead row beyond rowNumber (#1068).
+      return { ...result, rows: result.rows.slice(0, rowLimit) };
     });
   }
 
@@ -1457,8 +1465,8 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
    * Query a table or CDS view with structured parameters.
    * Builds the SELECT server-side from structured params. IN/NOT IN values are strictly
    * parsed as quoted literal lists (no subqueries). Uses the freestyle endpoint so
-   * multi-column WHERE and CDS views work on all SAP releases.
-   * Gated by allowDataPreview (not allowFreeSQL).
+   * multi-column WHERE uses SAP's SQL parser. Requires a working freestyle endpoint;
+   * sources/syntax depend on the backend. Gated by allowDataPreview (not allowFreeSQL).
    */
   async runTableQuery(
     tableName: string,
@@ -1672,7 +1680,7 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
    * surfaces the package as a denormalised attribute. Both shapes resolve
    * to the same package; we accept either.
    */
-  async resolveObjectPackage(objectUrl: string, accept?: string): Promise<string> {
+  async resolveObjectPackage(objectUrl: string, accept?: string, options?: AdtRequestOptions): Promise<string> {
     checkOperation(this.safety, OperationType.Read, 'ResolveObjectPackage');
     // Server-driven objects (8.16+) only render their <blue:blueSource> metadata (with the
     // adtcore:packageRef) under the blues.vN+xml Accept — callers pass it so the allowedPackages
@@ -1682,7 +1690,7 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
     // bindings resource), and that 406 body names no accepted type, so the generic negotiation
     // retry cannot recover. Parameters select nothing on these metadata reads.
     const bareAccept = accept?.split(';')[0]?.trim();
-    const resp = await this.http.get(objectUrl, bareAccept ? { Accept: bareAccept } : undefined);
+    const resp = await this.http.get(objectUrl, bareAccept ? { Accept: bareAccept } : undefined, options);
     const packageRefMatch = resp.body.match(/adtcore:packageRef[^>]*adtcore:name="([^"]*)"/);
     if (packageRefMatch?.[1]) return packageRefMatch[1];
     const containerRefMatch = resp.body.match(/adtcore:containerRef[^>]*adtcore:packageName="([^"]*)"/);

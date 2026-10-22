@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { BTPConfig, Destination } from '@arc-mcp/xsuaa-auth/btp';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -132,6 +133,54 @@ describe('multi-target principal-propagation retry', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     resetCachedFeatures();
+  });
+
+  it('keeps direct package browsing on the selected per-user target with only read scope', async () => {
+    const current = registry();
+    setCachedFeatures(featuresOff(), 'A4H/100');
+    resolveRuntimeSubaccountPpDestination.mockResolvedValue({
+      destination: DESTINATION,
+      authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
+    });
+    const contexts: unknown[] = [];
+    const post = vi.spyOn(AdtHttpClient.prototype, 'post').mockImplementation(async (_path, body) => {
+      contexts.push({
+        target: getCurrentContext()?.target,
+        identity: getCurrentContext()?.identity,
+        user: getCurrentContext()?.user,
+      });
+      const part = body?.includes('<TV_NODEKEY>000000</TV_NODEKEY>') ? 'root' : 'expanded';
+      return {
+        statusCode: 200,
+        headers: {},
+        body: readFileSync(new URL(`../../fixtures/xml/package-browser-750-${part}.xml`, import.meta.url), 'utf8'),
+      };
+    });
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
+    });
+    const result = await requestHandler(server)(
+      {
+        method: 'tools/call',
+        params: {
+          name: 'SAPRead',
+          arguments: {
+            target: 'A4H/100',
+            type: 'DEVC',
+            name: 'SABP_UNIT_CORE',
+            packageScope: 'direct',
+            format: 'structured',
+          },
+        },
+      },
+      { authInfo: READ_AUTH },
+    );
+    expect(result.isError).not.toBe(true);
+    expect(JSON.parse(result.content[0].text).listing.scope).toBe('direct');
+    expect(resolveRuntimeSubaccountPpDestination).toHaveBeenCalledWith(BTP_CONFIG, DESTINATION.Name, READ_AUTH.token);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(contexts).toEqual(Array(2).fill({ target: 'A4H/100', identity: 'per-user', user: 'RETRY_TEST_USER' }));
   });
 
   it('does not retain a failed lookup and retries successfully on the next call to the same server', async () => {
@@ -483,6 +532,81 @@ describe('transport review through selected BTP identity', () => {
       );
       expect(JSON.parse(result.content[0].text)).toMatchObject({ error });
       expect(resolveRuntimeSubaccountPpDestination).not.toHaveBeenCalled();
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+describe('syntax batches through selected BTP identity', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetCachedFeatures();
+    resolveRuntimeSubaccountPpDestination.mockReset();
+  });
+  it.each(['aggregate', 'pinned'] as const)('keeps %s identity, cancellation, read policy and audit', async (mode) => {
+    const current = registry();
+    const target = current.targets[0];
+    setCachedFeatures(featuresOff(), target.target);
+    resolveRuntimeSubaccountPpDestination.mockResolvedValue({
+      destination: DESTINATION,
+      authTokens: { sapConnectivityAuth: 'Bearer per-user-assertion' },
+    });
+    const audit = vi.spyOn(logger, 'emitAudit');
+    const signal = new AbortController().signal;
+    const post = vi
+      .spyOn(AdtHttpClient.prototype, 'post')
+      .mockImplementation(async (path, body, _contentType, _headers, options) => {
+        expect(path).toBe('/sap/bc/adt/checkruns');
+        expect(getCurrentContext()).toMatchObject({ target: 'A4H/100', identity: 'per-user', user: 'RETRY_TEST_USER' });
+        expect(options).toMatchObject({ signal, deadline: expect.any(Number), responseBudget: expect.anything() });
+        expect(body).toContain('ZCL_BATCH_A');
+        expect(body).toContain('ZCL_BATCH_B');
+        return {
+          statusCode: 200,
+          headers: {},
+          body: '<checkRunReports><checkReport reporter="abapCheckRun" triggeringUri="/sap/bc/adt/oo/classes/ZCL_BATCH_A" status="processed"/><checkReport reporter="abapCheckRun" triggeringUri="/sap/bc/adt/oo/classes/ZCL_BATCH_B" status="processed"/></checkRunReports>',
+        };
+      });
+    const server = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
+      btpConfig: BTP_CONFIG,
+      multiTarget: {
+        mode,
+        registry: current,
+        instanceConfig: DEFAULT_CONFIG,
+        ...(mode === 'pinned' ? { target } : {}),
+      },
+    });
+    try {
+      const result = await requestHandler(server)(
+        {
+          method: 'tools/call',
+          params: {
+            name: 'SAPDiagnose',
+            arguments: {
+              action: 'syntax',
+              objects: [
+                { type: 'CLAS', name: 'ZCL_BATCH_A' },
+                { type: 'CLAS', name: 'ZCL_BATCH_B' },
+              ],
+              ...(mode === 'aggregate' ? { target: target.target } : {}),
+            },
+          },
+        },
+        { authInfo: READ_AUTH, signal },
+      );
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(result.content[0].text)).toMatchObject({ status: 'passed', checkedObjectCount: 2 });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(audit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'tool_call_end',
+          tool: 'SAPDiagnose',
+          target: 'A4H/100',
+          identity: 'per-user',
+        }),
+      );
+      expect(resolveRuntimeSubaccountPpDestination).toHaveBeenCalledWith(BTP_CONFIG, DESTINATION.Name, READ_AUTH.token);
     } finally {
       await server.close();
     }

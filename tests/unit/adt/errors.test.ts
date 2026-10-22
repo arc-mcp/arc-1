@@ -658,6 +658,24 @@ describe('AdtApiError', () => {
       expect(classification?.category).toBe('authorization');
     });
 
+    it('recognizes Gateway service resolution by code regardless of message language', () => {
+      const body = JSON.stringify({ error: { code: '/IWFND/MED/170', message: { value: 'Kein Service gefunden' } } });
+      const classification = classifySapDomainError(403, body, '/sap/opu/odata/sap/APL_LOG_MANAGEMENT_SRV/');
+      expect(classification?.category).toBe('gateway-service-not-found');
+      expect(classification?.transaction).toBe('/IWFND/MAINT_SERVICE');
+    });
+
+    it.each([
+      [401, '{"error":{"code":"/IWFND/MED/170"}}', '/sap/opu/odata/sap/TEST/'],
+      [403, '{"error":{"code":"/IWFND/MED/170"}}', '/sap/bc/adt/core/discovery'],
+      [403, '{"error":{"code":"/IWFND/MED/171","message":"No service found"}}', '/sap/opu/odata/sap/TEST/'],
+      [403, '{"error":{"code":"/IWFND/MED/170"}', '/sap/opu/odata/sap/TEST/'],
+      [403, 'No service found /IWFND/MED/170', '/sap/opu/odata/sap/TEST/'],
+      [403, 'null', '/sap/opu/odata/sap/TEST/'],
+    ] as const)('does not infer Gateway service resolution from a near match (%s %s %s)', (status, body, path) => {
+      expect(classifySapDomainError(status, body, path)?.category).not.toBe('gateway-service-not-found');
+    });
+
     it('classifies an un-activated ICF node (403 "Service cannot be reached" HTML) as icf-service-inactive', () => {
       const html =
         '<html><head><title>Service cannot be reached</title></head><body>' +

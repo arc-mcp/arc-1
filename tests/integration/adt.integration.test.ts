@@ -419,7 +419,7 @@ describe('ADT Integration Tests', () => {
         );
         return;
       }
-      expect(result.rows.length).toBeGreaterThanOrEqual(1);
+      expect(result.rows.length).toBe(1);
     });
 
     it('returns 404 for non-existent program', async () => {

@@ -130,6 +130,8 @@ describe('multi-target MCP servers', () => {
       instanceConfig: { ...DEFAULT_CONFIG, multiTargetAuthorization: 'xsuaa-attribute' },
       authorization: {
         grant: { mode: 'all', status: 'valid' },
+        writeGrant: { mode: 'none', status: 'TARGET_GRANT_MISSING' },
+        write: false,
         targets: [target],
         scopes: ['read'],
         read: true,
@@ -391,7 +393,7 @@ describe('multi-target MCP servers', () => {
   it('keeps pinned schemas target-free', async () => {
     const current = registry(1);
     const target = current.targets[0];
-    const server = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target, { mode: 'pinned' }), {
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: DEFAULT_CONFIG, target },
     });
     const result = await requestHandler(server, ListToolsRequestSchema.shape.method.value)(
@@ -412,7 +414,7 @@ describe('multi-target MCP servers', () => {
     const aggregateServer = createServer(buildAggregateToolSurfaceConfig(DEFAULT_CONFIG, current.targets), {
       multiTarget: { mode: 'aggregate', registry: current, instanceConfig: DEFAULT_CONFIG },
     });
-    const pinnedServer = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target), {
+    const pinnedServer = createServer(buildMultiTargetConfig(DEFAULT_CONFIG, target, { mode: 'pinned' }), {
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: DEFAULT_CONFIG, target },
     });
     const ajv = new Ajv2020({ coerceTypes: true, strictTypes: false, allowUnionTypes: true });
@@ -668,7 +670,7 @@ describe('multi-target MCP servers', () => {
         event: 'safety_blocked',
         target: 'A00/000',
         operation: 'SAPWrite.update',
-        reason: 'Operation unavailable in read-only multi-target v1',
+        reason: 'Operation unavailable for this multi-target route and caller policy',
       }),
     );
 

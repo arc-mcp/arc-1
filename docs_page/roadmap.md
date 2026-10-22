@@ -1,6 +1,6 @@
 # ARC-1 Idea Roadmap
 
-**Last reviewed:** 2026-10-18
+**Last reviewed:** 2026-10-22
 
 This page is ARC-1's idea parking lot. It records worthwhile work that is **not implemented now** so
 it does not disappear, but it is not a delivery schedule and it does not answer "what should we do
@@ -68,12 +68,13 @@ sequence.
 | [ARCH-01](#arch-01) | Discovery-driven endpoint routing | P1 | M | Ready | Architecture |
 | [ARCH-02](#arch-02) | Server-driven source-state version verification | P3 | S | Needs research | Architecture |
 | [FEAT-59](#feat-59) | Embeddable multi-tenant server API | P3 | L | Revisit on trigger | Architecture |
+| [FEAT-93](#feat-93) | Broader pinned PP mutation capabilities | P2 | XL | Needs research | Architecture |
 | [SEC-16](#sec-16) | Client ID Metadata Documents (CIMD / SEP-991) | P1 | XL | Parked proposal | Auth / Compatibility |
 | [SEC-15](#sec-15) | Durable DCR signing-key lifecycle | P2 | L | Needs research | Auth / Operations |
 | [COMPAT-06](#compat-06) | Standard outbound proxy support | P2 | M | Ready | Compatibility |
 | [COMPAT-07](#compat-07) | CDS view-entity replacement lineage | P2 | S | Needs research | Compatibility |
 | [COMPAT-16](#compat-16) | API-release directory cleanup | P2 | S | Needs research | Compatibility |
-| [COMPAT-17](#compat-17) | Package contents without filtered search | P2 | M | Needs research | Compatibility |
+| [COMPAT-17](#compat-17) | Direct package browser release coverage | P2 | S | Needs research | Compatibility |
 | [COMPAT-18](#compat-18) | Newly created program metadata on 7.50 | P2 | S | Needs research | Compatibility |
 | [COMPAT-19](#compat-19) | Remaining BTP IDE navigation qualification | P1 | S | Needs environment | Compatibility |
 | [COMPAT-20](#compat-20) | Canonical ADT editor identity for AI edits | P2 | M | Needs research | Compatibility |
@@ -84,11 +85,13 @@ sequence.
 | [SEC-14](#sec-14) | DNS rebinding and Host-header hardening | P3 | M | Revisit on trigger | Security |
 | [SEC-17](#sec-17) | Match echoed abapGit credentials by value | P2 | M | Needs research | Security |
 | [SEC-18](#sec-18) | Implicit CDS conversion dependencies | P3 | M | Revisit on trigger | Security |
+| [SEC-19](#sec-19) | Registered agent identity and downstream tool scopes | P2 | L | Needs research | Auth / Security |
+| [COMPAT-22](#compat-22) | Integration Suite remote MCP gateway validation | P2 | M | Needs research | Compatibility |
 | [FEAT-03](#feat-03) | Enhancement authoring beyond BAdI implementations | P2 | L | Needs research | ABAP authoring |
 | [FEAT-85](#feat-85) | Set the ABAP language version of packages and objects | P1 | M | Needs research | ABAP authoring |
 | [FEAT-05](#feat-05) | Safe rename and extract refactorings | P3 | L | Needs research | Developer workflow |
 | [FEAT-21](#feat-21) | ABAP F1 documentation | P3 | S | Needs research | Developer workflow |
-| [FEAT-23](#feat-23) | Recursive program include reading | P2 | M | Needs research | Developer workflow |
+| [FEAT-92](#feat-92) | Function-group include expansion on the program walker | P2 | S | Ready | Developer workflow |
 | [FEAT-30](#feat-30) | ABAP cleaner integration | P3 | L | Revisit on trigger | Developer workflow |
 | [FEAT-66](#feat-66) | Interactive confirmation for destructive actions | P3 | L | Blocked | Safety / UX |
 | [FEAT-75](#feat-75) | Delete mutually-referencing objects as one set | P2 | S | Ready | Developer workflow |
@@ -102,13 +105,16 @@ sequence.
 | [FEAT-73](#feat-73) | Additional server-driven object types | P3 | S | Needs research | Object coverage |
 | [FEAT-78](#feat-78) | Table type access type and keys | P2 | M | Needs research | Object coverage |
 | [FEAT-09](#feat-09) | Cross Trace result reader | P2 | M | Needs research | Diagnostics |
-| [FEAT-69](#feat-69) | Mass syntax check | P2 | S | Ready | Diagnostics |
+| [FEAT-69](#feat-69) | Wider syntax-batch qualification | P3 | S | Needs research | Diagnostics |
 | [FEAT-71](#feat-71) | Dictionary activation log | P3 | M | Needs research | Diagnostics |
-| [FEAT-74](#feat-74) | Dump feed attribute filters | P3 | S | Ready | Diagnostics |
+| [FEAT-91](#feat-91) | Validate the legacy dump user filter | P2 | S | Needs research | Diagnostics |
+| [FEAT-74](#feat-74) | Qualify dump-filter matching | P2 | S | Needs research | Diagnostics |
 | [FEAT-50](#feat-50) | ADT type-probe fixture coverage | P3 | XS each | Contributor-driven | Diagnostics |
 | [FEAT-32](#feat-32) | Stable data-preview pagination | P3 | M | Needs research | Data access |
 | [FEAT-86](#feat-86) | Additional stored-text profiles and persistence | P3 | M | Needs research | Data access |
 | [FEAT-87](#feat-87) | Preserve repeated spaces in general data queries | P2 | S | Needs research | Data access |
+| [FEAT-88](#feat-88) | Application-log discovery and wider qualification | P3 | M | Needs research | Data access |
+| [FEAT-89](#feat-89) | Additional typed data-cluster use cases | P3 | M | Needs research | Data access |
 | [FEAT-90](#feat-90) | Historical transport scope beyond source | P2 | M | Needs research | Developer workflow |
 | [FEAT-36](#feat-36) | Type information | P3 | S | Blocked | Code intelligence |
 | [FEAT-79](#feat-79) | DDIC-aware dependency context | P2 | M | Needs research | Code intelligence |
@@ -116,6 +122,8 @@ sequence.
 | [OPS-02](#ops-02) | Bounded deep health check | P3 | S | Needs research | Operations |
 | [OPS-05](#ops-05) | SAP Cloud Logging and OpenTelemetry | P2 | L | Revisit on trigger | Operations |
 | [OPS-06](#ops-06) | Per-user SAP session reuse over HTTP | P2 | M | Needs research | Operations |
+| [OPS-07](#ops-07) | Signed single-file executables | P3 | M | Revisit on trigger | Operations |
+| [OPS-08](#ops-08) | SAP outage isolation and queue deadlines | P2 | M | Needs research | Operations |
 | [FEAT-07](#feat-07) | Native TLS listener | P3 | M | Revisit on trigger | Operations |
 | [DOC-02](#doc-02) | Basis administrator handbook | P2 | M | Ready | Documentation |
 
@@ -169,6 +177,30 @@ would create a public compatibility surface without a known consumer.
 
 **Resume when.** A concrete embedding customer can define lifecycle, isolation, writable-safety,
 and upgrade requirements. Do not widen the mutation-free multi-target contract as a shortcut.
+
+<a id="feat-93"></a>
+### FEAT-93 — Broader pinned PP mutation capabilities
+
+- **Priority / effort / status:** P2 / XL / Needs research
+- **Category:** Architecture
+
+**Remaining gap.** PR [#1080](https://github.com/arc-mcp/arc-1/pull/1080) implements the scoped
+CLAS/INTF create/main-update, CLAS method-edit and whole-owner activation contract for local and
+transportable packages, with exact target write grants and independent server/destination policy.
+Additional types, include editing, deletes, batches, package changes, RAP/DDIC and publication still
+need their own reviewed package, ownership, recording and activation contracts. General single-target
+parity is not implied. Aggregate and Basic writes remain rejected architectural alternatives.
+
+**Resume when.** A concrete development workflow needs one of those additional capabilities and
+its complete effect on SAP can be bounded and qualified. Extend the [ADR-0010 contract](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0010-pinned-pp-multi-target-writes.md)
+for that capability, including negative tests and live PP evidence; do not remove the explicit
+allowlist or add a second global write switch. Transport/Git management, caching, SaaS and embedding
+remain separate work. Keep operator configuration and effective-denial explanations explicit.
+
+**Prior work.** [#906](https://github.com/arc-mcp/arc-1/pull/906), the
+[alternatives assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-multi-target-write-strategy.md)
+and [V2 roadmap](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/multi-target-v2-roadmap.md)
+remain design history; revalidate older gap statements against the current scoped implementation.
 
 ## Authentication, compatibility, and security
 
@@ -334,19 +366,24 @@ catalog rows automatically. See the
 [state plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-12-text-pool-state.md).
 
 <a id="compat-17"></a>
-### COMPAT-17 — Package contents without filtered search
+### COMPAT-17 — Direct package browser release coverage
 
-- **Priority / effort / status:** P2 / M / Needs research
+- **Priority / effort / status:** P2 / S / Needs research
 - **Category:** Compatibility
 
-**Remaining gap.** Classic ADT quick search can ignore `packageName` (verified on 750).
-Package listing now requires the advertised filter. Native `nodestructure` can list
-direct contents in two read-only POSTs using returned type-node IDs, but lacks a server
-result cap and reliable descriptions; indexed search also includes descendant packages.
+**Remaining gap.** Explicit `packageScope=direct` now provides bounded native
+contents on verified 750 SP02 and 758 SP02 contracts. Native 740 SP04, BTP ABAP,
+and an existing empty package remain unverified; empty trees deliberately return
+an ambiguous-result error. Indexed search and write-package authorization remain
+separate.
 
-**Resume with.** A bounded native listing contract with explicit scope, missing-versus-empty
-behavior and accurate completeness metadata. Preserve the current search path's descriptions;
-do not silently substitute an unbounded tree traversal or system-wide search.
+**Resume with.** Sanitized native root/expansion evidence on those releases, or
+independent proof distinguishing an empty package from a missing/inaccessible
+one. Preserve direct scope, client budgets and unknown completeness; no automatic
+search/RFC/helper fallback. See [#1065](https://github.com/arc-mcp/arc-1/issues/1065),
+[the initial research](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-legacy-package-browser.md)
+([research PR #1071](https://github.com/arc-mcp/arc-1/pull/1071)) and
+[the implementation plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-22-direct-package-browser.md).
 
 <a id="compat-18"></a>
 ### COMPAT-18 — Newly created program metadata on 7.50
@@ -478,6 +515,42 @@ SAP metadata for implicit dependencies and test representative releases. Choose 
 explicit refusal for affected functions; do not infer full lineage from the present graph or add a
 hard-coded table list without proving its completeness.
 
+<a id="sec-19"></a>
+### SEC-19 — Registered agent identity and downstream tool scopes
+
+- **Priority / effort / status:** P2 / L / Needs research
+- **Category:** Auth / Security
+
+**Idea.** Investigate a supported credential flow carrying a registered Cloud Identity Services
+agent identity and original user context, with downstream permissions narrowed for the invoked tool.
+
+**Why it remains.** SAP ref. 137800 requires these properties. ARC-1's PP flow preserves user context,
+but `clientAgent` is only an audit label and MCP tool scopes do not narrow the SAP credential per tool.
+See the [2026-10-21 evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md).
+
+**Resume with.** Tenant/release-specific SAP documentation and a test tenant supporting the required
+agent registration, delegation and scope contract. Prove user/agent attribution and fail-closed
+behavior without broadening existing PP or multi-target exceptions. Do not invent an IAS setup
+requirement or claim this resolves the separate ADT-channel permission question.
+
+<a id="compat-22"></a>
+### COMPAT-22 — Integration Suite remote MCP gateway validation
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Idea.** Validate ARC-1 behind Integration Suite's documented remote-MCP proxy and, if successful,
+document a supported configuration.
+
+**Why it remains.** Current SAP Help now documents Streamable HTTP remote MCP sources, superseding
+the July inventory. ARC-1 interoperability and delegated identity through the gateway are unverified.
+See the [source and validation boundary](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md#remote-mcp-gateway-validation-boundary).
+
+**Resume with.** A suitable Integration Suite plan, Integration Cell, documented discovery/runtime
+authentication and two users with different SAP permissions. Verify identity, scopes, tool filtering,
+audit/traces, quotas, errors and reconnect behavior. Do not silently substitute a shared credential
+for PP or present transport success as ADT permission. The gateway is optional for custom MCP.
+
 ## Developer workflows
 
 <a id="feat-03"></a>
@@ -549,22 +622,25 @@ release-sensitive. Generic web links would add little over existing model knowle
 **Resume with.** Demonstrate one discovery-advertised, structured endpoint on multiple supported
 releases and define a useful fallback when documentation is unavailable.
 
-<a id="feat-23"></a>
-### FEAT-23 — Recursive program include reading
+<a id="feat-92"></a>
+### FEAT-92 — Function-group include expansion on the program walker
 
-- **Priority / effort / status:** P2 / M / Needs research
+- **Priority / effort / status:** P2 / S / Ready
 - **Category:** Developer workflow
 
-**Idea.** Read a program and its nested includes in one bounded response through `SAPRead`.
+**Idea.** Read function groups with the bounded walker that `expand_includes` uses for PROG and INCL,
+so that one parameter has one traversal.
 
-**Why it remains.** Function-group expansion is implemented, but `expand_includes` currently applies
-only to FUGR. `SAPContext` extracts class, type, and function dependencies; it does not recursively
-resolve program `INCLUDE` statements. Reading each include manually is possible but costs multiple
-tool calls.
+**Why it remains.** `getFunctionGroupExpanded` finds includes with a regex: it misses
+`INCLUDE … IF FOUND` and chained `INCLUDE: a, b.`, follows INCLUDE text inside `"` comments and
+literals, reads the SAP includes of customer groups (a table-maintenance group on SAP_BASIS 7.50
+returned 80 sources, nearly all `LSVIM*`, where the program walker read 8 customer sources), and has
+neither a time nor a size limit. The program walker was kept separate so that function-group output
+did not change in the same pull request.
 
-**Resume with.** Validate include discovery on supported on-premise releases, then extend the
-existing read tool with cycle detection, depth/object/byte limits, source boundaries, and explicit
-truncation. Reuse the function-group traversal where appropriate.
+**Resume with.** Move FUGR onto the program walker (root: the group's main program), keep the
+`getFunctionGroupExpanded` result shape for extensions, and document the changed output: ownership
+rule, 40,000-character text limit, deadline, and the closing note instead of `[truncated]`.
 
 <a id="feat-30"></a>
 ### FEAT-30 — ABAP cleaner integration
@@ -817,48 +893,35 @@ volume limits are not implemented.
 and keep trace activation separate from result reading.
 
 <a id="feat-74"></a>
-### FEAT-74 — Dump feed attribute filters
+### FEAT-74 — Qualify dump-filter matching
 
-- **Priority / effort / status:** P3 / S / Ready
+- **Priority / effort / status:** P2 / S / Needs research
 - **Category:** Diagnostics
 
-**Idea.** Let `SAPDiagnose(action="dumps")` filter short dumps by the other attributes SAP's feed
-supports, not only `user` and the time window.
+**Remaining gap.** Bounded typed filters and optional schema discovery are implemented for dump
+lists, with A4H/001 positive/negative runtime-error matches and synthetic mixed-day/paging controls.
+Other releases/auth routes and advertised attributes/operators are not qualified. Wildcard and
+whitespace string values remain refused. Model success remains uneven; earlier failures are retained.
 
-**Why it remains.** `GET /sap/bc/adt/feeds` self-describes the dumps feed, and its
-`feed:attributes` list is much wider than what ARC-1 exposes: `runtimeError`, `exception`,
-`objectName`, `package`, `packageHierarchy`, `component`, `responsible`, `objectResponsible`,
-`packageResponsible`, and a `dateTime`-typed `datetime`. The declared operators are `equals`,
-`notEquals`, `contains`, `notContains`, `greater`, `greaterOrEquals`, `less`, `lessOrEquals`,
-`between`, `notBetween`, with `queryDepth` 2. Live-verified on SAP_BASIS 816 (2026-09-22):
-`and(contains(objectName,SAPM))` returned 11 entries and
-`and(between(datetime,20260901000000,20260910000000))` returned 49, against an unfiltered feed
-capped at 100. Filtering server-side is far cheaper than paging the whole feed and discarding
-entries client-side, and answers questions ARC-1 cannot express today, such as "every TIME_OUT
-dump in package Z\*".
-
-**Resume with.** Read the per-system `feed:attributes` rather than hardcoding the list (it is
-release-dependent and also published for system messages and the gateway error log), map a small
-typed filter input onto the `and(...)` grammar without string-concatenating caller text, and keep
-the existing `user`/`from`/`to` parameters working. Note that the feed's own `rel="next"` link
-appends `sap-client` on every hop, so paging must keep rebuilding the `to` cursor as
-`listDumps` does.
+**Resume with.** A concrete target or filter task. Verify a positive and negative match on that
+target, including date bounds and caller identity, before broadening values or claiming support.
+Keep schema discovery optional and ordinary list/detail behavior unchanged.
+[Extraction and evidence](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-17-dump-filter-extraction.md).
 
 <a id="feat-69"></a>
-### FEAT-69 — Mass syntax check
+### FEAT-69 — Wider syntax-batch qualification
 
-- **Priority / effort / status:** P2 / S / Ready
+- **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Diagnostics
 
-**Idea.** Extend the read-only `SAPRead(type="SYNTAX")` route to check a bounded list of objects
-and return per-object findings without stopping at the first failure.
+**Remaining gap.** Explicit CLAS/INTF/PROG/DDLS lists are implemented through `SAPDiagnose syntax`,
+with bounded requests and per-object evidence. A4H/001 establishes the native batch contract;
+other releases, live BTP/PP and additional type families remain unqualified.
 
-**Why it remains.** The current syntax action accepts one object. ATC can cover packages or object
-sets, but it is heavier and semantically different from a direct syntax check.
-
-**Resume with.** Validate multiple entries in ADT's existing `checkObjectList` request, then add a
-strict object-count limit, deterministic per-object findings, explicit incomplete/error results,
-and aggregate counts. Bound concurrency if a per-object fallback is necessary.
+**Resume with.** A concrete target/type need and comparison with its native single-object checks.
+Transport integration additionally needs policy, failure isolation and source reconciliation:
+a current-source check never proves a historical transport snapshot. No automatic collector or
+hidden raw-HTTP scheduling. [Plan](https://github.com/arc-mcp/arc-1/blob/main/docs/plans/2026-10-19-bounded-syntax-checks.md).
 
 <a id="feat-71"></a>
 ### FEAT-71 — Dictionary activation log
@@ -866,13 +929,27 @@ and aggregate counts. Bound concurrency if a per-object fallback is necessary.
 - **Priority / effort / status:** P3 / M / Needs research
 - **Category:** Diagnostics
 
-**Idea.** Return useful DDIC activation-log details after a failed or warning-producing activation.
+**Remaining gap.** [#1011](https://github.com/arc-mcp/arc-1/pull/1011) verified a readable advertised
+DOMA log on 758. Saved logs have no verified latest-attempt correlation. Two model evaluations
+misinterpreted historical evidence despite explicit caveats; other types/releases remain unqualified.
 
-**Why it remains.** The known activation-log resource is not a simple readable GET endpoint. The
-request shape, lifetime, and relation to an activation request are not sufficiently established.
+**Resume with.** A concrete historical-log workflow that preserves uncertainty, or independent
+native correlation evidence. Keep the experiment deferred and never label saved messages as proof
+of a recent activation. [Failed controls](https://github.com/arc-mcp/arc-1/blob/5725fab6515f7a410e3e488003ae1a7aa3d8c249/docs/research/2026-10-17-diagnostic-main-decision.md).
 
-**Resume with.** Capture the live request/response sequence for a controlled DDIC activation
-failure and define a bounded, sanitized output contract.
+<a id="feat-91"></a>
+### FEAT-91 — Validate the legacy dump user filter
+
+- **Priority / effort / status:** P2 / S / Needs research
+- **Category:** Diagnostics
+
+**Remaining gap.** The older user-only path still inserts its trimmed value into the query grammar.
+Typed-filter calls validate this value, but ordinary calls preserve existing behavior. The extraction
+adds compatibility tests rather than changing SAP user-name or wildcard semantics without evidence.
+
+**Resume with.** Verify supported username characters and matching semantics, then add a narrow
+validator without schema discovery on the legacy path. Retain fail-before grammar tests and a live
+positive match. [Original finding](https://github.com/arc-mcp/arc-1/blob/5725fab6515f7a410e3e488003ae1a7aa3d8c249/docs/research/adt-vscode-1.2/evidence/diagnostics-review/claude-review-1.md).
 
 <a id="feat-50"></a>
 ### FEAT-50 — ADT type-probe fixture coverage
@@ -947,6 +1024,38 @@ The stored-text reader preserves its own literals; the general query paths still
 **Resume with.** Positive and negative live cases for leading, internal and trailing spaces in
 equality, LIKE and IN predicates. Preserve existing query semantics and safety gates; qualify the
 backend grammar before generalizing the stored-text workaround.
+
+<a id="feat-88"></a>
+### FEAT-88 — Application-log discovery and wider qualification
+
+- **Priority / effort / status:** P3 / M / Needs research
+- **Category:** Data access
+
+**Remaining gap.** Exact `SAPQuery(application_log)` reads use SAP's native OData service;
+restricted-user allow/deny checks passed on 7.58. Finding logs by object/time range, message
+details, BTP ABAP, principal propagation and additional active-service releases remain unqualified. Positive `$top`
+limits output, not SAP's full-log load. Do not add `/$count`, broad text searches, or BALDAT fallback
+without separate authorization and resource-cost evidence.
+
+**Resume with.** A concrete support workflow and an active service on the target landscape.
+Qualify native filters, time zones, DCL/BAdI restrictions and pagination before expanding the tool.
+See the [native-reader investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-18-application-log-native-reader.md).
+
+<a id="feat-89"></a>
+### FEAT-89 — Additional typed data-cluster use cases
+
+- **Priority / effort / status:** P3 / M / Needs research
+- **Category:** Data access
+
+**Remaining gap.** [PR #844](https://github.com/arc-mcp/arc-1/pull/844) also proposes INDX/custom
+clusters, DDIC layouts and legacy formats. Stored SAPscript texts and native application-log reads
+do not replace these capabilities. Broad integration is deferred: the proposed parser needs
+independent allocation/row/depth limits, exact fragment identity, and qualified encoding/layout
+semantics. Prefer purpose-specific native APIs where available.
+
+**Resume with.** A named customer workflow that cannot use an existing API, plus sanitized native
+fixtures and expected values across the relevant releases/platforms. Preserve data gates, blocklists,
+current-user identity, and bounded output; no RFC or executed ABAP fallback in core (ADR-0009).
 
 <a id="feat-36"></a>
 ### FEAT-36 — Type information
@@ -1049,6 +1158,41 @@ token lifetime, keep users isolated, and keep ADR-0007's request-local Basic cre
 Specify credential revocation and an absolute reuse lifetime before extending the sharing model;
 the single-target transport's bounded reuse and remaining revocation limitations are documented in
 [security-model R21](https://github.com/arc-mcp/arc-1/blob/main/docs/security-model.md#r21-shared-login-credential-freshness).
+
+<a id="ops-07"></a>
+### OPS-07 — Signed single-file executables
+
+- **Priority / effort / status:** P3 / M / Revisit on trigger
+- **Category:** Operations
+
+**Idea.** Close the gaps of the unsigned Node SEA executables shipped with each release: code
+signing/notarization, embedded UI assets, `ARC1_PLUGINS` support, and a Windows arm64 target.
+
+**Why it remains.** The executables remove the thousands-of-files antivirus scan, but an unsigned
+Windows binary is still scanned once on first start, and the SEA build does not embed the UI assets
+or verify plugin loading. Signing needs a certificate and secret handling that the project does not have.
+
+**Resume when.** Users report SmartScreen/Defender blocks despite checksums, or a supported
+`windows-11-arm` runner is available. Define the signing identity and key custody first; verify
+plugin loading in a SEA before claiming support.
+
+<a id="ops-08"></a>
+### OPS-08 — SAP outage isolation and queue deadlines
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Operations
+
+**Idea.** Define target-specific circuit-breaker behavior and bounded queue waits for SAP calls.
+
+**Why it remains.** SAP ref. 137800 calls for outage protection. ARC-1 has HTTP timeouts, bounded
+retry paths and concurrency admission, but no built-in circuit breaker; ordinary semaphore waits
+lack a queue deadline. A semaphore does not suppress repeated calls to an unavailable backend.
+See the [current gap assessment](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-21-sap-api-policy-custom-mcp.md).
+
+**Resume with.** Define transient-failure classification, target isolation, recovery probes, queue
+deadlines and actionable errors. Test outage/recovery without replaying uncertain writes, treating
+one user's authorization denial as a system outage, or letting one failed target block healthy ones.
+Compare application and gateway controls before choosing where the breaker belongs.
 
 <a id="feat-07"></a>
 ### FEAT-07 — Native TLS listener

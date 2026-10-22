@@ -98,6 +98,9 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    [ADR-0008](adr/0008-opt-in-xsuaa-target-authorization.md), the
    [accepted spec](plans/xsuaa-target-authorization.md) and its linked implementation/live-validation
    record. These qualify only enforced mode; standard behavior must remain unchanged.
+   For scoped writes, read [ADR-0010](adr/0010-pinned-pp-multi-target-writes.md), its
+   [implementation contract](plans/2026-10-22-multi-target-pinned-writes.md), and the
+   [operator guide](../docs_page/multi-target-writes.md).
 2. At startup, `src/server/destination-discovery.ts` projects subaccount destinations into a
    secret-safe shape, `destination-registry.ts` validates them, and `server.ts`/`http.ts` create the
    pinned and aggregate HTTP factories.
@@ -115,7 +118,9 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 ### Invariants
 
 - Default off; BTP CF only; XSUAA-only route auth; `ARC1_CACHE=none`; standard tool mode; UI,
-  plugins, shared cookies, writes, activation, and transport/Git mutation remain unavailable. PP
+  plugins and shared cookies remain unavailable. ADR-0010 permits only scoped CLAS/INTF writes and
+  whole-owner activation on explicitly enabled pinned PP targets with exact write grants; aggregate,
+  Copilot and Basic routes remain mutation-free. Transport/Git management remains unavailable. PP
   targets are strict per-user. Basic is a separate default-off shared identity, never fallback, and
   requires exactly one CF instance. ATC and ABAP Unit are available as workload-producing reads;
   operators can disable them with `SAP_DENY_ACTIONS`.
@@ -140,6 +145,10 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 
 ### Change these together
 
+- Scoped pinned writes: `multi-target-write-surface.ts`, verified request projection/runtime config,
+  `src/adt/pinned-write-policy.ts`, `src/handlers/write/pinned{,-activation}.ts`, HTTP no-replay policy,
+  and focused `pinned-writes` / `multi-target-writes` tests. The low-level activation boundary must
+  require scoped validation; never let missing context select the legacy pipeline.
 - Destination properties/validation: `multi-target-destination-config.ts`,
   `multi-target-identity.ts`, `destination-discovery.ts`, `destination-registry.ts`,
   `multi-target-runtime.ts`, and their tests. Target syntax, pinned route matchers, aggregate pattern,
@@ -202,11 +211,12 @@ npm run btp:validate
 | Add FLP operation | `src/adt/flp.ts`, `src/handlers/manage.ts`, `src/handlers/tools.ts`, `src/handlers/schemas.ts` |
 | Add package create/delete/move (DEVC) | `src/handlers/manage.ts` (`handleSAPManage`), `src/handlers/tools.ts`, `src/handlers/schemas.ts`, `src/adt/ddic-xml.ts`, `src/adt/refactoring.ts` |
 | Add FUGR/FUNC write (#250) | `src/handlers/write.ts` + `src/handlers/write-helpers.ts` (FUNC URL pre-resolution + `stripFmParamCommentBlock` in `handleSAPWrite`/`handleSAPActivate`), `buildCreateXml` (`FUGR`/`FUNC` cases — FUNC bypasses `objectBasePath('FUNC')`, keep that throw intact), `schemas.ts`/`tools.ts` (`FUGR` in `SAPWRITE_TYPES_ONPREM` + `group` field). SAPGUI `*"…"*` blocks auto-stripped before PUT (SAP rejects FUNC_ADT028).  |
+| Read PROG/INCL with nested includes (`SAPRead expand_includes=true`) | `src/adt/include-expansion.ts` (`findIncludeStatements` — abaplint `Statements.Include` on a copy that keeps only statements mentioning INCLUDE, at their rows, parsed in blocks of 2,000, because abaplint's structure pass is super-linear: 10k lines ≈ 0.8 s, 100k ≈ 108 s, 40k INCLUDE statements ≈ 3.4 s in one parse (2.120.71); `expandIncludes` — customer includes first, then the rest breadth-first in the order found (deterministic), cycle/dedup guard, ownership rule, 5 levels / 80 sources / 20 s / 40k chars for text (a client with a 25k-token result limit refused an 81k-char SAPMV45A expansion and saved a 62 KB one to a file), 4M for grep; `readProgramExpanded` — one deadline + the request's cancel signal for the program and include reads (the inactive-object lookup before it is outside)), `src/handlers/expanded-read.ts` (`=== name ===` blocks + `[include expansion]` note, customer code first; refuses when `SAPRead.INCL` is denied), tests. Function groups keep `getFunctionGroupExpanded`. |
 | Read FUGR full code tree (`SAPRead type=FUGR expand_includes=true`) | `src/adt/client.ts` (`getFunctionGroupExpanded` — BFS over the include graph, depth cap 5 / block cap 80, cycle+dedup guard), `src/handlers/read.ts` (`case 'FUGR'` expand branch, emits `=== name ===` blocks + `[truncated]` note), tests. Recursion is required — `FUNCTION…ENDFUNCTION` bodies live in nested `LZ<grp>U01/U02` includes. Dynpros + GUI status are NOT reachable via ADT (SE51/SE41 only; 404 on a4h). |
 | Add FUNC structured parameters (#252) | `src/adt/fm-signature.ts` (`buildFmSignatureClause`/`parseFmSignature`/`spliceFmSignature`), `src/handlers/write.ts` + `src/handlers/read.ts` (splice signature into source on FUNC create+update when `args.parameters` set; `handleSAPRead` returns `{source, signature}` when `includeSignature`), `schemas.ts`/`tools.ts`. `FUNC` is excluded from `runPreWriteLint` LINTABLE_TYPES — abaplint can't parse source-based FM signatures. |
 | Add FUNC processing kind (normal / Remote-Enabled / update task) | `src/handlers/{schemas,tools}.ts` (strict creation-only fields), `src/handlers/write-helpers.ts` (creation envelope), `src/handlers/object-types.ts` (`functionModuleObjectUrl`), and `src/handlers/write/create.ts` (create shell → GET inactive root → locked metadata PUT → structural readback, shared by single + batch routing). Keep `objectBasePath('FUNC')` fail-closed: a FUNC URL always needs its parent group. The create POST deliberately carries NO processing attributes (SAP ignores them there and still makes a `normal` shell); the locked PUT is the only writer, and its media type is negotiated then stripped to the bare type (on-prem rejects `; charset=…`). Full lifecycle live-verified on 758 (v3) and 750 (v2). See [the research record](research/2026-07-28-func-processing-types.md). |
 | Modify CLAS include writes | `src/handlers/write/update-delete.ts` (`SAPWrite update` with `include=definitions|implementations|macros|testclasses`, parent-class lock + include URL PUT), `src/adt/crud.ts` (`safeUpdateClassInclude` — GET-probes the include and POST-creates it under the class lock when missing, e.g. fresh `testclasses`/CCAU), `src/adt/errors.ts` (`include-not-initialized` category), `schemas.ts`/`tools.ts`, tests. |
-| Modify package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents` uses `informationsystem/search?packageName=...` GET; array API retained), `src/adt/package-contents.ts` (shared limit + completeness metadata), `src/handlers/read.ts`, `src/handlers/{schemas,tools}.ts`, tests. Default first block remains an array, second carries `listing`; structured is `{objects, listing}`. No total/continuation evidence; ADT search omits legacy types. See `docs/research/2026-09-14-package-completeness.md`. |
+| Modify package listing (`SAPRead type=DEVC`) | `src/adt/client.ts` (`getPackageContents`: indexed search; array API retained), `src/adt/{package-contents,package-browser}.ts`, `src/handlers/{read,schemas,tools,object-types}.ts`. `packageScope=direct` uses two bounded native tree reads and preserves exact folder selectors; never reuse it as authorization evidence. Both modes return array + `listing`, or structured `{objects, listing}`. See `docs/plans/2026-10-22-direct-package-browser.md`. |
 | Modify current object transport status (`history` legacy action name) | `src/adt/transport.ts` (`getObjectTransports`: current lock only), `src/adt/types.ts` (`ObjectTransportHistory`), `src/handlers/transport.ts` (`handleSAPTransport` case `history`: lock + assignment candidates, not complete history), `src/handlers/schemas.ts`, `src/handlers/tools.ts` |
 | Modify SAPTransport.create / transport target (TR_TARGET) / layer+target discovery | `src/adt/transport.ts` (`createTransportWithTarget` sets the explicit target via `tm:root`/`newrequest` `POST /cts/transportrequests` — the only ADT path that sets it; `CreateCorrectionRequest` at `/cts/transports` ignores `<TARGET>`. `supportsExplicitTransportTarget(http)` discovery-gates it: true iff `/cts/transportrequests` advertises `transportorganizer.v1+xml` — 7.58 yes, 7.50 no. `listTransportTargets`/`listTransportLayers` value-helps), `src/handlers/transport.ts` (`handleSAPTransport` create routing + `layers`/`targets` actions), `schemas.ts`/`tools.ts` (`target`/`transportLayer` params), `src/authz/policy.ts`, `src/adt/http.ts` (discovery accessors). Verified: a4h 7.58 sets target → 201; npl 7.50 gate fail-fast. |
 | Modify SAPTransport.check / transport preflight parsing | `src/adt/transport.ts` (`getTransportInfo` + `parseTransportInfo`), `src/handlers/transport.ts`, `src/handlers/{schemas,tools}.ts`, `tests/fixtures/xml/transport-check-*.xml` — live response is `REQUESTS/CTS_REQUEST/REQ_HEADER` plus `LOCKS/CTS_OBJECT_LOCK/LOCK_HOLDER`; `OPERATION=I` means create and empty means modify. Never use `KORRFLAG` alone: 7.50 returns `RECORDING=X` with it blank. Keep candidates bounded at the handler surface. Verified 750/758/816. |
@@ -274,7 +284,7 @@ npm run btp:validate
 | Update vulnerability reporting policy | `SECURITY.md` (Supported Versions, Reporting channels, Response SLAs, CVE handling, Out of Scope, Safe Harbor) |
 | Add CLI sub-command (`call`, `tools`, shortcuts) | `src/cli.ts` (Commander wiring), `src/cli-args.ts` (pure arg parsing + tests) — never duplicate Zod validation; `handleToolCall` does it. |
 | Add SAP version-quirk workaround (NW 7.50 / S/4 gating) | Prefer `extractExceptionType` in `src/adt/errors.ts` (structured XML error). Body-marker heuristics only with a release-scoped guard — see `convertHtmlConflictToProperError` in `src/adt/crud.ts` (scoped to `abapRelease < 751`). Inline-comment why the heuristic self-scopes. ADR-0002 (#199). |
-| Add activation batch quirk recovery | `src/adt/devtools.ts` (`activateBatch`, ED064 retry helper), `tests/unit/adt/devtools.test.ts`. Pure ED064 / "no next/previous object found" failures retried once as individual activations; mixed real errors must not retry. |
+| Add activation batch quirk recovery | `src/adt/devtools.ts` (`activateBatch`, ED064 retry helper), `tests/unit/adt/{devtools,activation-timeout}.test.ts`. Pure ED064 retries singles; mixed real errors must not retry. The initial POST, preaudit confirmation and singles share one 300 s deadline and caller signal; transient HTTP errors are not replayed. |
 | Add a plugin elicitation prompt (`ctx.elicit`) | `src/server/plugin-loader.ts` (`buildMcpCapabilities`) — the only live elicitation path (opt-in, for extension tools). Core tools have no interactive elicitation; destructive-op safety is the config ceiling (`allowWrites`/`allowedPackages`/`denyActions`). |
 | Add XSUAA/JWT auth | Provided by [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth) (`createXsuaaTokenVerifier` / `createChainedTokenVerifier`); wired in `src/server/http.ts` + `src/server/server.ts`. (Was `src/server/xsuaa.ts`, extracted in #456.) |
 | Modify OAuth DCR client store / signed-token format | Now [`@arc-mcp/xsuaa-auth`](https://github.com/arc-mcp/xsuaa-auth)'s `StatelessDcrClientStore`; ARC-1 sets `clientIdPrefix: 'arc1-'` + `dcrKdfLabel: 'arc1-dcr/v1'` in `src/server/http.ts`. Bump the kdf label to revoke issued client_ids. Audit: `oauth_client_registered`/`oauth_client_lookup_failed`/`oauth_redirect_uri_registered`. (Was `src/server/stateless-client-store.ts`, extracted in #456.) |
@@ -418,3 +428,16 @@ passed subsequent checks; the SAP-internal cause remains inferred. See the
 - **Not yet shipped** (see `docs/plans/2026-06-12-test-isolation-and-parallel-runs.md`): CI `retry: 1` paired
   with flake telemetry (H2), a parallel read-only e2e project (F2), and a cross-run flake-aggregation
   workflow (H3). The plan rates these measure-first / conditional on the F1 numbers.
+
+## Dump feed filters
+
+`feed-schema.ts` reads only the fixed dumps schema, compiles bounded flat AND conditions and
+creates one filtered-call budget. `diagnostics.ts` retains cursor paging and the legacy query
+encoder. `dump-filter-inputs.ts` owns schema fragments and action-specific validation. Keep the
+JSON schema, Zod, handler, policy and multi-target allowlist aligned. Unfiltered calls must remain
+exactly `(path, headers)` without new schema/budget options. Typed values are deliberately narrower
+than legacy `user`; do not broaden them without wire evidence.
+
+Tests: `tests/unit/{adt,handlers}/dump-filters.test.ts`, existing diagnostics and tool-surface tests.
+[Evidence](research/2026-10-17-dump-filter-extraction.md) distinguishes live matching from synthetic
+pagination/model checks. See [usage](../docs_page/tools.md#find-a-particular-runtime-error).

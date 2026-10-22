@@ -110,6 +110,7 @@ mta-*.mtaext
 
 # TypeScript / Node.js
 dist/
+dist-sea/
 node_modules/
 *.tsbuildinfo
 .vitest/

@@ -60,7 +60,9 @@ export async function verifyCiPackages(
       response = await http.get(`/sap/bc/adt/packages/${encodeURIComponent(name)}`, undefined, requestOptions);
     } catch (error) {
       if (error instanceof AdtApiError && error.statusCode === 404)
-        throw new Error(`CI package ${name} does not exist or is not accessible. No run was started.`);
+        throw new Error(
+          `CI package ${name} could not be verified: it may be missing/inaccessible, or the package metadata API may be unavailable. No run was started.`,
+        );
       throw error;
     }
     const packages = findDeepNodes(parseXml(response.body), 'package');

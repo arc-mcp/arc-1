@@ -247,7 +247,7 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
         return server;
       },
       createPinnedServer: (target, authorization) => {
-        const server = createServer(buildMultiTargetConfig(config, target), {
+        const server = createServer(buildMultiTargetConfig(config, target, { mode: 'pinned' }), {
           btpConfig: BTP,
           multiTarget: { mode: 'pinned', registry, instanceConfig: config, target, authorization },
         });
@@ -620,7 +620,9 @@ describe('request-scoped Eclipse links over real pinned/aggregate HTTP routing',
   it('inherits only the admin switch and refuses a valid preference when disabled', async () => {
     const base = { ...CONFIG, ideLinks: 'off' as const, ideSystemId: 'DEV' };
     const registry = makeRegistry(3, [], base);
-    expect(buildMultiTargetConfig({ ...base, ideLinks: 'eclipse' }, registry.targets[0])).toMatchObject({
+    expect(
+      buildMultiTargetConfig({ ...base, ideLinks: 'eclipse' }, registry.targets[0], { mode: 'pinned' }),
+    ).toMatchObject({
       ideLinks: 'eclipse',
       ideSystemId: 'A4H',
     });

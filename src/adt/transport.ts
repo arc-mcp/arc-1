@@ -9,6 +9,7 @@ import { postCreate } from './create-request.js';
 import { AdtApiError, AdtNetworkError, AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import { checkOperation, checkTransport, OperationType, type SafetyConfig } from './safety.js';
+import { parseTransportLocks } from './transport-locks.js';
 import type {
   InactiveObject,
   TransportLayer,
@@ -1180,6 +1181,8 @@ export interface TransportInfo {
   lockedTransportOwner?: string;
   /** Tasks below the parent request holding the object lock. */
   lockedTasks: string[];
+  /** Conflicting holders or task-only evidence cannot authorize a pinned mutation. */
+  lockedTransportAmbiguous?: true;
 }
 
 /**
@@ -1199,6 +1202,7 @@ export async function getTransportInfo(
   objectUrl: string,
   devclass: string,
   operation: 'I' | '' = 'I',
+  options?: AdtRequestOptions,
 ): Promise<TransportInfo> {
   // Transport info is a read operation — doesn't require allowTransportWrites.
   checkOperation(safety, OperationType.Read, 'TransportInfo');
@@ -1219,6 +1223,7 @@ export async function getTransportInfo(
     body,
     'application/vnd.sap.as+xml;charset=UTF-8;dataname=com.sap.adt.transport.service.checkData',
     { Accept: 'application/vnd.sap.as+xml' },
+    options,
   );
 
   const info = parseTransportInfo(resp.body);
@@ -1330,41 +1335,7 @@ function parseTransportInfo(xml: string): TransportInfo {
     number: String(message.MSGNR ?? ''),
   }));
 
-  // Live 7.50/7.58/8.16 shape:
-  // LOCKS/CTS_OBJECT_LOCK/LOCK_HOLDER/REQ_HEADER + TASK_HEADERS/CTS_TASK_HEADER.
-  // Keep LOCKS/HEADER below as a compatibility fallback for older recorded fixtures.
-  const lockContainer = findDeepNodes(parsed, 'LOCKS')[0];
-  let lockedTransport: string | undefined;
-  let lockedTransportOwner: string | undefined;
-  const lockedTasks: string[] = [];
-  if (lockContainer) {
-    const objectLocks = findDeepNodes(lockContainer, 'CTS_OBJECT_LOCK');
-    for (const objectLock of objectLocks) {
-      const holder = findDeepNodes(objectLock, 'LOCK_HOLDER')[0];
-      if (!holder) continue;
-      const header = findDeepNodes(holder, 'REQ_HEADER')[0];
-      const trkorr = String(header?.TRKORR ?? '').trim();
-      if (trkorr && !lockedTransport) {
-        lockedTransport = trkorr;
-        const owner = String(header?.AS4USER ?? '').trim();
-        if (owner) lockedTransportOwner = owner;
-      }
-      for (const task of findDeepNodes(holder, 'CTS_TASK_HEADER')) {
-        const taskId = String(task.TRKORR ?? '').trim();
-        if (taskId && !lockedTasks.includes(taskId)) lockedTasks.push(taskId);
-      }
-    }
-
-    if (!lockedTransport) {
-      const legacyHeader = findDeepNodes(lockContainer, 'HEADER')[0];
-      const trkorr = String(legacyHeader?.TRKORR ?? '').trim();
-      if (trkorr) {
-        lockedTransport = trkorr;
-        const owner = String(legacyHeader?.AS4USER ?? '').trim();
-        if (owner) lockedTransportOwner = owner;
-      }
-    }
-  }
+  const locks = parseTransportLocks(parsed);
 
   // Live shape: REQUESTS contains 0..N CTS_REQUEST nodes, each with its own REQ_HEADER.
   // Iterate CTS_REQUEST explicitly: findDeepNodes() deliberately returns the first matching
@@ -1408,9 +1379,7 @@ function parseTransportInfo(xml: string): TransportInfo {
     existingRequestOnly,
     messages,
     existingTransports,
-    lockedTasks,
-    ...(lockedTransport ? { lockedTransport } : {}),
-    ...(lockedTransportOwner ? { lockedTransportOwner } : {}),
+    ...locks,
   };
 }
 
@@ -1435,7 +1404,7 @@ function findDeepValue(obj: unknown, key: string): unknown {
 
 // ─── Parsers ────────────────────────────────────────────────────────
 
-function parseTransportList(xml: string, path: string): TransportRequest[] {
+export function parseTransportList(xml: string, path: string): TransportRequest[] {
   const parsed = parseXml(xml);
   if (!Object.hasOwn(parsed, 'root')) {
     const explanation =

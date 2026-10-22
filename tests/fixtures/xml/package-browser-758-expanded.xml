@@ -1,0 +1,290 @@
+<?xml version='1.0' encoding='utf-8'?>
+<asx:abap xmlns:asx="http://www.sap.com/abapxml" version="1.0">
+  <asx:values>
+    <DATA>
+      <TREE_CONTENT>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TTYP/DA</OBJECT_TYPE>
+          <OBJECT_NAME>TAUNIT_DESCR_TAB</OBJECT_NAME>
+          <TECH_NAME>TAUNIT_DESCR_TAB</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/tabletypes/taunit_descr_tab</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: Alert descriptions at runtime</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TTYP/DA</OBJECT_TYPE>
+          <OBJECT_NAME>TAUNIT_PARAMS</OBJECT_NAME>
+          <TECH_NAME>TAUNIT_PARAMS</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/tabletypes/taunit_params</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: Parameters for alert description</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>DOMA/DD</OBJECT_TYPE>
+          <OBJECT_NAME>TAUNIT_CM_PRIO</OBJECT_NAME>
+          <TECH_NAME>TAUNIT_CM_PRIO</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/domains/taunit_cm_prio</OBJECT_URI>
+          <DESCRIPTION>Priority as ATC/CheckMan finding</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>DTEL/DE</OBJECT_TYPE>
+          <OBJECT_NAME>AUNIT_CONFIG_KEY</OBJECT_NAME>
+          <TECH_NAME>AUNIT_CONFIG_KEY</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/dataelements/aunit_config_key</OBJECT_URI>
+          <DESCRIPTION>Configuration Key</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>DTEL/DE</OBJECT_TYPE>
+          <OBJECT_NAME>AUNIT_CONFIG_VALUE</OBJECT_NAME>
+          <TECH_NAME>AUNIT_CONFIG_VALUE</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/dataelements/aunit_config_value</OBJECT_URI>
+          <DESCRIPTION>Configuration Value</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>ENQU/DL</OBJECT_TYPE>
+          <OBJECT_NAME>EAUNIT_PROG_INFO</OBJECT_NAME>
+          <TECH_NAME>EAUNIT_PROG_INFO</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/lockobjects/sources/eaunit_prog_info</OBJECT_URI>
+          <DESCRIPTION>Lock Object for table TAUNIT_PROG_INFO</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TABL/DS</OBJECT_TYPE>
+          <OBJECT_NAME>SAUNIT_PROG_INFO</OBJECT_NAME>
+          <TECH_NAME>SAUNIT_PROG_INFO</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/structures/saunit_prog_info</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: Meta data on test classes (serialized)</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TABL/DS</OBJECT_TYPE>
+          <OBJECT_NAME>SAUNIT_RT_METRIC_CONTENT</OBJECT_NAME>
+          <TECH_NAME>SAUNIT_RT_METRIC_CONTENT</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/structures/saunit_rt_metric_content</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: ABAP runtime metrics</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TABL/DT</OBJECT_TYPE>
+          <OBJECT_NAME>TAUNIT</OBJECT_NAME>
+          <TECH_NAME>TAUNIT</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/tables/taunit</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: Text table "ABAP Unit Assertions"</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TABL/DT</OBJECT_TYPE>
+          <OBJECT_NAME>TAUNIT_CLT_SETUP</OBJECT_NAME>
+          <TECH_NAME>TAUNIT_CLT_SETUP</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/ddic/tables/taunit_clt_setup</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: Customizing of client</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>FUGR/F</OBJECT_TYPE>
+          <OBJECT_NAME>SABP_UNIT_REPOSITORY</OBJECT_NAME>
+          <TECH_NAME>SAPLSABP_UNIT_REPOSITORY</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/functions/groups/sabp_unit_repository</OBJECT_URI>
+          <DESCRIPTION>Internal: Repository</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>FUGR/F</OBJECT_TYPE>
+          <OBJECT_NAME>SABP_UNIT_SBOX</OBJECT_NAME>
+          <TECH_NAME>SAPLSABP_UNIT_SBOX</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/functions/groups/sabp_unit_sbox</OBJECT_URI>
+          <DESCRIPTION>Internal: Test Sandbox</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>PINF/KI</OBJECT_TYPE>
+          <OBJECT_NAME>SABP_UNIT_CORE_RUNTIME_2_IDE</OBJECT_NAME>
+          <TECH_NAME>SABP_UNIT_CORE_RUNTIME_2_IDE</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/vit/wb/object_type/pinfki/object_name/SABP_UNIT_CORE_RUNTIME_2_IDE</OBJECT_URI>
+          <DESCRIPTION>Access 4 IDE</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>PINF/KI</OBJECT_TYPE>
+          <OBJECT_NAME>SABP_UNIT_CORE_RUNTIME_2_PRV</OBJECT_NAME>
+          <TECH_NAME>SABP_UNIT_CORE_RUNTIME_2_PRV</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/vit/wb/object_type/pinfki/object_name/SABP_UNIT_CORE_RUNTIME_2_PRV</OBJECT_URI>
+          <DESCRIPTION>Access for SABP_UNIT* packages</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>CLAS/OC</OBJECT_TYPE>
+          <OBJECT_NAME>AUNIT_TYPE_CLASS_TEST</OBJECT_NAME>
+          <TECH_NAME>==============================CP</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/oo/classes/aunit_type_class_test</OBJECT_URI>
+          <DESCRIPTION>Internal: Type definition on ABAP Unit</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>CLAS/OC</OBJECT_TYPE>
+          <OBJECT_NAME>CL_AUNIT_ABAP_RUNTIME_ABORTION</OBJECT_NAME>
+          <TECH_NAME>==============================CP</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/oo/classes/cl_aunit_abap_runtime_abortion</OBJECT_URI>
+          <DESCRIPTION>Access to runtime abortion</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>INTF/OI</OBJECT_TYPE>
+          <OBJECT_NAME>IF_AUNIT_ABAP_RUNTIME_ABORTION</OBJECT_NAME>
+          <TECH_NAME>IF_AUNIT_ABAP_RUNTIME_ABORTION</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/oo/interfaces/if_aunit_abap_runtime_abortion</OBJECT_URI>
+          <DESCRIPTION>Internal: ABAP Runtime Error</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>INTF/OI</OBJECT_TYPE>
+          <OBJECT_NAME>IF_AUNIT_ACCESS</OBJECT_NAME>
+          <TECH_NAME>IF_AUNIT_ACCESS</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/oo/interfaces/if_aunit_access</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: *DO NOT ACCESS* Friendly Access to Test Classes</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>PROG/P</OBJECT_TYPE>
+          <OBJECT_NAME>RS_AUNIT_LOAD_FLAGS</OBJECT_NAME>
+          <TECH_NAME>RS_AUNIT_LOAD_FLAGS</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/programs/programs/rs_aunit_load_flags</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: Access flags within byte code within separate session</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>PROG/P</OBJECT_TYPE>
+          <OBJECT_NAME>RS_AUNIT_SBOX_CLASS_TEST_INT</OBJECT_NAME>
+          <TECH_NAME>RS_AUNIT_SBOX_CLASS_TEST_INT</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/programs/programs/rs_aunit_sbox_class_test_int</OBJECT_URI>
+          <DESCRIPTION>INTERNAL: Sandbox for test class execution</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>SUSH</OBJECT_TYPE>
+          <OBJECT_NAME>_AUNIT_REPO_COLLECT_GARBAGE   RF</OBJECT_NAME>
+          <TECH_NAME>_AUNIT_REPO_COLLECT_GARBAGE   RF</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/aps/iam/sush/_aunit_repo_collect_garbage%20%20%20rf</OBJECT_URI>
+          <DESCRIPTION>_AUNIT_REPO_COLLECT_GARBAGE</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>SUSH</OBJECT_TYPE>
+          <OBJECT_NAME>_AUNIT_SBOX_CLASS_TEST_EXT    RF</OBJECT_NAME>
+          <TECH_NAME>_AUNIT_SBOX_CLASS_TEST_EXT    RF</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/aps/iam/sush/_aunit_sbox_class_test_ext%20%20%20%20rf</OBJECT_URI>
+          <DESCRIPTION>_AUNIT_SBOX_CLASS_TEST_EXT</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TRAN/T</OBJECT_TYPE>
+          <OBJECT_NAME>SAUNIT_CLIENT_SETUP</OBJECT_NAME>
+          <TECH_NAME>SAUNIT_CLIENT_SETUP</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/vit/wb/object_type/trant/object_name/SAUNIT_CLIENT_SETUP</OBJECT_URI>
+          <DESCRIPTION>ABAP Unit Configuration</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TOBJ/TOB</OBJECT_TYPE>
+          <OBJECT_NAME>TAUNIT_CLT_SETUPS</OBJECT_NAME>
+          <TECH_NAME>TAUNIT_CLT_SETUPS</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/transportobject/objects/taunit_clt_setups</OBJECT_URI>
+          <DESCRIPTION />
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>TOBJ/TOB</OBJECT_TYPE>
+          <OBJECT_NAME>TAUNIT_CUSTS</OBJECT_NAME>
+          <TECH_NAME>TAUNIT_CUSTS</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/transportobject/objects/taunit_custs</OBJECT_URI>
+          <DESCRIPTION />
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>ENHS/XS</OBJECT_TYPE>
+          <OBJECT_NAME>SABP_UNIT_DEFAULT_LISTENER</OBJECT_NAME>
+          <TECH_NAME>SABP_UNIT_DEFAULT_LISTENER</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/enhancements/enhsxsb/sabp_unit_default_listener</OBJECT_URI>
+          <DESCRIPTION>Default Listener of ABAP Unit</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+        <SEU_ADT_REPOSITORY_OBJ_NODE>
+          <OBJECT_TYPE>ENHS/XS</OBJECT_TYPE>
+          <OBJECT_NAME>SABP_UNIT_SYSTEM_TYPE</OBJECT_NAME>
+          <TECH_NAME>SABP_UNIT_SYSTEM_TYPE</TECH_NAME>
+          <OBJECT_URI>/sap/bc/adt/enhancements/enhsxsb/sabp_unit_system_type</OBJECT_URI>
+          <DESCRIPTION>ABAP Unit: system type</DESCRIPTION>
+        </SEU_ADT_REPOSITORY_OBJ_NODE>
+      </TREE_CONTENT>
+      <OBJECT_TYPES>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>CLAS/OC</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000036</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>DOMA/DD</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000031</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>DTEL/DE</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000023</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>ENHS/XS</OBJECT_TYPE>
+          <CATEGORY_TAG>enhancements</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000170</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>ENQU/DL</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000033</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>FUGR/F</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000156</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>INTF/OI</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000112</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>PINF/KI</OBJECT_TYPE>
+          <CATEGORY_TAG>package_interfaces</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000003</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>PROG/P</OBJECT_TYPE>
+          <CATEGORY_TAG>source_library</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000151</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>SUSH</OBJECT_TYPE>
+          <CATEGORY_TAG>apsiam</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000162</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TABL/DS</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000019</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TABL/DT</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000007</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TOBJ/TOB</OBJECT_TYPE>
+          <CATEGORY_TAG>other</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000165</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TRAN/T</OBJECT_TYPE>
+          <CATEGORY_TAG>other</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000160</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+        <SEU_ADT_OBJECT_TYPE_INFO>
+          <OBJECT_TYPE>TTYP/DA</OBJECT_TYPE>
+          <CATEGORY_TAG>dictionary</CATEGORY_TAG>
+          <OBJECT_TYPE_LABEL />
+          <NODE_ID>000015</NODE_ID>
+        </SEU_ADT_OBJECT_TYPE_INFO>
+      </OBJECT_TYPES>
+    </DATA>
+  </asx:values>
+</asx:abap>

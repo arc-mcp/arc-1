@@ -29,23 +29,28 @@ its artifact; ask the deployment owner if that revision is unknown. Proposed set
 
     Start with the topology table below only when that recommendation does not fit your landscape.
 
+For custom MCP, SAP's reference architecture is the main design and control baseline. The
+[API-policy assessment](sap-api-policy-and-architecture.md) explains the conditional path, remaining
+controls and the ADT-specific clarification required for ARC-1. Technical setup alone does not
+establish policy permission.
+
 ## Choose the topology
 
 | Your SAP landscape | ARC-1 shape | SAP identity | Continue with |
 |--------------------|-------------|--------------|---------------|
 | One on-premise SAP system/client | One `/mcp` endpoint | Principal Propagation recommended; shared Basic supported | Cloud Foundry Deployment — [single-PP](btp-cloud-foundry-deployment.md#single-target-read-only-pp-profile) or [single-Basic](btp-cloud-foundry-deployment.md#single-target-read-only-shared-basic-profile) |
-| Several on-premise systems or clients, mutation-free access | Pinned `/<SYSTEM>/<CLIENT>/mcp` routes plus `/multi/mcp` | Principal Propagation recommended; shared Basic is an explicit exception | [Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) — multi-PP profile |
+| Several on-premise systems or clients, read access and optional scoped PP writes | Pinned `/<SYSTEM>/<CLIENT>/mcp` routes plus `/multi/mcp` | Principal Propagation recommended; shared Basic is an explicit exception | [Cloud Foundry Deployment](btp-cloud-foundry-deployment.md) — multi-PP profile |
 | One general `/mcp` endpoint beside mutation-free multi-target routes | Standard access (`standard`) only; opt-in target enforcement rejects this topology | Configure each path independently | Read the [side-by-side risks](multi-target-administration.md#optional-single-target-mcp) before deployment |
 | BTP ABAP Environment | One `/mcp` endpoint | `OAuth2UserTokenExchange` | [BTP ABAP Environment](btp-abap-environment.md) |
 | S/4HANA Public Cloud developer extensibility | One `/mcp` endpoint | Per-user SAML/OAuth exchange | [S/4HANA Public Cloud](s4hana-public-cloud.md) |
 | Writable access to several SAP systems with stronger isolation | One ARC-1 instance and MCP connection per target | Identity and safety policy per instance | [Separate instances](multi-target-administration.md#when-separate-instances-are-safer) |
 
-!!! warning "Multi-target v1 is mutation-free"
+!!! note "Writes require a separate pinned PP connection"
 
-    The discovered multi-target routes do not expose object writes, activation, transport mutation,
-    Git mutation, plugins, or controlled execution. A writable single-target `/mcp` may coexist
-    only with standard access (`standard`), as an independent configuration. Do not widen multi-target access by copying
-    single-target write settings into destinations.
+    Aggregate and Basic routes stay mutation-free. The [pinned write guide](multi-target-writes.md)
+    adds scoped CLAS/INTF writes and whole-owner activation through target-filtered PP routes,
+    with server, destination and exact user grants. CTS/Git management and plugins remain unavailable.
+    An independent single-target `/mcp` can coexist only in standard read multi-target mode.
 
 ## Follow the setup in this order
 

@@ -1,6 +1,6 @@
 {
   "name": "SAPNavigate",
-  "description": "Navigate code: definitions, references, completion, hierarchy. references: scope-based where-used with lines/snippets/package; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets. Experimental relations: dependency maps or package neighborhoods, then selected reads. Consumer locations: references; objectType=\"CLAS/OC\" for class-only; otherwise omit. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source.",
+  "description": "Navigate code: definitions, references, completion, hierarchy. references: where-used objects by default; detail=positions/snippets adds bounded native usages; objectType filters results (e.g. CLAS/OC, PROG/P); type+name replaces uri. hierarchy queries SEOMETAREL for superclass/interfaces/direct subclasses: requires data/SQL opt-in + matching scope; otherwise inspect class MAIN with SAPRead. CDS (DDLS) impact: SAPContext(action=\"impact\") classifies where-used into RAP buckets. Experimental relations: dependency maps or package neighborhoods, then selected reads. Consumer locations: references; objectType=\"CLAS/OC\" for class-only; otherwise omit. Active metadata, not source-call/runtime proof. Coverage unknown. type+name required, no uri/source.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -30,6 +30,25 @@
       "objectType": {
         "type": "string",
         "description": "references RESULT filter, not the root type: CLAS/OC, PROG/P, FUGR/FF. Omit for all consumer types. A bare prefix (\"CLAS\") matches every subtype."
+      },
+      "packages": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "items": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "description": "references: exact package names (e.g. [\"$TMP\"]); no wildcards or implicit subpackages. Native scope when available, otherwise local filtering."
+      },
+      "detail": {
+        "type": "string",
+        "enum": [
+          "objects",
+          "positions",
+          "snippets"
+        ],
+        "description": "references: objects (default), or expand at most 10 native nodes for positions/snippets. Method positions can be component-relative; inspect usageDetails limits."
       },
       "maxResults": {
         "type": "number",

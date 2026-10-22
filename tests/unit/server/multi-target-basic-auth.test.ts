@@ -283,7 +283,7 @@ describe('multi-target shared Basic authentication', () => {
       return DISCOVERY_RESPONSE;
     });
 
-    const pinned = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const pinned = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -323,7 +323,7 @@ describe('multi-target shared Basic authentication', () => {
       vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue(DISCOVERY_RESPONSE);
       const config =
         mode === 'pinned'
-          ? buildMultiTargetConfig(instanceConfig, target)
+          ? buildMultiTargetConfig(instanceConfig, target, { mode: 'pinned' })
           : buildAggregateToolSurfaceConfig(instanceConfig, current.targets);
       const server = createServer(config, {
         btpConfig: BTP_CONFIG,
@@ -465,7 +465,7 @@ describe('multi-target shared Basic authentication', () => {
       apiKeys: [{ key: 'basic-api-key', profile: 'viewer' }],
     };
     const audit = vi.spyOn(logger, 'emitAudit');
-    const server = createServer(buildMultiTargetConfig(config, target), {
+    const server = createServer(buildMultiTargetConfig(config, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: config, target, sharedAuthState },
     });
@@ -498,7 +498,7 @@ describe('multi-target shared Basic authentication', () => {
   it('fails safely before destination lookup when Basic BTP runtime state is missing', async () => {
     const current = registry();
     const target = current.targets[0];
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target },
     });
 
@@ -603,7 +603,7 @@ describe('multi-target shared Basic authentication', () => {
       if (canaries === 1) await firstBlocked;
       return DISCOVERY_RESPONSE;
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -641,7 +641,7 @@ describe('multi-target shared Basic authentication', () => {
       if (canaries === 1) await firstBlocked;
       return DISCOVERY_RESPONSE;
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -673,7 +673,7 @@ describe('multi-target shared Basic authentication', () => {
       await canaryBlocked;
       throw new AdtApiError('Unauthorized', 401, path, 'SECRET_SAP_BODY');
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -709,7 +709,7 @@ describe('multi-target shared Basic authentication', () => {
       }
       return DISCOVERY_RESPONSE;
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -756,7 +756,7 @@ describe('multi-target shared Basic authentication', () => {
           };
         return DISCOVERY_RESPONSE;
       });
-      const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+      const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
         btpConfig: BTP_CONFIG,
         multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
       });
@@ -780,7 +780,7 @@ describe('multi-target shared Basic authentication', () => {
     resolveRuntimeSubaccountDestination.mockImplementation(async () => ({ ...BASE_DESTINATION, Password: password }));
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue(DISCOVERY_RESPONSE);
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -825,7 +825,7 @@ describe('multi-target shared Basic authentication', () => {
       body,
     });
     vi.spyOn(AdtClient.prototype, 'getSystemInfo').mockResolvedValue('{"sid":"A4H"}');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -863,7 +863,7 @@ describe('multi-target shared Basic authentication', () => {
     resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
     vi.spyOn(AdtHttpClient.prototype, 'get').mockResolvedValue({ statusCode: 200, headers, body });
     const tool = vi.spyOn(AdtClient.prototype, 'getSystemInfo');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -895,7 +895,7 @@ describe('multi-target shared Basic authentication', () => {
     vi.spyOn(AdtClient.prototype, 'getSystemInfo')
       .mockRejectedValueOnce(new AdtApiError('Forbidden', 403, '/sap/bc/adt/systeminformation', authorizationBody))
       .mockResolvedValueOnce('{"sid":"A4H"}');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -922,7 +922,7 @@ describe('multi-target shared Basic authentication', () => {
       .spyOn(AdtHttpClient.prototype, 'get')
       .mockRejectedValue(new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', authorizationBody));
     const tool = vi.spyOn(AdtClient.prototype, 'getSystemInfo');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -951,7 +951,7 @@ describe('multi-target shared Basic authentication', () => {
     const canary = vi
       .spyOn(AdtHttpClient.prototype, 'get')
       .mockRejectedValue(new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', connectivityBody));
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -981,7 +981,7 @@ describe('multi-target shared Basic authentication', () => {
     const canary = vi
       .spyOn(AdtHttpClient.prototype, 'get')
       .mockRejectedValue(new AdtApiError('Forbidden', 403, '/sap/bc/adt/core/discovery', body));
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1022,7 +1022,7 @@ describe('multi-target shared Basic authentication', () => {
       return '{"sid":"A4H"}';
     });
     const audit = vi.spyOn(logger, 'emitAudit');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1056,7 +1056,7 @@ describe('multi-target shared Basic authentication', () => {
       URL: 'http://changed.internal:50000',
     });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1089,7 +1089,7 @@ describe('multi-target shared Basic authentication', () => {
       new RuntimeDestinationLevelError('INSTANCE_DESTINATION_SHADOW', target.destinationName),
     );
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1114,7 +1114,7 @@ describe('multi-target shared Basic authentication', () => {
       throw new Error('SENTINEL_PROXY_FAILURE_DETAIL');
     });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1146,7 +1146,7 @@ describe('multi-target shared Basic authentication', () => {
     createConnectivityProxy.mockImplementationOnce(() => {
       throw new Error('proxy temporarily unavailable');
     });
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1169,7 +1169,7 @@ describe('multi-target shared Basic authentication', () => {
     const sharedAuthState = new MultiTargetSharedAuthState();
     resolveRuntimeSubaccountDestination.mockResolvedValue({ ...BASE_DESTINATION, User: username });
     const canary = vi.spyOn(AdtHttpClient.prototype, 'get');
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });
@@ -1227,7 +1227,7 @@ describe('bounded transport review with shared Basic identity', () => {
     const sharedAuthState = new MultiTargetSharedAuthState();
     setCachedFeatures(featuresOff(), target.target);
     resolveRuntimeSubaccountDestination.mockResolvedValue(BASE_DESTINATION);
-    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target), {
+    const server = createServer(buildMultiTargetConfig(INSTANCE_CONFIG, target, { mode: 'pinned' }), {
       btpConfig: BTP_CONFIG,
       multiTarget: { mode: 'pinned', registry: current, instanceConfig: INSTANCE_CONFIG, target, sharedAuthState },
     });

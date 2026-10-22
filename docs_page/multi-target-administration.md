@@ -1,9 +1,9 @@
 # Multi-Target Administration
 
-!!! warning "Experimental v1"
+!!! note "Default-off, shared application"
 
-    Multi-target mode is default-off and mutation-free. Treat it as a shared read gateway, not as
-    256 isolated ARC-1 instances.
+    Aggregate and Basic routes remain mutation-free. [Scoped pinned PP writes](multi-target-writes.md)
+    require separate destination and exact user grants. One application is still one shared process.
 
 This page is the operator reference for security boundaries, registry behavior, diagnostics,
 capacity, and incident handling. Follow [BTP Cloud Foundry Deployment](btp-cloud-foundry-deployment.md)
@@ -49,14 +49,14 @@ multi-target v1 ceiling
 ∩ selected SAP identity authorization
 ```
 
-No layer can widen an earlier one. `MCPAdmin` cannot bypass SAP authorization or unlock mutations on
-multi-target routes. PrincipalPropagation targets are `per-user`; explicitly enabled
+No layer can widen an earlier one. `MCPAdmin` cannot bypass SAP authorization or grant pinned writes without the exact write grant
+and every configured write gate. Aggregate and Basic routes always refuse mutations. PrincipalPropagation targets are `per-user`; explicitly enabled
 BasicAuthentication targets are `shared` and use the same SAP technical user for every scoped
 XSUAA caller.
 
 ### OAuth grant behavior
 
-Multi-target protected-resource metadata advertises `read`, `data`, `sql`, and `admin`, and the
+Aggregate protected-resource metadata advertises `read`, `data`, `sql`, and `admin`, and the
 initial 401 does not force one fixed scope. General MCP clients request that mutation-free set;
 XSUAA intersects it with the authenticated user's assigned role collections, and ARC-1 filters the
 tool/action surface from the resulting token. A validated token without global read still receives
@@ -64,8 +64,10 @@ tool/action surface from the resulting token. A validated token without global r
 
 This makes role changes visible after logout/reconnect in clients that do not support reliable MCP
 scope step-up. It also means a trusted Admin receives all assigned mutation-free scopes at initial
-login. Treat the token accordingly and keep its lifetime short. This model must be redesigned—not
-merely expanded—before any multi-target write, transport, or Git scope is introduced.
+login. Treat the token accordingly and keep its lifetime short. Pinned metadata additionally advertises
+`write` only when global writes and target-filtered mode are enabled. Execution still requires the
+[exact write grant, PP and destination restrictions](multi-target-writes.md); transport/Git management
+remain unavailable.
 
 A pinned route reduces accidental target switching, but it is not by itself an access-control rule. With standard access,
 a global read user can try every accepted pinned route. Enforced mode checks a target grant first.
@@ -78,7 +80,7 @@ is unacceptable.
 
 Use one ARC-1 instance and a separate MCP connection per target when you need:
 
-- writes, activation, transport mutation, or Git mutation;
+- write types/actions beyond the [scoped pinned PP surface](multi-target-writes.md), transport management, or Git mutation;
 - target-specific visibility without enabling target authorization, or different
   capabilities per target for the same user;
 - different XSUAA tenants, subaccounts, or identity providers;
@@ -217,7 +219,7 @@ single target at bare `/mcp`. Discovered targets are never assigned there and do
 single target's destination names or policy.
 
 The single-target endpoint retains its normal configuration, including possible write/package behavior;
-the discovered pinned and aggregate routes remain mutation-free. Process-wide multi-target startup
+standard-mode discovered routes and all aggregate/Basic routes remain mutation-free. Process-wide multi-target startup
 constraints—cache none, standard tools, UI/plugins/cookies/direct credentials off—still affect the
 single-target runtime.
 
@@ -582,7 +584,7 @@ are sanitized/omitted for display without making an invalid destination valid.
 | `INVALID_LANGUAGE` | Remove or correct `sap-language`. |
 | `UNKNOWN_ARC1_PROPERTY` | Remove or correct the unsupported ARC-1 property. |
 | `INVALID_POLICY` | Set the data/SQL property to `true` or `false`. |
-| `UNSUPPORTED_V1_WRITE_CONFIG` | Remove write-related properties; writes are unavailable. |
+| `UNSUPPORTED_V1_WRITE_CONFIG` | Write properties require target-filtered mode; transport/Git enabling properties are unsupported. Follow the [write setup](multi-target-writes.md). |
 | `DUPLICATE_TARGET` | Give every enabled destination a unique public target ID. Systems sharing a real SID/client need an alias on one or both destinations; every duplicate claimant is quarantined. |
 | `DUPLICATE_BASIC_CONNECTION` | Keep exactly one enabled Basic destination for each physical URL/client/Cloud Connector location. Aliases cannot duplicate a shared Basic backend; every claimant is quarantined to preserve the lockout guard. |
 | `DUPLICATE_DESTINATION_NAME` | Remove duplicate inputs; every enabled claimant is quarantined and all claimants remain non-routable. |
@@ -682,7 +684,7 @@ On shared Basic targets, a transport diff page can hold the serialized target la
 
 ## Operational checklist
 
-- [ ] The feature is explicitly enabled and all multi-target routes remain mutation-free.
+- [ ] The feature is explicitly enabled. Aggregate/Basic routes remain mutation-free; any pinned PP writes satisfy the [write checklist](multi-target-writes.md).
 - [ ] XSUAA, Destination, and Connectivity bindings are healthy.
 - [ ] Every target has an intentional identity: strict Principal Propagation, or explicitly enabled Basic with no fallback between modes.
 - [ ] PP destinations match an HTTPS/`X509_RESTRICTED` mapping and CERTRULE setup; Basic destinations match a separate principal-type-None mapping with internal HTTPS and a Basic-capable ADT ICF logon procedure. All required ADT paths are allowed.
@@ -705,9 +707,9 @@ On shared Basic targets, a transport diff page can hold the serialized target la
 
 ## Deferred from v1
 
-- multi-target writes, activation, transport mutation, and Git mutation;
-- a full-write destination template;
-- per-target capability pairing (target grants restrict routing, but functional scopes remain global);
+- broader multi-target write actions/types, transport management, and Git mutation;
+- full single-target write parity;
+- capability pairing beyond the scoped exact object-write grant;
 - persisted per-user target availability;
 - API-key or direct Entra/IAS OIDC access to multi-target routes;
 - SaaS subscriber/provider and cross-subaccount discovery;

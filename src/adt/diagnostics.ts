@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { AdtApiError } from './errors.js';
+import { type FeedFilter, prepareDumpFilterQuery } from './feed-schema.js';
 import type { AdtHttpClient } from './http.js';
 import { assertCanonicalHostRelativeAdtPath } from './path-safety.js';
 import { checkOperation, OperationType, type SafetyConfig } from './safety.js';
@@ -65,7 +66,9 @@ interface FeedQueryOptions {
   to?: string;
 }
 
-export interface ListDumpsOptions extends FeedQueryOptions {}
+export interface ListDumpsOptions extends FeedQueryOptions {
+  filters?: FeedFilter[];
+}
 
 export interface ListSystemMessagesOptions extends FeedQueryOptions {}
 
@@ -235,6 +238,7 @@ export async function listDumps(
   const wanted = clampMaxResults(options?.maxResults, DEFAULT_DUMP_MAX_RESULTS, MAX_DUMP_RESULTS_CAP);
   const from = normalizeFeedTimestamp(options?.from, 'from');
   let to = normalizeFeedTimestamp(options?.to, 'to');
+  const { query, request } = await prepareDumpFilterQuery(http, safety, options?.filters, options?.user);
 
   const pageSize = Math.min(wanted, DUMP_PAGE_SIZE);
   const byId = new Map<string, DumpEntry>();
@@ -243,10 +247,11 @@ export async function listDumps(
       { ...options, from, to, maxResults: pageSize },
       DEFAULT_DUMP_MAX_RESULTS,
       'user',
+      query,
     );
-    const resp = await http.get(`/sap/bc/adt/runtime/dumps${queryString}`, {
-      Accept: 'application/atom+xml;type=feed',
-    });
+    const path = `/sap/bc/adt/runtime/dumps${queryString}`;
+    const headers = { Accept: 'application/atom+xml;type=feed' };
+    const resp = request ? await http.get(path, headers, request) : await http.get(path, headers);
 
     const entries = parseDumpList(resp.body);
     const before = byId.size;
@@ -1439,15 +1444,15 @@ function buildFeedQueryString(
   options: FeedQueryOptions | undefined,
   defaultMaxResults: number,
   userAttribute: string,
+  filterQuery?: string,
 ): string {
   const params: string[] = [];
   const maxResults = clampMaxResults(options?.maxResults, defaultMaxResults);
   params.push(`$top=${maxResults}`);
 
   const user = String(options?.user ?? '').trim();
-  if (user) {
-    params.push(`$query=${encodeURIComponent(`and(equals(${userAttribute},${user}))`)}`);
-  }
+  const query = filterQuery ?? (user ? `and(equals(${userAttribute},${user}))` : undefined);
+  if (query) params.push(`$query=${encodeURIComponent(query)}`);
 
   const from = String(options?.from ?? '').trim();
   if (from) params.push(`from=${encodeURIComponent(from)}`);
@@ -1782,10 +1787,7 @@ function extractHtmlSection(html: string, anchorId: string): string {
 function extractHtmlHeaderValue(html: string, label: string): string {
   if (!html || !label) return '';
   const labelPattern = escapeRegex(label).replace(/_/g, '[_\\s]?');
-  const re = new RegExp(
-    `<b[^>]*>\\s*(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`,
-    'i',
-  );
+  const re = new RegExp(`<b[^>]*>(?:&nbsp;|\\s)*${labelPattern}\\s*</b>\\s*</td>\\s*<td[^>]*>([\\s\\S]*?)</td>`, 'i');
   const match = html.match(re);
   if (!match?.[1]) return '';
   return sanitizeHtmlCellValue(match[1]);
@@ -1847,7 +1849,7 @@ function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourc
     const classes = (match[1] ?? '').trim();
     const isError = /\bhighlight\b/i.test(classes);
     const raw = stripHtmlTags(match[2] ?? '');
-    const content = decodeHtmlEntities(raw).replace(/\s+$/, '');
+    const content = decodeHtmlEntities(raw).trimEnd();
     const assignedNumber = numbers[i];
     const resolvedNumber = typeof assignedNumber === 'number' && assignedNumber > 0 ? assignedNumber : fallback;
     fallback = resolvedNumber + 1;

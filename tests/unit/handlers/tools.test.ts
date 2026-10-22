@@ -292,7 +292,7 @@ describe('Tool Definitions', () => {
     const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
     const schema = sapRead.inputSchema as Record<string, any>;
 
-    expect(schema.properties.maxRows.description).toContain('On 758, TABLE_CONTENTS returns N+1');
+    expect(schema.properties.maxRows.description).toContain('Returned row cap');
     expect(schema.properties.sqlFilter.description).toContain('broken on 758');
     expect(schema.properties.sqlFilter.description).toContain('TABLE_QUERY where');
     expect(schema.properties.where.description).toContain('Use <>; 758 rejects !=');
@@ -749,7 +749,7 @@ describe('Tool Definitions', () => {
     expect(actionEnum).toContain('traces');
     expect(actionEnum).toContain('system_messages');
     expect(actionEnum).toContain('gateway_errors');
-    expect(sapDiagnose.description).toContain('Server-driven types unsupported');
+    expect(sapDiagnose.description).toContain('No server-driven types');
     expect(schema.properties.source).toBeDefined();
     expect(schema.properties.sourceUri).toBeDefined();
     expect(schema.properties.line).toBeDefined();
@@ -1042,22 +1042,22 @@ describe('Tool Definitions', () => {
       expect(sapQuery.description).toContain('I_LANGUAGE');
     });
 
-    it('on-premise SAPQuery description suggests metadata tables for reverse-engineering', () => {
+    it('on-premise SAPQuery keeps concise ABAP dialect and CDS-impact guidance', () => {
       const tools = getToolDefinitions(onpremConfig);
       const sapQuery = tools.find((t) => t.name === 'SAPQuery')!;
 
-      expect(sapQuery.description).toContain('DD02L');
-      expect(sapQuery.description).toContain('TADIR');
-      expect(sapQuery.description).toContain('reverse-engineering');
-      expect(sapQuery.description).toContain('auto-chunks long literal IN-lists in plain projection SELECTs');
+      expect(sapQuery.description).toContain('ABAP SQL SELECT');
+      expect(sapQuery.description).toContain('DD02L/DD03L/TADIR/TFDIR/SWOTLV');
+      expect(sapQuery.description).toContain('Long literal IN-lists auto-chunk in plain projection SELECTs');
       expect(sapQuery.description).toContain('alias~field');
       expect(sapQuery.description).toContain('alias~*');
       expect(sapQuery.description).toContain('ASCENDING/DESCENDING');
-      expect(sapQuery.description).toContain('no @/:/? parameters');
-      expect(sapQuery.description).toContain('maxRows (not TOP/LIMIT/OFFSET/FETCH)');
-      expect(sapQuery.description).toContain('CTEs');
+      expect(sapQuery.description).toContain('no @/:/?');
+      expect(sapQuery.description).toContain('maxRows, not TOP/LIMIT/OFFSET/FETCH');
+      expect(sapQuery.description).toContain('CTE');
       expect(sapQuery.description).toContain('FULL JOIN');
-      expect(sapQuery.description).toContain('JOINs');
+      expect(sapQuery.description).toContain('JOIN/GROUP BY');
+      expect(sapQuery.description).toContain('SAPContext(action="impact",type="DDLS")');
       expect(sapQuery.description).not.toContain('3605050');
       expect(sapQuery.description).not.toContain('stage multi-table');
     });
@@ -1093,7 +1093,7 @@ describe('Tool Definitions', () => {
 
       // method is available on both BTP and on-prem (for CLAS method-level reads)
       expect(schema.properties.method).toBeDefined();
-      // expand_includes is on-prem only (for FUGR)
+      // expand_includes is on-prem only (FUGR, PROG, INCL)
       expect(schema.properties.expand_includes).toBeUndefined();
     });
 

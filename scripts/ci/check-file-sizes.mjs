@@ -42,7 +42,9 @@ const BUDGETS = {
   // Combined #769/#772: 1791 lines, retaining 4 lines of headroom.
   // +4: parent function group for SAPTransport check/history.
   // SAPQuery action-dependent schemas now live in query-tool.ts; lower the ratchet after extraction.
-  'src/handlers/tools.ts': 1745,
+  // +references packages/detail: keep two small parameter definitions beside SAPNavigate.
+  'src/handlers/tools.ts': 1776, // +5: explicit direct package scope (#1065).
+  'src/handlers/schemas.ts': 1573, // +31: direct package inputs and mode validation (#1065).
   // +shared parseNamedItems relocated here from transport.ts (now used by ATC variants too) +
   // parseAtcSystemCheckVariant (FEAT-68 ATC variant listing) + parseFunctionModuleProperties and
   // the pre-7.52 projectexplorer function-group parser.
@@ -58,7 +60,8 @@ const BUDGETS = {
   // +88 for dump paging: SAP caps the dumps feed at 100 entries and ignores $skip, so listDumps walks
   // the inclusive `to` bound, refuses to guess when a second holds a full page, and rejects bounds
   // SAP would silently discard or roll over to another day.
-  'src/adt/diagnostics.ts': 1933,
+  // +5: bounded typed dump query hook; schema/compiler/budget setup live in feed-schema.ts.
+  'src/adt/diagnostics.ts': 1938,
   // The ADT client facade aggregates every read/write op; set_api_state (#506) + runQueryWithMetrics
   // (SAPQuery metrics) + getEffectiveUser (BTP JWT-derived user, G-5) + getSourceAtObjectUrl
   // (post-activation cache promotion) + get/writeClassTextElements (class text pool) pushed it past
@@ -73,7 +76,7 @@ const BUDGETS = {
   // -5 after removing the forwarding-only guard factory and its extra import/configuration lines.
   // TABL write-route cache removed (never cache subtype routes for mutations); +9 for refusing TABL
   // mutations whose subtype cannot be verified on 7.50/7.51 (the resolver's error text).
-  'src/adt/client.ts': 1691, // Thread existing request budgets through revision/search reads.
+  'src/adt/client.ts': 1700, // +1: forward the internal pinned-write no-replay policy (#1080).
   // The single live ADT integration suite covers every read/write surface against a real system;
   // it passed the 3000-line default test budget with the ATC check-variant binding cases
   // (docs/research/2026-08-19-atc-default-check-variant.md). Split by domain before raising again.
@@ -81,9 +84,10 @@ const BUDGETS = {
   'tests/unit/adt/client.test.ts': 2874,
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
-  'src/adt/http.ts': 1543, // #993: proposal POSTs keep their URI and send SAP context in headers (+7).
+  // +3: classify caller cancellation before generic network wrapping (#1045).
+  'src/adt/http.ts': 1562, // Scoped no-replay options and bounded, observable owning-session cleanup (#1080).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
-  'src/adt/transport.ts': 1508, // Pass the review request budget through transport inventory GET.
+  'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main, with 3 lines of headroom.
   'src/server/server.ts': 1487,

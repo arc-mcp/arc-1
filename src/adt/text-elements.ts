@@ -203,7 +203,7 @@ export async function writeTextElementPart(
       safety,
       obj,
       name,
-      `Text elements were saved, but activation was not confirmed. Retry the same text write.${result.changes}`,
+      `Text elements were saved, but activation was not confirmed. Inspect the text pool before retrying the same text write.${result.changes}`,
     );
     try {
       result.state = await readTextPoolState(session, obj, objectType, name);

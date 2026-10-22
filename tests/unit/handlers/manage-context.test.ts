@@ -1736,14 +1736,8 @@ ENDCLASS.`;
   <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/Z_ORDERDATA3" adtcore:type="DDLS/DF" adtcore:name="Z_ORDERDATA3" adtcore:packageName="ZPKG" adtcore:description="Target"/>
   <adtcore:objectReference adtcore:uri="/sap/bc/adt/ddic/ddl/sources/Z_ORDERDATA4" adtcore:type="DDLS/DF" adtcore:name="Z_ORDERDATA4" adtcore:packageName="ZPKG" adtcore:description="Sibling"/>
 </adtcore:objectReferences>`;
-      const targetWhereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
-<usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
-  <usageReferences:referencedObjects>
-    <usageReferences:referencedObject uri="/sap/bc/adt/ddic/ddl/sources/zi_projection" isResult="true" canHaveChildren="false" usageInformation="gradeDirect,includeProductive">
-      <usageReferences:adtObject adtcore:name="ZI_PROJECTION" adtcore:type="DDLS/DF" xmlns:adtcore="http://www.sap.com/adt/core"/>
-    </usageReferences:referencedObject>
-  </usageReferences:referencedObjects>
-</usageReferences:usageReferenceResult>`;
+      const targetWhereUsedXml =
+        '<usageReferenceResult numberOfResults="0" resultDescription="[A4H] Where-Used List: Z_ORDERDATA3 (Data Definition)"><referencedObjects/></usageReferenceResult>';
       const siblingWhereUsedXml = `<?xml version="1.0" encoding="utf-8"?>
 <usageReferences:usageReferenceResult xmlns:usageReferences="http://www.sap.com/adt/ris/usageReferences">
   <usageReferences:referencedObjects>
@@ -1789,6 +1783,8 @@ ENDCLASS.`;
 
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.searchedFor).toContain('Where-Used List: Z_ORDERDATA3');
+      expect(parsed.downstream.summary.total).toBe(0);
       expect(parsed.consistencyHints?.[0]).toContain('Z_ORDERDATA3');
       expect(parsed.consistencyHints?.[0]).toContain('Z_ORDERDATA4');
       expect(parsed.siblingExtensionAnalysis.target.packageName).toBe('ZPKG');

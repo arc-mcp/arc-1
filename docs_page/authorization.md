@@ -57,16 +57,22 @@ Important details:
 
 ## SAP API Policy: data preview and free SQL are gated for a reason
 
-These two gates exist partly because SAP's API Policy restricts large-scale extraction and ungoverned autonomous AI call patterns — see **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)** for what the policy says and how ARC-1 is positioned against it. Operators should validate productive use against SAP documentation, their SAP agreement, and internal governance.
+SAP's API Policy FAQ Q33 places business-data reads and backend SQL outside ADT's intended
+development-tooling scope. The API Policy also conditions agent-driven API sequences and large-scale
+extraction on documented, endorsed pathways. See **[SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md)**
+for the custom-MCP architecture path and the separate ADT-channel question.
 
 ARC-1's defaults keep the highest-risk data paths disabled. Two server flags map directly onto capabilities that can expose business data or run ad-hoc SQL, and both default to off:
 
 | Flag | Default | What it enables | Governance note |
 | ---- | ------- | --------------- | ----------------- |
-| `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | `SAPRead` table previews and `SAPQuery(action=long_text)` | Reads application data; requires `data` scope. |
+| `SAP_ALLOW_DATA_PREVIEW=true` | `false` (off) | `SAPRead` table previews and `SAPQuery` actions `long_text` / `application_log` | Reads application data; requires `data` scope. |
 | `SAP_ALLOW_FREE_SQL=true` | `false` (off) | `SAPQuery(action=sql)` — freestyle ABAP SQL | Executes ad-hoc ABAP SQL; requires `sql` scope. |
 
-With both flags at their defaults, the data/sql rows in the capability matrix below are unreachable. Turning either flag on is a valid operational choice for approved scenarios, but it should be deliberate: check the current SAP API Policy, the customer's SAP agreement, SAP authorizations, and internal data-protection rules before enabling it on a productive system.
+With both flags at their defaults, the data/sql rows in the capability matrix below are unreachable.
+Keep the flags off unless the specific use has a documented allowance or SAP authorization under
+the applicable agreements. Internal approval, SAP technical authorizations and ARC-1 flags alone
+do not establish that allowance, including in dev/test. Apply internal data-protection rules as well.
 
 The `data` and `sql` user scopes (and the `viewer-data`, `viewer-sql`, `developer-data`, `developer-sql` API-key profiles) only become useful after the matching server flag is on. Granting `data` / `sql` to a user does **not** widen the server ceiling.
 
@@ -187,6 +193,7 @@ the feature that needs it:
 | `TSTC` | `SAPRead(type="TRAN")` program name | Returns metadata **with a warning**, without the program name |
 | `SWOTLV` | `SAPRead(type="SOBJ")` | Denied; no alternative in ARC-1 |
 | `STXH`, `STXL`, `TTXOB`, `TTXID`, or `T002` | `SAPQuery(action="long_text")` | Required text storage/configuration; denied when an accessed source is blocked |
+| Any configured blocklist | `SAPQuery(action="application_log")` | Hidden and refused: native service exits prevent proving complete table lineage |
 | `SUAUTHVALTRC` + `TOBJ` | `SAPDiagnose(authorization_trace)` | Denied — both are required; positional values without decoded field names would be misleading |
 
 Optional enrichment always warns rather than silently returning less.
@@ -272,6 +279,7 @@ Use this table to answer: "what must be true before this action can run?" For HT
 | Read Git info | `read` | Nothing | `SAPGit.list_repos`, `history`, `objects`, etc. when Git feature exists |
 | Preview named table contents | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `sql` implies `data` |
 | Read saved SAPscript long texts | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPQuery(action=long_text)`; free SQL is not required |
+| Read saved SLG1 messages | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPQuery(action=application_log)`; native SAP authorization applies; unavailable with any table blocklist |
 | Authorization trace (`SUAUTHVALTRC`) | `data` | `SAP_ALLOW_DATA_PREVIEW=true` | `SAPDiagnose action=authorization_trace`; on-prem STUSERTRACE read only |
 | Run freestyle SQL | `sql` | `SAP_ALLOW_FREE_SQL=true` | High risk on productive systems |
 | Apply exact source blocklist (experimental) | Existing `data`/`sql` scope | `SAP_BLOCKED_DATA_SOURCES=...` | Further restricts guarded data reads; cannot enable access, and unresolved lineage is denied |
@@ -326,7 +334,7 @@ Seven scopes exist:
 | ----- | ------- | ------- |
 | `read` | Read source, search, navigate, lint, diagnose | - |
 | `write` | Object/package/activation/FLP mutations | `read` |
-| `data` | Named table preview and saved SAPscript texts | - |
+| `data` | Named table preview, saved SAPscript texts and SLG1 messages | - |
 | `sql` | Freestyle SQL | `data` |
 | `transports` | CTS transport mutations | - |
 | `git` | Gated abapGit mutations, SAP-side Git egress, and the reserved authorization boundary for currently quarantined gCTS mutations | - |
@@ -371,6 +379,9 @@ To grant SQL to one BTP user, assign a role collection that includes `MCPSqlUser
 See [XSUAA Setup](xsuaa-setup.md) for BTP Cockpit assignment steps.
 
 ### Opt-in multi-target grants
+
+[Scoped pinned PP writes](multi-target-writes.md) additionally require `MCPTargetDeveloper` with
+exact `arc1_write_targets`, raw write scope and destination/server consent. Admin is not a bypass.
 
 **Opt-in target authorization** adds a separate target boundary
 only when the deployment owner selects `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute`.

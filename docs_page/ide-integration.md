@@ -56,7 +56,7 @@ If clicking does nothing, enable the `adt` link handler below or paste the link 
 | Browser cannot hand off to Eclipse | Enable `adt` in **Preferences → General → Link Handlers**. |
 
 **Preview:** the ARC-1 guidance and Eclipse settings need a build containing
-[draft PR #1025](https://github.com/arc-mcp/arc-1/pull/1025).
+[PR #1025](https://github.com/arc-mcp/arc-1/pull/1025).
 Tested on macOS with VS Code 1.142 / SAP ADT 1.2 and Copilot Local / Gemini 3.8 Flash,
 including BTP pinned and aggregate opening. Include opening remains unverified.
 Eclipse native opening passed; clicking directly from Eclipse Copilot is still unconfirmed.

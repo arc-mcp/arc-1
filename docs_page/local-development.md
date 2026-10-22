@@ -10,7 +10,7 @@ For multi-user / production deployments see [deployment.md](deployment.md).
 
 ## Install methods
 
-Pick one — they're equivalent in behaviour, they differ in how you manage the binary.
+Pick how you want to install and update ARC-1. The executable has a few limitations listed below.
 
 ### npx (zero install)
 
@@ -21,6 +21,8 @@ npx arc-1@latest --url https://your-sap-host:44300 \
 ```
 
 npx downloads on first run and caches. `@latest` follows the npm latest tag, which can advance across minor or major releases. Best for trying things out.
+
+Slow startup on Windows? Try the [single-file executable](#windows-setup-and-updates).
 
 ### npm install -g (faster startup)
 
@@ -48,6 +50,59 @@ Defaults to HTTP Streamable on `:8080`. Connect MCP clients to `http://localhost
 
 For stdio mode inside Docker (Claude Desktop wraps the `docker run` in the MCP config), add `-e SAP_TRANSPORT=stdio` and use `docker run -i --rm` instead of `-d`.
 
+### Single-file executable (no Node.js, no `node_modules`)
+
+Starting with 1.7.0, each [GitHub Release](https://github.com/arc-mcp/arc-1/releases) carries one executable per platform plus `SHA256SUMS.txt`:
+
+| Platform | File |
+|---|---|
+| Windows x64 | `arc-1-<version>-windows-x64.exe` |
+| Linux x64 / arm64 | `arc-1-<version>-linux-x64`, `arc-1-<version>-linux-arm64` |
+| macOS Apple Silicon / Intel | `arc-1-<version>-macos-arm64`, `arc-1-<version>-macos-x64` |
+
+On Linux or macOS, replace the filename below with the one you downloaded, then make it executable and run it from that directory:
+
+```bash
+chmod +x arc-1-1.7.0-linux-x64
+./arc-1-1.7.0-linux-x64 --url https://your-sap-host:44300 --user YOUR_USER --password YOUR_PASS --client 100
+```
+
+The npm package installs several thousand files that antivirus scanners inspect on first start; the executable is one file ([#957](https://github.com/arc-mcp/arc-1/issues/957)). It runs the same code on the Node.js runtime it was built with (a [Node SEA](https://nodejs.org/api/single-executable-applications.html)), so behavior matches the npm package apart from these differences:
+
+- **SQLite cache** — the native `better-sqlite3` addon cannot be embedded, so `ARC1_CACHE=sqlite` uses Node's built-in `node:sqlite` (prints an `ExperimentalWarning` on stderr; stdout is unaffected). Cache files use the same schema.
+- **Not available** — the read-only local UI (`public/ui`) is not embedded, and `ARC1_PLUGINS` extensions are untested in the executable. Use npm or Docker for those.
+- **First start can still be slow** — Windows Defender and similar tools can scan each new executable (~100 MB); startup time depends on your machine and security policy. The binaries are not publisher-signed; verify downloads with `SHA256SUMS.txt`. Corporate policy may block the Windows executable. macOS executables are ad-hoc signed; if Gatekeeper blocks a download, run `xattr -d com.apple.quarantine <file>`.
+- **Updating** — download and verify the new file; there is no built-in auto-update. See the [Windows steps](#windows-setup-and-updates) below.
+
+Build one yourself with `npm run build && npm run build:sea` (current platform only; output in `dist-sea/`), then check it with `npm run test:sea-smoke -- dist-sea/<file>`.
+
+#### Windows setup and updates
+
+1. **Download** the Windows x64 `.exe` and `SHA256SUMS.txt` from the **same [official release](https://github.com/arc-mcp/arc-1/releases)**.
+2. **Verify** in PowerShell from your download folder. Replace `1.7.0` with your downloaded version:
+
+    ```powershell
+    (Get-FileHash .\arc-1-1.7.0-windows-x64.exe -Algorithm SHA256).Hash
+    Select-String -Path .\SHA256SUMS.txt -SimpleMatch 'arc-1-1.7.0-windows-x64.exe'
+    ```
+
+    The hashes must match, ignoring uppercase/lowercase. If they differ, do not run the file. A checksum detects download corruption; it is not a publisher signature.
+
+3. **Configure** your MCP client. Move and rename the verified file to a stable path, for example `C:\Tools\arc-1\arc-1.exe` (create the folder first). In your existing server entry, replace the `npx` command and remove its `-y` and `arc-1@…` arguments:
+
+    ```json
+    {
+      "command": "C:\\Tools\\arc-1\\arc-1.exe",
+      "args": []
+    }
+    ```
+
+    This fragment assumes SAP settings are in `env`: keep that existing block. If you use ARC-1 flags such as `--url`, keep them in `args`. Restart the client. For a first setup, use the [MCP client configuration](#mcp-client-configuration) below with this command.
+
+4. **Update** by downloading and verifying the next version first. Stop **all clients and ARC-1 processes using this file**, keep the old executable as a backup, replace it at the same path, then restart. If replacement fails, keep using the old file and retry once it is no longer running.
+
+**Automating updates?** Check outside MCP startup so downloads do not delay connections. Verify each download, stage it separately, and replace the executable only when it is stopped. Serialize updates when several clients share the file; leave the working copy intact on failure.
+
 ### git clone (contributing or running from source)
 
 For every contribution, check the [idea roadmap](roadmap.md) before starting and before opening or
@@ -61,6 +116,9 @@ to record the tested build, SAP release, deployment/authentication route, observ
 untested scenarios. If you lack access, explain why and what still needs verification; this does
 not prevent you from contributing. Documentation-only changes can mark live testing as N/A.
 
+For contributor tooling (`lint-staged`), use Node.js 22 (22.22.1 or later) or 24; the published package's
+runtime minimum remains Node.js 22.19.
+
 ```bash
 git clone https://github.com/arc-mcp/arc-1.git
 cd arc-1
@@ -72,6 +130,23 @@ npm run dev                # stdio from source; restart after edits
 npm run dev:http           # builds + runs HTTP streamable on 0.0.0.0:8080
 npm run build && npm start # production-style: compile to dist/, run from there
 ```
+
+**`npm ci` fails looking for Python or Visual Studio.** An [npm bug](https://github.com/npm/cli/issues/9837)
+can run `node-gyp rebuild` for `better-sqlite3` 13 when installing from a lockfile, despite its
+bundled prebuilt binaries. This commonly affects Windows machines without the build toolchain.
+For this specific failure, skip install scripts for this one install:
+
+```powershell
+npm ci --ignore-scripts
+npm run build
+node -e "const Database = require('better-sqlite3'); const db = new Database(':memory:'); console.log(db.prepare('SELECT 1 AS ok').get()); db.close()"
+```
+
+The SQLite check should print `{ ok: 1 }`. If it fails, the workaround is insufficient;
+resolve the native-module error before continuing. `--ignore-scripts` skips **all** install
+scripts, including Git-hook setup: run `npm run prepare` before committing. Keep this flag
+on the affected install command rather than setting it globally. See [#1038](https://github.com/arc-mcp/arc-1/issues/1038)
+for the reported Windows environment and results.
 
 | Script | What it does | When to use it |
 |---|---|---|

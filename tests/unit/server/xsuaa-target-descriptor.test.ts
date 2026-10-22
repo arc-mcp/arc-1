@@ -34,6 +34,7 @@ describe('additive XSUAA target-grant descriptor contract', () => {
       ...existing.map(([name]) => name),
       'MCPTargetReadAccess',
       'MCPAllTargetReadAccess',
+      'MCPTargetDeveloper',
     ]);
   });
 
@@ -42,6 +43,12 @@ describe('additive XSUAA target-grant descriptor contract', () => {
       {
         name: 'arc1_targets',
         description: 'Exact ARC-1 public target IDs, or explicit * for all targets',
+        valueType: 'string',
+        valueRequired: true,
+      },
+      {
+        name: 'arc1_write_targets',
+        description: 'Exact ARC-1 public target IDs permitted for pinned PP writes; no wildcard',
         valueType: 'string',
         valueRequired: true,
       },
@@ -57,6 +64,10 @@ describe('additive XSUAA target-grant descriptor contract', () => {
       description: 'Read-only ARC-1 access to all current and future SAP targets',
       'scope-references': ['$XSAPPNAME.read'],
       'attribute-references': [{ name: 'arc1_targets', 'default-values': ['*'] }],
+    });
+    expect(templates.find((entry: { name: string }) => entry.name === 'MCPTargetDeveloper')).toMatchObject({
+      'scope-references': ['$XSAPPNAME.read', '$XSAPPNAME.write'],
+      'attribute-references': ['arc1_targets', 'arc1_write_targets'],
     });
     expect(security).not.toHaveProperty('role-collections');
     expect(security['oauth2-configuration']).not.toHaveProperty('scopes');

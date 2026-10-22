@@ -33,6 +33,7 @@ import { extractMethod, formatMethodListing, listMethods } from '../context/meth
 import { logger } from '../server/logger.js';
 import { type CacheSecurityContext, inactiveListUserKey, invalidateInactiveList } from './cache-security.js';
 import { readEditableSource } from './editable-source.js';
+import { includeSearchHint, readExpandedSource } from './expanded-read.js';
 import { getCachedFeatures, isBtpSystem } from './feature-cache.js';
 import {
   detectLocalHandlerInclude,
@@ -95,15 +96,16 @@ export async function resolveVersionAndDraftInfo(
   name: string,
   requestedVersion: RequestedSourceVersion,
   cacheSecurity: CacheSecurityContext,
-): Promise<{ effectiveVersion: SourceVersion; draft?: InactiveObject }> {
+): Promise<{ effectiveVersion: SourceVersion; draft?: InactiveObject; inactiveObjects?: InactiveObject[] }> {
   if (!VERSIONED_SOURCE_READ_TYPES.has(type)) {
     return { effectiveVersion: requestedVersion === 'auto' ? 'active' : requestedVersion };
   }
 
   let draft: InactiveObject | undefined;
+  let inactiveObjects: InactiveObject[] | undefined;
   if (cachingLayer || requestedVersion !== 'active') {
     try {
-      const inactiveObjects = cachingLayer
+      inactiveObjects = cachingLayer
         ? await cachingLayer.inactiveLists.getOrFetch(client, inactiveListUserKey(client, cacheSecurity))
         : await client.getInactiveObjects();
       const upperName = name.toUpperCase();
@@ -130,9 +132,32 @@ export async function resolveVersionAndDraftInfo(
   }
 
   if (requestedVersion === 'auto') {
-    return { effectiveVersion: draft ? 'inactive' : 'active', draft };
+    return { effectiveVersion: draft ? 'inactive' : 'active', draft, inactiveObjects };
   }
-  return { effectiveVersion: requestedVersion, draft };
+  return { effectiveVersion: requestedVersion, draft, inactiveObjects };
+}
+
+/**
+ * Version rule of `expand_includes` for each include, the same as for the requested object: `auto`
+ * reads the user's own draft where there is one, `inactive` reads every include inactive (SAP returns
+ * the active source where none exists). `draft` marks an include read from the user's draft.
+ */
+function includeVersions(
+  requestedVersion: RequestedSourceVersion,
+  inactiveObjects: InactiveObject[] | undefined,
+  recentlyActivated: (include: string) => boolean,
+): (include: string) => { version: SourceVersion; draft: boolean } {
+  // Built on the first include read, so other SAPRead types pay nothing for it.
+  let drafts: Set<string> | undefined;
+  return (include) => {
+    drafts ??= new Set(
+      (inactiveObjects ?? [])
+        .filter((object) => inactiveTypeMatches('INCL', object.type))
+        .map((object) => object.name.toUpperCase()),
+    );
+    const draft = requestedVersion !== 'active' && drafts.has(include.toUpperCase()) && !recentlyActivated(include);
+    return { version: requestedVersion === 'inactive' || draft ? 'inactive' : 'active', draft };
+  };
 }
 
 function sourceVersionWarning(effectiveVersion: SourceVersion, draft?: InactiveObject): string | undefined {
@@ -307,7 +332,7 @@ export async function handleSAPRead(
     cachingLayer.invalidate(type, name, 'all');
   }
 
-  const { effectiveVersion, draft } = await resolveVersionAndDraftInfo(
+  const { effectiveVersion, draft, inactiveObjects } = await resolveVersionAndDraftInfo(
     client,
     cachingLayer,
     type,
@@ -346,11 +371,41 @@ export async function handleSAPRead(
     return textResult(`${note}${indicator}${source}`);
   };
 
-  /** When args.grep is set, return only matching source lines (+context) instead of full source. */
-  const grepText = (source: string): ToolResult => {
-    const g = grepSource(source, String(args.grep));
-    return g.invalidPattern ? errorResult(g.output) : textResult(g.output);
+  /** JSON answers (SRVB) carry the draft note and cache indicator as fields, so the text stays parseable. */
+  const cachedJsonResult = (json: string, cacheHit: boolean, revalidated: boolean, warning?: string): ToolResult => {
+    const indicator = cacheHit && revalidated;
+    if (hasLineRange || (!indicator && !warning)) return cachedTextResult(json, cacheHit, revalidated, warning);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return cachedTextResult(json, cacheHit, revalidated, warning);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return cachedTextResult(json, cacheHit, revalidated, warning);
+    }
+    return textResult(
+      JSON.stringify({ ...(warning ? { warning } : {}), ...(indicator ? { cached: 'revalidated' } : {}), ...parsed }),
+    );
   };
+
+  /** When args.grep is set, return only matching source lines (+context) instead of full source. */
+  const grepText = (source: string, hint?: string): ToolResult => {
+    const g = grepSource(source, String(args.grep));
+    return g.invalidPattern ? errorResult(g.output) : textResult(hint ? `${g.output}\n\n${hint}` : g.output);
+  };
+
+  // PROG/INCL expansion: every include follows the version rule of the requested object.
+  const expandedVersions = {
+    root: effectiveVersion,
+    rootDraft: effectiveVersion === 'inactive' && draft !== undefined,
+    include: includeVersions(
+      requestedVersion,
+      inactiveObjects,
+      (include) => !cacheSecurity.isPerUserClient && cachingLayer?.wasRecentlyActivated('INCL', include) === true,
+    ),
+  };
+  const grepArg = args.grep ? String(args.grep) : undefined;
 
   // Structured ordinary reads: class metadata or a package listing envelope.
   if (args.format === 'structured' && type !== 'CLAS' && type !== 'DEVC') {
@@ -361,10 +416,13 @@ export async function handleSAPRead(
 
   switch (type) {
     case 'PROG': {
+      if (args.expand_includes === true) {
+        return readExpandedSource(client, 'PROG', name, grepArg, expandedVersions, versionWarning);
+      }
       const { source, cacheHit, revalidated } = await cachedGet('PROG', name, effectiveVersion, (ifNoneMatch) =>
         client.getProgram(name, { ifNoneMatch, version: effectiveVersion }),
       );
-      if (args.grep) return grepText(source);
+      if (args.grep) return grepText(source, includeSearchHint(name, source));
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'CLAS': {
@@ -578,10 +636,13 @@ export async function handleSAPRead(
       return textResult(toolJson(fg));
     }
     case 'INCL': {
+      if (args.expand_includes === true) {
+        return readExpandedSource(client, 'INCL', name, grepArg, expandedVersions, versionWarning);
+      }
       const { source, cacheHit, revalidated } = await cachedGet('INCL', name, effectiveVersion, (ifNoneMatch) =>
         client.getInclude(name, { ifNoneMatch, version: effectiveVersion }),
       );
-      if (args.grep) return grepText(source);
+      if (args.grep) return grepText(source, includeSearchHint(name, source));
       return cachedTextResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'DDLS': {
@@ -646,7 +707,7 @@ export async function handleSAPRead(
       const { source, cacheHit, revalidated } = await cachedGet('SRVB', name, effectiveVersion, (ifNoneMatch) =>
         client.getSrvb(name, { ifNoneMatch, version: effectiveVersion }),
       );
-      return cachedTextResult(source, cacheHit, revalidated, versionWarning);
+      return cachedJsonResult(source, cacheHit, revalidated, versionWarning);
     }
     case 'SKTD': {
       try {
@@ -921,8 +982,12 @@ export async function handleSAPRead(
     }
     case 'DEVC': {
       const maxResults = args.maxResults != null ? Number(args.maxResults) : undefined;
-      const contents = await client.getPackageContents(name, maxResults);
-      const listing = describePackageListing(contents.length, maxResults);
+      const direct =
+        args.packageScope === 'direct'
+          ? await client.getDirectPackageContents(name, maxResults, args.objectType as string | undefined)
+          : undefined;
+      const contents = direct?.objects ?? (await client.getPackageContents(name, maxResults));
+      const listing = direct?.listing ?? describePackageListing(contents.length, maxResults);
       if (args.format === 'structured') return textResult(toolJson({ objects: contents, listing }));
       const result = textResult(toolJson(contents));
       result.content.push({ type: 'text', text: toolJson({ listing }) });

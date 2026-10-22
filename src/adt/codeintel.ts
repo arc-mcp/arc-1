@@ -50,6 +50,8 @@ export interface WhereUsedResult {
   packageName: string;
   snippet: string;
   objectDescription: string;
+  /** Opaque native expansion token; omitted from ordinary object-list responses. */
+  objectIdentifier?: string;
   parentUri?: string;
   isResult?: boolean;
   canHaveChildren?: boolean;
@@ -179,7 +181,14 @@ export async function findWhereUsedWithScope(
     Accept: 'application/vnd.sap.adt.repository.usagereferences.result.v1+xml',
   });
 
-  const parsed = parseXml(resp.body);
+  return parseWhereUsedResponse(resp.body);
+}
+
+/** Shared native response parser; expansion tokens stay opt-in. */
+export function parseWhereUsedResponse(xml: string, includeIdentifiers = false): WhereUsedLookup {
+  const parsed = parseXml(xml);
+  const scope = findDeepNodes(parsed, 'usageReferenceResult')[0];
+  if (includeIdentifiers && !scope) throw new Error('SAP returned an invalid where-used response.');
   const results: WhereUsedResult[] = [];
 
   // Response uses referencedObject > adtObject tree structure
@@ -201,6 +210,9 @@ export async function findWhereUsedWithScope(
       packageName: String(pkgRef['@_name'] ?? ''),
       snippet: '',
       objectDescription: String(adtObj['@_description'] ?? ''),
+      ...(includeIdentifiers && typeof ref.objectIdentifier === 'string'
+        ? { objectIdentifier: ref.objectIdentifier }
+        : {}),
       parentUri: asOptionalString(ref['@_parentUri']),
       isResult: parseOptionalBoolean(ref['@_isResult']),
       canHaveChildren: parseOptionalBoolean(ref['@_canHaveChildren']),
@@ -215,7 +227,6 @@ export async function findWhereUsedWithScope(
     });
   }
 
-  const scope = findDeepNodes(parsed, 'usageReferenceResult')[0];
   const searchedFor = asOptionalString(scope?.['@_resultDescription']);
   const referencedObjectIdentifier = scope?.['@_referencedObjectIdentifier'];
   return {
@@ -232,8 +243,8 @@ export async function findWhereUsedWithScope(
  * SAP's scope-based usageReferences endpoint sometimes does NOT surface
  * interface→implementing-class links directly — the implementations sit
  * inside a `canHaveChildren="true"` Interface Section node, and the snippet
- * expansion endpoint (`/usageReferences/snippets`) returns 404 on every
- * release we've probed (NW 7.50, S/4HANA 2023). The where-used XML response
+ * expansion requires the separate `/usageSnippets` request. Ordinary object-only
+ * lookups do not expand those nodes. The where-used XML response
  * shows `numberOfResults="1"` but with no `isResult="true"` entry. Verified
  * live on `a4h.marianzeis.de` against ZIF_ARC1_TEST → ZCL_ARC1_TEST.
  *

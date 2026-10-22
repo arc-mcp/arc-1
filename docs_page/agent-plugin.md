@@ -28,8 +28,8 @@ VS Code uses the local SAP ADT MCP resolver instead.
 These settings apply only to that plugin server. The portable Agent Plugin has no client-specific
 settings form; a dedicated MCP entry is available where needed.
 
-This feature is in draft PR #1025 and needs a corresponding ARC-1 build; it is not supplied by an
-older `arc-1@latest`. See [IDE integration](ide-integration.md) for setup and tested-client limits.
+This feature needs a build containing [PR #1025](https://github.com/arc-mcp/arc-1/pull/1025).
+See [IDE integration](ide-integration.md) for setup and tested-client limits.
 
 ## Choose The Package For Your Client
 

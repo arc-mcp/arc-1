@@ -1,0 +1,91 @@
+{
+  "runtime": "Node 24.11.1",
+  "fullUnit": {
+    "revision": "290622c84a412e5329a986e9a187df71d36d10b5",
+    "command": "npm test -- --maxWorkers=4",
+    "passed": 8998,
+    "failed": 5,
+    "total": 9003,
+    "failures": [
+      {
+        "file": "tests/unit/cli/runtime.test.ts",
+        "test": "CLI subprocess entry runs the source entry explicitly and returns strict exit codes",
+        "reason": "Error: Test timed out in 10000ms."
+      },
+      {
+        "file": "tests/unit/server/http-request-body.test.ts",
+        "test": "accounts for declared bytes (8388608), leaving small requests available",
+        "reason": "Error: Test timed out in 10000ms."
+      },
+      {
+        "file": "tests/unit/server/shutdown.test.ts",
+        "test": "server signal wiring delivers an in-flight audit post on real SIGTERM with cache=none over stdio",
+        "reason": "AssertionError: expected [] to include 'post-started'"
+      },
+      {
+        "file": "tests/unit/server/shutdown.test.ts",
+        "test": "server signal wiring delivers an in-flight audit post on real SIGINT with cache=memory over stdio",
+        "reason": "AssertionError: expected [] to include 'post-started'"
+      },
+      {
+        "file": "tests/unit/server/shutdown.test.ts",
+        "test": "server signal wiring delivers an in-flight audit post on real SIGTERM with cache=none over http-streamable",
+        "reason": "AssertionError: expected [] to include 'post-started'"
+      }
+    ],
+    "status": "not green"
+  },
+  "baselineStartupControl": {
+    "revision": "498c12bbab1b4c6337e01e3451c5811ba8b8aa97",
+    "passed": 50,
+    "failed": 4,
+    "files": [
+      "tests/unit/cli/runtime.test.ts",
+      "tests/unit/server/shutdown.test.ts"
+    ]
+  },
+  "bodyIsolatedRerun": {
+    "revision": "290622c8",
+    "file": "tests/unit/server/http-request-body.test.ts",
+    "passed": 23,
+    "failed": 0
+  },
+  "defaultPlaceholderRegression": {
+    "before": "44d649da",
+    "failed": 2,
+    "after": "571c0a0f",
+    "filePassed": 41
+  },
+  "sourceChecks": {
+    "revision": "571c0a0f",
+    "build": "passed",
+    "typecheck": "passed"
+  },
+  "catalogChecks": {
+    "revision": "290622c8",
+    "lint": "passed; two infos",
+    "validate:policy": "passed; 131 entries",
+    "check:sizes": "passed; unchanged token/wire ceilings",
+    "snapshotTests": 12,
+    "syntheticFixtureTests": 4
+  },
+  "originalWorkPreserved": {
+    "workingTreeFiles": 67,
+    "researchInputs": 11
+  },
+  "localLogSha256": {
+    "arc1-dump-filter-all-tests.log": "cae4898ee30d9c91e8841b8f61385b183bb4d0adc5b6aa39e5c49da91993f858",
+    "arc1-dump-filter-corrections.log": "e219e406af5781d0dbf7192236e0e32b1d9c2e3a96bb5f1f1e500fad3a751810",
+    "arc1-filter-baseline-runtime.log": "1b91b4e187785b6ecb691d243c27533d44aad927bdd2e23774fc841390426af6",
+    "arc1-dump-filter-filler-before.log": "7fb9acb0804ff2bd0bc9964121bc8b24a9f1453bb2084eb7c31895f071286067",
+    "arc1-dump-filter-final-unit.log": "70bd35304752af493844f1c52af2af9b59142b8ec0171d082759430080207dcd",
+    "arc1-dump-filter-body-isolated.log": "cc4a287fbd3c50c48a914def6b3441705518aadce07ecc70b755bbec6e180f49",
+    "arc1-dump-filter-typecheck-571.log": "2b1e8ca5f9ac0740e7509cb1ced735eee298880b787a3b0044b5b7a34a2e8f24",
+    "arc1-dump-filter-build-571.log": "12892a890c2ac4cc13cb1a3f82be0b7d44c3bc0796bd009f95e0596fbf21385e",
+    "arc1-dump-filter-final-lint.log": "3bcd0c9b005c48c58ac3f5cfdc609fe4eec99e5ef2c2269b8837c99b10ae1cae",
+    "arc1-dump-filter-final-policy.log": "d8cfa3ecc2db6e740fa5054c790f1bcccb635f96a7c1ce4015088b4d3fe27d3e",
+    "arc1-dump-filter-neutral-sizes.log": "fe2ed90afd658a7e9e431192301294f45735c22be73545805abe25a1be29de96",
+    "arc1-dump-filter-neutral-fixture.log": "1fbb5ef221bccbacb566838dc2983790c84a6557270ea64565ed7bf33c97bd91",
+    "arc1-dump-filter-final-docs.log": "09b5b2db31092e5c5dcd252a1c4a095770a49de8846ab1eee252e818a8bc4cf4"
+  }
+}

@@ -42,6 +42,58 @@ export const SCENARIOS: EvalScenario[] = [
   },
 
   {
+    id: 'read-program-with-includes',
+    description: 'Read the whole code of a report, which lives in includes, in one call',
+    prompt: 'Show me the complete code of report ZSALES_REPORT.',
+    category: 'read',
+    tags: ['single-step', 'includes'],
+    optimal: [{ tool: 'SAPRead', requiredArgs: { type: 'PROG', name: 'ZSALES_REPORT', expand_includes: true } }],
+    acceptable: [{ tool: 'SAPRead', requiredArgs: { type: 'PROG', name: 'ZSALES_REPORT' } }],
+    mockResponses: {
+      SAPRead:
+        '=== PROG ZSALES_REPORT ===\nREPORT zsales_report.\nINCLUDE zsales_report_top.\nINCLUDE zsales_report_f01.\n\n=== zsales_report_top (ZSALES_REPORT line 2) ===\nDATA gv_total TYPE p.\n\n=== zsales_report_f01 (ZSALES_REPORT line 3) ===\nFORM sum_up.\nENDFORM.',
+    },
+  },
+
+  {
+    id: 'search-program-with-includes',
+    description: 'Search a report and the includes its code lives in for a statement in one call',
+    prompt: 'Where does report ZSALES_REPORT check authorizations?',
+    category: 'read',
+    tags: ['single-step', 'includes', 'grep'],
+    optimal: [
+      {
+        tool: 'SAPRead',
+        requiredArgs: { type: 'PROG', name: 'ZSALES_REPORT', expand_includes: true },
+        requiredArgKeys: ['grep'],
+      },
+    ],
+    acceptable: [{ tool: 'SAPRead', requiredArgs: { type: 'PROG', name: 'ZSALES_REPORT' }, requiredArgKeys: ['grep'] }],
+    mockResponses: {
+      SAPRead:
+        "1 match(es) for /AUTHORITY-CHECK/i in 1 of 3 source(s):\n\n=== zsales_report_f01 (ZSALES_REPORT line 3) ===\n>   12:   AUTHORITY-CHECK OBJECT 'V_VBAK_VKO' ID 'ACTVT' FIELD '03'.",
+    },
+  },
+
+  {
+    id: 'read-include-without-expansion',
+    description: 'A plain read of one include does not expand includes it may name',
+    prompt: 'Show me the data declarations in include ZSALES_REPORT_TOP.',
+    category: 'read',
+    tags: ['single-step', 'includes', 'negative'],
+    optimal: [
+      {
+        tool: 'SAPRead',
+        requiredArgs: { type: 'INCL', name: 'ZSALES_REPORT_TOP' },
+        absentArgPaths: [['expand_includes']],
+      },
+    ],
+    mockResponses: {
+      SAPRead: 'DATA gv_total TYPE p.\nDATA gt_items TYPE STANDARD TABLE OF vbap WITH EMPTY KEY.',
+    },
+  },
+
+  {
     id: 'read-class',
     description: 'Read a class source code',
     prompt: 'Show me the source code of class ZCL_ORDER_SERVICE',

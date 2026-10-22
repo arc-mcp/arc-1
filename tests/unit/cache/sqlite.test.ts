@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,12 +17,12 @@ function legacyDb(cache: SqliteCache): Database.Database {
   return (cache as unknown as { db: Database.Database }).db;
 }
 
-describe('SqliteCache', () => {
+describe.each(['better-sqlite3', 'node:sqlite'] as const)('SqliteCache (%s)', (driver) => {
   let cache: SqliteCache;
 
   beforeEach(() => {
     // Use in-memory SQLite for tests (no file cleanup needed)
-    cache = new SqliteCache(':memory:');
+    cache = new SqliteCache(':memory:', driver);
   });
 
   afterEach(() => {
@@ -30,7 +32,7 @@ describe('SqliteCache', () => {
   it('creates file-backed cache databases with private file permissions', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-cache-mode-'));
     const dbPath = path.join(dir, 'cache.db');
-    const fileCache = new SqliteCache(dbPath);
+    const fileCache = new SqliteCache(dbPath, driver);
 
     try {
       expect(fileMode(dbPath)).toBe(0o600);
@@ -46,10 +48,42 @@ describe('SqliteCache', () => {
     fs.writeFileSync(dbPath, '', { mode: 0o666 });
     fs.chmodSync(dbPath, 0o666);
 
-    const fileCache = new SqliteCache(dbPath);
+    const fileCache = new SqliteCache(dbPath, driver);
     try {
       expect(fileMode(dbPath)).toBe(0o600);
     } finally {
+      fileCache.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('waits for a brief write lock held by another connection', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arc1-cache-contention-'));
+    const dbPath = path.join(dir, 'cache.db');
+    const fileCache = new SqliteCache(dbPath, driver);
+    const child = spawn(
+      process.execPath,
+      [
+        '-e',
+        `const { DatabaseSync } = require('node:sqlite');
+         const db = new DatabaseSync(process.argv[1]);
+         db.exec('BEGIN IMMEDIATE');
+         process.send('locked');
+         setTimeout(() => { db.exec('COMMIT'); db.close(); process.disconnect(); }, 200);`,
+        dbPath,
+      ],
+      { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] },
+    );
+    const exited = once(child, 'exit');
+
+    try {
+      const [state] = await once(child, 'message');
+      expect(state).toBe('locked');
+      fileCache.putApi({ name: 'ZCL_SHARED', type: 'CLAS', releaseState: 'released' });
+      expect(fileCache.getApi('ZCL_SHARED', 'CLAS')?.releaseState).toBe('released');
+    } finally {
+      child.kill();
+      await exited;
       fileCache.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -168,7 +202,7 @@ describe('SqliteCache', () => {
       .run('PROG:Z_OLD', 'PROG', 'Z_OLD', 'REPORT.', 'h1', '2025-01-01');
     rawDb.close();
 
-    const migrated = new SqliteCache(dbPath);
+    const migrated = new SqliteCache(dbPath, driver);
     const cols = (migrated as unknown as { db: Database.Database }).db
       .prepare("PRAGMA table_info('sources')")
       .all()
@@ -207,7 +241,7 @@ describe('SqliteCache', () => {
     let migrated: SqliteCache | undefined;
     let reopened: SqliteCache | undefined;
     try {
-      migrated = new SqliteCache(dbPath);
+      migrated = new SqliteCache(dbPath, driver);
       expect(migrated.getSource('CLAS', 'ZCL_KEEP')?.source).toBe(source);
       expect(
         legacyDb(migrated).prepare('SELECT object_name FROM dep_graphs WHERE source_hash = ?').get(sourceHash),
@@ -222,7 +256,7 @@ describe('SqliteCache', () => {
       migrated.close();
       migrated = undefined;
 
-      reopened = new SqliteCache(dbPath);
+      reopened = new SqliteCache(dbPath, driver);
       expect(reopened.getSource('CLAS', 'ZCL_KEEP')?.etag).toBe('etag-1');
       expect(reopened.stats().contractCount).toBe(1);
       reopened.close();

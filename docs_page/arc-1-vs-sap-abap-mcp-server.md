@@ -100,8 +100,8 @@ flowchart LR
 |---|---|---|
 | Process lifetime | Managed service or client-launched local process | Tied to the local ADT runtime |
 | Many users | Central authentication, policy and audit | Developer-local session; no comparable shared-service model established here |
-| Multiple systems | Single target by default; experimental BTP CF multi-target mode is mutation-free | Destination-aware tools work with the allowed configured ADT connections |
-| Writable multi-system access | Separate ARC-1 instances; open proposals do not change this boundary | Depends on allowed destinations, packages, tools and SAP authorization |
+| Multiple systems | Single target by default; BTP CF multi-target reads plus opt-in scoped pinned PP writes | Destination-aware tools work with the allowed configured ADT connections |
+| Writable multi-system access | Scoped pinned PP CLAS/INTF writes with exact grants, or separate instances for broader writes/isolation | Depends on allowed destinations, packages, tools and SAP authorization |
 | Network to SAP | HTTP ADT; BTP destinations/Cloud Connector where configured | RFC destinations for on-premise/private cloud; HTTP destinations for ABAP environment/public cloud |
 | Operations | You own deployment, TLS termination, updates and capacity | You maintain IDE/client version, destinations, local credentials and SAP prerequisites |
 
@@ -390,21 +390,20 @@ condition. Verify the applicable deployment and commercial terms with SAP.
 Both can work with an external agent; freedom to choose an LLM is not exclusive to ARC-1.
 This page does not assume a particular underlying Joule model or quote unverified prices.
 
-## 13. A note on SAP's API policy (unsettled)
+## 13. SAP's API policy and the custom-MCP path
 
-The public [SAP API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf)
-was rechecked on 18 October and still identifies itself as **v.4.2026a**. It distinguishes published
-and non-published interfaces, assigns endpoint verification to customers/partners, and places
-additional conditions on AI-driven API use.
+Checked **21 October 2026**: the [API Policy](https://help.sap.com/doc/sap-api-policy/latest/en-US/API_Policy_latest.pdf)
+is v.4.2026a, and the [official FAQ](https://www.sap.com/documents/2026/04/e2a0665e-4c7f-0010-bca6-c68f7e60039b.html)
+is v1.3 (June 2026). Q56 allows custom MCP servers under conditions; Q32 does not require Integration
+Suite. For custom MCP, SAP's [reference architecture 137800](https://architecture.learning.sap.com/docs/ref-arch/137800)
+is the main design and control baseline we recommend.
 
-SAP supplying its own MCP server does not by itself authorize every third-party ADT endpoint use.
-Likewise, an endpoint's absence from the Business Accelerator Hub alone does not settle its status:
-the policy also refers to product-specific documentation. Confirm the relevant endpoints and
-intended use for your agreement.
-
-See [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md) for the separate,
-dated analysis and its open questions. Hosting ARC-1 on BTP is an architecture choice, not automatic
-contractual clearance.
+Q33 classifies ADT APIs as internal and limits development use to endorsed channels. SAP-provided
+developer tools are among its examples; ARC-1's direct TypeScript ADT client is not specifically
+identified. SAP shipping its own MCP server does not authorize third-party ADT use by analogy.
+BTP hosting and development-only positioning do not settle that channel-specific question.
+See [SAP API Policy & Architecture Alignment](sap-api-policy-and-architecture.md) for the recommended
+path, remaining controls and the specific clarification to obtain from SAP.
 
 ## 14. It's not either/or — the composable MCP ecosystem
 
@@ -487,7 +486,7 @@ explicit backend workflows and remote agent access. Source surgery, SQL access a
 transport/Git operations remain useful concrete capabilities.
 
 ARC-1's limits remain material: it is community-maintained, you operate it, backend contracts vary,
-multi-target is experimental and mutation-free, gCTS mutations are quarantined, and it does not
+multi-target writes are limited to pinned PP CLAS/INTF workflows, gCTS mutations are quarantined, and it does not
 replace an IDE. Core report/class execution and direct RFC are deliberately excluded; opted-in
 extensions have their own gates. See [extensions](extensions.md) and
 [ADR-0009](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md).

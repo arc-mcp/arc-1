@@ -6,6 +6,8 @@ import { parseTargetGrant, projectGrantedTargets, type TargetGrant } from './mul
 
 export interface MultiTargetRequestProjection {
   readonly grant: TargetGrant;
+  readonly writeGrant: TargetGrant;
+  readonly write: boolean;
   readonly targets: readonly TargetDescriptor[];
   readonly scopes: readonly string[];
   readonly read: boolean;
@@ -22,6 +24,9 @@ export function projectMultiTargetRequest(
   const grant = parseTargetGrant(authInfo);
   return Object.freeze({
     grant,
+    writeGrant: parseTargetGrant(authInfo, 'arc1_write_targets'),
+    write:
+      Array.isArray(authInfo?.extra?.arc1VerifiedRawScopes) && authInfo.extra.arc1VerifiedRawScopes.includes('write'),
     scopes: Object.freeze(scopes),
     read,
     admin: read && hasRequiredScope(scopes, 'admin'),

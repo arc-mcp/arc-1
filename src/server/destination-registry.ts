@@ -12,6 +12,7 @@ import { projectEnforcedDiagnostic } from './multi-target-catalog-projection.js'
 import {
   isSupportedMultiTargetArcProperty,
   isWriteRelatedArcProperty,
+  parseDestinationAllowlist,
   parseDestinationBoolean,
 } from './multi-target-destination-config.js';
 import {
@@ -75,13 +76,28 @@ export interface TargetDescriptor {
   readonly identity: TargetIdentity;
   readonly proxyType: 'OnPremise';
   readonly hasCloudConnectorLocationId: boolean;
+  readonly writePolicy?: Readonly<{
+    allowWrites: boolean;
+    allowedPackages: readonly string[];
+    allowedTransports: readonly string[];
+  }>;
   readonly requestedPolicy: TargetPolicy;
   readonly effectivePolicy: TargetPolicy;
   readonly connectionFingerprint: string;
   readonly fingerprint: string;
 }
 
+export interface TargetWriteDiagnostic {
+  readonly configured: boolean;
+  readonly enabledByConfiguration: boolean;
+  readonly packageRuleCount: number;
+  readonly transportRuleCount: number;
+  readonly digest: string;
+  readonly reason: 'ENABLED_REQUIRES_USER_GRANT' | 'GLOBAL_WRITES_DISABLED' | 'DESTINATION_WRITES_DISABLED';
+}
+
 export interface TargetDiagnostic {
+  readonly write?: TargetWriteDiagnostic;
   readonly destinationName: string;
   readonly target?: string;
   readonly status: 'active' | 'disabled' | 'ignored' | 'quarantined';
@@ -169,6 +185,7 @@ export function targetFingerprint(value: FingerprintInput): string {
     language: value.language,
     allowDataPreview: value.requestedPolicy.allowDataPreview,
     allowFreeSQL: value.requestedPolicy.allowFreeSQL,
+    writePolicy: value.writePolicy,
   });
   return createHash('sha256').update(canonical).digest('hex');
 }
@@ -273,20 +290,23 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       'quarantined',
       source.arcValidation.hasWriteProperty ? 'UNSUPPORTED_V1_WRITE_CONFIG' : 'UNKNOWN_ARC1_PROPERTY',
       source.arcValidation.hasWriteProperty
-        ? 'Write-related destination configuration is not supported in multi-target v1.'
+        ? 'This write-related destination property is unsupported; use only the documented pinned PP write properties.'
         : 'Unsupported ARC-1 destination properties; inspect the configuration in BTP Cockpit.',
     );
   }
 
   for (const key of Object.keys(source.arcProperties)) {
-    if (isWriteRelatedArcProperty(key)) {
+    if (
+      isWriteRelatedArcProperty(key) &&
+      (!isSupportedMultiTargetArcProperty(key) || base.multiTargetAuthorization !== 'xsuaa-attribute')
+    ) {
       return excludedCandidate(
         source,
         diagnosticBase,
         true,
         'quarantined',
         'UNSUPPORTED_V1_WRITE_CONFIG',
-        'Write-related destination configuration is not supported in multi-target v1.',
+        'Pinned writes require xsuaa-attribute authorization; unsupported write properties are refused.',
       );
     }
     if (!isSupportedMultiTargetArcProperty(key)) {
@@ -477,6 +497,30 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
     );
   }
 
+  let writePolicy: TargetDescriptor['writePolicy'];
+  try {
+    const allowWrites = parseDestinationBoolean(source.arcProperties['arc1.allow_writes']);
+    if (source.arcProperties['arc1.allow_writes'] !== undefined && allowWrites === undefined) throw new Error();
+    const allowedPackages = parseDestinationAllowlist(source.arcProperties['arc1.allowed_packages'], 'packages');
+    const allowedTransports = parseDestinationAllowlist(source.arcProperties['arc1.allowed_transports'], 'transports');
+    if (allowWrites && (!allowedPackages || authentication !== 'PrincipalPropagation')) throw new Error();
+    if (Object.keys(source.arcProperties).some(isWriteRelatedArcProperty)) {
+      writePolicy = Object.freeze({
+        allowWrites: allowWrites === true,
+        allowedPackages: allowedPackages ?? Object.freeze([]),
+        allowedTransports: allowedTransports ?? Object.freeze([]),
+      });
+    }
+  } catch {
+    return excludedCandidate(
+      source,
+      diagnosticBase,
+      true,
+      'quarantined',
+      'INVALID_POLICY',
+      'Writes require a PP destination, an explicit valid package allowlist, and valid bounded write properties.',
+    );
+  }
   const targetId = buildTargetId(source.sapSysId, source.sapClient, targetAlias);
   const description = sanitizeTargetDescription(source.description, targetId);
   const descriptionFallback = description === targetId && source.description !== targetId;
@@ -501,6 +545,7 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
     hasCloudConnectorLocationId: source.hasCloudConnectorLocationId,
     requestedPolicy,
     effectivePolicy,
+    ...(writePolicy ? { writePolicy } : {}),
   };
   const connectionFingerprint = targetConnectionFingerprint({
     urlFingerprint: source.urlFingerprint,
@@ -532,6 +577,22 @@ function evaluate(source: DiscoveredDestination, base: ServerConfig): CandidateE
       message: 'Destination is active on pinned and aggregate multi-target routes.',
       requestedPolicy,
       effectivePolicy,
+      ...(writePolicy
+        ? {
+            write: Object.freeze({
+              configured: writePolicy.allowWrites,
+              enabledByConfiguration: base.allowWrites && writePolicy.allowWrites,
+              packageRuleCount: writePolicy.allowedPackages.length,
+              transportRuleCount: writePolicy.allowedTransports.length,
+              digest: createHash('sha256').update(JSON.stringify(writePolicy)).digest('hex'),
+              reason: !writePolicy.allowWrites
+                ? ('DESTINATION_WRITES_DISABLED' as const)
+                : !base.allowWrites
+                  ? ('GLOBAL_WRITES_DISABLED' as const)
+                  : ('ENABLED_REQUIRES_USER_GRANT' as const),
+            }),
+          }
+        : {}),
       limitedByInstance:
         requestedPolicy.allowDataPreview !== effectivePolicy.allowDataPreview ||
         requestedPolicy.allowFreeSQL !== effectivePolicy.allowFreeSQL,

@@ -142,6 +142,12 @@ function unsafePatternReason(pattern: string): string | null {
   return null;
 }
 
+/** The refusal `grepSource` returns for a pattern the server does not run, or undefined. */
+export function unsupportedPatternMessage(pattern: string): string | undefined {
+  const reason = unsafePatternReason(pattern);
+  return reason ? `Unsupported grep pattern: ${reason}. Use a shorter literal token or a simpler regex.` : undefined;
+}
+
 function trimSearchLine(line: string): string {
   return line.length <= MAX_GREP_LINE_LENGTH ? line : line.slice(0, MAX_GREP_LINE_LENGTH);
 }
@@ -213,14 +219,10 @@ export function grepSource(source: string, pattern: string, opts: GrepOptions = 
   const contextLines = opts.contextLines ?? DEFAULT_CONTEXT_LINES;
   const maxMatches = opts.maxMatches ?? DEFAULT_MAX_MATCHES;
   const lines = source.replace(/\r\n/g, '\n').split('\n');
-  const unsafeReason = unsafePatternReason(pattern);
+  const unsupported = unsupportedPatternMessage(pattern);
 
-  if (unsafeReason) {
-    return {
-      matchCount: 0,
-      invalidPattern: true,
-      output: `Unsupported grep pattern: ${unsafeReason}. Use a shorter literal token or a simpler regex.`,
-    };
+  if (unsupported) {
+    return { matchCount: 0, invalidPattern: true, output: unsupported };
   }
 
   const { indexes, effectivePattern, invalidPattern } = resolveMatches(lines, pattern);

@@ -9,6 +9,8 @@ export interface RequestDeadlineOptions {
 }
 
 export interface AdtRequestOptions extends RequestDeadlineOptions {
+  /** Scoped mutations must not replay for auth, CSRF, negotiation or availability errors. */
+  noReplay?: boolean;
   /** Override the 120-second per-fetch cap for a known long-running ADT operation. */
   fetchTimeoutMs?: number;
   /** Optional ADT subresource: handled 404s may be logged at debug level. */
@@ -57,7 +59,11 @@ function requestTimeoutError(): DOMException {
 }
 
 function requestAbortError(signal: AbortSignal): AdtNetworkError {
-  const cause = signal.reason instanceof Error ? signal.reason : new Error('The ADT request was aborted.');
+  const reason = signal.reason;
+  const cause =
+    reason instanceof Error && (reason.name === 'TimeoutError' || reason.name === 'AbortError')
+      ? reason
+      : new DOMException('The ADT request was cancelled.', 'AbortError');
   return new AdtNetworkError(cause.message, cause);
 }
 

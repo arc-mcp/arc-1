@@ -40,6 +40,7 @@ import {
 } from './write/class-surgery.js';
 import type { SapWriteContext } from './write/context.js';
 import { writeActionBatchCreate, writeActionCreate } from './write/create.js';
+import { handlePinnedWrite } from './write/pinned.js';
 import { writeActionGenerateBehaviorImplementation, writeActionScaffoldRapHandlers } from './write/rap.js';
 import { writeTableSettings } from './write/table-settings.js';
 import { writeUiad } from './write/uiad.js';
@@ -61,6 +62,7 @@ export async function handleSAPWrite(
   cachingLayer: CachingLayer | undefined,
   cacheSecurity: CacheSecurityContext,
 ): Promise<ToolResult> {
+  if (config.multiTargetEndpoints && config.targetId) return handlePinnedWrite(client, args, config);
   const action = String(args.action ?? '');
   const type = normalizeWriteObjectType(String(args.type ?? ''));
   const name = String(args.name ?? '');
@@ -192,7 +194,7 @@ export async function handleSAPWrite(
   } else {
     // Discovery gate: refuse transparent-table creates upfront on systems that
     // don't expose /ddic/tables/ (NW 7.50/7.51). TABL/DS skips this — /structures/
-    // is always available. See issue #285.
+    // has separate backend support (verified on 750/758). See issue #285.
     if ((type === 'TABL' || type === 'TABL/DT') && (action === 'create' || action === 'batch_create')) {
       if (isTablesEndpointAvailable() === false) {
         return errorResult(TABL_DT_WRITE_UNAVAILABLE_HINT);

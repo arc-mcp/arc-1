@@ -277,7 +277,11 @@ export function normalizeTypeArgsForValidation(
         ...cleaned,
         type: normalizeObjectType(String(cleaned.type ?? '')),
         objectType:
-          cleaned.objectType === undefined ? undefined : normalizeObjectType(String(cleaned.objectType ?? '')),
+          cleaned.objectType === undefined
+            ? undefined
+            : normalizeObjectType(String(cleaned.type ?? '')) === 'DEVC' && cleaned.packageScope === 'direct'
+              ? String(cleaned.objectType).trim().toUpperCase()
+              : normalizeObjectType(String(cleaned.objectType)),
       };
     case 'SAPManage':
       // Strict-schema clients populate optional fields on unrelated actions and revoke.
@@ -348,12 +352,14 @@ export function normalizeTypeArgsForValidation(
         type: cleaned.type === undefined ? undefined : normalizeObjectType(String(cleaned.type ?? '')),
       };
     case 'SAPDiagnose':
+      // Empty optional filter selections preserve the ordinary call, including strict-client filler.
+      if (Array.isArray(cleaned.filters) && cleaned.filters.length === 0) delete cleaned.filters;
       // Strict-schema clients may supply an empty placeholder on single-object
-      // or unrelated actions. An actual empty ATC batch remains a validation error.
+      // or unrelated actions. An actual empty ATC/syntax batch remains a validation error.
       if (
         Array.isArray(cleaned.objects) &&
         cleaned.objects.length === 0 &&
-        (cleaned.action !== 'atc' ||
+        (!['atc', 'syntax'].includes(String(cleaned.action)) ||
           cleaned.name !== undefined ||
           cleaned.type !== undefined ||
           cleaned.url !== undefined)
