@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolvePinnedRequest } from '../../../src/adt/pinned-write-policy.js';
 import { defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { sourceHash } from '../../../src/adt/source-precondition.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
@@ -44,21 +45,26 @@ function client() {
 }
 let source: string;
 let normalizeLineEndings: boolean;
+let storedSourceTransform: (value: string) => string;
 let pkg: string;
 let local: string;
 let failSave: number;
 let failUnlock: boolean;
 let activationRefs: string[] | undefined;
+let activationResponse: string;
 const requests: Array<{ path: string; method: string; body: string }> = [];
 beforeEach(() => {
   vi.resetAllMocks();
   source = initial;
   normalizeLineEndings = false;
+  storedSourceTransform = (value) => value;
   pkg = '$TMP';
   local = 'X';
   failSave = 0;
   failUnlock = false;
   activationRefs = undefined;
+  activationResponse =
+    '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties activationExecuted="true"/></chkl:messages>';
   requests.length = 0;
   mockFetch.mockImplementation(async (url: unknown, options: any = {}) => {
     const parsed = new URL(String(url));
@@ -88,12 +94,12 @@ beforeEach(() => {
           200,
           `<ioc:inactiveObjects xmlns:ioc="http://www.sap.com/abapxml/inactiveCtsObjects"><ioc:entry><ioc:object><ioc:ref xmlns:adtcore="http://www.sap.com/adt/core" adtcore:uri="${activationRefs[0]}" adtcore:name="ZCL_TEST"/></ioc:object></ioc:entry></ioc:inactiveObjects>`,
         );
-      return mockResponse(200, '<checkReport/>');
+      return mockResponse(200, activationResponse);
     }
     if (parsed.pathname.endsWith('/source/main')) {
       if (method === 'PUT') {
         if (failSave) return mockResponse(failSave, 'Backend failure');
-        source = normalizeLineEndings ? body.replace(/\r?\n/g, '\r\n') : body;
+        source = storedSourceTransform(normalizeLineEndings ? body.replace(/\r?\n/g, '\r\n') : body);
       }
       return mockResponse(200, source);
     }
@@ -133,6 +139,37 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(result.isError, result.content[0].text).toBeUndefined();
     expect(payload(result).sourceHash).toBe(sourceHash(replacement.replace(/\n/g, '\r\n')));
   });
+  it.each(['remove', 'add'])('accepts terminal line-break normalization: %s', async (mode) => {
+    normalizeLineEndings = true;
+    storedSourceTransform = (value) => (mode === 'remove' ? value.replace(/(?:\r?\n)+$/, '') : `${value}\r\n`);
+    const result = await handlePinnedWrite(client(), update(), config);
+    expect(result.isError, result.content[0].text).toBeUndefined();
+    expect(payload(result).sourceHash).toBe(sourceHash(source));
+  });
+  it('does not accept a changed non-terminal source byte as normalization', async () => {
+    storedSourceTransform = (value) => value.replace('result = 2.', 'result = 9.');
+    const result = await handlePinnedWrite(client(), update(), config);
+    expect(result.isError).toBe(true);
+    expect(payload(result)).toMatchObject({ state: 'source-save-unknown', retryable: false });
+  });
+  it.each(['A4HK900001', 'A4HK999999', ''])(
+    'verifies sibling task membership against its parent tree: %s',
+    async (parent) => {
+      const fallback = mockFetch.getMockImplementation()!;
+      mockFetch.mockImplementation(async (url: unknown, options: any) => {
+        if (String(url).includes('/transportrequests/A4HK900002'))
+          return mockResponse(
+            200,
+            `<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"/><tm:task tm:number="A4HK900002" tm:parent="${parent}" tm:status="D"/></tm:root>`,
+          );
+        return fallback(url, options);
+      });
+      const adt = client();
+      const result = resolvePinnedRequest(adt.http, adt.safety, 'A4HK900002');
+      if (parent === 'A4HK900001') await expect(result).resolves.toBe(parent);
+      else await expect(result).rejects.toThrow();
+    },
+  );
   it('creates with no JWT display responsible and preserves the scoped metadata path', async () => {
     const result = await handlePinnedWrite(
       client(),
@@ -275,6 +312,19 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     const allowed = await handlePinnedActivation(client(), { type: 'CLAS', name: 'ZCL_TEST' });
     expect(allowed.isError, allowed.content[0].text).toBeUndefined();
     expect(requests.filter((r) => r.path.includes('/activation?'))).toHaveLength(2);
+  });
+  it.each([
+    '',
+    '<html>Login</html>',
+    '<chkl:messages xmlns:chkl="http://www.sap.com/abapxml/checklist"><chkl:properties activationExecuted="false"/></chkl:messages>',
+  ])('never claims activation success without SAP execution evidence: %s', async (response) => {
+    activationResponse = response;
+    for (const refs of [undefined, [`${owner}/includes/definitions`]]) {
+      activationRefs = refs;
+      const result = await handlePinnedActivation(client(), { type: 'CLAS', name: 'ZCL_TEST' });
+      expect(result.isError).toBe(true);
+      expect(payload(result)).toMatchObject({ state: 'activation-not-confirmed', retryable: false });
+    }
   });
   it('activates only after package and recording checks', async () => {
     const result = await handlePinnedActivation(client(), { type: 'CLAS', name: 'ZCL_TEST' });

@@ -5,6 +5,7 @@ import { AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
 import type { SafetyConfig } from './safety.js';
 import { CTS_CONTENT_TYPE_ORGANIZER, getTransportInfo, parseTransportList } from './transport.js';
+import { parseXml } from './xml-parser.js';
 
 export function assertPinnedOwner(type: unknown, name: unknown): asserts type is 'CLAS' | 'INTF' {
   if (
@@ -47,9 +48,33 @@ export async function resolvePinnedRequest(
   const response = await http.get(path, { Accept: CTS_CONTENT_TYPE_ORGANIZER }, options);
   if (response.body.length > 1024 * 1024)
     throw new AdtSafetyError('CTS request evidence exceeds the bounded qualification size.');
-  const matches = parseTransportList(response.body, path).filter(
+  let matches = parseTransportList(response.body, path).filter(
     (request) => request.id === id || request.tasks.some((task) => task.id === id),
   );
+  if (matches.length === 0) {
+    // A task detail document places its parent request and task as siblings. Use only
+    // the exact task's parent attribute, then independently verify the parent's tree.
+    const root = parseXml(response.body).root as Record<string, unknown> | undefined;
+    const tasks = root?.task;
+    const selected = (Array.isArray(tasks) ? tasks : tasks ? [tasks] : []).filter(
+      (task) => task && typeof task === 'object' && task['@_number'] === id,
+    );
+    const parent = selected.length === 1 ? selected[0]['@_parent'] : undefined;
+    if (
+      typeof parent !== 'string' ||
+      !/^[A-Z0-9]{1,20}$/.test(parent) ||
+      parent === id ||
+      selected[0]['@_status'] !== 'D'
+    )
+      throw new AdtSafetyError('CTS task parent could not be established.');
+    const parentPath = `/sap/bc/adt/cts/transportrequests/${parent}`;
+    const parentResponse = await http.get(parentPath, { Accept: CTS_CONTENT_TYPE_ORGANIZER }, options);
+    if (parentResponse.body.length > 1024 * 1024)
+      throw new AdtSafetyError('CTS request evidence exceeds the bounded qualification size.');
+    matches = parseTransportList(parentResponse.body, parentPath).filter(
+      (request) => request.id === parent && request.tasks.some((task) => task.id === id),
+    );
+  }
   if (matches.length !== 1) throw new AdtSafetyError('CTS request/task membership could not be established.');
   const request = matches[0];
   if (

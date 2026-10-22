@@ -267,9 +267,11 @@ async function handleSapTargets(
                   ? 'TARGET_ACCESS_REQUIRED'
                   : !projection.write
                     ? 'RAW_WRITE_SCOPE_REQUIRED'
-                    : !isTargetGranted(projection.writeGrant, target.target)
-                      ? 'EXACT_WRITE_GRANT_REQUIRED'
-                      : 'ENABLED_ON_PINNED_URL';
+                    : projection.writeGrant.status !== 'valid'
+                      ? `WRITE_${projection.writeGrant.status}`
+                      : !isTargetGranted(projection.writeGrant, target.target)
+                        ? 'EXACT_WRITE_GRANT_REQUIRED'
+                        : 'ENABLED_ON_PINNED_URL';
         return { enabled: reason === 'ENABLED_ON_PINNED_URL', reason };
       },
       runtimeAuth: adminView && sharedAuthState ? (target) => sharedAuthState.getHealth(target) : undefined,

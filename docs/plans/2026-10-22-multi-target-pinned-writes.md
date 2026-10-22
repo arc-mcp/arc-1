@@ -132,7 +132,7 @@ when the global list is empty.
 Update/edit flow: validate inputs → real package and CTS preflight → owning stateful lock → reread
 package and recording evidence → validate lock locality/CTS → fresh editable main source/hash →
 splice if requested → lint/advisory syntax → PUT → content read-back → bounded unlock/session close.
-SAP LF-to-CRLF normalization is allowed; all other source differences are incomplete outcomes.
+SAP LF/CRLF and terminal line-break normalization are allowed; all other source differences are incomplete outcomes.
 Return the hash of SAP's actual editable bytes, never the submitted representation.
 Creation runs package/recording/lint checks before metadata POST, then the same locked save checks.
 Omit responsible so SAP assigns the qualified PP identity. Never copy a JWT email into that field.

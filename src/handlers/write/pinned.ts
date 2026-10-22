@@ -166,7 +166,9 @@ export async function handlePinnedWrite(
         await http.put(`${sourceUrl}?${query}`, source, 'text/plain', undefined, options);
         phase = 'source-readback';
         const saved = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
-        if (saved.body.replace(/\r\n/g, '\n') !== source.replace(/\r\n/g, '\n'))
+        // ADT normalizes CRLF and terminal line breaks (INTF removes them; CLAS may add them).
+        const comparable = (value: string) => value.replace(/\r\n/g, '\n').replace(/\n+$/, '');
+        if (comparable(saved.body) !== comparable(source))
           throw new AdtSafetyError(
             'Save returned but exact editable source read-back did not match. Inspect before continuing.',
           );

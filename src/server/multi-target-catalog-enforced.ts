@@ -173,7 +173,7 @@ export function buildEnforcedTargetCatalogResult(
 export function enforcedCatalogFitsSnapshot(registry: DestinationRegistry): boolean {
   const payload = buildEnforcedTargetCatalog(registry, {
     admin: true,
-    pinnedWrite: () => ({ enabled: false, reason: 'TARGET_WRITE_GRANT_LIMIT_EXCEEDED' }),
+    pinnedWrite: () => ({ enabled: false, reason: 'WRITE_TARGET_GRANT_LIMIT_EXCEEDED' }),
     enforcement: {
       allowsTarget: () => false,
       authorization: {

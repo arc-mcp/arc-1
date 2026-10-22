@@ -232,14 +232,16 @@ async function activateWithinBudget(
     );
     const phase1DurationMs = Date.now() - phase1Start;
 
-    const outcome = parseActivationOutcome(resp.body);
+    const outcome = parseActivationOutcome(resp.body, safety.multiTargetWrite?.enabled === true);
     if (outcome.kind !== 'preaudit' || !preaudit) {
       return outcomeToResult(outcome);
     }
 
     await options?.validateReferences?.(outcome.refs);
     options?.beforeSubmit?.();
-    return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions);
+    return await confirmPreaudit(http, outcome.refs, options?.name ?? objectUrl, phase1DurationMs, requestOptions, {
+      safety,
+    });
   } catch (err) {
     return rethrowOrLockHint(err, options?.name ?? objectUrl);
   }
@@ -352,7 +354,7 @@ ${refLines}
       { Accept: 'application/xml' },
       requestOptions,
     );
-    result = outcomeToResult(parseActivationOutcome(resp.body));
+    result = outcomeToResult(parseActivationOutcome(resp.body, options?.safety.multiTargetWrite?.enabled === true));
     if (options?.ed064RetryObjects) {
       result = await retryBatchActivationIndividuallyAfterEd064(
         http,
@@ -957,8 +959,8 @@ export type ActivationOutcome =
     };
 
 /** Parse activation response into a discriminated outcome. */
-export function parseActivationOutcome(xml: string): ActivationOutcome {
-  if (!xml.trim()) return { kind: 'success', messages: [], details: [] };
+export function parseActivationOutcome(xml: string, requireExecutionEvidence = false): ActivationOutcome {
+  if (!xml.trim() && !requireExecutionEvidence) return { kind: 'success', messages: [], details: [] };
 
   const parsed = parseXml(xml);
   const msgs = findDeepNodes(parsed, 'msg');
@@ -1013,6 +1015,17 @@ export function parseActivationOutcome(xml: string): ActivationOutcome {
     };
   }
 
+  if (requireExecutionEvidence) {
+    const properties = findDeepNodes(parsed, 'properties');
+    if (
+      !Object.hasOwn(parsed, 'messages') ||
+      properties.length !== 1 ||
+      properties[0]['@_activationExecuted'] !== 'true'
+    )
+      throw new AdtSafetyError(
+        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.',
+      );
+  }
   return { kind: 'success', messages, details };
 }
 
