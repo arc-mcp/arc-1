@@ -1852,7 +1852,7 @@ function extractGatewaySourceFromHtml(sourceHtml: string): { lines: GatewaySourc
     const classes = (match[1] ?? '').trim();
     const isError = /\bhighlight\b/i.test(classes);
     const raw = stripHtmlTags(match[2] ?? '');
-    const content = decodeHtmlEntities(raw).replace(/\s+$/, '');
+    const content = decodeHtmlEntities(raw).trimEnd();
     const assignedNumber = numbers[i];
     const resolvedNumber = typeof assignedNumber === 'number' && assignedNumber > 0 ? assignedNumber : fallback;
     fallback = resolvedNumber + 1;

@@ -1136,6 +1136,14 @@ describe('Runtime Diagnostics', () => {
       });
     });
 
+    it('preserves long interior whitespace and indentation while trimming source-line endings', () => {
+      const content = `  DATA${' '.repeat(50000)}value.\t\u00a0`;
+      const html = `<h4 id="SOURCE">Source</h4><table><tr><td id="sourcetablecolumn"><span class="linenumber">42</span></td><td id="sourcetablecolumn"><div class="sourceline highlight">${content}</div><div class="sourceline"> \t\u00a0</div></td></tr></table><h4 id="STACK">Call Stack</h4>`;
+      const result = parseGatewayErrorDetail(html);
+      expect(result.sourceCode.lines[0]).toEqual({ number: 42, content: content.trimEnd(), isError: true });
+      expect(result.sourceCode.lines[1]?.content).toBe('');
+    });
+
     it('parses real SAP HTML fragment detail payload', () => {
       // Real NetWeaver /sap/bc/adt/gw/errorlog/{Type}/{Tx} returns HTML, not XML.
       // Mimics the real NetWeaver /sap/bc/adt/gw/errorlog/{Type}/{Tx} payload:
