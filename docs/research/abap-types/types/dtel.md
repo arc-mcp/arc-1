@@ -31,7 +31,7 @@ Live evidence: `objectType=DTEL` and `objectType=DTEL/DE` both return `adtcore:t
 - The 2026-10-17 validation in [PR #1007](https://github.com/arc-mcp/arc-1/pull/1007)
   records a successful native data-element read on 750, 758 and 816.
 - The earlier “stable since 7.40” claim was unverified. SAP's
-  [ADT feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468/page/2)
+  [ADT feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468)
   lists the native data-element editor from 7.50; that does not establish its exact endpoint
   contract on earlier support packages. [#996](https://github.com/arc-mcp/arc-1/issues/996)
   reports empty HTML from this endpoint on 740 SP04. Earlier-release alternatives need evidence.
