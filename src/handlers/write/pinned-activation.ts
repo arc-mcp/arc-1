@@ -4,6 +4,7 @@ import { activate } from '../../adt/devtools.js';
 import { AdtSafetyError } from '../../adt/errors.js';
 import { assertPinnedOwner, pinnedRecording } from '../../adt/pinned-write-policy.js';
 import { checkOperation, OperationType } from '../../adt/safety.js';
+import { getCurrentContext } from '../../server/context.js';
 import { objectUrlForType } from '../object-types.js';
 import { errorResult, type ToolResult, textResult, toolJson } from '../shared.js';
 import { enforceAllowedPackageForObjectUrl } from '../write-helpers.js';
@@ -35,16 +36,28 @@ export async function handlePinnedActivation(client: AdtClient, args: Record<str
     if ((args.action ?? 'activate') !== 'activate' || args.objects !== undefined || args.preaudit === false)
       throw new AdtSafetyError('Only whole-owner preaudited activation is allowed.');
     const owner = objectUrlForType(type, (name as string).toLowerCase());
-    const pkg = await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned activation');
+    const requestOptions = {
+      deadline: Date.now() + 300_000,
+      signal: getCurrentContext()?.signal,
+      noReplay: true,
+      retryTransientErrors: false,
+    };
+    const pkg = await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned activation', undefined, requestOptions);
     if (!pkg) throw new AdtSafetyError('Owner package is unresolved.');
-    await pinnedRecording(client.http, client.safety, owner, pkg, '');
+    await pinnedRecording(client.http, client.safety, owner, pkg, '', undefined, requestOptions);
     const result = await activate(client.http, client.safety, owner, {
       name: name as string,
       validateReferences: async (refs) => {
         validatePinnedActivationReferences(owner, type, refs);
-        const currentPackage = await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned activation scope');
+        const currentPackage = await enforceAllowedPackageForObjectUrl(
+          client,
+          owner,
+          'Pinned activation scope',
+          undefined,
+          requestOptions,
+        );
         if (currentPackage !== pkg) throw new AdtSafetyError('Owner package changed before activation.');
-        await pinnedRecording(client.http, client.safety, owner, pkg, '');
+        await pinnedRecording(client.http, client.safety, owner, pkg, '', undefined, requestOptions);
       },
       beforeSubmit: () => {
         submitted = true;

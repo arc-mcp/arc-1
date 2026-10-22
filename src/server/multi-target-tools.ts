@@ -143,6 +143,31 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
         type: 'object',
         properties: {
           ...properties,
+          ...(write
+            ? {
+                package: {
+                  type: 'string',
+                  description:
+                    'Required explicit package for create. Must match both server and destination policies. Omit for updates.',
+                },
+                transport: {
+                  type: 'string',
+                  description:
+                    'Required allowed Workbench request/task for transportable create. Existing objects may reuse their proven request. Omit for local objects; manage requests outside this connection.',
+                },
+                expectedSourceHash: {
+                  type: 'string',
+                  pattern: '^[a-f0-9]{64}$',
+                  description:
+                    'Required for update/edit_method: SHA-256 from SAPRead(format="editable") on this owner main source. Omit for create.',
+                },
+                method: {
+                  type: 'string',
+                  description:
+                    'Existing CLAS main-source method name, only for edit_method. Local-class/include methods are unavailable.',
+                },
+              }
+            : {}),
           type: { type: 'string', enum: ['CLAS', 'INTF'] },
           action: { type: 'string', enum: write ? [...PINNED_WRITE_ACTIONS] : ['activate'] },
         },

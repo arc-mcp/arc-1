@@ -100,7 +100,7 @@ flowchart LR
 |---|---|---|
 | Process lifetime | Managed service or client-launched local process | Tied to the local ADT runtime |
 | Many users | Central authentication, policy and audit | Developer-local session; no comparable shared-service model established here |
-| Multiple systems | Single target by default; experimental BTP CF multi-target mode is mutation-free | Destination-aware tools work with the allowed configured ADT connections |
+| Multiple systems | Single target by default; BTP CF multi-target reads plus opt-in scoped pinned PP writes | Destination-aware tools work with the allowed configured ADT connections |
 | Writable multi-system access | Separate ARC-1 instances; open proposals do not change this boundary | Depends on allowed destinations, packages, tools and SAP authorization |
 | Network to SAP | HTTP ADT; BTP destinations/Cloud Connector where configured | RFC destinations for on-premise/private cloud; HTTP destinations for ABAP environment/public cloud |
 | Operations | You own deployment, TLS termination, updates and capacity | You maintain IDE/client version, destinations, local credentials and SAP prerequisites |
@@ -479,7 +479,7 @@ explicit backend workflows and remote agent access. Source surgery, SQL access a
 transport/Git operations remain useful concrete capabilities.
 
 ARC-1's limits remain material: it is community-maintained, you operate it, backend contracts vary,
-multi-target is experimental and mutation-free, gCTS mutations are quarantined, and it does not
+multi-target writes are limited to pinned PP CLAS/INTF workflows, gCTS mutations are quarantined, and it does not
 replace an IDE. Core report/class execution and direct RFC are deliberately excluded; opted-in
 extensions have their own gates. See [extensions](extensions.md) and
 [ADR-0009](https://github.com/arc-mcp/arc-1/blob/main/docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md).

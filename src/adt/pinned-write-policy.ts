@@ -3,7 +3,7 @@
 import type { LockResult } from './crud.js';
 import { AdtSafetyError } from './errors.js';
 import type { AdtHttpClient, AdtRequestOptions } from './http.js';
-import type { SafetyConfig } from './safety.js';
+import { isTransportInWhitelist, type SafetyConfig } from './safety.js';
 import { CTS_CONTENT_TYPE_ORGANIZER, getTransportInfo, parseTransportList } from './transport.js';
 import { parseXml } from './xml-parser.js';
 
@@ -18,19 +18,12 @@ export function assertPinnedOwner(type: unknown, name: unknown): asserts type is
   }
 }
 
-function matches(patterns: readonly string[], value: string): boolean {
-  return patterns.some(
-    (pattern) =>
-      pattern.toUpperCase() === value ||
-      (pattern.endsWith('*') && value.startsWith(pattern.slice(0, -1).toUpperCase())),
-  );
-}
-
 export function checkPinnedRequest(safety: SafetyConfig, request: string): void {
   if (
     !safety.multiTargetWrite?.enabled ||
-    !matches(safety.multiTargetWrite.allowedTransports, request) ||
-    (safety.allowedTransports.length > 0 && !matches(safety.allowedTransports, request))
+    !safety.multiTargetWrite.allowedTransports.length ||
+    !isTransportInWhitelist({ allowedTransports: [...safety.multiTargetWrite.allowedTransports] }, request) ||
+    !isTransportInWhitelist({ allowedTransports: [...safety.multiTargetWrite.serverAllowedTransports] }, request)
   ) {
     throw new AdtSafetyError('CTS request is not allowed by both server and destination transport policies.');
   }
@@ -105,6 +98,8 @@ export async function pinnedRecording(
   options?: AdtRequestOptions,
 ): Promise<PinnedRecording> {
   const info = await getTransportInfo(http, safety, owner, pkg, operation, options);
+  if (info.lockedTransportAmbiguous || (info.lockedTasks.length && !info.lockedTransport))
+    throw new AdtSafetyError('Ambiguous CTS lock holders.');
   if (info.result !== 'S' || info.devclass !== pkg || info.operation !== operation)
     throw new AdtSafetyError('SAP did not affirm the requested package/recording context.');
   if (
@@ -127,6 +122,9 @@ export async function pinnedRecording(
   const request = await resolvePinnedRequest(http, safety, selected, options);
   if (info.lockedTransport && (await resolvePinnedRequest(http, safety, info.lockedTransport, options)) !== request)
     throw new AdtSafetyError('The object is recorded in a different CTS request.');
+  for (const task of info.lockedTasks)
+    if ((await resolvePinnedRequest(http, safety, task, options)) !== request)
+      throw new AdtSafetyError('A locked task belongs to a different CTS request.');
   return { local: false, request };
 }
 

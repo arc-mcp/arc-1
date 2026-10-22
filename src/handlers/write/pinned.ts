@@ -22,7 +22,13 @@ import {
   runPreWriteSyntaxCheck,
 } from '../write-helpers.js';
 
-export function pinnedFailure(error: unknown, state: string, phase: string, cleanupFailed = false): ToolResult {
+export function pinnedFailure(
+  error: unknown,
+  state: string,
+  phase: string,
+  cleanupFailed = false,
+  details: { sourceHash?: string; sessionClosed?: boolean } = {},
+): ToolResult {
   const context = getCurrentContext();
   return errorResult(
     toolJson({
@@ -30,17 +36,23 @@ export function pinnedFailure(error: unknown, state: string, phase: string, clea
       message:
         error instanceof AdtSafetyError
           ? error.message
-          : 'SAP did not confirm the complete operation. Inspect the object and its inactive source before deciding the next action.',
+          : state.endsWith('-rejected')
+            ? 'SAP rejected this operation phase. Review the status and current object before continuing.'
+            : 'SAP did not confirm the complete operation. Inspect the object and its inactive source before deciding the next action.',
       target: context?.target,
       requestId: context?.requestId,
       retryable: false,
       state,
       phase,
       ...(error instanceof AdtApiError ? { statusCode: error.statusCode } : {}),
+      ...details,
       ...(cleanupFailed
         ? {
             cleanupFailed: true,
-            cleanup: 'Unlock failed; the owning session was closed. Verify the SAP lock before continuing.',
+            cleanup:
+              details.sessionClosed === true
+                ? 'Unlock failed; the owning session was closed. Verify the SAP lock before continuing.'
+                : 'Unlock failed; session closure was not confirmed. Verify the SAP lock before continuing.',
           }
         : {}),
     }),
@@ -55,6 +67,8 @@ export async function handlePinnedWrite(
   let state = 'unchanged';
   let phase = 'validation';
   let cleanupFailed = false;
+  let sessionClosed: boolean | undefined;
+  let savedHash: string | undefined;
   try {
     // The HTTP gate validates all raw fields before Zod strips unknown fields. Recheck capability here.
     checkOperation(client.safety, OperationType.Update, 'PinnedWrite');
@@ -79,6 +93,7 @@ export async function handlePinnedWrite(
       deadline: Date.now() + 300_000,
       signal: getCurrentContext()?.signal,
       retryTransientErrors: false,
+      noReplay: true,
     };
     const requested = args.transport === undefined ? undefined : String(args.transport).trim().toUpperCase();
     let source = args.source;
@@ -98,7 +113,7 @@ export async function handlePinnedWrite(
       pkg = args.package.trim().toUpperCase();
       await checkPackage(client.safety, pkg, client.getPackageHierarchyResolver());
     } else {
-      pkg = (await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned write')) ?? '';
+      pkg = (await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned write', undefined, options)) ?? '';
     }
     phase = 'recording-preflight';
     const recording = await pinnedRecording(
@@ -116,6 +131,7 @@ export async function handlePinnedWrite(
       state = 'creation-unknown';
       const query = recording.request ? `?corrNr=${encodeURIComponent(recording.request)}` : '';
       // SAP assigns the mapped PP user; JWT display names are not SAP responsible-user evidence.
+      checkOperation(client.safety, OperationType.Create, 'PinnedCreate');
       await client.http.post(
         owner.replace(/\/[^/]+$/, '') + query,
         buildCreateXml(type, objectName, pkg, String(args.description ?? objectName), undefined, config.language),
@@ -125,73 +141,104 @@ export async function handlePinnedWrite(
       );
       state = 'created-source-not-confirmed';
     }
-    await client.http.withStatefulSession(async (http) => {
-      phase = 'lock';
-      throwIfRequestCancelled(options);
-      const lock = await lockObject(http, client.safety, owner, 'MODIFY', undefined, undefined, options);
-      try {
-        phase = 'locked-policy';
-        const actualPackage = await enforceAllowedPackageForObjectUrl(client, owner, 'Pinned write under lock');
-        if (actualPackage !== pkg) throw new AdtSafetyError('The owner package changed since preflight.');
-        const fresh = await pinnedRecording(http, client.safety, owner, pkg, '', recording.request, options);
-        if (fresh.local !== recording.local || fresh.request !== recording.request)
-          throw new AdtSafetyError('Recording context changed since preflight.');
-        await validatePinnedLock(http, client.safety, lock, fresh, options);
-        if (action !== 'create') {
-          const current = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
-          assertSourceHash(current.body, args.expectedSourceHash as string, sourceUrl);
-          if (action === 'edit_method') {
-            const release = getCachedFeatures()?.abapRelease;
-            const result = spliceMethod(
-              current.body,
-              objectName,
-              String(args.method),
-              source,
-              release ? mapSapReleaseToAbaplintVersion(release) : undefined,
-            );
-            if (!result.success) throw new AdtSafetyError(result.error ?? 'Method splice failed.');
-            source = result.newSource;
-            warnings = lint(source);
-          }
-        }
-        const syntaxNotes = await runPreWriteSyntaxCheck({ http, safety: client.safety }, type, source, owner, config);
-        if (syntaxNotes) warnings = [warnings, syntaxNotes].filter(Boolean).join('\n');
+    await client.http.withStatefulSession(
+      async (http) => {
+        phase = 'lock';
         throwIfRequestCancelled(options);
-        phase = 'source-save';
-        state = action === 'create' ? 'created-source-unknown' : 'source-save-unknown';
-        const query = new URLSearchParams({
-          lockHandle: lock.lockHandle,
-          ...(recording.request ? { corrNr: recording.request } : {}),
-        });
-        await http.put(`${sourceUrl}?${query}`, source, 'text/plain', undefined, options);
-        phase = 'source-readback';
-        const saved = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
-        // ADT normalizes CRLF and terminal line breaks (INTF removes them; CLAS may add them).
-        const comparable = (value: string) => value.replace(/\r\n/g, '\n').replace(/\n+$/, '');
-        if (comparable(saved.body) !== comparable(source))
-          throw new AdtSafetyError(
-            'Save returned but exact editable source read-back did not match. Inspect before continuing.',
+        const lock = await lockObject(http, client.safety, owner, 'MODIFY', undefined, undefined, options);
+        try {
+          phase = 'locked-policy';
+          const actualPackage = await enforceAllowedPackageForObjectUrl(
+            client,
+            owner,
+            'Pinned write under lock',
+            undefined,
+            options,
           );
-        source = saved.body; // SAP normalizes line endings; return the hash of its actual editable bytes.
-        state = 'saved-inactive';
-      } finally {
-        if (lock.lockHandle) {
-          try {
-            // Cleanup uses the owning session and a separate bounded budget even after cancellation.
-            await http.post(
-              `${owner}?_action=UNLOCK&lockHandle=${encodeURIComponent(lock.lockHandle)}`,
-              undefined,
-              undefined,
-              undefined,
-              { deadline: Date.now() + 5000, retryTransientErrors: false },
+          if (actualPackage !== pkg) throw new AdtSafetyError('The owner package changed since preflight.');
+          const fresh = await pinnedRecording(http, client.safety, owner, pkg, '', recording.request, options);
+          if (fresh.local !== recording.local || fresh.request !== recording.request)
+            throw new AdtSafetyError('Recording context changed since preflight.');
+          await validatePinnedLock(http, client.safety, lock, fresh, options);
+          if (action !== 'create') {
+            const current = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
+            assertSourceHash(current.body, args.expectedSourceHash as string, sourceUrl);
+            if (action === 'edit_method') {
+              const release = getCachedFeatures()?.abapRelease;
+              const result = spliceMethod(
+                current.body,
+                objectName,
+                String(args.method),
+                source,
+                release ? mapSapReleaseToAbaplintVersion(release) : undefined,
+              );
+              if (!result.success) throw new AdtSafetyError(result.error ?? 'Method splice failed.');
+              source = result.newSource;
+              warnings = lint(source);
+            }
+          }
+          const syntaxNotes = await runPreWriteSyntaxCheck(
+            { http, safety: client.safety },
+            type,
+            source,
+            owner,
+            config,
+            undefined,
+            options,
+          );
+          if (syntaxNotes) warnings = [warnings, syntaxNotes].filter(Boolean).join('\n');
+          throwIfRequestCancelled(options);
+          phase = 'source-save';
+          state = action === 'create' ? 'created-source-unknown' : 'source-save-unknown';
+          const query = new URLSearchParams({
+            lockHandle: lock.lockHandle,
+            ...(recording.request ? { corrNr: recording.request } : {}),
+          });
+          checkOperation(client.safety, OperationType.Update, 'PinnedSave');
+          await http.put(`${sourceUrl}?${query}`, source, 'text/plain', undefined, options);
+          phase = 'source-readback';
+          const saved = await http.get(sourceUrl, { Accept: 'text/plain' }, options);
+          // ADT normalizes CRLF and terminal line breaks (INTF removes them; CLAS may add them).
+          const comparable = (value: string) => {
+            const text = value.replace(/\r\n/g, '\n');
+            let end = text.length;
+            while (end > 0 && text.charCodeAt(end - 1) === 10) end--;
+            return text.slice(0, end);
+          };
+          if (comparable(saved.body) !== comparable(source))
+            throw new AdtSafetyError(
+              'Save returned but exact editable source read-back did not match. Inspect before continuing.',
             );
-          } catch {
-            cleanupFailed = true;
+          source = saved.body; // SAP normalizes line endings; return the hash of its actual editable bytes.
+          state = 'saved-inactive';
+          savedHash = sourceHash(source);
+        } finally {
+          if (lock.lockHandle) {
+            try {
+              // Cleanup uses the owning session and a separate bounded budget even after cancellation.
+              await http.post(
+                `${owner}?_action=UNLOCK&lockHandle=${encodeURIComponent(lock.lockHandle)}`,
+                undefined,
+                undefined,
+                undefined,
+                { deadline: Date.now() + 30_000, retryTransientErrors: false, noReplay: true },
+              );
+            } catch {
+              cleanupFailed = true;
+            }
           }
         }
-      }
-    });
-    if (cleanupFailed) return pinnedFailure(new Error('Unlock failed'), state, 'unlock', true);
+      },
+      {
+        timeoutMs: 30_000,
+        noReplay: true,
+        onClose: (closed) => {
+          sessionClosed = closed;
+        },
+      },
+    );
+    if (cleanupFailed)
+      return pinnedFailure(new Error('Unlock failed'), state, 'unlock', true, { sourceHash: savedHash, sessionClosed });
     return textResult(
       toolJson({
         target: config.targetId,
@@ -206,6 +253,12 @@ export async function handlePinnedWrite(
       }),
     );
   } catch (error) {
-    return pinnedFailure(error, state, phase, cleanupFailed);
+    // Definitive SAP rejections did not accept this phase; network/429/5xx outcomes remain unknown.
+    if (error instanceof AdtApiError && [400, 401, 403, 404, 409, 412, 415, 422, 423].includes(error.statusCode)) {
+      if (phase === 'create') state = 'creation-rejected';
+      if (phase === 'source-save')
+        state = state.startsWith('created-') ? 'created-source-rejected' : 'source-save-rejected';
+    }
+    return pinnedFailure(error, state, phase, cleanupFailed, { sourceHash: savedHash, sessionClosed });
   }
 }

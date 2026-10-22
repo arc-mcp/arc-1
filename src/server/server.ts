@@ -242,8 +242,6 @@ export function buildAdtConfig(
     maxDataPreviewResponseBytes: config.maxDataPreviewResponseBytes,
     maxConcurrentDataResults: config.maxConcurrentDataResults,
     dataResultSemaphore,
-    strictMultiTargetWrites: !!config.multiTargetWrite?.enabled,
-    ...(config.multiTargetWrite?.enabled ? { retryUnauthorized: false } : {}),
     safety: {
       multiTargetWrite: config.multiTargetWrite,
       allowWrites: config.allowWrites,

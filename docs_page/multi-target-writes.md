@@ -20,7 +20,8 @@ to a configured target-filtered PP deployment; it is not a second deployment rec
 
 ## Configure one writable and one read-only target
 
-In the application's MTA extension `properties:` (or equivalently `cf set-env`), set:
+The validated [write overlay and destination example](https://github.com/arc-mcp/arc-1/tree/main/examples/btp/multi-pp)
+provide this configuration with fictional targets. In the application's MTA extension `properties:` (or equivalently `cf set-env`), set:
 
 ```yaml
 SAP_ALLOW_WRITES: "true"
@@ -79,6 +80,11 @@ create a concrete role from that template with:
 | `arc1_targets` | `DEV/001`, `QAS/001` | Targets this user may access |
 | `arc1_write_targets` | `DEV/001` | Exact targets this user may write through pinned PP connections |
 
+First enable and verify `ARC1_MULTI_TARGET_AUTHORIZATION=xsuaa-attribute` on the application.
+`MCPTargetDeveloper` carries application-wide read/write scopes; its attributes only restrict access
+in that enforced multi-target mode. Do not assign it to standard or single-target apps expecting
+target isolation, or reuse an XSUAA service/role collection across apps without checking each app.
+
 Add that concrete role to a collection and assign the collection to the intended user or identity
 group. The template supplies `read` and `write` scopes. Read `*` is supported by the existing read
 contract; write `*`, globs and comma-separated values inside an attribute value are rejected.
@@ -117,7 +123,7 @@ only the aggregate compatibility connection cannot write through that connection
 
 | Action | Requirements |
 |---|---|
-| `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; optional allowed request/task for a transportable package |
+| `SAPWrite.create` | One CLAS or INTF; explicit package and complete source; required allowed request/task for a transportable package |
 | `SAPWrite.update` | CLAS/INTF main source; `expectedSourceHash` from `SAPRead(format="editable")` |
 | `SAPWrite.edit_method` | Existing CLAS main-source method; hash of the complete editable main source |
 | `SAPActivate` | One CLAS/INTF owner; activates all of that owner's existing inactive drafts and includes |
@@ -127,7 +133,8 @@ including drafts created previously or by another session; it is not method-only
 Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT. Hidden actions,
 other types, deletes, include editing, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
-Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is
+ABAP Unit can execute newly authored code under the SAP user; deny `SAPDiagnose.unittest` unless
+that execution is intended. Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is
 always required in addition to ARC-1 policy. Live qualification used SAP_BASIS 758 SP02 with
 Cloud Connector PP. Other releases must affirm the same lock, recording and activation evidence;
 unrecognized responses fail closed. An activation response without positive execution evidence
@@ -139,7 +146,8 @@ not independent development sandboxes.
 
 ## Diagnose, disable and recover
 
-`SAPTargets` on the aggregate connection reports a bounded `pinnedWrite` status for configured write
+`SAPTargets` is available to readers with more than one visible granted target and to admins;
+with one target use its pinned connection and tool catalog. On the aggregate connection it reports a bounded `pinnedWrite` status for configured write
 targets visible to the caller. Admin diagnostics additionally show configured/effective flags,
 rule counts and a policy digest. No raw restriction list or destination credential is exposed.
 
@@ -154,12 +162,14 @@ rule counts and a policy digest. No raw restriction list or destination credenti
 | Partial/unknown write result | Inspect the object, inactive source, CTS recording and locks. Do not automatically replay; creation may have left a stub or a save may have completed |
 
 For immediate administrative disable, set `SAP_ALLOW_WRITES: "false"` and restart all instances,
-or turn off the destination's write opt-in and restart. Already admitted work may complete. Merely
+or turn off the destination's write opt-in. A changed destination fingerprint refuses subsequent
+lookups immediately; restart every instance to adopt the new snapshot. Already admitted work may complete. Merely
 removing a role is not immediate revocation: old tokens and refresh sessions can retain grants.
 Require fresh authorization and verify the new effective permissions after IAM changes.
 
 Keep the prior application artifact/configuration for rollback. Old binaries quarantine destinations
-containing the new properties, so restore the corresponding destination configuration when rolling
+containing the new properties. On upgrade, those previously quarantined destinations may become
+readable (and writable only if all new gates agree); review them before upgrading. Restore the corresponding destination configuration when rolling
 back. Do not delete an MTA property to turn it off; explicitly set its false value. Audit delivery
 retains the existing asynchronous BTP Audit Log contract; monitor failures rather than assuming a
 write waits for a durable audit acknowledgement.

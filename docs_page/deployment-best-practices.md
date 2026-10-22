@@ -5,8 +5,8 @@
 ARC-1 follows the **one instance per SAP backend** pattern by default. This is the recommended model
 for writes and for hard security/capacity isolation, and matches Eclipse ADT, SAP Business
 Application Studio, and SAP GUI. A separate [experimental multi-target mode](multi-target-setup.md)
-offers mutation-free access to many BTP subaccount destinations when application sprawl is the
-larger operational risk.
+offers reads across BTP subaccount destinations and opt-in [scoped pinned PP writes](multi-target-writes.md)
+when application sprawl is the larger operational risk. Separate instances retain stronger operational isolation.
 
 ### Why one-per-system?
 
@@ -14,7 +14,7 @@ larger operational risk.
 |---------|---------------|----------------------|
 | **Security** | Blast radius = one system | One breach = all systems |
 | **Auth** | Clean: one auth flow per instance | N destinations + N auth flows |
-| **Safety gates** | Per-system: `allowWrites`, `allowedPackages`, `denyActions` | Multi-target writes are unavailable; data/SQL can narrow per destination but the instance remains the ceiling |
+| **Safety gates** | Per-system: `allowWrites`, `allowedPackages`, `denyActions` | Scoped pinned PP writes require exact user grants; destination restrictions narrow the instance ceiling |
 | **Tool descriptions** | Tailored to system type (BTP vs on-premise) | Must be generic for all |
 | **Audit trail** | Clear per-system logs | Mixed across systems |
 | **Scaling** | Scale independently | Heavy-use system affects all |

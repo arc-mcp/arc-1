@@ -55,6 +55,7 @@ export async function syntaxCheck(
   safety: SafetyConfig,
   objectUrl: string,
   options?: { version?: 'active' | 'inactive'; content?: string; artifactContentType?: 'application/json' },
+  requestOptions?: AdtRequestOptions,
 ): Promise<SyntaxCheckResult> {
   checkOperation(safety, OperationType.Read, 'SyntaxCheck');
 
@@ -73,9 +74,15 @@ export async function syntaxCheck(
     </chkrun:artifacts>
   </chkrun:checkObject>
 </chkrun:checkObjectList>`;
-    const resp = await http.post('/sap/bc/adt/checkruns?reporters=abapCheckRun', body, 'application/*', {
-      Accept: 'application/vnd.sap.adt.checkmessages+xml',
-    });
+    const resp = await http.post(
+      '/sap/bc/adt/checkruns?reporters=abapCheckRun',
+      body,
+      'application/*',
+      {
+        Accept: 'application/vnd.sap.adt.checkmessages+xml',
+      },
+      requestOptions,
+    );
     return parseSyntaxCheckResult(
       resp.body,
       options.artifactContentType === 'application/json' ? objectUrl : undefined,
@@ -87,9 +94,15 @@ export async function syntaxCheck(
   <chkrun:checkObject adtcore:uri="${escapeXmlAttr(objectUrl)}" chkrun:version="${version}"/>
 </chkrun:checkObjectList>`;
 
-  const resp = await http.post('/sap/bc/adt/checkruns', body, 'application/vnd.sap.adt.checkobjects+xml', {
-    Accept: 'application/vnd.sap.adt.checkmessages+xml',
-  });
+  const resp = await http.post(
+    '/sap/bc/adt/checkruns',
+    body,
+    'application/vnd.sap.adt.checkobjects+xml',
+    {
+      Accept: 'application/vnd.sap.adt.checkmessages+xml',
+    },
+    requestOptions,
+  );
 
   return parseSyntaxCheckResult(resp.body);
 }
@@ -195,7 +208,13 @@ export async function activate(
   objectUrl: string,
   options?: ActivationOptions,
 ): Promise<ActivationResult> {
-  return activateWithinBudget(http, safety, objectUrl, activationRequestOptions(), options);
+  return activateWithinBudget(
+    http,
+    safety,
+    objectUrl,
+    { ...activationRequestOptions(), noReplay: safety.multiTargetWrite?.enabled === true },
+    options,
+  );
 }
 
 async function activateWithinBudget(
@@ -1023,7 +1042,13 @@ export function parseActivationOutcome(xml: string, requireExecutionEvidence = f
       properties[0]['@_activationExecuted'] !== 'true'
     )
       throw new AdtSafetyError(
-        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.',
+        'SAP did not affirm activation execution. Inspect the active and inactive owner before continuing.' +
+          (messages.length
+            ? ` SAP: ${messages
+                .slice(0, 5)
+                .map((text) => text.slice(0, 500))
+                .join('; ')}`
+            : ''),
       );
   }
   return { kind: 'success', messages, details };

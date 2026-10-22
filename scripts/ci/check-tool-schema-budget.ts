@@ -176,7 +176,7 @@ const MULTI_TARGET_BUDGET: ToolSchemaBudget = {
 
 const PINNED_WRITE_CONFIG: ServerConfig = {
   ...DEFAULT_CONFIG, allowWrites: true, ppEnabled: true, ppStrict: true, multiTargetEndpoints: true,
-  multiTargetWrite: { target: 'A4H/001', enabled: true, allowedPackages: ['$TMP'], allowedTransports: [] },
+  multiTargetWrite: { target: 'A4H/001', enabled: true, allowedPackages: ['$TMP'], allowedTransports: [], serverAllowedTransports: [] },
 };
 
 // Dump filtering adds one described property; concise diagnostic wording retains all wire/token ceilings.

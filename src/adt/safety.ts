@@ -65,6 +65,7 @@ export interface MultiTargetWritePolicy {
   readonly enabled: boolean;
   readonly allowedPackages: readonly string[];
   readonly allowedTransports: readonly string[];
+  readonly serverAllowedTransports: readonly string[];
 }
 
 export interface SafetyConfig {
@@ -309,7 +310,7 @@ export async function checkPackage(
 }
 
 /** Check if a transport is in the whitelist. */
-function isTransportInWhitelist(config: SafetyConfig, transport: string): boolean {
+export function isTransportInWhitelist(config: Pick<SafetyConfig, 'allowedTransports'>, transport: string): boolean {
   if (listDeniesAll(config.allowedTransports)) return false;
   if (config.allowedTransports.length === 0) return true;
 
@@ -397,6 +398,7 @@ export function deriveUserSafety(serverConfig: SafetyConfig, scopes: string[]): 
   if (expanded.has('sql')) expanded.add('data');
 
   const effective: SafetyConfig = {
+    multiTargetWrite: serverConfig.multiTargetWrite,
     ...serverConfig,
     allowedPackages: [...serverConfig.allowedPackages],
     allowedTransports: [...serverConfig.allowedTransports],
@@ -494,6 +496,7 @@ export function deriveUserSafetyFromProfile(
   };
 
   const effective: SafetyConfig = {
+    multiTargetWrite: serverConfig.multiTargetWrite,
     allowWrites: and(serverConfig.allowWrites, profileSafety.allowWrites),
     allowDataPreview: and(serverConfig.allowDataPreview, profileSafety.allowDataPreview),
     allowFreeSQL: and(serverConfig.allowFreeSQL, profileSafety.allowFreeSQL),

@@ -134,3 +134,15 @@ cleaned. Test tokens and service credentials remain private and are not included
 Changing only the disposable destination's write opt-in to false caused the still-connected writer's
 next activation to fail with `TARGET_CONFIG_CHANGED` before SAP mutation. The global write switch
 was then turned off and the test application restarted for the disable check.
+
+After restart the still-connected writer saw only read tools and a direct activation was refused.
+The disposable destination, both temporary role collections and all three temporary roles were
+removed. The isolated XSUAA descriptor was restored. The application's user environment matches
+its original snapshot exactly; SSH was disabled. Production applications and their shared XSUAA
+were not changed.
+
+Cloud Foundry expired the original 13 October droplet during repeated qualification deployments;
+reassignment was refused because it was no longer staged. The reused, obsolete test app therefore
+runs `028f0ab6` (current-main `815e3ddb` plus the isolated #1082 packaging correction), with the
+original read-only environment. That exact standalone build started and passed MCP initialization
+and a PP `SAPRead` of `CL_ABAP_CHAR_UTILITIES`. The packaging fix is excluded from #1080's final diff.

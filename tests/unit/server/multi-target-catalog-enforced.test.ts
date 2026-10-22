@@ -8,6 +8,7 @@ import { DestinationRegistry, evaluateStandaloneTargetDescriptor } from '../../.
 import { buildTargetCatalog } from '../../../src/server/multi-target-catalog.js';
 import {
   buildEnforcedTargetCatalogResult as buildTargetCatalogResult,
+  MAX_PINNED_WRITE_REASON,
   TARGET_CATALOG_MAX_RESULT_BYTES,
   type TargetCatalogEnforcement,
 } from '../../../src/server/multi-target-catalog-enforced.js';
@@ -155,7 +156,7 @@ describe('opted-in complete target catalog', () => {
     const snapshot = registry(entries);
     expect(snapshot.available).toBe(true);
     const { result, view } = payload(snapshot, {
-      pinnedWrite: () => ({ enabled: false, reason: 'TARGET_WRITE_GRANT_LIMIT_EXCEEDED' }),
+      pinnedWrite: () => ({ enabled: false, reason: MAX_PINNED_WRITE_REASON }),
     });
     expect(result.isError).toBeUndefined();
     expect(view.targets).toHaveLength(256);

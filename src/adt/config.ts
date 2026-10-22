@@ -44,7 +44,6 @@ export function defaultFeatureConfig(): FeatureConfig {
 
 /** ADT client configuration */
 export interface AdtClientConfig {
-  strictMultiTargetWrites?: boolean;
   /** SAP system URL (e.g., "http://sap:8000") */
   baseUrl: string;
   /** SAP username */

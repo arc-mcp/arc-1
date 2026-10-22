@@ -115,12 +115,13 @@ export function buildMultiTargetConfig(
     ...buildReadOnlyRuntimeConfig(base, targetSafety(target, base.blockedDataSources), target),
     allowWrites: enabled,
     allowedPackages: [...base.allowedPackages],
-    allowedTransports: [...base.allowedTransports],
+    allowedTransports: [], // Preserve multi-target transport reads; write policy carries the server ceiling.
     multiTargetWrite: Object.freeze({
       target: target.target,
       enabled,
       allowedPackages: target.writePolicy?.allowedPackages ?? Object.freeze([]),
       allowedTransports: target.writePolicy?.allowedTransports ?? Object.freeze([]),
+      serverAllowedTransports: Object.freeze([...base.allowedTransports]),
     }),
   };
 }

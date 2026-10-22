@@ -85,9 +85,9 @@ const BUDGETS = {
   // Typed attempt accounting, scoped response ownership, and stateful-context teardown must stay at
   // the transport choke point. Relation parsing/traversal and feature algorithms live elsewhere.
   // +3: classify caller cancellation before generic network wrapping (#1045).
-  'src/adt/http.ts': 1549, // +3: internal no-replay flag; lifecycle orchestration lives in separate modules (#1080).
+  'src/adt/http.ts': 1562, // Scoped no-replay options and bounded, observable owning-session cleanup (#1080).
   // #817: reject absent CTS documents at the existing list/get parser boundary.
-  'src/adt/transport.ts': 1510, // +2: pass the pinned recording-preflight deadline (#1080).
+  'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
   // XSUAA startup from main, with 3 lines of headroom.
   'src/server/server.ts': 1487,

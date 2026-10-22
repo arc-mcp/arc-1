@@ -1,6 +1,6 @@
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { describe, expect, it } from 'vitest';
-import { checkPackage, defaultSafetyConfig } from '../../../src/adt/safety.js';
+import { checkPackage, checkTransport, defaultSafetyConfig } from '../../../src/adt/safety.js';
 import { getToolDefinitions } from '../../../src/handlers/tools.js';
 import { DestinationRegistry } from '../../../src/server/destination-registry.js';
 import { parseTargetGrant } from '../../../src/server/multi-target-authorization.js';
@@ -80,6 +80,26 @@ describe('pinned write policy composition', () => {
     expect(runtime(auth(), 'aggregate').allowWrites).toBe(false);
     expect(runtime().allowedPackages).toEqual(base.allowedPackages);
   });
+  it.each(['aggregate', 'reader', 'writer', 'basic'] as const)(
+    'keeps server transport write restrictions out of %s reads',
+    (kind) => {
+      const instance = { ...base, allowedTransports: ['A4HK900001'], multiTargetAllowBasicAuth: true };
+      const r = registry(
+        kind === 'basic' ? { 'arc1.allow_writes': 'false' } : {},
+        instance,
+        kind === 'basic' ? 'BasicAuthentication' : 'PrincipalPropagation',
+      );
+      const identity = kind === 'reader' ? auth([], ['read']) : auth();
+      const cfg = buildMultiTargetConfig(instance, r.targets[0], {
+        mode: kind === 'aggregate' ? 'aggregate' : 'pinned',
+        authorization: projectMultiTargetRequest(r, identity),
+      });
+      expect(() =>
+        checkTransport({ ...defaultSafetyConfig(), ...cfg }, 'A4HK999999', 'GetTransport', false),
+      ).not.toThrow();
+      if (kind === 'writer') expect(cfg.multiTargetWrite?.serverAllowedTransports).toEqual(instance.allowedTransports);
+    },
+  );
   it('quarantines malformed or unsupported write settings without losing the registry', () => {
     const invalid: Record<string, string>[] = [
       { 'arc1.allow_writes': 'yes' },
@@ -175,6 +195,35 @@ describe('pinned write policy composition', () => {
       authInfo: identity,
     });
     expect(result.handled).toBe(true);
+  });
+  it.each([
+    [undefined, 'WRITE_TARGET_GRANT_MISSING'],
+    [['*'], 'WRITE_TARGET_GRANT_MALFORMED'],
+    [Array.from({ length: 257 }, (_, i) => `A4H/${String(i).padStart(3, '0')}`), 'WRITE_TARGET_GRANT_LIMIT_EXCEEDED'],
+    [['A4H/100'], 'EXACT_WRITE_GRANT_REQUIRED'],
+    [['A4H/001'], 'ENABLED_ON_PINNED_URL'],
+  ])('explains the exact write grant in the aggregate catalog: %j', async (value, reason) => {
+    const r = registry();
+    const identity = auth(value);
+    if (value === undefined) {
+      delete (identity.extra!.xsuaaUserAttributes as Record<string, unknown>).arc1_write_targets;
+      (identity.extra!.xsuaaUserAttributeStatus as Record<string, unknown>).arc1_write_targets = 'missing';
+    }
+    const result = await prepareMultiTargetCall({
+      options: {
+        mode: 'aggregate',
+        registry: r,
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      },
+      toolName: 'SAPTargets',
+      rawArgs: {},
+      requestId: 'test',
+      authInfo: identity,
+    });
+    expect(result.handled).toBe(true);
+    if (!result.handled) throw new Error('Catalog was not handled');
+    expect(JSON.stringify(result.result)).toContain(reason);
   });
   it('normalizes omitted activation action before the global deny check', async () => {
     const r = registry();

@@ -23,6 +23,7 @@ const policy = {
   enabled: true,
   allowedPackages: ['$TMP', 'ZTEAM'],
   allowedTransports: ['A4HK900001'],
+  serverAllowedTransports: ['A4HK900001'],
 };
 const config = {
   ...DEFAULT_CONFIG,
@@ -38,8 +39,6 @@ const config = {
 function client() {
   return new AdtClient({
     baseUrl: 'http://sap:8000',
-    strictMultiTargetWrites: true,
-    retryUnauthorized: false,
     safety: { ...defaultSafetyConfig(), ...config },
   });
 }
@@ -249,14 +248,14 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect(result.isError).toBe(true);
     expect(saves()).toHaveLength(0);
   });
-  it.each([401, 403, 429, 500, 503])(
+  it.each([400, 401, 403, 404, 409, 412, 415, 422, 423, 429, 500, 503])(
     'never replays failed saves (%i), and preserves primary failure when unlock fails',
     async (status) => {
       failSave = status;
       failUnlock = true;
       const result = await handlePinnedWrite(client(), update(), config);
       expect(payload(result)).toMatchObject({
-        state: 'source-save-unknown',
+        state: status < 429 ? 'source-save-rejected' : 'source-save-unknown',
         statusCode: status,
         retryable: false,
         cleanupFailed: true,
@@ -265,6 +264,82 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       expect(requests.filter((r) => r.path.includes('_action=UNLOCK'))).toHaveLength(1);
     },
   );
+  it('keeps ordinary reads on a write-capable client retryable', async () => {
+    const fallback = mockFetch.getMockImplementation()!;
+    let first = true;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      if (new URL(String(url)).pathname.endsWith('/source/main') && first) {
+        first = false;
+        return mockResponse(503, 'busy');
+      }
+      return fallback(url, options);
+    });
+    expect((await client().http.get(`${owner}/source/main`)).body).toBe(initial);
+    expect(first).toBe(false);
+  });
+  it.each([true, false])('reports verified saved hash and actual session cleanup: closed=%s', async (closed) => {
+    failUnlock = true;
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      if (String(url).includes('_action=LOCK'))
+        return mockResponse(200, '<DATA><LOCK_HANDLE>lock-test</LOCK_HANDLE><IS_LOCAL>X</IS_LOCAL></DATA>', {
+          'set-cookie': 'sap-contextid=owned; Path=/',
+        });
+      if (String(url).includes('/http/sessions')) return mockResponse(closed ? 200 : 503, '');
+      return fallback(url, options);
+    });
+    const result = payload(await handlePinnedWrite(client(), update(), config));
+    expect(result).toMatchObject({
+      state: 'saved-inactive',
+      sourceHash: sourceHash(replacement),
+      cleanupFailed: true,
+      sessionClosed: closed,
+    });
+    expect(result.cleanup).toContain(closed ? 'was closed' : 'was not confirmed');
+  });
+  it('preserves a created stub when SAP rejects its source', async () => {
+    failSave = 422;
+    const result = payload(
+      await handlePinnedWrite(
+        client(),
+        {
+          action: 'create',
+          type: 'INTF',
+          name: 'ZIF_TEST',
+          source: 'INTERFACE zif_test PUBLIC. ENDINTERFACE.',
+          package: '$TMP',
+        },
+        config,
+      ),
+    );
+    expect(result).toMatchObject({ state: 'created-source-rejected', statusCode: 422, retryable: false });
+  });
+  it('normalizes long interior newline runs without changing their bytes', async () => {
+    const large = replacement.replace('result = 2.', `${'\n'.repeat(50000)}result = 2.`);
+    const result = payload(await handlePinnedWrite(client(), { ...update(), source: large }, config));
+    expect(result).toMatchObject({ state: 'saved-inactive', sourceHash: sourceHash(large) });
+  });
+  it.each(['orphan', 'multiple', 'wrong-task', 'valid'])('validates every CTS lock holder: %s', async (mode) => {
+    pkg = 'ZTEAM';
+    local = '';
+    const fallback = mockFetch.getMockImplementation()!;
+    mockFetch.mockImplementation(async (url: unknown, options: any) => {
+      if (String(url).includes('transportchecks')) {
+        const headers = mode === 'orphan' ? '' : '<REQ_HEADER><TRKORR>A4HK900001</TRKORR></REQ_HEADER>';
+        const extra =
+          mode === 'multiple' ? '<LOCK_HOLDER><REQ_HEADER><TRKORR>A4HK900099</TRKORR></REQ_HEADER></LOCK_HOLDER>' : '';
+        const task = mode === 'wrong-task' ? 'A4HK900099' : 'A4HK900002';
+        return mockResponse(
+          200,
+          `<DATA><DEVCLASS>ZTEAM</DEVCLASS><DLVUNIT>HOME</DLVUNIT><OPERATION/><RESULT>S</RESULT><LOCKS><CTS_OBJECT_LOCK><LOCK_HOLDER>${headers}<TASK_HEADERS><CTS_TASK_HEADER><TRKORR>${task}</TRKORR></CTS_TASK_HEADER></TASK_HEADERS></LOCK_HOLDER>${extra}</CTS_OBJECT_LOCK></LOCKS></DATA>`,
+        );
+      }
+      return fallback(url, options);
+    });
+    const result = await handlePinnedWrite(client(), { ...update(), transport: 'A4HK900001' }, config);
+    expect(result.isError, result.content[0].text).toBe(mode === 'valid' ? undefined : true);
+    expect(saves()).toHaveLength(mode === 'valid' ? 1 : 0);
+  });
   it('reports partial create state on source failure', async () => {
     failSave = 500;
     const result = await handlePinnedWrite(

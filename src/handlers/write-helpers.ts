@@ -936,9 +936,10 @@ export async function enforceAllowedPackageForObjectUrl(
   objectUrl: string,
   label: string,
   accept?: string,
+  options?: import('../adt/http.js').AdtRequestOptions,
 ): Promise<string | undefined> {
   if (client.safety.allowedPackages.length === 0 && !client.safety.multiTargetWrite) return undefined;
-  const pkg = await client.resolveObjectPackage(objectUrl, accept);
+  const pkg = await client.resolveObjectPackage(objectUrl, accept, options);
   if (!pkg) {
     throw new AdtSafetyError(
       `${label} blocked: ARC-1 could not determine the object's package from ADT metadata ` +
@@ -1246,7 +1247,9 @@ export function runPreWriteLint(
             `Fix these errors before writing:\n${errorLines}\n\n` +
             'For parser/version findings, check SAPLint action="list_rules" and the target SAP release before ' +
             'changing valid source. Use SAPLint action="lint_and_fix" for fixable findings, or ' +
-            'lintBeforeWrite=false to skip this check for this call.',
+            (config.multiTargetWrite
+              ? 'ask the administrator to review the configured lint policy if the finding is incompatible with this target.'
+              : 'lintBeforeWrite=false to skip this check for this call.'),
         ),
       };
     }
@@ -1296,13 +1299,20 @@ export async function runPreWriteSyntaxCheck(
   objectUrl: string,
   config: ServerConfig,
   perCallOverride?: boolean,
+  requestOptions?: import('../adt/http.js').AdtRequestOptions,
 ): Promise<string> {
   const enabled = perCallOverride ?? config.checkBeforeWrite;
   if (!enabled || !source) return '';
   if (!SYNTAX_CHECKABLE_TYPES.has(type.toUpperCase())) return '';
 
   try {
-    const result = await syntaxCheck(client.http, client.safety, objectUrl, { content: source, version: 'active' });
+    const result = await syntaxCheck(
+      client.http,
+      client.safety,
+      objectUrl,
+      { content: source, version: 'active' },
+      requestOptions,
+    );
     // Object not created yet → SAP checked nothing. Silent: pre-write on a create is the normal case.
     if (!result.checked || result.messages.length === 0) return '';
 
