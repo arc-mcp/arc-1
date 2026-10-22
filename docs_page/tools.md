@@ -9,6 +9,31 @@ of the 12 core intent tools and is never exposed on `/mcp` or a pinned target ro
 
 **Error intelligence:** ARC-1 enriches many SAP ADT failures with concise, actionable hints (for example lock conflicts, enqueue issues, missing authorizations, and transport/corrNr problems). Hints can include SAP transaction references like `SM12` (locks), `SU53` (authorization), and `SE09` (transport checks) to speed up troubleshooting.
 
+## Older SAP backends
+
+Tool availability depends on the SAP backend and support package, not just the ARC-1 version.
+SAP documents these starting points for native ADT features:
+
+| Feature | SAP prerequisite |
+| --- | --- |
+| Data preview | SAP_BASIS 7.40 SP05 |
+| SQL Console | SAP_BASIS 7.40 SP08 |
+| Native data-element editor | SAP_BASIS 7.50 |
+| Native database-table creation/editor | SAP_BASIS 7.52 SP00 |
+
+Sources: [SAP backend configuration guide, page 7](https://help.sap.com/doc/2e65ad9a26c84878b1413009f8ac07c3/202210.000/en-US/config_guide_system_backend_abap_development_tools.pdf#page=7),
+[SAP ADT feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468/page/2),
+and [table creation](https://help.sap.com/docs/abap-cloud/abap-development-tools-user-guide/creating-database-tables).
+These feature prerequisites do not prove that every endpoint is available or authorized;
+check the connected system's discovery and actual responses. Editing an object in SE11 does
+not establish that its native ADT HTTP API exists.
+
+On older systems, package listing requires advertised package filtering; otherwise use
+name/type search or SAP's native package browser. An empty HTML response from ADT is an
+error, not an empty query result or proof of a successful write. Read back attempted changes
+before retrying. ARC-1 1.6.0 includes these response/search fixes; native 7.40 SP04 confirmation
+remains tracked in [#1063](https://github.com/arc-mcp/arc-1/issues/1063).
+
 ---
 
 ## SAPTargets (aggregate multi-target only)

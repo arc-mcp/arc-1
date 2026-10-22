@@ -28,7 +28,13 @@ Live evidence: `objectType=DTEL` and `objectType=DTEL/DE` both return `adtcore:t
 - Note: ARC-1's `crud.ts` includes a content-type fallback (DTEL v2→v1 on 415) — unchanged by this audit.
 
 ### 7.50 (NW 7.50)
-- Not verified live; stable since 7.40.
+- The 2026-10-17 validation in [PR #1007](https://github.com/arc-mcp/arc-1/pull/1007)
+  records a successful native data-element read on 750, 758 and 816.
+- The earlier “stable since 7.40” claim was unverified. SAP's
+  [ADT feature matrix](https://community.sap.com/t5/technology-blog-posts-by-sap/adt-feature-availability-matrix-for-as-abap-releases/ba-p/13027468/page/2)
+  lists the native data-element editor from 7.50; that does not establish its exact endpoint
+  contract on earlier support packages. [#996](https://github.com/arc-mcp/arc-1/issues/996)
+  reports empty HTML from this endpoint on 740 SP04. Earlier-release alternatives need evidence.
 
 ## ARC-1 current surface
 | Location | Line(s) | Form used | Correct? |

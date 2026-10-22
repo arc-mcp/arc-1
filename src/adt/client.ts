@@ -1457,7 +1457,8 @@ WHERE d~TABNAME = '${table}' AND d~AS4LOCAL = 'A'`;
    * Query a table or CDS view with structured parameters.
    * Builds the SELECT server-side from structured params. IN/NOT IN values are strictly
    * parsed as quoted literal lists (no subqueries). Uses the freestyle endpoint so
-   * multi-column WHERE and CDS views work on all SAP releases.
+   * multi-column WHERE uses SAP's SQL parser. Requires a working freestyle endpoint;
+   * supported data sources and syntax depend on the backend release.
    * Gated by allowDataPreview (not allowFreeSQL).
    */
   async runTableQuery(
