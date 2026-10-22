@@ -31,7 +31,7 @@ vi.mock('../../../src/server/http.js', () => ({
 }));
 vi.mock('../../../src/server/shutdown.js', () => ({ registerShutdownHandlers: vi.fn(), closeHttpServer: vi.fn() }));
 
-// Resolve the asynchronous module mock before the first parallel dynamic imports.
+// Load the destination mock before exercising the server's dynamic imports.
 await import('@arc-mcp/xsuaa-auth/btp');
 
 const servers: HttpServer[] = [];
@@ -160,7 +160,7 @@ it('reuses one login across separate tool calls for the same PP credential', asy
       .filter((event) => event.event === 'auth_pp_created')
       .map((event) => event.transportReuse),
   ).toEqual(['pooled-new', 'pooled-reused', 'pooled-reused', 'pooled-reused']);
-  expect(boundary.lookup).toHaveBeenCalledTimes(4); // No cached authorization decision.
+  expect(boundary.lookup).toHaveBeenCalledTimes(4); // The pool never skips destination resolution.
   expect(sap.requests.filter((request) => request.cookie === '')).toHaveLength(1);
   expect(sap.requests.every((request) => request.credential === `Bearer ${token}`)).toBe(true);
   expect(

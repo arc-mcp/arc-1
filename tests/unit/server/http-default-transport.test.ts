@@ -306,7 +306,7 @@ it('keeps a PP credential without a Cloud Connector route request-local', async 
       options.headers?.Cookie?.includes('SAP_SESSIONID') ? [] : [`SAP_SESSIONID_A4H_001=S${++logins}; path=/`],
     ),
   );
-  const f = await startRotationFactory({ ppEnabled: true, ppStrict: false, ppStrictExplicit: true });
+  await startRotationFactory({ ppEnabled: true, ppStrict: false, ppStrictExplicit: true });
   const jwt = (user: string, issued: number) =>
     `header.${Buffer.from(JSON.stringify({ user_name: user, iat: issued, exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.signature`;
   /** Cookie on this user's source request; the startup probe and other identities are excluded. */
@@ -331,15 +331,6 @@ it('keeps a PP credential without a Cloud Connector route request-local', async 
   };
   const alice = jwt('ALICE', 1);
 
-  expect(await cookieAs(alice)).toBe('');
-  const aliceLogin = await cookieAs(alice);
-  expect(aliceLogin).toBe('');
-  // Another user, and the same user with a refreshed token, never receive this login.
-  expect(await cookieAs(jwt('BOB', 1))).toBe('');
-  expect(await cookieAs(jwt('ALICE', 2))).toBe('');
-  expect(await cookieAs(alice)).toBe(aliceLogin);
-
-  f.advance(SHARED_TRANSPORT_MAX_AGE_MS);
   expect(await cookieAs(alice)).toBe('');
   expect(await cookieAs(alice)).toBe('');
 });

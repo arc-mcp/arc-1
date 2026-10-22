@@ -1150,7 +1150,8 @@ Bearer token (OAuth2UserTokenExchange), a SAMLAssertion, or a credential without
 **Why it remains.** HTTP mode builds an MCP Server per request. The shared single-target transport
 and, since [#1085](https://github.com/arc-mcp/arc-1/issues/1085), single-target Cloud Connector PP
 transports (keyed by the exact per-user credential and route) are reused until ten minutes or JWT
-expiry. The affected deployment still needs to confirm the cause of its reported 400 responses. Multi-target clients and the Bearer/SAMLAssertion PP routes are still built per request,
+expiry. The affected deployment still needs to confirm the cause of its reported 400 responses.
+Multi-target clients and the Bearer/SAMLAssertion PP routes are still built per request,
 so each tool call logs on again and refetches a CSRF token. On SAP_BASIS 816 such bursts coincided
 with fresh stateful contexts failing (`400 Session not found`); see the
 [investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-09-27-sap-816-session-failures.md).

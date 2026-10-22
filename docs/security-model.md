@@ -270,7 +270,8 @@ Per-user PP and multi-target transports never receive the shared transport; both
 sanitizers discard injected transports. Single-target PP through the Cloud Connector keeps a
 separate transport per exact `SAP-Connectivity-Authentication` JWT and route (OPS-06), capped at
 500 entries. New calls replace it at ten minutes or credential expiry, whichever comes first;
-reuse never extends that deadline. Destination resolution still runs on every call. A changed
+reuse never extends that deadline. Each call invokes destination resolution, which can use the
+SAP SDK's per-user cache; this is not a fresh BTP authorization check. A changed
 credential or route gets a separate login (I2). Missing/opaque/expired credentials, the reserved
 proxy-token flow, OAuth2UserTokenExchange, SAMLAssertion and multi-target remain request-local.
 Factory and loopback-proxy tests cover isolation, expiry, failure and in-flight rollover.

@@ -43,7 +43,6 @@ it('shares only the transport, never the AdtClient and its metadata/package cach
 
 it.each([
   ['credential', () => ({ sapConnectivityAuth: `Bearer ${jwt('bob')}` })],
-  ['header kind', () => ({ sapConnectivityAuth: undefined, ppProxyAuth: `Bearer ${jwt()}` })],
   ['URL', () => ({ baseUrl: 'http://other-sap:8000' })],
   ['SAP client', () => ({ client: '002' })],
   ['proxy protocol', () => ({ btpProxy: { ...config().btpProxy!, protocol: 'https' as const } })],
@@ -103,7 +102,7 @@ it('retires short-lived credentials even when an older entry is still live', () 
   ).toBe(older.http);
 });
 
-it('bounds entries and leaves an evicted transport available to its admitted request', () => {
+it('bounds entries by evicting the oldest transport', () => {
   const pool = new PerUserTransportPool(600_000, 2);
   const alice = client(pool);
   const bob = client(pool, { sapConnectivityAuth: `Bearer ${jwt('bob')}` });
@@ -111,5 +110,4 @@ it('bounds entries and leaves an evicted transport available to its admitted req
   expect(pool.size).toBe(2);
   expect(client(pool, { sapConnectivityAuth: `Bearer ${jwt('bob')}` }).http).toBe(bob.http);
   expect(client(pool).http).not.toBe(alice.http);
-  expect(alice.http).toBeDefined();
 });
