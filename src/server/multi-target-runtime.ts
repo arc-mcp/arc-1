@@ -38,6 +38,9 @@ function buildReadOnlyRuntimeConfig(
     gzipDataPreviewBody: base.gzipDataPreviewBody,
     userAgent: base.userAgent,
     transport: 'http-streamable',
+    // Only the administrator ceiling; every caller must opt in to Eclipse links on each request.
+    ideLinks: base.ideLinks,
+    ideSystemId: target?.sid ?? '',
     httpAddr: base.httpAddr,
     allowWrites: safety.allowWrites,
     allowDataPreview: safety.allowDataPreview,

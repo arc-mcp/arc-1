@@ -385,6 +385,8 @@ describe('opt-in target authorization over the real HTTP/SDK boundary', () => {
       expect(tools).toEqual([]);
       expect(init.instructions).toContain('No SAP targets are available to this account');
       expect(init.instructions).not.toContain('A4H/');
+      expect(init.instructions).not.toContain('abap_object_get_file_uri');
+      expect(init.instructions).not.toContain('abap_object_list_file_uris');
       return;
     }
     const executionTools = tools.filter((tool) => tool.name !== 'SAPTargets');

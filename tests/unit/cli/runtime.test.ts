@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AdtClient } from '../../../src/adt/client.js';
 import { type CliDependencies, main } from '../../../src/cli.js';
-import { CLI_CONFIG_OPTION_SPECS, type resolveConfig } from '../../../src/server/config.js';
+import { CLI_CONFIG_OPTION_SPECS, resolveConfig } from '../../../src/server/config.js';
+import { appendIdeLinks } from '../../../src/server/ide-links.js';
 import { logger } from '../../../src/server/logger.js';
 import type { StartupAuthPreflightResult } from '../../../src/server/server.js';
 import type { ServerConfig } from '../../../src/server/types.js';
@@ -57,6 +58,32 @@ afterEach(() => {
 });
 
 describe('CLI runtime', () => {
+  it.each(['text', 'json'] as const)(
+    'keeps CLI source/search exports unchanged with IDE env opt-in (output=%s)',
+    async (output) => {
+      vi.stubEnv('SAP_URL', 'https://sap.example.test');
+      vi.stubEnv('ARC1_IDE_LINKS', 'eclipse');
+      vi.stubEnv('ARC1_IDE_SYSTEM_ID', 'DEV');
+      const configuration = resolveConfig([]);
+      expect(configuration.config.ideLinks).toBe('eclipse');
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      for (const [command, payload] of [
+        [['source', 'PROG', 'ZHELLO'], 'REPORT zhello.'],
+        [['search', 'Z*'], '[{"objectType":"CLAS/OC","objectName":"ZCL_TEST"}]'],
+      ] as const) {
+        log.mockClear();
+        const original = successfulToolResult(payload);
+        const dependencies = directDependencies(configuration, {
+          dispatchToolCall: vi.fn(async (_client, config, tool, args) => appendIdeLinks(original, tool, args, config)),
+        });
+        expect(await main([...command, '--output', output], dependencies)).toBe(0);
+        const printed = log.mock.calls.map(([line]) => String(line)).join('\n');
+        if (output === 'json') expect(JSON.parse(printed)).toEqual(original);
+        else expect(printed).toBe(payload);
+        expect(configuration.config.ideLinks).toBe('eclipse');
+      }
+    },
+  );
   it('initializes logging from the resolved level for direct tool calls', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);

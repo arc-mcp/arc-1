@@ -21,6 +21,7 @@ import type { SafetyConfig } from '../adt/safety.js';
 import { resolveSapUserAgent } from '../adt/user-agent.js';
 import { parseDenyActions, validateDenyActions } from './deny-actions.js';
 import { logger } from './logger.js';
+import { SAP_SYSID_PATTERN } from './multi-target-identity.js';
 import type {
   ConfigSource,
   FeatureToggle,
@@ -81,6 +82,12 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'max-http-request-bytes', valueName: 'bytes', description: 'MCP HTTP JSON body limit (1–16777216 bytes)' },
   { name: 'port', valueName: 'port', description: 'HTTP transport port override' },
   { name: 'server-name', valueName: 'name', description: 'MCP server name' },
+  {
+    name: 'ide-links',
+    valueName: 'mode',
+    description: 'Eclipse source links: off (default) or eclipse; VS Code uses SAP ADT MCP',
+  },
+  { name: 'ide-system-id', valueName: 'sid', description: 'Real SAP SID for Eclipse links (single-target only)' },
   { name: 'system-label', valueName: 'label', description: 'Connected-system label shown in MCP instructions' },
   {
     name: 'ui',
@@ -895,6 +902,15 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
   // ── SAML Behavior ──────────────────────────────────────────────────
   config.disableSaml2 = resolveBool('disable-saml', 'SAP_DISABLE_SAML', false, 'disableSaml2');
 
+  const ideLinks = resolveStr('ide-links', 'ARC1_IDE_LINKS', 'off', 'ideLinks');
+  if (ideLinks !== 'off' && ideLinks !== 'eclipse') {
+    throw new Error(
+      'ARC1_IDE_LINKS must be off or eclipse. VS Code navigation uses the local SAP ADT MCP resolver; remove old IDE destination mappings.',
+    );
+  }
+  config.ideLinks = ideLinks;
+  config.ideSystemId = resolveStr('ide-system-id', 'ARC1_IDE_SYSTEM_ID', '', 'ideSystemId');
+
   // ── Tool Mode ──────────────────────────────────────────────────────
   const toolMode = resolveStr('tool-mode', 'ARC1_TOOL_MODE', 'standard', 'toolMode');
   config.toolMode = (toolMode === 'hyperfocused' ? 'hyperfocused' : 'standard') as ServerConfig['toolMode'];
@@ -1062,6 +1078,16 @@ export function parseArgs(args: string[]): ServerConfig {
  * Fails fast at startup for invalid or dangerous config combinations.
  */
 export function validateConfig(config: ServerConfig): void {
+  if (config.ideSystemId && !SAP_SYSID_PATTERN.test(config.ideSystemId)) {
+    throw new Error('ARC1_IDE_SYSTEM_ID must be the real three-character SAP SID (uppercase, starting with a letter).');
+  }
+  if (config.multiTargetEndpoints && config.ideSystemId && !config.targetId) {
+    throw new Error('ARC1_IDE_SYSTEM_ID is single-target only; multi-target uses each destination sap-sysid.');
+  }
+  if (config.ideLinks === 'eclipse' && !config.multiTargetEndpoints && !config.ideSystemId) {
+    throw new Error('ARC1_IDE_LINKS=eclipse requires ARC1_IDE_SYSTEM_ID for a single-target connection.');
+  }
+
   if (config.multiTargetAuthorization !== 'standard' && config.multiTargetAuthorization !== 'xsuaa-attribute') {
     throw new Error('ARC1_MULTI_TARGET_AUTHORIZATION must be standard or xsuaa-attribute.');
   }

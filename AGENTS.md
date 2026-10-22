@@ -112,6 +112,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `SAP_SYSTEM_TYPE` | `auto` (default), `btp`, `onprem` |
 | `SAP_ABAP_RELEASE` | SAP_BASIS release override for abaplint (e.g. 758, 816); probe wins |
 | `ARC1_TOOL_MODE` | `standard` (12 tools) or `hyperfocused` (1 tool, ~200 tokens) |
+| `ARC1_IDE_LINKS` / `ARC1_IDE_SYSTEM_ID` | Eclipse links: `off` or `eclipse`; HTTP also needs per-request opt-in. Real SID comes from config (multi-target: destination `sap-sysid`). VS Code uses SAP ADT MCP; docs_page/ide-integration.md |
 | `ARC1_SCHEMA_NULLABLE_OPTIONALS` | `auto`/`off`/`on` for optional `SAPWrite` schema null unions; default `auto` emits portable plain schemas, `on` is explicit OpenAI/Azure strict-mode compatibility (#360/#520) |
 | `ARC1_PLUGINS` | FEAT-61 extensions: CSV of absolute LOCAL paths (`.js`/`.json`), NOT npm. Adds `Custom_*` tools (reads + gated non-ADT writes/execute) — docs_page/extensions.md |
 | `SAP_ALLOW_PLUGIN_EXECUTE` | Opt-in (default false): let plugin tools execute ABAP classes/reports (`ctx.run.classRun` / `ctx.run.programRun`). ALSO needs `SAP_ALLOW_WRITES` + a `write`-scoped tool |
@@ -261,6 +262,7 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0010](docs/ad
 | batch_create preflight / `activateAtEnd` | `src/handlers/write/create.ts` + `write/batch-results.ts` — validate the whole batch before creation; preserve confirmed/unknown persistence and invalidate caches on partial failures. |
 | Extension client reads | `src/public/read-only-client.ts` + `src/server/safe-http-client.ts` — the explicit key list defines both type and runtime; never expose session factories, mutations or data/SQL methods as plain reads. |
 | Hyperfocused mode | `src/handlers/hyperfocused.ts`, `src/handlers/tools.ts` |
+| Native IDE navigation | `src/server/ide-{request,links}.ts`, `src/cli-ide.ts`, server instructions, config/types + dispatch — VS Code uses SAP ADT MCP; Eclipse SID comes from server config, never a route alias |
 | ATC run (`SAPDiagnose action=atc`) | `src/adt/atc.ts` (`runAtcCheck`/`resolveCheckVariant`) — variant MUST bind at worklist creation; run with `clientWait=false`, poll a safe returned run location to `Completed` (unknown non-failure states keep polling), and use 10 s full-worklist settlement when SAP returns no usable location; protocol deviations preserve worklist findings but remain incomplete; `FINDING_STATS` is informational severity data, never completeness evidence (details: dev-guide) |
 | CI ATC/AUnit | `src/adt/ci-quality.ts`, `src/handlers/{diagnose-ci,diagnose-fields}.ts`, `src/cli-checks.ts` — verified package scope, harmless-only AUnit, incomplete evidence never passes. |
 | CDS test-case suggestions (8.16+) | `src/adt/devtools.ts`, `src/handlers/diagnose.ts` — discovery-gated, read-only |

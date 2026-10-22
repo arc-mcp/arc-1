@@ -205,8 +205,9 @@ lists **33 tool identifiers**, grouped below. This is a **documentation count**,
 [PR #1025's research](https://github.com/arc-mcp/arc-1/blob/adfae1e1addbe2b785089458316d0b5dae39e006/docs/research/2026-10-17-adt12-native-ide-links.md)
 found names including `abap_object_get_file_uri`, `abap_object_list_file_uris`,
 `abap_object_read_file`, `abap_object_edit_file` and `abap_repository_find_references`.
-The canonical resolver was unavailable in that tested Copilot session. Use the connected server's
-actual catalog and schemas when configuring agents; do not blindly substitute article IDs.
+The resolver was unavailable in that earlier session; the [19 October follow-up](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-verification.md)
+verified native resolution and source opening. Use the connected server's actual catalog and schemas
+when configuring agents; do not blindly substitute article IDs.
 
 ### 7.2 ARC-1's 12 intent tools
 
@@ -425,11 +426,17 @@ An agent can use ARC-1 to investigate backend objects and SAP ADT to inspect the
 source locally. Keep the **system, SAP client, destination alias and source state** explicit.
 A BTP destination name or SAP SID is not necessarily the local ADT destination alias.
 
-[Draft PR #1025](https://github.com/arc-mcp/arc-1/pull/1025) implements optional native ADT 1.2 links
-for qualified source types, including request-specific HTTP/BTP destination mapping.
-The recorded live checks include Copilot → local HTTP ARC-1 → native editor opening. **Live CF
-routing/OAuth and pinned/aggregate acceptance remain unqualified.** Opening a link also does not
-prove canonical dirty-buffer reuse, Keep/Undo, saving, activation or transport-selection parity.
+[Draft PR #1025](https://github.com/arc-mcp/arc-1/pull/1025) uses SAP ADT MCP exclusively for VS Code
+navigation: ARC-1 research → native resolver → SAP ADT editor. Each developer confirms their local
+destination for the same backend/client; no ARC-1 destination-map headers are needed. Eclipse
+retains optional SID links. The [setup](ide-integration.md) and
+[live native acceptance](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-verification.md)
+record pinned/aggregate BTP reads followed by Copilot resolution and canonical source opening. Copilot
+aggregate reconnect passes in the tested VS Code 1.142 / Copilot 0.70.0 setup after clearing its stale
+validator with a window reload and keeping separate stable entries. **A4H/100 still has timeout cases; second-user, denied-target and PP-only
+multi-instance acceptance remain open.**
+Opening a link does not prove canonical dirty-buffer reuse, Keep/Undo, saving, activation or
+transport-selection parity.
 The earlier [#676 bridge proposal](https://github.com/arc-mcp/arc-1/pull/676) was closed unmerged.
 
 ### Investigate data, then save a notebook
@@ -462,7 +469,7 @@ Status checked **18 October 2026**. These distinctions prevent research plans fr
 | [#1016 deny-rule guidance](https://github.com/arc-mcp/arc-1/pull/1016), [#1019 syntax result fix](https://github.com/arc-mcp/arc-1/pull/1019) | **Merged after 1.6.0** | Narrow fixes; no policy-preview feature from closed [#1010](https://github.com/arc-mcp/arc-1/pull/1010) |
 | [#1020 dump filters](https://github.com/arc-mcp/arc-1/pull/1020) | **Open draft** | Research/implementation evidence, not a released capability |
 | [#1024 saved application logs](https://github.com/arc-mcp/arc-1/pull/1024) | **Open draft** | Native SLG1-reader proposal; not Dictionary activation logs |
-| [#1025 editor links](https://github.com/arc-mcp/arc-1/pull/1025) | **Open draft** | Qualified local opening evidence and remaining deployment gaps |
+| [#1025 editor links](https://github.com/arc-mcp/arc-1/pull/1025) | **Open draft** | Local/BTP navigation and reconnect evidence; remaining client-100 and deployment qualifications |
 | [#1011 broader diagnostics](https://github.com/arc-mcp/arc-1/pull/1011) | **Open draft** | Source of separate investigations; not blanket shipped parity |
 
 The [research index](https://github.com/arc-mcp/arc-1/blob/main/docs/research/adt-vscode-1.2/README.md)

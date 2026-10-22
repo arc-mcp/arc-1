@@ -33,6 +33,7 @@ import {
   lintToCheckstyle,
   type StructuredDiffResult,
 } from './cli-checks.js';
+import { registerIdeConfigCommand } from './cli-ide.js';
 import { getToolRegistry, handleToolCall } from './handlers/dispatch.js';
 import { setCachedDiscovery, setCachedFeatures } from './handlers/feature-cache.js';
 import { errorResult, type ToolResult } from './handlers/shared.js';
@@ -789,6 +790,7 @@ export function createCliProgram(options: CreateCliProgramOptions = {}): Command
     .action(() => console.log(`ARC-1 v${VERSION}`));
 
   const configCommand = program.command('config').description('Configuration inspection');
+  registerIdeConfigCommand(configCommand);
   configCommand
     .command('show')
     .description('Show the resolved effective safety policy with source attribution')
@@ -907,7 +909,8 @@ export async function executeCliToolCall(
   try {
     const result = await runtime.deps.dispatchToolCall(
       direct.client,
-      config,
+      // IDE links are MCP presentation, never part of CLI source/JSON exports (including .env opt-in).
+      { ...config, ideLinks: 'off' },
       toolName,
       args,
       undefined,

@@ -7,8 +7,9 @@ import { parseTargetGrant } from '../../../src/server/multi-target-authorization
 import { parseDestinationAllowlist } from '../../../src/server/multi-target-destination-config.js';
 import { projectMultiTargetRequest } from '../../../src/server/multi-target-request-projection.js';
 import { buildMultiTargetConfig } from '../../../src/server/multi-target-runtime.js';
-import { prepareMultiTargetCall } from '../../../src/server/multi-target-server.js';
+import { buildMultiTargetServerInstructions, prepareMultiTargetCall } from '../../../src/server/multi-target-server.js';
 import { multiTargetToolDefinitions } from '../../../src/server/multi-target-tools.js';
+import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 const base = {
@@ -67,6 +68,33 @@ function runtime(identity = auth(), mode: 'pinned' | 'aggregate' = 'pinned') {
 }
 
 describe('pinned write policy composition', () => {
+  it.each(['writer', 'reader', 'aggregate'] as const)(
+    'retains native navigation and accurate mutation guidance for %s connections',
+    (kind) => {
+      const r = registry();
+      const identity = kind === 'reader' ? auth([], ['read']) : auth();
+      const instructions = buildMultiTargetServerInstructions({
+        mode: kind === 'aggregate' ? 'aggregate' : 'pinned',
+        registry: r,
+        target: kind === 'aggregate' ? undefined : r.targets[0],
+        instanceConfig: base,
+        authorization: projectMultiTargetRequest(r, identity),
+      });
+      expect(instructions).toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
+      expect(instructions.length).toBeLessThan(2048);
+      if (kind === 'writer') {
+        expect(instructions).toContain('scoped read/write');
+        expect(instructions).toContain('CLAS/INTF main-source writes require both package policies');
+        expect(instructions).toContain('Activation affects the whole owner');
+        expect(instructions).not.toContain('Writes, activation, transport/Git mutations');
+      } else {
+        expect(instructions).toContain('read-only interface');
+        expect(instructions).toContain('Writes, activation, transport/Git mutations');
+        expect(instructions).not.toContain('scoped read/write');
+      }
+    },
+  );
+
   it('requires both raw write scope and exact capability grant, including for admin', () => {
     expect(runtime().allowWrites).toBe(true);
     for (const identity of [

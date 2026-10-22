@@ -61,6 +61,16 @@ describe('DestinationRegistry', () => {
       expect(JSON.stringify(registry.targets)).not.toMatch(/[\p{Cf}]/u);
     },
   );
+  it.each([
+    ['Prod\uD800 label', 'Prod label'],
+    ['Prod\uDC00 label', 'Prod label'],
+    ['\uD800'.repeat(160), 'A4H/100'],
+    ['Prod 🚀 label', 'Prod 🚀 label'],
+  ])('bounds malformed Unicode display labels without altering target identity: %j', (description, expected) => {
+    const registry = DestinationRegistry.fromDiscovery(discovery([destination({ description })]), DEFAULT_CONFIG);
+    expect(registry.targets[0].description).toBe(expected);
+    expect(registry.get('A4H/100')?.destinationName).toBe('ARC1_A4H_100_PP');
+  });
   it('accepts the minimum config and applies the instance policy ceiling', () => {
     const registry = DestinationRegistry.fromDiscovery(
       discovery([

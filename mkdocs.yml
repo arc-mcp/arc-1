@@ -82,6 +82,7 @@ nav:
       - Tools Reference: tools.md
       - Extensions (Custom Tools): extensions.md
       - MCP Usage Guide: mcp-usage.md
+      - Open Objects in Your Editor: ide-integration.md
       - SQL Notebook Authoring: sql-notebook-authoring.md
       - Skills: skills.md
       - More:

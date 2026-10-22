@@ -168,6 +168,11 @@ export interface ServerConfig {
   /** Hide SAP response details from client-facing tool errors while retaining server-side correlation data. */
   minimalErrors: boolean;
 
+  // --- IDE navigation (HTTP requires explicit per-request editor preferences) ---
+  ideLinks: 'off' | 'eclipse';
+  /** Configured real SAP SID for Eclipse navigation; multi-target runtimes use the selected target's SID. */
+  ideSystemId: string;
+
   // --- Tool Mode ---
   /** Tool mode: 'standard' (12 intent tools, SAPGit feature-gated) or 'hyperfocused' (1 universal SAP tool, ~200 tokens) */
   toolMode: 'standard' | 'hyperfocused';
@@ -312,6 +317,8 @@ export const DEFAULT_CONFIG: ServerConfig = {
   ppStrictExplicit: false,
   ppAllowSharedCookies: false,
   disableSaml2: false,
+  ideLinks: 'off',
+  ideSystemId: '',
   toolMode: 'standard',
   schemaNullableOptionals: 'auto',
   plugins: [],

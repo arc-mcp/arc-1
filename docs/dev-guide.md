@@ -38,6 +38,21 @@ Lives in [docs_page/configuration-reference.md](../docs_page/configuration-refer
 CLI flags, clamps, layer interactions — the user-facing reference is the single verbose source;
 duplicating it here proved to drift). The compact per-variable table stays in AGENTS.md.
 
+## Native IDE source links
+
+VS Code navigation composes ARC-1 research with the local SAP ADT MCP resolver. The initialize hint in
+`server-instructions.ts` is always sent to authorized connections; its wording makes navigation optional.
+No ARC-1 flat-file URI builder or destination-map header
+remains. Require a user-confirmed backend/client mapping; never infer it from a SID or bypass an
+ARC-1 denial. [Native acceptance and limits](research/ide-navigation-verification.md).
+
+Eclipse: `src/server/ide-links.ts` appends a separate, bounded text block after successful research
+dispatch. Preserve source/JSON, ignore arbitrary backend URIs, and avoid extra SAP requests. The real
+SID comes from config or the selected multi-target destination's `sap-sysid`, never its route alias.
+HTTP requires both `ARC1_IDE_LINKS=eclipse` and a request-local `Arc1-Ide-Client: eclipse` preference.
+Direct CLI exports stay undecorated. `src/cli-ide.ts` generates Eclipse fragments offline.
+Tests: `server/ide-*`, `handlers/dispatch-ide-links`, `cli/ide-setup`, and `cli/runtime`.
+
 ## Live relations verification
 
 From a repository checkout after `npm ci`:

@@ -45,6 +45,7 @@ import {
   type TargetDescriptor,
   targetConnectionFingerprint,
 } from './destination-registry.js';
+import { resolveHttpIdeContext } from './ide-request.js';
 import { authLibLogger, initLogger, logger } from './logger.js';
 import { createMcpRateLimiter, type McpRateLimiter } from './mcp-rate-limit.js';
 import {
@@ -910,6 +911,7 @@ export function createServer(config: ServerConfig, options: CreateServerOptions 
         requestId,
         postDispatchResult,
         extra.signal,
+        resolveHttpIdeContext(activeConfig, extra.requestInfo?.headers),
       );
       return { ...result } as Record<string, unknown>;
     };

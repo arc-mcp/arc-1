@@ -5,11 +5,14 @@ export const MULTI_TARGET_MAX = 256;
 
 /** Display labels only: never use normalization to validate a connection or grant. */
 export function normalizeTargetDisplayText(value: string): string {
-  return value
-    .normalize('NFKC')
-    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return (
+    value
+      .normalize('NFKC')
+      // Lone surrogates expand to six characters in JSON labels; valid pairs stay intact.
+      .replace(/[\p{Cc}\p{Cf}\p{Cs}]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
 }
 
 // A route alias is useful when separate SAP systems reuse the same SID and client.

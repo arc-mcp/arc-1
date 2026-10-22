@@ -749,6 +749,7 @@ unacceptable.
 | `SAP_TARGET_BUSY` | The Basic target's bounded request gate is busy; retry after the active call completes. Persistent occurrences indicate that a shared Basic target is unsuitable for this load. |
 | `SAP_TARGET_TEMPORARILY_UNAVAILABLE` | The Basic canary reached a transient network, timeout, rate, SAP 5xx, or unrecognized non-login 2xx response. Check SAP/intermediary health and retry; the credential generation was not blocked. |
 | `TARGET_CONFIG_CHANGED` | Review the destination change and restart ARC-1. |
+| Copilot rejects valid aggregate input with `must NOT have additional properties` | After changing a connection or tool surface, run **Developer: Reload Window** and start a fresh chat. Copilot 0.70.0 cached validators by tool name; resetting MCP tools or restarting the server did not clear that cache. Keep pinned/aggregate entries separate and retain the required `target`. See [client recovery](ide-integration.md#if-a-link-does-not-open) and [VS Code #321662](https://github.com/microsoft/vscode/issues/321662). |
 | Data/SQL action is absent or denied | Check the instance ceiling, target property, XSUAA role, and SAP authorization. |
 
 <a id="not-in-v1"></a>

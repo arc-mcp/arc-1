@@ -48,6 +48,7 @@ import {
   runStartupAuthPreflightWithClient,
   VERSION,
 } from '../../../src/server/server.js';
+import { NATIVE_NAVIGATION_INSTRUCTIONS } from '../../../src/server/server-instructions.js';
 import { DEFAULT_CONFIG } from '../../../src/server/types.js';
 
 type RequestHandler = (
@@ -111,7 +112,7 @@ describe('MCP Server', () => {
     const labeled = (await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'ERP production (read-only)' }))
       .instructions;
 
-    expect(baseline).toMatch(/^ARC-1 gives this SAP ABAP system/);
+    expect(baseline).toMatch(/^Use ARC-1 for SAP ABAP source/);
     expect(baseline).not.toContain('Connected SAP system:');
     expect(labeled).toBe(`Connected SAP system: ERP production (read-only).\n\n${baseline}`);
   });
@@ -137,6 +138,7 @@ describe('MCP Server', () => {
       expect(instructions).toContain('finish with observed source behavior and unverified intent/compliance');
       expect(instructions).toContain('Do not broaden the policy search');
       expect(instructions).toContain('Unavailable or failed syntax/ATC/test checks are not passes');
+      expect(instructions).toContain(NATIVE_NAVIGATION_INSTRUCTIONS);
     },
   );
 
@@ -145,6 +147,22 @@ describe('MCP Server', () => {
       await initializeServer({ ...DEFAULT_CONFIG, systemLabel: 'x'.repeat(SYSTEM_LABEL_MAX_LENGTH) })
     ).instructions;
     expect(instructions?.length).toBeLessThan(2_048);
+  });
+
+  it('advertises the SAP URI handler while retaining native-navigation identity and failure boundaries', () => {
+    const instructions = NATIVE_NAVIGATION_INSTRUCTIONS;
+    expect(instructions).toContain('VS Code on request: if available, use SAP ADT MCP');
+    expect(instructions).not.toContain('prefer ARC-1 links');
+    expect(instructions).not.toContain('abap:/flat');
+    // Preserve the returned URI when generating the outer query value. Downstream editor
+    // URL decoding is separate; the live acceptance only qualifies the tested characters.
+    expect(instructions).toContain(
+      'Link returned abap: URIs via vscode://sapse.adt-vscode/open?abapUri= + encodeURIComponent(exact URI)',
+    );
+    expect(instructions).toContain('Require user-confirmed destination for backend/client');
+    expect(instructions).toContain('Verify name/type/source, not .json');
+    expect(instructions).toContain('On mismatch/error stop; no resolver/bridge/destination retries');
+    expect(instructions).toContain('never edit/activate natively');
   });
 
   it('rejects an overlong system label even when ServerConfig is constructed directly', () => {

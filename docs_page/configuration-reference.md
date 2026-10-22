@@ -410,6 +410,19 @@ Optional pre-write validation layers and tool/schema selection.
 
 ---
 
+## IDE navigation
+
+[VS Code navigation](ide-integration.md#vs-code-with-sap-adt) uses the local SAP
+ADT MCP resolver and requires no ARC-1 link settings or destination-map headers. The options below
+are only for Eclipse presentation; they never select the SAP connection or grant authorization.
+
+| Flag | Env var | Default | Effect |
+|---|---|---|---|
+| `--ide-links` | `ARC1_IDE_LINKS` | `off` | `eclipse` enables up to eight links in a separate text block. HTTP also requires `Arc1-Ide-Client: eclipse` on each request. Source/JSON remains unchanged; no extra SAP calls. |
+| `--ide-system-id` | `ARC1_IDE_SYSTEM_ID` | — | Real three-character SAP SID (uppercase, starting with a letter), required for single-target Eclipse links on stdio/HTTP. Multi-target uses the selected destination's `sap-sysid` and rejects a global value. The SID does not guarantee an exact local-project match. |
+
+---
+
 ## Extensions (FEAT-61)
 
 Load your own `Custom_*` tools (the [extension framework](extensions.md)). Plugins are **trusted

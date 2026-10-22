@@ -76,6 +76,26 @@ describe('parseArgs', () => {
     expect(() => parseArgs([])).toThrow(/ARC1_MULTI_TARGET_ENDPOINTS/);
   });
 
+  it('requires an explicit Eclipse SID and preserves CLI precedence', () => {
+    expect(parseArgs([]).ideLinks).toBe('off');
+    process.env.ARC1_IDE_LINKS = 'eclipse';
+    expect(() => parseArgs([])).toThrow(/requires ARC1_IDE_SYSTEM_ID/);
+    process.env.ARC1_IDE_SYSTEM_ID = 'A4H';
+    expect(parseArgs([])).toMatchObject({ ideLinks: 'eclipse', ideSystemId: 'A4H' });
+    expect(parseArgs(['--ide-system-id', 'DEV']).ideSystemId).toBe('DEV');
+    expect(parseArgs(['--ide-links', 'off']).ideLinks).toBe('off');
+    expect(() => parseArgs(['--ide-system-id', 'A4H-2025'])).toThrow(/three-character SAP SID/);
+    expect(parseArgs(['--transport', 'http-streamable', '--api-keys', 'test-key:viewer']).ideLinks).toBe('eclipse');
+  });
+
+  it.each(['vscode', 'on', 'auto'])(
+    'rejects removed or unsupported IDE mode %s with native resolver guidance',
+    (mode) => {
+      process.env.ARC1_IDE_LINKS = mode;
+      expect(() => parseArgs([])).toThrow(/must be off or eclipse.*SAP ADT MCP resolver/);
+    },
+  );
+
   it('parses CLI flags (--flag value)', () => {
     const config = parseArgs(['--url', 'http://sap:8000', '--user', 'admin', '--password', 'secret']);
     expect(config.url).toBe('http://sap:8000');

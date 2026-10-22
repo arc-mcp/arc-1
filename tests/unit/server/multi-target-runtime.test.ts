@@ -78,6 +78,16 @@ function destination(overrides: Record<string, unknown> = {}): Destination {
 }
 
 describe('multi-target runtime isolation', () => {
+  it('takes the Eclipse SID only from the selected destination, never a route alias or global setting', () => {
+    const target = { ...registryTarget(), target: 'A4H-2025/100' };
+    const base = { ...DEFAULT_CONFIG, ideLinks: 'eclipse' as const, ideSystemId: 'DEV' };
+    expect(buildMultiTargetConfig(base, target, { mode: 'pinned' })).toMatchObject({
+      ideLinks: 'eclipse',
+      ideSystemId: 'A4H',
+      targetId: 'A4H-2025/100',
+    });
+    expect(buildAggregateToolSurfaceConfig(base, [target]).ideSystemId).toBe('');
+  });
   it.each(['standard', 'xsuaa-attribute'] as const)(
     'preserves %s authorization in selected and aggregate runtime construction',
     (multiTargetAuthorization) => {

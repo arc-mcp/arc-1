@@ -76,6 +76,9 @@ sequence.
 | [COMPAT-16](#compat-16) | API-release directory cleanup | P2 | S | Needs research | Compatibility |
 | [COMPAT-17](#compat-17) | Direct package browser release coverage | P2 | S | Needs research | Compatibility |
 | [COMPAT-18](#compat-18) | Newly created program metadata on 7.50 | P2 | S | Needs research | Compatibility |
+| [COMPAT-19](#compat-19) | Remaining BTP IDE navigation qualification | P1 | S | Needs environment | Compatibility |
+| [COMPAT-20](#compat-20) | Canonical ADT editor identity for AI edits | P2 | M | Needs research | Compatibility |
+| [COMPAT-21](#compat-21) | Eclipse Copilot links and exact project selection | P2 | M | Needs research | Compatibility |
 | [COMPAT-10](#compat-10) | CDS set-operation lineage | P2 | M | Needs research | Compatibility |
 | [COMPAT-12](#compat-12) | Deletion with another user's text draft | P3 | S | Needs research | Compatibility |
 | [COMPAT-15](#compat-15) | Empty inactive text-pool recovery | P2 | M | Needs research | Compatibility |
@@ -400,6 +403,66 @@ source update and activation, so only its activation succeeded without recovery.
 **Resume with.** Verify source persistence and default/active/inactive metadata across releases;
 trace the SAP response before changing package resolution. Preserve fail-closed package checks. Unique E2E
 fixtures avoid the pre-delete, but do not fix this runtime gap; do not add a skip for it.
+
+<a id="compat-19"></a>
+### COMPAT-19 — Remaining BTP IDE navigation qualification
+
+- **Priority / effort / status:** P1 / S / Needs environment
+- **Category:** Compatibility
+
+**Remaining gap.** A4H/100 has successful discovery/source samples but recurring 120-second source
+read timeouts, reproduced on original 0.9.27 too. Second-user SAP identity, a known-but-ungranted
+live `xsuaa-attribute` target and PP-only multi-instance routing remain unqualified.
+
+**Already verified.** Public-router OAuth, pinned/aggregate PP and shared-Basic reads, request-local
+Eclipse preferences, restart/token refresh, and actual Copilot → SAP ADT MCP → VS Code opening.
+[Evidence and timeout trace anchors](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-verification.md#historical-btp-matrix).
+
+**Resume with.** Trace the client-100 SAP/Connectivity source path, obtain a second authorized identity
+and denied-target account, then test an isolated PP-only multi-instance deployment. Keep the existing
+shared-Basic test app at one instance. Retain required aggregate `target`; stale Copilot validator
+recovery uses window reload and stable separate entries.
+
+<a id="compat-20"></a>
+### COMPAT-20 — Canonical ADT editor identity for AI edits
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** Canonical opening does not establish dirty-buffer reuse, Keep/Undo, save,
+validation, transport or activation parity with the [ABAP Bridge](https://github.com/arc-mcp/arc1-abap-bridge).
+Local ADT session recovery, same-name/type collisions, includes and other clients also need qualification.
+
+**Already verified.** The simplified runtime `7b00407a` passed pinned/aggregate BTP reads, SAP name/type
+resolution, exact URI encoding, clicked interface/CDS opening and an explicit missing-object stop case.
+Earlier native-error retries failed; instructions cannot enforce cross-server behavior.
+[Current acceptance](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-verification.md#final-simplified-runtime-acceptance).
+
+**Resume with.** Diagnose local session logoff; test dirty buffers and each edit/save operation on
+disposable objects. A local picker could save each developer's confirmed connection/target mapping;
+SAP's first-match SID fallback cannot verify backend/client. No ARC-1 VS Code mapping settings remain.
+[Decisions and original requirements](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-decisions.md).
+
+<a id="compat-21"></a>
+### COMPAT-21 — Eclipse Copilot links and exact project selection
+
+- **Priority / effort / status:** P2 / M / Needs research
+- **Category:** Compatibility
+
+**Remaining gap.** Direct Eclipse Copilot clicking and exact project/backend matching. User screenshots
+show chooser and source but do not identify whether the direct or adjacent HTTP handoff link initiated it.
+Same SID/client can describe different backends; ARC-1 cannot force a chooser.
+
+**Already verified.** Local `npx`, HTTP/BTP pinned/aggregate reads, preference forwarding, rendering,
+restart recovery and native-dialog opening for CLAS/INTF/PROG/DDLS. Isolated Claude plugin preference
+substitution passed; installed ARC-1 UI and Desktop opening remain unqualified.
+Namespaced Eclipse opening is unverified. Live HTTP evidence used the retired combined `on` mode;
+the current `eclipse`-only mode has automated coverage, pending a fresh live Eclipse run.
+
+**Resume with.** Enable the `adt` handler and manually click a fresh answer containing only the direct
+link. Qualify project-name authorities, collisions, missing/cloud projects and other OSes before richer
+links or a companion. Keep per-client opt-in; defer the plugin dropdown pending a minimum-client policy.
+[Options and evidence limits](https://github.com/arc-mcp/arc-1/blob/main/docs/research/ide-navigation-decisions.md#eclipse-contract-and-unresolved-selection).
 
 <a id="sec-14"></a>
 ### SEC-14 — DNS rebinding and Host-header hardening
