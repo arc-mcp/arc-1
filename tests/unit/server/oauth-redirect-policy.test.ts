@@ -277,3 +277,41 @@ describe('production OAuth redirect flow', () => {
     expect(wrong.headers.location).toBeUndefined();
   });
 });
+
+describe('deployment-restricted OAuth clients', () => {
+  const restricted: Partial<ServerConfig> = {
+    oauthDcrRedirectUriPatterns: [
+      'https://vscode.dev/redirect',
+      'http://127.0.0.1:*/**',
+      'https://*.applicationstudio.cloud.sap/callback',
+    ],
+    oauthConsentExemptRedirectUriPatterns: ['https://vscode.dev/redirect', 'http://127.0.0.1:*/**'],
+  };
+  const register = (app: express.Express, redirectUri: string) =>
+    request(app)
+      .post('/register')
+      .send({ client_name: 'Visual Studio Code', redirect_uris: [redirectUri], token_endpoint_auth_method: 'none' });
+
+  it('rejects a registration outside the allowlist before any authorization', async () => {
+    const app = await boot('https://arc1.example', true, restricted);
+    const rejected = await register(app, 'https://attacker.example/cb');
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error).toBe('invalid_client_metadata');
+  });
+
+  it('skips consent only for exempt return addresses and keeps it for BAS workspaces', async () => {
+    const app = await boot('https://arc1.example', true, restricted);
+    const loopback = 'http://127.0.0.1:33418/';
+    const local = await register(app, loopback);
+    const direct = await request(app).get('/authorize').query(authorization(loopback, local.body.client_id));
+    expect(direct.status).toBe(302);
+    expect(new URL(direct.headers.location).origin).toBe(CREDENTIALS.url);
+    expect(cookies(direct).some((cookie) => cookie.includes('mcp-oauth-state-'))).toBe(true);
+
+    const bas = 'https://port3000-workspaces-ws-x.eu10.applicationstudio.cloud.sap/callback';
+    const workspace = await register(app, bas);
+    const page = await request(app).get('/authorize').query(authorization(bas, workspace.body.client_id));
+    expect(page.status).toBe(200);
+    expect(page.headers.location).toBeUndefined();
+  });
+});

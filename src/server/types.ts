@@ -121,6 +121,13 @@ export interface ServerConfig {
   oauthDcrTtlSeconds: number;
   /** Allow new dynamic OAuth client registrations. Existing clients still require consent. */
   oauthDcrEnabled: boolean;
+  /**
+   * Optional allowlist (redirect-URI globs) for dynamic client registration. Registration rejects
+   * other return addresses, and existing client_ids lose them. Unset keeps the library default.
+   */
+  oauthDcrRedirectUriPatterns?: string[];
+  /** Return addresses that skip the consent page; loopback or exact HTTPS hosts only. Default none. */
+  oauthConsentExemptRedirectUriPatterns: string[];
 
   /**
    * Optional dedicated secret for HMAC-signing DCR `client_id`s. When set,
@@ -310,6 +317,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   allowHttpNoAuth: false,
   oidcDiscovery: true,
   oauthDcrEnabled: true,
+  oauthConsentExemptRedirectUriPatterns: [],
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,

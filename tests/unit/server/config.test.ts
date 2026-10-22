@@ -1060,6 +1060,37 @@ describe('parseArgs', () => {
     expect(parseArgs(['--oauth-dcr-enabled', 'false']).oauthDcrEnabled).toBe(false);
   });
 
+  it('parses the OAuth redirect allowlist and consent exemptions', () => {
+    expect(parseArgs([]).oauthDcrRedirectUriPatterns).toBeUndefined();
+    expect(parseArgs([]).oauthConsentExemptRedirectUriPatterns).toEqual([]);
+    vi.stubEnv(
+      'ARC1_OAUTH_DCR_REDIRECT_URI_PATTERNS',
+      'https://vscode.dev/redirect, http://127.0.0.1:*/**\nhttps://*.applicationstudio.cloud.sap/callback',
+    );
+    vi.stubEnv('ARC1_OAUTH_CONSENT_EXEMPT_REDIRECT_URI_PATTERNS', 'https://vscode.dev/redirect,http://127.0.0.1:*/**');
+    const config = parseArgs([]);
+    expect(config.oauthDcrRedirectUriPatterns).toEqual([
+      'https://vscode.dev/redirect',
+      'http://127.0.0.1:*/**',
+      'https://*.applicationstudio.cloud.sap/callback',
+    ]);
+    expect(config.oauthConsentExemptRedirectUriPatterns).toEqual([
+      'https://vscode.dev/redirect',
+      'http://127.0.0.1:*/**',
+    ]);
+  });
+
+  it.each([
+    'https://*.applicationstudio.cloud.sap/callback',
+    'https://*/**',
+    'http://attacker.example/cb',
+    'https://user@vscode.dev/redirect',
+    'cursor://anysphere.cursor-mcp/**',
+  ])('refuses to exempt %s from OAuth consent', (pattern) => {
+    vi.stubEnv('ARC1_OAUTH_CONSENT_EXEMPT_REDIRECT_URI_PATTERNS', pattern);
+    expect(() => parseArgs([])).toThrow(/loopback HTTP or exact HTTPS hosts/);
+  });
+
   // --- oauthDcrTtlSeconds ---
 
   it('defaults oauthDcrTtlSeconds to 0 (never expire)', () => {
