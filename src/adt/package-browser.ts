@@ -43,7 +43,7 @@ function scalar(value: unknown, allowEmpty = false): string {
   return value;
 }
 function parseTree(xml: string, root: boolean) {
-  if (!xml.trim()) throw ambiguous();
+  if (!xml.trim()) throw root ? ambiguous() : invalid();
   if (XMLValidator.validate(xml) !== true || /<!DOCTYPE/i.test(xml)) throw invalid();
   const values = record(record(parseXml(xml).abap).values).DATA;
   if (!Array.isArray(values) || values.length !== 1) throw invalid();
@@ -128,6 +128,8 @@ export async function getDirectPackageContents(
     ),
   ];
   const expanded = ids.length ? (await read(ids, false)).objects : [];
+  if (!ids.length && !root.objects.length) throw ambiguous();
+  if (ids.length && !expanded.length) throw invalid();
   const unique = new Map<string, PackageObject>();
   for (const object of [...(!objectType || objectType === 'DEVC/K' ? root.objects : []), ...expanded]) {
     unique.set(JSON.stringify([object.type, object.name, object.uri]), object);

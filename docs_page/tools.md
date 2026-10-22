@@ -94,7 +94,7 @@ Use `SAPRead` for exact implementation behavior, an exact reference, one method 
 | `group` | string | No | For FUNC, and for VERSIONS or API_STATE with `objectType="FUNC"`: function group name; resolved through search when omitted, including namespaced functions and SAP_BASIS 750's decorated search names. |
 | `versionUri` | string | No | For VERSION_SOURCE: canonical source/revision URI from a VERSIONS response (`revisions[].uri`). Only known source endpoint shapes are accepted; unrelated ADT endpoints, absolute URLs, authority changes, dot segments, queries, fragments, controls, encoded backslashes, and ambiguous nested encodings are rejected. Encoded slashes remain valid inside namespaced ABAP object names. |
 | `maxRows` | number | No | For TABLE_CONTENTS/TABLE_QUERY: requested row cap (default 100, clamped to 10,000). Wide results can hit the server's cumulative byte ceiling at fewer rows. ARC-1 caps returned rows even when SAP includes a lookahead row. |
-| `maxResults` | number | No | For DEVC: maximum package objects to list (default 200, clamped to 1–1000). SAP may truncate larger packages at the requested limit. |
+| `maxResults` | number | No | DEVC result cap (default 200, clamped to 1–1000). Indexed search sends it to SAP; direct mode applies it locally without reducing SAP's response. |
 | `packageScope` | string | No | DEVC: `"direct"` uses bounded native package browsing without recursion or descriptions. Omit for indexed search. `objectType` optionally selects an advertised folder such as `CLAS/OC`. |
 | `sqlFilter` | string | No | Legacy TABLE_CONTENTS condition. Do not rely on it for portable automation: the 758 endpoint expects a different SELECT-shaped payload, so condition-only filters are unusable there. Prefer TABLE_QUERY `where`. |
 | `columns` | array | No | For TABLE_QUERY: fields to project; omit for all columns. Example: `["MANDT","MATNR"]`. |
@@ -238,11 +238,12 @@ Each call has one root read and at most one expansion: 16 folder IDs, 2 MiB of
 cumulative response data, 10 seconds, and eight HTTP sends including CSRF/retries.
 `maxResults` caps the returned entries only; use `objectType` or a smaller package
 to reduce SAP's response. A failed request returns an error, not partial results.
-Cancellation cannot undo backend work already started. `$TMP` uses SAP's current
-user/workbench view; it is not an all-user inventory.
+Cancellation cannot undo backend work already started. ARC-1 sends no user filter
+for `$TMP`; whether SAP includes other users' local objects is unverified.
 
 An empty tree cannot distinguish an empty, missing or inaccessible package and
-returns an explicit error. Direct mode was tested on SAP_BASIS 750 SP02 and 758
+returns an explicit error. Advertised folders returning no objects also fail
+instead of establishing emptiness. Direct mode was tested on SAP_BASIS 750 SP02 and 758
 SP02; 740 SP04, BTP ABAP and an existing empty package remain unverified. Normal
 read scope and the selected SAP identity apply; write-package gates are unchanged.
 

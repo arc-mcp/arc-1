@@ -99,6 +99,21 @@ it.each(['', ' ', tree()])('treats an empty root as ambiguous, not as an empty p
   expect(post).toHaveBeenCalledTimes(1);
 });
 
+it('refuses an empty subpackage folder instead of establishing an empty package', async () => {
+  responses(tree('', folder('DEVC/K')));
+  await expect(read()).rejects.toThrow('empty, missing or inaccessible');
+  expect(post).toHaveBeenCalledTimes(1);
+});
+
+it.each(['', tree(), tree('', folder())])(
+  'refuses empty advertised expansions without returning root subpackages',
+  async (xml) => {
+    responses(tree(node('ZCHILD', 'DEVC/K'), folder()), xml);
+    await expect(read()).rejects.toThrow('Invalid native package-tree response');
+    expect(post).toHaveBeenCalledTimes(2);
+  },
+);
+
 it.each([
   '<html/>',
   '<asx:abap>',

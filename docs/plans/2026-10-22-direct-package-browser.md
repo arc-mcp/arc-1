@@ -105,9 +105,14 @@ Claude Opus 5.5 Max reviewed the plan and native controls before implementation
   multi-target route. BTP is explicitly unverified; extension APIs stay unchanged.
 
 The existing #999 refusal will point to direct mode. Native probes already used
-`withShortDescriptions=false` (758 still sends descriptions); discard them. `$TMP`
-inherits SAP's caller-specific workbench view; it is not an all-user inventory.
-Do not infer a user filter beyond the observed backend contract.
+`withShortDescriptions=false` (758 still sends descriptions); discard them. ARC-1
+sends no user filter for `$TMP`; whether SAP includes other users' local objects
+is unverified.
+
+The implementation review additionally requires an error when a root advertises
+only an empty subpackage folder, or when advertised object folders expand to no
+objects. Empty expansion bodies are invalid responses, distinct from ambiguous
+roots. Neither case returns a partial root listing.
 
 ## Scope and roadmap
 
