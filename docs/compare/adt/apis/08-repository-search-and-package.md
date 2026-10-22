@@ -92,28 +92,18 @@ must be probed without conflating backend-disabled and authorization responses.
 
 ## C. `POST .../repository/nodestructure?parent_type=DEVC/K&parent_name={pkg}&withShortDescriptions=true`
 
-### Contract
+### Contract and current use
 
-| Item | Value |
-|------|--------|
-| Method | `POST` |
-| Content-Type | `application/xml` |
-| Body | `undefined` (empty) in current code — SAP accepts POST for tree expansion |
+Use `application/vnd.sap.as+xml` for Accept and the ABAP XML body; include
+`parent_tech_name` and `TV_NODEKEY=000000` for the root, then returned type-node IDs
+for expansion. An empty request body is not the maintained contract.
 
-### ARC-1
+- `getSubpackages` uses this native tree for direct child packages and keeps the existing
+  bounded hierarchy resolver. CSRF is required because the read uses POST.
+- `getPackageContents` uses discovery-gated indexed search; it does **not** currently
+  fall back to this endpoint. Classic search may ignore package filters.
+- Native listing has no proven server row cap; 750 responses omit descriptions, and
+  an empty body does not distinguish a missing package from empty/inaccessible content.
 
-- `getPackageContents` — `Read`, `'GetPackage'` (note: operation name says GetPackage).
-- **CSRF:** Yes (POST).
-- **406/415:** **Yes**
-
-### Tests
-
-- **Unit:** `xml-parser` discovery fixtures include nodestructure hrefs; **integration** for package browse may vary.
-
-### Actions
-
-| Action | Priority |
-|--------|----------|
-| Confirm integration test for `getPackageContents` on a known package (e.g. `$TMP`) | Medium |
-
-**Verdict:** **OK** in code; **integration coverage** should be **explicitly confirmed** (add test if missing).
+See the [live 750/758 evidence and proposed contract](../../../research/2026-10-22-legacy-package-browser.md).
+General legacy browsing remains COMPAT-17 / #1065, not an implemented capability.

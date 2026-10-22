@@ -351,6 +351,10 @@ result cap and reliable descriptions; indexed search also includes descendant pa
 **Resume with.** A bounded native listing contract with explicit scope, missing-versus-empty
 behavior and accurate completeness metadata. Preserve the current search path's descriptions;
 do not silently substitute an unbounded tree traversal or system-wide search.
+The [750/758 investigation](https://github.com/arc-mcp/arc-1/blob/main/docs/research/2026-10-22-legacy-package-browser.md)
+and [#1065](https://github.com/arc-mcp/arc-1/issues/1065) propose an explicit direct-contents mode.
+API semantics, empty-package evidence and large-package load still need resolution;
+740 SP04 support is unverified.
 
 <a id="compat-18"></a>
 ### COMPAT-18 — Newly created program metadata on 7.50
