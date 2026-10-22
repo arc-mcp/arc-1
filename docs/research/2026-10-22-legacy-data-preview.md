@@ -48,6 +48,11 @@ enabling a guessed SICF child, changing MIME type or applying an unrelated KBA f
   SAP error log. A successful native baseline is the next decision point. If Eclipse
   also fails, the SAP owner must resolve the installation before a client fix is justified.
 
+`TABLE_CONTENTS` normally uses DDIC preview. When `SAP_BLOCKED_DATA_SOURCES` is
+configured, its metadata/catalog checks additionally need freestyle SQL and fail closed
+if unavailable. Internal SEOMETAREL lookups also use freestyle; a working DDIC preview
+alone does not establish these capabilities.
+
 ## Alternatives evaluated
 
 | Alternative | Why it is not the proposed core fix |
