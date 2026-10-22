@@ -503,7 +503,7 @@ export function getToolDefinitions(
           maxRows: {
             type: 'number',
             description:
-              'Row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner). On 758, TABLE_CONTENTS returns N+1; use TABLE_QUERY for exact caps.',
+              'Returned row cap for TABLE_CONTENTS/TABLE_QUERY (default 100, max 10,000; byte limit may apply sooner).',
           },
           maxResults: {
             type: 'number',

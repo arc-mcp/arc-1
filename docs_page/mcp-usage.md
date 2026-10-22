@@ -57,7 +57,7 @@ SELECT carrid, COUNT(*) as cnt FROM sflight GROUP BY carrid ORDER BY cnt DESC
 | KTD / SKTD | **Y** | Knowledge Transfer Documents; `KTD` is the friendly alias for canonical `SKTD` |
 | TABL (Table Definition) | **Y** | Table structure |
 | VIEW (DDIC View) | **Y** | Dictionary views |
-| TABLE_CONTENTS | **Y** | Legacy preview; filter and exact cap vary by backend. Prefer `TABLE_QUERY` for structured filtering |
+| TABLE_CONTENTS | **Y** | Legacy preview; ARC-1 caps returned rows. Prefer `TABLE_QUERY` for structured filtering |
 | DEVC (Package) | **Y** | Package contents |
 | SYSTEM | **Y** | ADT discovery collections and configured/token-derived user; not SID, release, or SAP identity proof |
 | COMPONENTS | **Y** | Installed software components |

@@ -292,7 +292,7 @@ describe('Tool Definitions', () => {
     const sapRead = getToolDefinitions(DEFAULT_CONFIG).find((t) => t.name === 'SAPRead')!;
     const schema = sapRead.inputSchema as Record<string, any>;
 
-    expect(schema.properties.maxRows.description).toContain('On 758, TABLE_CONTENTS returns N+1');
+    expect(schema.properties.maxRows.description).toContain('Returned row cap');
     expect(schema.properties.sqlFilter.description).toContain('broken on 758');
     expect(schema.properties.sqlFilter.description).toContain('TABLE_QUERY where');
     expect(schema.properties.where.description).toContain('Use <>; 758 rejects !=');

@@ -249,11 +249,10 @@ Use ABAP SQL spelling such as `alias~field` and `ASCENDING`/`DESCENDING`, not `a
 `DESC`, or `LIMIT`. Keep free SQL off unless its data-access use case is explicitly approved.
 
 With `SAP_ALLOW_DATA_PREVIEW=true`, prefer `SAPRead(type="TABLE_QUERY")` with structured `columns`,
-`where`, and `maxRows`. The legacy `TABLE_CONTENTS` path is suitable for an unfiltered sample, but on
-758 its requested limit returns `N+1` rows and its documented condition-only filter is not accepted by
-the backend. Do not use that legacy filter/limit as a CI data boundary; use TABLE_QUERY or enforce the
-final cap in your caller. On 758, spell inequality as `<>`; the currently accepted `!=` input is sent
-unchanged and SAP rejects it.
+`where`, and `maxRows`. The legacy `TABLE_CONTENTS` path is suitable for an unfiltered sample;
+ARC-1 caps returned rows even when SAP includes a lookahead row. Its condition-only filter is not
+accepted by the tested 758 backend: use TABLE_QUERY for structured filtering. On 758, spell inequality
+as `<>`; the currently accepted `!=` input is sent unchanged and SAP rejects it.
 
 For an approved but security-first deployment, `SAP_BLOCKED_DATA_SOURCES=USR02,PA0002` activates the
 experimental exact source blocklist. It performs strict SQL parsing and fresh live CDS/replacement lineage
