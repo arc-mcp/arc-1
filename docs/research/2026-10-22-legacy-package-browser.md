@@ -5,7 +5,7 @@ Tracking: [#1065](https://github.com/arc-mcp/arc-1/issues/1065), COMPAT-17; pare
 
 ## Decision
 
-Keep the current refusal when discovery lacks package-filtered quick search. A native
+Defer the implementation; keep the current refusal when discovery lacks package-filtered quick search. A native
 **direct-contents** browser is feasible, but it must be an explicit mode with bounded
 client work and honest completeness. It cannot silently replace descendant-inclusive
 indexed search. Native 740 SP04 remains untested.
@@ -56,7 +56,9 @@ metadata. These projections document observed wire fields; they are not full tes
 
 1. Agree an explicit direct-contents mode on `SAPRead type=DEVC`. Keep indexed search
    unchanged, including its descriptions and descendant scope. Return `scope=direct`.
-2. Use one root call and one expansion call containing only selected returned type IDs.
+2. Propose one root call and one expansion call containing only selected returned type IDs.
+   Combining multiple IDs in one expansion still needs a native contract test; the
+   controls above expanded one folder per request.
    Do not recurse into subpackages or fetch descriptions per object. Return absent
    descriptions as absent; preserve names, types and URIs from validated native fields.
 3. Share a cumulative response-byte budget and deadline across the two calls. Proposed
@@ -83,7 +85,15 @@ this residual load is acceptable. There is no proven native pagination contract 
 - Public-tool checks: explicit scope and completeness, stable modern search behavior,
   separate package safety tests, no broader-system search on failure.
 - Native 750/758: direct versus descendant scope, known populated/empty/missing packages,
-  namespaces and approved large-package load. Ask the #996 author for 740 confirmation.
+  namespaces and approved large-package load. Obtain 740 confirmation with the recipe below.
+
+For the 740 reporter: fetch a CSRF token with `GET /sap/bc/adt/discovery` and retain
+that session's cookies locally. POST the scoped root envelope above for one known
+package, then POST one returned type-node ID using the same headers and identity.
+Report status, Content-Type, byte length, type/node counts and whether descriptions
+exist; omit credentials, tokens, cookies and object names if sensitive. Do not use an
+unscoped root or change services/authorizations. This is a research request, not a
+prerequisite for closing already-fixed client bugs in #996.
 
 The API choice, empty-package distinction and large-package load are still open.
 Keep #1065 and COMPAT-17 open; this research does not enable package browsing on 740.
