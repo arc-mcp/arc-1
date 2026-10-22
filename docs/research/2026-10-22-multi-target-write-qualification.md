@@ -80,8 +80,57 @@ result held only read/write scopes despite the SDK requesting the advertised sco
 catalog exposed the three SAPWrite actions and SAPActivate with mutation annotations.
 
 The first deployment revealed `.cfignore` matching `public/` inside `dist/public`, dropping required
-runtime modules. Anchoring that exclusion to `/public/` allowed the rebuilt application to start.
+runtime modules. Anchoring that exclusion to `/public/` allowed the rebuilt application to start. This unrelated
+packaging correction is split into [PR #1082](https://github.com/arc-mcp/arc-1/pull/1082).
 The first MCP CLAS create/save completed on SAP, but strict read-back reported uncertainty because
 SAP converted LF to CRLF. `SAPRead(format="editable")` independently showed the intended complete
 source. The check was adapted to allow only CRLF/LF normalization and return the stored-byte hash.
 This was a read-back classification failure, not a safe reason to recreate the object.
+
+## Deployed implementation qualification
+
+Build `ef2b14c7` (including source normalization, sibling-task membership and positive activation
+execution evidence) was deployed to the isolated CF app at 15:25 UTC. Destination alias
+`PR1080/001` pointed to the existing A4H/001 PP connection; its package policy was `$TMP,ZARC1_DEMO`
+and its request policy named only the disposable Workbench request A4HK906586.
+
+- Official SDK OAuth discovery/DCR/PKCE was already verified against the earlier implementation;
+  subsequent calls retained that same user token and connection across deployments.
+- Same writer token: aggregate `/multi/mcp`, Copilot `/authorize`, and read-only pinned A4H/100
+  hid mutations and refused direct mutation calls. Pinned PR1080/001 remained writable.
+- A fresh read-only-scope token carried the exact write attribute but exposed no write tools and
+  refused activation. A second fresh IAS identity carried raw read/write scope and access to
+  PR1080/001, but only an unrelated write grant; it also hid/refused mutations. Its SAP read was
+  denied under PP, while the primary user's read succeeded. No shared-identity fallback occurred.
+  This is a two-user negative isolation test, not a second SAP writer's positive qualification.
+- A stale full-source hash was refused under the lock with state unchanged and retryable=false.
+  A disallowed package and unresolved/deleted CTS request were refused before mutation.
+- Local interface save exposed another normalization: SAP strips terminal newlines. The comparison
+  now permits CRLF/LF and terminal line-break differences only, returns SAP's actual byte hash,
+  and rejects other changed bytes. Controlled fixtures cover both acceptance and rejection.
+- Task-selected create initially refused safely because the generic request parser ignores sibling
+  task nodes in task-detail documents. The scoped resolver now reads the exact task's parent,
+  independently fetches that parent's tree, and verifies exact modifiable membership before saving.
+  Task A4HK906587 then successfully created and updated INTF using canonical request A4HK906586.
+- Scoped activation now requires SAP's positive `activationExecuted="true"` checklist evidence;
+  an empty, unknown or explicitly non-executed response is an uncertain result, never success.
+  Initial and expanded-confirmation cases are covered in controlled tests; legacy parsing is unchanged.
+
+A final 34-call MCP matrix on `ef2b14c7` passed: main-source update and CLAS method edit in
+both local and transportable packages; new local CLAS/INTF creation with terminal newlines;
+whole-owner activation for all six fixtures; independent active-source comparison against the
+complete editable source in every case. The earlier CTS creation paths also succeeded, including
+INTF task input mapped to the allowed parent. No retry was used to cover an uncertain mutation.
+Final reviewer dispositions and environment cleanup are recorded below when complete.
+
+## Cleanup and policy change verification
+
+After the successful matrix, metadata for all six MCP-created fixtures confirmed
+`createdBy=changedBy=responsible=MARIAN` and their intended real package. Each was deleted with an
+owning lock and independently verified absent (GET 404). Request A4HK906586 and task A4HK906587
+were also removed and independently verified absent. Earlier protocol fixtures had already been
+cleaned. Test tokens and service credentials remain private and are not included in this record.
+
+Changing only the disposable destination's write opt-in to false caused the still-connected writer's
+next activation to fail with `TARGET_CONFIG_CHANGED` before SAP mutation. The global write switch
+was then turned off and the test application restarted for the disable check.

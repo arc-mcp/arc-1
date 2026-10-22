@@ -578,7 +578,7 @@ describe('multi-target MCP servers', () => {
         event: 'safety_blocked',
         target: 'A00/000',
         operation: 'SAPWrite.update',
-        reason: 'Operation unavailable in read-only multi-target v1',
+        reason: 'Operation unavailable for this multi-target route and caller policy',
       }),
     );
 

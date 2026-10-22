@@ -128,7 +128,10 @@ Use `SAP_DENY_ACTIONS=SAPActivate` if your team must activate separately in ADT.
 other types, deletes, include editing, batches, RAP/DDIC, publication, transport management and Git
 are refused even if a client sends the call directly. Per-call lint-disable options are unavailable.
 Global lint configuration applies; `SAP_CHECK_BEFORE_WRITE` remains advisory. SAP authorization is
-always required in addition to ARC-1 policy.
+always required in addition to ARC-1 policy. Live qualification used SAP_BASIS 758 SP02 with
+Cloud Connector PP. Other releases must affirm the same lock, recording and activation evidence;
+unrecognized responses fail closed. An activation response without positive execution evidence
+is reported as unconfirmed, even when the HTTP request succeeded.
 
 A hash establishes source freshness, not target identity. Verify the pinned connection before
 editing. SAP repository objects are generally cross-client: two clients of one physical system are

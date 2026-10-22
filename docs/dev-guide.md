@@ -83,6 +83,9 @@ use SAP's separate **Multi-Target Application** packaging terminology.
    [ADR-0008](adr/0008-opt-in-xsuaa-target-authorization.md), the
    [accepted spec](plans/xsuaa-target-authorization.md) and its linked implementation/live-validation
    record. These qualify only enforced mode; standard behavior must remain unchanged.
+   For scoped writes, read [ADR-0010](adr/0010-pinned-pp-multi-target-writes.md), its
+   [implementation contract](plans/2026-10-22-multi-target-pinned-writes.md), and the
+   [operator guide](../docs_page/multi-target-writes.md).
 2. At startup, `src/server/destination-discovery.ts` projects subaccount destinations into a
    secret-safe shape, `destination-registry.ts` validates them, and `server.ts`/`http.ts` create the
    pinned and aggregate HTTP factories.
@@ -100,7 +103,9 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 ### Invariants
 
 - Default off; BTP CF only; XSUAA-only route auth; `ARC1_CACHE=none`; standard tool mode; UI,
-  plugins, shared cookies, writes, activation, and transport/Git mutation remain unavailable. PP
+  plugins and shared cookies remain unavailable. ADR-0010 permits only scoped CLAS/INTF writes and
+  whole-owner activation on explicitly enabled pinned PP targets with exact write grants; aggregate,
+  Copilot and Basic routes remain mutation-free. Transport/Git management remains unavailable. PP
   targets are strict per-user. Basic is a separate default-off shared identity, never fallback, and
   requires exactly one CF instance. ATC and ABAP Unit are available as workload-producing reads;
   operators can disable them with `SAP_DENY_ACTIONS`.
@@ -125,6 +130,10 @@ use SAP's separate **Multi-Target Application** packaging terminology.
 
 ### Change these together
 
+- Scoped pinned writes: `multi-target-write-surface.ts`, verified request projection/runtime config,
+  `src/adt/pinned-write-policy.ts`, `src/handlers/write/pinned{,-activation}.ts`, HTTP no-replay policy,
+  and focused `pinned-writes` / `multi-target-writes` tests. The low-level activation boundary must
+  require scoped validation; never let missing context select the legacy pipeline.
 - Destination properties/validation: `multi-target-destination-config.ts`,
   `multi-target-identity.ts`, `destination-discovery.ts`, `destination-registry.ts`,
   `multi-target-runtime.ts`, and their tests. Target syntax, pinned route matchers, aggregate pattern,

@@ -14,8 +14,7 @@ skills/
 compare/
 artifacts/
 site/
-# Exclude only source UI assets; dist/public contains required runtime modules.
-/public/
+public/
 coverage/
 test-results/
 mta_archives/

@@ -149,7 +149,9 @@ activate). Require a validator at the low-level multi-target activation boundary
 and batch/recovery paths must refuse. Before confirmation, permit only the exact requested owner
 and known same-owner CLAS include URI mappings, recheck package/recording, and reject extra owners,
 absolute/cross-origin/query/fragment/unknown references. No prefix-only authorization. Preserve the
-activation deadline and no-replay policy. The tested SAP system completed initial preaudit without
+activation deadline and no-replay policy. On this scoped path, require a SAP checklist with
+positive activation-execution evidence before reporting success, including after confirmation;
+empty/unknown/non-executed responses are uncertain results. Legacy single-target parsing stays unchanged. The tested SAP system completed initial preaudit without
 an expanded prompt; controlled wire fixtures must test confirmation refusals and allowed mappings.
 
 Audit caller, target/identity, action/object, denial and outcome with existing correlation and

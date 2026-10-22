@@ -104,6 +104,13 @@ Where: [`src/authz/policy.ts`](../src/authz/policy.ts) (`ACTION_POLICY`),
 Fails when: a new write path skips the package gate (see R4), or gates a user-supplied package
 instead of the resolved one, or package resolution fails *open*.
 
+For the scoped pinned multi-target path, require ADR-0010's additional conjunction before resolving
+PP: existing pinned route, global and destination write opt-ins, verified raw write scope, read
+access grant and exact write-target grant. Global and destination package/CTS rules are independent
+constraints, never replacement lists. Aggregate/Copilot and Basic routes cannot mutate. Carry an
+explicit enabled/disabled context into the ADT boundary; a missing context must not select legacy
+single-target writes. See [the implementation contract](plans/2026-10-22-multi-target-pinned-writes.md).
+
 ### I2 — Per-user isolation of anything cached or keyed
 Wherever SAP authorization differs per user, a cache or in-memory map must **either** key on a
 *verified, unique* user identity **or** still force a per-user SAP round-trip on every hit. Never
@@ -252,6 +259,27 @@ Added by the 2026-06-09 deep review (Track A/B). All verified in code; R8 verifi
 | R22 | **XSUAA binding failure → unauthenticated `/mcp`.** With `SAP_XSUAA_AUTH=true`, an unreadable or missing `VCAP_SERVICES` XSUAA binding was only logged; the bare flag had already satisfied the HTTP-auth startup check, so without API keys/OIDC `/mcp` was mounted on the open no-auth route (startup log `auth: NONE (open)`). The safety ceiling still applied, but there was no authentication and no scopes. | **High** | XSUAA HTTP (BTP CF) | [`server.ts`](../src/server/server.ts), [`http.ts`](../src/server/http.ts), [`xsuaa-startup.test.ts`](../tests/unit/server/xsuaa-startup.test.ts) | ✅ [#916](https://github.com/arc-mcp/arc-1/pull/916) — startup refused whenever the binding cannot be loaded, also with API keys/OIDC or `ARC1_ALLOW_HTTP_NO_AUTH`; `startHttpServer` refuses XSUAA without credentials |
 
 ---
+
+### R23 — Scoped pinned multi-target mutation risks
+
+ADR-0010 introduces an explicit PP-only mutation surface under `SAP_ALLOW_WRITES`, destination
+opt-in, target-filtered XSUAA access and exact verified write grants. It supports CLAS/INTF main
+source writes and whole-owner activation, with independent package and canonical-request policy.
+Read-only defaults, aggregate/Copilot isolation, no shared-Basic writes and per-call drift checks
+remain structural. Source hashes, owning stateful locks, positive local/CTS evidence, bounded
+cleanup, no automatic mutation replay and positive activation-execution evidence protect the
+scoped lifecycle. [Qualification evidence](research/2026-10-22-multi-target-write-qualification.md)
+distinguishes live SAP checks from fault-injection tests and untested release shapes.
+
+Residual limits: one process shares availability; route/client identity does not isolate the
+cross-client ABAP repository; package rules do not sandbox the eventual behavior of authored ABAP;
+activation includes preexisting drafts for the complete owner; an interrupted create/save may leave
+partial state. CTS allowance is deliberately parent-request-level, including its SAP-managed tasks.
+Audit delivery remains asynchronous. Removed IAM assignments may survive in old tokens/refresh
+sessions, so immediate disable uses server/destination policy and restart, and admitted calls may
+still complete. New backends require new public IDs and grants. Operators must assess these limits
+before enabling the feature; separate single-target applications remain the stronger availability
+and deployment-isolation option.
 
 ### R21 — Shared-login credential freshness
 
