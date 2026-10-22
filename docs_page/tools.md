@@ -150,7 +150,7 @@ approval. `SAPDiagnose` remains mixed and hyperfocused `SAP` remains unannotated
 | `SMBC` | Business Configuration Maintenance Object: native JSON, available on 758/816 and BTP. `SMBC/TYP` is accepted. Omitted/`auto` uses SAP’s developer view; explicit versions are verified. Transport `check`/`history` are supported; SMBC source writes are not. |
 | `SKTD` / `KTD` | Knowledge Transfer Document attached to an ABAP object. Returns Markdown decoded from the ADT XML envelope, one `## <node id>` section per documented node when routing is needed (BDEF entities, savers, actions, functions, …). A heading that names a node — its id, or the node name the index prints — is reserved routing syntax; a colliding heading inside stored body text is reversibly shown with one leading `\`. Behind a reserved HTML-comment marker, the response lists populated per-node short texts and a compact index of EVERY writable node, each by the spelling that resolves back to it (the name, or the full id when only that does), with the empty ones on an `empty (n):` line. Add a `## <name>` section above the marker to document one; use `shortTexts` to update its short text. Start multi-node edits from the complete `SAPRead` result; a standalone `## <object name>` is refused when it could instead be a visible root title (use `# <object name>` for that title). `SAPWrite` ignores the marker and context below it; the writable Markdown still follows the requested active/inactive version semantics. Documented non-writable sections can pass through unchanged while attempted edits remain refused. `KTD` is a friendly alias; `SKTD` remains the canonical SAP object type. |
 | `TABL` | DDIC TABL — covers both transparent tables (T000-style) and DDIC structures (BAPIRET2-style). Returns CDS-like source. ARC-1 auto-resolves the URL: tries `/sap/bc/adt/ddic/tables/{name}` first, falls back to `/sap/bc/adt/ddic/structures/{name}` on 404. On tested 750, the structure fallback returns `define type` without table category or delivery class; it is field/type source, not a complete table definition. There is no separate `STRU` type — `TABL` is the canonical short type for both, mirroring TADIR `R3TR TABL` and abapGit conventions. |
-| `TABL/DTT` | Technical settings of a transparent table; `name` is the table name. Returns working state, editable `source`, and read-only storage/logging fields. See [Technical table settings](#technical-table-settings). |
+| `TABL/DTT` | Technical settings of a transparent table; `name` is the table name. Returns working state, editable `source`, and native storage/load-unit fields. See [Technical table settings](#technical-table-settings). |
 | `TTYP` | DDIC table type (on-prem and BTP where discovered). Returns `{name, description, rowType, rowTypeKind, rowTypeLength, rowTypeDecimals, accessType, keyKind, plainStandardTable, package}`. Key components and secondary keys are not listed; `plainStandardTable` is `false` when the table type has them or is not a standard table with a non-unique standard key. Written via `SAPWrite(type="TTYP")` — the create POSTs a CHAR shell and a follow-up PUT sets the real row type. |
 | `ENQU` | DDIC lock object (on-prem and BTP; `ENQU/DL` accepted). Returns `{name, description, package, version, allowRFC, primaryTable, secondaryTables, lockParameters, lockModules}` — tables carry `{tableName, lockMode}`, parameters `{parameterName, tableName, fieldName, parameterWanted}`, and `lockModules` lists the generated `ENQUEUE_`/`DEQUEUE_` function modules. Omitted `version` returns SAP's developer view. Written via `SAPWrite(type="ENQU")` — see [Lock object writes](#lock-object-writes-enqu). |
 | `VIEW` | DDIC view |
@@ -1275,6 +1275,7 @@ read result's `source`, not the whole result. Supported fields:
 |-------|--------|
 | `dataClass` | Native data class, e.g. `APPL0`, `APPL1`, `APPL2`; SAP validates its meaning |
 | `sizeCategory` | Integer 0–9 |
+| `loggingEnabled` | `true` / `false` — “Log data changes”; requires the native field |
 | `buffering.allowed` | `N` forbidden, `A` permitted but off, `X` on |
 | `buffering.type` | `""` none, `P` single record, `G` generic, `X` full |
 | `buffering.areaKeyFields` | Number of leading key fields for generic buffering; otherwise 0 |
@@ -1289,7 +1290,12 @@ independently. Explicit `version="active"`/`"inactive"` reads refuse a different
 version returned by SAP; omit `version` to prefer any pending draft, including another user's draft,
 with active settings as the native fallback.
 
-Storage type, load unit and logging remain read-only. No SQL or legacy fallback.
+For example, `source='{"loggingEnabled":true}'` enables the table flag after activation.
+Actual data-change recording also requires the system profile parameter
+[`rec/client`](https://help.sap.com/saphelp_ewm900/helpdata/en/4d/b6a69336311dcee10000000a42189c/content.htm);
+ARC-1 does not change that parameter. Logging updates were verified on SAP_BASIS 758.
+
+Storage type and load unit remain read-only. No SQL or legacy fallback.
 
 <a id="class-text-symbols"></a>
 

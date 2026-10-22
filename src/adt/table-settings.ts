@@ -26,6 +26,7 @@ const settingsPatch = z
       .regex(/^[A-Z0-9_]{1,5}$/)
       .optional(),
     sizeCategory: z.number().int().min(0).max(9).optional(),
+    loggingEnabled: z.boolean().optional(),
     buffering: bufferingPatch.optional(),
   })
   .strict()
@@ -104,6 +105,9 @@ export function parseTableSettings(xml: string, name: string) {
   const source = {
     dataClass: scalar(root.dataClassCategory),
     sizeCategory: integer(root.sizeCategory),
+    ...(root.loggingEnabled === 'true' || root.loggingEnabled === 'false'
+      ? { loggingEnabled: root.loggingEnabled === 'true' }
+      : {}),
     buffering: {
       allowed: scalar(buffering.allowed),
       type: scalar(buffering.type),
@@ -159,13 +163,19 @@ function replaceField(xml: string, prefix: string, field: string, value: string 
 
 export function patchTableSettingsXml(xml: string, name: string, patch: TableSettingsPatch): string {
   patch = settingsPatch.parse(patch);
-  parseTableSettings(xml, name);
+  const settings = parseTableSettings(xml, name);
   // Native settings contain scalar XML. Refuse lexical constructs that could hide matching tags.
   if (/<!--|<!\[CDATA\[|<!DOCTYPE/i.test(xml))
     throw new AdtError('Cannot safely edit technical settings containing comments, CDATA or a document type.');
   const prefix = xml.match(/<([A-Za-z_][\w.-]*:)?tableSettings\b/)?.[1] ?? '';
   if (patch.dataClass !== undefined) xml = replaceField(xml, prefix, 'dataClassCategory', patch.dataClass);
   if (patch.sizeCategory !== undefined) xml = replaceField(xml, prefix, 'sizeCategory', patch.sizeCategory);
+  if (patch.loggingEnabled !== undefined) {
+    // Require the root field: a nested lookalike must not stand in for an absent setting.
+    if (settings.source.loggingEnabled === undefined)
+      throw new AdtError('SAP does not expose a supported loggingEnabled field for this table.');
+    xml = replaceField(xml, prefix, 'loggingEnabled', String(patch.loggingEnabled));
+  }
   if (patch.buffering) {
     const buffering = patch.buffering;
     const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

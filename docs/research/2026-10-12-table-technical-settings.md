@@ -16,7 +16,10 @@ The collection is absent on the tested 750 SP02 system.
   does not supply its own package reference.
 
 Native metadata contains `dataClassCategory`, `sizeCategory`, and `buffering`
-(`allowed`, `type`, `areaKeyFields`). ARC-1 exposes these as partial JSON `source`.
+(`allowed`, `type`, `areaKeyFields`). ARC-1 exposes these as partial JSON `source`,
+along with boolean `loggingEnabled` for the verified plain `true`/`false` native
+field. Its existing raw top-level value is retained. Missing or unfamiliar logging
+metadata is omitted from `source` and cannot be updated; other settings remain usable.
 Other native fields and attributes survive unchanged. Missing/duplicate scalar fields,
 unknown patch keys and ambiguous XML are refused before PUT.
 
@@ -53,8 +56,7 @@ full-buffering code. SAP validates combinations and the number of generic key fi
 
 ## Scope and remaining qualifications
 
-Storage type, load unit and logging are returned as native values but remain
-read-only. No table conversion, SQL fallback, 7.50 compatibility layer, independent
+Storage type and load unit are returned as native values but remain read-only. No table conversion, SQL fallback, 7.50 compatibility layer, independent
 settings create/delete, or CTS cleanup feature is included. Secondary indexes use a
 separate resource and belong in their own change.
 

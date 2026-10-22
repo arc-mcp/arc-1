@@ -56,6 +56,33 @@ const write = (extra = {}) =>
   call('SAPWrite', { action: 'update', type: 'TABL/DTT', name: 'ZTEST', source: '{"dataClass":"APPL1"}', ...extra });
 
 describe('TABL/DTT public routing and safety', () => {
+  it.each([true, false])(
+    'saves loggingEnabled=%s through the existing locked update, without activation',
+    async (loggingEnabled) => {
+      xml = fixture
+        .replace('<ts:loggingEnabled>false', `<ts:loggingEnabled>${!loggingEnabled}`)
+        .replace('<ts:sizeCategory>0', '<ts:sizeCategory>2');
+      const r = await write({ source: JSON.stringify({ loggingEnabled }), transport: 'DEVK900099' });
+      expect(r.isError, JSON.stringify(r)).toBeUndefined();
+      const put = mutations().find(([, init]) => init?.method === 'PUT');
+      expect(put?.[0]).toContain('corrNr=DEVK900099');
+      expect(put?.[1]?.body).toBe(
+        xml.replace(`>${!loggingEnabled}</ts:loggingEnabled>`, `>${loggingEnabled}</ts:loggingEnabled>`),
+      );
+      expect(mockFetch.mock.calls.some(([url]) => url.includes('/activation'))).toBe(false);
+      expect(mutations().at(-1)?.[0]).toContain('_action=UNLOCK');
+    },
+  );
+  it.each([
+    '',
+    '<ts:loggingEnabled>false</ts:loggingEnabled><ts:loggingEnabled>true</ts:loggingEnabled>',
+    '<ts:loggingEnabled ts:isEditable="false">false</ts:loggingEnabled>',
+  ])('unlocks and refuses a logging update before PUT for unavailable or uneditable metadata %s', async (field) => {
+    xml = fixture.replace('<ts:loggingEnabled>false</ts:loggingEnabled>', field);
+    const r = await write({ source: '{"loggingEnabled":true}' });
+    expect(r.isError).toBe(true);
+    expect(mutations().map(([url]) => url.includes('_action=UNLOCK'))).toEqual([false, true]);
+  });
   it('preserves native identity in both read and write normalization', () => {
     expect(normalizeObjectType('tabl/dtt')).toBe('TABL/DTT');
     expect(normalizeWriteObjectType('TABL/DTT')).toBe('TABL/DTT');

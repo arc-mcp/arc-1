@@ -743,8 +743,8 @@ contract can be captured.
 - **Priority / effort / status:** P3 / S / Needs research
 - **Category:** Object coverage
 
-**Idea.** Extend `TABL/DTT` updates to storage type, load unit or logging only where
-SAP advertises an editable, verified contract. Data class, size category and buffering
+**Idea.** Extend `TABL/DTT` updates to storage type or load unit only where
+SAP advertises an editable, verified contract. Data class, size category, buffering and logging
 already have separate read/update/activation support; table DDL annotations are outside this gap.
 
 **Why it remains.** The additional fields vary by release and can be read-only. Current

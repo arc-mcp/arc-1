@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, type TestContext } from 'vitest';
 import type { AdtClient } from '../../src/adt/client.js';
 import { fetchDiscoveryDocument } from '../../src/adt/discovery.js';
 import { AdtApiError } from '../../src/adt/errors.js';
@@ -23,7 +23,7 @@ describe('technical table settings through public dispatch', () => {
     return result.content.map((c) => c.text ?? '').join('\n');
   }
 
-  it('preserves pending fields and activates settings separately from the table', async (ctx) => {
+  async function createTable(ctx: TestContext): Promise<string> {
     requireOrSkip(
       ctx,
       client.http.discoveryAcceptFor('/sap/bc/adt/ddic/db/settings'),
@@ -55,7 +55,7 @@ describe('technical table settings through public dispatch', () => {
       source: `@EndUserText.label : 'ARC1 settings test'
 @AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
 @AbapCatalog.tableCategory : #TRANSPARENT
-@AbapCatalog.deliveryClass : #A
+@AbapCatalog.deliveryClass : #C
 @AbapCatalog.dataMaintenance : #RESTRICTED
 define table ${name.toLowerCase()} {
  key client : abap.clnt not null;
@@ -63,6 +63,11 @@ define table ${name.toLowerCase()} {
  status : abap.char(1);
 }`,
     });
+    return name;
+  }
+
+  it('preserves pending fields and activates settings separately from the table', async (ctx) => {
+    const name = await createTable(ctx);
     const read = async () => JSON.parse(await call('SAPRead', { type: 'TABL/DTT', name }));
     const write = (patch: unknown) =>
       call('SAPWrite', { action: 'update', type: 'TABL/DTT', name, source: JSON.stringify(patch) });
@@ -87,5 +92,29 @@ define table ${name.toLowerCase()} {
       version: 'active',
       source: { dataClass: 'APPL1', sizeCategory: 2, buffering: { allowed: 'N', type: '', areaKeyFields: 0 } },
     });
+  }, 120_000);
+
+  it('enables and disables change logging, preserving other pending settings', async (ctx) => {
+    const name = await createTable(ctx);
+    await call('SAPActivate', { type: 'TABL', name });
+    const read = async (version?: 'active') => JSON.parse(await call('SAPRead', { type: 'TABL/DTT', name, version }));
+    const write = (patch: unknown) =>
+      call('SAPWrite', { action: 'update', type: 'TABL/DTT', name, source: JSON.stringify(patch) });
+    const initial = await read();
+    expect(initial.source.loggingEnabled).toBe(false);
+    await write({ loggingEnabled: true });
+    expect(await read()).toMatchObject({ version: 'inactive', source: { ...initial.source, loggingEnabled: true } });
+    expect((await read('active')).source.loggingEnabled).toBe(false);
+    await write({ sizeCategory: 2 });
+    await call('SAPActivate', { type: 'TABL/DTT', name });
+    const enabled = await read();
+    expect(enabled).toMatchObject({
+      version: 'active',
+      source: { ...initial.source, loggingEnabled: true, sizeCategory: 2 },
+    });
+    await write({ loggingEnabled: false });
+    expect((await read('active')).source.loggingEnabled).toBe(true);
+    await call('SAPActivate', { type: 'TABL/DTT', name });
+    expect(await read()).toMatchObject({ version: 'active', source: { ...enabled.source, loggingEnabled: false } });
   }, 120_000);
 });
