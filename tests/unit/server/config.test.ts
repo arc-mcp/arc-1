@@ -1032,6 +1032,14 @@ describe('parseArgs', () => {
     expect(config.authRateLimit).toBe(7);
   });
 
+  it('allows disabling new OAuth registrations with CLI precedence over environment', () => {
+    expect(parseArgs([]).oauthDcrEnabled).toBe(true);
+    vi.stubEnv('ARC1_OAUTH_DCR_ENABLED', 'false');
+    expect(parseArgs([]).oauthDcrEnabled).toBe(false);
+    expect(parseArgs(['--oauth-dcr-enabled', 'true']).oauthDcrEnabled).toBe(true);
+    expect(parseArgs(['--oauth-dcr-enabled', 'false']).oauthDcrEnabled).toBe(false);
+  });
+
   // --- oauthDcrTtlSeconds ---
 
   it('defaults oauthDcrTtlSeconds to 0 (never expire)', () => {

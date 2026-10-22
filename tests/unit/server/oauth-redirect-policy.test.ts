@@ -25,7 +25,7 @@ function buildProvider() {
   });
 }
 
-async function boot(publicUrl = 'https://arc1.example') {
+async function boot(publicUrl = 'https://arc1.example', oauthDcrEnabled = true) {
   vi.stubEnv('ARC1_PUBLIC_URL', publicUrl);
   let app!: express.Express;
   const listen = vi.spyOn(express.application, 'listen').mockImplementation(function (this: express.Express) {
@@ -40,6 +40,7 @@ async function boot(publicUrl = 'https://arc1.example') {
         transport: 'http-streamable',
         httpAddr: '127.0.0.1:0',
         xsuaaAuth: true,
+        oauthDcrEnabled,
         authRateLimit: 0,
         mcpHttpRateLimit: 0,
         dcrSigningSecret: 'test-dcr-signing-secret-with-enough-entropy',
@@ -63,8 +64,85 @@ function authorization(redirectUri: string, clientId = CREDENTIALS.clientid) {
   };
 }
 
+function cookies(response: request.Response): string[] {
+  const values = response.headers['set-cookie'] as unknown as string[] | undefined;
+  return (values ?? [])
+    .filter((value) => !value.includes('Expires=Thu, 01 Jan 1970'))
+    .map((value) => value.split(';')[0]!);
+}
+
+async function approve(app: express.Express, page: request.Response) {
+  expect(page.status).toBe(200);
+  expect(page.headers.location).toBeUndefined();
+  const decode = (value: string) =>
+    value.replace(
+      /&(amp|quot|lt|gt|#39);/g,
+      (_, key: string) => ({ amp: '&', quot: '"', lt: '<', gt: '>', '#39': "'" })[key]!,
+    );
+  const fields = Object.fromEntries(
+    [...page.text.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)">/g)].map((match) => [
+      match[1]!,
+      decode(match[2]!),
+    ]),
+  );
+  const action = new URL(decode(/<form method="post" action="([^"]+)"/.exec(page.text)![1]!));
+  const response = await request(app)
+    .post('/authorize')
+    .set('Origin', action.origin)
+    .set('Cookie', cookies(page))
+    .type('form')
+    .send({ ...fields, consent_action: 'approve' });
+  expect(response.status).toBe(302);
+  return response;
+}
+
 describe('production OAuth redirect flow', () => {
   afterEach(() => vi.unstubAllEnvs());
+
+  it.each(['https://arc1.example', 'https://gateway.example/arc1'])(
+    'disables DCR at %s without removing manual-client sign-in',
+    async (publicUrl) => {
+      const app = await boot(publicUrl, false);
+      expect(
+        (await request(app).get('/.well-known/oauth-authorization-server')).body.registration_endpoint,
+      ).toBeUndefined();
+      expect(
+        (
+          await request(app)
+            .post('/register')
+            .send({ redirect_uris: ['https://client.example/cb'] })
+        ).status,
+      ).toBe(404);
+      const page = await request(app).get('/authorize').query(authorization('https://claude.ai/api/mcp/auth_callback'));
+      await approve(app, page);
+    },
+  );
+
+  it('requires approval after registering the attacker-controlled HTTPS callback', async () => {
+    const app = await boot();
+    const registered = await request(app)
+      .post('/register')
+      .send({
+        redirect_uris: ['https://attacker.example/cb'],
+        token_endpoint_auth_method: 'none',
+      });
+    expect(registered.status).toBe(201);
+    const page = await request(app)
+      .get('/authorize')
+      .query(authorization('https://attacker.example/cb', registered.body.client_id));
+    expect(page.status).toBe(200);
+    expect(page.headers.location).toBeUndefined();
+    expect(page.text).toContain('attacker.example');
+    const approved = await approve(app, page);
+    const callback = await request(app)
+      .get('/oauth/callback')
+      .query({
+        state: new URL(approved.headers.location).searchParams.get('state'),
+        code: 'VICTIM_CODE',
+      });
+    expect(callback.status).toBe(400);
+    expect(callback.headers.location).toBeUndefined();
+  });
 
   it.each([
     'https://attacker.cfapps.eu10.hana.ondemand.com/callback',
@@ -97,19 +175,20 @@ describe('production OAuth redirect flow', () => {
   ])('round trips a supported manual callback: %s', async (redirectUri) => {
     const app = await boot();
     const response = await request(app).get('/authorize').query(authorization(redirectUri));
-    expect(response.status).toBe(302);
-    const upstream = new URL(response.headers.location);
+    const approved = await approve(app, response);
+    const upstream = new URL(approved.headers.location);
     expect(upstream.origin).toBe(CREDENTIALS.url);
     expect(upstream.searchParams.get('redirect_uri')).toBe('https://arc1.example/oauth/callback');
     const callback = await request(app)
       .get('/oauth/callback')
+      .set('Cookie', cookies(approved))
       .query({
         state: upstream.searchParams.get('state'),
         code: 'test-code',
       });
     expect(callback.status).toBe(302);
     const target = new URL(callback.headers.location);
-    expect(target.searchParams.get('code')).toBe('test-code');
+    expect(target.searchParams.get('code')).toMatch(/^mcp-code-/);
     expect(target.searchParams.get('state')).toBe('original+client/state=');
     target.search = '';
     expect(target.href).toBe(redirectUri);
@@ -148,11 +227,12 @@ describe('production OAuth redirect flow', () => {
     expect(registered.status).toBe(201);
     const clientId = registered.body.client_id;
     const response = await request(app).get('/authorize').query(authorization(redirectUri, clientId));
-    expect(response.status).toBe(302);
-    const upstream = new URL(response.headers.location);
+    const approved = await approve(app, response);
+    const upstream = new URL(approved.headers.location);
     expect(upstream.searchParams.get('redirect_uri')).toBe('https://gateway.example/arc1/oauth/callback');
     const callback = await request(app)
       .get('/oauth/callback')
+      .set('Cookie', cookies(approved))
       .query({
         state: upstream.searchParams.get('state'),
         code: 'test-code',

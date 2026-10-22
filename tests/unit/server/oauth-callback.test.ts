@@ -2,6 +2,7 @@ import { createOAuthCallbackHandler, OAuthStateCodec, StatelessDcrClientStore } 
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
+import { TEST_BROWSER_BINDING, TEST_BROWSER_COOKIE } from '../../helpers/oauth-browser-binding.js';
 
 const SECRET = 'callback-test-signing-secret-1234567890';
 const TEST_CLIENT_ID = 'arc1-test-client';
@@ -28,16 +29,24 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
   it('redirects to the client with the ORIGINAL "+" state recoverable (the fix)', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const clientState = '6QadZ5GFXGvZ649+OuQi+Q==';
-    const token = codec.encode({ clientState, clientRedirectUri: 'http://127.0.0.1:33418/', clientId: TEST_CLIENT_ID });
+    const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
+      clientState,
+      clientRedirectUri: 'http://127.0.0.1:33418/',
+      clientId: TEST_CLIENT_ID,
+    });
 
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({ code: 'AUTHCODE123', state: token });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
+      .query({ code: 'AUTHCODE123', state: token });
 
     expect(res.status).toBe(302);
     const loc = res.headers.location as string;
     // The redirect target is the client's own loopback.
     expect(loc.startsWith('http://127.0.0.1:33418/')).toBe(true);
     // The code is forwarded.
-    expect(new URL(loc).searchParams.get('code')).toBe('AUTHCODE123');
+    expect(codec.authorizationCodes.decode(new URL(loc).searchParams.get('code')!, TEST_CLIENT_ID)).toBe('AUTHCODE123');
     // KEY ASSERTION: the state is encoded such that a standard URL parser
     // recovers the EXACT original (the `+` survived as `%2B` on the wire).
     expect(loc).toContain('state=6QadZ5GFXGvZ649%2BOuQi%2BQ%3D%3D');
@@ -47,11 +56,15 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
   it('emits %2B (not literal +) in the Location header', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'a+b+c==',
       clientRedirectUri: 'http://localhost:1/cb',
       clientId: TEST_CLIENT_ID,
     });
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({ code: 'x', state: token });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
+      .query({ code: 'x', state: token });
     const loc = res.headers.location as string;
     // The state segment must not contain a raw '+'.
     const stateSegment = loc.split('state=')[1] ?? '';
@@ -62,12 +75,14 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
   it('renders a self-hosted error page (no 302 to a possibly-dead loopback) on OAuth error', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'st+ate==',
       clientRedirectUri: 'http://127.0.0.1:5/cb',
       clientId: TEST_CLIENT_ID,
     });
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ error: 'access_denied', error_description: 'user cancelled', state: token });
     // The flow failed -> surface the reason to the human instead of redirecting
     // to the client's loopback (whose listener is usually already gone).
@@ -83,12 +98,14 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
   it('redirects the error (not a terminal page) for a hosted HTTPS callback', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'st+ate==',
       clientRedirectUri: 'https://claude.ai/api/mcp/auth_callback',
       clientId: TEST_CLIENT_ID,
     });
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ error: 'invalid_scope', error_description: 'no scopes', state: token });
     // A hosted callback is alive and expects the spec-compliant error redirect.
     expect(res.status).toBe(302);
@@ -102,8 +119,12 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
 
   it('adds an actionable role-collection hint for invalid_scope', async () => {
     const codec = new OAuthStateCodec(SECRET);
-    const token = codec.encode({ clientRedirectUri: 'http://127.0.0.1:5/cb', clientId: TEST_CLIENT_ID });
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({
+    const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
+      clientRedirectUri: 'http://127.0.0.1:5/cb',
+      clientId: TEST_CLIENT_ID,
+    });
+    const res = await request(buildApp(codec)).get('/oauth/callback').set('Cookie', TEST_BROWSER_COOKIE).query({
       error: 'invalid_scope',
       error_description: 'is invalid. not allowed any of the requested scopes',
       state: token,
@@ -114,9 +135,14 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
 
   it('HTML-escapes a malicious error_description (no XSS)', async () => {
     const codec = new OAuthStateCodec(SECRET);
-    const token = codec.encode({ clientRedirectUri: 'http://127.0.0.1:5/cb', clientId: TEST_CLIENT_ID });
+    const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
+      clientRedirectUri: 'http://127.0.0.1:5/cb',
+      clientId: TEST_CLIENT_ID,
+    });
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ error: 'invalid_request', error_description: '<script>alert(1)</script>', state: token });
     expect(res.status).toBe(400);
     expect(res.text).not.toContain('<script>alert(1)</script>');
@@ -126,18 +152,29 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
   it('round-trips a state with no "+" unchanged', async () => {
     const codec = new OAuthStateCodec(SECRET);
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'mElKiL3xesnEy0LnXDyKvA==',
       clientRedirectUri: 'http://localhost:1/cb',
       clientId: TEST_CLIENT_ID,
     });
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({ code: 'c', state: token });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
+      .query({ code: 'c', state: token });
     expect(clientParsedState(res.headers.location as string)).toBe('mElKiL3xesnEy0LnXDyKvA==');
   });
 
   it('omits state when the client did not send one', async () => {
     const codec = new OAuthStateCodec(SECRET);
-    const token = codec.encode({ clientRedirectUri: 'http://localhost:1/cb', clientId: TEST_CLIENT_ID });
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({ code: 'c', state: token });
+    const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
+      clientRedirectUri: 'http://localhost:1/cb',
+      clientId: TEST_CLIENT_ID,
+    });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
+      .query({ code: 'c', state: token });
     expect(new URL(res.headers.location as string).searchParams.has('state')).toBe(false);
   });
 
@@ -145,6 +182,7 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
     const codec = new OAuthStateCodec(SECRET);
     const res = await request(buildApp(codec))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ code: 'c', state: 'forged.AAAAAAAAAAAAAAAAAAAAAA' });
     expect(res.status).toBe(400);
     expect(res.headers.location).toBeUndefined();
@@ -155,19 +193,26 @@ describe('createOAuthCallbackHandler — issue #214 round-trip', () => {
     const codec = new OAuthStateCodec(SECRET, { ttlSeconds: 1 });
     // Encode with a clock far in the past so it is already expired at decode (now).
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'x',
       clientRedirectUri: 'http://localhost:1/cb',
       clientId: TEST_CLIENT_ID,
       now: 1_000_000_000_000,
     });
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({ code: 'c', state: token });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
+      .query({ code: 'c', state: token });
     expect(res.status).toBe(400);
     expect(res.headers.location).toBeUndefined();
   });
 
   it('returns 400 when no state is provided at all', async () => {
     const codec = new OAuthStateCodec(SECRET);
-    const res = await request(buildApp(codec)).get('/oauth/callback').query({ code: 'c' });
+    const res = await request(buildApp(codec))
+      .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
+      .query({ code: 'c' });
     expect(res.status).toBe(400);
   });
 });
@@ -185,17 +230,19 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     const store = buildStore();
     const registered = await store.registerClient({ redirect_uris: ['https://app.example.com/cb'] });
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'abc',
       clientRedirectUri: 'https://app.example.com/cb',
       clientId: registered.client_id,
     });
     const res = await request(buildAppWithStore(codec, store))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ code: 'CODE1', state: token });
     expect(res.status).toBe(302);
     const u = new URL(res.headers.location as string);
     expect(u.origin + u.pathname).toBe('https://app.example.com/cb');
-    expect(u.searchParams.get('code')).toBe('CODE1');
+    expect(codec.authorizationCodes.decode(u.searchParams.get('code')!, registered.client_id)).toBe('CODE1');
   });
 
   it('returns 400 (code NOT leaked) when redirect_uri is NOT registered for the client_id', async () => {
@@ -204,12 +251,14 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     const registered = await store.registerClient({ redirect_uris: ['https://app.example.com/cb'] });
     // The attacker reuses a victim client_id but substitutes their own redirect_uri.
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'abc',
       clientRedirectUri: 'https://attacker.example/cb',
       clientId: registered.client_id,
     });
     const res = await request(buildAppWithStore(codec, store))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ code: 'STOLEN', state: token });
     expect(res.status).toBe(400);
     // No redirect at all → the authorization code is never delivered anywhere.
@@ -222,12 +271,14 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     const codec = new OAuthStateCodec(SECRET);
     const store = buildStore();
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'abc',
       clientRedirectUri: 'https://app.example.com/cb',
       clientId: 'arc1-bogus.AAAAAAAAAAAAAAAAAAAAAA',
     });
     const res = await request(buildAppWithStore(codec, store))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ code: 'CODE1', state: token });
     expect(res.status).toBe(400);
     expect(res.headers.location).toBeUndefined();
@@ -238,12 +289,14 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     const store = buildStore();
     const registered = await store.registerClient({ redirect_uris: ['https://app.example.com/cb'] });
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'abc',
       clientRedirectUri: 'https://attacker.example/cb',
       clientId: registered.client_id,
     });
     const res = await request(buildAppWithStore(codec, store))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ error: 'access_denied', error_description: 'denied', state: token });
     expect(res.status).toBe(400);
     expect(res.headers.location).toBeUndefined();
@@ -261,18 +314,25 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     const codec = new OAuthStateCodec(SECRET);
     const store = buildStore();
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'abc',
       clientRedirectUri: 'https://global.consent.azure-apim.net/redirect/contoso',
       clientId: DEFAULT_CLIENT_ID,
     });
     const res = await request(buildAppWithStore(codec, store))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ code: 'CODE1', state: token });
     expect(res.status).toBe(302);
     expect((res.headers.location as string).startsWith('https://global.consent.azure-apim.net/redirect/contoso')).toBe(
       true,
     );
-    expect(new URL(res.headers.location as string).searchParams.get('code')).toBe('CODE1');
+    expect(
+      codec.authorizationCodes.decode(
+        new URL(res.headers.location as string).searchParams.get('code')!,
+        DEFAULT_CLIENT_ID,
+      ),
+    ).toBe('CODE1');
   });
 
   it('returns 400 (code NOT leaked) for the default client when redirect_uri is not allowlisted', async () => {
@@ -282,12 +342,14 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     // default client must not receive the victim's code, even though ensureRedirectUri
     // would once have auto-trusted it.
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'abc',
       clientRedirectUri: 'https://attacker.example/cb',
       clientId: DEFAULT_CLIENT_ID,
     });
     const res = await request(buildAppWithStore(codec, store))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ code: 'STOLEN', state: token });
     expect(res.status).toBe(400);
     expect(res.headers.location).toBeUndefined();
@@ -301,12 +363,14 @@ describe('createOAuthCallbackHandler — client-binding validation (auth-code in
     const codec = new OAuthStateCodec(SECRET);
     const store = buildStore();
     const token = codec.encode({
+      browserBinding: TEST_BROWSER_BINDING,
       clientState: 'abc',
       clientRedirectUri: 'http://localhost:x@evil.com/cb',
       clientId: DEFAULT_CLIENT_ID,
     });
     const res = await request(buildAppWithStore(codec, store))
       .get('/oauth/callback')
+      .set('Cookie', TEST_BROWSER_COOKIE)
       .query({ code: 'STOLEN', state: token });
     expect(res.status).toBe(400);
     expect(res.headers.location).toBeUndefined();

@@ -131,6 +131,7 @@ export const CLI_CONFIG_OPTION_SPECS: readonly CliConfigOptionSpec[] = [
   { name: 'oidc-scopes', valueName: 'scopes', description: 'OIDC scopes' },
   { name: 'xsuaa-auth', valueName: 'boolean', description: 'Enable XSUAA MCP authentication (true/false)' },
   { name: 'allow-http-no-auth', valueName: 'boolean', description: 'Allow unauthenticated HTTP MCP (true/false)' },
+  { name: 'oauth-dcr-enabled', valueName: 'boolean', description: 'Allow new OAuth client registrations' },
   { name: 'oauth-dcr-ttl-seconds', valueName: 'seconds', description: 'OAuth DCR client lifetime' },
   { name: 'dcr-signing-secret', valueName: 'secret', description: 'OAuth DCR signing secret' },
   { name: 'btp-service-key', valueName: 'json', description: 'BTP ABAP service-key JSON' },
@@ -792,6 +793,7 @@ export function resolveConfig(args: string[]): { config: ServerConfig; sources: 
     sources.oidcScopes = 'default';
   }
   config.xsuaaAuth = resolveBool('xsuaa-auth', 'SAP_XSUAA_AUTH', false, 'xsuaaAuth');
+  config.oauthDcrEnabled = resolveBool('oauth-dcr-enabled', 'ARC1_OAUTH_DCR_ENABLED', true, 'oauthDcrEnabled');
   config.allowHttpNoAuth = resolveBool('allow-http-no-auth', 'ARC1_ALLOW_HTTP_NO_AUTH', false, 'allowHttpNoAuth');
 
   // OAuth DCR client_id lifetime. Default: 0 = never expire (no per-client

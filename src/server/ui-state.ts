@@ -220,6 +220,7 @@ export function summarizeAuthConfig(config: ServerConfig): Record<string, unknow
     },
     xsuaa: {
       enabled: config.xsuaaAuth,
+      dcrEnabled: config.oauthDcrEnabled,
       dcrTtlSeconds: config.oauthDcrTtlSeconds,
       dcrSigningSecret: { configured: !!config.dcrSigningSecret },
     },

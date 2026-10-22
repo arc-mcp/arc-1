@@ -482,6 +482,7 @@ export async function startHttpServer(
       clientIdPrefix: 'arc1-',
       dcrKdfLabel: 'arc1-dcr/v1',
       stateKdfLabel: 'arc1-oauth-state/v1',
+      dcrEnabled: config.oauthDcrEnabled,
       dcrTtlSeconds: config.oauthDcrTtlSeconds,
       dcrSigningSecret: config.dcrSigningSecret,
       callbackUrl: oauthCallbackUrl,
@@ -727,7 +728,7 @@ export async function startHttpServer(
         scopes_supported: scopesSupported,
         revocation_endpoint: `${fullBase}/revoke`,
         revocation_endpoint_auth_methods_supported: ['client_secret_post'],
-        registration_endpoint: `${fullBase}/register`,
+        ...(config.oauthDcrEnabled ? { registration_endpoint: `${fullBase}/register` } : {}),
       };
       const customResourceMetadata = {
         resource: `${fullBase}/mcp`,

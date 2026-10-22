@@ -117,6 +117,8 @@ export interface ServerConfig {
    * Positive values opt into expiry, clamped to `[60s, 90d]`. Only consulted
    * when XSUAA OAuth proxy mode is active. */
   oauthDcrTtlSeconds: number;
+  /** Allow new dynamic OAuth client registrations. Existing clients still require consent. */
+  oauthDcrEnabled: boolean;
 
   /**
    * Optional dedicated secret for HMAC-signing DCR `client_id`s. When set,
@@ -300,6 +302,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   xsuaaAuth: false,
   allowHttpNoAuth: false,
   oidcDiscovery: true,
+  oauthDcrEnabled: true,
   oauthDcrTtlSeconds: 0, // 0 = never expire; positive opts into expiry (clamped 60s..90d) — see field JSDoc
   btpOAuthCallbackPort: 0,
   multiTargetEndpoints: false,
