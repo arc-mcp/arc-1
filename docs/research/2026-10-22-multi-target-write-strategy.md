@@ -3,12 +3,19 @@
 **Recommendation:** add a narrow object-development capability to pinned Principal Propagation
 routes in one ARC-1 deployment. Keep `/multi/mcp` and shared Basic targets mutation-free. Require
 an exact write grant for the selected target, enforce both instance and destination policy, and
-ship a configuration validator with the capability. Use PR #906 as implementation material;
+ship effective-policy diagnostics with the capability. Use PR #906 as implementation material;
 rework its authorization and operation surface against current main before enabling writes.
 
 This covers multiple SAP targets in one BTP CF application. Multiple CF replicas and SaaS tenants
 are separate concerns. It covers repository development, not business-data updates or ABAP/RFC
 execution. These recommendations do not change the accepted ADRs or enable runtime writes.
+
+**Implementation entry point:** the [dated plan](../plans/2026-10-22-multi-target-pinned-writes.md)
+and [proposed ADR-0010](../adr/0010-pinned-pp-multi-target-writes.md) turn this assessment into a
+staged contract. The [Claude Opus 5.5 max review and dispositions](multi-target-pinned-writes/claude-plan-review.md)
+add concrete dispatcher/retry, package-enforcement, diagnostics and revocation requirements.
+The first beta is now narrowed to `$TMP` only; broader package examples below describe the
+composition model for subsequent qualification, not extra supported beta configuration.
 
 ## Agreed configuration direction
 
@@ -32,6 +39,19 @@ release **1.7.0**. The local checkout matched that revision.
 [PR #906](https://github.com/arc-mcp/arc-1/pull/906) was open and unmerged at head
 `9250a24f887540450e091f29294cf0572dffd472`. Its merge base was `1f00c7acae59f9f25027956ee472ae1cac13a9fe`;
 main had 111 subsequent commits and the PR had 13. GitHub reported it non-mergeable at inspection.
+
+The implementation-plan baseline was subsequently refreshed to
+[`565e6c68db0de3355da94dd5338cf83289fe5e06`](https://github.com/arc-mcp/arc-1/commit/565e6c68db0de3355da94dd5338cf83289fe5e06).
+The six intervening commits include package-quality preflight error handling and legacy capability
+documentation; none changes the multi-target policy/authentication boundary. The branch was rebased
+onto that revision and all 307 focused baseline tests were rerun successfully. #906 remained at the
+same unmerged head. Initial observations and test counts below retain their original baseline.
+
+Before publishing, main advanced to
+[`d3c0191ced917da7ff77258dc9368ab4d0751be3`](https://github.com/arc-mcp/arc-1/commit/d3c0191ced917da7ff77258dc9368ab4d0751be3).
+Its #1074 change caps returned TABLE_CONTENTS rows, with corresponding tests/docs; inspection found
+no change to this plan's write/authentication boundary. The final branch uses that base. The
+independent review and 307-test rerun remain explicitly tied to `565e6c68`, not this later commit.
 
 | Area | Current main | Implication |
 |---|---|---|
@@ -247,8 +267,9 @@ token/header limits and old-token behavior in the live XSUAA spike.
 ### Generate a small operator setup
 
 Keep `.mtaext` as the instance source, Destination Service as the connection/target-policy source,
-and XSUAA as the grant source. A setup generator should produce these artifacts from a short
-questionnaire; it must not create a fourth runtime policy store.
+and XSUAA as the grant source. A future setup generator could produce these artifacts from a short
+questionnaire; it must not create a fourth runtime policy store and is not a beta prerequisite.
+Use existing validation, bounded admin diagnostics and clear examples first.
 
 The following is a **proposed contract, not working configuration on 1.7.0**. The global switches
 already exist, but current main does not support these write destination properties or the proposed
@@ -287,21 +308,22 @@ Effective result:
   /multi/mcp     read-only for every user
 ```
 
-Require an explicit destination package list. Reject empty/malformed lists and standalone `*` in
-the initial write profile; local `$TMP` is suitable for disposable test objects, while an exact
-team package is the subsequent normal setup. Do not silently inherit `Z*` or an unrestricted
-empty array. For transportable packages, add a reviewed target transport list: absence means no
+Require an explicit destination package list. The reviewed beta accepts only `$TMP`; other
+packages and destination patterns are deferred. Do not silently inherit `Z*` or an unrestricted
+empty array. For later transportable packages, add a reviewed target transport list: absence means no
 transport-bound saves, even though today's single-target empty transport list means unrestricted.
 
 In multi-target mode, keep Basic writes, aggregate writes, plugins and alternate auth paths
 structurally unavailable. This does not impose PP on existing single-target writes. The recommended
 IAM design requires target-filtered access for writable multi-target destinations. Configuration
-errors should identify the field and reason without echoing untrusted values or secrets. With
-`SAP_ALLOW_WRITES=false`, valid future PP write policy may remain readable and visibly disabled;
-invalid policy must fail closed.
+errors should identify the field and reason without echoing untrusted values or secrets. In
+target-filtered mode with `SAP_ALLOW_WRITES=false`, valid PP write policy may remain readable and
+visibly disabled. Standard mode keeps write-related destinations quarantined without failing the
+whole app. Invalid policy must fail closed.
 
-The validator should show requested and effective capabilities, packages, transport rules, route,
-identity mode, backend repository grouping, policy revision, and the exact denying layer. An
+Diagnostics should show requested/effective capability flags, package/transport rule counts, route,
+identity mode, policy digest, and the denying layer within the existing catalog size budget. Keep
+complete rule lists in their configuration sources rather than duplicating them for all targets. An
 administrator preview of destination policy is not proof of a user's SAP permissions: user-level
 checks require that user's verified token and, where appropriate, bounded PP probes. Diagnostic
 tools must never assign roles, enable writes or retry with a technical identity automatically.
@@ -385,6 +407,10 @@ defines resource indicators, audience checks and scope challenges. Its
 [security guidance](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices#scope-minimization)
 recommends minimal initial scopes and targeted elevation. Those are design inputs; they do not
 prove the installed ARC-1 SDK or each client implements a usable write step-up flow.
+Role changes require sign-out, fresh authorization and verified permissions, not merely token
+refresh: the current live record shows refreshed sessions can retain removed grants. Signing out
+also does not revoke every outstanding token/session. Follow the plan's explicit containment and
+token-lifetime review instead of promising revocation at the next access-token expiry.
 
 Prototype a real HTTP `403 insufficient_scope` challenge before SAP mutation preparation. Today's
 MCP tool error alone is not that flow. If supported clients cannot elevate reliably, qualify a
@@ -420,7 +446,8 @@ stale source; package escape; explicit and lock-derived transport mismatch; expa
 PP failure without fallback; cancellation; ambiguous response; and old client tool catalogs.
 
 Roll out with flags off, prepare exact grants, enable one non-production PP target/package, inspect
-effective policy, restart all serving instances and refresh client tokens/catalogs. Preserve current
+effective policy, restart all serving instances, sign out, authorize afresh and verify permissions
+and client tool catalogs. Preserve current
 destination drift refusal. Do not silently repoint a writable public ID to a different backend:
 require reviewed re-grant/re-enrollment. An emergency flag takes effect only after every instance
 applies it; drain/unroute for immediate containment, and expect in-flight work may complete. Binary
@@ -437,7 +464,8 @@ reported lint-staged's newer engine requirement, while these selected tests comp
 These are current-main local tests, not tests of #906's branch or a live writable PP deployment.
 No SAP writes, IAM changes, destination edits or deployments were performed for this research.
 The strict documentation-site build passed, all checked local/main-branch file links in the
-assessment and roadmap resolved locally, and the final origin fetch still matched the baseline.
+assessment and roadmap resolved locally. The later baseline refresh and independent review are
+recorded above; the implementation plan includes the resulting corrections and remaining live gates.
 
 Roadmap: add **FEAT-93** for the focused pinned PP object-write outcome and link this assessment
 and #906. Leave **FEAT-59** scoped to embedding/multitenancy. **OPS-06** session reuse,
