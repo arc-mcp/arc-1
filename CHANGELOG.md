@@ -5,6 +5,26 @@ For what each release *means* (impact, upgrade actions, config and tool-surface 
 annotated [release notes](https://docs.arc-1-mcp.com/release-notes/)
 ([source](docs_page/release-notes.md)).
 
+## [1.8.0](https://github.com/arc-mcp/arc-1/compare/v1.7.0...v1.8.0) (2026-10-22)
+
+
+### Features
+
+* add bounded direct package browsing ([#1081](https://github.com/arc-mcp/arc-1/issues/1081)) ([815e3dd](https://github.com/arc-mcp/arc-1/commit/815e3ddb340f4ceb289e38fa5d4229ed15ca55b7))
+* add SAP ADT MCP navigation and Eclipse links ([#1025](https://github.com/arc-mcp/arc-1/issues/1025)) ([2d097d3](https://github.com/arc-mcp/arc-1/commit/2d097d31625a187173d34f3f57647fbd0d8adb87))
+* enable scoped pinned PP multi-target writes ([#1080](https://github.com/arc-mcp/arc-1/issues/1080)) ([7e63cc1](https://github.com/arc-mcp/arc-1/commit/7e63cc1b198c736307b0210c09d4d27dcedb0faa))
+* support the table change logging flag ([#1087](https://github.com/arc-mcp/arc-1/issues/1087)) ([de35a02](https://github.com/arc-mcp/arc-1/commit/de35a028d68395973637f358734939cb5bd6abf9))
+
+
+### Bug Fixes
+
+* avoid Gateway HTML parser whitespace backtracking ([#1084](https://github.com/arc-mcp/arc-1/issues/1084)) ([7a94011](https://github.com/arc-mcp/arc-1/commit/7a9401193a31c3c25daa16d255cd21f8c3f9f0e0))
+* enforce TABLE_CONTENTS returned row limit ([#1074](https://github.com/arc-mcp/arc-1/issues/1074)) ([d3c0191](https://github.com/arc-mcp/arc-1/commit/d3c0191ced917da7ff77258dc9368ab4d0751be3))
+* **oauth:** integrate consent protection from xsuaa-auth 1.1.1 ([#1088](https://github.com/arc-mcp/arc-1/issues/1088)) ([671c171](https://github.com/arc-mcp/arc-1/commit/671c171c754cae2867b98021338d4b0d9128e2b4))
+* preserve uncertainty in package quality-check preflight errors ([#1076](https://github.com/arc-mcp/arc-1/issues/1076)) ([e118fe7](https://github.com/arc-mcp/arc-1/commit/e118fe7ca3a2f0fcac3466a6cf42f5600884ce97))
+* retain compiled public modules in CF uploads ([#1082](https://github.com/arc-mcp/arc-1/issues/1082)) ([35c065e](https://github.com/arc-mcp/arc-1/commit/35c065eacb421e328791135aba912fc867105dc9))
+* reuse bounded single-target Cloud Connector PP sessions ([#1086](https://github.com/arc-mcp/arc-1/issues/1086)) ([8562ffd](https://github.com/arc-mcp/arc-1/commit/8562ffdb5fba98bfc8b76c2f2c513974df98f459))
+
 ## [1.7.0](https://github.com/arc-mcp/arc-1/compare/v1.6.0...v1.7.0) (2026-10-21)
 
 
