@@ -36,6 +36,22 @@ and technical name, vendor `application/vnd.sap.as+xml` body with `TV_NODEKEY=00
 Expand only IDs returned by that root. IDs differ by package and release. These are
 read-only POSTs; retain CSRF handling. Never call the unscoped root.
 
+A second control expanded the returned class ID through a fresh `AdtClient` with no
+shared cookies or explicit stateful session. Both systems again returned HTTP 200 and
+55/75 objects. This supports cross-client use for the tested controls, not a permanent
+node-ID cache or a 740 guarantee. Sanitized projections of the native root/expansion:
+
+```xml
+<!-- 750 SABP_UNIT_CORE root; other fields/nodes omitted -->
+<SEU_ADT_OBJECT_TYPE_INFO><OBJECT_TYPE>CLAS/OC</OBJECT_TYPE><NODE_ID>000033</NODE_ID></SEU_ADT_OBJECT_TYPE_INFO>
+<!-- 758 SABP_UNIT_CORE_RUNTIME root; other fields/nodes omitted -->
+<SEU_ADT_OBJECT_TYPE_INFO><OBJECT_TYPE>CLAS/OC</OBJECT_TYPE><NODE_ID>000035</NODE_ID></SEU_ADT_OBJECT_TYPE_INFO>
+```
+
+Expanded 750 rows had `OBJECT_TYPE`, `OBJECT_NAME`, `TECH_NAME`, `OBJECT_URI`,
+`OBJECT_VIT_URI`, `EXPANDABLE`; 758 additionally supplied `DESCRIPTION` and other
+metadata. These projections document observed wire fields; they are not full test fixtures.
+
 ## Proposed small implementation
 
 1. Agree an explicit direct-contents mode on `SAPRead type=DEVC`. Keep indexed search
