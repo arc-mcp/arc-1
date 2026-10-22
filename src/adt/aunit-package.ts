@@ -55,7 +55,7 @@ export async function resolveAunitPackageSelection(
   } catch (error) {
     if (error instanceof AdtApiError && error.statusCode === 404)
       throw new Error(
-        `ABAP Unit package ${normalizedPackage} could not be verified: it may be missing/inaccessible, or the package metadata API may be unavailable. No run was started.`,
+        `ABAP Unit package ${normalizedPackage} could not be verified: it may be missing/inaccessible, or the package metadata API may be unavailable.`,
       );
     throw error;
   }

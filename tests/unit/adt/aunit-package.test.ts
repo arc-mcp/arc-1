@@ -25,9 +25,15 @@ function httpFor(xml: string): AdtHttpClient {
 describe('AUnit package selection', () => {
   it('refuses ambiguous package metadata 404s without searching', async () => {
     const get = vi.fn().mockRejectedValue(new AdtApiError('No suitable resource found', 404, '/packages/SABP_UNIT'));
-    await expect(
-      resolveAunitPackageSelection({ get } as unknown as AdtHttpClient, unrestrictedSafetyConfig(), 'SABP_UNIT', true),
-    ).rejects.toThrow('package metadata API may be unavailable');
+    const selection = resolveAunitPackageSelection(
+      { get } as unknown as AdtHttpClient,
+      unrestrictedSafetyConfig(),
+      'SABP_UNIT',
+      true,
+    );
+    await expect(selection).rejects.toThrow('package metadata API may be unavailable');
+    // Selection is also rechecked after execution, so its error cannot claim no run occurred.
+    await expect(selection).rejects.not.toThrow('No run was started');
     expect(get).toHaveBeenCalledTimes(1);
   });
 
