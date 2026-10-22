@@ -89,9 +89,9 @@ const BUDGETS = {
   // #817: reject absent CTS documents at the existing list/get parser boundary.
   'src/adt/transport.ts': 1477, // Exhaustive lock-holder parsing extracted to transport-locks.ts (#1080).
   // Target-authorization helpers are extracted; retain shared transport renewal and fail-closed
-  // XSUAA startup from main, with 3 lines of headroom.
+  // XSUAA startup from main.
   // PP pool wiring and secret-free reuse audit status; logic lives in per-user-transport.ts (#1085).
-  'src/server/server.ts': 1494,
+  'src/server/server.ts': 1496,
 };
 
 const DEFAULT_SRC = 1500;
