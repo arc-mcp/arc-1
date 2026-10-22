@@ -1,7 +1,7 @@
 # Implementation plan: pinned PP writes in multi-target mode
 
-**Status:** Implementation and qualification in progress in [PR #1080](https://github.com/arc-mcp/arc-1/pull/1080).
-**Baseline:** `origin/main` `815e3ddb`, incorporated at `11092547`, 22 October 2026.
+**Status:** Implemented, qualified and independently reviewed in [PR #1080](https://github.com/arc-mcp/arc-1/pull/1080).
+**Baseline:** `origin/main` `815e3ddb` incorporated at `11092547`; latest-main `06517021` (documentation only) incorporated at `da44218c`, 22 October 2026.
 **Release objective:** Deliver all scoped features below together. No separate beta release.
 Local-only stages are internal qualification milestones and are not the end goal of this PR.
 
@@ -10,7 +10,7 @@ This is the implementation contract. See the [alternatives research](../research
 [ADR-0010](../adr/0010-pinned-pp-multi-target-writes.md), and
 [Claude plan review and dispositions](../research/multi-target-pinned-writes/claude-plan-review.md).
 The owner explicitly authorized implementation and isolated testing after the plan-only draft.
-ADR-0006/0007/0008 continue to constrain behavior until the new ADR and acceptance gates are satisfied.
+Accepted ADR-0010 qualifies ADR-0006/0007/0008 only for the complete scoped surface below.
 
 ## 1. Fixed decisions
 
@@ -200,6 +200,8 @@ build is not an operator usability test; walk the public recipe and record unres
 
 ## 9. Review status
 
-The completed Claude Opus 5.5 max review covered the earlier plan only. Its substantive findings
-remain requirements above. It is not approval of this implementation. Final implementation review,
-live MCP acceptance and final ADR status are pending until the evidence is recorded in this PR.
+The [implementation review and dispositions](../research/multi-target-pinned-writes/claude-implementation-review.md)
+record the broad review, live-driven follow-up and final review. All scoped features shipped together
+in this PR; broader mutations remain FEAT-93, not an unfinished beta stage. Live and automated checks
+and their precise limitations are recorded in the linked qualification evidence. No merge/release
+is implied by completion of implementation and review.

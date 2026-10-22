@@ -15,7 +15,7 @@ gates was identified. Findings were addressed in `ef2b14c7` and `293cbaf2` as fo
 | No-replay client setting altered ordinary reads | Required scoped operations carry per-request noReplay. Ordinary reads retain legacy retries; tested with a transient backend failure. |
 | Definitive SAP rejections reported unknown | 400/401/403/404/409/412/415/422/423 report rejected phase; created-stub state remains explicit. Network/429/5xx stay unknown. No automatic replay. |
 | Short cleanup budget and overclaimed closure | Independent 30-second cleanup budget, actual close acknowledgement, and verified saved hash preserved on cleanup errors. Legacy cleanup behavior retained. Fault coverage is controlled, not live failure injection. |
-| Ambiguous CTS lock evidence | Exhaustive holder parsing refuses conflicting parents/orphan tasks; every task must independently resolve to the allowed canonical parent. |
+| Ambiguous CTS lock evidence | Exhaustive holder parsing refuses conflicting parents/orphan tasks; every reported task must appear exactly once in the independently verified canonical parent tree (the final refinement avoids redundant task lookups). |
 | Missing adjacent low-level operation checks | Explicit Create and Update guards immediately before metadata POST and source PUT. |
 | Stale guides and missing setup example | Operator pages aligned; fictional MTA chain/destination parser-tested and MBT-validated; whole-owner activation, IAM setup, policy precedence and recovery documented. Final ADR acceptance follows final review. |
 | Role-template scope reach | Guide explicitly requires enforced multi-target mode before assignment and warns that functional scopes are application-wide in other modes/apps. |
@@ -45,9 +45,25 @@ N5 (remaining wording), and the Cockpit role description. The follow-up fixes al
 selection retains status D, historical lock tasks use exact parent-tree membership without extra
 lookups, document order is preserved, refusal codes match states, positive/negative server-ceiling
 and PRM tests were added, and remaining operator/model/Cockpit wording was corrected.
-Full suite after these changes: 10,054 passing tests. Final narrow review and live retest remain pending.
+Full suite at `0632606a`: 10,054 passing tests. The narrow review accepted all security/correctness fixes; the live retest passed (details below).
 Live retest and limitations:
 [qualification record](../2026-10-22-multi-target-write-qualification.md).
+
+## Narrow acceptance review — 0632606a
+
+Claude Code Opus 5.5 max completed a 48-turn, 10.8-minute read-only review of the last fixes.
+It accepted N1–N4 and S6 with **no new correctness or security blocker**, conditional on the live
+run and explicit governance/evidence qualifications. The exact 0632606a artifact then passed all
+six local/CTS owner lifecycles and the independent server CTS ceiling test; XSUAA's live role
+metadata confirmed the new warning. A bounded read-only search of five existing requests found
+no released-task example; that shape remains controlled-wire coverage, explicitly accepted as a
+residual limit in ADR-0010.
+
+Nonblocking suggestions were also applied: unchanged/preflight failures now say no create/save
+was sent, failure-code assertions and a released-task CORRNR case were added, selected-task
+assertions name the exact rejection, method-source schema text includes METHOD…ENDMETHOD blocks,
+and OAuth metadata/README wording matches the implementation. These final message/schema-text
+and test/documentation changes do not alter the live-qualified policy or mutation sequence.
 
 ## Original reviewer reports
 
@@ -374,3 +390,65 @@ This is a go once:
 - the governance update lands, including ADR-0005 and R23's severity line.
 
 N1, N3 and N4 are a few lines each and fit in one commit. N2, N5 and the S6 descriptor can be fast follow-ups.
+
+
+### Narrow acceptance review
+
+**Verdict:** N1, N2, N3, N4 and S6 are all fixed at `0632606a`, and so is the other wording you changed. I found no new correctness or security blocker. I accept this fix; governance can go ahead once your 0632606a live run passes.
+
+All paths are relative to the `review-0632606a` snapshot. I didn't run any tests or make any live calls; the test and live results are as you reported them.
+
+| Finding | Status | Key lines |
+|---|---|---|
+| N1 released historical tasks | Fixed in code with a unit test; no live probe recorded yet | `pinned-write-policy.ts:71`, `:91-95`, `:136-143`, `:161` |
+| N2 lock display order | Fixed | `transport-locks.ts:8`, `:36`, `:46`; new `transport-locks.test.ts` |
+| N3 refusal codes | Fixed | `pinned.ts:35-43` |
+| N4 server ceiling test | Fixed | `pinned-writes.test.ts:242`, `:366-377` |
+| S6 Cockpit description | Fixed | `xs-security.json:121` |
+| Other wording | Fixed | see below |
+
+**N1**
+- **Task the caller selects:** it still has to be modifiable (status D), checked on the task lookup (`:71`) and again in the parent's task list (`:91-95`).
+- **Tasks from lock evidence:** each must appear exactly once in the parent's task list, which has already been verified. The parent must be a modifiable Workbench request with at most 256 tasks, allowed by both the server and destination lists (`:84-96`). Task status is ignored and no extra lookups are made (`:141-143`).
+- **Lock request number:** `lockedTransport` must now equal the parent's ID exactly (`:137`), which is stricter than before. The `corrNr` from the fresh lock only has to belong to the parent (`:161`).
+- **758 returns the full task list:** in the live `task-lookup.xml`, the request and the task sit side by side and the request lists no tasks. So a selected task always falls back to loading the parent's own full task list. Lock tasks are never checked against a partial list.
+- **Regression test:** the `released-task` case (`pinned-writes.test.ts:322-352`) would have failed at 293cbaf2, because the old per-task lookup required status D.
+
+**N2:** `.reverse()` restores document order, and `!parents.has` keeps the first holder's owner. This matches main's parser (unchanged at `a68537d5`, `src/adt/transport.ts:1338-1368`): the first `REQ_HEADER` wins, and the legacy `HEADER` is used only when there is none. Without the fix, the new test picks `A4HK900003`, so it really guards the regression. Conflicting holders are still flagged (`:53`) and refused (`pinned-write-policy.ts:115-116`).
+
+**N3, N4, S6**
+- **N3:** the mapping is exactly what I recommended. `created-source-rejected` and every `*-unknown` state stay `INCOMPLETE`.
+- **N4:** the destination allows the request in both cases. When the server list excludes it, the write is refused with 0 saves; when the server list is empty, it saves once (`safety.ts:315`).
+- **Other new tests:** the PRM test matches `http.ts:786-789`. All 7 hidden-input negative tests now assert `MULTI_TARGET_OPERATION_FORBIDDEN` (`multi-target-writes.test.ts:173-201`).
+- **S6:** the descriptor test checks only scope and attribute references (`xsuaa-target-descriptor.test.ts:68-71`), so the new description can't break it.
+
+**Other wording:** every line I listed is fixed:
+- `btp-cloud-foundry-deployment.md:7-9`
+- `btp-administration.md:418`
+- `arc-1-vs-sap-abap-mcp-server.md:103`
+- `README.md:50-54`
+- `examples/btp/README.md:10`
+- R23's severity line and position (`docs/security-model.md:285-287`)
+
+The changed instruction text is used only on the aggregate route; writable pinned routes get their own text (`multi-target-server.ts:62` vs `:81-88`).
+
+**Why there's no new blocker:** both relaxations only loosen the checks on lock evidence. The parent request must still be a modifiable Workbench request allowed by both lists. The task the caller selects must still be modifiable, and create and save still record into the parent (`pinned.ts:134`, `:197`). These cases all still refuse:
+- a request outside the allowlists;
+- a parent that isn't a Workbench request, or is released;
+- conflicting or orphan lock holders;
+- a task that is missing from the parent's list or listed twice.
+
+**Non-blocking follow-ups**
+1. **Misleading message (`pinned.ts:41-43`):** state `unchanged` with an error that isn't an `AdtApiError` still pairs `REFUSED` with "SAP did not confirm the complete operation… inspect inactive source". Examples are the plain `Error` thrown for fatal CTS messages (`transport.ts:1239`), network errors and cancellation. It's safe, just misleading. Use a neutral message whenever the state is `unchanged`, for example "No create or source save was sent."
+2. **Test gaps:**
+   - No test asserts the `error` code. Add it to the existing checks at `pinned-writes.test.ts:257` and `:315`.
+   - `toThrow('modifiable')` at `:364` would also match the parent-request error. Assert "The selected task must be modifiable" instead.
+   - The mocked lock always returns the request ID (`:87`), so a task ID as `corrNr` at `pinned-write-policy.ts:161` is never tested.
+3. **Schema text (`multi-target-tools.ts:155`):** "only the existing main method body" doesn't match `spliceMethod`. It also accepts a complete METHOD…ENDMETHOD block, and asks for one when a body-only edit fails (`method-surgery.ts:650-652`, `:693-694`).
+4. **Docs:**
+   - `xsuaa-setup.md:182-183`, `:271` and `:276` say only "eligible" pinned PP routes advertise `write`. The code and your new test advertise it on every pinned route, including unknown ones, when writes and enforced mode are on. That's correct because it doesn't reveal which targets exist, so the docs should say that.
+   - `README.md:230` still calls Multi-System Setup "read-only".
+
+**Before governance**
+- The qualification record has no released-task entry yet. Either run that probe in the 0632606a live run, or record "released-task lock evidence: unit tests only" as a residual limit in ADR-0010, as the N1 disposition.
+- Confirm the XSUAA service update accepts the new role description.

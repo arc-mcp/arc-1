@@ -38,9 +38,11 @@ export function pinnedFailure(
       message:
         error instanceof AdtSafetyError
           ? error.message
-          : state.endsWith('-rejected') || (state === 'unchanged' && error instanceof AdtApiError)
-            ? 'SAP rejected this operation phase. Review the status and current object before continuing.'
-            : 'SAP did not confirm the complete operation. Inspect the object and its inactive source before deciding the next action.',
+          : state === 'unchanged'
+            ? 'No create or source save was sent. Review the reported phase before continuing.'
+            : state.endsWith('-rejected')
+              ? 'SAP rejected this operation phase. Review the status and current object before continuing.'
+              : 'SAP did not confirm the complete operation. Inspect the object and its inactive source before deciding the next action.',
       target: context?.target,
       requestId: context?.requestId,
       retryable: false,

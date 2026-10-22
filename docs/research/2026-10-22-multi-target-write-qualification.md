@@ -1,6 +1,7 @@
 # Pinned PP write qualification — 22 October 2026
 
-This is a live evidence log for PR #1080, not a claim that the implementation is ready.
+This records qualification of the complete scoped feature in PR #1080. Earlier sections are
+chronological observations; the final qualification and residual limits below govern readiness.
 Preimplementation baseline: `11092547`, including `origin/main` `815e3ddb` (#1081).
 The owner requests the complete scoped feature in one PR, with no separate beta release.
 
@@ -63,7 +64,7 @@ cleanup verified. Failed calls are retained as evidence, not counted as successf
    replay or generic “retry the 500” advice.
 5. Document the verified BTP CLI role workflow alongside Cockpit instructions.
 
-## Remaining acceptance
+## Acceptance still outstanding at the protocol-only stage
 
 Runtime tests and the deployed writable MCP artifact must still establish route/grant isolation,
 negative inputs, both package constraints, policy drift, hash conflicts, activation reference
@@ -187,3 +188,58 @@ The disposable destination, role and collection were removed; original applicati
 was restored exactly, original XSUAA descriptor restored, and SSH disabled. The app was returned
 to the independently qualified #1082 droplet `028f0ab6` and is healthy. A private droplet backup was
 made before this round so CF retention cannot prevent restoring that tested read-only baseline.
+
+
+## Final runtime qualification — 0632606a
+
+The final reviewed policy/runtime build was deployed at 16:46 UTC. Latest `origin/main` remains
+06517021 and is incorporated; the only private staging addition is #1082's packaging exclusion fix.
+Six new J/K/L fixtures exercised CLAS/INTF create/main update, CLAS method edit, whole-owner
+activation and independent active-source comparison in both local and transportable packages.
+The journal contains 44 calls: 43 successful operations and one intentional already-active owner
+activation returning unconfirmed. Request A4HK906590 and its verified task A4HK906591 were used;
+task input again canonicalized to the parent for saving. No harness error occurred in this round.
+
+- Disallowed existing request, stale hash and package checks refused writes with unchanged source.
+- Aggregate, Copilot and read-only pinned-target mutation attempts were refused.
+- A verified raw read-only token retained the exact write attribute; reads succeeded, write tools
+  remained hidden, and direct activation was refused.
+- With the destination allowing A4HK906590 but the server allowing only A4HK906522, a valid-hash
+  source change was refused at recording preflight with PINNED_WRITE_REFUSED and unchanged hash.
+  Both writer and read-only tokens still read A4HK906590 through pinned and aggregate routes.
+- Global write-off plus restart hid mutations and refused a direct activation call.
+- The effective XSUAA service metadata contained the new MCPTargetDeveloper description warning
+  about application-wide functional scopes and the required enforced mode.
+
+A bounded, read-only metadata search of five existing modifiable requests found only modifiable
+tasks. It did not qualify a real released historical task. Released-task membership/CORRNR shapes
+remain controlled-wire tests; no unrelated SAP task was released to fabricate the case. One initial
+probe import failed because the long-lived harness cached older module exports; an isolated compiled
+module copy corrected the harness and the metadata search completed. This was not a mutation.
+
+All six objects showed createdBy/changedBy/responsible=MARIAN and the expected real package.
+Deletion and independent GET 404 checks completed for every object and request/task at 16:52 UTC.
+The temporary destination and role/collection were removed and the XSUAA descriptor restored.
+The user environment was restored byte-for-value to its original parsed snapshot (writes false),
+SSH disabled, and the tested 028f0ab6 baseline droplet reassigned. CAPI confirmed the expected
+droplet and a RUNNING instance; public health returned 200. Parsed XSUAA scopes, attributes, role
+templates/collections and OAuth configuration match the original snapshot. The local authorization
+harnesses were closed to discard their in-memory tokens.
+
+After the accepted 0632606a review, only failure-message/schema wording, stronger assertions and
+operator/governance documentation changed. No authorization or mutation sequencing changed.
+The final full suite passes **10,056 tests**; typecheck, build, lint, policy validation, file/schema
+budgets, focused descriptor/example tests and strict documentation build pass. The earlier standard
+MTA and chained write-overlay builds remain valid; their descriptors did not change subsequently.
+Independent review reports and dispositions are preserved in
+[the implementation review](multi-target-pinned-writes/claude-implementation-review.md).
+
+### Accepted evidence limits
+
+Only SAP_BASIS 758 SP02 and one positive PP SAP writer were live-qualified. The second identity
+supplied negative grant/PP-isolation evidence. Released-task history, expanded activation prompts,
+ambiguous metadata and fault/cleanup uncertainty are controlled-wire coverage. Basic/admin-only
+negatives are automated tests. Refresh revocation was not requalified: outstanding tokens/refresh
+sessions may retain removed assignments. Unknown SAP evidence fails closed. These limitations are
+also recorded in accepted ADR-0010 and R23; this is the full scoped feature, without a beta stage,
+not a claim of broader object/action parity or release approval.

@@ -1,9 +1,9 @@
 # ADR 0005 — One SAP System per ARC-1 Instance
 
-**Status:** Accepted; qualified by [ADR-0006](0006-experimental-read-only-multi-target.md)
+**Status:** Accepted; qualified by [ADR-0006](0006-experimental-read-only-multi-target.md) and [ADR-0010](0010-pinned-pp-multi-target-writes.md)
 **Date:** 2026-06-19
 **Supersedes:** N/A
-**Superseded by:** ADR-0006 only for its explicit, default-off, mutation-free BTP multi-target mode
+**Superseded by:** ADR-0006 for default-off BTP multi-target reads; ADR-0010 only for reviewed pinned strict-PP CLAS/INTF writes and whole-owner activation
 
 **Maintenance, 2026-09-15:** Removed retired deployment recommendations. The default single-target
 boundary and ADR-0006 exception remain unchanged.
@@ -17,18 +17,20 @@ reasonable on its face ("I have 10 systems, I don't want 10 servers"), so it kee
 This ADR records the default standing decision to **decline that inside ARC-1**, the arguments for it,
 and the sanctioned alternative. ADR-0006 later proposed one narrow exception: a default-off,
 mutation-free, BTP-only multi-target mode with explicit per-call target checks. This ADR continues to
-govern writable access, the default deployment model, and use cases requiring stronger isolation.
+govern broader writable access, the default deployment model, and use cases requiring stronger
+isolation. ADR-0010 additionally qualifies only its reviewed pinned strict-PP write surface.
 
 ## Decision
 
 **By default, ARC-1 serves exactly one SAP system per instance/process.** It exposes no `system`/`destination`
 selector to the LLM and holds no cross-system routing. For writable access to several systems, deploy
-one ARC-1 instance per target and configure a separate MCP connection for each. The only in-process
-exception is the experimental read-only contract in ADR-0006; it is not permission to add writes or
-an unreviewed selector.
+one ARC-1 instance per target and configure a separate MCP connection for each, or use only the
+scoped pinned strict-PP write contract in ADR-0010. ADR-0006 supplies the default-off read contract.
+These exceptions do not permit broader writes or an unreviewed selector.
 
-For requirements beyond ADR-0006's exact boundary, use separate instances. Adding a writable system
-selector, a new discovery mode, or other cross-system behavior requires a new ADR/security review.
+For requirements beyond ADR-0006 and ADR-0010's exact boundaries, use separate instances. Adding a
+broader writable selector, a new discovery mode, or other cross-system behavior requires a new
+ADR/security review.
 
 ## Why (the arguments)
 

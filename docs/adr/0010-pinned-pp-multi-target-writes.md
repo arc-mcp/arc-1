@@ -1,6 +1,6 @@
 # ADR 0010 — Pinned Principal Propagation writes in multi-target mode
 
-**Status:** Proposed; implementation and qualification in progress in PR #1080.
+**Status:** Accepted — scoped, default-off; implemented and qualified in PR #1080.
 **Date:** 22 October 2026.
 **Implementation contract:** [Pinned PP writes plan](../plans/2026-10-22-multi-target-pinned-writes.md).
 **Evidence:** [Current-main research](../research/2026-10-22-multi-target-write-strategy.md).
@@ -13,7 +13,7 @@ pinned writes but adds duplicate global switches, lacks exact write grants and e
 single-target action surface. Operators need fewer configuration concepts and an enforceable
 server ceiling before multi-target development can be enabled.
 
-## Proposed decision
+## Decision
 
 Permit a narrow, explicitly qualified object-write capability on existing pinned PP routes only.
 Reuse `SAP_ALLOW_WRITES` and require destination opt-in/package policy, target-filtered access,
@@ -53,13 +53,20 @@ per-request isolation, configuration drift rejection and existing shared process
 - Operators need a tested minimal setup, effective-policy explanations and explicit restart/rollback
   steps. Configuration clarity is a release gate, not deferred documentation work.
 
-## Acceptance before changing the boundary
+## Acceptance evidence
 
-Keep this ADR proposed until the plan's policy, negative tests, live XSUAA/client/PP/SAP evidence
-and independent implementation security review pass for the advertised scope. Allocate a new
-security-model risk entry at implementation time; do not reuse an occupied identifier from #906.
-Update ADR-0006/0007/0008 qualifications and AGENTS only when this decision is accepted. Merging
-this design document alone must not be represented as enabling writes or granting deployment approval.
+The owner authorized the scoped implementation and isolated testing. The
+[live record](../research/2026-10-22-multi-target-write-qualification.md) and
+[independent Claude implementation review with dispositions](../research/multi-target-pinned-writes/claude-implementation-review.md)
+record acceptance of this scope, required checks, real PP author identity, negative authorization
+boundaries and cleanup. R23 records residual risks. Controlled fault/confirmation tests are distinct
+from live evidence; only SAP_BASIS 758 SP02 and one positive SAP writer were qualified. Unknown
+backend shapes fail closed. Released-task history and expanded activation prompts are controlled-wire
+evidence; the bounded live search found no released-task case. Basic/admin-only negatives are unit
+coverage, the second identity supplied negative isolation evidence, and refresh revocation was not
+requalified. These residual limits are explicit acceptance conditions, not claims of broader coverage.
+This decision authorizes neither broader mutation parity nor a release
+or merge outside the repository's ordinary approval process.
 
 ## Alternatives
 

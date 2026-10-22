@@ -1,5 +1,12 @@
 # Secure multi target writes and configuration strategy
 
+> Historical design research. The implemented contract is now
+> [ADR-0010](../adr/0010-pinned-pp-multi-target-writes.md), the
+> [implementation plan](../plans/2026-10-22-multi-target-pinned-writes.md), and
+> [qualification evidence](2026-10-22-multi-target-write-qualification.md).
+> Earlier plan-only/proposed statements below describe the research stage.
+
+
 **Recommendation:** add a narrow object-development capability to pinned Principal Propagation
 routes in one ARC-1 deployment. Keep `/multi/mcp` and shared Basic targets mutation-free. Require
 an exact write grant for the selected target, enforce both instance and destination policy, and

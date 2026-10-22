@@ -152,7 +152,7 @@ function pruneDefinition(tool: ToolDefinition, config: ServerConfig): ToolDefini
                 source: {
                   type: 'string',
                   description:
-                    'Complete CLAS/INTF main source for create/update; only the existing main method body for edit_method.',
+                    'Complete CLAS/INTF main source for create/update; an existing main method body or complete METHOD…ENDMETHOD block for edit_method.',
                 },
                 package: {
                   type: 'string',

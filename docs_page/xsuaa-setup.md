@@ -179,8 +179,10 @@ See [authorization.md](authorization.md) for the full three-layer authorization 
 does exist as a separate [Cloud Foundry UAA scope](https://docs.cloudfoundry.org/api/uaa/version/78.11.0/),
 but ARC-1 does not require it to obtain these XSUAA role attributes. Do not add either name to
 ARC-1's requested scopes or invent `$XSAPPNAME.user_attributes`; that application-qualified scope
-is not declared by ARC-1. Request the scopes advertised by the chosen route; only eligible pinned
-PP routes additionally advertise `write`. Aggregate metadata stays mutation-free.
+is not declared by ARC-1. Request the scopes advertised by the chosen route. When global writes
+and target-filtered authorization are enabled, all syntactically pinned routes advertise `write`,
+including unknown targets, so public metadata does not reveal target existence. Actual writes still
+require every PP/destination/user gate. Aggregate metadata stays mutation-free.
 
 <a id="step-2-bind-service-and-configure"></a>
 
@@ -268,12 +270,12 @@ configuring a client:
 | Endpoint | Protected-resource scopes ARC-1 advertises | Notes |
 |---|---|---|
 | `/mcp` | `read`, `write`, `data`, `sql`, `transports`, `git`, `admin` | Actual grants and application ceilings still prune tools/actions |
-| `/<SYSTEM>/<CLIENT>/mcp` | `read`, `data`, `sql`, `admin`; also `write` for eligible pinned PP configuration | Exact user write grants still required |
+| `/<SYSTEM>/<CLIENT>/mcp` | `read`, `data`, `sql`, `admin`; also `write` when global writes and target-filtered authorization are enabled | Same metadata for unknown targets; PP, destination policy and exact user write grants still required |
 | `/multi/mcp` | `read`, `data`, `sql`, `admin` | Mutation-free aggregate route; SAP calls require `target` |
 
 XSUAA returns only scopes assigned to the user. Advertising the full mutation-free set does not
 grant Admin, data, or SQL. It lets OAuth clients request a usable token while role collections remain
-the authorization source. Eligible pinned PP routes may advertise `write`; aggregate routes never do. All multi-target routes
+the authorization source. Pinned routes may advertise `write` under the configuration above; aggregate routes never do. All multi-target routes
 still require `read` before revealing whether a pinned target exists.
 
 ## Step 5: Configure MCP Clients

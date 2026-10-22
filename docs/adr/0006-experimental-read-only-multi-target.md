@@ -9,6 +9,11 @@
 explicit shared Basic-authentication exception; [ADR-0008](0008-opt-in-xsuaa-target-authorization.md)
 for opted-in target grants, multi-only routing and the complete bounded catalog
 
+**Current write qualification:** [ADR-0010](0010-pinned-pp-multi-target-writes.md) supersedes
+this document's blanket mutation-free statements only for the reviewed pinned strict-PP
+CLAS/INTF surface with exact write grants. Aggregate/Copilot and shared Basic remain mutation-free;
+other discovery, identity and operational constraints below still apply.
+
 ## Context
 
 Large SAP estates can contain 100 or more system/client targets. One ARC-1 CF application per client

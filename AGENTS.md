@@ -20,11 +20,11 @@ Distributed as npm package (`arc-1`) and Docker image (`ghcr.io/arc-mcp/arc-1`).
 4. **BTP-native deployment** — Destination Service, Cloud Connector, XSUAA OAuth, BTP Audit Log; also Docker/npm/stdio.
 5. **Multi-client, vendor-neutral** — XSUAA OAuth + Entra ID OIDC + API key coexist; one instance serves Claude, Copilot Studio, VS Code, Gemini CLI, Cursor.
 6. **Safe defaults, opt-in power** — read-only by default; free SQL blocked; package allowlist defaults to `$TMP`; everything forbidden until the admin allows it.
-7. **Single target by default; one experimental read-only BTP exception** — ADR-0005 remains the rule
-   for writable/general multi-system access. ADR-0006 permits only the default-off BTP CF mode with
-   explicit pinned/aggregate targets under its mutation-free safety contract. ADR-0007 permits the
-   default-off shared Basic identity only under its one-instance/lockout controls. Do not broaden
-   either exception to writes or another discovery/auth model without a new ADR/security review.
+7. **Single target by default; explicit BTP exceptions** — ADR-0006 permits default-off discovered
+   pinned/aggregate targets; ADR-0007 keeps shared Basic mutation-free and one-instance. ADR-0010
+   permits only scoped CLAS/INTF writes and whole-owner activation on pinned strict-PP routes with
+   destination restrictions and exact verified write grants. Aggregate/Copilot remain mutation-free.
+   Broader writes or another discovery/auth model require a new ADR/security review.
 8. **ABAP execution and RFC belong in extensions** — no built-in report/class execution, direct RFC,
    or installed/temporary ABAP helpers. Core uses existing SAP APIs and TypeScript; user ABAP
    development and dedicated ATC/Unit workflows retain their gates. See [ADR-0009](docs/adr/0009-abap-execution-and-rfc-belong-in-extensions.md).
@@ -123,7 +123,7 @@ Full per-option details (defaults, clamps, layer interactions): [docs_page/confi
 | `ARC1_MAX_DATAPREVIEW_RESPONSE_BYTES` / `ARC1_MAX_CONCURRENT_DATA_RESULTS` | Cumulative successful data-preview body cap per tool call (default 2 MiB, after decompression/before string conversion) / process-wide data-result cap held through parse + serialization + audit (default 2); positive integers only, `0` does not disable; on BTP use the [RAM sizing table](docs_page/btp-administration.md#data-preview-ram-sizing) before raising either value |
 | `ARC1_AUTH_RATE_LIMIT` / `ARC1_MCP_HTTP_RATE_LIMIT` / `ARC1_RATE_LIMIT` | Per-IP OAuth cap (20/min), optional shared MCP HTTP/IP override (unset derives `max(OAuth×30,600)`; 0 disables), and per-user MCP cap (default 0 = off; ADR-0004) |
 | `SAP_BTP_DESTINATION` / `SAP_BTP_PP_DESTINATION` | BTP Destination names (PP = PrincipalPropagation type) |
-| `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → mutation-free `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus `/multi/mcp`; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
+| `ARC1_MULTI_TARGET_ENDPOINTS` | Experimental/default-off BTP CF mode: marked subaccount destinations → pinned `/<SYSTEM-OR-ALIAS>/<CLIENT>/mcp` plus mutation-free `/multi/mcp`; scoped pinned PP writes require ADR-0010 gates; requires XSUAA, cache none, standard tools, UI/plugins off; PP targets are strict. |
 | `ARC1_MULTI_TARGET_ALLOW_BASIC_AUTH` | Default false. Permits shared BasicAuthentication targets in multi mode; never PP fallback, credentials stay request-local, and v1 requires exactly one CF instance. |
 | `ARC1_MULTI_TARGET_AUTHORIZATION` | Default/unset `standard` = standard access. Opt-in `xsuaa-attribute` filters IAM-assigned targets, not discovered SAP accounts; multi-only, never fallback. Admin diagnostics do not grant execution. Contract/readiness: ADR-0008 + `docs/plans/xsuaa-target-authorization.md`. |
 | `SAP_PP_ENABLED` / `SAP_PP_STRICT` / `SAP_PP_ALLOW_SHARED_COOKIES` | Principal propagation + strict mode + cookie-coexistence escape hatch |
@@ -146,7 +146,7 @@ src/
 │   ├── multi-target-destination-config.ts # Shared destination-property contract
 │   ├── multi-target-identity.ts # Public target IDs, route aliases, and shared HTTP matchers
 │   ├── multi-target-runtime.ts, multi-target-server.ts # Selected-identity runtime + request preparation
-│   ├── multi-target-tools.ts, multi-target-catalog.ts # Mutation-free schemas + SAPTargets result
+│   ├── multi-target-tools.ts, multi-target-catalog.ts # Scoped schemas + SAPTargets result
 │   ├── multi-target-feature-state.ts # Per-target feature-probe flight coordination
 │   ├── multi-target-shared-auth-state.ts # Process-wide Basic generation/lockout guard
 │   ├── logger.ts               # Structured logger (stderr only, never stdout)
@@ -198,12 +198,12 @@ tests/                          # helpers/ unit/ integration/ e2e/ fixtures/ (to
 Terse routing only — full gotchas per row in [docs/dev-guide.md](docs/dev-guide.md).
 
 For opt-in target authorization, also read [ADR-0008](docs/adr/0008-opt-in-xsuaa-target-authorization.md)
-and [its contract](docs/plans/xsuaa-target-authorization.md); they qualify the multi-target v1 row below.
+and [its contract](docs/plans/xsuaa-target-authorization.md); [ADR-0010](docs/adr/0010-pinned-pp-multi-target-writes.md) adds the scoped pinned-write qualification.
 
 | Task | Files (+ key gotcha) |
 |------|------|
 | BTP deployment/docs guidance | `docs_page/btp-overview.md` → one canonical runbook or task reference; per-user targets: `docs_page/multi-target-authorization.md`. Use the deployed artifact's source revision; research/specs are not shipped settings. Maintenance and optional walkthrough checks: `docs/dev-guide.md#btp-documentation`. |
-| Multi-target ADR-0006/0007 work | Read `docs/adr/0006-experimental-read-only-multi-target.md` and `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. Keep the mutation-free boundary and explicit lint/transport action allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
+| Multi-target ADR-0006/0007 work | Read `docs/adr/0006-experimental-read-only-multi-target.md` and `docs/adr/0007-shared-basic-identity-for-read-only-multi-target.md`, then the normative `docs/plans/destination-discovered-multi-target-v1.md`, `docs_page/multi-target-setup.md`, and `docs_page/multi-target-administration.md`; code is `src/server/{destination-discovery,destination-registry,multi-target-*,server,http}.ts`, `src/authz/policy.ts`, and `src/handlers/{dispatch,feature-cache}.ts`; focused tests are `tests/unit/server/{destination-discovery,destination-registry,multi-target-*,http-destinations,http-multi-target-routes,mta-descriptor}.test.ts`, `tests/unit/authz/policy.test.ts`, and `tests/unit/handlers/multi-target-errors.test.ts`. For writes also read ADR-0010, `docs/plans/2026-10-22-multi-target-pinned-writes.md` and `docs_page/multi-target-writes.md`; pipeline/tests: `src/handlers/write/pinned*.ts`, `src/adt/pinned-write-policy.ts`, `tests/unit/handlers/pinned-writes.test.ts`. Keep aggregate/Basic mutation-free and explicit action/type/input allowlists; ATC/Unit are workload-producing reads. Basic is default-off/shared/one-instance and never PP fallback. `SAPTargets` is aggregate-only. Real `sap-sysid`/`sap-client` remain mandatory. |
 | Add new read operation | `src/adt/client.ts`, `src/handlers/read.ts`, `src/handlers/tools.ts` (+ `src/adt/xml-parser.ts`, `src/adt/types.ts` for structured) |
 | Stored SAPscript text (`SAPQuery action=long_text`) | `src/adt/stored-text/`, `src/handlers/{query-input,query-tool,long-text,long-text-input}.ts`, `tests/evals/scenarios/stored-text.ts` — exact-key classic ITF only; data scope/preview, no RFC/helper/free-SQL fallback. See `docs/research/2026-10-17-stored-text-integration-evals.md`. |
 | Add ADT slash alias to `SLASH_TYPE_MAP` | `src/handlers/object-types.ts`, `tests/unit/handlers/slash-type-map.test.ts` — needs `docs/research/abap-types/types/<short>.md` evidence, verify live `<adtcore:type>` first (#218) |
@@ -310,10 +310,10 @@ and [its contract](docs/plans/xsuaa-target-authorization.md); they qualify the m
 3. **SAP client** (`src/server/server.ts`): normally `ppEnabled` + JWT → per-user SAP session; ADR-0007 multi-target Basic resolves one request-local shared credential behind the process guard.
 4. **`handleToolCall`** (`src/handlers/dispatch.ts`): arg normalization (`stripLlmEmptyValues`) → scope check (`ACTION_POLICY`) → Zod validation → per-tool handler → package check for writes. Source reads consult the inactive-list + ETag source cache.
 5. **ADT client** (`src/adt/{client,crud,devtools}.ts`): every endpoint behind `checkOperation(safety, …)`.
-6. **HTTP** (`src/adt/http.ts`): MIME negotiation, conditional GET, CSRF auto-refresh, 406/415 one-retry, cookie hot-reload, stateful lock→modify→unlock sessions.
+6. **HTTP** (`src/adt/http.ts`): MIME negotiation, conditional GET, CSRF auto-refresh, 406/415 one-retry, cookie hot-reload, stateful lock→modify→unlock sessions. Scoped pinned mutations use only the dedicated pipeline, per-request noReplay, bounded cleanup and whole-owner activation validator.
 7. **SAP**: native auth (`S_DEVELOP`, `S_ADT_RES`, `S_TRANSPRT`).
 
-**Key invariant:** scope ∧ safety ∧ SAP auth — all must pass.
+**Key invariant:** scope ∧ safety ∧ SAP auth — all must pass; pinned writes additionally require exact verified target capability and destination restrictions.
 
 ## Authorization & Safety
 
@@ -386,15 +386,13 @@ never present mocks or skipped tests as live coverage. Documentation-only change
 - **stdout is sacred** — MCP JSON-RPC only; all logging to stderr.
 - Never commit `.env`, `cookies.txt`, `.arc1.json`; sensitive fields are redacted in logs.
 - **Safety config is the server ceiling** — per-user scopes only restrict.
-- **Multi-system boundary** — single target remains the default and all writable multi-system access
-  stays out of scope under ADR-0005. ADR-0006 is the sanctioned experimental, default-off, BTP/XSUAA,
-  mutation-free exception for pinned and aggregate endpoints. Principal Propagation remains recommended;
-  ADR-0007 permits only an explicit, default-off shared Basic identity under its mutation-free, one-instance
-  controls and never as a PP fallback. ADR-0008 adds only opt-in verified XSUAA target roles under
-  `docs/plans/xsuaa-target-authorization.md`; standard stays unchanged. Follow these normative plans;
-  do not add writes, another discovery/auth model, or a hidden compatibility mode. Route requirements
-  outside those boundaries to separate ARC-1 instances. Changing the boundary requires a new
-  ADR/security review.
+- **Multi-system boundary** — single target remains the default. ADR-0006/0007/0008 define discovered
+  BTP/XSUAA routes, shared Basic read-only identity and verified target grants. ADR-0010 qualifies
+  only pinned strict-PP CLAS/INTF create/main update, CLAS main method edit and whole-owner activation.
+  Every call requires the server ceiling, destination opt-in/restrictions, read access, raw write scope
+  and exact write grant. Aggregate/Copilot and Basic remain mutation-free; no PP fallback. Follow the
+  normative plans and R23 in `docs/security-model.md`; broader mutations or another discovery/auth
+  model require a new ADR/security review. Separate instances remain the stronger isolation option.
 - **Per-user auth never inherits shared credentials** — `buildAdtConfig(..., { perUser: true })` strips username/password/cookies; any new Layer B field must respect the flag.
 - **All ADT endpoints have safety guards** — no unguarded `http.{get,post,put,delete}`.
 - **Cookie hot-reload**: `SAP_COOKIE_FILE` re-read before the 401 retry, and again on the next request after a persistent 401; `SAP_COOKIE_STRING` cannot hot-reload.

@@ -221,9 +221,21 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
     expect((await handlePinnedWrite(client(), missing, config)).isError).toBe(true);
     expect(requests).toHaveLength(0);
     const result = await handlePinnedWrite(client(), { ...update(), expectedSourceHash: '0'.repeat(64) }, config);
-    expect(payload(result)).toMatchObject({ state: 'unchanged', retryable: false });
+    expect(payload(result)).toMatchObject({ error: 'PINNED_WRITE_REFUSED', state: 'unchanged', retryable: false });
     expect(saves()).toHaveLength(0);
     expect(requests.some((r) => r.path.includes('_action=UNLOCK'))).toBe(true);
+  });
+  it('reports that no save was sent when ordinary preflight fails', async () => {
+    const c = client();
+    vi.spyOn(c, 'resolveObjectPackage').mockRejectedValue(new Error('Metadata unavailable'));
+    const result = await handlePinnedWrite(c, update(), config);
+    expect(payload(result)).toMatchObject({
+      error: 'PINNED_WRITE_REFUSED',
+      state: 'unchanged',
+      message: 'No create or source save was sent. Review the reported phase before continuing.',
+      retryable: false,
+    });
+    expect(saves()).toHaveLength(0);
   });
   it.each(['missing', 'Y', ''])('refuses unproven/mismatched local lock evidence: %s', async (value) => {
     local = value;
@@ -255,6 +267,7 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       failUnlock = true;
       const result = await handlePinnedWrite(client(), update(), config);
       expect(payload(result)).toMatchObject({
+        error: status < 429 ? 'PINNED_WRITE_REFUSED' : 'PINNED_WRITE_INCOMPLETE',
         state: status < 429 ? 'source-save-rejected' : 'source-save-unknown',
         statusCode: status,
         retryable: false,
@@ -312,14 +325,19 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
         config,
       ),
     );
-    expect(result).toMatchObject({ state: 'created-source-rejected', statusCode: 422, retryable: false });
+    expect(result).toMatchObject({
+      error: 'PINNED_WRITE_INCOMPLETE',
+      state: 'created-source-rejected',
+      statusCode: 422,
+      retryable: false,
+    });
   });
   it('normalizes long interior newline runs without changing their bytes', async () => {
     const large = replacement.replace('result = 2.', `${'\n'.repeat(50000)}result = 2.`);
     const result = payload(await handlePinnedWrite(client(), { ...update(), source: large }, config));
     expect(result).toMatchObject({ state: 'saved-inactive', sourceHash: sourceHash(large) });
   });
-  it.each(['orphan', 'multiple', 'wrong-task', 'valid', 'released-task'])(
+  it.each(['orphan', 'multiple', 'wrong-task', 'valid', 'released-task', 'released-task-lock'])(
     'validates every CTS lock holder: %s',
     async (mode) => {
       pkg = 'ZTEAM';
@@ -338,16 +356,23 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
             `<DATA><DEVCLASS>ZTEAM</DEVCLASS><DLVUNIT>HOME</DLVUNIT><OPERATION/><RESULT>S</RESULT><LOCKS><CTS_OBJECT_LOCK><LOCK_HOLDER>${headers}<TASK_HEADERS><CTS_TASK_HEADER><TRKORR>${task}</TRKORR></CTS_TASK_HEADER></TASK_HEADERS></LOCK_HOLDER>${extra}</CTS_OBJECT_LOCK></LOCKS></DATA>`,
           );
         }
-        if (mode === 'released-task' && String(url).includes('transportrequests'))
+        if (mode.startsWith('released-task') && String(url).includes('transportrequests'))
           return mockResponse(
             200,
             '<tm:root xmlns:tm="http://www.sap.com/cts/adt/tm"><tm:request tm:number="A4HK900001" tm:type="K" tm:status="D"><tm:task tm:number="A4HK900002" tm:status="R"/></tm:request></tm:root>',
           );
+        if (mode === 'released-task-lock' && String(url).includes('_action=LOCK'))
+          return mockResponse(
+            200,
+            '<DATA><LOCK_HANDLE>lock-test</LOCK_HANDLE><CORRNR>A4HK900002</CORRNR><IS_LOCAL/></DATA>',
+          );
         return fallback(url, options);
       });
       const result = await handlePinnedWrite(client(), { ...update(), transport: 'A4HK900001' }, config);
-      expect(result.isError, result.content[0].text).toBe(['valid', 'released-task'].includes(mode) ? undefined : true);
-      expect(saves()).toHaveLength(['valid', 'released-task'].includes(mode) ? 1 : 0);
+      expect(result.isError, result.content[0].text).toBe(
+        ['valid', 'released-task', 'released-task-lock'].includes(mode) ? undefined : true,
+      );
+      expect(saves()).toHaveLength(['valid', 'released-task', 'released-task-lock'].includes(mode) ? 1 : 0);
     },
   );
   it('rejects a caller-selected released task even though lock evidence may contain it', async () => {
@@ -361,7 +386,9 @@ describe('pinned mutation lifecycle on the real ADT HTTP stack', () => {
       return fallback(url, options);
     });
     const c = client();
-    await expect(resolvePinnedRequest(c.http, c.safety, 'A4HK900002')).rejects.toThrow('modifiable');
+    await expect(resolvePinnedRequest(c.http, c.safety, 'A4HK900002')).rejects.toThrow(
+      'The selected task must be modifiable',
+    );
   });
   it.each([{ serverAllowedTransports: [] }, { serverAllowedTransports: ['A4HK999999'] }])(
     'independently enforces the server CTS write ceiling: %j',

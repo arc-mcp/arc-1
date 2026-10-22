@@ -6,6 +6,11 @@
 [ADR-0006](0006-experimental-read-only-multi-target.md),
 [ADR-0007](0007-shared-basic-identity-for-read-only-multi-target.md)
 
+**Current write qualification:** [ADR-0010](0010-pinned-pp-multi-target-writes.md) supersedes
+this document's blanket mutation-free statements only for the reviewed pinned strict-PP
+CLAS/INTF surface with exact write grants. Aggregate/Copilot and shared Basic remain mutation-free;
+other discovery, identity and operational constraints below still apply.
+
 ## Context
 
 Global `read` scope currently permits discovery and routing to every accepted multi-target
