@@ -3,6 +3,57 @@ import { describe, expect, it } from 'vitest';
 import { parseTableSettings, parseTableSettingsPatch, patchTableSettingsXml } from '../../../src/adt/table-settings.js';
 
 const fixture = readFileSync(new URL('../../fixtures/table-settings-758.xml', import.meta.url), 'utf8');
+const loggingField = '<ts:loggingEnabled>false</ts:loggingEnabled>';
+
+describe('table change logging', () => {
+  it.each([true, false])('accepts the explicit JSON boolean %s', (loggingEnabled) => {
+    expect(parseTableSettingsPatch(JSON.stringify({ loggingEnabled }))).toEqual({ loggingEnabled });
+  });
+  it.each(['false', 'true', 0, 1, null])('rejects nonboolean input %j', (loggingEnabled) => {
+    expect(() => parseTableSettingsPatch(JSON.stringify({ loggingEnabled }))).toThrow('Invalid TABL/DTT source');
+  });
+  it.each([
+    ['true', true],
+    ['false', false],
+  ] as const)('reads native %s as a boolean while retaining the raw value', (native, expected) => {
+    const xml = fixture.replace(loggingField, `<ts:loggingEnabled>${native}</ts:loggingEnabled>`);
+    expect(parseTableSettings(xml, 'ZTEST')).toMatchObject({
+      source: { loggingEnabled: expected },
+      loggingEnabled: native,
+    });
+  });
+  it.each([true, false])('changes only logging text to %s, preserving attributes and other pending fields', (value) => {
+    const before = fixture
+      .replace(loggingField, `<ts:loggingEnabled>${!value}</ts:loggingEnabled>`)
+      .replace('<ts:sizeCategory>0', '<ts:sizeCategory>2')
+      .replaceAll('ts:', 'native:')
+      .replace('xmlns:ts=', 'xmlns:native=');
+    const after = patchTableSettingsXml(before, 'ZTEST', { loggingEnabled: value });
+    expect(after).toBe(before.replace(`>${!value}</native:loggingEnabled>`, `>${value}</native:loggingEnabled>`));
+    expect(parseTableSettings(after, 'ZTEST').source).toMatchObject({ loggingEnabled: value, sizeCategory: 2 });
+  });
+  it.each([
+    '',
+    `<ts:future>${loggingField}</ts:future>`,
+    loggingField + loggingField,
+    '<ts:loggingEnabled/>',
+    '<ts:loggingEnabled>X</ts:loggingEnabled>',
+    '<ts:loggingEnabled>1</ts:loggingEnabled>',
+    '<ts:loggingEnabled>0</ts:loggingEnabled>',
+    '<ts:loggingEnabled><ts:unexpected/></ts:loggingEnabled>',
+    '<ts:loggingEnabled ts:isEditable="false">false</ts:loggingEnabled>',
+    '<ts:loggingEnabled ts:isEditable="true">false</ts:loggingEnabled>',
+  ])('leaves unfamiliar logging metadata readable but refuses to edit it: %s', (field) => {
+    const before = fixture.replace(loggingField, field);
+    const read = parseTableSettings(before, 'ZTEST');
+    expect(read.source).not.toHaveProperty('loggingEnabled');
+    expect(read.source).toMatchObject({ dataClass: 'APPL0', sizeCategory: 0 });
+    expect(patchTableSettingsXml(before, 'ZTEST', { sizeCategory: 2 })).toBe(
+      before.replace('<ts:sizeCategory>0', '<ts:sizeCategory>2'),
+    );
+    expect(() => patchTableSettingsXml(before, 'ZTEST', { loggingEnabled: true })).toThrow(/loggingEnabled/);
+  });
+});
 
 describe('technical settings partial edits', () => {
   it('reads native values and separates the writable source from state and other settings', () => {
